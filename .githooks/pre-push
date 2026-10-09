@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Checks the tip of every pushed ref the way CI's verify workflow does (scripts/check.sh) and
+# stops the push if it fails. `git push --no-verify` skips it.
+set -euo pipefail
+
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+root="$(git rev-parse --show-toplevel)"
+
+commits=""
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  if [[ "$local_sha" =~ ^0+$ ]]; then continue; fi
+  commits="$commits $local_sha"
+done
+
+for commit in $(printf '%s\n' $commits | sort -u); do
+  "$root/scripts/check.sh" "$commit"
+done

@@ -1,0 +1,132 @@
+/*
+ * Motion. Overlays animate on the `data-state` Radix sets; Radix keeps a closing element mounted
+ * until its animation ends, so exits need keyframes rather than transitions. The reduced-motion rule
+ * in theme.css collapses every animation here to an instant change, and skeletons hold still.
+ */
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes overlay-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes overlay-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes overlay-rise-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@keyframes overlay-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes overlay-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes overlay-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes overlay-toast-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes overlay-toast-swipe-out {
+  from {
+    transform: translateX(var(--radix-toast-swipe-end-x));
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* The scrim behind dialogs and sheets. */
+.anim-scrim[data-state="open"] {
+  animation: overlay-fade-in 180ms ease-out;
+}
+.anim-scrim[data-state="closed"] {
+  animation: overlay-fade-out 140ms ease-in;
+}
+
+/* Dialogs and sheets rise into place. */
+.anim-modal[data-state="open"] {
+  animation: overlay-rise-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.anim-modal[data-state="closed"] {
+  animation: overlay-rise-out 140ms ease-in;
+}
+
+/* Menus, popovers and tooltips grow from the edge that touches their trigger. */
+.anim-pop {
+  transform-origin: var(--radix-popper-transform-origin);
+}
+.anim-pop[data-state="open"],
+.anim-pop[data-state="delayed-open"],
+.anim-pop[data-state="instant-open"] {
+  animation: overlay-pop-in 140ms ease-out;
+}
+.anim-pop[data-state="closed"] {
+  animation: overlay-pop-out 100ms ease-in;
+}
+
+/* Toasts slide in from the right edge and follow a swipe back out. */
+.anim-toast[data-state="open"] {
+  animation: overlay-toast-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.anim-toast[data-state="closed"] {
+  animation: overlay-toast-out 140ms ease-in;
+}
+.anim-toast[data-swipe="move"] {
+  transform: translateX(var(--radix-toast-swipe-move-x));
+}
+.anim-toast[data-swipe="cancel"] {
+  transform: translateX(0);
+  transition: transform 200ms ease-out;
+}
+.anim-toast[data-swipe="end"] {
+  animation: overlay-toast-swipe-out 140ms ease-out;
+}
+
+/* The skeleton pulse: opacity 1 → .5 and back over 1.2s. */
+@keyframes skeleton-pulse {
+  to {
+    opacity: 0.5;
+  }
+}
+
+.anim-pulse {
+  animation: skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-pulse {
+    animation: none;
+  }
+}

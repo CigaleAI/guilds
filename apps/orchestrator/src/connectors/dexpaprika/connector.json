@@ -1,0 +1,216 @@
+{
+  "slug": "dexpaprika",
+  "display_name": "DexPaprika",
+  "auth": {
+    "kind": "token",
+    "fields": [
+      {
+        "name": "token",
+        "label": "DexPaprika API key",
+        "secret": true
+      }
+    ]
+  },
+  "description": "On-chain DEX data: search tokens and pools, prices, liquidity, OHLCV, and recent swaps across 36 networks.",
+  "limitations": "Read-only market data. Each call uses the operator's DexPaprika credit quota. Finer candles and longer history need a paid plan. Not a trading venue.",
+  "setup_hint": "Connect with a DexPaprika API key from https://console.dexpaprika.com. A free key is enough.",
+  "tools": [
+    {
+      "name": "search",
+      "description": "Find tokens, pools, and DEXes by name, symbol, or address across every network. Call token or pool with a result's network and address.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Name, symbol, or contract address."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per section. Default 15, max 30."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "token",
+      "description": "One token's price, liquidity, and 24h volume. Pass DexPaprika network id, e.g. ethereum, solana, base. and the token address.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "DexPaprika network id, e.g. ethereum, solana, base."
+          },
+          "address": {
+            "type": "string",
+            "description": "Token contract address."
+          }
+        },
+        "required": [
+          "network",
+          "address"
+        ]
+      }
+    },
+    {
+      "name": "prices",
+      "description": "Current USD prices for up to 10 token addresses on one network.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "DexPaprika network id, e.g. ethereum, solana, base."
+          },
+          "tokens": {
+            "type": "string",
+            "description": "Comma list of token addresses, at most 10."
+          }
+        },
+        "required": [
+          "network",
+          "tokens"
+        ]
+      }
+    },
+    {
+      "name": "pool",
+      "description": "One liquidity pool: pair, DEX, price, liquidity, and 24h volume.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "DexPaprika network id, e.g. ethereum, solana, base."
+          },
+          "address": {
+            "type": "string",
+            "description": "Pool address."
+          }
+        },
+        "required": [
+          "network",
+          "address"
+        ]
+      }
+    },
+    {
+      "name": "pools",
+      "description": "Liquidity pools on one network. Optional token, DEX, or creation window. Default sort is 24h volume.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "DexPaprika network id, e.g. ethereum, solana, base."
+          },
+          "token": {
+            "type": "string",
+            "description": "Token contract address."
+          },
+          "dex": {
+            "type": "string",
+            "description": "DEX id, e.g. uniswap_v3."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Creation window start: -24h, Unix seconds, RFC3339, or YYYY-MM-DD."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "volume_usd_24h, volume_usd_7d, volume_usd_30d, liquidity_usd, txns_24h, price_usd, created_at. Default volume_usd_24h."
+          },
+          "sort": {
+            "type": "string",
+            "description": "asc or desc. Default desc."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Continue from a previous next_cursor."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          }
+        },
+        "required": [
+          "network"
+        ]
+      }
+    },
+    {
+      "name": "ohlcv",
+      "description": "Pool candles. Default last 24 hours at 1h. A free key allows 10m and up over 7 days; 1m and 5m need a paid plan.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "DexPaprika network id, e.g. ethereum, solana, base."
+          },
+          "address": {
+            "type": "string",
+            "description": "Pool address."
+          },
+          "start": {
+            "type": "string",
+            "description": "Window start. Default -24h."
+          },
+          "end": {
+            "type": "string",
+            "description": "Window end. Same formats as start."
+          },
+          "interval": {
+            "type": "string",
+            "description": "1m, 5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h. Default 1h."
+          }
+        },
+        "required": [
+          "network",
+          "address"
+        ]
+      }
+    },
+    {
+      "name": "swaps",
+      "description": "Recent pool swaps, newest first. Optional from/to window, capped to the last 7 days.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "DexPaprika network id, e.g. ethereum, solana, base."
+          },
+          "address": {
+            "type": "string",
+            "description": "Pool address."
+          },
+          "from": {
+            "type": "string",
+            "description": "Inclusive start: -1h, Unix seconds, RFC3339, or YYYY-MM-DD."
+          },
+          "to": {
+            "type": "string",
+            "description": "Exclusive end. Same formats as from."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Transaction id from a previous page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          }
+        },
+        "required": [
+          "network",
+          "address"
+        ]
+      }
+    }
+  ]
+}

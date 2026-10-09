@@ -1,0 +1,14 @@
+: connected
+
+event: generation.started
+data: {"generation": 1}
+
+event: assistant.delta
+data: {"text": "Hello"}
+
+event: message.committed
+data: {"id": 9, "seq": 2, "payload": {"role": "assistant", "content": "Hello"}, "metadata": {"model": "openrouter/openai/gpt-5.6-luna", "usage": {"input_tokens": 1, "output_tokens": 1, "cache_read_tokens": 0}, "cost_usd": 0.0, "generation": 1, "latency_ms": 1, "response_id": "compat-response", "finish_reason": "stop", "provider_request_id": "compat-provider"}, "created_at": "<ts:+00:00-us>"}
+
+event: generation.finished
+data: {"generation": 1}
+

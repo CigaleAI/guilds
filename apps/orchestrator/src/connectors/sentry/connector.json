@@ -1,0 +1,16 @@
+{
+  "slug": "sentry",
+  "display_name": "Sentry",
+  "endpoint": {
+    "url": "https://mcp.sentry.dev/mcp"
+  },
+  "auth": {
+    "kind": "oauth",
+    "oauth": {
+      "strategy": "dynamic"
+    }
+  },
+  "description": "Search errors, analyze performance, triage issues, read Sentry docs, and manage projects in the operator's Sentry organization.",
+  "limitations": "Hosted Sentry only. Issue, project, and team writes use the connected account. Not local logs and not a general APM.",
+  "setup_hint": "Connect with Sentry OAuth. The first connection opens a browser to authorize the operator's Sentry account."
+}

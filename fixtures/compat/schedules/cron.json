@@ -1,0 +1,58 @@
+{
+  "normalized": "0 9 * * 1",
+  "every_five": "*/5 * * * *",
+  "errors": {
+    "too_few_fields": "cron must be 5 fields: minute hour day month weekday (UTC)",
+    "invalid": "cron is invalid",
+    "too_frequent": "cron must wait at least 5 minutes between wake-ups"
+  },
+  "describe": {
+    "monday": "At 09:00 on Monday (UTC)",
+    "weekdays": "At 09:00 on Monday through Friday (UTC)",
+    "names": "At 09:00 on Monday, Wednesday, and Friday (UTC)"
+  },
+  "next_run": {
+    "monday_0900": "2026-09-14T09:00:00+00:00",
+    "every_30": "2026-09-12T16:30:00+00:00"
+  },
+  "vixie_dom_dow_or": {
+    "expression": "0 0 1,15 * 1",
+    "base": "2026-09-12T16:00:00+00:00",
+    "next": [
+      "2026-09-14T00:00:00+00:00",
+      "2026-09-15T00:00:00+00:00",
+      "2026-09-21T00:00:00+00:00",
+      "2026-09-28T00:00:00+00:00",
+      "2026-10-01T00:00:00+00:00",
+      "2026-10-05T00:00:00+00:00"
+    ],
+    "note": "Vixie/croniter OR: fire when DOM matches or DOW matches, not Quartz AND"
+  },
+  "wake": {
+    "payload": {
+      "role": "user",
+      "content": "Schedule wake-up: {\n  \"id\": \"sch_1\",\n  \"cron\": \"0 9 * * 1\",\n  \"instruction\": \"Read shared notes and post if anything is new.\",\n  \"previous_run_at\": \"2026-09-07T09:00:03Z\"\n}"
+    },
+    "metadata": {
+      "generation": 1,
+      "source": "schedule",
+      "schedule_id": "sch_1",
+      "instruction_hash": "b35622c080186ae6b41204f7332e2a3c6cfcc32b76416036f9fe12bda7eb3546"
+    }
+  },
+  "schedule_item": {
+    "id": "sch_1",
+    "agent_id": "a_1",
+    "cron": "0 9 * * 1",
+    "window": null,
+    "label": "At 09:00 on Monday (UTC)",
+    "description": "Monday inbox",
+    "instruction": "Check Gmail and write a note.",
+    "instruction_hash": "7ec44d732813641807f0c9bdc3b91269b0e519756ae04e7650a3d89ef25e0c2e",
+    "paused": false,
+    "next_run_at": "2026-09-14T09:00:00+00:00",
+    "last_run_at": null,
+    "created_at": "2026-09-13T12:00:00+00:00",
+    "updated_at": "2026-09-13T12:00:00+00:00"
+  }
+}

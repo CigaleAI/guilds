@@ -1,0 +1,30 @@
+{
+  "slug": "opensea",
+  "display_name": "OpenSea",
+  "endpoint": {
+    "url": "https://mcp.opensea.io/mcp"
+  },
+  "auth": {
+    "kind": "token",
+    "header": {
+      "name": "X-API-KEY",
+      "prefix": ""
+    }
+  },
+  "description": "OpenSea marketplace reads and, when enabled, collection or order management.",
+  "limitations": "Management tools are default Off. Buying and listing through the Wallet connector uses different tools.",
+  "setup_hint": "Connect with an OpenSea API key.",
+  "policy": {
+    "default_off": [
+      "get_instant_api_key",
+      "manage_collections",
+      "get_favorites",
+      "manage_watchlist",
+      "manage_profile",
+      "manage_wallets",
+      "manage_drops",
+      "check_drop_eligibility",
+      "cancel_orders"
+    ]
+  }
+}

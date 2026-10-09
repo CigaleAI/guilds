@@ -1,0 +1,8 @@
+#!/bin/sh
+# Names the run and the agent that made a commit as trailers. The shell tool sets
+# GUILD_RUN_ID and GUILD_AGENT_ID; a commit made elsewhere gets no trailers.
+[ -n "$GUILD_RUN_ID" ] || exit 0
+exec git interpret-trailers --in-place --if-exists addIfDifferent \
+  --trailer "Guild-Run: $GUILD_RUN_ID" \
+  --trailer "Guild-Agent: ${GUILD_AGENT_ID:-unknown}" \
+  "$1"

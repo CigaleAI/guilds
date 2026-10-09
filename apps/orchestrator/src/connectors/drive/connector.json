@@ -1,0 +1,45 @@
+{
+  "slug": "drive",
+  "display_name": "Google Drive",
+  "endpoint": {
+    "url": "https://drivemcp.googleapis.com/mcp/v1"
+  },
+  "auth": {
+    "kind": "oauth",
+    "oauth": {
+      "strategy": "configured",
+      "provider": "google-connectors",
+      "scopes": [
+        "https://www.googleapis.com/auth/drive"
+      ]
+    }
+  },
+  "requires": {
+    "integration": "google-connectors"
+  },
+  "description": "Search, read, and create files in one Google Drive folder the operator picks at Connect.",
+  "limitations": "Google login can see the Drive; the agent is limited to the picked folder. Create and copy are default Off. Official Drive MCP has no delete. Requires a platform-configured OAuth client and the Drive MCP service on that Cloud project. Restricted Drive OAuth scope. Not a Gmail or Calendar connector.",
+  "setup_hint": "Connect with Google OAuth and pick one folder. Create and copy stay off until the operator enables them.",
+  "policy": {
+    "default_off": [
+      "copy_file",
+      "create_file"
+    ]
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "folder_id": {
+        "type": "string",
+        "title": "Folder",
+        "x-lookup": true,
+        "minLength": 1,
+        "description": "The one folder every Drive tool is limited to. Search by name or paste a folder link."
+      }
+    },
+    "required": [
+      "folder_id"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "slug": "notion",
+  "display_name": "Notion",
+  "endpoint": {
+    "url": "https://mcp.notion.com/mcp"
+  },
+  "auth": {
+    "kind": "oauth",
+    "oauth": {
+      "strategy": "dynamic"
+    }
+  },
+  "description": "Read and write Notion pages, databases, and comments. Use for CRMs, wikis, and shared records the operator already owns.",
+  "limitations": "Workspace structure and database IDs are chosen by the operator during setup. Not a substitute for LinkedIn, email, or arbitrary websites.",
+  "setup_hint": "Connect Notion to the organisation so the builder can search existing databases. Use it for long-lived records only; queues and working files stay in local notes or collections.",
+  "builder": {
+    "searchable": true,
+    "role": "system_of_record",
+    "guidance": "Its pages and databases are the operator's own records; search them before proposing a new table, and name the databases the operator confirms in `connections[].resources`."
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "guilds",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "engines": {
+    "node": "^24"
+  },
+  "scripts": {
+    "compat:verify": "pnpm --filter @guildsrun/orchestrator compat:verify",
+    "test:orchestrator": "pnpm --filter @guildsrun/orchestrator test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test:docs-mcp": "pnpm --filter @guildsrun/docs-mcp test",
+    "storybook": "pnpm --filter @guildsrun/ui storybook",
+    "build:storybook": "pnpm --filter @guildsrun/ui build-storybook",
+    "design-system-doc": "pnpm --filter @guildsrun/ui design-system-doc",
+    "test:ui": "pnpm --filter @guildsrun/ui test",
+    "test:web": "pnpm --filter @guildsrun/web test",
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
+    "check": "scripts/check.sh"
+  }
+}

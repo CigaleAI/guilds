@@ -1,0 +1,229 @@
+{
+  "slug": "twitterapiio",
+  "display_name": "TwitterAPI.io",
+  "auth": {
+    "kind": "token"
+  },
+  "description": "Search posts, read profiles, timelines, followers, mentions, replies, quotes, and trends through TwitterAPI.io.",
+  "limitations": "Read-only public X data. Search is last 24 hours, ranked by Top. Posting is not offered. Each call uses the operator's TwitterAPI.io credits.",
+  "setup_hint": "Connect with a TwitterAPI.io API key from https://twitterapi.io/dashboard.",
+  "tools": [
+    {
+      "name": "search",
+      "description": "Search posts from the last 24 hours, ranked by Top. X operators (from:user, min_faves) work. Pass query.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query. Operators such as from:user work. Time range is always the last 24 hours."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "user",
+      "description": "One X profile. Pass a username (@optional) or user id.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username (@optional) or user id."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "posts",
+      "description": "Recent posts from one account. Pass a username or user id.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username (@optional) or user id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "post",
+      "description": "One post. Pass a post id or an x.com / twitter.com status URL.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id or status URL."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "followers",
+      "description": "Followers of one account. Pass a username.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username (@optional)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "following",
+      "description": "Accounts one user follows. Pass a username.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username (@optional)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "mentions",
+      "description": "Posts that mention one account. Pass a username.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username (@optional)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "replies",
+      "description": "Replies under one post. Pass a post id or status URL.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id or status URL."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "quotes",
+      "description": "Quote posts of one post. Pass a post id or status URL.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id or status URL."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "trends",
+      "description": "Trending topics. Pass optional woeid (1 worldwide, 23424977 US).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "woeid": {
+            "type": "string",
+            "description": "Yahoo WOEID. Default 1 (worldwide)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          }
+        }
+      }
+    }
+  ]
+}

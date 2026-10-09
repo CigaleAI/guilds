@@ -1,0 +1,8 @@
+{
+  "search": "from:elonmusk  n=1\n123  @elonmusk  Elon Musk  2026-09-13T12:00:00.000Z  likes=12  rts=3  replies=1  quotes=0  hello world\npage=page-2",
+  "user": "44196397  @elonmusk  Elon Musk  blue  followers=1  following=2  posts=3  2026-09-13T12:00:00.000Z\nbio",
+  "posts": "1  @x  X  likes=1  rts=-  replies=-  quotes=-  one",
+  "post": "1  @x  X  likes=1  rts=-  replies=-  quotes=-  one",
+  "followers": "2  @alice  Alice  followers=10  following=4  posts=-",
+  "trends": "#AI  tweets=12345"
+}

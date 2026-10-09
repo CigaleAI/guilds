@@ -1,0 +1,10 @@
+{
+  "alphabet": "0123456789ABCDEFGHJKMNPQRSTVWXYZ",
+  "pattern": "^[a-z]+_[0-9A-HJKMNPQRSTVWXYZ]{26}$",
+  "samples": [
+    "guild_01M2JAG0AYXX3PRSGWT97R9EW2",
+    "agent_01M2JAG0AYJW7AHSB9550VGRQS",
+    "r_01M2JAG0AYEV2X66ZDZS90DTRA"
+  ],
+  "sample_ok": true
+}

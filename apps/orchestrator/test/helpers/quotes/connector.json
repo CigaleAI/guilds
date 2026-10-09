@@ -1,0 +1,33 @@
+{
+  "slug": "quotes",
+  "display_name": "Quotes",
+  "auth": { "kind": "token", "fields": [{ "name": "token", "label": "Quotes API key", "secret": true }] },
+  "description": "Puts the symbols a login pins, with their price, into every run's State.",
+  "state": {
+    "key": "quotes",
+    "intro": "`quotes` lists the pinned symbols with their price at run start."
+  },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "symbols": {
+        "type": "array",
+        "title": "Pinned symbols",
+        "x-lookup": true,
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,99}$" },
+            "name": { "type": "string", "maxLength": 100 }
+          },
+          "required": ["id"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["symbols"],
+    "additionalProperties": false
+  }
+}

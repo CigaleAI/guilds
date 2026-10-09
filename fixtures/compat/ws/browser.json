@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "name": "ws-root",
+      "path": "/api/agents/<id:a:2>/browser/vnc",
+      "subprotocol": "binary",
+      "text_reply": "echo-text:hello-text",
+      "bin_reply_prefix": "echo-bin:hello-bin"
+    },
+    {
+      "name": "ws-path",
+      "path": "/api/agents/<id:a:2>/browser/vnc/websockify",
+      "subprotocol": "binary",
+      "text_reply": "echo-text:hello-text",
+      "bin_reply_prefix": "echo-bin:hello-bin"
+    }
+  ]
+}

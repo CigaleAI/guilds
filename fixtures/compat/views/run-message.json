@@ -1,0 +1,70 @@
+{
+  "message_us": {
+    "id": 4294967303,
+    "seq": 3,
+    "payload": {
+      "role": "user",
+      "content": "hi"
+    },
+    "metadata": {
+      "generation": 1
+    },
+    "created_at": "2026-09-13T12:00:00.123456+00:00"
+  },
+  "message_whole": {
+    "id": 1,
+    "seq": 0,
+    "payload": {
+      "role": "system",
+      "content": "sys"
+    },
+    "metadata": {},
+    "created_at": "2026-09-13T12:00:00+00:00"
+  },
+  "run": {
+    "id": "r_1",
+    "agent_id": "a_1",
+    "status": "active",
+    "config_snapshot": {
+      "model": "openrouter/openai/gpt-5.6-luna"
+    },
+    "errors": [],
+    "generating": true,
+    "system_prompt_hash": "abc",
+    "task_prompt_hash": "def",
+    "memory_prompt_hash": "ghi",
+    "memory_skipped": false,
+    "created_at": "2026-09-13T12:00:00.123456+00:00",
+    "updated_at": "2026-09-13T12:00:00.123456+00:00",
+    "archived_at": null,
+    "kind": "direct",
+    "group_chat_through_seq": null
+  },
+  "group_message": {
+    "id": 9,
+    "seq": 1,
+    "author_type": "user",
+    "author_name": "operator",
+    "author_agent_id": null,
+    "source_run_id": null,
+    "content": "hello @ada",
+    "tagged": [
+      "ada"
+    ],
+    "tagged_agent_ids": [],
+    "tagged_user_ids": [
+      "user_ada"
+    ],
+    "created_at": "2026-09-13T12:00:00.123456+00:00"
+  },
+  "user": {
+    "id": "user_operator",
+    "name": "operator",
+    "email": null,
+    "image": null,
+    "timezone": null,
+    "color": null,
+    "created_at": "2026-09-13T12:00:00+00:00",
+    "updated_at": "2026-09-13T12:00:00+00:00"
+  }
+}

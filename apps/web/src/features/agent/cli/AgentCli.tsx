@@ -1,0 +1,131 @@
+import { Link, useParams } from "@tanstack/react-router";
+import { RotateCw, SquareTerminal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { api } from "../../../api/client";
+import { useAgent } from "../../../api/queries";
+import { Button, IconButton, EmptyState, StatusBadge } from "@guildsrun/ui";
+type Session =
+  | { kind: "idle" }
+  | { kind: "starting" }
+  | { kind: "live"; nonce: number }
+  | { kind: "failed"; detail: string };
+
+function terminalUrl(agentId: string, nonce: number): string {
+  // ttyd opens its socket and its token request next to the page, so the path ends in a slash.
+  return `/api/agents/${encodeURIComponent(agentId)}/cli/tty/?_=${nonce}`;
+}
+
+/**
+ * A bash session on the agent's machine. Nothing starts until the operator asks: opening the
+ * terminal wakes the sandbox, which then stays up for five minutes after the last input.
+ */
+export function AgentCli() {
+  const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
+  const agent = useAgent(agentId);
+  const enabled = agent.data?.config.cli !== false;
+  const [session, setSession] = useState<Session>({ kind: "idle" });
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const start = () => {
+    setSession({ kind: "starting" });
+    api(`/api/agents/${encodeURIComponent(agentId)}/cli`, { method: "POST" }).then(
+      () => mounted.current && setSession({ kind: "live", nonce: Date.now() }),
+      (error: Error) =>
+        mounted.current &&
+        setSession({ kind: "failed", detail: error.message || "Could not start the terminal." }),
+    );
+  };
+
+  if (agent.data && !enabled) {
+    return (
+      <div className="grid flex-1 place-items-center p-6">
+        <EmptyState
+          icon={SquareTerminal}
+          title="This agent has no CLI"
+          description="Turn it on in Settings to open a terminal on the agent's machine."
+          action={
+            <Button asChild size="sm">
+              <Link to="/guilds/$guildId/agents/$agentId/settings" params={{ guildId, agentId }}>
+                Open Settings
+              </Link>
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  if (session.kind === "idle") {
+    return (
+      <div className="grid flex-1 place-items-center p-6">
+        <EmptyState
+          icon={SquareTerminal}
+          title="Open a terminal on this agent's machine"
+          description="Starting it wakes the sandbox, which stays up for five minutes after the last input. The shell runs as root in /home/agent and sees the agent's environment, secret values included."
+          action={
+            <Button size="sm" onClick={start}>
+              Start the terminal
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-7 py-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-fg-2">
+          Bash on the agent's machine, in /home/agent. It stays up for five minutes after the last
+          input.
+        </span>
+        <span className="flex-1" />
+        <StatusBadge
+          status={session.kind === "live" ? "ok" : session.kind === "failed" ? "failed" : "running"}
+        >
+          {session.kind === "live" ? "Live" : session.kind === "failed" ? "Failed" : "Starting"}
+        </StatusBadge>
+        <IconButton
+          icon={RotateCw}
+          label="Restart the terminal"
+          variant="surface"
+          onClick={start}
+        />
+      </div>
+      {session.kind === "live" ? (
+        <iframe
+          key={session.nonce}
+          title={`${agent.data?.name ?? "Agent"} terminal`}
+          src={terminalUrl(agentId, session.nonce)}
+          className="min-h-0 w-full flex-1 rounded-lg bg-panel"
+        />
+      ) : session.kind === "failed" ? (
+        <div className="grid flex-1 place-items-center">
+          <div className="flex max-w-160 flex-col items-center gap-3 text-center">
+            <h3 className="text-lg font-semibold">Terminal unavailable</h3>
+            <pre className="max-h-60 w-full overflow-auto rounded-md bg-surface p-3 text-left font-mono text-xs whitespace-pre-wrap">
+              {session.detail}
+            </pre>
+            <Button size="sm" onClick={start}>
+              Try again
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid flex-1 place-items-center">
+          <div role="status" className="flex flex-col items-center gap-2 text-sm text-muted">
+            <StatusBadge status="running">Starting the terminal</StatusBadge>
+            It can take up to a minute when the sandbox is asleep.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

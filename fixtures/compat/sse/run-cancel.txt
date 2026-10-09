@@ -1,0 +1,14 @@
+: connected
+
+event: generation.started
+data: {"generation": 1}
+
+event: assistant.delta
+data: {"text": "partial-"}
+
+event: run.error
+data: {"at": "<ts:Z-us>", "generation": 1, "operation": "generation.cancelled", "error_type": "GenerationCancelled", "message": "cancelled"}
+
+event: generation.finished
+data: {"generation": 1}
+

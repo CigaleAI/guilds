@@ -1,0 +1,41 @@
+{
+  "slug": "tavily",
+  "display_name": "Web search",
+  "auth": {
+    "kind": "token",
+    "fields": [
+      {
+        "name": "token",
+        "label": "Tavily API key",
+        "secret": true
+      }
+    ],
+    "instance": {
+      "integration": "web-search",
+      "variable": "TAVILY_API_KEY"
+    }
+  },
+  "description": "Search the live web through Tavily: title, URL, and snippet for each source of a natural-language query.",
+  "limitations": "Snippets only, not a logged-in browser. Runs on the platform's Tavily key unless the organisation connects its own.",
+  "setup_hint": "The platform's key serves every organisation while web search is on. Connect a Tavily API key to search on your own.",
+  "tools": [
+    {
+      "name": "search",
+      "description": "Search the live web. query is natural language. The result is title, URL, and snippet for each source.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ],
+  "prompt": {
+    "guidance": "When this run offers `tavily_search`, search the live web. `query` is natural language. The result is title, URL, and snippet for each source."
+  }
+}

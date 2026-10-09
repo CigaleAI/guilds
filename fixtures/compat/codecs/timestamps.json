@@ -1,0 +1,26 @@
+{
+  "isoformat_us": "2026-09-13T12:00:00.123456+00:00",
+  "isoformat_whole": "2026-09-13T12:00:00+00:00",
+  "z_from_offset": "2026-09-13T12:00:00Z",
+  "memory_iso": "2026-09-13T12:00:00Z",
+  "memory_stamp": "2026-09-13T12-00-00Z",
+  "bigint_id": 4294967303,
+  "numeric_cost": {
+    "input_tokens": 8,
+    "output_tokens": 2,
+    "cache_read_tokens": 1,
+    "total_tokens": 10,
+    "cost_usd": 0.0119845,
+    "calls": 3,
+    "updated_at": "2026-09-13T12:00:00+00:00"
+  },
+  "numeric_cost_quarter": {
+    "input_tokens": 8,
+    "output_tokens": 2,
+    "cache_read_tokens": 1,
+    "total_tokens": 10,
+    "cost_usd": 0.25,
+    "calls": 3,
+    "updated_at": "2026-09-13T12:00:00+00:00"
+  }
+}

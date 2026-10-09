@@ -1,0 +1,76 @@
+# Localhost-only docs search. Dev overlay; never include
+# this file in a public box's Compose. Bind is loopback; the index lives
+# under STATE_ROOT.
+
+services:
+  lightrag:
+    image: ghcr.io/hkuds/lightrag:latest
+    ports:
+      - "127.0.0.1:9621:9621"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${STATE_ROOT:-.state}/lightrag:/app/data/rag_storage
+      - ./docs:/app/data/inputs:ro
+      - ./deploy/docs-preview/prompts:/app/data/prompts:ro
+    environment:
+      WORKING_DIR: /app/data/rag_storage
+      INPUT_DIR: /app/data/inputs
+      HOST: "0.0.0.0"
+      PORT: "9621"
+      WEBUI_TITLE: guilds.run docs
+      WEBUI_DESCRIPTION: Architecture knowledge graph (localhost)
+      WHITELIST_PATHS: /health
+      TIMEOUT: "240"
+      LLM_TIMEOUT: "240"
+      MAX_ASYNC_LLM: "4"
+      RERANK_BINDING: "null"
+      LLM_BINDING: openai
+      LLM_BINDING_HOST: https://openrouter.ai/api/v1
+      LLM_BINDING_API_KEY: ${OPENROUTER_API_KEY}
+      LLM_MODEL: ${DOCS_LLM_MODEL:-openai/gpt-4.1-mini}
+      EMBEDDING_BINDING: openai
+      EMBEDDING_BINDING_HOST: https://openrouter.ai/api/v1
+      EMBEDDING_BINDING_API_KEY: ${OPENROUTER_API_KEY}
+      EMBEDDING_MODEL: ${DOCS_EMBEDDING_MODEL:-openai/text-embedding-3-large}
+      EMBEDDING_DIM: ${DOCS_EMBEDDING_DIM:-3072}
+      EMBEDDING_TOKEN_LIMIT: "8192"
+      EMBEDDING_SEND_DIM: "false"
+      EMBEDDING_USE_BASE64: "false"
+      LIGHTRAG_API_KEY: ${LIGHTRAG_API_KEY:-}
+      PROMPT_DIR: /app/data/prompts
+      USER_PROMPT_PREFIX_FILE: user_prompt_prefix.md
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9621/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    restart: unless-stopped
+
+  preview:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:9622:80"
+    volumes:
+      - ./docs:/docs:ro
+      - ./deploy/docs-preview/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/docs-preview/public:/usr/share/nginx/html:ro
+    environment:
+      DOCS_HOST_ROOT: ${DOCS_HOST_ROOT:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - printf '{"hostRoot":"%s"}\n' "$$DOCS_HOST_ROOT" > /tmp/docs-preview-config.json && nginx -g 'daemon off;'
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      lightrag:
+        condition: service_healthy
+    restart: unless-stopped

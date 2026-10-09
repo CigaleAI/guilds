@@ -1,0 +1,99 @@
+{
+  "slug": "x",
+  "display_name": "X",
+  "auth": {
+    "kind": "token",
+    "fields": [
+      {
+        "name": "token",
+        "label": "Bearer token",
+        "secret": true
+      }
+    ]
+  },
+  "description": "Search recent posts, read profiles, and fetch a post or timeline from X.",
+  "limitations": "Recent search is last 7 days. Posting is not offered. Not LinkedIn, not a firehose.",
+  "setup_hint": "Connect with an X API bearer token.",
+  "tools": [
+    {
+      "name": "search",
+      "description": "Recent posts from the last 7 days. Pass a search query; operators such as from:user work.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query. Operators such as from:user work."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "user",
+      "description": "One X profile. Pass a username (@optional) or user id.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username (@optional) or user id."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "posts",
+      "description": "Recent posts from one account. Pass a username or user id.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "string",
+            "description": "Username (@optional) or user id."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "user"
+        ]
+      }
+    },
+    {
+      "name": "post",
+      "description": "One post. Pass a post id or an x.com / twitter.com status URL.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id or status URL."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    }
+  ]
+}

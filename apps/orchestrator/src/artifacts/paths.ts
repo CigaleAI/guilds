@@ -1,0 +1,174 @@
+import { isId } from "../lib/ids.js";
+import { ArtifactError } from "./errors.js";
+import type { ArtifactKind, ArtifactLevel } from "./types.js";
+
+export const TASK_KEY = "task.md";
+export const MEMORY_KEY = "memory.md";
+export const COLLECTIONS_SEGMENT = "collections";
+export const SCRIPTS_SEGMENT = "scripts";
+export const HISTORY_ARCHIVE_SEGMENT = "history-archive";
+
+const NOTE_KEY_RE = /^[^/\\]+\.md$/;
+
+export type ParsedDisplayPath =
+  | {
+      kind: "artifact";
+      orgId: string;
+      level: ArtifactLevel;
+      ownerId: string;
+      path: string;
+      key: string;
+    }
+  | {
+      kind: "collection";
+      orgId: string;
+      collectionName: string;
+    }
+  | {
+      kind: "record";
+      orgId: string;
+      collectionName: string;
+      recordId: string;
+    }
+  | {
+      kind: "revision";
+      orgId: string;
+      agentId: string;
+      stamp: string;
+    };
+
+export function ownerPrefix(orgId: string, level: ArtifactLevel, ownerId: string): string {
+  if (level === "agent") {
+    return `org/${orgId}/agents/${ownerId}/`;
+  }
+  if (level === "guild") {
+    return `org/${orgId}/guilds/${ownerId}/`;
+  }
+  return `org/${orgId}/`;
+}
+
+/** Collections live at the organisation: `org/<org_id>/collections/<name>`. */
+export function collectionDisplayPath(orgId: string, collectionName: string): string {
+  return `org/${orgId}/${COLLECTIONS_SEGMENT}/${collectionName}`;
+}
+
+export function recordDisplayPath(orgId: string, collectionName: string, recordId: string | number): string {
+  return `${collectionDisplayPath(orgId, collectionName)}/${recordId}`;
+}
+
+export function displayPathFor(args: {
+  orgId: string;
+  level: ArtifactLevel;
+  ownerId: string;
+  kind: ArtifactKind | "collection" | "task";
+  collectionName?: string | null;
+  path: string;
+  key: string;
+}): string {
+  if (args.kind === "object" || args.kind === "collection") {
+    const collectionName = (args.collectionName ?? "").trim();
+    if (!collectionName) {
+      throw new ArtifactError("record is missing its collection name", 500);
+    }
+    if (args.kind === "object") {
+      return recordDisplayPath(args.orgId, collectionName, args.key);
+    }
+    return collectionDisplayPath(args.orgId, collectionName);
+  }
+  const prefix = ownerPrefix(args.orgId, args.level, args.ownerId);
+  return args.path ? `${prefix}${args.path}/${args.key}` : `${prefix}${args.key}`;
+}
+
+export function revisionDisplayPath(orgId: string, agentId: string, stamp: string): string {
+  return `${ownerPrefix(orgId, "agent", agentId)}${HISTORY_ARCHIVE_SEGMENT}/${stamp}`;
+}
+
+/** A note key is a `.md` file name: notes sit directly under their owner, without folders. */
+export function normalizeNoteKey(raw: string): string {
+  const key = (raw || "").trim();
+  if (!NOTE_KEY_RE.test(key) || key.includes("..") || key.includes("\0")) {
+    throw new ArtifactError("note key must be a .md file name; notes have no folders", 422);
+  }
+  return key;
+}
+
+/** `task.md` and `memory.md` name the agent's Task and Memory, so no agent note takes them. */
+export function assertNoteKeyFree(level: ArtifactLevel, key: string): void {
+  if (level === "agent" && (key === TASK_KEY || key === MEMORY_KEY)) {
+    throw new ArtifactError(`${key} is reserved`, 422);
+  }
+}
+
+/** The display path of a file the Host names inside one owner: a note, or an agent's `task.md` or `memory.md`. */
+export function hostFileDisplayPath(orgId: string, level: ArtifactLevel, ownerId: string, name: string): string {
+  return `${ownerPrefix(orgId, level, ownerId)}${normalizeNoteKey(name)}`;
+}
+
+function isScopedId(value: string, prefix: string): boolean {
+  if (isId(value, prefix)) {
+    return true;
+  }
+  return value.startsWith(`${prefix}_`) && /^[a-z][a-z0-9_]*$/.test(value);
+}
+
+export function isDisplayPath(raw: string): boolean {
+  try {
+    parseDisplayPath(raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function parseDisplayPath(raw: string): ParsedDisplayPath {
+  const text = (raw || "").trim().replace(/^\/+/, "");
+  const parts = text.split("/").filter(Boolean);
+  if (parts[0] !== "org" || !parts[1] || !isScopedId(parts[1], "org")) {
+    throw new ArtifactError("unknown artifact path", 404);
+  }
+  const orgId = parts[1];
+  let level: ArtifactLevel = "org";
+  let ownerId = orgId;
+  let rest = parts.slice(2);
+  if (rest[0] === COLLECTIONS_SEGMENT) {
+    const collectionName = rest[1];
+    if (!collectionName || rest.length > 3) {
+      throw new ArtifactError("unknown artifact path", 404);
+    }
+    if (rest.length === 2) {
+      return { kind: "collection", orgId, collectionName };
+    }
+    return { kind: "record", orgId, collectionName, recordId: rest[2] ?? "" };
+  }
+  if (rest[0] === "agents" && rest[1] && isScopedId(rest[1], "a")) {
+    level = "agent";
+    ownerId = rest[1];
+    rest = rest.slice(2);
+  } else if (rest[0] === "guilds" && rest[1] && isScopedId(rest[1], "guild")) {
+    level = "guild";
+    ownerId = rest[1];
+    rest = rest.slice(2);
+  } else if (rest[0] === "agents" || rest[0] === "guilds") {
+    throw new ArtifactError("unknown artifact path", 404);
+  }
+  if (level === "agent" && rest[0] === HISTORY_ARCHIVE_SEGMENT) {
+    const stamp = rest.slice(1).join("/");
+    if (!stamp) {
+      throw new ArtifactError("unknown artifact path", 404);
+    }
+    return { kind: "revision", orgId, agentId: ownerId, stamp };
+  }
+  if (rest.length === 0 || rest[0] === COLLECTIONS_SEGMENT) {
+    throw new ArtifactError("unknown artifact path", 404);
+  }
+  const key = rest[rest.length - 1] ?? "";
+  const path = rest.slice(0, -1).join("/");
+  return {
+    kind: "artifact",
+    orgId,
+    level,
+    ownerId,
+    path,
+    key,
+  };
+}

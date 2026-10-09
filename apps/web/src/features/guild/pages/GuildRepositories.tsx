@@ -1,0 +1,187 @@
+import { Plus, Trash2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { useAddGuildRepository, useGuildRepositories, useRemoveGuildRepository } from "../../../api/queries";
+import type { Guild, GuildRepository } from "../../../api/types";
+import {
+  Button,
+  IconButton,
+  TextField,
+  Banner,
+  Select,
+  toast,
+  Icon,
+  Tag,
+} from "@guildsrun/ui";
+import { isGithubUrl, NO_LOGIN, repositoryLogin, repositoryNamePattern } from "../repositories";
+
+type Draft = { name: string; url: string; branch: string; login: string };
+
+const emptyDraft: Draft = { name: "", url: "", branch: "", login: "" };
+
+function loginLabel(repository: GuildRepository): ReactNode {
+  if (!repository.connection) return <Tag font="sans">anonymous</Tag>;
+  if (repository.connection.status === "disconnected")
+    return (
+      <Tag tone="ochre" font="sans">
+        {repository.connection.account_hint || "GitHub"} disconnected
+      </Tag>
+    );
+  return (
+    <Tag tone="tide" font="sans">
+      GitHub · {repository.connection.account_hint}
+    </Tag>
+  );
+}
+
+/**
+ * Extra git URLs this guild's coding agents clone, besides the repositories picked on a GitHub
+ * login (Tools → GitHub).
+ */
+export function GuildRepositories({ guild }: { guild: Guild }) {
+  const listed = useGuildRepositories(guild.id);
+  const add = useAddGuildRepository(guild.id);
+  const remove = useRemoveGuildRepository(guild.id);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const repositories = listed.data?.repositories ?? [];
+  const logins = (listed.data?.github_connections ?? []).filter((login) => login.status === "connected");
+  const github = isGithubUrl(draft.url);
+  const login = repositoryLogin(draft.url, draft.login, logins);
+
+  const nameError =
+    draft.name && !repositoryNamePattern.test(draft.name)
+      ? "Lowercase letters, digits, - and _, starting with a letter."
+      : undefined;
+
+  const submit = () => {
+    add.mutate(
+      {
+        name: draft.name.trim(),
+        url: draft.url.trim(),
+        ...(draft.branch.trim() ? { default_branch: draft.branch.trim() } : {}),
+        ...(login ? { connection_id: login } : {}),
+      },
+      {
+        onSuccess: (repository) => {
+          setDraft(emptyDraft);
+          toast({ kind: "success", title: `${repository.name} added` });
+        },
+      },
+    );
+  };
+
+  return (
+    <section aria-label="Repositories" className="flex flex-col gap-3">
+      <h3 className="type-label text-muted">Repositories</h3>
+      <p className="text-sm text-fg-2">
+        Extra git URLs each coding agent of this guild clones into{" "}
+        <span className="font-mono text-xs">/home/agent/repos/&lt;name&gt;</span> at its next run.
+        Pick GitHub repositories on the GitHub integration (Tools), at this guild or an agent, or
+        add one here with a GitHub login. One without a login is cloned anonymously, which only a
+        public repository allows.
+      </p>
+      {repositories.length ? (
+        <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
+          {repositories.map((repository) => (
+            <div
+              key={repository.id}
+              className="flex items-center gap-3 border-b border-line px-3.5 py-2.5 last:border-b-0"
+            >
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-mono text-sm font-medium">{repository.name}</span>
+                <span className="truncate text-xs text-muted">
+                  {repository.url} · {repository.default_branch}
+                </span>
+              </div>
+              {loginLabel(repository)}
+              <IconButton
+                type="button"
+                icon={Trash2}
+                label={`Remove ${repository.name}`}
+                variant="ghost"
+                size={28}
+                disabled={remove.isPending}
+                onClick={() =>
+                  remove.mutate(repository.id, {
+                    onError: (error) =>
+                      toast({
+                        kind: "error",
+                        title: `Couldn't remove ${repository.name}`,
+                        description: error.message,
+                      }),
+                  })
+                }
+              />
+            </div>
+          ))}
+        </div>
+      ) : listed.isSuccess ? (
+        <p className="text-sm text-muted">No extra repositories yet.</p>
+      ) : null}
+
+      <div className="flex flex-col gap-3 rounded-xl bg-surface p-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <TextField
+            tone="paper"
+            label="Name"
+            mono
+            placeholder="shop"
+            value={draft.name}
+            onChange={(event) => setDraft({ ...draft, name: event.currentTarget.value })}
+            {...(nameError ? { error: nameError } : {})}
+          />
+          <TextField
+            tone="paper"
+            label="URL"
+            placeholder="https://github.com/owner/shop"
+            value={draft.url}
+            onChange={(event) => setDraft({ ...draft, url: event.currentTarget.value })}
+          />
+          <TextField
+            tone="paper"
+            label="Default branch"
+            aside="optional"
+            placeholder="main"
+            value={draft.branch}
+            onChange={(event) => setDraft({ ...draft, branch: event.currentTarget.value })}
+          />
+        </div>
+        {github ? (
+          <Select
+            tone="paper"
+            label="GitHub login"
+            className="md:w-1/3"
+            value={login ?? NO_LOGIN}
+            onValueChange={(next) => setDraft({ ...draft, login: next })}
+            options={[
+              ...logins.map((item) => ({ value: item.id, label: `GitHub · ${item.account_hint}` })),
+              { value: NO_LOGIN, label: "None: clone anonymously" },
+            ]}
+            hint={
+              login
+                ? "Its coding agents get a token for this repository at each run."
+                : logins.length
+                  ? "Without a login, only a public repository can be cloned."
+                  : "Without a login, only a public repository can be cloned. Connect GitHub under Tools to add a private one."
+            }
+          />
+        ) : null}
+        {add.isError ? (
+          <Banner tone="error" title="Couldn't add the repository">
+            {add.error.message}
+          </Banner>
+        ) : null}
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={add.isPending || !draft.name.trim() || !draft.url.trim() || Boolean(nameError)}
+            onClick={submit}
+          >
+            <Icon icon={Plus} size={14} />
+            {add.isPending ? "Adding…" : "Add repository"}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}

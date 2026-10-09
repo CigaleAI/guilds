@@ -1,0 +1,173 @@
+{
+  "slug": "gmail",
+  "display_name": "Gmail",
+  "auth": {
+    "kind": "oauth",
+    "oauth": {
+      "strategy": "configured",
+      "provider": "google-connectors",
+      "scopes": [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose"
+      ]
+    }
+  },
+  "requires": {
+    "integration": "google-connectors"
+  },
+  "description": "Read a Gmail inbox and draft or send mail through a Google account.",
+  "limitations": "Send is default Off. Requires a platform-configured OAuth client. Not a calendar or Drive connector.",
+  "setup_hint": "Connect with Google OAuth. Send stays off until the operator enables it.",
+  "tools": [
+    {
+      "name": "search_threads",
+      "description": "Search Gmail threads with Gmail search syntax (from:, to:, subject:, newer_than:, is:unread). Returns thread ids, senders, subjects, dates, and snippets.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Gmail search query. Operators such as from:user and is:unread work."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Threads this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "get_thread",
+      "description": "Read one Gmail thread by id, including message headers and text bodies.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Thread id from search_threads."
+          }
+        },
+        "required": [
+          "thread_id"
+        ]
+      }
+    },
+    {
+      "name": "get_message",
+      "description": "Read one Gmail message by id, including headers and text body.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id from a thread or draft."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      }
+    },
+    {
+      "name": "list_labels",
+      "description": "List Gmail labels on the connected account (system and user labels).",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "list_drafts",
+      "description": "List Gmail drafts. Returns draft ids, message ids, recipients, and subjects.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Drafts this page. Default 15, max 30."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          }
+        }
+      }
+    },
+    {
+      "name": "create_draft",
+      "description": "Create a Gmail draft. Review it in Gmail before sending, or use send_message.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient address, or comma-separated addresses."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "body": {
+            "type": "string",
+            "description": "Plain-text body."
+          },
+          "cc": {
+            "type": "string",
+            "description": "Optional Cc addresses."
+          },
+          "bcc": {
+            "type": "string",
+            "description": "Optional Bcc addresses."
+          }
+        },
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ]
+      }
+    },
+    {
+      "name": "send_message",
+      "description": "Send an email from the connected Gmail account. Default Off.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient address, or comma-separated addresses."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "body": {
+            "type": "string",
+            "description": "Plain-text body."
+          },
+          "cc": {
+            "type": "string",
+            "description": "Optional Cc addresses."
+          },
+          "bcc": {
+            "type": "string",
+            "description": "Optional Bcc addresses."
+          }
+        },
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ]
+      },
+      "mutating": true
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# Local development only, merged into docker-compose.yml by docker-compose.dev.yml: the
+# orchestrator runs the checkout's source, bind-mounted over the image, and restarts itself when
+# it changes; it accepts the all-zero master key the Makefile gives a development stack; and
+# PostgreSQL is published on loopback for tests and tools on the host. CORE is where this
+# repository sits under /app in the image, as in the orchestrator's Dockerfile.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+  orchestrator:
+    volumes:
+      - ./apps/orchestrator/src:/app/${CORE:-.}/apps/orchestrator/src
+      - ./apps/orchestrator/scripts:/app/${CORE:-.}/apps/orchestrator/scripts
+      - ./apps/orchestrator/drizzle:/app/${CORE:-.}/apps/orchestrator/drizzle
+    environment:
+      ALLOW_ZERO_MASTER_KEY: "1"
+    command:
+      - node_modules/.bin/tsx
+      - watch
+      - --clear-screen=false
+      - --import
+      - ./src/observability/instrument.ts
+      - src/server.ts

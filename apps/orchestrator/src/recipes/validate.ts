@@ -1,0 +1,572 @@
+import { CATALOG_IDS, PROVIDER_LABELS, catalogById, isProvider, providerNameForModel } from "../llm/catalog.js";
+import { validateTiming } from "../schedules/timing.js";
+import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
+import { NATIVE_TOOLS } from "../db/seed/catalog.js";
+import type { CollectionColumn } from "../artifacts/columns.js";
+import { collectTaskEmbeds } from "../artifacts/embeds.js";
+import { isDisplayPath } from "../artifacts/paths.js";
+import { recipeNotePath } from "./rewrite.js";
+import { operatorAccessCuts, type RecipeDocument } from "./schema.js";
+
+export type FindingSeverity = "error" | "warning" | "info";
+
+export type RecipeFinding = {
+  code: string;
+  severity: FindingSeverity;
+  path: string;
+  message: string;
+};
+
+export type ValidationContext = {
+  publishedServers: Set<string>;
+  /** How many more agents the organisation may hold; null when uncapped. */
+  remainingAgents: number | null;
+  remainingBrowserAgents: number | null;
+  remainingCodingAgents: number | null;
+  groupLimit: number;
+  /** Organisation BYOK / coding-API keys that are connected. */
+  connectedProviders?: Set<string>;
+  /** Connectors the registry offers that the box lacks, by slug: the newest version. */
+  registryConnectors?: Map<string, { version: string; verified: boolean }>;
+};
+
+const NATIVE = new Set<string>(NATIVE_TOOLS);
+
+function reviewHint(path: string): string {
+  if (path.endsWith(".task")) {
+    return "Confirm the standing prompt. Press Confirm on that field.";
+  }
+  if (path.endsWith(".browser")) {
+    return "This role needs a take-control browser login. Confirm the login notes; after apply, the live agent asks the operator to log in.";
+  }
+  if (path.includes(".scripts.")) {
+    return "Confirm the script before apply.";
+  }
+  if (path.startsWith("connections.")) {
+    return "Confirm the connector setup notes.";
+  }
+  return `Confirm ${path}.`;
+}
+void reviewHint;
+
+function finding(
+  code: string,
+  severity: FindingSeverity,
+  path: string,
+  message: string,
+): RecipeFinding {
+  return { code, severity, path, message };
+}
+
+export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
+  const findings: RecipeFinding[] = [];
+  const roles = new Set(recipe.roles.map((role) => role.role));
+  if (ctx.remainingAgents !== null && recipe.roles.length > ctx.remainingAgents) {
+    findings.push(
+      finding(
+        "capacity.agents",
+        "error",
+        "roles",
+        `recipe needs ${recipe.roles.length} agents; ${ctx.remainingAgents} remaining`,
+      ),
+    );
+  }
+  const browserRoles = recipe.roles.filter((role) => role.browser.required || role.config.browser);
+  if (ctx.remainingBrowserAgents !== null && browserRoles.length > ctx.remainingBrowserAgents) {
+    findings.push(
+      finding(
+        "capacity.browser",
+        "error",
+        "roles",
+        `recipe needs ${browserRoles.length} browser agents; ${ctx.remainingBrowserAgents} remaining`,
+      ),
+    );
+  }
+  const codingRoles = recipe.roles.filter((role) => role.config.coding === true);
+  if (ctx.remainingCodingAgents !== null && codingRoles.length > ctx.remainingCodingAgents) {
+    findings.push(
+      finding(
+        "capacity.coding",
+        "error",
+        "roles",
+        `recipe needs ${codingRoles.length} coding agents; ${ctx.remainingCodingAgents} remaining`,
+      ),
+    );
+  }
+  if (recipe.repositories.length && !codingRoles.length) {
+    findings.push(
+      finding(
+        "repositories.unused",
+        "warning",
+        "repositories",
+        "the recipe lists repositories but no role sets config.coding",
+      ),
+    );
+  }
+  for (const role of recipe.roles) {
+    if (role.config.coding !== undefined && typeof role.config.coding !== "boolean") {
+      findings.push(finding("coding.flag", "error", `roles.${role.role}.config.coding`, "config.coding must be a boolean"));
+    }
+    const model = String(role.config.model ?? "");
+    if (model && !CATALOG_IDS.has(model) && ![...CATALOG_IDS].some((id) => id.endsWith(`/${model}`) || id === model)) {
+      findings.push(
+        finding("model.unknown", "warning", `roles.${role.role}.config.model`, `unknown model ${model}`),
+      );
+    }
+    const catalogId =
+      CATALOG_IDS.has(model) ? model : [...CATALOG_IDS].find((id) => id.endsWith(`/${model}`) || id === model);
+    const catalog = catalogId ? catalogById(catalogId) : undefined;
+    if (catalog?.coding_only) {
+      if (role.config.coding !== true) {
+        findings.push(
+          finding(
+            "model.coding",
+            "error",
+            `roles.${role.role}.config.model`,
+            `${catalog.label} is only for a coding agent`,
+          ),
+        );
+      }
+      const provider = providerNameForModel(catalog.id);
+      const providerLabel = provider && isProvider(provider) ? PROVIDER_LABELS[provider] : catalog.provider;
+      if (provider && ctx.connectedProviders && !ctx.connectedProviders.has(provider)) {
+        findings.push(
+          finding(
+            "model.coding_key",
+            "error",
+            `roles.${role.role}.config.model`,
+            `${catalog.label} needs a ${providerLabel} key on Model keys`,
+          ),
+        );
+      } else if (provider && !ctx.connectedProviders) {
+        findings.push(
+          finding(
+            "model.coding_key",
+            "warning",
+            `roles.${role.role}.config.model`,
+            `${catalog.label} needs a ${providerLabel} key on Model keys`,
+          ),
+        );
+      }
+    }
+    if (Boolean(role.config.browser) !== role.browser.required) {
+      findings.push(
+        finding(
+          "browser.flag",
+          "error",
+          `roles.${role.role}.browser`,
+          "browser.required must match config.browser",
+        ),
+      );
+    }
+    if (!role.task.body.trim() && !role.focus.trim() && !recipe.guild.objective.trim() && !recipe.guild.about.trim()) {
+      findings.push(finding("task.empty", "error", `roles.${role.role}.task`, "role needs a task prompt"));
+    } else if (!role.task.body.trim()) {
+      findings.push(
+        finding(
+          "task.derived",
+          "warning",
+          `roles.${role.role}.task`,
+          "task is empty; apply will use the role focus and guild objective",
+        ),
+      );
+    }
+    if (!role.schedules.length) {
+      const fromDesign = recipe.design.routines.some((item) => item.role === role.role);
+      if (!fromDesign) {
+        findings.push(
+          finding(
+            "schedule.missing",
+            "warning",
+            `roles.${role.role}.schedules`,
+            "This role has no routine. Tell the coach how often it should run, for example every 15 minutes.",
+          ),
+        );
+      }
+    }
+    for (const name of Object.keys(role.native_tools)) {
+      if (!NATIVE.has(name)) {
+        findings.push(finding("native.unknown", "error", `roles.${role.role}.native_tools.${name}`, `unknown native tool`));
+      }
+    }
+    for (const schedule of role.schedules) {
+      try {
+        validateTiming(schedule);
+      } catch (error) {
+        findings.push(
+          finding(
+            "schedule.invalid",
+            "error",
+            `roles.${role.role}.schedules.${schedule.key}`,
+            error instanceof Error ? error.message : "invalid schedule",
+          ),
+        );
+      }
+    }
+    for (const script of role.scripts) {
+      try {
+        validateScriptName(script.name);
+        validateScriptDescription(script.description);
+        validateScriptSource(script.source);
+        validateScriptParameters(script.parameters);
+      } catch (error) {
+        findings.push(
+          finding(
+            "script.invalid",
+            "error",
+            `roles.${role.role}.scripts.${script.name}`,
+            error instanceof Error ? error.message : "invalid script",
+          ),
+        );
+      }
+      if (/sk-[a-zA-Z0-9]{10,}|api[_-]?key\s*=\s*['"]/i.test(script.source)) {
+        findings.push(
+          finding(
+            "script.literal_secret",
+            "error",
+            `roles.${role.role}.scripts.${script.name}`,
+            "script source must not contain literal credential values",
+          ),
+        );
+      }
+      if (script.author.by === "builder" && !script.author.reviewed) {
+        findings.push(
+          finding(
+            "review.script",
+            "info",
+            `roles.${role.role}.scripts.${script.name}`,
+            "Builder-authored script. Edit it here or ask the coach to revise before you validate.",
+          ),
+        );
+      }
+    }
+  }
+  for (const collection of recipe.collections) {
+    for (const writer of collection.writers) {
+      if (!roles.has(writer)) {
+        findings.push(
+          finding("collection.writer", "error", `collections.${collection.name}`, `unknown writer role ${writer}`),
+        );
+      }
+    }
+  }
+  const noteIds = new Set(recipe.notes.map((note) => note.id));
+  const notePaths = new Set(recipe.notes.map((note) => recipeNotePath(note)));
+  for (const note of recipe.notes) {
+    if (note.role && !roles.has(note.role)) {
+      findings.push(finding("note.role", "error", `notes.${note.id}`, "unknown role"));
+    }
+  }
+  for (const role of recipe.roles) {
+    for (const href of collectTaskEmbeds(role.task.body)) {
+      if (href.startsWith("recipe:") && noteIds.has(href.slice("recipe:".length))) {
+        continue;
+      }
+      if (noteIds.has(href) || notePaths.has(href) || isDisplayPath(href)) {
+        continue;
+      }
+      findings.push(
+        finding(
+          "task.embed",
+          "error",
+          `roles.${role.role}.task`,
+          `unknown file link ${href}. Use the note's destination path (guild/…, org/…, agent/<role>/…) or ![[recipe:<note-id>]].`,
+        ),
+      );
+    }
+  }
+  if (!recipe.connections.length) {
+    findings.push(
+      finding(
+        "connection.missing",
+        "warning",
+        "connections",
+        "No connectors in the recipe. Name a catalog tool in the prompt, or ask the coach to add one.",
+      ),
+    );
+  }
+  for (const connection of recipe.connections) {
+    if (!ctx.publishedServers.has(connection.server)) {
+      const offered = ctx.registryConnectors?.get(connection.server);
+      if (connection.manifest) {
+        findings.push(
+          finding(
+            "server.organisation",
+            "error",
+            `connections.${connection.server}`,
+            "not on this box: add it as this organisation's server from the recipe",
+          ),
+        );
+      } else if (offered) {
+        findings.push(
+          finding(
+            "server.registry",
+            "error",
+            `connections.${connection.server}`,
+            `not installed: the registry offers ${connection.server}@${offered.version}, which an instance admin installs`,
+          ),
+        );
+      } else {
+        findings.push(
+          finding("server.unknown", "error", `connections.${connection.server}`, "unknown or unpublished connector"),
+        );
+      }
+    }
+    for (const role of Object.keys(connection.roles)) {
+      if (!roles.has(role)) {
+        findings.push(finding("connection.role", "error", `connections.${connection.server}.roles.${role}`, "unknown role"));
+      }
+    }
+  }
+  for (const cut of operatorAccessCuts(recipe)) {
+    if (cut.kind === "tool") {
+      findings.push(
+        finding(
+          "access.tool_removed",
+          "info",
+          `connections.${cut.server}.roles.${cut.role}.tools.${cut.tool}`,
+          `Operator removed ${cut.tool} from ${cut.server} for ${cut.role}. Update the standing prompt if it relies on that tool, or ask why it was removed.`,
+        ),
+      );
+      continue;
+    }
+    findings.push(
+      finding(
+        "access.connector_removed",
+        "info",
+        `design.systems.${cut.server}`,
+        `Operator removed the ${cut.server} connector. Update prompts that name it, or ask whether to restore it or switch to another system.`,
+      ),
+    );
+  }
+  return findings;
+}
+
+export function validateDesign(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
+  const findings: RecipeFinding[] = [];
+  const collectionNames = new Set(recipe.collections.map((item) => item.name));
+  const scheduleKeys = new Set(recipe.roles.flatMap((role) => role.schedules.map((schedule) => schedule.key)));
+  for (const routine of recipe.design.routines) {
+    if (!scheduleKeys.has(routine.key)) {
+      findings.push(finding("design.routine_missing", "error", `design.routines.${routine.key}`, "routine key is not on a role"));
+    }
+    if (!routine.dedupe_collection && !routine.dedupe_key) {
+      findings.push(
+        finding(
+          "design.poll_dedupe",
+          "error",
+          `design.routines.${routine.key}`,
+          "poll routine needs a dedupe collection or key",
+        ),
+      );
+    }
+    if (routine.dedupe_collection && !collectionNames.has(routine.dedupe_collection)) {
+      findings.push(
+        finding(
+          "design.unknown_collection",
+          "error",
+          `design.routines.${routine.key}`,
+          `unknown collection ${routine.dedupe_collection}`,
+        ),
+      );
+    }
+  }
+  for (const role of recipe.roles) {
+    if (role.schedules.length && !recipe.design.routines.some((item) => item.role === role.role)) {
+      for (const schedule of role.schedules) {
+        if (!recipe.design.routines.some((item) => item.key === schedule.key)) {
+          findings.push(
+            finding(
+              "design.poll_dedupe",
+              "error",
+              `roles.${role.role}.schedules.${schedule.key}`,
+              "routine has no design.routines entry with a dedupe store",
+            ),
+          );
+        }
+      }
+    }
+  }
+  for (const spec of recipe.design.specialization) {
+    if (!recipe.roles.some((role) => role.role === spec.role)) {
+      findings.push(finding("design.specialization_role", "error", `design.specialization.${spec.role}`, "unknown role"));
+    }
+  }
+  if (recipe.meta.source.kind === "builder" && recipe.roles.length === 1) {
+    const only = recipe.roles[0];
+    const justified = recipe.design.specialization.some(
+      (item) => item.role === only?.role && item.detail.trim().length > 0,
+    );
+    if (!justified) {
+      findings.push(
+        finding(
+          "design.single_role",
+          "warning",
+          "roles",
+          "Split into specialized roles with distinct prompts, or record in design.specialization why this stays one agent.",
+        ),
+      );
+    }
+  }
+  if (recipe.roles.length > 1) {
+    const hasProtocol = recipe.design.handoffs.some(
+      (item) => item.kind === "collection" || (item.kind === "tagged" && typeof item.budget === "number"),
+    );
+    if (!hasProtocol) {
+      findings.push(
+        finding(
+          "design.handoff",
+          "error",
+          "design.handoffs",
+          "multiple roles require a queue/fan-in collection or an explicit tagged-message budget",
+        ),
+      );
+    }
+  }
+  for (const handoff of recipe.design.handoffs) {
+    if (handoff.kind === "collection" && handoff.collection && !collectionNames.has(handoff.collection)) {
+      findings.push(
+        finding("design.unknown_collection", "error", `design.handoffs`, `unknown collection ${handoff.collection}`),
+      );
+    }
+    if (handoff.kind === "tagged" && (handoff.budget === undefined || handoff.budget > ctx.groupLimit)) {
+      findings.push(
+        finding(
+          "design.tagged_budget",
+          "error",
+          "design.handoffs",
+          "tagged protocol needs a budget within group_agent_message_limit",
+        ),
+      );
+    }
+  }
+  for (const browser of recipe.design.browser) {
+    if (!browser.viable) {
+      findings.push(
+        finding("design.browser_viability", "warning", `design.browser.${browser.role}`, "site failed a viability test"),
+      );
+    }
+    if (!browser.login_failure_policy) {
+      findings.push(
+        finding(
+          "design.browser_login_policy",
+          "error",
+          `design.browser.${browser.role}`,
+          "browser role needs a login-failure policy",
+        ),
+      );
+    }
+  }
+  for (const role of recipe.roles) {
+    if ((role.browser.required || role.config.browser) && !recipe.design.browser.some((item) => item.role === role.role)) {
+      findings.push(
+        finding(
+          "design.browser_login_policy",
+          "error",
+          `roles.${role.role}.browser`,
+          "browser role needs design.browser viability and login-failure policy",
+        ),
+      );
+    }
+  }
+  const usedServers = new Set<string>();
+  for (const connection of recipe.connections) {
+    const anyEnabled = Object.values(connection.roles).some((item) => item.enabled);
+    if (!anyEnabled) {
+      findings.push(
+        finding("design.unused_access", "warning", `connections.${connection.server}`, "connection is unused"),
+      );
+    }
+    usedServers.add(connection.server);
+  }
+  const producerCron = new Map<string, string>();
+  for (const handoff of recipe.design.handoffs) {
+    if (handoff.kind !== "collection" || !handoff.collection) {
+      continue;
+    }
+    const producer = recipe.design.routines.find((item) => item.role === handoff.from);
+    const consumer = recipe.design.routines.find((item) => item.role === handoff.to);
+    if (producer && consumer && producer.cadence === consumer.cadence) {
+      findings.push(
+        finding(
+          "design.cadence_collision",
+          "warning",
+          `design.handoffs`,
+          `${handoff.to} shares a cadence with producer ${handoff.from}`,
+        ),
+      );
+    }
+    if (producer) {
+      producerCron.set(handoff.collection, producer.cadence);
+    }
+  }
+  for (const collection of recipe.collections) {
+    const handoffs = recipe.design.handoffs.filter(
+      (item) => item.kind === "collection" && item.collection === collection.name,
+    );
+    const dedupeRoutines = recipe.design.routines.filter((item) => item.dedupe_collection === collection.name);
+    if (!handoffs.length && !dedupeRoutines.length) {
+      findings.push(
+        finding("design.orphan_collection", "warning", `collections.${collection.name}`, "collection is never read or written"),
+      );
+    }
+    if (!collection.columns.length) {
+      findings.push(
+        finding("design.untyped_collection", "error", `collections.${collection.name}`, "collection declares no columns"),
+      );
+    } else if (handoffs.length && !stateColumn(collection.columns)) {
+      findings.push(
+        finding(
+          "design.handoff_state",
+          "error",
+          `collections.${collection.name}`,
+          "hand-off collection needs a required text column with values: the state the consumer matches on",
+        ),
+      );
+    }
+    const writingRoles = new Map<string, string>();
+    for (const handoff of handoffs) {
+      writingRoles.set(handoff.from, "hand-off producer");
+      writingRoles.set(handoff.to, "hand-off consumer");
+    }
+    for (const routine of dedupeRoutines) {
+      if (!writingRoles.has(routine.role)) {
+        writingRoles.set(routine.role, `dedupe store of routine ${routine.key}`);
+      }
+    }
+    for (const [role, use] of writingRoles) {
+      if (collection.guild !== "write" && !collection.writers.includes(role) && recipe.roles.some((item) => item.role === role)) {
+        findings.push(
+          finding(
+            "design.collection_access",
+            "error",
+            `collections.${collection.name}`,
+            `${role} cannot write ${collection.name} (${use}); set guild to write or add ${role} to writers`,
+          ),
+        );
+      }
+    }
+  }
+  void usedServers;
+  void producerCron;
+  return findings;
+}
+
+/** The required text column with a closed value list: what a consumer matches work on. */
+function stateColumn(columns: CollectionColumn[]): CollectionColumn | null {
+  return columns.find((column) => column.type === "text" && column.required && Boolean(column.values?.length)) ?? null;
+}
+
+export function validateRecipe(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
+  return [...validateMechanical(recipe, ctx), ...validateDesign(recipe, ctx)];
+}
+
+export function blockingErrors(findings: RecipeFinding[]): RecipeFinding[] {
+  return findings.filter((item) => item.severity === "error");
+}
+
+const APPLY_NON_BLOCKING = new Set(["design.poll_dedupe", "design.routine_missing"]);
+
+export function applyBlockingErrors(findings: RecipeFinding[]): RecipeFinding[] {
+  return blockingErrors(findings).filter((item) => !APPLY_NON_BLOCKING.has(item.code));
+}

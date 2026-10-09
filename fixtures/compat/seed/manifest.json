@@ -1,0 +1,328 @@
+{
+  "system": {
+    "expected_mcp_slugs": [
+      "notion",
+      "gmail",
+      "drive",
+      "sentry",
+      "github",
+      "cigale",
+      "coingecko",
+      "alchemy",
+      "opensea",
+      "etherscan",
+      "x",
+      "twitterapiio",
+      "qonto",
+      "dexpaprika",
+      "tavily"
+    ],
+    "platform_native_tool_bindings": [
+      {
+        "catalog_id": "group_post",
+        "enabled": true
+      },
+      {
+        "catalog_id": "memory_write",
+        "enabled": true
+      },
+      {
+        "catalog_id": "note_delete",
+        "enabled": true
+      },
+      {
+        "catalog_id": "note_find",
+        "enabled": true
+      },
+      {
+        "catalog_id": "note_get",
+        "enabled": true
+      },
+      {
+        "catalog_id": "note_write",
+        "enabled": true
+      },
+      {
+        "catalog_id": "record_add",
+        "enabled": true
+      },
+      {
+        "catalog_id": "record_list",
+        "enabled": true
+      },
+      {
+        "catalog_id": "record_remove",
+        "enabled": true
+      },
+      {
+        "catalog_id": "record_search",
+        "enabled": true
+      },
+      {
+        "catalog_id": "record_update",
+        "enabled": true
+      },
+      {
+        "catalog_id": "schedule_create_cron",
+        "enabled": true
+      },
+      {
+        "catalog_id": "schedule_create_window",
+        "enabled": true
+      },
+      {
+        "catalog_id": "schedule_delete",
+        "enabled": true
+      },
+      {
+        "catalog_id": "schedule_list",
+        "enabled": true
+      },
+      {
+        "catalog_id": "schedule_pause",
+        "enabled": true
+      },
+      {
+        "catalog_id": "schedule_resume",
+        "enabled": true
+      },
+      {
+        "catalog_id": "script_create",
+        "enabled": true
+      },
+      {
+        "catalog_id": "script_delete",
+        "enabled": true
+      },
+      {
+        "catalog_id": "script_list",
+        "enabled": true
+      },
+      {
+        "catalog_id": "script_read",
+        "enabled": true
+      },
+      {
+        "catalog_id": "script_run",
+        "enabled": true
+      },
+      {
+        "catalog_id": "secret_request",
+        "enabled": true
+      },
+      {
+        "catalog_id": "secret_store",
+        "enabled": true
+      }
+    ],
+    "expected_platform_native_tools": [
+      "note_find",
+      "note_get",
+      "note_write",
+      "note_delete",
+      "record_search",
+      "record_list",
+      "record_add",
+      "record_update",
+      "record_remove",
+      "script_create",
+      "script_list",
+      "script_read",
+      "script_run",
+      "script_delete",
+      "schedule_create_cron",
+      "schedule_create_window",
+      "schedule_list",
+      "schedule_pause",
+      "schedule_resume",
+      "schedule_delete",
+      "memory_write",
+      "secret_store",
+      "secret_request",
+      "group_post"
+    ],
+    "bash_absent": true,
+    "native_tools_constant": [
+      "note_find",
+      "note_get",
+      "note_write",
+      "note_delete",
+      "record_search",
+      "record_list",
+      "record_add",
+      "record_update",
+      "record_remove",
+      "memory_write",
+      "script_create",
+      "script_list",
+      "script_read",
+      "script_run",
+      "script_delete",
+      "schedule_create_cron",
+      "schedule_create_window",
+      "schedule_list",
+      "schedule_pause",
+      "schedule_resume",
+      "schedule_delete",
+      "secret_store",
+      "secret_request",
+      "group_post"
+    ],
+    "connectors": [
+      {
+        "id": "mcp_alchemy",
+        "slug": "alchemy",
+        "display_name": "Alchemy",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_cigale",
+        "slug": "cigale",
+        "display_name": "Cigale",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_coingecko",
+        "slug": "coingecko",
+        "display_name": "CoinGecko",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_dexpaprika",
+        "slug": "dexpaprika",
+        "display_name": "DexPaprika",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_drive",
+        "slug": "drive",
+        "display_name": "Google Drive",
+        "auth": "oauth",
+        "source": "core"
+      },
+      {
+        "id": "mcp_etherscan",
+        "slug": "etherscan",
+        "display_name": "Etherscan",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_github",
+        "slug": "github",
+        "display_name": "GitHub",
+        "auth": "oauth",
+        "source": "core"
+      },
+      {
+        "id": "mcp_gmail",
+        "slug": "gmail",
+        "display_name": "Gmail",
+        "auth": "oauth",
+        "source": "core"
+      },
+      {
+        "id": "mcp_notion",
+        "slug": "notion",
+        "display_name": "Notion",
+        "auth": "oauth",
+        "source": "core"
+      },
+      {
+        "id": "mcp_opensea",
+        "slug": "opensea",
+        "display_name": "OpenSea",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_qonto",
+        "slug": "qonto",
+        "display_name": "Qonto",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_sentry",
+        "slug": "sentry",
+        "display_name": "Sentry",
+        "auth": "oauth",
+        "source": "core"
+      },
+      {
+        "id": "mcp_tavily",
+        "slug": "tavily",
+        "display_name": "Web search",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_twitterapiio",
+        "slug": "twitterapiio",
+        "display_name": "TwitterAPI.io",
+        "auth": "token",
+        "source": "core"
+      },
+      {
+        "id": "mcp_x",
+        "slug": "x",
+        "display_name": "X",
+        "auth": "token",
+        "source": "core"
+      }
+    ]
+  },
+  "operator": {
+    "users": [
+      {
+        "id": "user_operator",
+        "name": "operator",
+        "email": null
+      }
+    ],
+    "orgs": [
+      {
+        "id": "org_home",
+        "name": "Home",
+        "slug": "home"
+      }
+    ],
+    "org_members": [
+      {
+        "org_id": "org_home",
+        "user_id": "user_operator",
+        "role": "owner"
+      }
+    ],
+    "expected": {
+      "users": [
+        {
+          "id": "user_operator",
+          "name": "operator",
+          "email": null
+        }
+      ],
+      "org_id": "org_home"
+    }
+  },
+  "runtime_bootstrap": {
+    "seed_operator": [
+      "skip while any user exists",
+      "insert SEED_USERS by id",
+      "insert org_home and its owner membership"
+    ],
+    "post_api_users": "creating a user inserts a personal org"
+  },
+  "row_counts": {
+    "users": 1,
+    "orgs": 1,
+    "org_members": 1,
+    "connectors": 15,
+    "bindings": 28,
+    "secrets": 0
+  }
+}

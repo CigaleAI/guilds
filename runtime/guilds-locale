@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Timezone from the sandbox egress IP; Chrome language from GUILDS_BROWSER_LANGUAGE."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shlex
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+CACHE_PATH = Path(os.environ.get("GUILDS_LOCALE_CACHE", "/tmp/guilds-locale.json"))
+FETCH_TIMEOUT_SECONDS = 3
+COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
+LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+DEFAULTS = {
+    "country": "",
+    "ip": "",
+    "timezone": "UTC",
+    "locale": "en-US",
+    "lang": "en_US.UTF-8",
+    "language": "en_US:en",
+    "chrome_lang": "en-US",
+    "chrome_accept_lang": "en-US,en;q=0.9",
+}
+
+
+def valid_timezone(name: str) -> bool:
+    if not name or ".." in name or name.startswith("/") or len(name) > 64:
+        return False
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, Exception):
+        return False
+    return True
+
+
+def valid_country(code: str) -> str:
+    candidate = code.strip().upper()
+    return candidate if COUNTRY_RE.match(candidate) else ""
+
+
+def preferred_language() -> str:
+    raw = os.environ.get("GUILDS_BROWSER_LANGUAGE", "").strip()
+    if not raw or len(raw) > 32 or not LANGUAGE_RE.match(raw):
+        return DEFAULTS["locale"]
+    return raw
+
+
+def posix_locale(bcp47: str) -> str:
+    parts = bcp47.replace("-", "_").split("_")
+    if len(parts) == 1:
+        return f"{parts[0]}_{parts[0].upper()}.UTF-8"
+    return f"{parts[0]}_{parts[1].upper()}.UTF-8"
+
+
+def accept_lang(bcp47: str) -> str:
+    parts = [bcp47]
+    seen = {bcp47.lower()}
+
+    def add(tag: str, q: float) -> None:
+        key = tag.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        parts.append(f"{tag};q={q:g}")
+
+    if "-" in bcp47:
+        add(bcp47.split("-")[0], 0.9)
+    if bcp47.split("-")[0].lower() != "en":
+        add("en-US", 0.8)
+        add("en", 0.7)
+    else:
+        add("en-US", 0.8)
+        add("en", 0.7)
+    return ",".join(parts)
+
+
+def language_fields(bcp47: str) -> dict[str, str]:
+    posix = posix_locale(bcp47)
+    language = posix.split(".")[0]
+    primary = bcp47.split("-")[0]
+    return {
+        "locale": bcp47,
+        "lang": posix,
+        "language": f"{language}:{primary}:en",
+        "chrome_lang": bcp47,
+        "chrome_accept_lang": accept_lang(bcp47),
+    }
+
+
+def parse_geo(payload: Any) -> dict[str, str] | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("success") is False or payload.get("status") not in (None, "success"):
+        return None
+    timezone = payload.get("timezone")
+    if isinstance(timezone, dict):
+        timezone = timezone.get("id") or timezone.get("name") or ""
+    country = payload.get("country_code") or payload.get("countryCode") or payload.get("country") or ""
+    ip = payload.get("ip") or payload.get("query") or ""
+    parsed = {
+        "country": str(country),
+        "timezone": str(timezone or ""),
+        "ip": str(ip),
+    }
+    if not parsed["country"] and not parsed["timezone"]:
+        return None
+    return parsed
+
+
+def resolve_locale(geo: dict[str, str] | None, language: str) -> dict[str, str]:
+    resolved = dict(DEFAULTS)
+    resolved.update(language_fields(language))
+    if not geo:
+        return resolved
+    country = valid_country(geo.get("country", ""))
+    timezone = geo.get("timezone", "").strip()
+    resolved["country"] = country
+    resolved["ip"] = geo.get("ip", "")[:64]
+    resolved["timezone"] = timezone if valid_timezone(timezone) else DEFAULTS["timezone"]
+    return resolved
+
+
+def fetch_geo() -> dict[str, str] | None:
+    request_headers = {"User-Agent": "guilds-locale/1.0", "Accept": "application/json"}
+    for url in (
+        "https://ipwho.is/",
+        "https://ipinfo.io/json",
+        "http://ip-api.com/json/?fields=status,countryCode,timezone,query",
+    ):
+        try:
+            request = urllib.request.Request(url, headers=request_headers)
+            with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            parsed = parse_geo(payload)
+            if parsed:
+                return parsed
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+            continue
+    return None
+
+
+def load_cache() -> dict[str, str] | None:
+    try:
+        loaded = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    return {key: str(loaded.get(key, DEFAULTS.get(key, ""))) for key in DEFAULTS}
+
+
+def save_cache(values: dict[str, str]) -> None:
+    try:
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CACHE_PATH.write_text(json.dumps(values, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def shell_exports(values: dict[str, str]) -> str:
+    mapping = {
+        "TZ": values["timezone"],
+        "LANG": values["lang"],
+        "LANGUAGE": values["language"],
+        "CHROME_LANG": values["chrome_lang"],
+        "CHROME_ACCEPT_LANG": values["chrome_accept_lang"],
+    }
+    lines = [f"export {key}={shlex.quote(value)}" for key, value in mapping.items()]
+    return "\n".join(lines) + "\n"
+
+
+def pref_languages(accept: str) -> str:
+    tags: list[str] = []
+    for part in accept.split(","):
+        tag = part.split(";", 1)[0].strip()
+        if tag:
+            tags.append(tag)
+    return ",".join(tags)
+
+
+def deep_update(base: dict[str, Any], updates: dict[str, Any]) -> None:
+    for key, value in updates.items():
+        current = base.get(key)
+        if isinstance(value, dict) and isinstance(current, dict):
+            deep_update(current, value)
+        else:
+            base[key] = value
+
+
+def merge_json(path: Path, updates: dict[str, Any]) -> None:
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            loaded = {}
+        if isinstance(loaded, dict):
+            data = loaded
+    deep_update(data, updates)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def write_profile(profile_dir: Path, values: dict[str, str]) -> None:
+    accept = pref_languages(values["chrome_accept_lang"])
+    merge_json(
+        profile_dir / "Default" / "Preferences",
+        {
+            "intl": {
+                "accept_languages": accept,
+                "selected_languages": accept,
+            }
+        },
+    )
+    merge_json(
+        profile_dir / "Local State",
+        {"intl": {"app_locale": values["chrome_lang"]}},
+    )
+
+
+def resolve_from_args(from_json: str | None, refresh: bool) -> dict[str, str]:
+    language = preferred_language()
+    if from_json is not None:
+        return resolve_locale(parse_geo(json.loads(from_json)), language)
+    if not refresh:
+        cached = load_cache()
+        if cached:
+            cached.update(language_fields(language))
+            return cached
+    values = resolve_locale(fetch_geo(), language)
+    save_cache(values)
+    return values
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--from-json", help="Geo JSON payload; skip network and cache")
+    parser.add_argument("--refresh", action="store_true", help="Ignore cache and look up the public IP")
+    parser.add_argument("--json", action="store_true", help="Print JSON instead of shell exports")
+    parser.add_argument(
+        "--write-profile",
+        metavar="DIR",
+        help="Write Chrome intl prefs so the UI and Accept-Language follow GUILDS_BROWSER_LANGUAGE",
+    )
+    args = parser.parse_args()
+    try:
+        values = resolve_from_args(args.from_json, args.refresh)
+    except Exception:
+        values = dict(DEFAULTS)
+        values.update(language_fields(preferred_language()))
+    if args.write_profile:
+        write_profile(Path(args.write_profile), values)
+    if args.json:
+        sys.stdout.write(json.dumps(values) + "\n")
+        return
+    sys.stdout.write(shell_exports(values))
+
+
+if __name__ == "__main__":
+    main()

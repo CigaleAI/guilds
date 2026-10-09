@@ -1,0 +1,199 @@
+/*
+ * guilds.run design tokens.
+ *
+ * Brand constants never change with the theme; components never read them directly.
+ * Semantic tokens are the only colours components use, and each theme redefines them.
+ * Fonts, the type scale and radii live in theme.css because they are theme-invariant.
+ */
+
+:root,
+[data-theme="light"] {
+  --brand-sand: #d9d5c7;
+  --brand-well: #e6e3d8;
+  --brand-cream: #f3f1ea;
+  --brand-paper: #faf9f5;
+  --brand-ink: #221b1f;
+  --brand-signal: #1fafd1;
+  --brand-tide: #4a8a9c;
+  --brand-dusk: #6e5e75;
+  --brand-plum: #573646;
+
+  /* Grounds: each level nests one step lighter. */
+  --page: var(--brand-sand);
+  --well: var(--brand-well);
+  --surface: var(--brand-cream);
+  --paper: var(--brand-paper);
+  --paper-hi: #ffffff;
+  --stripe: #eae7dd;
+
+  /* Lines */
+  --line: #ece9e0;
+  --line-2: #e0dccf;
+  --line-3: var(--brand-sand);
+  --rule: #c9c4b4;
+  --rule-2: #b8b1a0;
+
+  /* Text */
+  --fg: var(--brand-ink);
+  --fg-2: #3a3136;
+  --muted: #5e555b;
+  --faint: #9c9398;
+
+  /* Inverse and panel */
+  --ink-fill: var(--brand-ink);
+  --on-ink: var(--brand-paper);
+  --on-ink-muted: #cfc6cb;
+  --panel: var(--brand-ink);
+  --on-panel: var(--brand-cream);
+  --on-panel-muted: #cfc6cb;
+
+  /* Fills */
+  --signal: var(--brand-signal);
+  --signal-2: #8fc3d1;
+  --mauve: #c9b9c5;
+  --tide: #3c7585;
+  --dusk: var(--brand-dusk);
+  --plum: var(--brand-plum);
+  --ochre: #b7864f;
+
+  /* Text on fills */
+  --on-signal: var(--brand-ink);
+  --on-plum: var(--brand-cream);
+  --on-plum-muted: #e6dce0;
+  --on-ochre: var(--brand-ink);
+
+  /* Accent text */
+  --signal-t: #136a80;
+  --tide-t: #2f6f80;
+  --plum-t: var(--brand-plum);
+  --dusk-t: var(--brand-dusk);
+  --signal-soft: #8fd9ea;
+  --plum-soft: #e0afc7;
+
+  /* Wake outcomes: posted and wrote share one ramp, posted strongest; no output is grey; a failure is warm. */
+  --outcome-posted: #14738a;
+  --outcome-wrote: #5aa9bd;
+  --outcome-silent: #c6bfae;
+  --outcome-failed: #b4583f;
+  --outcome-running: var(--mauve);
+
+  /* Tints: each background carries its paired ink. */
+  --t-sig: #d3ecf2;
+  --t-sig-fg: #1e5563;
+  --t-tide: #e2edef;
+  --t-tide-fg: #2f5f6c;
+  --t-plum: #e8e1ea;
+  --t-dusk-fg: #4e4155;
+  --t-ochre: #ede6dc;
+  --t-ochre-fg: #6b4e2e;
+
+  /* Identity: every agent owns one of these. Fills and the ink initials on them stay constant;
+     the name colour (-t) is the shade that reads on paper and surface in each theme. */
+  --id-signal: #1fafd1;
+  --id-tide: #4a8a9c;
+  --id-moss: #7f9a5e;
+  --id-ochre: #c08f55;
+  --id-rosewood: #b8627f;
+  --id-dusk: #8672a0;
+  --on-id: var(--brand-ink);
+  --id-signal-t: #14738a;
+  --id-tide-t: #3c707e;
+  --id-moss-t: #5c6f44;
+  --id-ochre-t: #896133;
+  --id-rosewood-t: #a64b6a;
+  --id-dusk-t: #756190;
+  /* Soft grounds in each identity colour, such as a person's message bubble. */
+  --id-signal-tint: color-mix(in oklab, var(--id-signal) 20%, var(--paper));
+  --id-tide-tint: color-mix(in oklab, var(--id-tide) 20%, var(--paper));
+  --id-moss-tint: color-mix(in oklab, var(--id-moss) 20%, var(--paper));
+  --id-ochre-tint: color-mix(in oklab, var(--id-ochre) 20%, var(--paper));
+  --id-rosewood-tint: color-mix(in oklab, var(--id-rosewood) 20%, var(--paper));
+  --id-dusk-tint: color-mix(in oklab, var(--id-dusk) 20%, var(--paper));
+
+  /* Overlay */
+  --on-signal-line: rgb(34 27 31 / 0.35);
+  --on-plum-track: rgb(243 241 234 / 0.28);
+  --on-plum-hover: rgb(243 241 234 / 0.14);
+  --scrim: rgb(34 27 31 / 0.55);
+  --focus: var(--signal-t);
+
+  /* Elevation: depth comes from stacked colour first, shadow second. */
+  --elev-pop: 0 12px 30px -12px rgb(34 27 31 / 0.45);
+  --elev-float: 0 30px 60px -40px rgb(34 27 31 / 0.4);
+  --elev-modal: 0 40px 80px -40px rgb(34 27 31 / 0.6);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --page: #120e11;
+  --well: #1d171b;
+  --surface: #251e23;
+  --paper: #2e262b;
+  --paper-hi: #382f35;
+  --stripe: #221b20;
+
+  --line: #382e34;
+  --line-2: #3e343a;
+  --line-3: #463b42;
+  --rule: #5a4d55;
+  --rule-2: #6a5c65;
+
+  --fg: #f3eef0;
+  --fg-2: #d6cdd2;
+  --muted: #ada2a8;
+  --faint: #7c7077;
+
+  --ink-fill: #f3eef0;
+  --on-ink: #1a1418;
+  --on-ink-muted: #5e535a;
+  --panel: #0b080a;
+  --on-panel: var(--brand-cream);
+  --on-panel-muted: #b9aeb4;
+
+  --mauve: #a68ca0;
+  --dusk: #735f7d;
+  --plum: #7a4862;
+
+  --signal-t: #6cd6ee;
+  --tide-t: #9acbd8;
+  --plum-t: #e0afc7;
+  --dusk-t: #c3b2cb;
+
+  --outcome-posted: #1fafd1;
+  --outcome-wrote: #2f6f80;
+  --outcome-silent: #54474f;
+  --outcome-failed: #d9876f;
+
+  --t-sig: #12394a;
+  --t-sig-fg: #a6e3f1;
+  --t-tide: #1b3339;
+  --t-tide-fg: #add5df;
+  --t-plum: #3d2835;
+  --t-dusk-fg: #d2c4d9;
+  --t-ochre: #3a2e21;
+  --t-ochre-fg: #e3cba9;
+
+  --id-signal-t: #1fafd1;
+  --id-tide-t: #599db0;
+  --id-moss-t: #829d60;
+  --id-ochre-t: #c08f55;
+  --id-rosewood-t: #c58097;
+  --id-dusk-t: #9d8db2;
+  --id-signal-tint: color-mix(in oklab, var(--id-signal) 28%, var(--paper));
+  --id-tide-tint: color-mix(in oklab, var(--id-tide) 28%, var(--paper));
+  --id-moss-tint: color-mix(in oklab, var(--id-moss) 28%, var(--paper));
+  --id-ochre-tint: color-mix(in oklab, var(--id-ochre) 28%, var(--paper));
+  --id-rosewood-tint: color-mix(in oklab, var(--id-rosewood) 28%, var(--paper));
+  --id-dusk-tint: color-mix(in oklab, var(--id-dusk) 28%, var(--paper));
+
+  --scrim: rgb(0 0 0 / 0.6);
+  --focus: var(--signal-t);
+
+  /* Floating surfaces sit near-black on a near-black page; the pop shadow carries a hairline. */
+  --elev-pop: inset 0 0 0 1px var(--line-3), 0 12px 30px -12px rgb(0 0 0 / 0.7);
+  --elev-float: 0 30px 60px -40px rgb(0 0 0 / 0.8);
+  --elev-modal: 0 40px 80px -40px rgb(0 0 0 / 0.9);
+
+  color-scheme: dark;
+}

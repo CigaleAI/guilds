@@ -1,0 +1,88 @@
+name: images
+
+# Publishes the images a self-hosted box runs when a version is tagged: guilds-orchestrator,
+# guilds-agent-runtime (the standard box), guilds-agent-runtime-lite (the lite box), and
+# guilds-opensandbox-server, this project's build of the OpenSandbox server at its pinned commit,
+# under the organisation that owns the repository. The standard runtime is built with Chromium,
+# since Chrome may not be redistributed.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: orchestrator
+            context: .
+            file: apps/orchestrator/Dockerfile
+            build-args: ""
+          - image: agent-runtime
+            context: runtime
+            file: runtime/Dockerfile
+            build-args: BROWSER=chromium
+          - image: agent-runtime-lite
+            context: runtime
+            file: runtime/Dockerfile.lite
+            build-args: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Image names are lower case, whatever the organisation's is.
+      - id: registry
+        run: echo "name=ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          build-args: ${{ matrix.build-args }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.registry.outputs.name }}/guilds-${{ matrix.image }}:${{ github.ref_name }}
+            ${{ steps.registry.outputs.name }}/guilds-${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  opensandbox-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - id: pin
+        run: |
+          commit="$(sed -n 's/^opensandbox_commit=//p' scripts/images.sh)"
+          [[ -n "$commit" ]]
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "short=${commit:0:8}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Image names are lower case, whatever the organisation's is.
+      - id: registry
+        run: echo "name=ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: https://github.com/opensandbox-group/OpenSandbox.git#${{ steps.pin.outputs.commit }}:server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.registry.outputs.name }}/guilds-opensandbox-server:${{ steps.pin.outputs.short }}

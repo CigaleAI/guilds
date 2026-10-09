@@ -1,0 +1,72 @@
+{
+  "aes_gcm": {
+    "key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "nonce_b64": "AAECAwQFBgcICQoL",
+    "plaintext": {
+      "value": "brave-secret",
+      "note": "café"
+    },
+    "plaintext_utf8": "{\"note\":\"caf\\u00e9\",\"value\":\"brave-secret\"}",
+    "ciphertext_b64": "PCC4dLGA4CGvIvbt7ZxIXebvpRjSDT4QTQLHvz8LctN3dYOPyqJg/QCGAn0l5450fkgoJaRp4VNkddA=",
+    "roundtrip": {
+      "note": "café",
+      "value": "brave-secret"
+    },
+    "encoding": {
+      "sort_keys": true,
+      "separators": [
+        ",",
+        ":"
+      ],
+      "ensure_ascii": true,
+      "nonce_bytes": 12,
+      "aad": null
+    }
+  },
+  "key_decode": {
+    "strict_b64": {
+      "ok": true,
+      "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    "urlsafe_b64": {
+      "ok": true,
+      "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    "hex": {
+      "ok": true,
+      "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    "hex_whitespace": {
+      "ok": true,
+      "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    "ascii_32": {
+      "ok": true,
+      "hex": "6162636465666768696a6b6c6d6e6f707172737475767778797a313233343536"
+    },
+    "too_short": {
+      "ok": false,
+      "error": "RuntimeError: SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)"
+    },
+    "invalid_hex": {
+      "ok": false,
+      "error": "RuntimeError: SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)"
+    },
+    "wrong_len_hex": {
+      "ok": true,
+      "hex": "3030303030303030303030303030303030303030303030303030303030303030"
+    },
+    "empty": {
+      "ok": false,
+      "error": "RuntimeError: SECRETS_MASTER_KEY is required"
+    }
+  },
+  "fingerprint": {
+    "empty": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b94",
+    "ordered": "b8754036d2bda4db45eae5a27ff4aaf630b391b190de71dd89a769f2b4288bf",
+    "reordered": "b8754036d2bda4db45eae5a27ff4aaf630b391b190de71dd89a769f2b4288bf",
+    "changed": "1cc4eed9ef35dfc9552fd14b0b97a4a3de86e3845c97936cecffe57e2b820ef",
+    "unicode": "1f0e058d9413032863764a59f76abdabf8b6ac93f3e1f735ff45d353f3f3801",
+    "length": 63
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "state": {
+    "utc_now": "2026-09-13T09:00:12Z",
+    "utc_date": "Sunday, 13 September 2026",
+    "max_tool_calls": 50,
+    "group": {
+      "members": [
+        {
+          "name": "researcher",
+          "focus": "read papers"
+        },
+        {
+          "name": "writer"
+        }
+      ],
+      "operators": [
+        {
+          "name": "ada",
+          "role": "admin"
+        }
+      ],
+      "history": [
+        {
+          "sentBy": "ada",
+          "content": "m3",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m4",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m5",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m6",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m7",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m8",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m9",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m10",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m11",
+          "tagged": []
+        },
+        {
+          "sentBy": "ada",
+          "content": "m12",
+          "tagged": []
+        }
+      ],
+      "about": "weekly synthesis"
+    },
+    "readable_levels": [
+      "agent",
+      "guild",
+      "org"
+    ],
+    "writable_levels": [
+      "agent",
+      "guild"
+    ],
+    "collections": [
+      {
+        "name": "papers",
+        "purpose": "reading list",
+        "columns": []
+      }
+    ],
+    "scripts": [
+      {
+        "name": "send_usdc",
+        "description": "Sign and send USDC",
+        "parameters": {
+          "type": "object"
+        }
+      }
+    ],
+    "environment": [
+      {
+        "name": "WALLET_PRIVATE_KEY",
+        "description": "signs sends"
+      }
+    ]
+  },
+  "without_database": {
+    "utc_now": "2026-09-13T09:00:12Z",
+    "utc_date": "Sunday, 13 September 2026",
+    "max_tool_calls": 50,
+    "group": {
+      "members": [],
+      "operators": [],
+      "history": []
+    },
+    "readable_levels": [
+      "agent"
+    ],
+    "writable_levels": [
+      "agent"
+    ],
+    "collections": [
+      {
+        "name": "papers",
+        "purpose": "reading list",
+        "columns": []
+      }
+    ],
+    "scripts": [],
+    "environment": []
+  },
+  "embedded": "State: {\n  \"utc_now\": \"2026-09-13T09:00:12Z\",\n  \"utc_date\": \"Sunday, 13 September 2026\",\n  \"max_tool_calls\": 50,\n  \"group\": {\n    \"members\": [\n      {\n        \"name\": \"researcher\",\n        \"focus\": \"read papers\"\n      },\n      {\n        \"name\": \"writer\"\n      }\n    ],\n    \"operators\": [\n      {\n        \"name\": \"ada\",\n        \"role\": \"admin\"\n      }\n    ],\n    \"history\": [\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m3\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m4\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m5\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m6\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m7\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m8\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m9\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m10\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m11\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m12\",\n        \"tagged\": []\n      }\n    ],\n    \"about\": \"weekly synthesis\"\n  },\n  \"readable_levels\": [\n    \"agent\",\n    \"guild\",\n    \"org\"\n  ],\n  \"writable_levels\": [\n    \"agent\",\n    \"guild\"\n  ],\n  \"collections\": [\n    {\n      \"name\": \"papers\",\n      \"purpose\": \"reading list\",\n      \"columns\": []\n    }\n  ],\n  \"scripts\": [\n    {\n      \"name\": \"send_usdc\",\n      \"description\": \"Sign and send USDC\",\n      \"parameters\": {\n        \"type\": \"object\"\n      }\n    }\n  ],\n  \"environment\": [\n    {\n      \"name\": \"WALLET_PRIVATE_KEY\",\n      \"description\": \"signs sends\"\n    }\n  ]\n}",
+  "attached": "You are an agent.\n\nState: {\n  \"utc_now\": \"2026-09-13T09:00:12Z\",\n  \"utc_date\": \"Sunday, 13 September 2026\",\n  \"max_tool_calls\": 50,\n  \"group\": {\n    \"members\": [\n      {\n        \"name\": \"researcher\",\n        \"focus\": \"read papers\"\n      },\n      {\n        \"name\": \"writer\"\n      }\n    ],\n    \"operators\": [\n      {\n        \"name\": \"ada\",\n        \"role\": \"admin\"\n      }\n    ],\n    \"history\": [\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m3\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m4\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m5\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m6\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m7\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m8\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m9\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m10\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m11\",\n        \"tagged\": []\n      },\n      {\n        \"sentBy\": \"ada\",\n        \"content\": \"m12\",\n        \"tagged\": []\n      }\n    ],\n    \"about\": \"weekly synthesis\"\n  },\n  \"readable_levels\": [\n    \"agent\",\n    \"guild\",\n    \"org\"\n  ],\n  \"writable_levels\": [\n    \"agent\",\n    \"guild\"\n  ],\n  \"collections\": [\n    {\n      \"name\": \"papers\",\n      \"purpose\": \"reading list\",\n      \"columns\": []\n    }\n  ],\n  \"scripts\": [\n    {\n      \"name\": \"send_usdc\",\n      \"description\": \"Sign and send USDC\",\n      \"parameters\": {\n        \"type\": \"object\"\n      }\n    }\n  ],\n  \"environment\": [\n    {\n      \"name\": \"WALLET_PRIVATE_KEY\",\n      \"description\": \"signs sends\"\n    }\n  ]\n}\n"
+}

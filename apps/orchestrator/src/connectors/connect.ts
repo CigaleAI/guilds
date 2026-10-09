@@ -1,0 +1,224 @@
+import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
+import { newId } from "../lib/ids.js";
+import type { ListedTool } from "../mcp/index.js";
+import { markDisconnected, McpDisconnectedError, McpError } from "../mcp/index.js";
+import { authFields } from "./manifest.js";
+import type { ConnectorRegistry } from "./registry.js";
+import { installedConnectors } from "./index.js";
+import { settingsComplete, SettingsError, validateSettings } from "./settings.js";
+import type { Credentials } from "./types.js";
+
+/**
+ * What to do when the owner already has a connected login on the server. `refuse`: a 409.
+ * `keep`: the stored login stays. `replace`: the new credentials replace it. `replace_when_hint`:
+ * they replace it only when its account hint is this one; any other login stays.
+ */
+export type OnExisting = "refuse" | "keep" | "replace" | { replace_when_hint: string };
+
+/** `installed`: the credentials are now the owner's login. `current`: they already were. `kept`: another login stays. */
+export type ConnectOutcome = "installed" | "current" | "kept";
+
+export type ConnectInput = {
+  server: Record<string, unknown>;
+  ownerScope: string;
+  ownerId: string | null;
+  /** The form's values, by the manifest's field names. */
+  credentials: Record<string, unknown>;
+  /**
+   * The login's settings, checked against the manifest's `settings_schema` and by the
+   * connector's `validate`. A login whose schema has required properties it lacks is stored
+   * pending until a settings save completes it.
+   */
+  settings?: Record<string, unknown>;
+  onExisting?: OnExisting;
+  /** Replaces the hint the connector's `validate` returns. */
+  accountHint?: string;
+};
+
+export type ConnectResult = {
+  connection: Record<string, unknown>;
+  outcome: ConnectOutcome;
+};
+
+export class ConnectError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ConnectError";
+    this.status = status;
+  }
+}
+
+export type ConnectRepo = {
+  getMcpConnectionForOwner(
+    serverId: string,
+    ownerScope: string,
+    ownerId: string | null,
+  ): Promise<Record<string, unknown> | null>;
+  connectMcp(
+    connectionId: string,
+    bindingId: string,
+    serverId: string,
+    ownerScope: string,
+    ownerId: string | null,
+    ciphertext: Buffer,
+    nonce: Buffer,
+    now: Date,
+    options?: {
+      oauthState?: string | null;
+      bind?: boolean;
+      status?: string;
+      accountHint?: string;
+      settings?: Record<string, unknown>;
+    },
+  ): Promise<Record<string, unknown>>;
+  deleteMcpConnection(connectionId: string): Promise<unknown>;
+  saveMcpConnection(
+    connectionId: string,
+    options: { ciphertext: Buffer; nonce: Buffer; status: string; accountHint: string; oauthState: string | null; now: Date },
+  ): Promise<Record<string, unknown> | null>;
+  listMcpTools(connectionId: string): Promise<Array<Record<string, unknown>>>;
+  replaceMcpTools(connectionId: string, tools: ListedTool[], now: Date): Promise<void>;
+};
+
+export type ConnectPool = {
+  validate(server: Record<string, unknown>, credentials: Credentials, settings?: Record<string, unknown>): Promise<string>;
+  syncTools(
+    db: ConnectRepo,
+    connection: Record<string, unknown>,
+    server: Record<string, unknown>,
+    options?: { force?: boolean; validate?: boolean },
+  ): Promise<ListedTool[]>;
+  forget(connectionId: string): void;
+};
+
+/** The form's values for a token login, by field: every declared field trimmed, the required ones present. */
+export function tokenCredentials(
+  server: Record<string, unknown>,
+  values: Record<string, unknown>,
+  connectors: ConnectorRegistry = installedConnectors(),
+): Credentials {
+  const manifest = connectors.forServer(server)?.manifest;
+  const fields = manifest ? authFields(manifest) : [{ name: "token", label: "API key", optional: false }];
+  const credentials: Record<string, string> = {};
+  for (const field of fields) {
+    const raw = values[field.name];
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (!value && !field.optional) {
+      throw new ConnectError(422, `${field.label.toLowerCase()} is required`);
+    }
+    credentials[field.name] = value;
+  }
+  return credentials;
+}
+
+function sameCredentials(stored: Record<string, unknown>, credentials: Credentials): boolean {
+  return Object.entries(credentials).every(([name, value]) => (stored[name] ?? "") === value);
+}
+
+function storedCredentials(connection: Record<string, unknown>, masterKey: Buffer | undefined): Record<string, unknown> {
+  try {
+    return decryptPayload(connection.ciphertext as Buffer, connection.nonce as Buffer, masterKey);
+  } catch {
+    return {};
+  }
+}
+
+/** Answers a connector's failure: a rejected credential or a bad setting is a 422, anything else upstream a 502. */
+export function connectFailure(error: unknown, server: Record<string, unknown>): never {
+  if (error instanceof McpError && !(error instanceof McpDisconnectedError)) {
+    if (error.status === 401 || error.status === 403) {
+      throw new ConnectError(422, "api key was rejected");
+    }
+    if (error.status === 422) {
+      throw new ConnectError(422, error.message);
+    }
+    throw new ConnectError(502, `${String(server.display_name ?? server.slug)}: ${error.message}`);
+  }
+  throw error;
+}
+
+/**
+ * Connects a token login: checks the credentials against the manifest's fields, applies
+ * `onExisting` to the owner's stored login, runs the connector's `validate`, stores the
+ * credentials encrypted, and lists the login's tools. A listing the server rejects removes the
+ * new login, or disconnects the one it replaced; any other listing failure leaves it for the next sync.
+ */
+export async function connect(
+  repo: ConnectRepo,
+  pool: ConnectPool | null,
+  input: ConnectInput,
+  now: Date = new Date(),
+  options: { masterKey?: Buffer | undefined; connectors?: ConnectorRegistry } = {},
+): Promise<ConnectResult> {
+  const { server } = input;
+  if (server.auth !== "token") {
+    throw new ConnectError(422, "connector does not take a key");
+  }
+  const credentials = tokenCredentials(server, input.credentials, options.connectors);
+  const schema = (options.connectors ?? installedConnectors()).forServer(server)?.manifest.settings_schema;
+  const settings = input.settings ?? {};
+  if (schema && Object.keys(settings).length) {
+    try {
+      validateSettings(schema, settings);
+    } catch (error) {
+      if (error instanceof SettingsError) {
+        throw new ConnectError(422, error.message);
+      }
+      throw error;
+    }
+  }
+  const complete = settingsComplete(schema, settings);
+  const onExisting = input.onExisting ?? "refuse";
+  const existing = await repo.getMcpConnectionForOwner(String(server.id), input.ownerScope, input.ownerId);
+  if (existing !== null && existing.status === "connected") {
+    if (onExisting === "refuse") {
+      throw new ConnectError(409, "already connected; disconnect first");
+    }
+    if (onExisting === "keep") {
+      return { connection: existing, outcome: "kept" };
+    }
+    if (sameCredentials(storedCredentials(existing, options.masterKey), credentials)) {
+      return { connection: existing, outcome: "current" };
+    }
+    if (typeof onExisting === "object" && existing.account_hint !== onExisting.replace_when_hint) {
+      return { connection: existing, outcome: "kept" };
+    }
+  }
+  let hint = "";
+  try {
+    hint = pool ? await pool.validate(server, credentials, settings) : "";
+  } catch (error) {
+    connectFailure(error, server);
+  }
+  const [ciphertext, nonce] = encryptPayload({ ...credentials }, options.masterKey);
+  const connection = await repo.connectMcp(
+    newId("conn"),
+    newId("bind"),
+    String(server.id),
+    input.ownerScope,
+    input.ownerId,
+    ciphertext,
+    nonce,
+    now,
+    { status: complete ? "connected" : "pending", accountHint: input.accountHint ?? hint, settings },
+  );
+  if (pool === null || !complete) {
+    return { connection, outcome: "installed" };
+  }
+  try {
+    await pool.syncTools(repo, connection, server, { force: true, validate: false });
+  } catch (error) {
+    if (error instanceof McpError && (error.status === 401 || error.status === 403)) {
+      if (existing === null) {
+        await repo.deleteMcpConnection(String(connection.id));
+      } else {
+        await markDisconnected(repo, connection);
+      }
+      pool.forget(String(connection.id));
+      throw new ConnectError(422, "api key was rejected");
+    }
+  }
+  return { connection, outcome: "installed" };
+}

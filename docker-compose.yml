@@ -1,0 +1,130 @@
+# The core stack: PostgreSQL, OpenSandbox, and the orchestrator serving the operator app on
+# http://127.0.0.1:8080. ./setup.sh writes the secrets and the state path it needs into .env and
+# builds the three images no registry publishes; then `docker compose up --detach` starts it. Only
+# the orchestrator is published, and only on loopback.
+name: guilds
+
+configs:
+  opensandbox-config:
+    content: |
+      [server]
+      host = "0.0.0.0"
+      port = 8080
+
+      [proxy]
+      resolve_internal = false
+
+      [runtime]
+      type = "docker"
+      execd_image = "opensandbox/execd:v1.1.0"
+
+      [storage]
+      allowed_host_paths = ["${STATE_ROOT}/workspaces"]
+
+      [store]
+      type = "sqlite"
+      path = "/var/lib/opensandbox/opensandbox.db"
+
+      [docker]
+      network_mode = "bridge"
+      host_ip = "host.docker.internal"
+      drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG"]
+      no_new_privileges = true
+      pids_limit = 4096
+
+      [ingress]
+      mode = "direct"
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: agent_platform
+      POSTGRES_USER: agent_platform
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?run ./setup.sh first, which writes it into .env}"
+    volumes:
+      # An absolute path on the Docker host: OpenSandbox mounts each workspace by that same path.
+      - "${STATE_ROOT:?run ./setup.sh first, which writes it into .env}/postgres:/var/lib/postgresql/data"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_platform -d agent_platform"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  opensandbox:
+    image: guilds-opensandbox-server:473ff611
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${STATE_ROOT}/workspaces:${STATE_ROOT}/workspaces
+      - ${STATE_ROOT}/opensandbox:/var/lib/opensandbox
+    configs:
+      - source: opensandbox-config
+        target: /etc/opensandbox/config.toml
+    environment:
+      OPENSANDBOX_SERVER_API_KEY: "${OPENSANDBOX_API_KEY:?run ./setup.sh first, which writes it into .env}"
+      SANDBOX_CONFIG_PATH: /etc/opensandbox/config.toml
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  orchestrator:
+    image: ${ORCHESTRATOR_IMAGE:-guilds-orchestrator:local}
+    build:
+      context: .
+      dockerfile: apps/orchestrator/Dockerfile
+    stop_grace_period: 20s
+    ports:
+      - "127.0.0.1:${ORCHESTRATOR_PORT:-8080}:8080"
+    volumes:
+      - ${STATE_ROOT}/notes:${STATE_ROOT}/notes
+      - ${STATE_ROOT}/workspaces:${STATE_ROOT}/workspaces
+      - ${STATE_ROOT}/attachments:${STATE_ROOT}/attachments
+      - ${STATE_ROOT}/connectors:${STATE_ROOT}/connectors
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://agent_platform:${POSTGRES_PASSWORD}@postgres:5432/agent_platform
+      OPENSANDBOX_URL: http://opensandbox:8080
+      OPENSANDBOX_API_KEY: ${OPENSANDBOX_API_KEY}
+      NOTES_ROOT: ${STATE_ROOT}/notes
+      WORKSPACE_ROOT: ${STATE_ROOT}/workspaces
+      ATTACHMENTS_ROOT: ${STATE_ROOT}/attachments
+      CONNECTORS_ROOT: ${STATE_ROOT}/connectors
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-agent-runtime:0.3}
+      SANDBOX_IMAGE_LITE: ${SANDBOX_IMAGE_LITE:-agent-runtime-lite:0.1}
+      TOOL_RESULT_MAX_BYTES: 65536
+      SECRETS_MASTER_KEY: "${SECRETS_MASTER_KEY:?run ./setup.sh first, which writes it into .env}"
+      AUTH_MODE: ${AUTH_MODE:-compat-cookie}
+      HOST: 0.0.0.0
+      PORT: "8080"
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensandbox:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    restart: unless-stopped

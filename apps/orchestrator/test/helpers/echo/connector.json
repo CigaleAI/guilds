@@ -1,0 +1,18 @@
+{
+  "slug": "echo",
+  "display_name": "Echo",
+  "auth": { "kind": "none" },
+  "description": "Says back what it is sent.",
+  "tools": [
+    {
+      "name": "say",
+      "description": "Returns the text.",
+      "input_schema": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] }
+    },
+    {
+      "name": "refuse",
+      "description": "Always fails.",
+      "input_schema": { "type": "object", "properties": {} }
+    }
+  ]
+}

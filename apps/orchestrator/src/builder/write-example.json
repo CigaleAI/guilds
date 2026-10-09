@@ -1,0 +1,215 @@
+{
+  "format": "guilds.recipe",
+  "version": 2,
+  "meta": {
+    "name": "Example desk",
+    "description": "Shape example only. Not this session's document.",
+    "created_at": "2026-01-01T00:00:00.000Z",
+    "source": { "kind": "builder", "session_id": "bld_example" }
+  },
+  "guild": {
+    "name_suggestion": "example-desk",
+    "about": "Two specialists that hand off through a queue table.",
+    "objective": "Scout candidates and archive them.",
+    "group_agent_message_limit": 20
+  },
+  "roles": [
+    {
+      "role": "scout",
+      "name_suggestion": "scout",
+      "focus": "Find new candidates and write them to the queue.",
+      "config": { "browser": false },
+      "task": {
+        "body": "Start of work: read Memory, then the playbook.md note. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nBefore queueing a candidate, check seen-set with record_list where key is the candidate name in lower case. Add each new candidate to scout-queue with record_add (name, source_url, status new), then record_add its key and source to seen-set. The runtime assigns ids; never send one. Do not archive. End a useful wake with memory_write.",
+        "embeds": ["guild/field-map.md"]
+      },
+      "scripts": [],
+      "schedules": [
+        {
+          "key": "scout-sweep",
+          "cron": "10 * * * *",
+          "description": "Hourly sweep",
+          "instruction": "Sweep for new candidates. Skip keys already in seen-set (record_list where key); add the rest to scout-queue with status new."
+        }
+      ],
+      "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
+      "native_tools": { "note_find": true, "note_get": true, "note_write": true, "record_list": true, "record_add": true },
+      "browser": { "required": false, "instructions": "" }
+    },
+    {
+      "role": "archivist",
+      "name_suggestion": "archivist",
+      "focus": "Read the queue and write the durable record.",
+      "config": { "browser": false },
+      "task": {
+        "body": "Start of work: read Memory, then the notion-map.md note. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nFind scout-queue records with record_list where status new and archive each one, then record_update that record by id with status archived, or rejected with a reason. Do not scout. End a useful wake with memory_write.",
+        "embeds": ["guild/field-map.md"]
+      },
+      "scripts": [],
+      "schedules": [
+        {
+          "key": "archive-drain",
+          "cron": "25 * * * *",
+          "description": "Hourly drain, offset from scout",
+          "instruction": "Archive scout-queue records whose status is new; record_update each one to status archived when done."
+        }
+      ],
+      "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
+      "native_tools": { "note_find": true, "note_get": true, "note_write": true, "record_list": true, "record_update": true },
+      "browser": { "required": false, "instructions": "" }
+    }
+  ],
+  "collections": [
+    {
+      "name": "scout-queue",
+      "purpose": "One record per candidate: the scout adds it, the archivist drains it and sets the outcome.",
+      "columns": [
+        { "name": "name", "type": "text", "description": "Candidate name as found", "required": true },
+        { "name": "source_url", "type": "text", "description": "Where the scout found it", "required": true },
+        {
+          "name": "status",
+          "type": "text",
+          "description": "new when the scout adds it; the archivist sets archived or rejected",
+          "required": true,
+          "values": ["new", "archived", "rejected"]
+        },
+        { "name": "reason", "type": "text", "description": "Why the archivist rejected it" }
+      ],
+      "scope": "guild"
+    },
+    {
+      "name": "seen-set",
+      "purpose": "One record per candidate key the scout has already queued, so a sweep never re-queues it.",
+      "columns": [
+        { "name": "key", "type": "text", "description": "Candidate name, lower-case", "required": true, "unique": true },
+        { "name": "source", "type": "text", "description": "Where the candidate was first seen", "required": true },
+        { "name": "first_seen", "type": "datetime", "description": "When the sweep that recorded it ran" }
+      ],
+      "scope": "org",
+      "guild": "read",
+      "writers": ["scout"]
+    }
+  ],
+  "notes": [
+    {
+      "id": "field-map",
+      "level": "guild",
+      "key": "field-map.md",
+      "body": "Canonical fields and who writes them. Edit this file once; Tasks embed it.",
+      "kind": "seed"
+    },
+    {
+      "id": "playbook",
+      "level": "agent",
+      "role": "scout",
+      "key": "playbook.md",
+      "body": "What a real candidate looks like versus noise.",
+      "kind": "seed"
+    },
+    {
+      "id": "notion-map",
+      "level": "agent",
+      "role": "archivist",
+      "key": "notion-map.md",
+      "body": "Which Notion database each queue column lands in.",
+      "kind": "seed"
+    }
+  ],
+  "connections": [
+    {
+      "server": "tavily",
+      "auth": "token",
+      "recommended_scope": "org",
+      "hint": "Live web results for the scout.",
+      "setup": "Nothing to connect while the platform's web search is on; otherwise add a Tavily API key on the organisation.",
+      "roles": {
+        "scout": { "enabled": true, "tools": { "tavily_search": true } }
+      }
+    },
+    {
+      "server": "notion",
+      "auth": "oauth",
+      "recommended_scope": "org",
+      "hint": "Archive workspace.",
+      "setup": "Connect Notion on the organisation and confirm the destination database. Queues stay in local collections.",
+      "resources": [
+        {
+          "kind": "database",
+          "id": "archive-db",
+          "title": "Archive",
+          "use": "Long-lived archived candidates. Not the scout queue."
+        }
+      ],
+      "roles": {
+        "archivist": { "enabled": true, "tools": {} }
+      }
+    }
+  ],
+  "secrets": [],
+  "external": [],
+  "design": {
+    "systems": [
+      {
+        "name": "web-search",
+        "resolution": "catalog",
+        "server": "tavily",
+        "reason": "Scouting needs live web results; the web search connector serves them.",
+        "proposed_by": "builder",
+        "accepted": true
+      },
+      {
+        "name": "notion",
+        "resolution": "catalog",
+        "server": "notion",
+        "reason": "Durable archive the operator already owns.",
+        "proposed_by": "builder",
+        "accepted": false
+      }
+    ],
+    "specialization": [
+      {
+        "role": "scout",
+        "reason": "narrower_context",
+        "detail": "Owns the watchlist playbook.",
+        "proposed_by": "builder",
+        "accepted": false
+      },
+      {
+        "role": "archivist",
+        "reason": "narrower_tools",
+        "detail": "Owns Notion write and the archive map.",
+        "proposed_by": "builder",
+        "accepted": false
+      }
+    ],
+    "routines": [
+      {
+        "key": "scout-sweep",
+        "role": "scout",
+        "cadence": "hourly",
+        "dedupe_collection": "seen-set",
+        "proposed_by": "builder",
+        "accepted": false
+      },
+      {
+        "key": "archive-drain",
+        "role": "archivist",
+        "cadence": "hourly, offset",
+        "dedupe_collection": "scout-queue",
+        "proposed_by": "builder",
+        "accepted": false
+      }
+    ],
+    "handoffs": [
+      {
+        "from": "scout",
+        "to": "archivist",
+        "kind": "collection",
+        "collection": "scout-queue",
+        "proposed_by": "builder",
+        "accepted": false
+      }
+    ],
+    "browser": []
+  }
+}

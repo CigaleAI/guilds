@@ -1,0 +1,1495 @@
+#!/usr/bin/env python3
+"""The code tools inside an agent sandbox.
+
+Usage: guilds-code <base64 JSON request> | guilds-code @<request file>
+
+The orchestrator runs this once per tool call. A request names an `op` plus its
+arguments; a large request arrives as a file under /run/guilds/requests, which
+this helper reads and deletes. The helper prints one base64 JSON envelope:
+{"ok": true, "text": ..., "meta": {...}} or {"ok": false, "error": ...}. `text`
+is already shaped to `max_bytes`; `meta` becomes tool-call metadata.
+"""
+from __future__ import annotations
+
+import base64
+import difflib
+import hashlib
+import json
+import os
+import re
+import shlex
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.parse
+from pathlib import Path
+from typing import Any
+
+HOME = Path(os.environ.get("GUILDS_AGENT_HOME", "/home/agent"))
+RUN_DIR = Path(os.environ.get("GUILDS_RUN_DIR", "/run/guilds"))
+RUNS = HOME / ".runs"
+REPOS = HOME / "repos"
+GRAPHS = HOME / ".cache" / "graft"
+BACKGROUND = RUN_DIR / "background"
+KEEP_RUNS = 20
+DEFAULT_MAX_BYTES = 8192
+SHELL_HEAD_BYTES = 2048
+SHELL_DEFAULT_TIMEOUT = 120
+SHELL_MAX_TIMEOUT = 600
+READ_DEFAULT_LINES = 200
+READ_MAX_LINES = 500
+READ_LINE_CHARS = 400
+STATUS_TAIL_LINES = 40
+BINARY_PROBE = 8000
+DIFF_MAX_CELLS = 50_000_000
+SEARCH_TIMEOUT = 60
+SEARCH_LINE_CHARS = 300
+SEARCH_FILES_LIMIT = 30
+SEARCH_CONTENT_LIMIT = 40
+SEARCH_PER_FILE = 10
+SYMBOLS_LIMIT = 20
+SYMBOLS_HITS = 5
+MATCH_LIMIT = 30
+MATCH_MAX = 100
+GRAFT_TIMEOUT = 300
+GRAFT_BUILD_TIMEOUT = 600
+MAP_DIRS = 16
+MAP_HOTSPOTS = 10
+FIND_LIMIT = 8
+FIND_MAX = 20
+FIND_EXCERPT_LINES = 8
+CALLERS_MAX_DEPTH = 3
+GIT_TIMEOUT = 60
+CHECKPOINT_TIMEOUT = 120
+CLONE_TIMEOUT = 600
+ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]")
+CHILD_ENV = {
+    "PAGER": "cat",
+    "GIT_PAGER": "cat",
+    "GIT_TERMINAL_PROMPT": "0",
+    "NO_COLOR": "1",
+    "TERM": "dumb",
+    "DEBIAN_FRONTEND": "noninteractive",
+}
+
+
+class ToolError(Exception):
+    pass
+
+
+# --- request and envelope -------------------------------------------------
+
+
+def _request() -> dict[str, Any]:
+    if len(sys.argv) != 2:
+        raise ToolError("usage: guilds-code <base64-json> | guilds-code @<file>")
+    arg = sys.argv[1]
+    if arg.startswith("@"):
+        path = Path(arg[1:])
+        try:
+            raw = path.read_bytes()
+        finally:
+            path.unlink(missing_ok=True)
+        loaded = json.loads(raw)
+    else:
+        loaded = json.loads(base64.b64decode(arg))
+    if not isinstance(loaded, dict):
+        raise ToolError("request must be an object")
+    return loaded
+
+
+def _emit(envelope: dict[str, Any]) -> None:
+    body = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+    sys.stdout.write(base64.b64encode(body).decode("ascii"))
+    sys.stdout.flush()
+
+
+def _max_bytes(spec: dict[str, Any]) -> int:
+    value = spec.get("max_bytes")
+    if isinstance(value, int) and value >= 1024:
+        return value
+    return DEFAULT_MAX_BYTES
+
+
+def _int(spec: dict[str, Any], name: str, default: int, low: int, high: int) -> int:
+    value = spec.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            value = int(value.strip())
+        else:
+            value = default
+    return max(low, min(high, int(value)))
+
+
+def _text_arg(spec: dict[str, Any], name: str, required: bool = True) -> str:
+    value = spec.get(name)
+    if value is None or value == "":
+        if required:
+            raise ToolError(f"{name} is required")
+        return ""
+    if not isinstance(value, str):
+        raise ToolError(f"{name} must be a string")
+    return value
+
+
+# --- runs, working directory, paths ----------------------------------------
+
+
+def _safe_segment(value: Any, name: str) -> str:
+    text = str(value or "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", text) or text in {".", ".."}:
+        raise ToolError(f"{name} is invalid")
+    return text
+
+
+def _run_dir(spec: dict[str, Any]) -> Path:
+    run_id = _safe_segment(spec.get("run_id"), "run_id")
+    folder = RUNS / run_id
+    if not folder.is_dir():
+        folder.mkdir(parents=True, exist_ok=True)
+        _prune_runs(folder)
+    return folder
+
+
+def _prune_runs(current: Path) -> None:
+    entries = []
+    for entry in RUNS.iterdir():
+        if entry.is_symlink() or not entry.is_dir():
+            continue
+        entries.append((entry.stat().st_mtime, entry))
+    entries.sort(key=lambda item: item[0], reverse=True)
+    for _, entry in entries[KEEP_RUNS:]:
+        if entry != current:
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def _default_cwd(spec: dict[str, Any]) -> Path:
+    """Where a run's working directory starts: `default_cwd` inside the workspace, else its root."""
+    raw = spec.get("default_cwd")
+    if isinstance(raw, str) and raw and not raw.startswith("/"):
+        candidate = HOME / raw
+        if candidate.is_dir() and _within_home(Path(os.path.realpath(candidate))):
+            return candidate
+    return HOME
+
+
+def _cwd(spec: dict[str, Any]) -> Path:
+    stored = _run_dir(spec) / "cwd"
+    try:
+        text = stored.read_text(encoding="utf-8").strip()
+    except OSError:
+        text = ""
+    if text and Path(text).is_dir():
+        return Path(text)
+    return _default_cwd(spec)
+
+
+def _within_home(path: Path) -> bool:
+    home = Path(os.path.realpath(HOME))
+    return path == home or home in path.parents
+
+
+def _resolve(spec: dict[str, Any], raw: str) -> Path:
+    if not raw:
+        raise ToolError("path is required")
+    if raw == "~" or raw.startswith("~/"):
+        candidate = HOME / raw[2:]
+    else:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = _cwd(spec) / candidate
+    real = Path(os.path.realpath(candidate))
+    if not _within_home(real):
+        raise ToolError(f"{raw} is outside {HOME}")
+    return real
+
+
+def _shown(spec: dict[str, Any], path: Path) -> str:
+    cwd = Path(os.path.realpath(_cwd(spec)))
+    try:
+        relative = path.relative_to(cwd)
+    except ValueError:
+        return str(path)
+    text = str(relative)
+    return text if text != "." else str(path)
+
+
+# --- text shaping -----------------------------------------------------------
+
+
+def _clean(text: str) -> str:
+    text = ANSI.sub("", text)
+    if "\r" not in text:
+        return text
+    lines = []
+    for line in text.split("\n"):
+        if "\r" in line:
+            parts = [part for part in line.split("\r") if part]
+            line = parts[-1] if parts else ""
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _cut_head(data: bytes, size: int) -> str:
+    return data[:size].decode("utf-8", errors="ignore")
+
+
+def _cut_tail(data: bytes, size: int) -> str:
+    return data[-size:].decode("utf-8", errors="ignore") if size > 0 else ""
+
+
+def _cap(text: str, max_bytes: int) -> str:
+    data = text.encode("utf-8")
+    if len(data) <= max_bytes:
+        return text
+    marker = "\n[truncated]"
+    return _cut_head(data, max_bytes - len(marker.encode("utf-8"))) + marker
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _lines(text: str) -> list[str]:
+    if not text:
+        return []
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _line_delta(before: str, after: str) -> tuple[int, int]:
+    old, new = _lines(before), _lines(after)
+    if len(old) * len(new) > DIFF_MAX_CELLS:
+        return len(new), len(old)
+    added = removed = 0
+    matcher = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return added, removed
+
+
+# --- shell ------------------------------------------------------------------
+
+
+def _die_with_parent() -> None:
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)
+    except Exception:
+        pass
+
+
+def _child_env(spec: dict[str, Any], cwd: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    env.pop("GUILDS_AGENT_HOME", None)
+    env.pop("GUILDS_RUN_DIR", None)
+    env.update(CHILD_ENV)
+    for key, name in (("run_id", "GUILD_RUN_ID"), ("agent_id", "GUILD_AGENT_ID")):
+        value = spec.get(key)
+        if isinstance(value, str) and value:
+            env[name] = value
+    token = _repository_token(cwd)
+    if token:
+        env["GH_TOKEN"] = token
+    return env
+
+
+def _repository_token(cwd: Path) -> str:
+    """The token of the guild repository that holds `cwd`, for `gh`."""
+    try:
+        tokens = json.loads((RUN_DIR / "git-tokens.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    repos = tokens.get("repositories") if isinstance(tokens, dict) else None
+    if not isinstance(repos, dict):
+        return ""
+    real = Path(os.path.realpath(cwd))
+    for name, entry in repos.items():
+        root = Path(os.path.realpath(HOME / "repos" / str(name)))
+        if (real == root or root in real.parents) and isinstance(entry, dict):
+            token = entry.get("token")
+            return token if isinstance(token, str) else ""
+    return ""
+
+
+def _group_alive(pgid: int, child: subprocess.Popen[bytes] | None) -> bool:
+    if child is not None:
+        child.poll()
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
+def _stop_group(pgid: int, grace: float = 2.0, child: subprocess.Popen[bytes] | None = None) -> None:
+    """SIGTERM the process group, then SIGKILL whatever is left after `grace` seconds."""
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 1.0)):
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            if not _group_alive(pgid, child):
+                return
+            time.sleep(0.05)
+
+
+def _shape_output(log: Path, budget: int) -> tuple[str, bool]:
+    """The whole output when it fits `budget`, else its start and its end around a marker."""
+    size = log.stat().st_size
+    if size <= budget:
+        return _clean(log.read_bytes().decode("utf-8", errors="replace")), False
+    budget -= 160
+    head_size = min(SHELL_HEAD_BYTES, budget // 4)
+    tail_size = budget - head_size
+    with log.open("rb") as handle:
+        head = handle.read(head_size)
+        handle.seek(max(0, size - tail_size))
+        tail = handle.read(tail_size)
+    elided = size - len(head) - len(tail)
+    middle = f"\n[… {elided} bytes elided; full output: {log} …]\n"
+    return _clean(_cut_head(head, head_size)) + middle + _clean(_cut_tail(tail, tail_size)), True
+
+
+def op_shell(spec: dict[str, Any]) -> dict[str, Any]:
+    command = _text_arg(spec, "command")
+    call_id = _safe_segment(spec.get("call_id"), "call_id")
+    timeout = _int(spec, "timeout_seconds", SHELL_DEFAULT_TIMEOUT, 1, SHELL_MAX_TIMEOUT)
+    run_dir = _run_dir(spec)
+    cwd = _cwd(spec)
+    env = _child_env(spec, cwd)
+    log = run_dir / f"{call_id}.log"
+    if spec.get("background") is True:
+        return _start_background(spec, command, cwd, env, log)
+    cwd_file = run_dir / "cwd"
+    env["GUILDS_CWD_FILE"] = str(cwd_file)
+    script = "trap 'printf \"%s\" \"$PWD\" > \"$GUILDS_CWD_FILE\"' EXIT\n" + command
+    with log.open("wb") as out:
+        child = subprocess.Popen(
+            ["bash", "-c", script],
+            cwd=str(cwd),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            preexec_fn=_die_with_parent,
+        )
+
+        def forward(signum: int, _frame: Any) -> None:
+            _stop_group(child.pid, 0.5, child)
+            raise SystemExit(128 + signum)
+
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(sig, forward)
+        timed_out = False
+        try:
+            code = child.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _stop_group(child.pid, 2.0, child)
+            code = child.wait()
+    if timed_out:
+        code = 124
+    text, elided = _shape_output(log, _max_bytes(spec) - 120)
+    if not elided:
+        log.unlink(missing_ok=True)
+    lines = [text.rstrip("\n")] if text.strip() else []
+    if timed_out:
+        lines.append(f"[timed out after {timeout}s; the command was stopped]")
+    if code != 0:
+        lines.append(f"exit_code: {code}")
+    meta: dict[str, Any] = {"exit_code": code, "cwd": str(_cwd(spec))}
+    if elided:
+        meta["log_path"] = str(log)
+    if timed_out:
+        meta["timed_out"] = True
+    return {"text": "\n".join(lines) if lines else "(no output)", "meta": meta}
+
+
+def _background_id() -> str:
+    BACKGROUND.mkdir(parents=True, exist_ok=True)
+    number = 1
+    while True:
+        marker = BACKGROUND / f"b{number}.json"
+        try:
+            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            number += 1
+            continue
+        os.close(fd)
+        return f"b{number}"
+
+
+def _start_background(
+    spec: dict[str, Any], command: str, cwd: Path, env: dict[str, str], log: Path
+) -> dict[str, Any]:
+    ident = _background_id()
+    exit_file = BACKGROUND / f"{ident}.exit"
+    env["GUILDS_EXIT_FILE"] = str(exit_file)
+    script = "trap 'echo $? > \"$GUILDS_EXIT_FILE\"' EXIT\n" + command
+    with log.open("wb") as out:
+        child = subprocess.Popen(
+            ["bash", "-c", script],
+            cwd=str(cwd),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    record = {
+        "id": ident,
+        "pid": child.pid,
+        "command": command,
+        "cwd": str(cwd),
+        "log_path": str(log),
+        "run_id": spec.get("run_id"),
+        "started_at": time.time(),
+    }
+    (BACKGROUND / f"{ident}.json").write_text(json.dumps(record), encoding="utf-8")
+    text = (
+        f"started {ident} in the background (pid {child.pid})\n"
+        f"log: {log}\n"
+        f"check it with shell_status id {ident}"
+    )
+    return {"text": text, "meta": {"background_id": ident, "log_path": str(log)}}
+
+
+def _background_records() -> list[dict[str, Any]]:
+    if not BACKGROUND.is_dir():
+        return []
+    records = []
+    for path in BACKGROUND.glob("b*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(record, dict) and "pid" in record:
+            records.append(record)
+    records.sort(key=lambda item: int(str(item["id"])[1:]))
+    return records
+
+
+def _pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    stat = Path(f"/proc/{pid}/stat")
+    try:
+        fields = stat.read_text().rsplit(")", 1)[1].split()
+        return fields[0] != "Z"
+    except (OSError, IndexError):
+        return True
+
+
+def _state(record: dict[str, Any]) -> tuple[str, int | None]:
+    if (BACKGROUND / f"{record['id']}.stopped").exists():
+        return ("stopped" if not _pid_running(int(record["pid"])) else "stopping"), None
+    exit_file = BACKGROUND / f"{record['id']}.exit"
+    try:
+        return "exited", int(exit_file.read_text().strip())
+    except (OSError, ValueError):
+        pass
+    if _pid_running(int(record["pid"])):
+        return "running", None
+    return "ended", None
+
+
+def _elapsed(record: dict[str, Any]) -> str:
+    """How long the command ran: until its exit file was written, or until now."""
+    try:
+        end = (BACKGROUND / f"{record['id']}.exit").stat().st_mtime
+    except OSError:
+        end = time.time()
+    seconds = max(0, int(end - float(record.get("started_at") or end)))
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m{seconds:02d}s"
+
+
+def _tail_lines(path: Path, count: int, max_bytes: int) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return ""
+    with path.open("rb") as handle:
+        handle.seek(max(0, size - max_bytes))
+        data = handle.read()
+    text = _clean(data.decode("utf-8", errors="replace"))
+    lines = text.splitlines()[-count:]
+    return "\n".join(lines)
+
+
+def op_shell_status(spec: dict[str, Any]) -> dict[str, Any]:
+    ident = spec.get("id")
+    records = _background_records()
+    if not ident:
+        if not records:
+            return {"text": "no background commands", "meta": {}}
+        rows = []
+        for record in records:
+            state, code = _state(record)
+            label = f"exited {code}" if state == "exited" else state
+            command = str(record.get("command", "")).splitlines()[0][:120]
+            rows.append(f"{record['id']}  {label}  {_elapsed(record)}  {command}")
+        return {"text": "\n".join(rows), "meta": {}}
+    record = next((item for item in records if item.get("id") == ident), None)
+    if record is None:
+        raise ToolError(f"no background command {ident}")
+    state, code = _state(record)
+    if spec.get("stop") is True and state == "running":
+        (BACKGROUND / f"{ident}.stopped").touch()
+        _stop_group(int(record["pid"]), 5.0)
+        state, code = _state(record)
+    max_bytes = _max_bytes(spec)
+    label = f"exited {code}" if state == "exited" else state
+    header = f"{ident}  {label}  {_elapsed(record)}\nlog: {record['log_path']}"
+    tail = _tail_lines(Path(record["log_path"]), STATUS_TAIL_LINES, max_bytes - len(header) - 64)
+    text = header + ("\n\n" + tail if tail else "\n\n(no output yet)")
+    meta: dict[str, Any] = {"background_id": ident, "state": state, "log_path": record["log_path"]}
+    if code is not None:
+        meta["exit_code"] = code
+    return {"text": _cap(text, max_bytes), "meta": meta}
+
+
+# --- files ------------------------------------------------------------------
+
+
+def _read_check(path: Path) -> None:
+    if not path.exists():
+        raise ToolError(f"{path} does not exist")
+    if path.is_dir():
+        raise ToolError(f"{path} is a directory")
+    if not path.is_file():
+        raise ToolError(f"{path} is not a regular file")
+
+
+def _read_bytes(path: Path) -> bytes:
+    _read_check(path)
+    return path.read_bytes()
+
+
+def _text_of(path: Path, data: bytes) -> str:
+    if b"\x00" in data[:BINARY_PROBE]:
+        raise ToolError(f"{path} is a binary file ({len(data)} bytes)")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ToolError(f"{path} is not UTF-8 text") from exc
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    mode = None
+    if path.exists():
+        mode = path.stat().st_mode & 0o7777
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+        if mode is not None:
+            os.chmod(temp, mode)
+        os.replace(temp, path)
+    except BaseException:
+        Path(temp).unlink(missing_ok=True)
+        raise
+
+
+def _numbered(number: int, width: int, raw: bytes) -> str:
+    line = raw.rstrip(b"\n").rstrip(b"\r").decode("utf-8", errors="replace")
+    if len(line) > READ_LINE_CHARS:
+        line = f"{line[:READ_LINE_CHARS]}… [+{len(line) - READ_LINE_CHARS} chars]"
+    return f"{number:>{width}}  {line}"
+
+
+def op_file_read(spec: dict[str, Any]) -> dict[str, Any]:
+    raw = _text_arg(spec, "path")
+    path = _resolve(spec, raw)
+    _read_check(path)
+    shown = _shown(spec, path)
+    start = _int(spec, "offset", 1, 1, 2**31)
+    limit = _int(spec, "limit", READ_DEFAULT_LINES, 1, READ_MAX_LINES)
+    last = start + limit - 1
+    digest = hashlib.sha256()
+    selected: list[bytes] = []
+    total = 0
+    with path.open("rb") as handle:
+        probe = handle.read(BINARY_PROBE)
+        binary = b"\x00" in probe
+        handle.seek(0)
+        if binary:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        else:
+            for line in handle:
+                digest.update(line)
+                total += 1
+                if start <= total <= last:
+                    selected.append(line)
+    meta: dict[str, Any] = {"path": str(path), "range": None, "content_hash": digest.hexdigest()}
+    if binary:
+        size = path.stat().st_size
+        return {"text": f"{shown} · binary file, {size} bytes; not shown", "meta": meta}
+    meta["lines"] = total
+    if total == 0:
+        return {"text": f"{shown} · empty file", "meta": meta}
+    if start > total:
+        return {"text": f"{shown} · {total} lines; offset {start} is past the end", "meta": meta}
+    width = len(str(min(total, last)))
+    budget = _max_bytes(spec) - 160
+    body: list[str] = []
+    used = 0
+    end = start - 1
+    for index, line in enumerate(selected):
+        row = _numbered(start + index, width, line)
+        size = len(row.encode("utf-8")) + 1
+        if body and used + size > budget:
+            break
+        body.append(row)
+        used += size
+        end = start + index
+    footer = ""
+    if end < min(total, last):
+        footer = (
+            f"\n[stopped at line {end} to stay under {_max_bytes(spec)} bytes; "
+            f"continue with offset {end + 1}]"
+        )
+    meta["range"] = [start, end]
+    header = f"{shown} · lines {start}–{end} of {total}"
+    return {"text": header + "\n" + "\n".join(body) + footer, "meta": meta}
+
+
+def op_file_edit(spec: dict[str, Any]) -> dict[str, Any]:
+    raw = _text_arg(spec, "path")
+    old = _text_arg(spec, "old_string")
+    new = spec.get("new_string", "")
+    if not isinstance(new, str):
+        raise ToolError("new_string must be a string")
+    if old == new:
+        raise ToolError("old_string and new_string are the same")
+    path = _resolve(spec, raw)
+    text = _text_of(path, _read_bytes(path))
+    count = text.count(old)
+    shown = _shown(spec, path)
+    if count == 0:
+        raise ToolError(f"old_string not found in {shown}; nothing changed")
+    replace_all = spec.get("replace_all") is True
+    if count > 1 and not replace_all:
+        raise ToolError(
+            f"old_string occurs {count} times in {shown}; add surrounding lines to make it "
+            "unique or set replace_all; nothing changed"
+        )
+    updated = text.replace(old, new) if replace_all else text.replace(old, new, 1)
+    _write_atomic(path, updated)
+    added, removed = _line_delta(old, new)
+    added *= count if replace_all else 1
+    removed *= count if replace_all else 1
+    suffix = f", {count} places" if replace_all and count > 1 else ""
+    return {
+        "text": f"edited {shown} (+{added} −{removed}{suffix})",
+        "meta": {
+            "path": str(path),
+            "lines_added": added,
+            "lines_removed": removed,
+            "content_hash": _sha256(updated.encode("utf-8")),
+        },
+    }
+
+
+def op_file_write(spec: dict[str, Any]) -> dict[str, Any]:
+    raw = _text_arg(spec, "path")
+    content = spec.get("content", "")
+    if not isinstance(content, str):
+        raise ToolError("content must be a string")
+    path = _resolve(spec, raw)
+    if path.is_dir():
+        raise ToolError(f"{path} is a directory")
+    before = ""
+    if path.exists():
+        if not path.is_file():
+            raise ToolError(f"{path} is not a regular file")
+        data = path.read_bytes()
+        before = "" if b"\x00" in data[:BINARY_PROBE] else data.decode("utf-8", errors="replace")
+    _write_atomic(path, content)
+    added, removed = _line_delta(before, content)
+    count = len(_lines(content))
+    return {
+        "text": f"wrote {_shown(spec, path)} ({count} lines)",
+        "meta": {
+            "path": str(path),
+            "lines_added": added,
+            "lines_removed": removed,
+            "content_hash": _sha256(content.encode("utf-8")),
+        },
+    }
+
+
+# --- code search --------------------------------------------------------------
+
+
+def _target(spec: dict[str, Any]) -> Path:
+    raw = spec.get("path")
+    if raw is None or raw == "":
+        return Path(os.path.realpath(_cwd(spec)))
+    if not isinstance(raw, str):
+        raise ToolError("path must be a string")
+    return _resolve(spec, raw)
+
+
+def _rel(spec: dict[str, Any], path: Path) -> str:
+    """A path as the model should pass it back: relative to the working directory."""
+    cwd = Path(os.path.realpath(_cwd(spec)))
+    relative = os.path.relpath(path, cwd)
+    return relative if not relative.startswith("../../..") else str(path)
+
+
+def _args_for(spec: dict[str, Any], target: Path) -> list[str]:
+    """The search root as an argument: none for the working directory itself, so results
+    carry plain relative paths."""
+    cwd = Path(os.path.realpath(_cwd(spec)))
+    relative = os.path.relpath(target, cwd)
+    return [] if relative == "." else [relative]
+
+
+def _clip(line: str, width: int = SEARCH_LINE_CHARS) -> str:
+    line = line.rstrip("\n").rstrip("\r")
+    if len(line) > width:
+        return f"{line[:width]}… [+{len(line) - width} chars]"
+    return line
+
+
+def _run_tool(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            argv,
+            cwd=str(cwd),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise ToolError(f"{argv[0]} is not installed in this sandbox") from exc
+
+
+def _fit(lines: list[str], footer: list[str], max_bytes: int) -> str:
+    """Joins lines under the byte budget, keeping every footer line."""
+    budget = max_bytes - sum(len(line.encode("utf-8")) + 1 for line in footer) - 64
+    kept: list[str] = []
+    used = 0
+    for line in lines:
+        size = len(line.encode("utf-8")) + 1
+        if kept and used + size > budget:
+            footer = [f"[{len(lines) - len(kept)} more lines past the size cap]"] + footer
+            break
+        kept.append(line)
+        used += size
+    return "\n".join(kept + footer)
+
+
+def _rg_base(spec: dict[str, Any]) -> list[str]:
+    argv = ["rg", "--no-messages", "--color=never"]
+    if spec.get("fixed") is True:
+        argv.append("--fixed-strings")
+    if spec.get("ignore_case") is True:
+        argv.append("--ignore-case")
+    glob = spec.get("glob")
+    if isinstance(glob, str) and glob:
+        argv += ["--glob", glob]
+    return argv
+
+
+def _search_files(spec: dict[str, Any], pattern: str, target: Path) -> dict[str, Any]:
+    cwd = Path(os.path.realpath(_cwd(spec)))
+    limit = _int(spec, "limit", SEARCH_FILES_LIMIT, 1, SEARCH_FILES_LIMIT)
+    argv = _rg_base(spec) + ["--count-matches", "--with-filename", "--", pattern, *_args_for(spec, target)]
+    done = _run_tool(argv, cwd, SEARCH_TIMEOUT)
+    if done.returncode not in (0, 1):
+        raise ToolError(done.stderr.strip() or f"rg failed with exit code {done.returncode}")
+    counts: list[tuple[str, int]] = []
+    for line in done.stdout.splitlines():
+        name, _, count = line.rpartition(":")
+        if name and count.isdigit():
+            counts.append((name, int(count)))
+    if not counts:
+        return {"text": f"no matches for {pattern!r} in {_rel(spec, target)}", "meta": {"matches": 0, "files": 0}}
+    counts.sort(key=lambda item: (-item[1], item[0]))
+    total = sum(count for _, count in counts)
+    lines = [f"{name}: {count}" for name, count in counts[:limit]]
+    footer = []
+    if len(counts) > limit:
+        footer.append(f"… {len(counts) - limit} more files")
+    footer.append(f"{total} matches in {len(counts)} files")
+    return {"text": _fit(lines, footer, _max_bytes(spec)), "meta": {"matches": total, "files": len(counts)}}
+
+
+def _rg_text(data: dict[str, Any]) -> str:
+    lines = data.get("lines") or {}
+    if "text" in lines:
+        return str(lines["text"])
+    raw = lines.get("bytes")
+    return base64.b64decode(raw).decode("utf-8", errors="replace") if raw else ""
+
+
+def _search_content(spec: dict[str, Any], pattern: str, target: Path) -> dict[str, Any]:
+    cwd = Path(os.path.realpath(_cwd(spec)))
+    limit = _int(spec, "limit", SEARCH_CONTENT_LIMIT, 1, SEARCH_CONTENT_LIMIT)
+    context = _int(spec, "context", 0, 0, 5)
+    argv = _rg_base(spec) + [
+        "--json",
+        "--max-count",
+        str(SEARCH_PER_FILE),
+        "--context",
+        str(context),
+        "--",
+        pattern,
+        *_args_for(spec, target),
+    ]
+    done = _run_tool(argv, cwd, SEARCH_TIMEOUT)
+    if done.returncode not in (0, 1):
+        raise ToolError(done.stderr.strip() or f"rg failed with exit code {done.returncode}")
+    lines: list[str] = []
+    matched = 0
+    files = 0
+    last: tuple[str, int] | None = None
+    for raw in done.stdout.splitlines():
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            continue
+        kind = event.get("type")
+        data = event.get("data") or {}
+        if kind == "begin":
+            files += 1
+            continue
+        if kind not in ("match", "context"):
+            continue
+        name = (data.get("path") or {}).get("text", "")
+        number = int(data.get("line_number") or 0)
+        if kind == "match":
+            matched += 1
+        if last is not None and context and (last[0] != name or number > last[1] + 1):
+            lines.append("--")
+        separator = ":" if kind == "match" else "-"
+        lines.append(f"{name}{separator}{number}{separator} {_clip(_rg_text(data))}")
+        last = (name, number)
+    if not matched:
+        return {"text": f"no matches for {pattern!r} in {_rel(spec, target)}", "meta": {"matches": 0, "files": 0}}
+    footer = []
+    shown = lines[:limit]
+    if len(lines) > limit:
+        footer.append(f"[{len(lines) - limit} more lines; narrow with path, glob, or a longer pattern]")
+    footer.append(f"{matched} matching lines in {files} files (at most {SEARCH_PER_FILE} per file)")
+    return {
+        "text": _fit(shown, footer, _max_bytes(spec)),
+        "meta": {"matches": matched, "files": files},
+    }
+
+
+def op_code_search(spec: dict[str, Any]) -> dict[str, Any]:
+    pattern = _text_arg(spec, "pattern")
+    mode = spec.get("mode") or "files"
+    target = _target(spec)
+    if not target.exists():
+        raise ToolError(f"{_rel(spec, target)} does not exist")
+    if mode == "files":
+        return _search_files(spec, pattern, target)
+    if mode == "content":
+        return _search_content(spec, pattern, target)
+    if mode == "symbols":
+        return _search_symbols(spec, pattern, target)
+    raise ToolError("mode must be files, content, or symbols")
+
+
+def op_code_match(spec: dict[str, Any]) -> dict[str, Any]:
+    pattern = _text_arg(spec, "pattern")
+    target = _target(spec)
+    if not target.exists():
+        raise ToolError(f"{_rel(spec, target)} does not exist")
+    cwd = Path(os.path.realpath(_cwd(spec)))
+    limit = _int(spec, "limit", MATCH_LIMIT, 1, MATCH_MAX)
+    argv = ["ast-grep", "run", "--pattern", pattern, "--json=stream"]
+    lang = spec.get("lang")
+    if isinstance(lang, str) and lang:
+        argv += ["--lang", lang]
+    argv += _args_for(spec, target)
+    done = _run_tool(argv, cwd, SEARCH_TIMEOUT)
+    matches = []
+    for raw in done.stdout.splitlines():
+        try:
+            item = json.loads(raw)
+        except ValueError:
+            continue
+        start = (item.get("range") or {}).get("start") or {}
+        first = str(item.get("lines") or item.get("text") or "").split("\n")[0]
+        matches.append(f"{item.get('file')}:{int(start.get('line') or 0) + 1}: {_clip(first.strip())}")
+    if not matches:
+        detail = done.stderr.strip()
+        if done.returncode not in (0, 1) and detail:
+            raise ToolError(detail.splitlines()[-1])
+        return {"text": f"no structural matches for {pattern!r} in {_rel(spec, target)}", "meta": {"matches": 0}}
+    footer = []
+    if len(matches) > limit:
+        footer.append(f"… {len(matches) - limit} more matches")
+    footer.append(f"{len(matches)} matches")
+    return {"text": _fit(matches[:limit], footer, _max_bytes(spec)), "meta": {"matches": len(matches)}}
+
+
+# --- code graph (Graft) --------------------------------------------------------
+
+
+def _repositories() -> list[str]:
+    if not REPOS.is_dir():
+        return []
+    return sorted(entry.name for entry in REPOS.iterdir() if entry.is_dir() and not entry.name.startswith("."))
+
+
+def _repo_holding(path: Path) -> tuple[str, Path] | None:
+    repos = Path(os.path.realpath(REPOS))
+    real = Path(os.path.realpath(path))
+    try:
+        relative = real.relative_to(repos)
+    except ValueError:
+        return None
+    if not relative.parts:
+        return None
+    name = relative.parts[0]
+    return name, repos / name
+
+
+def _repository(spec: dict[str, Any], name: Any = None, path: Path | None = None) -> tuple[str, Path]:
+    """The repository a graph call works on: named, holding `path`, holding the working
+    directory, or the only one under /home/agent/repos."""
+    if isinstance(name, str) and name:
+        root = REPOS / name
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", name) or not root.is_dir():
+            raise ToolError(_no_repository(f"no repository {name!r}"))
+        return name, Path(os.path.realpath(root))
+    for candidate in (path, _cwd(spec)):
+        if candidate is not None:
+            found = _repo_holding(candidate)
+            if found:
+                return found
+    names = _repositories()
+    if len(names) == 1:
+        return names[0], Path(os.path.realpath(REPOS / names[0]))
+    raise ToolError(_no_repository("name the repository"))
+
+
+def _no_repository(lead: str) -> str:
+    names = _repositories()
+    if not names:
+        return f"{lead}: there is no repository under {REPOS}; clone one there first"
+    return f"{lead}: repositories under {REPOS} are {', '.join(names)}"
+
+
+def _graft_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env.update({"DO_NOT_TRACK": "1", "GRAFT_NO_GITIGNORE": "1", "GRAFT_NO_IGNORE": "1"})
+    env.pop("GUILDS_AGENT_HOME", None)
+    env.pop("GUILDS_RUN_DIR", None)
+    return env
+
+
+def _graft(name: str, root: Path, args: list[str]) -> Any:
+    """Runs one Graft query as JSON, building the graph on the first call for a repository.
+    Graft refreshes the graph against the working tree before it answers."""
+    graph = GRAPHS / name
+    env = _graft_env()
+    if not (graph / ".graph").is_dir():
+        graph.parent.mkdir(parents=True, exist_ok=True)
+        built = _run_tool(["graft", "--dir", str(graph), "build", str(root)], root, GRAFT_BUILD_TIMEOUT, env)
+        if built.returncode != 0:
+            tail = (built.stderr or built.stdout).strip().splitlines()[-3:]
+            raise ToolError("building the code graph failed: " + " ".join(tail))
+    done = _run_tool(["graft", "--dir", str(graph), *args, "--json"], root, GRAFT_TIMEOUT, env)
+    if done.returncode != 0:
+        tail = (done.stderr or done.stdout).strip().splitlines()[-2:]
+        raise ToolError(" ".join(tail) or f"graft failed with exit code {done.returncode}")
+    try:
+        return json.loads(done.stdout)
+    except ValueError as exc:
+        raise ToolError("graft returned unreadable output") from exc
+
+
+def _graph_path(spec: dict[str, Any], root: Path, relative: str) -> str:
+    return _rel(spec, root / relative)
+
+
+def _span(value: Any) -> str:
+    match = re.fullmatch(r"L(\d+)-L(\d+)", str(value or ""))
+    if not match:
+        return ""
+    start, end = match.groups()
+    return start if start == end else f"{start}-{end}"
+
+
+def _scope(spec: dict[str, Any], name: str, root: Path, raw: Any) -> list[str]:
+    """`--in` for a path inside the repository; empty for the whole repository."""
+    if not isinstance(raw, str) or not raw:
+        return []
+    path = _resolve(spec, raw)
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise ToolError(f"{raw} is not inside repository {name}") from exc
+    text = str(relative)
+    if text in ("", "."):
+        return []
+    return ["--in", text + ("/" if path.is_dir() else "")]
+
+
+def op_code_map(spec: dict[str, Any]) -> dict[str, Any]:
+    name, root = _repository(spec, spec.get("repo"))
+    data = _graft(name, root, ["map", str(root), "--max-dirs", str(MAP_DIRS)])
+    totals = data.get("totals") or {}
+    languages = ", ".join(totals.get("languages") or []) or "no parsed languages"
+    lines = [
+        f"{name} ({_rel(spec, root)}): {totals.get('files', 0)} files · {totals.get('symbols', 0)} symbols"
+        f" · {totals.get('edges', 0)} edges · {languages}"
+    ]
+    for item in data.get("dirs") or []:
+        hubs = ", ".join(
+            f"{hub.get('name')} ({_graph_path(spec, root, str(hub.get('path')))}:{_span(hub.get('span')).split('-')[0]}, {hub.get('inDegree', 0)} refs)"
+            for hub in (item.get("hubs") or [])[:3]
+        )
+        label = str(item.get("path")) + ("" if item.get("isFile") else "/")
+        files = item.get("files", 0)
+        line = f"{label}  {files} file{'s' if files != 1 else ''} · {item.get('symbols', 0)} symbols"
+        lines.append(line + (f" · hubs: {hubs}" if hubs else ""))
+    if data.get("dropped"):
+        lines.append(f"… {data['dropped']} more directories")
+    hotspots = data.get("hotspots") or []
+    if hotspots:
+        lines.append("hotspots (most referenced):")
+        for spot in hotspots[:MAP_HOTSPOTS]:
+            where = f"{_graph_path(spec, root, str(spot.get('path')))}:{_span(spot.get('span'))}"
+            lines.append(f"  {spot.get('name')} · {spot.get('kind')} · {where} · {spot.get('inDegree', 0)} refs")
+    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"repository": name}}
+
+
+def _pointer(spec: dict[str, Any], root: Path, pointer: str) -> str:
+    path, _, span = pointer.rpartition(":")
+    if not path:
+        return _graph_path(spec, root, pointer)
+    return f"{_graph_path(spec, root, path)}:{_span(span) or span}"
+
+
+def op_code_find(spec: dict[str, Any]) -> dict[str, Any]:
+    question = _text_arg(spec, "question")
+    scope_raw = spec.get("in")
+    scope_path = _resolve(spec, scope_raw) if isinstance(scope_raw, str) and scope_raw else None
+    name, root = _repository(spec, None, scope_path)
+    limit = _int(spec, "limit", FIND_LIMIT, 1, FIND_MAX)
+    args = ["ask", question, str(root), "--limit", str(limit), *_scope(spec, name, root, scope_raw)]
+    source = spec.get("source") is True
+    if source:
+        args.append("--source")
+    data = _graft(name, root, args)
+    hits = data.get("hits") or []
+    if not hits:
+        return {"text": f"nothing in {name} matches {question!r}", "meta": {"repository": name, "hits": 0}}
+    lines = []
+    for index, hit in enumerate(hits[:limit], start=1):
+        title = str(hit.get("title") or "")
+        lines.append(f"{index}. {title} · {_pointer(spec, root, str(hit.get('pointer') or ''))}")
+        if source and hit.get("code"):
+            excerpt = str(hit["code"]).split("\n")
+            shown = [f"     {_clip(line)}" for line in excerpt[:FIND_EXCERPT_LINES]]
+            if len(excerpt) > FIND_EXCERPT_LINES:
+                shown.append(f"     … {len(excerpt) - FIND_EXCERPT_LINES} more lines")
+            lines.extend(shown)
+        elif hit.get("snippet"):
+            lines.append(f"   {_clip(str(hit['snippet']).strip())}")
+    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"repository": name, "hits": len(hits)}}
+
+
+def op_code_outline(spec: dict[str, Any]) -> dict[str, Any]:
+    raw = _text_arg(spec, "path")
+    path = _resolve(spec, raw)
+    _read_check(path)
+    found = _repo_holding(path)
+    if found is None:
+        raise ToolError(f"{raw} is not inside a repository under {REPOS}")
+    name, root = found
+    relative = str(path.relative_to(Path(os.path.realpath(root))))
+    try:
+        data = _graft(name, root, ["skeleton", relative, str(root)])
+    except ToolError as exc:
+        raise ToolError(f"{raw} has no outline in the code graph ({exc}); read a range with file_read") from exc
+    entries = data.get("entries") or []
+    if not entries:
+        return {
+            "text": f"{_rel(spec, path)} · no symbols in the code graph (a language it does not parse, or "
+            "no definitions); read a range with file_read",
+            "meta": {"path": str(path), "symbols": 0},
+        }
+    lines = [f"{_rel(spec, path)} · {len(entries)} symbols"]
+    for entry in entries:
+        signature = " ".join(str(entry.get("signature") or entry.get("name") or "").split())
+        lines.append(f"{_span(entry.get('span')):>9}  {_clip(signature)}")
+    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"path": str(path), "symbols": len(entries)}}
+
+
+def op_code_callers(spec: dict[str, Any]) -> dict[str, Any]:
+    symbol = _text_arg(spec, "symbol")
+    direction = spec.get("direction") or "in"
+    if direction not in ("in", "out"):
+        raise ToolError("direction must be in or out")
+    depth = _int(spec, "depth", 1, 1, CALLERS_MAX_DEPTH)
+    scope_raw = spec.get("in")
+    scope_path = _resolve(spec, scope_raw) if isinstance(scope_raw, str) and scope_raw else None
+    name, root = _repository(spec, None, scope_path)
+    args = ["callers", symbol, str(root), "--direction", direction, "--depth", str(depth)]
+    args += _scope(spec, name, root, scope_raw)
+    data = _graft(name, root, args)
+    matches = data.get("matches") or []
+    if not matches:
+        return {"text": f"no symbol {symbol!r} in {name}", "meta": {"repository": name, "hits": 0}}
+    arrow = "←" if direction == "in" else "→"
+    lines: list[str] = []
+    total = 0
+    for match in matches:
+        head = match.get("symbol") or {}
+        where = f"{_graph_path(spec, root, str(head.get('path')))}:{_span(head.get('span'))}"
+        lines.append(f"{head.get('name')} · {head.get('kind')} · {where}")
+        hits = match.get("hits") or []
+        total += len(hits)
+        if not hits:
+            lines.append(f"  {arrow} nothing")
+        for hit in hits:
+            indent = "  " * int(hit.get("depth") or 1)
+            relation = hit.get("relation")
+            label = f" ({relation})" if relation and relation != "calls" else ""
+            place = f"{_graph_path(spec, root, str(hit.get('path')))}:{_span(hit.get('span'))}"
+            lines.append(f"{indent}{arrow} {hit.get('name')} · {hit.get('kind')} · {place}{label}")
+    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"repository": name, "hits": total}}
+
+
+def _search_symbols(spec: dict[str, Any], pattern: str, target: Path) -> dict[str, Any]:
+    found = _repo_holding(target)
+    name, root = found if found is not None else _repository(spec)
+    args = ["grep", pattern, str(root)]
+    if spec.get("ignore_case") is True:
+        args.append("--ignore-case")
+    if spec.get("fixed") is True:
+        args.append("--fixed")
+    if found is not None:
+        args += _scope(spec, name, root, str(target))
+    data = _graft(name, root, args)
+    groups = data.get("groups") or []
+    if not groups:
+        return {"text": f"no matches for {pattern!r} in the code graph of {name}", "meta": {"matches": 0}}
+    limit = _int(spec, "limit", SYMBOLS_LIMIT, 1, SYMBOLS_LIMIT)
+    lines: list[str] = []
+    for group in groups[:limit]:
+        symbol = group.get("symbol")
+        path = _graph_path(spec, root, str(group.get("path")))
+        if symbol:
+            lines.append(
+                f"{symbol.get('name')} · {symbol.get('kind')} · {path}:{_span(symbol.get('span'))}"
+                f" · {group.get('inDegree', 0)} refs"
+            )
+        else:
+            lines.append(f"{path} (top level)")
+        hits = group.get("hits") or []
+        for hit in hits[:SYMBOLS_HITS]:
+            lines.append(f"  {hit.get('line')}: {_clip(str(hit.get('text') or '').strip())}")
+        if len(hits) > SYMBOLS_HITS:
+            lines.append(f"  … {len(hits) - SYMBOLS_HITS} more")
+    footer = []
+    if len(groups) > limit:
+        footer.append(f"… {len(groups) - limit} more symbols")
+    footer.append(f"{data.get('totalHits', 0)} matches in {len(groups)} symbols ({data.get('filesSearched', 0)} files searched)")
+    return {"text": _fit(lines, footer, _max_bytes(spec)), "meta": {"matches": data.get("totalHits", 0)}}
+
+
+# --- git: setup, checkpoints, diffs ---------------------------------------------
+
+CHECKPOINT_IDENTITY = {
+    "GIT_AUTHOR_NAME": "guilds checkpoint",
+    "GIT_AUTHOR_EMAIL": "checkpoint@guilds.invalid",
+    "GIT_COMMITTER_NAME": "guilds checkpoint",
+    "GIT_COMMITTER_EMAIL": "checkpoint@guilds.invalid",
+}
+
+
+def _git_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    env = dict(os.environ)
+    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_PAGER": "cat"})
+    env.pop("GUILDS_AGENT_HOME", None)
+    env.pop("GUILDS_RUN_DIR", None)
+    env.update(extra or {})
+    return env
+
+
+def _git(repo: Path, args: list[str], env: dict[str, str] | None = None, timeout: int = GIT_TIMEOUT) -> subprocess.CompletedProcess[str]:
+    full = _git_env(env)
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        env=full,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _git_out(repo: Path, args: list[str], env: dict[str, str] | None = None) -> str | None:
+    done = _git(repo, args, env)
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def _same_repository_host(current: str, wanted: str) -> bool:
+    return urllib.parse.urlsplit(current).hostname == urllib.parse.urlsplit(wanted).hostname
+
+
+def _url_key(url: str) -> str:
+    url = url.strip().rstrip("/")
+    return (url[:-4] if url.endswith(".git") else url).lower()
+
+
+def op_git_setup(spec: dict[str, Any]) -> dict[str, Any]:
+    """Writes the agent's git identity and clones each guild repository missing from
+    /home/agent/repos. A clone already there whose `origin` names another repository on the
+    same host, as after a rename, is pointed at the URL the guild has now. The orchestrator
+    never runs git itself."""
+    identity = spec.get("identity") or {}
+    for key in ("name", "email"):
+        value = identity.get(key)
+        if isinstance(value, str) and value:
+            current = _git_out(HOME, ["config", "--global", f"user.{key}"])
+            if current != value:
+                done = _git(HOME, ["config", "--global", f"user.{key}", value])
+                if done.returncode != 0:
+                    raise ToolError(f"git config failed: {done.stderr.strip()}")
+    REPOS.mkdir(parents=True, exist_ok=True)
+    cloned: list[str] = []
+    present: list[str] = []
+    moved: list[str] = []
+    failed: list[dict[str, str]] = []
+    timeout = _int(spec, "clone_timeout", CLONE_TIMEOUT, 10, CLONE_TIMEOUT)
+    for entry in spec.get("repositories") or []:
+        name = _safe_segment(entry.get("name"), "repository name")
+        url = str(entry.get("url") or "")
+        target = REPOS / name
+        if target.exists():
+            present.append(name)
+            origin = _git_out(target, ["config", "--get", "remote.origin.url"])
+            if origin and url and _same_repository_host(origin, url) and _url_key(origin) != _url_key(url):
+                if _git(target, ["remote", "set-url", "origin", url]).returncode == 0:
+                    moved.append(name)
+            continue
+        try:
+            done = subprocess.run(
+                ["git", "clone", "--quiet", url, str(target)],
+                env=_git_env(),
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=timeout,
+                check=False,
+            )
+            error = "" if done.returncode == 0 else (done.stderr.strip().splitlines() or ["git clone failed"])[-1]
+        except subprocess.TimeoutExpired:
+            error = f"git clone timed out after {timeout}s"
+        if error:
+            shutil.rmtree(target, ignore_errors=True)
+            failed.append({"name": name, "error": error})
+        else:
+            cloned.append(name)
+    text = f"cloned {', '.join(cloned) or 'nothing'}; present {', '.join(present) or 'nothing'}"
+    if moved:
+        text += f"; moved origin of {', '.join(moved)}"
+    if failed:
+        text += "; failed " + "; ".join(f"{item['name']}: {item['error']}" for item in failed)
+    return {"text": text, "meta": {"cloned": cloned, "present": present, "moved": moved, "failed": failed}}
+
+
+def _work_trees(names: Any) -> list[tuple[str, Path]]:
+    if isinstance(names, list):
+        candidates = [str(name) for name in names]
+    else:
+        candidates = _repositories()
+    trees = []
+    for name in candidates:
+        root = REPOS / name
+        if re.fullmatch(r"[A-Za-z0-9._-]+", name) and root.is_dir() and (root / ".git").exists():
+            trees.append((name, root))
+    return trees
+
+
+def _snapshot(root: Path, message: str) -> str:
+    """A commit of the working tree, uncommitted and untracked (not ignored) changes
+    included, built through a temporary index: the real index and the branch stay as they are."""
+    index = _git_out(root, ["rev-parse", "--git-path", "index"])
+    head = _git_out(root, ["rev-parse", "--verify", "--quiet", "HEAD"])
+    with tempfile.TemporaryDirectory(prefix="guilds-checkpoint-") as scratch:
+        temp_index = Path(scratch) / "index"
+        if index:
+            source = Path(index) if Path(index).is_absolute() else root / index
+            if source.is_file():
+                shutil.copyfile(source, temp_index)
+        env = {"GIT_INDEX_FILE": str(temp_index), **CHECKPOINT_IDENTITY}
+        added = _git(root, ["add", "--all", "--", "."], env, CHECKPOINT_TIMEOUT)
+        if added.returncode != 0:
+            raise ToolError(f"git add failed: {added.stderr.strip()}")
+        tree = _git_out(root, ["write-tree"], env)
+        if not tree:
+            raise ToolError("git write-tree failed")
+    args = ["commit-tree", tree, "-m", message]
+    if head:
+        args += ["-p", head]
+    commit = _git_out(root, args, CHECKPOINT_IDENTITY)
+    if not commit:
+        raise ToolError("git commit-tree failed")
+    return commit
+
+
+def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
+    """Records refs/guild/runs/<run id>/start (once) or /end (each time) in every working
+    tree under /home/agent/repos, and at the end the change since the start."""
+    run_id = _safe_segment(spec.get("run_id"), "run_id")
+    which = spec.get("which")
+    if which not in ("start", "end"):
+        raise ToolError("which must be start or end")
+    records: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for name, root in _work_trees(spec.get("repositories")):
+        ref = f"refs/guild/runs/{run_id}/{which}"
+        try:
+            existing = _git_out(root, ["rev-parse", "--verify", "--quiet", ref])
+            if which == "start" and existing:
+                continue
+            commit = _snapshot(root, f"guild run {run_id} {which}")
+            if _git(root, ["update-ref", ref, commit]).returncode != 0:
+                raise ToolError(f"git update-ref {ref} failed")
+            if which == "start":
+                records.append({"name": name, "start_sha": commit})
+                continue
+            start = _git_out(root, ["rev-parse", "--verify", "--quiet", f"refs/guild/runs/{run_id}/start"])
+            record: dict[str, Any] = {
+                "name": name,
+                "branch": _git_out(root, ["rev-parse", "--abbrev-ref", "HEAD"]) or None,
+                "head_sha": _git_out(root, ["rev-parse", "--verify", "--quiet", "HEAD"]) or None,
+                "start_sha": start or None,
+                "end_sha": commit,
+                "files_changed": 0,
+                "insertions": 0,
+                "deletions": 0,
+            }
+            if start:
+                stat = _git_out(root, ["diff", "--shortstat", start, commit]) or ""
+                for key, pattern in (
+                    ("files_changed", r"(\d+) files? changed"),
+                    ("insertions", r"(\d+) insertions?"),
+                    ("deletions", r"(\d+) deletions?"),
+                ):
+                    match = re.search(pattern, stat)
+                    record[key] = int(match.group(1)) if match else 0
+            records.append(record)
+        except (ToolError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"{name}: {exc}")
+    text = f"{which} checkpoint of {len(records)} repositories"
+    if errors:
+        text += "; " + "; ".join(errors)
+    return {"text": text, "meta": {"repositories": records, "errors": errors}}
+
+
+def op_diff(spec: dict[str, Any]) -> dict[str, Any]:
+    run_id = _safe_segment(spec.get("run_id"), "run_id")
+    name = _safe_segment(spec.get("repository"), "repository")
+    root = REPOS / name
+    if not (root / ".git").exists():
+        raise ToolError(f"no repository {name}")
+    start = _git_out(root, ["rev-parse", "--verify", "--quiet", f"refs/guild/runs/{run_id}/start"])
+    end = _git_out(root, ["rev-parse", "--verify", "--quiet", f"refs/guild/runs/{run_id}/end"])
+    if not start or not end:
+        raise ToolError(f"run {run_id} has no checkpoints in {name}")
+    done = _git(root, ["diff", "--no-color", "--no-ext-diff", start, end])
+    if done.returncode != 0:
+        raise ToolError(done.stderr.strip() or "git diff failed")
+    limit = _max_bytes(spec)
+    data = done.stdout.encode("utf-8")
+    truncated = len(data) > limit
+    text = data[:limit].decode("utf-8", errors="ignore") if truncated else done.stdout
+    return {"text": text, "meta": {"truncated": truncated, "bytes": len(data), "start_sha": start, "end_sha": end}}
+
+
+# --- workspace --------------------------------------------------------------
+
+
+def op_workspace_size(_spec: dict[str, Any]) -> dict[str, Any]:
+    completed = subprocess.run(
+        ["du", "-sk", str(HOME)], capture_output=True, text=True, check=False, timeout=120
+    )
+    try:
+        kib = int(completed.stdout.split()[0])
+    except (IndexError, ValueError) as exc:
+        raise ToolError(f"du failed: {completed.stderr.strip()}") from exc
+    mib = (kib + 1023) // 1024
+    return {"text": f"{mib} MiB", "meta": {"mib": mib}}
+
+
+OPS = {
+    "shell": op_shell,
+    "shell_status": op_shell_status,
+    "file_read": op_file_read,
+    "file_edit": op_file_edit,
+    "file_write": op_file_write,
+    "code_search": op_code_search,
+    "code_match": op_code_match,
+    "code_map": op_code_map,
+    "code_find": op_code_find,
+    "code_outline": op_code_outline,
+    "code_callers": op_code_callers,
+    "git_setup": op_git_setup,
+    "checkpoint": op_checkpoint,
+    "diff": op_diff,
+    "workspace_size": op_workspace_size,
+}
+
+
+def main() -> None:
+    try:
+        spec = _request()
+        handler = OPS.get(str(spec.get("op")))
+        if handler is None:
+            raise ToolError(f"unknown op {spec.get('op')}")
+        result = handler(spec)
+        _emit({"ok": True, "text": result["text"], "meta": result.get("meta", {})})
+    except ToolError as exc:
+        _emit({"ok": False, "error": str(exc)})
+    except subprocess.TimeoutExpired as exc:
+        _emit({"ok": False, "error": f"timed out after {exc.timeout}s"})
+    except OSError as exc:
+        _emit({"ok": False, "error": f"{exc.strerror or exc}: {exc.filename or ''}".rstrip(": ")})
+    except Exception as exc:  # noqa: BLE001 - every failure answers as an envelope
+        _emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
+if __name__ == "__main__":
+    main()

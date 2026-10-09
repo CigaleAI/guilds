@@ -1,0 +1,116 @@
+{
+  "slug": "qonto",
+  "display_name": "Qonto",
+  "auth": {
+    "kind": "token",
+    "fields": [
+      {
+        "name": "login",
+        "label": "Login",
+        "secret": false
+      },
+      {
+        "name": "secret_key",
+        "label": "Secret key",
+        "secret": true
+      }
+    ]
+  },
+  "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
+  "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from /home/agent. Production API only.",
+  "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
+  "tools": [
+    {
+      "name": "list_bank_accounts",
+      "description": "List Qonto bank accounts for the connected organization. Use this to choose which account_id to scan for missing invoices. Returns id, name, iban, currency, and status.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_missing_invoices",
+      "description": "Find completed Qonto transactions that still need an invoice or receipt: empty attachment_ids, attachment_required true, and attachment_lost false. Optional bank_account_id (otherwise every active account), settled_from/settled_to (ISO dates, default last 90 days), side (debit, credit, or both; default debit), and min_amount in euros.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bank_account_id": {
+            "type": "string",
+            "description": "Scan this account only. Omit to scan every active account."
+          },
+          "settled_from": {
+            "type": "string",
+            "description": "Inclusive start date (YYYY-MM-DD). Default: 90 days ago."
+          },
+          "settled_to": {
+            "type": "string",
+            "description": "Inclusive end date (YYYY-MM-DD). Default: today (UTC)."
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "debit",
+              "credit",
+              "both"
+            ],
+            "description": "Transaction side. Default debit."
+          },
+          "min_amount": {
+            "type": "number",
+            "description": "Exclude transactions below this amount in euros."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows to show. Default 50, max 100."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_transaction",
+      "description": "Fetch one Qonto transaction by id, including current attachment_ids. Confirm a transaction before uploading an invoice and after the upload lands.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "UUID of the transaction."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "upload_invoice",
+      "description": "Attach a PDF, JPEG, or PNG from the agent workspace as the invoice for a Qonto transaction. file_path is under /home/agent. Refuses if the transaction already has attachments unless force is true. Qonto processes the file in the background; this waits until attachment_ids is populated or 60 seconds elapse.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "description": "UUID of the transaction."
+          },
+          "file_path": {
+            "type": "string",
+            "description": "Path under /home/agent to a PDF, JPEG, or PNG."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Upload even if the transaction already has attachments. Default false."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "file_path"
+        ],
+        "additionalProperties": false
+      },
+      "mutating": true
+    }
+  ]
+}

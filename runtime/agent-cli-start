@@ -1,0 +1,57 @@
+#!/bin/bash
+# Starts the operator terminal (ttyd, bash in /home/agent) when it is not
+# already answering, and prints the secret path segment it serves under,
+# which the orchestrator's proxy prepends to every upstream request.
+# Idempotent: a second call finds the running daemon and prints the same
+# secret.
+set -euo pipefail
+
+PORT=7681
+TOKEN_FILE=/tmp/agent-cli-token
+PID_FILE=/tmp/agent-cli.pid
+LOG=/tmp/agent-cli.log
+AGENT_HOME=/home/agent
+
+ready() {
+  curl -sf -o /dev/null "http://127.0.0.1:${PORT}/t/$1/token"
+}
+
+if [ -s "$TOKEN_FILE" ]; then
+  token="$(cat "$TOKEN_FILE")"
+  if ready "$token"; then
+    echo "$token"
+    exit 0
+  fi
+fi
+
+if [ -s "$PID_FILE" ]; then
+  kill "$(cat "$PID_FILE")" 2>/dev/null || true
+  rm -f "$PID_FILE"
+fi
+
+token="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+umask 077
+printf '%s' "$token" > "$TOKEN_FILE"
+
+cd "$AGENT_HOME"
+setsid nohup ttyd \
+  --port "$PORT" \
+  --writable \
+  --base-path "/t/${token}" \
+  --client-option disableLeaveAlert=true \
+  --client-option 'theme={"background":"#111018"}' \
+  env "HISTFILE=${AGENT_HOME}/.bash_history" bash \
+  >>"$LOG" 2>&1 </dev/null &
+echo $! > "$PID_FILE"
+
+for _ in $(seq 1 100); do
+  if ready "$token"; then
+    echo "$token"
+    exit 0
+  fi
+  sleep 0.1
+done
+
+echo "terminal failed to start" >&2
+tail -n 20 "$LOG" >&2 || true
+exit 1

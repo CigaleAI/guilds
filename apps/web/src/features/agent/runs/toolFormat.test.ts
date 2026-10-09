@@ -1,0 +1,123 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  formatCost,
+  formatDuration,
+  formatReturnedData,
+  formatTokens,
+  friendlyToolCall,
+  previewText,
+  stripRemainingToolCalls,
+  toolOutcome,
+  toolResultError,
+} from "./toolFormat";
+
+test("stripRemainingToolCalls removes only the trailing budget stamp", () => {
+  const wrapUp = "Wrap up and finish with text.";
+  assert.equal(stripRemainingToolCalls("ok\n\nremaining_tool_calls: 12"), "ok");
+  assert.equal(
+    stripRemainingToolCalls("remaining_tool_calls: 12 is text"),
+    "remaining_tool_calls: 12 is text",
+  );
+  assert.equal(
+    stripRemainingToolCalls(`ok\n\n${wrapUp}\n\nremaining_tool_calls: 5`),
+    `ok\n\n${wrapUp}`,
+  );
+  assert.equal(stripRemainingToolCalls(null), null);
+});
+
+test("toolResultError prefers metadata and falls back to the ERROR body", () => {
+  assert.equal(toolResultError(null), null);
+  assert.equal(toolResultError({ payload: { content: "fine" }, metadata: { error: null } }), null);
+  assert.equal(
+    toolResultError({ payload: { content: "fine" }, metadata: { error: "boom" } }),
+    "boom",
+  );
+  assert.equal(
+    toolResultError({
+      payload: { content: "ERROR: unknown tool x\nmore\n\nremaining_tool_calls: 3" },
+      metadata: {},
+    }),
+    "unknown tool x",
+  );
+});
+
+test("formatReturnedData detects JSON bodies and keeps text raw", () => {
+  const json = formatReturnedData('{"a":1}');
+  assert.equal(json.isJson, true);
+  assert.deepEqual(json.raw, { a: 1 });
+  const text = formatReturnedData("plain\ttsv");
+  assert.equal(text.isJson, false);
+  assert.equal(text.text, "plain\ttsv");
+  assert.equal(formatReturnedData("").isEmpty, true);
+});
+
+test("compact formatters", () => {
+  assert.equal(formatDuration(9), "9ms");
+  assert.equal(formatDuration(1234), "1.2s");
+  assert.equal(formatDuration(12_345), "12s");
+  assert.equal(formatDuration(125_000), "2m 05s");
+  assert.equal(formatDuration(-1), "");
+  assert.equal(formatTokens(950), "950");
+  assert.equal(formatTokens(3100), "3.1k");
+  assert.equal(formatTokens(41_000), "41k");
+  assert.equal(formatTokens(1_200_000), "1.2M");
+  assert.equal(formatCost(0), "$0");
+  assert.equal(formatCost(0.0031), "$0.0031");
+  assert.equal(formatCost(0.12), "$0.12");
+  assert.equal(formatCost("x"), "");
+  assert.equal(previewText("  a\n\nb   c  "), "a b c");
+  assert.equal(previewText("abcdefghij", 5), "abcd…");
+});
+
+test("friendlyToolCall summarises known calls and falls back to a single short argument", () => {
+  const friendly = (name: string, args: string) =>
+    friendlyToolCall({ function: { name, arguments: args } });
+  assert.equal(friendly("note_find", '{"query":"thesis"}'), "Find notes thesis");
+  assert.equal(friendly("memory_write", "{}"), "Write memory");
+  assert.equal(friendly("record_search", '{"query":"acme"}'), "Search records acme");
+  assert.equal(
+    friendly("record_search", '{"collection":"customers","query":"acme"}'),
+    "Search customers acme",
+  );
+  assert.equal(friendly("record_list", '{"collection":"customers"}'), "List customers");
+  assert.equal(friendly("record_add", '{"collection":"customers","body":{}}'), "Add to customers");
+  assert.equal(
+    friendly("record_update", '{"collection":"customers","id":42,"body":{}}'),
+    "Update customers/42",
+  );
+  assert.equal(
+    friendly("record_remove", '{"collection":"customers","id":42}'),
+    "Remove customers/42",
+  );
+  assert.equal(friendly("record_remove", "{}"), "Remove record");
+  assert.equal(friendly("custom", '{"name":"one"}'), "name: one");
+  assert.equal(friendly("custom", '{"a":1,"b":2}'), "");
+});
+
+test("code tools read as the command, the file, or the background job they touch", () => {
+  const call = (name: string, args: Record<string, unknown>) =>
+    friendlyToolCall({ function: { name, arguments: JSON.stringify(args) } });
+  assert.equal(call("shell", { command: "npm test -- --watch=false\necho done" }), "Run npm test -- --watch=false");
+  assert.equal(call("shell", { command: "npm run dev", background: true }), "Start npm run dev");
+  assert.equal(call("shell_status", {}), "List background commands");
+  assert.equal(call("shell_status", { id: "b2", stop: true }), "Stop b2");
+  assert.equal(call("file_read", { path: "src/app.ts", offset: 120 }), "Read src/app.ts from line 120");
+  assert.equal(call("file_edit", { path: "src/app.ts" }), "Edit src/app.ts");
+  assert.equal(call("file_write", { path: "README.md" }), "Write README.md");
+  assert.equal(call("code_search", { pattern: "refund", mode: "content", path: "src" }), 'Search lines "refund" in src');
+  assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
+  assert.equal(call("code_find", { question: "where are refunds validated" }), "Find: where are refunds validated");
+  assert.equal(call("code_callers", { symbol: "cents" }), "Callers of cents");
+  assert.equal(call("code_callers", { symbol: "cents", direction: "out" }), "What cents calls");
+  assert.equal(call("code_outline", { path: "src/refund.ts" }), "Outline src/refund.ts");
+});
+
+test("toolOutcome names a failing exit, an edit's line counts, and a repeated read", () => {
+  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 0 }), "");
+  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 2 }), "exit 2");
+  assert.equal(toolOutcome({ tool_name: "shell", exit_code: 124, timed_out: true }), "timed out");
+  assert.equal(toolOutcome({ tool_name: "file_edit", lines_added: 3, lines_removed: 1 }), "+3 −1");
+  assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
+  assert.equal(toolOutcome(null), "");
+});

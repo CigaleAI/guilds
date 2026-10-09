@@ -1,0 +1,94 @@
+# guilds.run
+
+guilds.run runs standing teams of AI agents you can inspect.
+
+A guild is a department: named roles, a shared room, shared tables.
+Every run keeps the prompt the model saw, every tool call, and every
+memory change.
+
+These pages are for the people who run it, the people who use it, and
+the people who change it.
+
+Each page describes what the code does today. The security register is
+the one page that keeps history.
+
+## Overview
+
+- [Overview](overview.md) — what guilds.run is, the principles, the
+  shape of the system
+
+## Getting started
+
+- [Install](getting-started/install.md) — requirements, setup, first
+  start, first model key
+- [Your first guild](getting-started/first-guild.md) — a guild, an
+  agent, the group chat, a routine, a recipe
+- [Configure](getting-started/configure.md) — `.env`: required values,
+  integrations, limits
+- [Remote access](getting-started/remote-access.md) — reaching the box
+  from another machine
+- [Operate](getting-started/operate.md) — update, back up, restore,
+  logs, when it fails
+
+## Concepts
+
+How the product works, for the operator.
+
+- [Users and organisations](concepts/users-and-organisations.md) —
+  identity modes, organisations, members, the instance admin, the seed
+- [Guilds and agents](concepts/guilds-and-agents.md) — membership,
+  configuration, avatars, deletion
+- [Prompts and memory](concepts/prompts-and-memory.md) — the system
+  prompt, the Task, memory, hydration
+- [Notes and collections](concepts/notes-and-collections.md) — notes,
+  display paths, collections, records, grants
+- [Runs](concepts/runs.md) — direct, group, and schedule runs;
+  generation; sandboxes
+- [Group chat](concepts/group-chat.md) — tags, recipients, the cursor
+  queue, posting
+- [Tools and connectors](concepts/tools-and-connectors.md) — native
+  tools, the catalog, connections, bindings
+- [Secrets and access](concepts/secrets-and-access.md) — secrets,
+  grants, what reaches a sandbox
+- [Recipes](concepts/recipes.md) — portable guild configuration
+- [Prompt Studio](concepts/prompt-studio.md) — improve standing tasks
+  on a live guild
+- [Guild builder](concepts/guild-builder.md) — design a recipe from a
+  conversation
+- [Operator app](concepts/operator-app.md) — the screens
+
+## Architecture
+
+For the people who change the code.
+
+- [System](architecture/system.md) — process model, topology, state on
+  disk, images and stacks, the trust boundary
+- [Code map](architecture/code-map.md) — repository layout, `src/`
+  directories, boot, the request path, the run flow
+- [Orchestrator](architecture/orchestrator.md) — startup and shutdown,
+  events, PostgreSQL and migrations, codecs, the model client, the
+  sandbox manager
+- [Extension points](architecture/extension-points.md) — what an
+  edition built on core may replace
+- [Design system](architecture/design-system.md) — `@guildsrun/ui`:
+  tokens, components, [Storybook](/storybook)
+- [Security register](architecture/security-register.md) — issues
+  fixed and still open, with their history
+
+## Contributing
+
+- [Contributing](CONTRIBUTING.md) — licence, pull requests, the check
+- [Development](contributing/development.md) — the development stack,
+  verify, check, the pre-push hook, CI, fixtures
+- [Code guidelines](contributing/code-guidelines.md) — names, function
+  size, scaffolding, boundaries, tests, docs
+
+## Licence
+
+guilds.run is made and operated by Cigale AI. It is free software
+under the GNU Affero General Public License, version 3 only
+([LICENSE](../LICENSE)). What it builds on is listed in
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+
+The hosted edition, the layer Cigale AI runs its own service with,
+is separate and proprietary.

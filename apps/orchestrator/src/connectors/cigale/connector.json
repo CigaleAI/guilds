@@ -1,0 +1,251 @@
+{
+  "slug": "cigale",
+  "display_name": "Cigale",
+  "endpoint": {
+    "url": "https://api.cigale.ai/api/v1/public/mcp"
+  },
+  "auth": {
+    "kind": "token"
+  },
+  "description": "Social research and reply drafting from Cigale's tweet index. Search a topic's best posts over recent months, semantically find X posts from the last 24 hours, pull trend reports, and draft a reply to any tweet in a Cigale agent's or campaign's voice.",
+  "limitations": "Does not post to X or create live guilds. Reply drafts spend the Cigale agent's plan quota and need a Cigale agent id. Historical tweet search covers about five months; recent semantic search is a 24-hour window. Not a general web browser.",
+  "setup_hint": "Connect with a Cigale public API token. Agent and campaign ids come from the operator's Cigale project.",
+  "tools": [
+    {
+      "name": "search_knowledge_base",
+      "description": "Search the tweet knowledge base for the best posts about up to 5 topics over the last five months. Use for deep social research on a token, person, or theme.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-text topic queries. Max 5."
+          },
+          "noControversial": {
+            "type": "boolean",
+            "description": "Drop documents classified as controversial."
+          },
+          "onlyEnglish": {
+            "type": "boolean",
+            "description": "Restrict to English-language documents."
+          }
+        },
+        "required": [
+          "queries"
+        ]
+      }
+    },
+    {
+      "name": "get_recent_documents",
+      "description": "Semantic search over tweets posted in an explicit window of at most 24 hours. Pass topic queries plus a from timestamp.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Free-text topic queries. Max 10."
+          },
+          "from": {
+            "type": "string",
+            "description": "Window start, ISO 8601."
+          },
+          "to": {
+            "type": "string",
+            "description": "Window end, ISO 8601. Defaults to now."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max documents to return. Max 100."
+          },
+          "noControversial": {
+            "type": "boolean"
+          },
+          "onlyEnglish": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "queries",
+          "from"
+        ]
+      }
+    },
+    {
+      "name": "generate_reply_options",
+      "description": "Draft reply options to a tweet in a Cigale agent's voice, optionally for one of its campaigns. Pass tweet id plus agent id. Spends one reply generation; nothing is posted.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tweetId": {
+            "type": "string",
+            "description": "Tweet to reply to: opportunity id (tweet_<id>) or the bare tweet id."
+          },
+          "agentId": {
+            "type": "string",
+            "description": "Cigale agent id (UUID). Replies are written in this agent's voice."
+          },
+          "campaignId": {
+            "type": "string",
+            "description": "Optional Cigale campaign id (UUID). Layers that campaign's positioning over the agent's voice."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Instruction to the reply strategist. Defaults to Reply."
+          }
+        },
+        "required": [
+          "tweetId",
+          "agentId"
+        ]
+      }
+    },
+    {
+      "name": "get_top_reply_opportunities",
+      "description": "Tweets currently worth replying to across tracked feeds, ranked by opportunity score. Optional agent id scopes the feed to what that agent sees.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Optional Cigale agent id (UUID)."
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "noControversial": {
+            "type": "boolean"
+          },
+          "onlyEnglish": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_campaign_top_reply_opportunities",
+      "description": "Tweets worth replying to for one of an agent's campaigns. Pass agent id; campaign id defaults to that agent's default campaign.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Cigale agent id (UUID)."
+          },
+          "campaignId": {
+            "type": "string",
+            "description": "Optional Cigale campaign id (UUID)."
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "noControversial": {
+            "type": "boolean"
+          },
+          "onlyEnglish": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      }
+    },
+    {
+      "name": "get_reports_list",
+      "description": "List recent trend reports, optionally filtered by category or sub-category.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subCategories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hoursBack": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_reports_by_string",
+      "description": "Search trend reports by free-text query, ranked by relevance.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Free-text query describing the report topic."
+          },
+          "hoursBack": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "get_full_report_by_label",
+      "description": "Full trend report by label: headline, tldr, talking points, and supporting tweet ids.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Trend report label from the list or search tools."
+          }
+        },
+        "required": [
+          "label"
+        ]
+      }
+    },
+    {
+      "name": "get_report_categories_list",
+      "description": "List the report category taxonomy (top-level categories and sub-categories).",
+      "input_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_predicted_views",
+      "description": "Look up stored view forecasts for tweets: predicted lifetime views, author-baseline divergence, and momentum.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tweetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tweet ids: snowflake, tweet_…, or status URL. Max 100."
+          }
+        },
+        "required": [
+          "tweetIds"
+        ]
+      }
+    }
+  ]
+}

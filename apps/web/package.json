@@ -1,0 +1,56 @@
+{
+  "name": "@guildsrun/web",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^24"
+  },
+  "exports": {
+    "./vite": "./vite.app.ts",
+    "./api/client": "./src/api/client.ts",
+    "./api/session": "./src/api/session.ts",
+    "./api/types": "./src/api/types.ts",
+    "./app/format": "./src/app/format.ts",
+    "./app/identity": "./src/app/identity.tsx",
+    "./app/router": "./src/app/router.tsx",
+    "./app/slots": "./src/app/slots.ts",
+    "./features/agent/runs/toolFormat": "./src/features/agent/runs/toolFormat.ts",
+    "./features/settings/members": "./src/features/settings/members.ts",
+    "./mount": "./src/mount.tsx"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "format": "prettier --write src"
+  },
+  "dependencies": {
+    "@guildsrun/ui": "workspace:*",
+    "@tanstack/react-query": "^5.104.0",
+    "@tanstack/react-router": "^1.170.39",
+    "lucide-react": "^1.48.0",
+    "radix-ui": "^1.6.7",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.70.0",
+    "vite": "^8.3.1"
+  }
+}

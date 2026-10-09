@@ -1,0 +1,21 @@
+{
+  "shared_ok": "hello",
+  "rejected": [
+    {
+      "case": "shared_escape",
+      "error": "invalid path"
+    },
+    {
+      "case": "shared_gitkeep",
+      "error": "invalid path"
+    },
+    {
+      "case": "agent_escape",
+      "error": "invalid path"
+    },
+    {
+      "case": "agent_nested_escape",
+      "error": "invalid path"
+    }
+  ]
+}

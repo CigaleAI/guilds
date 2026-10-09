@@ -1,0 +1,155 @@
+{
+  "generator_version": "1",
+  "fixtures": [
+    {
+      "path": "adapters/tavily.json",
+      "source": "src/connectors/tavily/client.ts formatSearch",
+      "generator_version": "1",
+      "sha256": "21d14c60e59515a9706450440c078b2dc290429993bbcb0c5e13b5ce0479df07"
+    },
+    {
+      "path": "adapters/twitterapiio.json",
+      "source": "src/adapters/twitterapiio.ts formatSearch",
+      "generator_version": "1",
+      "sha256": "6785bc63f049cddb28d8773842dc9d2be47fd92054c0f21eb5780bdf457d21bb"
+    },
+    {
+      "path": "bindings/resolution.json",
+      "source": "src/access resolution walk",
+      "generator_version": "1",
+      "sha256": "fe66dc0cebac101501fdaaf47f1d69050d793e55cded04dfdaf4f1f231cb80b0"
+    },
+    {
+      "path": "codecs/timestamps.json",
+      "source": "src/db/codecs.ts and src/usage.ts",
+      "generator_version": "1",
+      "sha256": "dca57fcb15146f603a027add2c6cd94535500a4edff7dad94cfe8f59c421f634"
+    },
+    {
+      "path": "crypto/vectors.json",
+      "source": "src/credentials/crypto.ts AES-GCM vectors",
+      "generator_version": "1",
+      "sha256": "63235c8b9eed062e0412ff27497a6e547af035387e591fe8cb43fa133ab3334e"
+    },
+    {
+      "path": "http/oauth-callback-cancelled.html",
+      "source": "GET /api/mcp/oauth/callback",
+      "generator_version": "1",
+      "sha256": "9aef5a4638f521b78f2af2bbec879f8d948db9eb07ab9e896f1e7ae91ea1bf32"
+    },
+    {
+      "path": "http/oauth-callback-expired.html",
+      "source": "GET /api/mcp/oauth/callback",
+      "generator_version": "1",
+      "sha256": "2d78a285073175b01cc823f81436c25b90117ef10759df8054689e97ccc58384"
+    },
+    {
+      "path": "http/routes.json",
+      "source": "recorded HTTP request/response pairs",
+      "generator_version": "1",
+      "sha256": "7215da42ae967fcf532fb9d3d0c9b5c6a216b4d33c9f0f55b278c348757e1d3b"
+    },
+    {
+      "path": "ids/shape.json",
+      "source": "src/lib/ids.ts newId",
+      "generator_version": "1",
+      "sha256": "cc63ef1d4758e221a8db3d7006783572afcb361dae9fea1ee3939bc2cd7c764b"
+    },
+    {
+      "path": "memory/cases.json",
+      "source": "src/memory parse and render",
+      "generator_version": "1",
+      "sha256": "23cb4feca85e6349e1a5b100565efc655f62ec68e781839feac7abb38e85e7e1"
+    },
+    {
+      "path": "notes/confinement.json",
+      "source": "src/lib/contain.ts path confinement",
+      "generator_version": "1",
+      "sha256": "d69dcda08b9a718fb8b13af05f14d294a9391bcf47b38aa5778ec274c12393a5"
+    },
+    {
+      "path": "prompts/compose.txt",
+      "source": "src/prompts composeSystemPrompt",
+      "generator_version": "1",
+      "sha256": "492491c6c1f012ec5657a209df8dfd331382632d1968a9aa7eb60079e43af25e"
+    },
+    {
+      "path": "prompts/hashes.json",
+      "source": "src/prompts promptHash",
+      "generator_version": "1",
+      "sha256": "7a1fa87ead77121ab9b20614901a264e8049e83c7b0caa35ca17d08edc7410ba"
+    },
+    {
+      "path": "prompts/hydrate.json",
+      "source": "src/prompts hydratePrompts",
+      "generator_version": "1",
+      "sha256": "68445252d4a8cf58f2eab2e55e9e8e050059fb09f89ab81831c876add2defb33"
+    },
+    {
+      "path": "schedules/cron.json",
+      "source": "src/schedules/cron.ts nextRunAt",
+      "generator_version": "1",
+      "sha256": "60fd0814d00228dc288333b91729138cce82f5ae0b40b56d28142d2347cbc87a"
+    },
+    {
+      "path": "scripts/cases.json",
+      "source": "src/scripts snapshot, materialise, launcher",
+      "generator_version": "1",
+      "sha256": "12bb32dea97cdb64de1b316b43987a57c14d36ee65010b79cb0556a7c6324903"
+    },
+    {
+      "path": "seed/manifest.json",
+      "source": "clean-database seed rows: system, dev, runtime bootstrap",
+      "generator_version": "1",
+      "sha256": "057191d83cb919f1c1770f36382765f9aeb390d55f48ba343c3f0b1be9db9ae6"
+    },
+    {
+      "path": "sse/channel-split-run.txt",
+      "source": "run SSE does not mix group events",
+      "generator_version": "1",
+      "sha256": "ad063653d9e3016097f79a5f4b01b2115996a49f45d6c731724ea65acc3c90d1"
+    },
+    {
+      "path": "sse/group.txt",
+      "source": "GET /api/guilds/{guild_id}/group-chat/stream",
+      "generator_version": "1",
+      "sha256": "a4d07f292d674bc585d483134308a010dd961b4e9bf6c6ee815e49d1f3dfc735"
+    },
+    {
+      "path": "sse/run-cancel.txt",
+      "source": "cancellation as run.error",
+      "generator_version": "1",
+      "sha256": "02f676dd5f2bdcbae0b4916594a4e3075b33d87516b82215c8cb2c29d8f2f91a"
+    },
+    {
+      "path": "sse/run-reconnect.txt",
+      "source": "GET /api/runs/{run_id}/stream no-replay",
+      "generator_version": "1",
+      "sha256": "ad063653d9e3016097f79a5f4b01b2115996a49f45d6c731724ea65acc3c90d1"
+    },
+    {
+      "path": "sse/run.txt",
+      "source": "GET /api/runs/{run_id}/stream",
+      "generator_version": "1",
+      "sha256": "0bd516fbcaca806f5b0ec4b5f0c57f50641b15be20bc9a051b539cb0e0dafdd4"
+    },
+    {
+      "path": "state/snapshot.json",
+      "source": "src/state collectRunState",
+      "generator_version": "1",
+      "sha256": "9d4b7e56c860b5cd585c0c354260a9412c916f841d4367fff3168b05b76c66d9"
+    },
+    {
+      "path": "views/run-message.json",
+      "source": "orchestrator.db:message_item",
+      "generator_version": "1",
+      "sha256": "197ac1bf67af69679dd2c626ce4b0a7739593ac3b1551553e589982acd452580"
+    },
+    {
+      "path": "ws/browser.json",
+      "source": "browser proxy websocket",
+      "generator_version": "1",
+      "sha256": "9b760f9687db48ff989085b0f657ea01543230ab76b22926598004e1a1f87d36"
+    }
+  ]
+}

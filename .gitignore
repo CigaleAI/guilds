@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.production.env
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+.coverage
+htmlcov/
+.state/
+node_modules/
+dist/
+*.tsbuildinfo

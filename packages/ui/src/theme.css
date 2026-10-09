@@ -1,0 +1,245 @@
+@import "tailwindcss";
+@import "@fontsource-variable/manrope";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "./tokens.css";
+@import "./motion.css";
+
+/* Scan this package wherever a consumer imports theme.css, so utility classes in components survive. */
+@source "./**/*.{ts,tsx}";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Selected, whichever way the element reports it: Radix state, ARIA, or `data-selected`. */
+@custom-variant selected (&:is([data-state="on"], [data-state="active"], [data-state="checked"], [aria-pressed="true"], [aria-selected="true"], [aria-current="page"], [data-selected="true"]));
+
+/*
+ * Tailwind reads only guilds.run tokens: the default palette, type scale, radii and shadows are
+ * cleared, so a value off the design system has no utility.
+ */
+@theme {
+  --font-*: initial;
+  --font-sans: "Manrope Variable", "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-2xs--line-height: 1.4;
+  --text-xs: 12px;
+  --text-xs--line-height: 1.45;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.45;
+  --text-md: 14px;
+  --text-md--line-height: 1.55;
+  --text-lg: 16px;
+  --text-lg--line-height: 1.4;
+  --text-xl: 18px;
+  --text-xl--line-height: 1.3;
+  --text-2xl: 20px;
+  --text-2xl--line-height: 1.25;
+  --text-3xl: 24px;
+  --text-3xl--line-height: 1.2;
+  --text-4xl: 32px;
+  --text-4xl--line-height: 1.1;
+  --text-5xl: 48px;
+  --text-5xl--line-height: 1;
+  --text-6xl: 64px;
+  --text-6xl--line-height: 1;
+
+  --radius-*: initial;
+  --radius-2xs: 2px;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-3xl: 40px;
+  --radius-full: 999px;
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-page: var(--page);
+  --color-well: var(--well);
+  --color-surface: var(--surface);
+  --color-paper: var(--paper);
+  --color-paper-hi: var(--paper-hi);
+  --color-stripe: var(--stripe);
+
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-line-3: var(--line-3);
+  --color-rule: var(--rule);
+  --color-rule-2: var(--rule-2);
+
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-ink-fill: var(--ink-fill);
+  --color-on-ink: var(--on-ink);
+  --color-on-ink-muted: var(--on-ink-muted);
+  --color-panel: var(--panel);
+  --color-on-panel: var(--on-panel);
+  --color-on-panel-muted: var(--on-panel-muted);
+
+  --color-signal: var(--signal);
+  --color-signal-2: var(--signal-2);
+  --color-mauve: var(--mauve);
+  --color-tide: var(--tide);
+  --color-dusk: var(--dusk);
+  --color-plum: var(--plum);
+  --color-ochre: var(--ochre);
+
+  --color-on-signal: var(--on-signal);
+  --color-on-plum: var(--on-plum);
+  --color-on-plum-muted: var(--on-plum-muted);
+  --color-on-ochre: var(--on-ochre);
+
+  --color-signal-t: var(--signal-t);
+  --color-tide-t: var(--tide-t);
+  --color-plum-t: var(--plum-t);
+  --color-dusk-t: var(--dusk-t);
+  --color-signal-soft: var(--signal-soft);
+  --color-plum-soft: var(--plum-soft);
+
+  --color-outcome-posted: var(--outcome-posted);
+  --color-outcome-wrote: var(--outcome-wrote);
+  --color-outcome-silent: var(--outcome-silent);
+  --color-outcome-failed: var(--outcome-failed);
+  --color-outcome-running: var(--outcome-running);
+
+  --color-t-sig: var(--t-sig);
+  --color-t-sig-fg: var(--t-sig-fg);
+  --color-t-tide: var(--t-tide);
+  --color-t-tide-fg: var(--t-tide-fg);
+  --color-t-plum: var(--t-plum);
+  --color-t-dusk-fg: var(--t-dusk-fg);
+  --color-t-ochre: var(--t-ochre);
+  --color-t-ochre-fg: var(--t-ochre-fg);
+
+  --color-id-signal: var(--id-signal);
+  --color-id-tide: var(--id-tide);
+  --color-id-moss: var(--id-moss);
+  --color-id-ochre: var(--id-ochre);
+  --color-id-rosewood: var(--id-rosewood);
+  --color-id-dusk: var(--id-dusk);
+  --color-on-id: var(--on-id);
+  --color-id-signal-t: var(--id-signal-t);
+  --color-id-tide-t: var(--id-tide-t);
+  --color-id-moss-t: var(--id-moss-t);
+  --color-id-ochre-t: var(--id-ochre-t);
+  --color-id-rosewood-t: var(--id-rosewood-t);
+  --color-id-dusk-t: var(--id-dusk-t);
+  --color-id-signal-tint: var(--id-signal-tint);
+  --color-id-tide-tint: var(--id-tide-tint);
+  --color-id-moss-tint: var(--id-moss-tint);
+  --color-id-ochre-tint: var(--id-ochre-tint);
+  --color-id-rosewood-tint: var(--id-rosewood-tint);
+  --color-id-dusk-tint: var(--id-dusk-tint);
+
+  --color-on-signal-line: var(--on-signal-line);
+  --color-on-plum-track: var(--on-plum-track);
+  --color-on-plum-hover: var(--on-plum-hover);
+  --color-scrim: var(--scrim);
+  --color-focus: var(--focus);
+
+  --shadow-*: initial;
+  --shadow-pop: var(--elev-pop);
+  --shadow-float: var(--elev-float);
+  --shadow-modal: var(--elev-modal);
+}
+
+/* Composite text styles: size, line height, weight and tracking together. Colour stays separate. */
+@utility type-display {
+  font-size: var(--text-6xl);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+@utility type-hero {
+  font-size: var(--text-5xl);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+@utility type-h1 {
+  font-size: var(--text-4xl);
+  line-height: 1.1;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+@utility type-h2 {
+  font-size: var(--text-3xl);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+@utility type-title {
+  font-size: var(--text-lg);
+  line-height: 1.35;
+  font-weight: 600;
+}
+@utility type-body {
+  font-size: var(--text-md);
+  line-height: 1.55;
+  font-weight: 400;
+}
+@utility type-caption {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  font-weight: 400;
+}
+@utility type-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+@utility type-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+@utility type-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}
+
+@layer base {
+  html {
+    background: var(--page);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--t-sig);
+    color: var(--t-sig-fg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

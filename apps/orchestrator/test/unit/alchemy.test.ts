@@ -1,0 +1,318 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { decodeMasterKey } from "../../src/config/index.js";
+import { encryptPayload } from "../../src/credentials/crypto.js";
+import {
+  AlchemyError,
+  CHAINS,
+  callTool,
+  formatCollection,
+  formatHoldings,
+  formatNft,
+  holdingsTool,
+  nftTool,
+  ping,
+} from "../../src/connectors/alchemy/client.js";
+import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { CONNECTORS } from "../../src/connectors/index.js";
+import { ConnectorError } from "../../src/connectors/types.js";
+import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { mockFetch } from "../helpers/http.js";
+
+const KEY = decodeMasterKey(HEX_MASTER_KEY);
+const TOOLS = CONNECTORS.bySlug("alchemy")!.manifest.tools!;
+
+class MemoryDb {
+  rows: Array<Record<string, unknown>> = [];
+  async replaceMcpTools(_id: string, tools: ListedTool[]) {
+    this.rows = tools.map((tool) => ({ ...tool }));
+  }
+  async listMcpTools() {
+    return this.rows;
+  }
+}
+
+test("formatHoldings drops images and descriptions", () => {
+  const stored = formatHoldings(
+    {
+      ownedNfts: [{
+        contract: {
+          address: "0x0beed7099af7514ccedf642cfea435731176fb02",
+          name: "DuskBreakers",
+          symbol: "DUSK",
+          tokenType: "ERC721",
+          isSpam: null,
+          openSeaMetadata: { floorPrice: 0.0582, imageUrl: "https://example.com/col.png", description: "long html" },
+        },
+        tokenId: "28",
+        tokenType: "ERC721",
+        name: "DuskBreaker #28",
+        description: "Breakers have the honor of serving humanity.",
+        image: { cachedUrl: "https://example.com/28.png", originalUrl: "https://duskbreakers.gg/28.png" },
+        tokenUri: "https://api.duskbreakers.gg/metadata/28",
+        balance: "1",
+      }],
+      totalCount: 12,
+      pageKey: "next-page",
+    },
+    { owner: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", chain: "ethereum" },
+  );
+  assert.equal(
+    stored,
+    "0xd8da6bf26964af9d7eed9e03e53415d37aa96045  ethereum  total=12\n"
+      + "0x0beed7099af7514ccedf642cfea435731176fb02  DUSK  DuskBreakers  "
+      + "#28  DuskBreaker #28  ERC721\n"
+      + "page=next-page",
+  );
+  assert.ok(!stored.includes("example.com"));
+  assert.ok(!stored.includes("long html"));
+  assert.ok(!stored.includes("Breakers have"));
+});
+
+test("formatHoldings caps rows and marks spam", () => {
+  const payload = {
+    ownedNfts: Array.from({ length: 20 }, (_, index) => ({
+      contract: { address: `0x${index.toString(16).padStart(40, "0")}`, name: `Col ${index}`, symbol: "X", isSpam: index === 0 },
+      tokenId: String(index),
+      name: `Token ${index}`,
+      balance: index === 1 ? "2" : "1",
+    })),
+    totalCount: 20,
+  };
+  const stored = formatHoldings(payload, { owner: "0xabc", chain: "base", limit: 3 });
+  assert.ok(stored.startsWith("0xabc  base  total=20"));
+  assert.equal(stored.split("\n").length - 1, 4);
+  assert.ok(stored.includes("+17 more"));
+  assert.ok(stored.split("\n")[1]?.includes("spam"));
+  assert.ok(stored.split("\n")[2]?.includes("bal=2"));
+});
+
+test("formatNft and formatCollection keep floor", () => {
+  const nft = formatNft({
+    contract: {
+      address: "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
+      name: "Bored Ape Yacht Club",
+      symbol: "BAYC",
+      tokenType: "ERC721",
+      openSeaMetadata: { floorPrice: 12.5, imageUrl: "https://example.com/x" },
+    },
+    tokenId: "1",
+    name: "Bored Ape #1",
+    description: "long",
+    image: { cachedUrl: "https://example.com/1.png" },
+  });
+  assert.equal(
+    nft,
+    "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d  BAYC  Bored Ape Yacht Club  "
+      + "#1  Bored Ape #1  ERC721\n"
+      + "floor=12.5",
+  );
+  assert.ok(!nft.includes("example.com"));
+  const collection = formatCollection({
+    address: "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
+    name: "Bored Ape Yacht Club",
+    symbol: "BAYC",
+    tokenType: "ERC721",
+    totalSupply: "10000",
+    openseaMetadata: { floorPrice: 12.5, description: "long" },
+  });
+  assert.equal(
+    collection,
+    "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d  BAYC  Bored Ape Yacht Club  "
+      + "ERC721  supply=10000\n"
+      + "floor=12.5",
+  );
+  assert.ok(!collection.includes("long"));
+});
+
+test("holdings uses the NFT path and key", async () => {
+  let url = "";
+  const stored = await holdingsTool(
+    { owner: "0xd8da", chain: "base" },
+    {
+      apiKey: "alc-test",
+      client: mockFetch((requestUrl) => {
+        url = requestUrl;
+        return {
+          status: 200,
+          json: {
+            ownedNfts: [{ contract: { address: "0xabc", symbol: "X", name: "Example" }, tokenId: "1", name: "Example #1" }],
+            totalCount: 1,
+          },
+        };
+      }),
+    },
+  );
+  assert.equal(
+    url,
+    "https://base-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner?owner=0xd8da&withMetadata=true&pageSize=15",
+  );
+  assert.equal(stored, "0xd8da  base  total=1\n0xabc  X  Example  #1  Example #1");
+});
+
+test("holdings uses ink and robinhood hosts", async () => {
+  const seen: string[] = [];
+  const client = mockFetch((requestUrl) => {
+    seen.push(requestUrl);
+    return { status: 200, json: { ownedNfts: [], totalCount: 0 } };
+  });
+  await holdingsTool({ owner: "0xabc", chain: "ink" }, { apiKey: "alc-test", client });
+  await holdingsTool({ owner: "0xabc", chain: "robinhood" }, { apiKey: "alc-test", client });
+  await holdingsTool({ owner: "0xabc", chain: "bsc" }, { apiKey: "alc-test", client });
+  assert.ok(seen[0]?.startsWith("https://ink-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
+  assert.ok(seen[1]?.startsWith("https://robinhood-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
+  assert.ok(seen[2]?.startsWith("https://bnb-mainnet.g.alchemy.com/nft/v3/alc-test/getNFTsForOwner"));
+  assert.ok("ink" in CHAINS && "robinhood" in CHAINS && "solana" in CHAINS);
+  assert.equal(CHAINS.bsc, "bnb-mainnet");
+});
+
+test("holdings solana uses DAS", async () => {
+  let url = "";
+  let body = "";
+  const stored = await holdingsTool(
+    { owner: "So11111111111111111111111111111111111111112", chain: "solana" },
+    {
+      apiKey: "alc-test",
+      client: mockFetch((requestUrl, init) => {
+        url = requestUrl;
+        body = String(init?.body ?? "");
+        return {
+          status: 200,
+          json: {
+            jsonrpc: "2.0",
+            id: 1,
+            result: {
+              total: 1,
+              page: 1,
+              items: [{
+                id: "Mad1111111111111111111111111111111111111111",
+                interface: "V1_NFT",
+                content: { metadata: { name: "Mad Lads #1", symbol: "MAD" }, links: { image: "https://example.com/1.png" } },
+                grouping: [{
+                  group_key: "collection",
+                  group_value: "Col1111111111111111111111111111111111111111",
+                  collection_metadata: { name: "Mad Lads" },
+                }],
+              }],
+            },
+          },
+        };
+      }),
+    },
+  );
+  assert.equal(url, "https://solana-mainnet.g.alchemy.com/v2/alc-test");
+  const parsed = JSON.parse(body) as { method: string; params: Record<string, unknown> };
+  assert.equal(parsed.method, "getAssetsByOwner");
+  assert.equal(parsed.params.ownerAddress, "So11111111111111111111111111111111111111112");
+  assert.equal((parsed.params.options as { showFungible?: boolean }).showFungible, false);
+  assert.equal(
+    stored,
+    "So11111111111111111111111111111111111111112  solana  total=1\n"
+      + "Col1111111111111111111111111111111111111111  MAD  Mad Lads  "
+      + "Mad1111111111111111111111111111111111111111  Mad Lads #1  V1_NFT",
+  );
+  assert.ok(!stored.includes("example.com"));
+});
+
+test("nft solana uses mint", async () => {
+  let body = "";
+  const stored = await nftTool(
+    { contract: "Mad1111111111111111111111111111111111111111", chain: "solana" },
+    {
+      apiKey: "alc-test",
+      client: mockFetch((_url, init) => {
+        body = String(init?.body ?? "");
+        return {
+          status: 200,
+          json: {
+            jsonrpc: "2.0",
+            id: 1,
+            result: {
+              id: "Mad1111111111111111111111111111111111111111",
+              interface: "V1_NFT",
+              content: { metadata: { name: "Mad Lads #1", symbol: "MAD" } },
+            },
+          },
+        };
+      }),
+    },
+  );
+  const parsed = JSON.parse(body) as { method: string; params: { id: string } };
+  assert.equal(parsed.method, "getAsset");
+  assert.equal(parsed.params.id, "Mad1111111111111111111111111111111111111111");
+  assert.equal(stored, "Mad1111111111111111111111111111111111111111  MAD  Mad Lads #1  V1_NFT");
+});
+
+test("ping rejects unauthorized", async () => {
+  await assert.rejects(
+    () => ping("bad", { client: mockFetch(() => ({ status: 401, json: { message: "Must be authenticated!" } })) }),
+    (error: unknown) => error instanceof AlchemyError && error.status === 401 && /Must be authenticated/.test(error.message),
+  );
+});
+
+test("callTool unknown name", async () => {
+  await assert.rejects(() => callTool("swap", {}, { apiKey: "alc-test" }), /unknown Alchemy tool/);
+});
+
+test("sync Alchemy writes the curated catalog", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  let pinged = 0;
+  const pool = new McpPool(10 * 60 * 1000);
+  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+    async validate(creds) {
+      const apiKey = creds.token;
+      pinged += 1;
+      assert.equal(apiKey, "alc-test");
+      return "";
+    },
+  });
+  const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
+  const db = new MemoryDb();
+  const connection = { id: "conn_alc", status: "connected", ciphertext, nonce };
+  const server = { id: "mcp_alchemy", slug: "alchemy", auth: "token" };
+  const first = await pool.syncTools(db, connection, server, { force: true });
+  const second = await pool.syncTools(db, connection, server);
+  assert.equal(pinged, 1);
+  assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `alchemy_${spec.name}`));
+  assert.deepEqual(first, second);
+  assert.deepEqual(first[0], new ListedTool("holdings", "alchemy_holdings", TOOLS[0]!.description, TOOLS[0]!.input_schema));
+});
+
+test("sync Alchemy rejects a bad key", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const pool = new McpPool();
+  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+    async validate() {
+      throw new ConnectorError("invalid key", 401);
+    },
+  });
+  const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
+  await assert.rejects(
+    () => pool.syncTools(new MemoryDb(), { id: "conn_alc", status: "connected", ciphertext, nonce }, { id: "mcp_alchemy", slug: "alchemy", auth: "token" }, { force: true }),
+    (error: unknown) => error instanceof McpError && error.status === 401,
+  );
+});
+
+test("call Alchemy dispatches", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const seen: Record<string, unknown> = {};
+  const pool = new McpPool();
+  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+    async call(name, arguments_, creds) {
+      seen.name = name;
+      seen.arguments = arguments_;
+      seen.api_key = creds.token;
+      return "0xd8da  ethereum  total=0";
+    },
+  });
+  const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
+  const stored = await pool.call(
+    new MemoryDb(),
+    { id: "conn_alc", status: "connected", ciphertext, nonce },
+    { id: "mcp_alchemy", slug: "alchemy", auth: "token" },
+    "holdings",
+    { owner: "0xd8da" },
+  );
+  assert.equal(stored, "0xd8da  ethereum  total=0");
+  assert.deepEqual(seen, { name: "holdings", arguments: { owner: "0xd8da" }, api_key: "alc-test" });
+});

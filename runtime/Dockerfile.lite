@@ -1,0 +1,31 @@
+# The lite box: the small guest an agent with neither browser nor coding runs on. Python for its
+# scripts, ttyd for the CLI tab, and nothing of the standard image's toolchains: no Chromium, VNC,
+# Playwright, Node.js, gh, mise, Graft, guilds-code, guilds-browser, or build-essential.
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# ttyd serves the CLI tab: a bash session over WebSocket, started on demand by
+# agent-cli-start. Debian does not package it, so the release binary is pinned.
+ARG TTYD_VERSION=1.7.7
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) asset=ttyd.x86_64; sum=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55 ;; \
+        arm64) asset=ttyd.aarch64; sum=b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165 ;; \
+        *) echo "unsupported architecture for ttyd" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/ttyd "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/${asset}"; \
+    echo "${sum}  /usr/local/bin/ttyd" | sha256sum -c -; \
+    chmod 755 /usr/local/bin/ttyd
+
+COPY agent-cli-start /usr/local/bin/agent-cli-start
+COPY guilds-script-run /usr/local/bin/guilds-script-run
+RUN chmod 755 /usr/local/bin/agent-cli-start /usr/local/bin/guilds-script-run
+
+ENV LANG=C.UTF-8
+WORKDIR /home/agent

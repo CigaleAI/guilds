@@ -1,0 +1,89 @@
+{
+  "inherited": {
+    "catalog_kind": "native_tool",
+    "catalog_id": "bash",
+    "enabled": true,
+    "source_scope": "platform",
+    "connection_id": null,
+    "overlay": null
+  },
+  "agent_opt_out": {
+    "catalog_kind": "native_tool",
+    "catalog_id": "bash",
+    "enabled": false,
+    "source_scope": "agent",
+    "connection_id": null,
+    "overlay": {
+      "catalog_kind": "native_tool",
+      "catalog_id": "bash",
+      "scope": "agent",
+      "scope_id": "a",
+      "enabled": false,
+      "connection_id": null
+    }
+  },
+  "guild_opt_out_reenabled": {
+    "catalog_kind": "native_tool",
+    "catalog_id": "note_read",
+    "enabled": true,
+    "source_scope": "agent",
+    "connection_id": null,
+    "overlay": {
+      "catalog_kind": "native_tool",
+      "catalog_id": "note_read",
+      "scope": "agent",
+      "scope_id": "a",
+      "enabled": true,
+      "connection_id": null
+    }
+  },
+  "org_overlay": {
+    "catalog_kind": "native_tool",
+    "catalog_id": "bash",
+    "enabled": false,
+    "source_scope": "org",
+    "connection_id": null,
+    "overlay": null
+  },
+  "empty_chain": {
+    "catalog_kind": "native_tool",
+    "catalog_id": "bash",
+    "enabled": false,
+    "source_scope": null,
+    "connection_id": null,
+    "overlay": null
+  },
+  "enabled_names": [
+    "script_run"
+  ],
+  "native_tools": [
+    "note_find",
+    "note_get",
+    "note_write",
+    "note_delete",
+    "record_search",
+    "record_list",
+    "record_add",
+    "record_update",
+    "record_remove",
+    "memory_write",
+    "script_create",
+    "script_list",
+    "script_read",
+    "script_run",
+    "script_delete",
+    "schedule_create_cron",
+    "schedule_create_window",
+    "schedule_list",
+    "schedule_pause",
+    "schedule_resume",
+    "schedule_delete",
+    "secret_store",
+    "secret_request",
+    "group_post"
+  ],
+  "visibility": {
+    "platform_on_agent": true,
+    "org_cross_tenant": false
+  }
+}

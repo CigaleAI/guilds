@@ -1,0 +1,16 @@
+.state
+.venv
+.git
+.pytest_cache
+.ruff_cache
+__pycache__
+.env
+**/images.env
+README.md
+node_modules
+**/node_modules
+**/dist
+*.tsbuildinfo
+apps/web/storybook-static
+apps/web/claude-design-export
+**/.vitepress/cache

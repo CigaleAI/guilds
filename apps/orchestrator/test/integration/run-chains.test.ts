@@ -1,0 +1,256 @@
+import assert from "node:assert/strict";
+import { after, test } from "node:test";
+import { buildApp } from "../../src/app.js";
+import { ArtifactStore } from "../../src/artifacts/index.js";
+import { connect } from "../../src/db/client.js";
+import { Repositories } from "../../src/db/repositories.js";
+import { HANDOFF_REQUEST, HANDOFF_TOOL_REFUSED } from "../../src/generation/chain.js";
+import { generationLive, GenerationLoop, RunRequestError, type GenerationSandboxes } from "../../src/generation/index.js";
+import type { Completion } from "../../src/llm/index.js";
+import { McpPool } from "../../src/mcp/index.js";
+import { NotesStore } from "../../src/notes/store.js";
+import { Scripts } from "../../src/scripts/catalog.js";
+import { Schedules } from "../../src/schedules/service.js";
+import { HostCodeSandbox } from "../helpers/code-sandbox.js";
+import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { templatesRoot } from "../helpers/fixtures.js";
+import { FakeSandboxes } from "../helpers/generation.js";
+import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+
+const live = generationLive;
+const originalStream = live.streamCompletion;
+const originalCount = live.countInputTokens;
+const dbName = uniqueDbName("agent_platform_run_chains");
+
+after(async () => {
+  live.streamCompletion = originalStream;
+  live.countInputTokens = originalCount;
+  await dropIsolatedDatabase(dbName);
+});
+
+function completion(payload: Record<string, unknown>): Completion {
+  return {
+    payload,
+    metadata: {
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
+      latency_ms: 1,
+      finish_reason: "tool_calls" in payload ? "tool_calls" : "stop",
+      model: "test",
+      response_id: "c",
+      provider_request_id: null,
+      cost_usd: 0,
+    },
+  };
+}
+
+type Reply = (messages: Array<Record<string, unknown>>) => Record<string, unknown>;
+
+function script(reply: Reply) {
+  return (async function* stream(options: { messages: Array<Record<string, unknown>> }) {
+    yield ["done", completion(reply(options.messages))] as ["done", Completion];
+  }) as unknown as typeof live.streamCompletion;
+}
+
+const lastContent = (messages: Array<Record<string, unknown>>) => String(messages.at(-1)?.content ?? "");
+const shellCall = (id: string) => ({
+  role: "assistant",
+  content: null,
+  tool_calls: [{ id, type: "function", function: { name: "shell", arguments: '{"command":"echo step"}' } }],
+});
+
+test("a coding run near its input limit hands off and continues in a new run", { timeout: 120_000 }, async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const databaseUrl = await createIsolatedDatabase(dbName);
+  const database = await connect(databaseUrl);
+  const notes = new NotesStore(tempDir("guilds-chain-notes-"), templatesRoot(), "notes");
+  await notes.ensureSystemPrompt();
+  const repo = new Repositories(database.pool);
+  const artifacts = new ArtifactStore(database.pool, notes.templates);
+  const sandbox = new HostCodeSandbox();
+  const sandboxes = new FakeSandboxes();
+  sandboxes.ensure = (async (agentId: string) => {
+    sandboxes.running.add(agentId);
+    return sandbox;
+  }) as unknown as FakeSandboxes["ensure"];
+  const loop = new GenerationLoop(repo, notes, tempDir("guilds-chain-ws-"), sandboxes as unknown as GenerationSandboxes, {
+    mcp: new McpPool(),
+    artifacts,
+    idleTimeoutMs: 0,
+  });
+  // One hundred tokens per message: with a 1000-token input limit, the hand-off comes at 7 messages.
+  live.countInputTokens = ((_model: string, payloads: unknown[]) => payloads.length * 100) as typeof live.countInputTokens;
+
+  const app = await buildApp(database, {
+    repo,
+    notes,
+    artifacts,
+    scripts: new Scripts(repo),
+    schedules: new Schedules(repo, notes),
+    generation: loop,
+  });
+  const headers = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home", "content-type": "application/json" };
+  const guild = await app.inject({ method: "POST", url: "/api/guilds", headers, payload: { name: "chains" } });
+  assert.equal(guild.statusCode, 201, guild.body);
+  const config = {
+    model: "openrouter/openai/gpt-5.6-luna",
+    temperature: 1,
+    max_tokens: 64,
+    max_steps: 30,
+    max_tool_calls: 50,
+    max_input_tokens: 1000,
+    browser: false,
+    coding: true,
+    thinking_level: "none",
+  };
+  const agent = await app.inject({
+    method: "POST",
+    url: `/api/guilds/${String(guild.json().id)}/agents`,
+    headers,
+    payload: { name: "chainer", config },
+  });
+  assert.equal(agent.statusCode, 201, agent.body);
+  const agentId = String(agent.json().id);
+  try {
+    live.streamCompletion = script((messages) => {
+      const last = lastContent(messages);
+      if (last === HANDOFF_REQUEST) {
+        return { role: "assistant", content: "Goal: ship refunds. Done: tests. Remains: docs. See src/refund.ts:12." };
+      }
+      if (String(messages[1]?.content ?? "").startsWith("Continuation:")) {
+        return { role: "assistant", content: "picked up" };
+      }
+      return shellCall(`c${messages.length}`);
+    });
+    const created = await loop.createRun(agentId, "start the task");
+    const first = String(created.id);
+    const continued: string[] = [];
+    const queue = loop.subscribe(first);
+    await loop._tasks.get(first);
+    while (queue.size) {
+      const [event, data] = await queue.get();
+      if (event === "run.continued") {
+        continued.push(String(data.run_id));
+      }
+    }
+
+    const runA = (await repo.getRun(first))!;
+    const metaA = runA.metadata as Record<string, unknown>;
+    assert.equal(runA.status, "completed");
+    const second = String(metaA.continued_by_run_id);
+    assert.deepEqual(continued, [second]);
+    const rowsA = await repo.listMessages(first);
+    const request = rowsA.find((row) => (row.metadata as Record<string, unknown>).source === "handoff");
+    assert.equal((request?.payload as Record<string, unknown>).content, HANDOFF_REQUEST);
+    assert.match(String((rowsA.at(-1)?.payload as Record<string, unknown>).content), /^Goal: ship refunds/);
+
+    const runB = (await repo.getRun(second))!;
+    assert.equal(runB.kind, "direct");
+    assert.equal(runB.status, "active");
+    assert.deepEqual((runB.metadata as Record<string, unknown>).chain, { root_run_id: first, index: 2, previous_run_id: first });
+    const rowsB = await repo.listMessages(second);
+    const opening = rowsB[1]!;
+    assert.equal((opening.metadata as Record<string, unknown>).source, "continuation");
+    const body = JSON.parse(String((opening.payload as Record<string, unknown>).content).slice("Continuation: ".length));
+    assert.deepEqual(body, {
+      previous_run_id: first,
+      handoff: "Goal: ship refunds. Done: tests. Remains: docs. See src/refund.ts:12.",
+    });
+    assert.equal((rowsB.at(-1)?.payload as Record<string, unknown>).content, "picked up");
+    assert.equal(loop.agentIsBusy(agentId), false);
+
+    const view = loop.run_view(runB);
+    assert.deepEqual(view.chain, { root_run_id: first, index: 2, previous_run_id: first });
+    assert.equal(loop.run_view(runA).continued_by_run_id, second);
+
+    await assert.rejects(loop.addMessage(first, "more"), (error: unknown) =>
+      error instanceof RunRequestError && error.status === 409 && error.detail.includes(`continued in run ${second}`),
+    );
+    await assert.rejects(loop.resumeRun(first), (error: unknown) => error instanceof RunRequestError && error.status === 409);
+
+    // A hand-off answered with tool calls: the calls are refused, and no text means no hand-off.
+    live.streamCompletion = script((messages) => {
+      const last = lastContent(messages);
+      if (last === HANDOFF_REQUEST) {
+        return shellCall("c_handoff");
+      }
+      if (String(messages[1]?.content ?? "").startsWith("Continuation:")) {
+        return { role: "assistant", content: "resumed" };
+      }
+      return shellCall(`c${messages.length}`);
+    });
+    const third = String((await loop.createRun(agentId, "again")).id);
+    await loop._tasks.get(third);
+    const rowsC = await repo.listMessages(third);
+    const refused = rowsC.find((row) => (row.payload as Record<string, unknown>).tool_call_id === "c_handoff");
+    assert.match(String((refused?.payload as Record<string, unknown>).content), new RegExp(`^${HANDOFF_TOOL_REFUSED}`));
+    const fourth = String(((await repo.getRun(third))!.metadata as Record<string, unknown>).continued_by_run_id);
+    const openingD = (await repo.listMessages(fourth))[1]!;
+    const bodyD = JSON.parse(String((openingD.payload as Record<string, unknown>).content).slice("Continuation: ".length));
+    assert.equal(bodyD.handoff, null);
+    assert.match(String(bodyD.note), /no hand-off/);
+
+    // The fifth run of a chain completes at the hand-off point instead of starting a sixth.
+    live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
+    const fifth = String((await loop.createRun(agentId, null)).id);
+    await repo.mergeRunMetadata(fifth, { chain: { root_run_id: first, index: 5, previous_run_id: second } }, new Date());
+    await loop.addMessage(fifth, "go on");
+    await loop._tasks.get(fifth);
+    const runE = (await repo.getRun(fifth))!;
+    assert.equal(runE.status, "completed");
+    assert.equal((runE.metadata as Record<string, unknown>).continued_by_run_id, undefined);
+    assert.equal((runE.errors as Array<Record<string, unknown>>).at(-1)?.operation, "generation.max_chain");
+
+    // A group delivery completes, and its cursor advances, when the chain ends; Memory is asked of
+    // the last run only.
+    live.streamCompletion = script((messages) => {
+      const last = lastContent(messages);
+      if (last === HANDOFF_REQUEST) {
+        return { role: "assistant", content: "Hand-off for the group task." };
+      }
+      if (String(messages[1]?.content ?? "").startsWith("Continuation:")) {
+        return { role: "assistant", content: "group done" };
+      }
+      return shellCall(`c${messages.length}`);
+    });
+    const guildId = String(guild.json().id);
+    const posted = await app.inject({
+      method: "POST",
+      url: `/api/guilds/${guildId}/group-chat/messages`,
+      headers,
+      payload: { content: "@chainer take the refunds task" },
+    });
+    assert.equal(posted.statusCode, 202, posted.body);
+    const groupRuns = async () => (await repo.listRuns(agentId)).filter((row) => row.kind === "group");
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const runs = await groupRuns();
+      if (runs.length === 2 && runs.every((row) => row.status === "completed") && !loop.group_chat.is_dispatching(guildId)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const [later, earlier] = await groupRuns();
+    const root = (earlier!.metadata as Record<string, unknown>).chain ? later! : earlier!;
+    const next = root === earlier ? later! : earlier!;
+    assert.equal((root.metadata as Record<string, unknown>).continued_by_run_id, next.id);
+    assert.equal(root.status, "completed");
+    assert.equal(next.status, "completed");
+    assert.equal(next.group_chat_through_seq, root.group_chat_through_seq);
+    assert.equal((root.metadata as Record<string, unknown>).memory_skipped, undefined);
+    assert.equal((next.metadata as Record<string, unknown>).memory_skipped, true);
+    const cursor = await database.pool.query("SELECT group_chat_delivered_through FROM agents WHERE id = $1", [agentId]);
+    assert.equal(Number(cursor.rows[0]?.group_chat_delivered_through), Number(root.group_chat_through_seq));
+
+    // A run without coding keeps the terminal cap.
+    await repo.updateAgentConfig(agentId, { ...config, coding: false }, new Date(), {});
+    live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
+    const plain = String((await loop.createRun(agentId, "plain")).id);
+    await loop._tasks.get(plain);
+    const runF = (await repo.getRun(plain))!;
+    assert.equal((runF.metadata as Record<string, unknown>).continued_by_run_id, undefined);
+    assert.equal((runF.errors as Array<Record<string, unknown>>).at(-1)?.operation, "generation.max_input_tokens");
+  } finally {
+    await loop.close();
+    await app.close();
+    await database.close();
+  }
+});

@@ -1,0 +1,121 @@
+{
+  "slug": "alchemy",
+  "display_name": "Alchemy",
+  "auth": {
+    "kind": "token"
+  },
+  "description": "NFT holdings, metadata, and collection data across supported chains.",
+  "limitations": "Read-only NFT data. Not a wallet and not an order book.",
+  "setup_hint": "Connect with an Alchemy API key.",
+  "tools": [
+    {
+      "name": "holdings",
+      "description": "NFTs currently owned by an address. Pass owner and optional chain, contract, page_key. Chains: ethereum, polygon, base, arbitrum, bsc, optimism, ink, robinhood, solana. Default ethereum.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "Wallet address. ENS works on ethereum."
+          },
+          "chain": {
+            "type": "string",
+            "enum": [
+              "ethereum",
+              "polygon",
+              "base",
+              "arbitrum",
+              "bsc",
+              "optimism",
+              "ink",
+              "robinhood",
+              "solana"
+            ],
+            "description": "ethereum, polygon, base, arbitrum, bsc, optimism, ink, robinhood, solana. Default ethereum."
+          },
+          "contract": {
+            "type": "string",
+            "description": "Optional collection contract or Solana collection mint."
+          },
+          "page_key": {
+            "type": "string",
+            "description": "Continue from a previous page_key."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows this page. Default 15, max 30."
+          }
+        },
+        "required": [
+          "owner"
+        ]
+      }
+    },
+    {
+      "name": "nft",
+      "description": "One NFT. On EVM pass contract and token_id. On solana pass the mint as contract.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "description": "NFT contract address, or Solana mint."
+          },
+          "token_id": {
+            "type": "string",
+            "description": "Token id. Required on EVM chains."
+          },
+          "chain": {
+            "type": "string",
+            "enum": [
+              "ethereum",
+              "polygon",
+              "base",
+              "arbitrum",
+              "bsc",
+              "optimism",
+              "ink",
+              "robinhood",
+              "solana"
+            ],
+            "description": "ethereum, polygon, base, arbitrum, bsc, optimism, ink, robinhood, solana. Default ethereum."
+          }
+        },
+        "required": [
+          "contract"
+        ]
+      }
+    },
+    {
+      "name": "collection",
+      "description": "Collection metadata and floor. Pass contract, or a Solana collection mint.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "description": "Collection contract address, or Solana collection mint."
+          },
+          "chain": {
+            "type": "string",
+            "enum": [
+              "ethereum",
+              "polygon",
+              "base",
+              "arbitrum",
+              "bsc",
+              "optimism",
+              "ink",
+              "robinhood",
+              "solana"
+            ],
+            "description": "ethereum, polygon, base, arbitrum, bsc, optimism, ink, robinhood, solana. Default ethereum."
+          }
+        },
+        "required": [
+          "contract"
+        ]
+      }
+    }
+  ]
+}

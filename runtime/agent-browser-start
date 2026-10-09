@@ -1,0 +1,129 @@
+#!/bin/bash
+set -euo pipefail
+
+PROFILE=/home/agent/.browser
+DISPLAY_NUM=1
+export DISPLAY=":${DISPLAY_NUM}"
+GEOMETRY="${BROWSER_GEOMETRY:-1280x720}"
+NOVNC_ROOT=/usr/share/novnc
+LOG=/tmp/agent-browser.log
+
+mkdir -p "$PROFILE" /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
+exec >>"$LOG" 2>&1
+
+cleanup() {
+  jobs -p | xargs -r kill 2>/dev/null || true
+}
+trap cleanup EXIT
+
+resolve_chrome() {
+  if command -v google-chrome >/dev/null 2>&1; then
+    echo google-chrome
+  elif command -v google-chrome-stable >/dev/null 2>&1; then
+    echo google-chrome-stable
+  elif command -v chromium >/dev/null 2>&1; then
+    echo chromium
+  else
+    echo "no chrome binary" >&2
+    exit 1
+  fi
+}
+
+CHROME_BIN="$(resolve_chrome)"
+
+if [ ! -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ]; then
+  Xtigervnc ":${DISPLAY_NUM}" \
+    -geometry "$GEOMETRY" \
+    -depth 24 \
+    -SecurityTypes None \
+    -localhost \
+    -AlwaysShared \
+    -AcceptSetDesktopSize=0 &
+fi
+
+for _ in $(seq 1 100); do
+  if xdpyinfo -display ":${DISPLAY_NUM}" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+xdpyinfo -display ":${DISPLAY_NUM}" >/dev/null
+
+matchbox-window-manager -use_titlebar no >/dev/null 2>&1 &
+
+if ! curl -sf "http://127.0.0.1:6080/vnc.html" >/dev/null 2>&1; then
+  websockify --web "$NOVNC_ROOT" 6080 127.0.0.1:5901 &
+fi
+
+for _ in $(seq 1 100); do
+  if curl -sf "http://127.0.0.1:6080/vnc.html" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+curl -sf "http://127.0.0.1:6080/vnc.html" >/dev/null
+
+eval "$(python3 /usr/local/bin/guilds-locale --write-profile "$PROFILE")"
+export TZ LANG LANGUAGE CHROME_LANG CHROME_ACCEPT_LANG
+echo "chrome locale tz=${TZ:-UTC} lang=${CHROME_LANG:-en-US} accept=${CHROME_ACCEPT_LANG:-en-US,en}"
+
+if [ -n "${LANG:-}" ]; then
+  locale_name="${LANG%%.*}"
+  localedef -c -i "$locale_name" -f UTF-8 "$LANG" >/dev/null 2>&1 || true
+fi
+
+clear_stale_chromium_locks() {
+  echo "chromium host=$(hostname) profile=$PROFILE"
+  for name in SingletonLock SingletonCookie SingletonSocket; do
+    path="$PROFILE/$name"
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      target=$(readlink "$path" 2>/dev/null || true)
+      echo "clearing stale chromium $name${target:+ -> $target}"
+      rm -f "$path"
+    fi
+  done
+}
+
+# Keep cookies and logins; drop last-session tabs so Chrome does not reopen guilds.run.
+clear_restored_tabs() {
+  default="$PROFILE/Default"
+  rm -f \
+    "$default/Current Session" \
+    "$default/Current Tabs" \
+    "$default/Last Session" \
+    "$default/Last Tabs"
+  rm -rf "$default/Sessions"
+}
+
+while true; do
+  clear_stale_chromium_locks
+  clear_restored_tabs
+  if ! "$CHROME_BIN" \
+    --no-sandbox \
+    --disable-dev-shm-usage \
+    --use-gl=angle \
+    --disable-gpu-compositing \
+    --use-angle=swiftshader \
+    --enable-unsafe-swiftshader \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-field-trial-config \
+    --password-store=basic \
+    --disable-session-crashed-bubble \
+    --hide-crash-restore-bubble \
+    --disable-blink-features=AutomationControlled \
+    --start-maximized \
+    --window-size=1280,720 \
+    --remote-debugging-port=9222 \
+    --remote-debugging-address=127.0.0.1 \
+    --user-data-dir="$PROFILE" \
+    --homepage=about:blank \
+    --lang="${CHROME_LANG:-en-US}" \
+    --accept-lang="${CHROME_ACCEPT_LANG:-en-US,en}" \
+    about:blank
+  then
+    echo "chromium exited $?"
+  fi
+  sleep 1
+done

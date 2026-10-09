@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+from playwright.async_api import async_playwright
+
+CDP = "http://127.0.0.1:9222"
+VIEWPORT = {"width": 1280, "height": 720}
+SCREENSHOT = Path("/home/agent/screenshots/latest.jpg")
+LOCALE_CACHE = Path(os.environ.get("GUILDS_LOCALE_CACHE", "/tmp/guilds-locale.json"))
+TIMEOUT_MS = 15_000
+
+
+DIRECTIONS = ("up", "down", "left", "right")
+
+# `el` is a start node or null; `direction` is up/down/left/right.
+_SCROLL_CORE = """
+  const axis = direction === "left" || direction === "right" ? "x" : "y";
+  const sign = direction === "down" || direction === "right" ? 1 : -1;
+
+  function isDoc(node) {
+    return !node
+      || node === document.documentElement
+      || node === document.body
+      || node === document.scrollingElement;
+  }
+
+  function canScroll(node, which) {
+    const root = document.scrollingElement || document.documentElement;
+    if (isDoc(node)) {
+      return which === "y"
+        ? root.scrollHeight > root.clientHeight + 1
+        : root.scrollWidth > root.clientWidth + 1;
+    }
+    const style = getComputedStyle(node);
+    const overflow = which === "y" ? style.overflowY : style.overflowX;
+    if (overflow !== "auto" && overflow !== "scroll" && overflow !== "overlay") {
+      return false;
+    }
+    return which === "y"
+      ? node.scrollHeight > node.clientHeight + 1
+      : node.scrollWidth > node.clientWidth + 1;
+  }
+
+  function label(node) {
+    if (isDoc(node)) {
+      return "window";
+    }
+    const id = node.id ? "#" + node.id : "";
+    let cls = "";
+    if (typeof node.className === "string" && node.className.trim()) {
+      cls = "." + node.className.trim().split(/\\s+/).slice(0, 2).join(".");
+    }
+    return node.tagName.toLowerCase() + id + cls;
+  }
+
+  function scrollerOf(node, which) {
+    const root = document.scrollingElement || document.documentElement;
+    if (isDoc(node)) {
+      return root;
+    }
+    return node;
+  }
+
+  function metrics(node, which) {
+    const target = scrollerOf(node, which);
+    const pos = which === "y" ? target.scrollTop : target.scrollLeft;
+    const size = which === "y" ? target.clientHeight : target.clientWidth;
+    const max = which === "y" ? target.scrollHeight : target.scrollWidth;
+    const remaining = Math.max(0, max - size - pos);
+    return { target, pos, size, remaining };
+  }
+
+  function pickDefault(which) {
+    const found = [];
+    for (const node of document.querySelectorAll("*")) {
+      if (isDoc(node) || !canScroll(node, which)) {
+        continue;
+      }
+      const box = node.getBoundingClientRect();
+      if (box.width < 40 || box.height < 40) {
+        continue;
+      }
+      if (box.bottom < 0 || box.top > innerHeight || box.right < 0 || box.left > innerWidth) {
+        continue;
+      }
+      found.push(node);
+    }
+    if (found.length) {
+      found.sort((a, b) => (b.clientWidth * b.clientHeight) - (a.clientWidth * a.clientHeight));
+      return found[0];
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function fromStart(node, which) {
+    let cur = node;
+    while (cur && !isDoc(cur)) {
+      if (canScroll(cur, which)) {
+        return cur;
+      }
+      cur = cur.parentElement;
+    }
+    return pickDefault(which);
+  }
+
+  const node = el ? fromStart(el, axis) : pickDefault(axis);
+  const before = metrics(node, axis);
+  const atEnd = sign > 0 ? before.remaining <= 0 : before.pos <= 0;
+  if (atEnd) {
+    return {
+      moved: false,
+      direction,
+      container: label(node),
+      from: Math.round(before.pos),
+      to: Math.round(before.pos),
+      remaining: Math.round(sign > 0 ? before.remaining : before.pos),
+    };
+  }
+  const delta = sign * Math.max(1, Math.floor(before.size * 0.9));
+  if (axis === "y") {
+    before.target.scrollBy(0, delta);
+  } else {
+    before.target.scrollBy(delta, 0);
+  }
+  const after = metrics(node, axis);
+  return {
+    moved: after.pos !== before.pos,
+    direction,
+    container: label(node),
+    from: Math.round(before.pos),
+    to: Math.round(after.pos),
+    remaining: Math.round(sign > 0 ? after.remaining : after.pos),
+  };
+"""
+
+
+def _evaluate_source(spec: dict[str, Any]) -> str:
+    raw = spec.get("expression")
+    if not isinstance(raw, str) or not raw.strip():
+        raise RuntimeError("expression is required")
+    return f"(async () => {{\n{raw}\n}})()"
+
+
+def _format_scroll(result: Any) -> str:
+    if not isinstance(result, dict):
+        return str(result)
+    direction = result.get("direction")
+    moved = result.get("moved")
+    head = f"scrolled {direction}" if moved else f"already at end ({direction})"
+    return (
+        f"{head}\n"
+        f"container: {result.get('container')}\n"
+        f"from: {result.get('from')}\n"
+        f"to: {result.get('to')}\n"
+        f"remaining: {result.get('remaining')}"
+    )
+
+
+async def _scroll(page, spec: dict[str, Any]) -> str:
+    direction = spec.get("direction")
+    if direction not in DIRECTIONS:
+        raise RuntimeError("direction must be up, down, left, or right")
+    target = spec.get("target")
+    if isinstance(target, str) and target.strip():
+        result = await page.locator(target.strip()).first.evaluate(
+            "(el, direction) => {\n" + _SCROLL_CORE + "\n}",
+            direction,
+        )
+    else:
+        result = await page.evaluate(
+            "(direction) => {\nconst el = null;\n" + _SCROLL_CORE + "\n}",
+            direction,
+        )
+    return _format_scroll(result)
+
+
+def _format_result(result: Any) -> str:
+    if result is None:
+        return "undefined"
+    try:
+        return json.dumps(result, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(result)
+
+
+def _spec() -> dict[str, Any]:
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: guilds-browser <base64-json>")
+    loaded = json.loads(base64.b64decode(sys.argv[1]))
+    if not isinstance(loaded, dict):
+        raise SystemExit("spec must be an object")
+    return loaded
+
+
+def _locale_cache() -> dict[str, str]:
+    try:
+        loaded = json.loads(LOCALE_CACHE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {key: str(value) for key, value in loaded.items()}
+
+
+async def _apply_locale(page) -> None:
+    values = _locale_cache()
+    timezone = values.get("timezone")
+    locale = values.get("locale")
+    if not timezone and not locale:
+        return
+    try:
+        cdp = await page.context.new_cdp_session(page)
+        if timezone:
+            await cdp.send("Emulation.setTimezoneOverride", {"timezoneId": timezone})
+        if locale:
+            await cdp.send("Emulation.setLocaleOverride", {"locale": locale})
+    except Exception:
+        pass
+
+
+async def _page():
+    playwright = await async_playwright().start()
+    browser = await playwright.chromium.connect_over_cdp(CDP)
+    if not browser.contexts:
+        raise RuntimeError("Chromium has no browser context")
+    context = browser.contexts[0]
+    page = context.pages[-1] if context.pages else await context.new_page()
+    try:
+        await page.set_viewport_size(VIEWPORT)
+    except Exception:
+        pass
+    await _apply_locale(page)
+    return playwright, page
+
+
+async def _run(spec: dict[str, Any]) -> str:
+    op = spec.get("op")
+    playwright, page = await _page()
+    try:
+        if op == "navigate":
+            url = spec["url"]
+            await page.goto(url, wait_until="domcontentloaded", timeout=TIMEOUT_MS)
+            return f"{page.url}\n{await page.title()}"
+        if op == "snapshot":
+            body = await page.locator("html").aria_snapshot()
+            return f"url: {page.url}\ntitle: {await page.title()}\n\n{body}"
+        if op == "click":
+            await page.locator(spec["target"]).click(timeout=TIMEOUT_MS)
+            return f"clicked {spec['target']}\n{page.url}"
+        if op == "type":
+            await page.locator(spec["target"]).press_sequentially(
+                spec["text"], timeout=TIMEOUT_MS
+            )
+            return f"typed into {spec['target']}"
+        if op == "fill":
+            await page.locator(spec["target"]).fill(spec["value"], timeout=TIMEOUT_MS)
+            return f"filled {spec['target']}"
+        if op == "scroll":
+            return await _scroll(page, spec)
+        if op == "screenshot":
+            SCREENSHOT.parent.mkdir(parents=True, exist_ok=True)
+            await page.screenshot(path=str(SCREENSHOT), type="jpeg", quality=60)
+            return f"screenshot {SCREENSHOT}\n{page.url}"
+        if op == "evaluate":
+            result = await page.evaluate(_evaluate_source(spec))
+            return _format_result(result)
+        raise RuntimeError(f"unknown op {op}")
+    finally:
+        await playwright.stop()
+
+
+def main() -> None:
+    try:
+        print(asyncio.run(_run(_spec())), end="")
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    main()

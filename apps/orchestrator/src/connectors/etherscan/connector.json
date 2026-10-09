@@ -1,0 +1,13 @@
+{
+  "slug": "etherscan",
+  "display_name": "Etherscan",
+  "endpoint": {
+    "url": "https://mcp.etherscan.io/mcp"
+  },
+  "auth": {
+    "kind": "token"
+  },
+  "description": "Read-only onchain data across 60+ Etherscan-supported chains: balances, transactions, tokens, contracts, logs, and gas.",
+  "limitations": "Read-only public data. Every call uses the operator's Etherscan API quota. Some tools need a paid plan (for example address labels). Nothing signs or sends a transaction. Not a wallet.",
+  "setup_hint": "Connect with an Etherscan API key. One key covers every supported chain; pass chainid on each call (Ethereum 1, Arbitrum 42161)."
+}

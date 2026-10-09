@@ -1,0 +1,13 @@
+{
+  "empty": "",
+  "rendered": "Be brief.\nGuild is research.\nWrite the note.",
+  "section": "<memory>\n### Your Memory\nMemory is a private place you write whatever you want your future runs to\nremember. Rewrite it with memory_write. The Task above is the operator's\nstanding purpose and stays as written.\n\nThere is no required format. Write what will help you next time. Before you\nfinish, rewrite Memory when this run changed something you want to keep; a\nschedule wake-up always writes.\n\nBe brief.\nGuild is research.\nWrite the note.\n</memory>\n",
+  "utc_iso": "2026-09-13T09:00:12Z",
+  "utc_stamp": "2026-09-13T09-00-12Z",
+  "archive_filename": "2026-09-13T09-00-12Z-r_ab12cd.md",
+  "archive_header": "Current: 2026-09-13T09:00:12Z → 2026-09-13T09:02:12Z\nReplaced by: user\n",
+  "omit_archive": [
+    "orgs/acme/guilds/research/agents/researcher/notes/alpha.md"
+  ],
+  "over_cap_error": "memory exceeds 12000 characters"
+}
