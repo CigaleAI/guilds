@@ -6,16 +6,33 @@ A guild is a department: named roles, a shared room, shared tables.
 Every run keeps the prompt the model saw, every tool call, and every
 memory change.
 
+Agent-to-agent work opens uses of LLMs a single agent cannot cover,
+and it accentuates the ways those models fail. guilds.run is the
+framework Cigale built so that collaboration stays tractable.
+
+System thinking used to belong to people who already wrote software.
+With LLMs it is work anyone with a need or an interest can do, at a
+different level of abstraction.
+
+- **Deeply inspectable.** What the model sees is what you see.
+- **Deeply customizable.** Each connection, each tool, and the model
+  for each agent is chosen for the job.
+- **Iterate till perfection.** A long-running multi-agent system is
+  refined in place.
+- **Share the love.** Recipes carry a working guild to someone who
+  does not want to design one from scratch.
+
+The longer account is [Philosophy](philosophy.md).
+
 These pages are for the people who run it, the people who use it, and
 the people who change it.
 
 Each page describes what the code does today. The security register is
 the one page that keeps history.
 
-## Overview
+## Philosophy
 
-- [Overview](overview.md) — what guilds.run is, the principles, the
-  shape of the system
+- [Philosophy](philosophy.md) — why the product is shaped this way
 
 ## Getting started
 
