@@ -11,7 +11,7 @@ submitting it. There is no separate contributor agreement.
 - Write code the way the repository does:
   [Code guidelines](contributing/code-guidelines.md).
 - Understand the system before changing it: start at the
-  [Overview](overview.md), then the
+  [index](README.md) and [Philosophy](philosophy.md), then the
   [Architecture](README.md#architecture) pages.
 
 A change is a branch and a pull request against `main`.

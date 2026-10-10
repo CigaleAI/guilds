@@ -105,6 +105,7 @@
       const form = document.getElementById("search");
       const q = document.getElementById("q");
       const allowed = /^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.md$/;
+      const home = "README.md";
       let lastConfig = { hostRoot: "" };
 
       mermaid.initialize({
@@ -230,9 +231,11 @@
       }
 
       async function loadList() {
-        const files = (await listMarkdown()).sort((a, b) =>
-          a.localeCompare(b, "en", { numeric: true }),
-        );
+        const files = (await listMarkdown()).sort((a, b) => {
+          if (a === home) return -1;
+          if (b === home) return 1;
+          return a.localeCompare(b, "en", { numeric: true });
+        });
         nav.innerHTML = files
           .map((name) => `<a href="#${encodeURIComponent(name)}" data-name="${name}">${name}</a>`)
           .join("");
@@ -333,8 +336,9 @@
         .then((files) => {
           const name = currentName();
           if (name) return loadChapter(name);
-          if (files[0]) {
-            location.hash = encodeURIComponent(files[0]);
+          const first = files.includes(home) ? home : files[0];
+          if (first) {
+            location.hash = encodeURIComponent(first);
           }
         })
         .catch((error) => {

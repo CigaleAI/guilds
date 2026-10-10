@@ -193,3 +193,4 @@ services alone.
 The documentation is Markdown under `docs/`.
 `docs/README.md` is the index and the one place the structure is
 kept. GitHub shows it on the repository page.
+`docs/philosophy.md` is the motivation and the principles.

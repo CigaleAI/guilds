@@ -30,7 +30,7 @@ test("formatSearchResult lists entities, relations, and clipped chunks", () => {
       ],
       chunks: [
         {
-          file_path: "overview.md",
+          file_path: "philosophy.md",
           content: "compat-cookie is the local default.",
         },
       ],
@@ -38,8 +38,8 @@ test("formatSearchResult lists entities, relations, and clipped chunks", () => {
   });
   assert.match(text, /AUTH_MODE \(setting\)/);
   assert.match(text, /AUTH_MODE → identity\.ts/);
-  assert.match(text, /overview\.md/);
-  assert.match(text, /http:\/\/127\.0\.0\.1:9622\/#overview\.md/);
+  assert.match(text, /philosophy\.md/);
+  assert.match(text, /http:\/\/127\.0\.0\.1:9622\/#philosophy\.md/);
   assert.match(text, /compat-cookie is the local default/);
 });
 
