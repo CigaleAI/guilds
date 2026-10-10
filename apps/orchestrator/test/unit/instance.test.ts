@@ -53,8 +53,6 @@ test("statuses name each integration and its variables without a value", () => {
   assert.deepEqual(
     statuses.map((item) => [item.id, item.state]),
     [
-      ["openrouter", "off"],
-      ["deepinfra", "off"],
       ["web-search", "on"],
       ["group-routing", "off"],
       ["github-app", "incomplete"],
@@ -82,18 +80,14 @@ test("no two integrations share an id or a variable", () => {
   assert.equal(new Set(names).size, names.length);
 });
 
-test("statuses say which providers, tools, and connectors each integration switches on", () => {
+test("statuses say which tools and connectors each integration switches on, and none serves a model", () => {
   const provides = Object.fromEntries(
     integrationStatuses(CORE_INTEGRATIONS, {}).map((item) => [item.id, item.provides]),
   );
-  assert.deepEqual(provides.openrouter, { model_providers: ["openrouter"], native_tools: [], connectors: [] });
-  assert.deepEqual(provides.deepinfra, { model_providers: ["deepinfra"], native_tools: [], connectors: [] });
-  assert.deepEqual(provides["web-search"], { model_providers: [], native_tools: [], connectors: ["tavily"] });
-  assert.deepEqual(provides["github-app"], { model_providers: [], native_tools: [], connectors: ["github"] });
-  assert.deepEqual(provides["google-connectors"], {
-    model_providers: [],
-    native_tools: [],
-    connectors: ["gmail", "drive"],
-  });
-  assert.deepEqual(provides["group-routing"], { model_providers: [], native_tools: [], connectors: [] });
+  assert.equal("openrouter" in provides, false);
+  assert.equal("deepinfra" in provides, false);
+  assert.deepEqual(provides["web-search"], { native_tools: [], connectors: ["tavily"] });
+  assert.deepEqual(provides["github-app"], { native_tools: [], connectors: ["github"] });
+  assert.deepEqual(provides["google-connectors"], { native_tools: [], connectors: ["gmail", "drive"] });
+  assert.deepEqual(provides["group-routing"], { native_tools: [], connectors: [] });
 });

@@ -114,9 +114,10 @@ monitor outside the box.
 | `AUTH_MODE must be compat-cookie, trusted-header` | `.env` names a mode core does not have |
 | `TRUSTED_PROXY_SECRET is required when AUTH_MODE=trusted-header`, and the same for `PUBLIC_BASE_URL` and `OPERATOR_EMAIL` | The proxy mode is missing one of its three settings ([Remote access](remote-access.md)) |
 | `OPERATOR_EMAIL is another user's email` | A user other than the box's first already holds that address |
-| A banner above every page says `No model key yet` | Neither the organisation nor the server has any model key. Connect one under **Settings**, **Model keys**, or set `OPENROUTER_API_KEY` or `DEEPINFRA_API_KEY` and restart ([Install](install.md#the-first-model-key)) |
-| A run ends with `OPENROUTER_API_KEY is not set` (or `DEEPINFRA_API_KEY`) | Neither the organisation nor the server has a key for that model's provider ([Configure](configure.md#integrations)) |
-| A run ends with `a … key is not connected` | A coding agent runs a model that takes an organisation key only, and the organisation has none under **Settings**, **Model keys** |
+| Create agent, Studio, the Builder, or recipe apply shows `Connect a model provider first` | The organisation has no provider connected. Connect one under **Settings**, **Model keys** ([Install](install.md#the-first-model-key)) |
+| A run ends with `connect a … key on Model keys` | The organisation has no key for that agent's model provider, or removed it; connect one under **Settings**, **Model keys** |
+| The picker lists a model under `Not offered` | The agent's stored model is no longer among the organisation's chosen models; it still runs while the provider's key is connected |
+| Model keys cannot browse a provider's catalog, or lists stale models | The box could not fetch models.dev and serves its last catalog or the snapshot it ships with ([Configure](configure.md#model-catalog)) |
 | Stored credentials fail to decrypt after a restore | The restore runs under a different `SECRETS_MASTER_KEY` than the one the data was written with |
 
 The orchestrator container restarts on its own

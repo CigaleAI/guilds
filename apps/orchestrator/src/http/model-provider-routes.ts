@@ -1,12 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { encryptPayload } from "../credentials/crypto.js";
-import { newId } from "../lib/ids.js";
-import { providerRequiresOrgKey } from "../llm/catalog.js";
-import { LLMError, probeProviderKey } from "../llm/client.js";
-import { keyHint, validateModelProvider } from "../llm/org-keys.js";
+import { ModelsError, ModelsService } from "../llm/models.js";
+import { coreModelCredentials } from "../llm/credentials.js";
+import { isProvider } from "../llm/providers.js";
 import { canManageSettings } from "../organisations/index.js";
 import type { AppDeps } from "./deps.js";
-import { HttpError, missingBodyFields } from "./errors.js";
+import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
 
 function bodyOf(request: FastifyRequest): Record<string, unknown> {
@@ -45,71 +43,81 @@ async function requireOrgManager(deps: AppDeps, request: FastifyRequest, orgId: 
   }
 }
 
-function providerItem(row: Record<string, unknown>): Record<string, unknown> {
-  return {
-    provider: row.provider,
-    key_hint: row.key_hint,
-    updated_at: row.updated_at,
-  };
-}
-
-function providerParam(request: FastifyRequest) {
-  try {
-    return validateModelProvider(param(request, "provider"));
-  } catch (error) {
-    throw new HttpError(422, error instanceof Error ? error.message : "invalid provider");
+function providerParam(request: FastifyRequest): string {
+  const provider = param(request, "provider");
+  if (!isProvider(provider)) {
+    throw new HttpError(422, "unknown model provider");
   }
+  return provider;
 }
 
-/** An organisation's own model keys: every member lists them, owners and admins set and remove them. */
-export async function registerModelProviderRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+/** The models service the routes answer with: the one composed, or core's over the repository. */
+export function modelsOf(deps: AppDeps): ModelsService {
+  return (
+    deps.models ??
+    new ModelsService({
+      repo: deps.repo,
+      credentials: deps.modelCredentials ?? coreModelCredentials(deps.repo, deps.masterKey),
+      masterKey: deps.masterKey,
+    })
+  );
+}
 
-  app.get("/api/orgs/:org_id/model-providers", async (request) => {
+function mapModelsError(error: unknown): never {
+  if (error instanceof ModelsError) {
+    throw new HttpError(error.status, error.message);
+  }
+  throw error;
+}
+
+/**
+ * An organisation's model setup: every member reads what is offered, owners and admins connect
+ * providers, choose their models, and name the default.
+ */
+export async function registerModelProviderRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+  const models = modelsOf(deps);
+
+  app.get("/api/orgs/:org_id/models", async (request) => {
     const orgId = param(request, "org_id");
     await requireMembership(deps, request, orgId);
-    return (await repo.listOrgModelProviders(orgId)).map(providerItem);
+    return models.read(orgId);
+  });
+
+  app.get("/api/orgs/:org_id/model-providers/:provider/catalog", async (request) => {
+    const orgId = param(request, "org_id");
+    await requireMembership(deps, request, orgId);
+    try {
+      return { models: await models.providerCatalog(orgId, providerParam(request)) };
+    } catch (error) {
+      mapModelsError(error);
+    }
   });
 
   app.put("/api/orgs/:org_id/model-providers/:provider", async (request) => {
     const orgId = param(request, "org_id");
     await requireOrgManager(deps, request, orgId);
     const provider = providerParam(request);
-    const missing = missingBodyFields(request.body, ["api_key"]);
-    if (missing) {
-      throw missing;
+    try {
+      return await models.connect(orgId, provider, bodyOf(request));
+    } catch (error) {
+      mapModelsError(error);
     }
-    const apiKey = String(bodyOf(request).api_key ?? "").trim();
-    if (!apiKey) {
-      throw new HttpError(422, "api_key is required");
+  });
+
+  app.put("/api/orgs/:org_id/default-model", async (request) => {
+    const orgId = param(request, "org_id");
+    await requireOrgManager(deps, request, orgId);
+    try {
+      return await models.setDefault(orgId, bodyOf(request).model ?? null);
+    } catch (error) {
+      mapModelsError(error);
     }
-    if (providerRequiresOrgKey(provider)) {
-      try {
-        await probeProviderKey(provider, apiKey);
-      } catch (error) {
-        throw new HttpError(422, error instanceof LLMError ? error.message : "couldn't reach the provider");
-      }
-    }
-    const [ciphertext, nonce] = deps.masterKey
-      ? encryptPayload({ api_key: apiKey }, deps.masterKey)
-      : encryptPayload({ api_key: apiKey });
-    const row = await repo.upsertOrgModelProvider(
-      newId("mp"),
-      orgId,
-      provider,
-      ciphertext,
-      nonce,
-      keyHint(apiKey),
-      new Date(),
-    );
-    return providerItem(row);
   });
 
   app.delete("/api/orgs/:org_id/model-providers/:provider", async (request, reply) => {
     const orgId = param(request, "org_id");
     await requireOrgManager(deps, request, orgId);
-    const deleted = await repo.deleteOrgModelProvider(orgId, providerParam(request));
-    if (deleted === null) {
+    if (!(await models.remove(orgId, providerParam(request)))) {
       throw new HttpError(404, "model provider not found");
     }
     return reply.code(204).send();

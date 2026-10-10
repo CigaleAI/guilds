@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { modelAcceptsAttachments, modelNeedsInlineImages } from "../llm/catalog.js";
+import { modelAcceptsAttachments } from "../llm/catalog.js";
+import { modelNeedsInlineImages } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { iso } from "../db/views.js";
 import { sanitizeFilename, sniffImage } from "./sniff.js";

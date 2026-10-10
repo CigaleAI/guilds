@@ -1,5 +1,5 @@
-# Local development of core alone: product stack with the orchestrator restarting on source
-# changes, + localhost docs search.
+# Local development of core alone: the product stack with the orchestrator restarting on source
+# changes.
 # Usage: docker compose -f docker-compose.dev.yml up
 # Never use this file for the hosted public box.
 name: guilds
@@ -8,4 +8,3 @@ include:
   - path:
       - docker-compose.yml
       - docker-compose.watch.yml
-  - path: docker-compose.docs.yml

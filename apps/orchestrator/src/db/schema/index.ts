@@ -56,6 +56,8 @@ export const orgs = pgTable(
     slug: text("slug").notNull(),
     createdAt: timestamptz("created_at").notNull(),
     updatedAt: timestamptz("updated_at").notNull(),
+    /** The organisation's default model, `{provider}/{model}`, or null while none is named. */
+    defaultModel: text("default_model"),
   },
   (table) => [unique("orgs_slug_key").on(table.slug)],
 );
@@ -709,9 +711,11 @@ export const orgModelProviders = pgTable(
     id: text("id").primaryKey(),
     orgId: text("org_id").notNull(),
     provider: text("provider").notNull(),
-    ciphertext: bytea("ciphertext").notNull(),
-    nonce: bytea("nonce").notNull(),
-    keyHint: text("key_hint").notNull(),
+    ciphertext: bytea("ciphertext"),
+    nonce: bytea("nonce"),
+    keyHint: text("key_hint"),
+    /** The chosen model ids, `{provider}/{model}`, the pickers offer. */
+    models: text("models").array().notNull().default(sql`'{}'::text[]`),
     createdAt: timestamptz("created_at").notNull(),
     updatedAt: timestamptz("updated_at").notNull(),
   },
@@ -721,10 +725,6 @@ export const orgModelProviders = pgTable(
       foreignColumns: [orgs.id],
       name: "org_model_providers_org_id_fkey",
     }).onDelete("cascade"),
-    check(
-      "org_model_providers_provider_check",
-      sql`${table.provider} IN ('openrouter', 'deepinfra', 'kimi')`,
-    ),
     unique("org_model_providers_org_provider_unique").on(table.orgId, table.provider),
   ],
 );

@@ -1,4 +1,4 @@
-import { CATALOG_IDS, PROVIDER_LABELS, catalogById, isProvider, providerNameForModel } from "../llm/catalog.js";
+import { parseModelId, providerLabel } from "../llm/providers.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../db/seed/catalog.js";
@@ -24,7 +24,7 @@ export type ValidationContext = {
   remainingBrowserAgents: number | null;
   remainingCodingAgents: number | null;
   groupLimit: number;
-  /** Organisation BYOK / coding-API keys that are connected. */
+  /** The model providers the organisation has connected. */
   connectedProviders?: Set<string>;
   /** Connectors the registry offers that the box lacks, by slug: the newest version. */
   registryConnectors?: Map<string, { version: string; verified: boolean }>;
@@ -107,47 +107,37 @@ export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContex
     if (role.config.coding !== undefined && typeof role.config.coding !== "boolean") {
       findings.push(finding("coding.flag", "error", `roles.${role.role}.config.coding`, "config.coding must be a boolean"));
     }
-    const model = String(role.config.model ?? "");
-    if (model && !CATALOG_IDS.has(model) && ![...CATALOG_IDS].some((id) => id.endsWith(`/${model}`) || id === model)) {
+    const model = String(role.config.model ?? "").trim();
+    const parsed = model ? parseModelId(model) : null;
+    if (model && !parsed) {
       findings.push(
-        finding("model.unknown", "warning", `roles.${role.role}.config.model`, `unknown model ${model}`),
+        finding(
+          "model.unknown",
+          "warning",
+          `roles.${role.role}.config.model`,
+          `unknown model ${model}; apply asks for one`,
+        ),
       );
     }
-    const catalogId =
-      CATALOG_IDS.has(model) ? model : [...CATALOG_IDS].find((id) => id.endsWith(`/${model}`) || id === model);
-    const catalog = catalogId ? catalogById(catalogId) : undefined;
-    if (catalog?.coding_only) {
-      if (role.config.coding !== true) {
-        findings.push(
-          finding(
-            "model.coding",
-            "error",
-            `roles.${role.role}.config.model`,
-            `${catalog.label} is only for a coding agent`,
-          ),
-        );
-      }
-      const provider = providerNameForModel(catalog.id);
-      const providerLabel = provider && isProvider(provider) ? PROVIDER_LABELS[provider] : catalog.provider;
-      if (provider && ctx.connectedProviders && !ctx.connectedProviders.has(provider)) {
-        findings.push(
-          finding(
-            "model.coding_key",
-            "error",
-            `roles.${role.role}.config.model`,
-            `${catalog.label} needs a ${providerLabel} key on Model keys`,
-          ),
-        );
-      } else if (provider && !ctx.connectedProviders) {
-        findings.push(
-          finding(
-            "model.coding_key",
-            "warning",
-            `roles.${role.role}.config.model`,
-            `${catalog.label} needs a ${providerLabel} key on Model keys`,
-          ),
-        );
-      }
+    if (parsed && parsed.provider.kind === "coding" && role.config.coding !== true) {
+      findings.push(
+        finding(
+          "model.coding",
+          "warning",
+          `roles.${role.role}.config.model`,
+          `${model} is only for a coding agent; apply asks for another`,
+        ),
+      );
+    }
+    if (parsed && ctx.connectedProviders && !ctx.connectedProviders.has(parsed.provider.id)) {
+      findings.push(
+        finding(
+          "model.not_connected",
+          "warning",
+          `roles.${role.role}.config.model`,
+          `${model} needs a ${providerLabel(parsed.provider.id)} key on Model keys; apply asks for another`,
+        ),
+      );
     }
     if (Boolean(role.config.browser) !== role.browser.required) {
       findings.push(

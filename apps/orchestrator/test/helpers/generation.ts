@@ -15,6 +15,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { SandboxError } from "../../src/sandbox/index.js";
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
+import { TEST_CREDENTIALS } from "./models.js";
 import type { PlannedWake } from "../../src/schedules/window.js";
 
 export const AGENT_CONFIG = {
@@ -200,7 +201,6 @@ export class FakeDB {
   mcp_connection: Record<string, unknown> | null = null;
   mcp_server: Record<string, unknown> | null = null;
   monthlyUsage: Record<string, unknown> | null = null;
-  orgApiKey: string | null = null;
   due_schedules: Array<Record<string, unknown>> = [];
   fired: Array<Record<string, unknown>> = [];
 
@@ -257,10 +257,6 @@ export class FakeDB {
 
   async getOrgMonthlyUsage(_orgId: string, _month: string) {
     return this.monthlyUsage;
-  }
-
-  async resolveOrgApiKey(_orgId: string, _model: string) {
-    return this.orgApiKey;
   }
 
   async getGuild(guildId: string) {
@@ -855,7 +851,7 @@ export function makeLoop(
     notes as GenerationNotes,
     workspaceRoot,
     sandboxes as GenerationSandboxes,
-    { idleTimeoutMs: 0, ...options },
+    { idleTimeoutMs: 0, credentials: TEST_CREDENTIALS, ...options },
   );
 }
 

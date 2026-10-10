@@ -263,7 +263,11 @@ Browser logins happen on the live agent after apply.
 ```
 
 The landing takes a sentence or two describing the guild and the coach
-model.
+model, from the organisation's chosen marketplace models and
+preselected with its default; while no provider is connected it shows
+a guide to Model keys instead. The coach's model is written into the
+roles it drafts without one, as their recommendation
+([Recipes](recipes.md)).
 It starts a session with that description as its first message.
 It lists earlier drafts.
 

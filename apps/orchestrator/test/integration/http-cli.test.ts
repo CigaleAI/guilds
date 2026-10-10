@@ -5,7 +5,7 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
 import { GenerationLoop } from "../../src/generation/index.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -40,6 +40,7 @@ test(
     const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
     await notes.ensureSystemPrompt();
     const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
     const artifacts = new ArtifactStore(database.pool, notes.templates);
     const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
     const upstream = await startSandboxUpstream({ subprotocol: "tty" });
@@ -73,7 +74,7 @@ test(
         method: "POST",
         url: `/api/guilds/${guildId}/agents`,
         headers: JSON_AUTH,
-        payload: { name: "cli-plain", config: { model: DEFAULT_MODEL, browser: false } },
+        payload: { name: "cli-plain", config: { model: TEST_MODEL, browser: false } },
       });
       assert.equal(created.statusCode, 201, created.body);
       const agentId = String(created.json().id);
@@ -141,7 +142,7 @@ test(
         method: "POST",
         url: `/api/guilds/${guildId}/agents`,
         headers: JSON_AUTH,
-        payload: { name: "cli-browser", config: { model: DEFAULT_MODEL, browser: true } },
+        payload: { name: "cli-browser", config: { model: TEST_MODEL, browser: true } },
       });
       assert.equal(browserAgent.statusCode, 201, browserAgent.body);
       const browserId = String(browserAgent.json().id);

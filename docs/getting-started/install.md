@@ -112,21 +112,21 @@ machine, is [Remote access](remote-access.md).
 
 ## The first model key
 
-A run needs one model key:
+A run needs the organisation's own key for a model provider. The
+server holds none. Under **Settings**, **Model keys**:
 
-- the server's, in `.env` (`OPENROUTER_API_KEY` or
-  `DEEPINFRA_API_KEY`, then `docker compose up --detach --wait`
-  again)
-- or the organisation's own, under **Settings**, **Model keys**
+1. Choose a provider: OpenAI, OpenRouter, xAI, DeepInfra, a local
+   OpenAI-compatible endpoint, or Kimi Code for coding agents.
+2. Paste the key. The local endpoint takes a base URL and an
+   optional key. The key is probed; a rejected one is not saved.
+3. Choose the models to offer from the provider's catalog.
+4. Mark one as the organisation's default.
 
-Until one exists:
+Until a provider is connected, creating an agent, starting Studio or
+the Builder, and applying a recipe show a guide to Model keys in
+place of the model picker
+([Operator app](../concepts/operator-app.md#settings-settings)).
 
-- a banner above every page says so and names both ways to give one
-- the model picker marks each model with `No … key yet`
-- a run on that model fails at its first model call with the
-  variable's name
-
-Every other key in `.env` is optional
-([Configure](configure.md)).
+Every key in `.env` is optional ([Configure](configure.md)).
 
 Next: [Your first guild](first-guild.md).

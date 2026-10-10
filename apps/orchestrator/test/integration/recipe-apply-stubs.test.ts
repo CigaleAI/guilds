@@ -15,6 +15,7 @@ import { RecipeStore } from "../../src/recipes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { startMcpPingFixture } from "../helpers/mcp-fixture.js";
 import {
@@ -54,6 +55,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const notes = new NotesStore(tempDir("guilds-apply-stubs-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);

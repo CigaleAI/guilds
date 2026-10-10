@@ -1,4 +1,10 @@
-import { CATALOG, DEFAULT_MODEL, isMarketplaceModel } from "../llm/catalog.js";
+import {
+  ModelNotConnectedError,
+  assertModelConnected,
+  coreModelCredentials,
+  type ModelCredentialsProvider,
+} from "../llm/credentials.js";
+import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { AdmissionCoordinator } from "../generation/admission.js";
@@ -32,7 +38,8 @@ export type BuilderServiceDeps = {
   apply: RecipeApplyService;
   admission?: AdmissionCoordinator;
   policy?: OrgPolicy;
-  resolveOrgApiKey?: (orgId: string, model: string) => Promise<string | null>;
+  /** What the coach's model provider is called with; core's own rows when absent. */
+  credentials?: ModelCredentialsProvider;
   mcp?: BuilderMcpClient | null;
 };
 
@@ -41,18 +48,19 @@ export class BuilderService {
   runner: ConversationRunner;
   admission: AdmissionCoordinator;
   policy: OrgPolicy;
+  credentials: ModelCredentialsProvider;
 
   constructor(public deps: BuilderServiceDeps) {
     this.store = new BuilderStore(deps.repo.pool);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
+    this.credentials = deps.credentials ?? coreModelCredentials(deps.repo);
     this.runner = new ConversationRunner({
       store: this.store,
       admission: this.admission,
       admissionKind: "builder",
-      ...(deps.resolveOrgApiKey ? { resolveOrgApiKey: deps.resolveOrgApiKey } : {}),
+      credentials: this.credentials,
       policy: this.policy,
-      getOrgMonthlyUsage: (orgId, month) => deps.repo.getOrgMonthlyUsage(orgId, month),
       onToolResult: async (sessionId, name, result, publish) => {
         if (name === "builder_write_recipe" && result.ok) {
           await publish(sessionId, "recipe.changed", result);
@@ -111,15 +119,24 @@ export class BuilderService {
     );
   }
 
-  validateModel(model: string): string {
-    const token = model.trim() || DEFAULT_MODEL;
-    if (
-      !isMarketplaceModel(token)
-      && ![...CATALOG].some((item) => item.kind === "marketplace" && (item.id.endsWith(`/${token}`) || item.id === token))
-    ) {
-      throw new BuilderError(422, "unknown model");
+  /** The coach's model: a marketplace model whose provider the organisation has connected. */
+  async validateModel(orgId: string, model: string): Promise<string> {
+    const id = model.trim();
+    if (!id) {
+      throw new BuilderError(422, "model is required");
     }
-    return token;
+    if (!isMarketplaceModel(id)) {
+      throw new BuilderError(422, "the coach needs a marketplace model");
+    }
+    try {
+      await assertModelConnected(this.credentials, orgId, id);
+    } catch (error) {
+      if (error instanceof ModelNotConnectedError) {
+        throw new BuilderError(422, error.message);
+      }
+      throw error;
+    }
+    return id;
   }
 
   async createSession(args: {
@@ -128,7 +145,7 @@ export class BuilderService {
     model: string;
     temperature?: number;
   }): Promise<Record<string, unknown>> {
-    const model = this.validateModel(args.model);
+    const model = await this.validateModel(String(args.org.id), args.model);
     const temperature =
       typeof args.temperature === "number" ? args.temperature : BUILDER_DEFAULT_TEMPERATURE;
     const now = new Date();
@@ -217,6 +234,7 @@ export class BuilderService {
       mcp: this.deps.mcp ?? null,
       recipeId: String(session.recipe_id),
       recipes: this.deps.recipes,
+      coachModel: String((session.config_snapshot as Record<string, unknown> | null)?.model ?? ""),
       validationContext: () => this.deps.apply.validationContext(String(session.org_id)),
     };
   }

@@ -5,7 +5,7 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
 import { GenerationLoop } from "../../src/generation/index.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -34,6 +34,7 @@ test("an agent is created on a lite or a standard box, and a box change replaces
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
   const generation = new GenerationLoop(repo, notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
@@ -61,7 +62,7 @@ test("an agent is created on a lite or a standard box, and a box change replaces
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: JSON_AUTH,
-      payload: { name: "scripter", config: { model: DEFAULT_MODEL } },
+      payload: { name: "scripter", config: { model: TEST_MODEL } },
     });
     assert.equal(lite.statusCode, 201, lite.body);
     assert.equal(lite.json().box, "lite");
@@ -75,7 +76,7 @@ test("an agent is created on a lite or a standard box, and a box change replaces
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: JSON_AUTH,
-      payload: { name: "coder", config: { model: DEFAULT_MODEL, box: "standard" } },
+      payload: { name: "coder", config: { model: TEST_MODEL, box: "standard" } },
     });
     assert.equal(standard.statusCode, 201, standard.body);
     assert.equal(standard.json().box, "standard");
@@ -89,7 +90,7 @@ test("an agent is created on a lite or a standard box, and a box change replaces
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: JSON_AUTH,
-      payload: { name: "mixed", config: { model: DEFAULT_MODEL, box: "lite", coding: true } },
+      payload: { name: "mixed", config: { model: TEST_MODEL, box: "lite", coding: true } },
     });
     assert.equal(disagree.statusCode, 422, disagree.body);
     assert.match(disagree.json().detail, /a lite box has browser and coding off/);
@@ -97,7 +98,7 @@ test("an agent is created on a lite or a standard box, and a box change replaces
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: JSON_AUTH,
-      payload: { name: "empty", config: { model: DEFAULT_MODEL, box: "standard", browser: false, coding: false } },
+      payload: { name: "empty", config: { model: TEST_MODEL, box: "standard", browser: false, coding: false } },
     });
     assert.equal(empty.statusCode, 422, empty.body);
     assert.match(empty.json().detail, /a standard box has browser or coding on/);

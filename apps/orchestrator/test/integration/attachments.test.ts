@@ -7,7 +7,7 @@ import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
 import { GenerationLoop } from "../../src/generation/index.js";
 import { newId } from "../../src/lib/ids.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -39,6 +39,9 @@ test("operators upload images, attach them to a run, and cannot read another org
   const notes = new NotesStore(tempDir("guilds-attachments-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra", {
+    models: [TEST_MODEL, "deepinfra/Qwen/Qwen3.8-2.4T-A95B"],
+  });
   const attachments = new AttachmentService(repo, new MemoryBlobStore());
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
@@ -58,10 +61,10 @@ test("operators upload images, attach them to a run, and cannot read another org
   });
 
   try {
-    const catalog = await app.inject({ method: "GET", url: "/api/models", headers: OWNER });
+    const catalog = await app.inject({ method: "GET", url: "/api/orgs/org_home/models", headers: OWNER });
     assert.equal(catalog.statusCode, 200);
     const glm = (catalog.json().models as Array<{ id: string; attachments: boolean }>).find(
-      (item) => item.id === DEFAULT_MODEL,
+      (item) => item.id === TEST_MODEL,
     );
     assert.equal(glm?.attachments, true);
 
@@ -116,7 +119,7 @@ test("operators upload images, attach them to a run, and cannot read another org
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: { ...OWNER, "content-type": "application/json" },
-      payload: { name: "looker", config: { model: DEFAULT_MODEL, browser: false } },
+      payload: { name: "looker", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(agent.statusCode, 201, agent.body);
     const agentId = String(agent.json().id);

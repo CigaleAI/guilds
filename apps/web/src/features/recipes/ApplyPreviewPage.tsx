@@ -5,11 +5,15 @@ import {
   useAddOrgServer,
   useApplyRecipe,
   useInstallRegistryConnector,
+  useOrgModels,
   useRecipe,
   useRecipePreview,
 } from "../../api/queries";
 import type { ApplyConnectionChoice, ApplyInstall, PlannedConnection } from "../../api/types";
+import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
+import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
+import { modelOptions } from "../models/models";
 import {
   Button,
   ConfirmDialog,
@@ -45,16 +49,20 @@ function choiceOf(connection: PlannedConnection, login: string): ApplyConnection
 
 /**
  * What applying an approved recipe creates, before anything is written: the new guild's name, each
- * agent's name, and for each connector a live login to reuse or one to connect afterwards.
+ * agent's name and model, and for each connector a live login to reuse or one to connect
+ * afterwards.
  */
 export function ApplyPreviewPage() {
   const { recipeId } = useParams({ from: "/recipes/$recipeId/apply" });
   const navigate = useNavigate();
+  const { org } = useIdentity();
   const recipe = useRecipe(recipeId);
   const preview = useRecipePreview(recipeId, recipe.data?.body_version);
+  const orgModels = useOrgModels(org.id);
   const applyRecipe = useApplyRecipe(recipeId);
   const [guildName, setGuildName] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [models, setModels] = useState<Record<string, string>>({});
   const [logins, setLogins] = useState<Record<string, string>>({});
 
   const failed = recipe.error ?? preview.error;
@@ -77,9 +85,17 @@ export function ApplyPreviewPage() {
   const creates = data.creates;
   const planned = creates.connections.length ? creates.connections : data.connections;
   const approved = isRecipeApproved(recipe.data.status);
+  const modelOf = (role: string) =>
+    models[role] ?? data.models.find((item) => item.role === role)?.model ?? "";
+  const noProvider = hasConnectedProvider(orgModels.data) === false;
+  const missingModel = creates.agents.some((agent) => !modelOf(agent.role));
   const blockedBy = !approved
     ? "Approve this recipe before applying it."
-    : (data.errors[0]?.message ?? null);
+    : noProvider
+      ? "Connect a model provider on Model keys before applying."
+      : missingModel
+        ? "Choose a model for each agent."
+        : (data.errors[0]?.message ?? null);
   const plan = planFromRecipe(recipe.data.body, {
     creates,
     connections: planned,
@@ -97,6 +113,7 @@ export function ApplyPreviewPage() {
           role: agent.role,
           name: nameOf(agent.role, agent.name).trim() || agent.name,
         })),
+        models: creates.agents.map((agent) => ({ role: agent.role, model: modelOf(agent.role) })),
         connections: planned.map((connection) => choiceOf(connection, loginOf(connection))),
       },
       {
@@ -157,6 +174,8 @@ export function ApplyPreviewPage() {
           <Installs installs={data.installs} onInstalled={() => void preview.refetch()} />
         ) : null}
 
+        {noProvider ? <ConnectProviderGuide what="this guild's agents" /> : null}
+
         <TextField
           tone="surface"
           label="Guild name"
@@ -171,19 +190,39 @@ export function ApplyPreviewPage() {
           hideEmpty
           agentExtras={(agent) => {
             const name = nameOf(agent.role, agent.name);
+            const recommended = data.models.find((item) => item.role === agent.role)?.recommended;
             return (
-              <TextField
-                tone="paper"
-                label="Agent name"
-                value={name}
-                onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  setNames((current) => ({ ...current, [agent.role]: value }));
-                }}
-                {...(data.collisions.includes(name.trim())
-                  ? { error: "An agent already has this name. Rename it before creating." }
-                  : {})}
-              />
+              <div className="grid gap-3 md:grid-cols-2">
+                <TextField
+                  tone="paper"
+                  label="Agent name"
+                  value={name}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setNames((current) => ({ ...current, [agent.role]: value }));
+                  }}
+                  {...(data.collisions.includes(name.trim())
+                    ? { error: "An agent already has this name. Rename it before creating." }
+                    : {})}
+                />
+                {noProvider ? null : (
+                  <Select
+                    tone="paper"
+                    label="Model"
+                    placeholder="Choose a model"
+                    value={modelOf(agent.role)}
+                    onValueChange={(value) =>
+                      setModels((current) => ({ ...current, [agent.role]: value }))
+                    }
+                    options={modelOptions(orgModels.data, {
+                      current: modelOf(agent.role),
+                      coding: agent.coding,
+                    })}
+                    hint={recommended ? `The recipe recommends ${recommended}.` : undefined}
+                    {...(modelOf(agent.role) ? {} : { error: "Choose a model." })}
+                  />
+                )}
+              </div>
             );
           }}
           connectionExtras={(server) => {

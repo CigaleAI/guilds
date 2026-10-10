@@ -1,10 +1,12 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useBuilderSessions, useModels, useStartBuilder } from "../../api/queries";
-import { marketplaceCatalogModels } from "../../api/types";
+import { useBuilderSessions, useOrgModels, useStartBuilder } from "../../api/queries";
+import { hasConnectedProvider } from "../../api/types";
+import { useIdentity } from "../../app/identity";
 import { relativeTime } from "../../app/format";
-import { ModelKeyGapHint, useModelKeyGap } from "../instance/ModelKeyGapHint";
+import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
+import { modelOptions, preselectedModel } from "../models/models";
 import {
   Button,
   Select,
@@ -42,12 +44,13 @@ const examples = [
 export function BuilderLanding() {
   const navigate = useNavigate();
   const sessions = useBuilderSessions();
-  const models = useModels();
+  const { org } = useIdentity();
+  const models = useOrgModels(org.id);
   const start = useStartBuilder();
   const [model, setModel] = useState("");
   const [brief, setBrief] = useState("");
-  const chosenModel = model || models.data?.default || "";
-  const keyGap = useModelKeyGap(chosenModel);
+  const chosenModel = model || preselectedModel(models.data, { marketplaceOnly: true });
+  const noProvider = hasConnectedProvider(models.data) === false;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -94,14 +97,12 @@ export function BuilderLanding() {
             <Select
               tone="surface"
               aria-label="Coach model"
+              placeholder="Choose a model"
               lead={<span className="text-xs font-semibold text-muted">Coach</span>}
               className="min-w-56"
               value={chosenModel}
               onValueChange={setModel}
-              options={marketplaceCatalogModels(models.data).map((item) => ({
-                value: item.id,
-                label: item.label,
-              }))}
+              options={modelOptions(models.data, { current: chosenModel, marketplaceOnly: true })}
             />
             <span className="flex-1" />
             <Button
@@ -114,11 +115,7 @@ export function BuilderLanding() {
               {start.isPending ? "Starting…" : "Draft the recipe"}
             </Button>
           </div>
-          {keyGap ? (
-            <p className="text-xs text-muted">
-              <ModelKeyGapHint integration={keyGap} />
-            </p>
-          ) : null}
+          {noProvider ? <ConnectProviderGuide what="the Builder" /> : null}
           {start.isError ? (
             <Banner tone="error" title="Couldn't start the Builder">
               {start.error.message}

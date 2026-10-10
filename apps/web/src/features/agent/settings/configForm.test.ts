@@ -25,11 +25,34 @@ test("switching coding on moves default limits to the coding budgets and back", 
   assert.equal(configOf(coding, undefined).coding, true);
 });
 
-test("turning coding off resets a Kimi Code model", () => {
+test("turning coding off drops a Kimi Code model for the organisation's default, or nothing", () => {
   const form = { ...configFormOf(defaultAgentConfig), model: "kimi/kimi-for-coding", coding: true };
   const off = withCoding(form, false);
-  assert.equal(off.model, defaultAgentConfig.model);
+  assert.equal(off.model, "");
   assert.equal(off.coding, false);
+  const models = { default: "openai/gpt-5", providers: [], models: [] };
+  assert.equal(withCoding(form, false, models).model, "openai/gpt-5");
+  assert.equal(withCoding({ ...form, model: "openai/gpt-5-mini" }, false, models).model, "openai/gpt-5-mini");
+});
+
+test("a model is required, must fit the coding flag, and must have its provider connected", () => {
+  const form = configFormOf(defaultAgentConfig);
+  assert.equal(configErrors(form).model, "Choose a model.");
+  const models = {
+    default: null,
+    providers: [
+      { id: "openai" as const, label: "OpenAI", kind: "marketplace" as const, connected: true, key_hint: "abcd", base_url: null },
+      { id: "kimi" as const, label: "Kimi Code", kind: "coding" as const, connected: false, key_hint: null, base_url: null },
+    ],
+    models: [],
+  };
+  assert.equal(configErrors({ ...form, model: "openai/gpt-5" }, { models }).model, undefined);
+  assert.equal(configErrors({ ...form, model: "kimi/k3" }, { models }).model, "Turn Coding on to use this model.");
+  assert.equal(
+    configErrors({ ...form, model: "kimi/k3", coding: true }, { models }).model,
+    "Connect a Kimi Code key on Model keys first.",
+  );
+  assert.equal(configErrors({ ...form, model: "xai/grok" }, { models }).model, "Connect a xai key on Model keys first.");
 });
 
 test("limits the operator already changed stay as typed", () => {
@@ -58,7 +81,7 @@ test("a new agent starts on the lite box; standard turns both flags on with the 
   assert.equal(lite.coding, false);
   assert.equal(lite.max_steps, "30");
   assert.equal(lite.max_tool_calls, "50");
-  assert.equal(lite.model, defaultAgentConfig.model);
+  assert.equal(lite.model, "");
 });
 
 test("a stored config without a box reads the box its flags call for", () => {

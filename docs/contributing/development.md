@@ -5,7 +5,6 @@ The repository is a pnpm workspace:
 - `apps/orchestrator` (the Node control plane)
 - `apps/web` (the operator app)
 - `packages/ui` (the design system)
-- `apps/docs-mcp` (the docs search MCP)
 - `runtime/` (the agent runtime image)
 
 The toolchain is Node 24 (`.nvmrc`), pnpm 10 (`packageManager` in
@@ -18,8 +17,7 @@ hook through `core.hooksPath`.
 
 `make up` starts `docker-compose.dev.yml`. That file is the
 product stack (`docker-compose.yml`) with the development overlay
-(`docker-compose.watch.yml`) and docs search
-(`docker-compose.docs.yml`).
+(`docker-compose.watch.yml`).
 
 The overlay publishes PostgreSQL on `127.0.0.1:5432`. It
 bind-mounts `src/`, `scripts/`, and `drizzle/` into the
@@ -51,11 +49,11 @@ user.
 | `make build` | Builds the OpenSandbox server, `agent-runtime:0.3`, `agent-runtime-lite:0.1`, and the development stack's images |
 | `make up` | The development stack, detached, after the images |
 | `make dev` | `make up`, then the Vite server |
-| `make down` | Stops every service of the stack and of docs search |
+| `make down` | Stops every service of the stack |
 | `make reset` | `make down`, removes the local state trees, `make up` |
 | `make verify` | Health, the guild list as the seed user, the app page, typecheck, lint, the orchestrator tests, the fixture digests, against a running stack |
 | `make soak` | Creates and deletes a guild, restarts the orchestrator, and reads the migration, seed, binding, and run tables |
-| `make contract` | The OpenSandbox and model contract tests (`RUN_OPENSANDBOX_CONTRACT`, `RUN_MODEL_CONTRACT` with `MODEL_CONTRACT_MODEL`; the model one needs `OPENROUTER_API_KEY` in `.env`) |
+| `make contract` | The OpenSandbox and model contract tests (`RUN_OPENSANDBOX_CONTRACT`, `RUN_MODEL_CONTRACT` with `MODEL_CONTRACT_MODEL`, a `{provider}/{model}` id, and `MODEL_CONTRACT_API_KEY` in `.env`; `MODEL_CONTRACT_BASE_URL` for a local endpoint) |
 | `make check` | `scripts/check.sh`: what CI runs |
 
 One package runs alone with pnpm:
@@ -76,7 +74,7 @@ log.
 
 | Lane | Steps |
 | --- | --- |
-| orchestrator | `typecheck`, `lint`, `compat-verify`, `test-orchestrator`, `test-docs-mcp` |
+| orchestrator | `typecheck`, `lint`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `build-web`, `build-storybook` |
 | core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory, checking that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
 
@@ -172,21 +170,6 @@ of an edition or a relative path that leaves this repository.
 
 Prettier formats with semicolons, double quotes, trailing
 commas, and a width of 100 (`pnpm --filter <package> format`).
-
-## Docs search
-
-`make up` also starts LightRAG and the chapter preview.
-`make docs-index` indexes the docs directory (`DOCS_HOST_ROOT`,
-`docs/` by default). Search matching segments at
-`http://127.0.0.1:9622/`.
-
-Coding agents use the `guilds-docs` MCP server (`apps/docs-mcp`)
-over the same index. Indexing needs `OPENROUTER_API_KEY`.
-`DOCS_LLM_MODEL`, `DOCS_EMBEDDING_MODEL`, and
-`DOCS_EMBEDDING_DIM` change the models it uses.
-
-`make docs-up` and `make docs-down` start and stop those two
-services alone.
 
 ## Documentation
 

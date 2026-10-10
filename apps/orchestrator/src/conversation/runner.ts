@@ -9,7 +9,15 @@ import {
 } from "../llm/index.js";
 import { CancelEvent } from "../toolbox/index.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
-import { utcMonth } from "../usage.js";
+import { modelCatalog } from "../llm/catalog.js";
+import {
+  NO_CREDENTIALS,
+  modelUsageOf,
+  reportModelUsage,
+  resolveModelCredentials,
+  type ModelCredentials,
+  type ModelCredentialsProvider,
+} from "../llm/credentials.js";
 import { AdmissionConflictError, AdmissionCoordinator, type WorkloadKind } from "../generation/admission.js";
 import { promptHash } from "../prompts/index.js";
 import { ConversationConflictError, ConversationError } from "./errors.js";
@@ -67,9 +75,9 @@ export type ConversationProjectionBudget = ProjectionBudget;
 export type ConversationRunnerDeps = {
   store: ConversationStore;
   admission: AdmissionCoordinator;
-  resolveOrgApiKey?: (orgId: string, model: string) => Promise<string | null>;
+  /** What a model provider is called with; nothing resolves when absent. */
+  credentials?: ModelCredentialsProvider;
   policy?: OrgPolicy;
-  getOrgMonthlyUsage?: (orgId: string, month: string) => Promise<Record<string, unknown> | null>;
   admissionKind?: WorkloadKind;
   projectionPolicyVersion?: number;
   minUnstubbedToolResults?: number;
@@ -250,7 +258,7 @@ export class ConversationRunner {
           });
           break;
         }
-        await this.assertSpend(orgId);
+        await this.assertAllowed(orgId);
         let completion: Completion;
         try {
           completion = await this.complete({
@@ -400,9 +408,12 @@ export class ConversationRunner {
     cancel: CancelEvent;
   }): Promise<Completion> {
     const abort = new AbortController();
-    const apiKey = this.deps.resolveOrgApiKey
-      ? ((await this.deps.resolveOrgApiKey(options.orgId, options.model)) ?? undefined)
-      : undefined;
+    const credentials: ModelCredentials = await resolveModelCredentials(
+      this.deps.credentials ?? NO_CREDENTIALS,
+      options.orgId,
+      options.model,
+    );
+    void modelCatalog.ensureFresh();
     const agen = generationLive.streamCompletion({
       model: options.model,
       messages: options.messages,
@@ -410,7 +421,8 @@ export class ConversationRunner {
       max_tokens: options.max_tokens,
       tools: options.tools,
       signal: abort.signal,
-      ...(apiKey ? { apiKey } : {}),
+      apiKey: credentials.apiKey,
+      ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
     });
     const iterator = agen[Symbol.asyncIterator]();
     let completion: Completion | null = null;
@@ -449,6 +461,7 @@ export class ConversationRunner {
     if (!completion) {
       throw new LLMError("provider returned no completion");
     }
+    await reportModelUsage(credentials, modelUsageOf(options.sessionId, options.model, completion.metadata));
     return completion;
   }
 
@@ -510,16 +523,10 @@ export class ConversationRunner {
     return (await this.policy.standing(orgId)).limits.maxConcurrentRuns ?? undefined;
   }
 
-  private async assertSpend(orgId: string): Promise<void> {
-    const { limits, blocked } = await this.policy.standing(orgId);
+  private async assertAllowed(orgId: string): Promise<void> {
+    const { blocked } = await this.policy.standing(orgId);
     if (blocked) {
       throw new ConversationConflictError(blocked.message);
-    }
-    const limit = limits.monthlyCostLimitUsd;
-    if (limit === null || !this.deps.getOrgMonthlyUsage) return;
-    const usage = await this.deps.getOrgMonthlyUsage(orgId, utcMonth());
-    if (Number(usage?.cost_usd ?? 0) >= limit) {
-      throw new ConversationConflictError("monthly cost limit reached");
     }
   }
 }

@@ -1,32 +1,30 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type FormEvent, type ReactNode } from "react";
 import {
-  useInstance,
-  useModels,
-  useOrgModelKeys,
+  useConnectModelProvider,
+  useOrgModels,
   useOrgUsage,
-  useRemoveModelKey,
-  useSetModelKey,
+  useProviderCatalog,
+  useRemoveModelProvider,
+  useSetDefaultModel,
   useUpdateProfile,
   useUpdateOrg,
 } from "../../api/queries";
 import { switchOrg } from "../../api/identity";
-import type {
-  ModelCatalogProvider,
-  ModelProvider,
-  ModelProviderKey,
-  UsageTotals,
-} from "../../api/types";
+import type { CatalogModel, ModelProvider, OrgModelProvider, OrgModels, UsageTotals } from "../../api/types";
 import { agentLook } from "../../app/agents";
 import { useIdentity } from "../../app/identity";
 import type { TabSearch } from "../../app/router";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
   Button,
+  Checkbox,
   StatBand,
   FormField,
+  SearchField,
   Segmented,
   Select,
+  Tag,
   TextField,
   ToneSwatches,
   Banner,
@@ -40,7 +38,6 @@ import {
 import { AccessSecrets } from "../access/AccessSecrets";
 import { AccessTools } from "../access/AccessTools";
 import { formatCost } from "../agent/runs/toolFormat";
-import { integrationFor } from "../instance/instance";
 import { handlePattern } from "../names";
 import { MembersTab } from "./MembersTab";
 import { canManageMembers } from "./members";
@@ -320,77 +317,98 @@ function General() {
   );
 }
 
+const tokens = new Intl.NumberFormat("en", { notation: "compact" });
+
+/** A model's capacities and price in a line: `thinking · images · 1M context · $0.15 / $0.50 per M`. */
+function modelFacts(model: CatalogModel): string {
+  const facts: string[] = [];
+  if (model.thinking) facts.push("thinking");
+  if (model.attachments) facts.push("images");
+  if (model.context) facts.push(`${tokens.format(model.context)} context`);
+  if (model.price) facts.push(`$${model.price.input} in · $${model.price.output} out per M tokens`);
+  return facts.join(" · ");
+}
+
+/**
+ * Model keys: every provider, split into marketplace and coding APIs. The organisation connects a
+ * provider with its own key, ticks the models it offers from the provider's catalog, and marks one
+ * marketplace model as its default.
+ */
 function ModelKeys() {
   const { org } = useIdentity();
-  const models = useModels();
-  const setKey = useSetModelKey(org.id);
-  const removeKey = useRemoveModelKey(org.id);
-  const [drafts, setDrafts] = useState<Partial<Record<ModelProvider, string>>>({});
+  const models = useOrgModels(org.id);
+  const removeProvider = useRemoveModelProvider(org.id);
+  const setDefault = useSetDefaultModel(org.id);
   const [removing, setRemoving] = useState<ModelProvider | null>(null);
   const canManage = org.role === "owner" || org.role === "admin";
-  const modelKeys = useOrgModelKeys(org.id);
-  const instance = useInstance();
-  const noPlatformKey = (providerId: string) => {
-    const integration = integrationFor(instance.data, "model_providers", providerId);
-    return Boolean(integration && integration.state !== "on");
-  };
-  const catalogProviders = models.data?.providers ?? [];
-  const marketplace = catalogProviders.filter((item) => item.kind === "marketplace");
-  const coding = catalogProviders.filter((item) => item.kind === "coding");
-  const removingMeta = catalogProviders.find((item) => item.id === removing);
+  const providers = models.data?.providers ?? [];
+  const marketplace = providers.filter((item) => item.kind === "marketplace");
+  const coding = providers.filter((item) => item.kind === "coding");
+  const removingMeta = providers.find((item) => item.id === removing);
+
+  if (models.isPending) {
+    return (
+      <Scroll>
+        <SkeletonRows rows={3} label="Loading model keys" />
+      </Scroll>
+    );
+  }
+  if (models.isError || !models.data) {
+    return (
+      <Scroll>
+        <Banner tone="error" title="Couldn't load model keys" meta={models.error?.message} />
+      </Scroll>
+    );
+  }
 
   return (
     <Scroll>
-      {modelKeys.isPending || models.isPending ? (
-        <SkeletonRows rows={3} label="Loading keys" />
-      ) : (
-        <>
-          <KeySection
-            title="Marketplace"
-            intro="Agents call models with the platform's keys, where it has them, until the organisation connects its own. Keys are stored by the orchestrator; only their last characters are shown."
-            providers={marketplace}
-            emptyHint={(provider) =>
-              noPlatformKey(provider.id)
-                ? "Required to use this provider. The platform has no key for it."
-                : "The platform's key is used until you connect your own."
-            }
-            keys={modelKeys.data}
-            drafts={drafts}
-            setDrafts={setDrafts}
-            canManage={canManage}
-            setKey={setKey}
-            onRemove={setRemoving}
-          />
-          <KeySection
-            title="Coding APIs"
-            intro="Coding agents can use these instead of a marketplace model. The platform has no fallback key; a coding agent on this provider cannot run until a key is connected."
-            providers={coding}
-            emptyHint={() => "Required to use this provider. The platform has no fallback."}
-            keys={modelKeys.data}
-            drafts={drafts}
-            setDrafts={setDrafts}
-            canManage={canManage}
-            setKey={setKey}
-            onRemove={setRemoving}
-          />
-        </>
-      )}
+      <p className="text-sm text-fg-2">
+        <span className="font-semibold text-fg">Default model. </span>
+        {models.data.default ? (
+          <>
+            New agents, Studio and the Builder start on{" "}
+            <span className="font-mono text-xs">{models.data.default}</span>.
+          </>
+        ) : (
+          "None yet: every picker starts empty until one is marked below."
+        )}
+      </p>
+      <ProviderSection
+        title="Marketplace"
+        intro="Agents, Studio and the Builder run on these. Connect a provider with the organisation's key, then choose the models to offer. Keys are stored by the orchestrator; only their last characters are shown."
+        providers={marketplace}
+        models={models.data}
+        canManage={canManage}
+        onRemove={setRemoving}
+        onDefault={(model) =>
+          setDefault.mutate(model, {
+            onSuccess: () =>
+              toast({ kind: "success", title: model ? "Default model set" : "Default model cleared" }),
+            onError: (error) =>
+              toast({ kind: "error", title: "Couldn't set the default", description: error.message }),
+          })
+        }
+      />
+      <ProviderSection
+        title="Coding APIs"
+        intro="Coding agents can run on these instead of a marketplace model. Their models appear in a picker only for an agent with Coding on."
+        providers={coding}
+        models={models.data}
+        canManage={canManage}
+        onRemove={setRemoving}
+        onDefault={null}
+      />
       <ConfirmDialog
         kind="destructive"
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}
         title={`Remove the ${removingMeta?.label ?? ""} key?`}
-        description={
-          removingMeta?.kind === "coding"
-            ? "Coding agents on this provider cannot run until you connect a key again."
-            : removingMeta && noPlatformKey(removingMeta.id)
-              ? "The platform has no key for this provider: agents on it cannot run until you connect a key again."
-              : "Agents go back to the platform's key for this provider."
-        }
+        description="Its chosen models leave every picker, and agents on this provider cannot run until a key is connected again."
         confirmLabel="Remove key"
         onConfirm={() =>
           removing
-            ? removeKey.mutateAsync(removing).then(
+            ? removeProvider.mutateAsync(removing).then(
                 () => setRemoving(null),
                 (error: Error) => {
                   toast({
@@ -408,28 +426,23 @@ function ModelKeys() {
   );
 }
 
-function KeySection({
+function ProviderSection({
   title,
   intro,
   providers,
-  emptyHint,
-  keys,
-  drafts,
-  setDrafts,
+  models,
   canManage,
-  setKey,
   onRemove,
+  onDefault,
 }: {
   title: string;
   intro: string;
-  providers: ModelCatalogProvider[];
-  emptyHint: (provider: ModelCatalogProvider) => string;
-  keys: ModelProviderKey[] | undefined;
-  drafts: Partial<Record<ModelProvider, string>>;
-  setDrafts: (next: Partial<Record<ModelProvider, string>>) => void;
+  providers: OrgModelProvider[];
+  models: OrgModels;
   canManage: boolean;
-  setKey: ReturnType<typeof useSetModelKey>;
   onRemove: (provider: ModelProvider) => void;
+  /** Marks a chosen model as the default, or clears it with null; absent for providers that cannot hold it. */
+  onDefault: ((model: string | null) => void) | null;
 }) {
   return (
     <>
@@ -437,67 +450,271 @@ function KeySection({
         <span className="font-semibold text-fg">{title}. </span>
         {intro}
       </p>
-      {providers.map((provider) => {
-        const id = provider.id as ModelProvider;
-        const key = keys?.find((item) => item.provider === provider.id);
-        const draft = drafts[id] ?? "";
+      {providers.map((provider) => (
+        <ProviderCard
+          key={provider.id}
+          provider={provider}
+          models={models}
+          canManage={canManage}
+          onRemove={onRemove}
+          onDefault={onDefault}
+        />
+      ))}
+    </>
+  );
+}
+
+/** One provider: its state, the connect form, and once connected the catalog to choose from. */
+function ProviderCard({
+  provider,
+  models,
+  canManage,
+  onRemove,
+  onDefault,
+}: {
+  provider: OrgModelProvider;
+  models: OrgModels;
+  canManage: boolean;
+  onRemove: (provider: ModelProvider) => void;
+  onDefault: ((model: string | null) => void) | null;
+}) {
+  const { org } = useIdentity();
+  const connect = useConnectModelProvider(org.id);
+  const [key, setKey] = useState("");
+  const [url, setUrl] = useState(provider.base_url ?? "");
+  const [choosing, setChoosing] = useState(false);
+  const local = provider.id === "local";
+  const chosen = models.models.filter((model) => model.provider === provider.id);
+  const state = provider.connected
+    ? local
+      ? `Connected · ${provider.base_url ?? ""}${provider.key_hint ? ` · key ends in ${provider.key_hint}` : ""}`
+      : `Connected · key ends in ${provider.key_hint ?? "…"}`
+    : local
+      ? "Not connected. Save the endpoint's URL, and a key when it needs one."
+      : "Not connected. Paste the organisation's key.";
+
+  const save = () => {
+    const body = {
+      provider: provider.id,
+      ...(key.trim() ? { api_key: key.trim() } : {}),
+      ...(local ? { base_url: url.trim() } : {}),
+    };
+    connect.mutate(body, {
+      onSuccess: () => {
+        setKey("");
+        toast({ kind: "success", title: `${provider.label} connected` });
+        setChoosing(true);
+      },
+      onError: (error) =>
+        toast({ kind: "error", title: `Couldn't connect ${provider.label}`, description: error.message }),
+    });
+  };
+  const canSave = local ? Boolean(url.trim()) && (Boolean(key.trim()) || url.trim() !== (provider.base_url ?? "")) : Boolean(key.trim());
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl bg-surface p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-md font-semibold">{provider.label}</span>
+          <span className="text-sm text-muted">{state}</span>
+        </div>
+        {provider.connected && canManage ? (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setChoosing((open) => !open)}>
+              {choosing ? "Done choosing" : "Choose models"}
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => onRemove(provider.id)}>
+              Remove
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      {canManage ? (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (canSave) save();
+          }}
+        >
+          {local ? (
+            <TextField
+              tone="paper"
+              label="Base URL"
+              placeholder="http://127.0.0.1:11434/v1"
+              className="min-w-60 flex-1"
+              value={url}
+              onChange={(event) => setUrl(event.currentTarget.value)}
+            />
+          ) : null}
+          <TextField
+            tone="paper"
+            label={local ? "API key (optional)" : "API key"}
+            type="password"
+            autoComplete="off"
+            className="min-w-60 flex-1"
+            value={key}
+            onChange={(event) => setKey(event.currentTarget.value)}
+          />
+          <Button type="submit" size="xl" disabled={!canSave || connect.isPending}>
+            {provider.connected ? "Replace" : "Connect"}
+          </Button>
+        </form>
+      ) : (
+        <p className="text-sm text-muted">Owners and admins manage model keys.</p>
+      )}
+      {provider.connected ? (
+        <ChosenModels
+          provider={provider}
+          chosen={chosen}
+          defaultModel={models.default}
+          canManage={canManage}
+          onDefault={onDefault}
+        />
+      ) : null}
+      {provider.connected && choosing && canManage ? (
+        <CatalogPicker provider={provider} chosen={chosen.map((model) => model.id)} onClose={() => setChoosing(false)} />
+      ) : null}
+    </section>
+  );
+}
+
+/** The models a connected provider offers, with the default marked. */
+function ChosenModels({
+  provider,
+  chosen,
+  defaultModel,
+  canManage,
+  onDefault,
+}: {
+  provider: OrgModelProvider;
+  chosen: CatalogModel[];
+  defaultModel: string | null;
+  canManage: boolean;
+  onDefault: ((model: string | null) => void) | null;
+}) {
+  if (!chosen.length) {
+    return (
+      <p className="text-sm text-muted">
+        No models chosen yet: nothing from {provider.label} is offered until some are.
+      </p>
+    );
+  }
+  return (
+    <ul className="flex flex-col overflow-hidden rounded-lg bg-paper">
+      {chosen.map((model) => {
+        const isDefault = defaultModel === model.id;
         return (
-          <form
-            key={provider.id}
-            className="flex flex-col gap-3 rounded-xl bg-surface p-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!draft.trim()) return;
-              setKey.mutate(
-                { provider: id, apiKey: draft.trim() },
-                {
-                  onSuccess: () => {
-                    setDrafts({ ...drafts, [id]: "" });
-                    toast({ kind: "success", title: `${provider.label} key saved` });
-                  },
-                  onError: (error) =>
-                    toast({
-                      kind: "error",
-                      title: "Couldn't save the key",
-                      description: error.message,
-                    }),
-                },
-              );
-            }}
-          >
-            <div className="flex flex-col gap-0.5">
-              <span className="text-md font-semibold">{provider.label}</span>
-              <span className="text-sm text-muted">
-                {key ? `Connected · ends in ${key.key_hint}` : emptyHint(provider)}
-              </span>
-            </div>
-            {canManage ? (
-              <div className="flex flex-wrap items-end gap-2">
-                <TextField
-                  tone="paper"
-                  label="API key"
-                  type="password"
-                  autoComplete="off"
-                  className="min-w-60 flex-1"
-                  value={draft}
-                  onChange={(event) => setDrafts({ ...drafts, [id]: event.currentTarget.value })}
-                />
-                <Button type="submit" size="xl" disabled={!draft.trim() || setKey.isPending}>
-                  {key ? "Replace key" : "Save key"}
-                </Button>
-                {key ? (
-                  <Button variant="danger" size="xl" onClick={() => onRemove(id)}>
-                    Remove
-                  </Button>
+          <li key={model.id} className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 last:border-b-0">
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-sm">
+                {model.label}
+                {isDefault ? (
+                  <Tag tone="ink" font="sans" className="ml-2">
+                    Default
+                  </Tag>
                 ) : null}
-              </div>
-            ) : (
-              <p className="text-sm text-muted">Owners and admins manage model keys.</p>
-            )}
-          </form>
+              </span>
+              <span className="truncate font-mono text-xs text-muted">{model.id}</span>
+              {modelFacts(model) ? <span className="text-xs text-muted">{modelFacts(model)}</span> : null}
+            </span>
+            {onDefault && canManage ? (
+              <Button variant="ghost" size="sm" onClick={() => onDefault(isDefault ? null : model.id)}>
+                {isDefault ? "Clear default" : "Make default"}
+              </Button>
+            ) : null}
+          </li>
         );
       })}
-    </>
+    </ul>
+  );
+}
+
+/** The provider's catalog with a search over label and id; ticked rows become the chosen models. */
+function CatalogPicker({
+  provider,
+  chosen,
+  onClose,
+}: {
+  provider: OrgModelProvider;
+  chosen: string[];
+  onClose: () => void;
+}) {
+  const { org } = useIdentity();
+  const catalog = useProviderCatalog(org.id, provider.id, true);
+  const connect = useConnectModelProvider(org.id);
+  const [query, setQuery] = useState("");
+  const [ticked, setTicked] = useState<string[]>(chosen);
+  const needle = query.trim().toLowerCase();
+  const rows = (catalog.data ?? []).filter(
+    (model) => !needle || model.label.toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle),
+  );
+  const dirty = JSON.stringify([...ticked].sort()) !== JSON.stringify([...chosen].sort());
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg bg-paper p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchField
+          tone="surface"
+          label={`Search ${provider.label} models`}
+          placeholder="Search by name or id"
+          className="min-w-60 flex-1"
+          value={query}
+          onValueChange={setQuery}
+        />
+        <span className="text-xs text-muted">{ticked.length} chosen</span>
+        <Button
+          size="sm"
+          disabled={!dirty || connect.isPending}
+          onClick={() =>
+            connect.mutate(
+              { provider: provider.id, models: ticked },
+              {
+                onSuccess: () => {
+                  toast({ kind: "success", title: `${provider.label} models saved` });
+                  onClose();
+                },
+                onError: (error) =>
+                  toast({ kind: "error", title: "Couldn't save the models", description: error.message }),
+              },
+            )
+          }
+        >
+          Save models
+        </Button>
+      </div>
+      {catalog.isPending ? (
+        <SkeletonRows rows={4} label="Loading the catalog" />
+      ) : catalog.isError ? (
+        <Banner tone="error" title="Couldn't load the catalog" meta={catalog.error.message} />
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted">No model matches.</p>
+      ) : (
+        <ul className="flex max-h-96 flex-col overflow-y-auto">
+          {rows.map((model) => (
+            <li key={model.id} className="border-b border-line py-1.5 last:border-b-0">
+              <Checkbox
+                checked={ticked.includes(model.id)}
+                onCheckedChange={(checked) =>
+                  setTicked((current) =>
+                    checked === true
+                      ? [...current, model.id]
+                      : current.filter((id) => id !== model.id),
+                  )
+                }
+                label={
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm">{model.label}</span>
+                    <span className="truncate font-mono text-xs text-muted">{model.id}</span>
+                    {modelFacts(model) ? <span className="text-xs text-muted">{modelFacts(model)}</span> : null}
+                  </span>
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -1,6 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useCreateStudioSession, useModels } from "../../api/queries";
+import { useCreateStudioSession, useOrgModels } from "../../api/queries";
 import type { Issue } from "../../api/types";
+import { useIdentity } from "../../app/identity";
+import { preselectedModel } from "../models/models";
 import { toast } from "@guildsrun/ui";
 /** What a new session starts pinned to, and the question it offers to ask. */
 export type StudioPin = { focus: Record<string, unknown> & { label: string }; prompt: string };
@@ -30,17 +32,19 @@ export function clearPin(sessionId: string): void {
  */
 export function useInvestigateIssue() {
   const navigate = useNavigate();
-  const models = useModels();
+  const { org } = useIdentity();
+  const models = useOrgModels(org.id);
   const create = useCreateStudioSession();
   return {
     pending: create.isPending,
     investigate: async (issue: Issue) => {
-      const model = models.data?.default ?? (await models.refetch()).data?.default;
+      const loaded = models.data ?? (await models.refetch()).data;
+      const model = preselectedModel(loaded, { marketplaceOnly: true });
       if (!model) {
         toast({
           kind: "error",
           title: "Couldn't open Studio",
-          description: "No coach model is set up.",
+          description: "Set a default model on Model keys, or start a session from Studio and pick one.",
         });
         return;
       }

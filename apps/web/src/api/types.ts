@@ -18,8 +18,8 @@ export type InstanceIntegration = {
   enables: string;
   state: IntegrationState;
   variables: { name: string; optional: boolean; set: boolean }[];
-  /** The model providers, native tools, and connector slugs it switches on. */
-  provides: { model_providers: string[]; native_tools: string[]; connectors: string[] };
+  /** The native tools and connector slugs it switches on. */
+  provides: { native_tools: string[]; connectors: string[] };
 };
 
 /** What this server is: how it identifies a request and which integrations it has. */
@@ -671,18 +671,21 @@ export type AgentUsage = {
   max_workspace_mib: number;
 };
 
-/** A model an agent can run on, and which settings it takes. */
+/** A model the organisation offers, with what it takes and costs as the catalog says. */
 export type CatalogModel = {
   id: string;
   model: string;
-  provider: string;
+  provider: ModelProvider;
   label: string;
   thinking: boolean;
   temperature: boolean;
   attachments: boolean;
+  /** The context window in tokens; null when the catalog does not say. */
+  context: number | null;
+  /** USD per million tokens; null for an unbilled provider or a row without a price. */
+  price: { input: number; output: number; cache_read: number } | null;
   kind: "marketplace" | "coding";
   coding_only: boolean;
-  requires_org_key: boolean;
 };
 
 /** An uploaded chat image the operator attached to a direct-chat message. */
@@ -704,28 +707,42 @@ export type MessageAttachment = {
   kind: "image" | "file";
 };
 
-export type ModelCatalogProvider = {
-  id: string;
+export type ModelProvider = "openai" | "openrouter" | "xai" | "deepinfra" | "local" | "kimi";
+
+/** A provider as the organisation sees it: connected or not, and the last characters of its key. */
+export type OrgModelProvider = {
+  id: ModelProvider;
   label: string;
   kind: "marketplace" | "coding";
+  connected: boolean;
+  key_hint: string | null;
+  /** The local endpoint's URL once saved; null for every other provider. */
+  base_url: string | null;
 };
 
-export type ModelCatalog = {
-  default: string;
-  providers: ModelCatalogProvider[];
+/** `GET /api/orgs/:id/models`: the default, each provider's state, and the chosen models every picker lists. */
+export type OrgModels = {
+  default: string | null;
+  providers: OrgModelProvider[];
   models: CatalogModel[];
 };
 
-export function marketplaceCatalogModels(catalog?: ModelCatalog): CatalogModel[] {
-  return (catalog?.models ?? []).filter((item) => item.kind !== "coding");
+export function marketplaceModels(models?: OrgModels): CatalogModel[] {
+  return (models?.models ?? []).filter((item) => item.kind !== "coding");
 }
 
-export function isCodingOnlyModel(modelId: string, catalog?: ModelCatalog): boolean {
-  const entry = catalog?.models.find((item) => item.id === modelId);
+export function isCodingOnlyModel(modelId: string, models?: OrgModels): boolean {
+  const entry = models?.models.find((item) => item.id === modelId);
   if (entry) {
     return entry.coding_only;
   }
   return modelId.startsWith("kimi/");
+}
+
+/** Whether any provider is connected; null while the organisation's models are still loading. */
+export function hasConnectedProvider(models?: OrgModels): boolean | null {
+  if (!models) return null;
+  return models.providers.some((item) => item.connected);
 }
 
 /** A settings save: the whole model config, and the name, focus, wake triggers and look when they change. */
@@ -802,11 +819,6 @@ export type Script = {
   source: string;
   display_path?: string;
 };
-
-export type ModelProvider = "openrouter" | "deepinfra" | "kimi";
-
-/** An organisation's own key for a model provider; only its last characters are shown. */
-export type ModelProviderKey = { provider: ModelProvider; key_hint: string; updated_at: string };
 
 /** One organisation's usage by guild and agent, with the coach and deleted guilds as rows of their own. */
 export type OrgUsage = UsageTotals & {
@@ -1637,6 +1649,8 @@ export type ApplyPreview = {
   guild_name: string;
   guild_id: string | null;
   names: Array<{ role: string; name: string }>;
+  /** Each role's recommended model, and the one apply creates it with unless the operator picks another. */
+  models: RoleModel[];
   collisions: string[];
   connections: PlannedConnection[];
   /** Connectors the recipe names that the box lacks; each blocks apply until it is installed. */
@@ -1677,7 +1691,7 @@ export type CapabilityServer = Partial<ConnectorFacts> & {
 /** What the Builder and the recipe pages can use: the connector catalog, models and plan room. */
 export type BuilderCapabilities = {
   catalog: CapabilityServer[];
-  models: ModelCatalog;
+  models: OrgModels;
   /** How many more agents the organisation may hold, by kind; null where nothing caps it. */
   remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
 };
@@ -1707,10 +1721,14 @@ export type ApplyConnectionChoice = {
   connection_id?: string;
 };
 
-/** What the operator decides before apply: the guild's name, each agent's name, and each login. */
+/** A role's model on the apply preview: what the recipe recommends, and what apply will create it with. */
+export type RoleModel = { role: string; recommended: string | null; model: string | null };
+
+/** What the operator decides before apply: the guild's name, each agent's name and model, and each login. */
 export type ApplyChoices = {
   guild_name: string;
   names: Array<{ role: string; name: string }>;
+  models: Array<{ role: string; model: string }>;
   connections: ApplyConnectionChoice[];
 };
 

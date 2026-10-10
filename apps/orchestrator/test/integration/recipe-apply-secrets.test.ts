@@ -11,6 +11,7 @@ import { RecipeStore } from "../../src/recipes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { cryptoThreeRoleRecipe } from "../helpers/recipe-docs.js";
@@ -29,6 +30,7 @@ test("apply reuses a secret by granting it to the new guild and waits for the on
   const notes = new NotesStore(tempDir("guilds-apply-secrets-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);

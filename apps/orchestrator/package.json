@@ -65,11 +65,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --import tsx --test test/unit/*.test.ts test/integration/*.test.ts test/contract/*.test.ts",
+    "test": "MODELS_DEV_URL= node --import tsx --test test/unit/*.test.ts test/integration/*.test.ts test/contract/*.test.ts",
     "lint": "eslint src test scripts",
     "format": "prettier --write src test scripts drizzle/*.md drizzle.config.ts",
     "compat:verify": "tsx scripts/compat-verify.ts",
     "compat:digest": "tsx scripts/compat-digest.ts",
+    "models:snapshot": "tsx scripts/models-dev-snapshot.ts",
     "sweep:workspaces": "tsx scripts/sweep-workspaces.ts",
     "typesafe:replay": "tsx scripts/typesafe-replay.ts",
     "start": "node --import tsx --import ./src/observability/instrument.ts src/server.ts",

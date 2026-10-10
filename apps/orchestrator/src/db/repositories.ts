@@ -4,8 +4,6 @@ import { newId } from "../lib/ids.js";
 import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, messageCostUsd, usageDelta, utcMonth } from "../usage.js";
 import { AgentMessageLimitReached, GuildInactive, GuildNameTaken, LastGuildAdmin, SecretNameTaken } from "./errors.js";
 import { jsonObj } from "./json.js";
-import { asBuffer, decryptPayload } from "../credentials/crypto.js";
-import { providerNameForModel } from "../llm/catalog.js";
 import { SEED_USERS } from "../users/index.js";
 import { firstRow, isUniqueViolation, stamp, withTransaction } from "./pg.js";
 import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../guilds/validation.js";
@@ -3246,7 +3244,7 @@ export class Repositories {
 
   async listOrgModelProviders(orgId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
-      `SELECT id, org_id, provider, key_hint, created_at, updated_at
+      `SELECT id, org_id, provider, key_hint, models, created_at, updated_at
        FROM org_model_providers
        WHERE org_id = $1
        ORDER BY provider`,
@@ -3257,7 +3255,7 @@ export class Repositories {
 
   async getOrgModelProvider(orgId: string, provider: string): Promise<Record<string, unknown> | null> {
     const result = await this.pool.query(
-      `SELECT id, org_id, provider, ciphertext, nonce, key_hint, created_at, updated_at
+      `SELECT id, org_id, provider, ciphertext, nonce, key_hint, models, created_at, updated_at
        FROM org_model_providers
        WHERE org_id = $1 AND provider = $2`,
       [orgId, provider],
@@ -3269,53 +3267,52 @@ export class Repositories {
     providerId: string,
     orgId: string,
     provider: string,
-    ciphertext: Buffer,
-    nonce: Buffer,
-    hint: string,
+    row: { ciphertext: Buffer | null; nonce: Buffer | null; keyHint: string | null; models: string[] },
     now: Date,
   ): Promise<Record<string, unknown>> {
     const result = await this.pool.query(
       `INSERT INTO org_model_providers (
-         id, org_id, provider, ciphertext, nonce, key_hint, created_at, updated_at
+         id, org_id, provider, ciphertext, nonce, key_hint, models, created_at, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::text[], $8, $8)
        ON CONFLICT (org_id, provider) DO UPDATE SET
          ciphertext = EXCLUDED.ciphertext,
          nonce = EXCLUDED.nonce,
          key_hint = EXCLUDED.key_hint,
+         models = EXCLUDED.models,
          updated_at = EXCLUDED.updated_at
-       RETURNING id, org_id, provider, key_hint, created_at, updated_at`,
-      [providerId, orgId, provider, ciphertext, nonce, hint, stamp(now)],
+       RETURNING id, org_id, provider, key_hint, models, created_at, updated_at`,
+      [providerId, orgId, provider, row.ciphertext, row.nonce, row.keyHint, row.models, stamp(now)],
     );
-    const row = firstRow(result);
-    if (!row) {
+    const inserted = firstRow(result);
+    if (!inserted) {
       throw new Error("model provider upsert failed");
     }
-    return row;
+    return inserted;
   }
 
   async deleteOrgModelProvider(orgId: string, provider: string): Promise<Record<string, unknown> | null> {
     const result = await this.pool.query(
       `DELETE FROM org_model_providers
        WHERE org_id = $1 AND provider = $2
-       RETURNING id, org_id, provider, key_hint`,
+       RETURNING id, org_id, provider, key_hint, models`,
       [orgId, provider],
     );
     return firstRow(result);
   }
 
-  async resolveOrgApiKey(orgId: string, model: string): Promise<string | null> {
-    const provider = providerNameForModel(model);
-    if (!provider) {
-      return null;
-    }
-    const row = await this.getOrgModelProvider(orgId, provider);
-    if (!row) {
-      return null;
-    }
-    const payload = decryptPayload(asBuffer(row.ciphertext), asBuffer(row.nonce));
-    const key = payload.api_key;
-    return typeof key === "string" && key.trim() ? key.trim() : null;
+  async getOrgDefaultModel(orgId: string): Promise<string | null> {
+    const result = await this.pool.query(`SELECT default_model FROM orgs WHERE id = $1`, [orgId]);
+    const value = firstRow(result)?.default_model;
+    return typeof value === "string" && value ? value : null;
+  }
+
+  async setOrgDefaultModel(orgId: string, model: string | null, now: Date): Promise<void> {
+    await this.pool.query(`UPDATE orgs SET default_model = $2, updated_at = $3 WHERE id = $1`, [
+      orgId,
+      model,
+      stamp(now),
+    ]);
   }
 
   /** The connector an organisation sees under a slug: the platform's, or with `orgId` its own. */

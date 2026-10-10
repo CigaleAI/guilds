@@ -45,14 +45,15 @@ import type {
   McpConnection,
   McpCredentials,
   McpToolCallResult,
-  ModelCatalog,
+  CatalogModel,
   NewSecret,
   Secret,
   SecretAccessChoice,
   SecretChanges,
   OrgMember,
   ModelProvider,
-  ModelProviderKey,
+  OrgModelProvider,
+  OrgModels,
   Notifications,
   Org,
   RecipeRow,
@@ -129,10 +130,10 @@ export const keys = {
   fileList: (prefix: string) => ["files", "list", prefix] as const,
   file: (prefix: string, path: string) => ["files", "file", prefix, path] as const,
   agentUsage: (agentId: string) => ["agent", agentId, "usage"] as const,
-  models: ["models"] as const,
   instance: ["instance"] as const,
   identity: ["identity"] as const,
-  orgModelKeys: (orgId: string) => ["org", orgId, "model-keys"] as const,
+  orgModels: (orgId: string) => ["org", orgId, "models"] as const,
+  providerCatalog: (orgId: string, provider: string) => ["org", orgId, "model-catalog", provider] as const,
   orgUsage: ["usage", "org"] as const,
   adminCatalog: ["admin", "catalog"] as const,
   adminRegistry: ["admin", "registry"] as const,
@@ -804,15 +805,6 @@ export function useAgentUsage(agentId: string) {
   });
 }
 
-/** The models agents can run on; the catalog changes only with a deploy. */
-export function useModels() {
-  return useQuery({
-    queryKey: keys.models,
-    queryFn: () => api<ModelCatalog>("/api/models"),
-    staleTime: Infinity,
-  });
-}
-
 /** What this server is and which integrations it has; that changes only with a restart. */
 export function useInstance() {
   return useQuery({
@@ -1454,37 +1446,79 @@ export function useUpdateOrg(orgId: string) {
   });
 }
 
-/** The organisation's own model keys, each shown by its last characters. */
-export function useOrgModelKeys(orgId: string) {
+const orgModelsPath = (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}`;
+
+/** The organisation's default, its providers, and the models it chose to offer: what every picker lists. */
+export function useOrgModels(orgId: string) {
   return useQuery({
-    queryKey: keys.orgModelKeys(orgId),
+    queryKey: keys.orgModels(orgId),
+    queryFn: () => api<OrgModels>(`${orgModelsPath(orgId)}/models`),
+  });
+}
+
+/** A provider's whole catalog, or the local endpoint's live list; read by Model keys alone. */
+export function useProviderCatalog(orgId: string, provider: ModelProvider, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.providerCatalog(orgId, provider),
     queryFn: () =>
-      api<ModelProviderKey[]>(`/api/orgs/${encodeURIComponent(orgId)}/model-providers`),
+      api<{ models: CatalogModel[] }>(`${orgModelsPath(orgId)}/model-providers/${provider}/catalog`).then(
+        (body) => body.models,
+      ),
+    enabled,
+    retry: false,
   });
 }
 
-/** Sets the organisation's own key for a provider, used instead of the platform's. */
-export function useSetModelKey(orgId: string) {
+function useOrgModelsWrite<T>(orgId: string, write: (input: T) => Promise<unknown>) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ provider, apiKey }: { provider: ModelProvider; apiKey: string }) =>
-      api(`/api/orgs/${encodeURIComponent(orgId)}/model-providers/${provider}`, {
+    mutationFn: write,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.orgModels(orgId) });
+      void client.invalidateQueries({ queryKey: keys.capabilities });
+    },
+  });
+}
+
+/**
+ * Connects a provider, or changes what it offers: the key (kept when left out on a connected
+ * provider), the local endpoint's URL, and the chosen models. The key is probed before anything
+ * is saved.
+ */
+export function useConnectModelProvider(orgId: string) {
+  return useOrgModelsWrite(
+    orgId,
+    ({
+      provider,
+      ...body
+    }: {
+      provider: ModelProvider;
+      api_key?: string;
+      base_url?: string;
+      models?: string[];
+    }) =>
+      api<OrgModelProvider>(`${orgModelsPath(orgId)}/model-providers/${provider}`, {
         method: "PUT",
-        body: { api_key: apiKey },
+        body,
       }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.orgModelKeys(orgId) }),
-  });
+  );
 }
 
-export function useRemoveModelKey(orgId: string) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (provider: ModelProvider) =>
-      api<undefined>(`/api/orgs/${encodeURIComponent(orgId)}/model-providers/${provider}`, {
-        method: "DELETE",
-      }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.orgModelKeys(orgId) }),
-  });
+/** Names the organisation's default model, or clears it with null. */
+export function useSetDefaultModel(orgId: string) {
+  return useOrgModelsWrite(orgId, (model: string | null) =>
+    api<{ default: string | null }>(`${orgModelsPath(orgId)}/default-model`, {
+      method: "PUT",
+      body: { model },
+    }),
+  );
+}
+
+/** Removes a provider's key and its chosen models; a default among them clears. */
+export function useRemoveModelProvider(orgId: string) {
+  return useOrgModelsWrite(orgId, (provider: ModelProvider) =>
+    api<undefined>(`${orgModelsPath(orgId)}/model-providers/${provider}`, { method: "DELETE" }),
+  );
 }
 
 /**
@@ -2050,7 +2084,7 @@ export function useRecipePreview(id: string, version: number | undefined) {
     queryFn: () =>
       api<ApplyPreview>(`${recipePath(id)}/preview`, {
         method: "POST",
-        body: { connections: [], names: [] },
+        body: { connections: [], names: [], models: [] },
       }),
     enabled: version !== undefined,
     retry: false,

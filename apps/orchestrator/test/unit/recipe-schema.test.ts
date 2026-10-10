@@ -490,15 +490,18 @@ test("coding roles count against the plan's coding agents", () => {
   );
 });
 
-test("a Kimi Code model is only for a coding role with a connected key", () => {
+test("a role's model is a recommendation: a bad one warns and never blocks", () => {
   const recipe = parseRecipe(fixtureDeskRecipe());
   recipe.roles[0]!.config = { ...recipe.roles[0]!.config, model: "kimi/kimi-for-coding", coding: false };
-  assert.ok(validateRecipe(recipe, ctx).some((item) => item.code === "model.coding" && item.severity === "error"));
+  const notCoding = validateRecipe(recipe, ctx);
+  assert.ok(notCoding.some((item) => item.code === "model.coding" && item.severity === "warning"));
+  assert.ok(!notCoding.some((item) => item.code.startsWith("model.") && item.severity === "error"));
   recipe.roles[0]!.config.coding = true;
-  const warned = validateRecipe(recipe, ctx);
-  assert.ok(warned.some((item) => item.code === "model.coding_key" && item.severity === "warning"));
   const blocked = validateRecipe(recipe, { ...ctx, connectedProviders: new Set() });
-  assert.ok(blocked.some((item) => item.code === "model.coding_key" && item.severity === "error"));
-  const ready = validateRecipe(recipe, { ...ctx, connectedProviders: new Set(["kimi"]) });
-  assert.ok(!ready.some((item) => item.code === "model.coding" || item.code === "model.coding_key"));
+  assert.ok(blocked.some((item) => item.code === "model.not_connected" && item.severity === "warning"));
+  const ready = validateRecipe(recipe, { ...ctx, connectedProviders: new Set(["kimi", "deepinfra"]) });
+  assert.ok(!ready.some((item) => item.code.startsWith("model.")), JSON.stringify(ready));
+  recipe.roles[0]!.config.model = "anthropic/claude-opus-5";
+  const unknown = validateRecipe(recipe, ctx);
+  assert.ok(unknown.some((item) => item.code === "model.unknown" && item.severity === "warning"));
 });

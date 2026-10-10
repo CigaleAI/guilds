@@ -1,14 +1,7 @@
 import OpenAI from "openai";
-import { MODEL_PROVIDER_INTEGRATIONS, integrationVariable } from "../instance/integrations.js";
-import {
-  PROVIDER_BASE_URLS,
-  isProvider,
-  missingOrgKeyMessage,
-  PROVIDER_LABELS,
-  providerNameForModel,
-  providerRequiresOrgKey,
-} from "./catalog.js";
+import { modelCatalog } from "./catalog.js";
 import { catalogCostUsd } from "./cost.js";
+import { parseModelId, type ProviderDef } from "./providers.js";
 
 export class LLMError extends Error {
   constructor(message: string) {
@@ -45,40 +38,13 @@ export function redactApiKey(text: string, apiKey?: string | null): string {
   return text.split(key).join("[REDACTED:API_KEY]");
 }
 
-export function apiKeyForModel(
-  model: string,
-  env: NodeJS.ProcessEnv = process.env,
-  orgKey?: string | null,
-): string {
-  const connected = (orgKey ?? "").trim();
-  if (connected) {
-    return connected;
+/** The provider a stored model id names, and the id the provider knows the model by. */
+export function providerForModel(model: string): { provider: ProviderDef; upstream: string } {
+  const parsed = parseModelId(model);
+  if (!parsed) {
+    throw new LLMError("model must be {provider}/{model}");
   }
-  const provider = providerNameForModel(model);
-  if (!provider) {
-    throw new LLMError("model must start with a catalog provider prefix");
-  }
-  if (providerRequiresOrgKey(provider)) {
-    throw new LLMError(missingOrgKeyMessage(provider));
-  }
-  const integration = MODEL_PROVIDER_INTEGRATIONS[provider];
-  if (!integration) {
-    throw new LLMError(missingOrgKeyMessage(provider));
-  }
-  const variable = integration.variables[0].name;
-  const key = integrationVariable(integration, variable, env);
-  if (!key) {
-    throw new LLMError(`${variable} is not set`);
-  }
-  return key;
-}
-
-export function providerForModel(model: string): { baseURL: string; upstream: string } {
-  const provider = providerNameForModel(model);
-  if (!provider) {
-    throw new LLMError("model must start with a catalog provider prefix");
-  }
-  return { baseURL: PROVIDER_BASE_URLS[provider], upstream: model.slice(`${provider}/`.length) };
+  return { provider: parsed.provider, upstream: parsed.model };
 }
 
 /** Kimi Code documents `low` / `high` / `max`; the picker is `none` / `low` / `medium` / `high`. */
@@ -101,26 +67,29 @@ export function reasoningEffortForModel(model: string, level: string): string | 
   return level;
 }
 
-export async function probeProviderKey(
-  provider: string,
-  apiKey: string,
-  options: { fetch?: typeof fetch; timeoutMs?: number } = {},
-): Promise<void> {
-  if (!isProvider(provider) || !providerRequiresOrgKey(provider)) {
-    return;
-  }
-  const key = apiKey.trim();
-  if (!key) {
+/**
+ * `GET {baseURL}/models` with the key: the probe a save runs, and the local endpoint's catalog.
+ * A rejected key fails; the listed ids come back.
+ */
+export async function listProviderModels(
+  provider: ProviderDef,
+  options: { apiKey: string; baseURL?: string | null; fetch?: typeof fetch; timeoutMs?: number },
+): Promise<string[]> {
+  const key = options.apiKey.trim();
+  if (!key && provider.id !== "local") {
     throw new LLMError("api_key is required");
+  }
+  const base = (options.baseURL ?? provider.baseURL ?? "").replace(/\/+$/, "");
+  if (!base) {
+    throw new LLMError(`${provider.label} needs a base URL`);
   }
   const fetchFn = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
-  const url = `${PROVIDER_BASE_URLS[provider]}/models`;
   let response: Response;
   try {
-    response = await fetchFn(url, {
+    response = await fetchFn(`${base}/models`, {
       headers: {
-        Authorization: `Bearer ${key}`,
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
         "User-Agent": MODEL_USER_AGENT,
       },
       signal: AbortSignal.timeout(timeoutMs),
@@ -129,13 +98,27 @@ export async function probeProviderKey(
     throw asLlmError(error, key);
   }
   if (!response.ok) {
-    const label = PROVIDER_LABELS[provider];
     throw new LLMError(
       response.status === 401 || response.status === 403
-        ? `${label} rejected the key`
-        : `${label} did not accept the key (${response.status})`,
+        ? `${provider.label} rejected the key`
+        : `${provider.label} did not accept the key (${response.status})`,
     );
   }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  const rows = Array.isArray(body)
+    ? body
+    : body && typeof body === "object" && Array.isArray((body as { data?: unknown }).data)
+      ? ((body as { data: unknown[] }).data)
+      : [];
+  return rows.flatMap((row) => {
+    const id = row && typeof row === "object" ? (row as { id?: unknown }).id : row;
+    return typeof id === "string" && id.trim() ? [id.trim()] : [];
+  });
 }
 
 function optionalString(value: unknown): string | null {
@@ -326,6 +309,52 @@ export function applyPromptCacheControl(
   return messages;
 }
 
+/** The request body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
+export function completionRequestBody(options: {
+  model: string;
+  messages: Array<Record<string, unknown>>;
+  temperature: number;
+  max_tokens: number;
+  tools?: unknown[] | null;
+  tool_choice?: unknown;
+  thinking_level?: string;
+}): Record<string, unknown> {
+  const { provider, upstream } = providerForModel(options.model);
+  const openrouter = provider.id === "openrouter";
+  const body: Record<string, unknown> = {
+    model: upstream,
+    messages: openrouter ? applyPromptCacheControl(options.messages) : options.messages,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+  if (modelCatalog.entry(options.model)?.temperature !== false) {
+    body.temperature = options.temperature;
+  }
+  if (provider.id === "openai") {
+    body.max_completion_tokens = options.max_tokens;
+  } else {
+    body.max_tokens = options.max_tokens;
+  }
+  if (openrouter) {
+    body.cache_control = PROMPT_CACHE_CONTROL;
+  }
+  const effort = reasoningEffortForModel(options.model, options.thinking_level ?? "none");
+  if (effort) {
+    if (openrouter) {
+      body.reasoning = { effort };
+    } else {
+      body.reasoning_effort = effort;
+    }
+  }
+  if (options.tools && options.tools.length) {
+    body.tools = options.tools;
+  }
+  if (options.tool_choice !== undefined && options.tool_choice !== null) {
+    body.tool_choice = options.tool_choice;
+  }
+  return body;
+}
+
 export async function* streamCompletion(options: {
   model: string;
   messages: Array<Record<string, unknown>>;
@@ -334,45 +363,28 @@ export async function* streamCompletion(options: {
   tools?: unknown[] | null;
   tool_choice?: unknown;
   signal?: AbortSignal;
-  env?: NodeJS.ProcessEnv;
   baseURL?: string;
   apiKey?: string;
   thinking_level?: string;
 }): AsyncGenerator<ModelEvent> {
-  const env = options.env ?? process.env;
-  const { baseURL, upstream } = providerForModel(options.model);
-  const apiKey = options.apiKey ?? apiKeyForModel(options.model, env);
+  const { provider } = providerForModel(options.model);
+  const baseURL = options.baseURL ?? provider.baseURL;
+  if (!baseURL) {
+    throw new LLMError(`${provider.label} needs a base URL`);
+  }
+  if (options.apiKey === undefined) {
+    throw new LLMError(`${provider.label} is not connected`);
+  }
+  const apiKey = options.apiKey.trim() || "local";
   const client = new OpenAI({
     apiKey,
-    baseURL: options.baseURL ?? baseURL,
+    baseURL,
     timeout: completionTimeoutMs(options.max_tokens),
     maxRetries: 0,
     defaultHeaders: { "User-Agent": MODEL_USER_AGENT },
   });
   const started = performance.now();
-  const openrouter = options.model.startsWith("openrouter/");
-  const body: Record<string, unknown> = {
-    model: upstream,
-    messages: openrouter ? applyPromptCacheControl(options.messages) : options.messages,
-    temperature: options.temperature,
-    max_tokens: options.max_tokens,
-    stream: true,
-    stream_options: { include_usage: true },
-  };
-  if (openrouter) {
-    body.cache_control = PROMPT_CACHE_CONTROL;
-  }
-  const effort = reasoningEffortForModel(options.model, options.thinking_level ?? "none");
-  if (effort) {
-    body.reasoning = { effort };
-    body.reasoning_effort = effort;
-  }
-  if (options.tools && options.tools.length) {
-    body.tools = options.tools;
-  }
-  if (options.tool_choice !== undefined && options.tool_choice !== null) {
-    body.tool_choice = options.tool_choice;
-  }
+  const body = completionRequestBody(options);
   type StreamUsage = {
     prompt_tokens?: number;
     completion_tokens?: number;

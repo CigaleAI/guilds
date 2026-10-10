@@ -32,7 +32,9 @@ Otherwise it opens the landing for that guild
 
 The landing has:
 
-- the create form (guild, coach model, temperature)
+- the create form (guild, coach model from the organisation's chosen
+  marketplace models, preselected with its default, temperature); a
+  guide to Model keys in its place while no provider is connected
 - the operator's sessions on that guild, any of which resumes
 
 **Investigate in Studio** on an issue always starts a new session
@@ -64,7 +66,6 @@ Publishing affects new runs only.
 
 Studio generation does not take the target agent's busy lock.
 It does take an organisation admission slot.
-It is subject to the organisation's monthly spend check.
 
 Evidence is untrusted.
 Tool results cannot grant authority, add tools, or publish.
@@ -387,8 +388,8 @@ Kinds:
 
 **Investigate in Studio** on an issue card (inbox or guild Issues tab)
 creates a session for the issue's guild.
-It uses the default coach model (waiting for the model catalog when
-it has not loaded) and temperature 0.2.
+It uses the organisation's default model and temperature 0.2; with
+no default, a toast asks for one on Model keys.
 
 It opens the inspector on the reporting agent's History tab at the
 run that raised the issue (`tab=history&item=<run id>`).
@@ -739,7 +740,8 @@ The coach loop is the shared conversation runner
 - cancellation with tool-call repair
 - crash reconcile
 - organisation admission
-- spend check
+- the credentials of the coach's model provider, resolved per
+  completion
 - subscribe-before-snapshot SSE
 
 Usage is charged to the global and organisation counters and to
@@ -781,6 +783,8 @@ POST   /api/studio/drafts/:id/discard
 ```
 
 Create body: `{ "mode": "optimize", "source_guild_id", "coach_config": { model, temperature }, "parent_session_id"? }`.
+`model` is required: a marketplace model whose provider the
+organisation has connected, else 422.
 
 Activity takes `hours` (default 24, at most 168) and `until` (ISO,
 default and at most now) and returns `{ guild_id, since, until, agents,

@@ -3,11 +3,14 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
+import { coreModelCredentials } from "../../src/llm/credentials.js";
+import { ModelsService } from "../../src/llm/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
+import { TEST_MASTER_KEY } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
@@ -19,7 +22,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("an organisation's model keys are listed by members and managed by owners", { timeout: 60_000 }, async () => {
+test("an organisation connects providers, chooses models, and names a default", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-model-keys-"), templatesRoot(), "notes");
@@ -27,56 +30,124 @@ test("an organisation's model keys are listed by members and managed by owners",
   const repo = new Repositories(database.pool);
   const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
   await repo.insertMember("org_home", String(member.id), "member", new Date());
+  const probed: string[] = [];
+  const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
+    const key = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
+    probed.push(`${String(url)} ${key}`);
+    if (key.includes("rejected")) {
+      return new Response("no", { status: 401 });
+    }
+    return new Response(JSON.stringify({ data: [{ id: "zai-org/GLM-5.3-Flash" }, { id: "k3" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  const credentials = coreModelCredentials(repo, TEST_MASTER_KEY);
   const app = await buildApp(database, {
     repo,
     notes,
     scripts: new Scripts(repo),
     schedules: new Schedules(repo, notes),
-    masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
+    masterKey: TEST_MASTER_KEY,
+    modelCredentials: credentials,
+    models: new ModelsService({ repo, credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),
   });
-  const url = "/api/orgs/org_home/model-providers";
-  const put = (headers: Record<string, string>, provider: string, payload: Record<string, unknown>) =>
+  const base = "/api/orgs/org_home";
+  const put = (headers: Record<string, string>, path: string, payload: Record<string, unknown>) =>
     app.inject({
       method: "PUT",
-      url: `${url}/${provider}`,
+      url: `${base}${path}`,
       headers: { ...headers, "content-type": "application/json" },
       payload,
     });
 
   try {
-    const empty = await app.inject({ method: "GET", url, headers: OWNER });
+    const empty = await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER });
     assert.equal(empty.statusCode, 200, empty.body);
-    assert.deepEqual(empty.json(), []);
-
-    const set = await put(OWNER, "openrouter", { api_key: "  sk-or-v1-secret-abcd  " });
-    assert.equal(set.statusCode, 200, set.body);
-    assert.equal(set.json().provider, "openrouter");
-    assert.equal(set.json().key_hint, "abcd");
-    assert.equal(set.body.includes("sk-or-v1-secret"), false);
-    assert.equal(await repo.resolveOrgApiKey("org_home", "openrouter/openai/gpt-5.6-luna"), "sk-or-v1-secret-abcd");
-
-    const listed = await app.inject({ method: "GET", url, headers: MEMBER });
-    assert.equal(listed.statusCode, 200, listed.body);
+    assert.equal(empty.json().default, null);
+    assert.deepEqual(empty.json().models, []);
     assert.deepEqual(
-      listed.json().map((item: { provider: string; key_hint: string }) => [item.provider, item.key_hint]),
-      [["openrouter", "abcd"]],
+      empty.json().providers.map((item: { id: string; connected: boolean }) => [item.id, item.connected]),
+      [["openai", false], ["openrouter", false], ["xai", false], ["deepinfra", false], ["local", false], ["kimi", false]],
     );
-    assert.equal(listed.body.includes("sk-or-v1-secret"), false);
 
-    assert.equal((await put(MEMBER, "openrouter", { api_key: "sk-other" })).statusCode, 404);
-    assert.equal((await put(OWNER, "openai", { api_key: "sk-x" })).statusCode, 422);
-    assert.equal((await put(OWNER, "openrouter", { api_key: "   " })).statusCode, 422);
-    assert.equal((await put(OWNER, "openrouter", {})).statusCode, 422);
+    const catalog = await app.inject({ method: "GET", url: `${base}/model-providers/deepinfra/catalog`, headers: MEMBER });
+    assert.equal(catalog.statusCode, 200, catalog.body);
+    const rows = catalog.json().models as Array<{ id: string; attachments: boolean; price: unknown }>;
+    assert.ok(rows.length > 10, "the models.dev catalog lists DeepInfra");
+    assert.ok(rows.some((row) => row.id === "deepinfra/zai-org/GLM-5.3-Flash" && row.attachments && row.price));
+    assert.deepEqual(probed, [], "browsing the catalog reaches no provider");
 
-    const outsider = await app.inject({ method: "GET", url: "/api/orgs/org_elsewhere/model-providers", headers: OWNER });
+    const rejected = await put(OWNER, "/model-providers/deepinfra", { api_key: "sk-rejected", models: [] });
+    assert.equal(rejected.statusCode, 422, rejected.body);
+    assert.match(rejected.json().detail, /DeepInfra rejected the key/);
+
+    const set = await put(OWNER, "/model-providers/deepinfra", {
+      api_key: "  sk-di-secret-abcd  ",
+      models: ["deepinfra/zai-org/GLM-5.3-Flash", "deepinfra/Qwen/Qwen3.8-2.4T-A95B"],
+    });
+    assert.equal(set.statusCode, 200, set.body);
+    assert.deepEqual(set.json(), {
+      id: "deepinfra",
+      label: "DeepInfra",
+      kind: "marketplace",
+      connected: true,
+      key_hint: "abcd",
+      base_url: null,
+    });
+    assert.equal(set.body.includes("sk-di-secret"), false);
+    assert.equal(probed.at(-1), "https://api.deepinfra.com/v1/openai/models Bearer sk-di-secret-abcd");
+    assert.deepEqual(await credentials.modelCredentials("org_home", "deepinfra"), { apiKey: "sk-di-secret-abcd" });
+
+    const listed = await app.inject({ method: "GET", url: `${base}/models`, headers: MEMBER });
+    assert.equal(listed.statusCode, 200, listed.body);
+    assert.equal(listed.json().providers.find((item: { id: string }) => item.id === "deepinfra").key_hint, "abcd");
+    assert.deepEqual(
+      listed.json().models.map((item: { id: string; attachments: boolean }) => [item.id, item.attachments]),
+      [["deepinfra/zai-org/GLM-5.3-Flash", true], ["deepinfra/Qwen/Qwen3.8-2.4T-A95B", false]],
+    );
+    assert.equal(listed.body.includes("sk-di-secret"), false);
+
+    assert.equal((await put(MEMBER, "/model-providers/deepinfra", { api_key: "sk-other" })).statusCode, 404);
+    assert.equal((await put(OWNER, "/model-providers/anthropic", { api_key: "sk-x" })).statusCode, 422);
+    assert.equal((await put(OWNER, "/model-providers/openrouter", { api_key: "   " })).statusCode, 422);
+    assert.equal((await put(OWNER, "/model-providers/openrouter", {})).statusCode, 422);
+    assert.equal((await put(OWNER, "/model-providers/deepinfra", { models: ["openai/gpt-5"] })).statusCode, 422);
+
+    const wrongKind = await put(OWNER, "/default-model", { model: "kimi/k3" });
+    assert.equal(wrongKind.statusCode, 422, wrongKind.body);
+    const unchosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3" });
+    assert.equal(unchosen.statusCode, 422, unchosen.body);
+    const chosen = await put(OWNER, "/default-model", { model: "deepinfra/zai-org/GLM-5.3-Flash" });
+    assert.equal(chosen.statusCode, 200, chosen.body);
+    assert.deepEqual(chosen.json(), { default: "deepinfra/zai-org/GLM-5.3-Flash" });
+    assert.equal((await put(MEMBER, "/default-model", { model: null })).statusCode, 404);
+    assert.equal((await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER })).json().default, "deepinfra/zai-org/GLM-5.3-Flash");
+
+    const retick = await put(OWNER, "/model-providers/deepinfra", { models: ["deepinfra/Qwen/Qwen3.8-2.4T-A95B"] });
+    assert.equal(retick.statusCode, 200, retick.body);
+    assert.equal(retick.json().key_hint, "abcd", "the key is kept when the save carries none");
+    assert.equal((await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER })).json().default, null);
+
+    const local = await put(OWNER, "/model-providers/local", { base_url: "http://127.0.0.1:11434/v1", models: ["local/k3"] });
+    assert.equal(local.statusCode, 200, local.body);
+    assert.equal(local.json().base_url, "http://127.0.0.1:11434/v1");
+    assert.equal(local.json().key_hint, null);
+    const localCatalog = await app.inject({ method: "GET", url: `${base}/model-providers/local/catalog`, headers: OWNER });
+    assert.equal(localCatalog.statusCode, 200, localCatalog.body);
+    assert.deepEqual(localCatalog.json().models.map((item: { id: string }) => item.id), ["local/zai-org/GLM-5.3-Flash", "local/k3"]);
+
+    const outsider = await app.inject({ method: "GET", url: "/api/orgs/org_elsewhere/models", headers: OWNER });
     assert.equal(outsider.statusCode, 404);
 
-    const refused = await app.inject({ method: "DELETE", url: `${url}/openrouter`, headers: MEMBER });
+    const refused = await app.inject({ method: "DELETE", url: `${base}/model-providers/deepinfra`, headers: MEMBER });
     assert.equal(refused.statusCode, 404);
-    const removed = await app.inject({ method: "DELETE", url: `${url}/openrouter`, headers: OWNER });
+    const removed = await app.inject({ method: "DELETE", url: `${base}/model-providers/deepinfra`, headers: OWNER });
     assert.equal(removed.statusCode, 204);
-    assert.equal((await app.inject({ method: "DELETE", url: `${url}/openrouter`, headers: OWNER })).statusCode, 404);
-    assert.deepEqual((await app.inject({ method: "GET", url, headers: OWNER })).json(), []);
+    assert.equal((await app.inject({ method: "DELETE", url: `${base}/model-providers/deepinfra`, headers: OWNER })).statusCode, 404);
+    const after = await app.inject({ method: "GET", url: `${base}/models`, headers: OWNER });
+    assert.deepEqual(after.json().models.map((item: { id: string }) => item.id), ["local/k3"]);
+    assert.equal(await credentials.modelCredentials("org_home", "deepinfra"), null);
   } finally {
     await app.close();
     await database.close();

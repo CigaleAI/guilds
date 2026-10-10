@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -33,6 +33,7 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
   const notes = new NotesStore(tempDir("guilds-guild-routines-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const schedules = new Schedules(repo, notes);
   const app = await buildApp(database, {
     repo,
@@ -65,7 +66,7 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: { ...OWNER, "content-type": "application/json" },
-      payload: { name: "hold-keeper", config: { model: DEFAULT_MODEL, browser: false } },
+      payload: { name: "hold-keeper", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(agent.statusCode, 201, agent.body);
     const agentId = String(agent.json().id);
@@ -74,7 +75,7 @@ test("a guild can hold every routine without changing pause", { timeout: 60_000 
       method: "POST",
       url: `/api/guilds/${otherId}/agents`,
       headers: { ...OWNER, "content-type": "application/json" },
-      payload: { name: "open-keeper", config: { model: DEFAULT_MODEL, browser: false } },
+      payload: { name: "open-keeper", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(otherAgent.statusCode, 201, otherAgent.body);
     const otherAgentId = String(otherAgent.json().id);

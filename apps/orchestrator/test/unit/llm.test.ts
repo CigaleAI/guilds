@@ -2,32 +2,36 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { test } from "node:test";
 import {
-  CATALOG,
   GenerationLimitError,
   INPUT_TOKEN_LIMIT_MESSAGE,
   LLMError,
-  PRICING_VERSION,
   MODEL_USER_AGENT,
-  apiKeyForModel,
   applyPromptCacheControl,
   modelAcceptsAttachments,
+  modelCatalog,
   modelNeedsInlineImages,
-  probeProviderKey,
+  listProviderModels,
+  providerById,
   reasoningEffortForModel,
   applyReasoningDetailDelta,
   assistantMetadata,
   assistantPayload,
+  completionRequestBody,
   completionTimeoutMs,
   catalogCostUsd,
-  catalogRateTable,
   countInputTokens,
   enforceInputTokenLimit,
-  catalogModelId,
   redactApiKey,
   streamCompletion,
   type ModelEvent,
   type ReasoningDetail,
 } from "../../src/llm/index.js";
+
+function provider(id: string) {
+  const definition = providerById(id);
+  assert.ok(definition, `${id} is a provider`);
+  return definition;
+}
 
 test("assistant payload excludes null tool_calls", () => {
   assert.deepEqual(assistantPayload({ role: "assistant", content: "hi", tool_calls: null }), {
@@ -65,14 +69,23 @@ test("applyPromptCacheControl marks the last text message", () => {
   ]);
 });
 
-test("catalog attachments flag follows the verified model list", () => {
+test("catalog attachments flag follows the models.dev snapshot, and an unlisted id takes the default", () => {
   assert.equal(modelAcceptsAttachments("deepinfra/zai-org/GLM-5.3-Flash"), true);
   assert.equal(modelAcceptsAttachments("deepinfra/deepseek-ai/DeepSeek-V4.1-Flash"), true);
   assert.equal(modelAcceptsAttachments("kimi/k3"), true);
   assert.equal(modelAcceptsAttachments("kimi/kimi-for-coding"), true);
   assert.equal(modelAcceptsAttachments("deepinfra/Qwen/Qwen3.8-2.4T-A95B"), false);
+  assert.equal(modelAcceptsAttachments("openai/gpt-5-dated-2099-01-01"), false);
+  assert.equal(modelAcceptsAttachments("local/qwen"), false);
+  assert.equal(modelAcceptsAttachments("not-a-provider"), false);
   assert.equal(modelNeedsInlineImages("kimi/k3"), true);
   assert.equal(modelNeedsInlineImages("deepinfra/zai-org/GLM-5.3-Flash"), false);
+  const unlisted = modelCatalog.entry("openai/gpt-5-dated-2099-01-01");
+  assert.deepEqual(
+    unlisted && { listed: unlisted.listed, thinking: unlisted.thinking, temperature: unlisted.temperature, rates: unlisted.rates },
+    { listed: false, thinking: true, temperature: true, rates: null },
+  );
+  assert.equal(modelCatalog.entry("nope"), null);
 });
 
 test("assistant metadata catalog cost treats cached tokens as part of input", () => {
@@ -156,65 +169,24 @@ test("enforceInputTokenLimit is strict greater-than", () => {
   );
 });
 
-test("catalog cost_usd fallback prices every catalog model", () => {
+test("catalog cost_usd comes from the catalog's rates for a billed provider", () => {
   const million = 1_000_000;
   const usage = { input_tokens: million, output_tokens: million, cache_read_tokens: million };
-  const luna = catalogCostUsd("openrouter/openai/gpt-5.6-luna", usage);
-  assert.equal(luna.cost_usd, 1.2e-6 * million + 2e-8 * million);
-  assert.equal(luna.cost_source, "catalog");
-  assert.equal(luna.pricing_version, PRICING_VERSION);
-  const luna6 = catalogCostUsd("openrouter/openai/gpt-6-luna", usage);
-  assert.equal(luna6.cost_usd, 5e-7 * million + 1e-8 * million);
-  const sol = catalogCostUsd("openrouter/openai/gpt-6.1-sol", usage);
-  assert.equal(sol.cost_usd, 1e-5 * million + 1e-7 * million);
-  const lunaPro = catalogCostUsd("openrouter/openai/gpt-6-luna-pro", usage);
-  assert.equal(lunaPro.cost_usd, 5e-7 * million + 1e-8 * million);
-  const opus = catalogCostUsd("openrouter/anthropic/claude-opus-5", usage);
-  assert.equal(opus.cost_usd, 2.5e-5 * million + 5e-7 * million);
-  const gemini = catalogCostUsd("openrouter/google/gemini-3.8-flash", usage);
-  assert.equal(gemini.cost_usd, 3.75e-6 * million + 7.5e-8 * million);
-  const qwenFlash = catalogCostUsd("openrouter/qwen/qwen3.8-flash", usage);
-  assert.equal(qwenFlash.cost_usd, 4.7e-7 * million + 1.6e-8 * million);
-  const qwen = catalogCostUsd("deepinfra/Qwen/Qwen3.8-2.4T-A95B", usage);
-  assert.equal(qwen.cost_usd, 6e-6 * million + 2e-7 * million);
-  const glm = catalogCostUsd("deepinfra/zai-org/GLM-5.3", usage);
-  assert.equal(glm.cost_source, "catalog");
-  assert.equal(glm.cost_usd, 4e-6 * million + 2e-7 * million);
   const glmFlash = catalogCostUsd("deepinfra/zai-org/GLM-5.3-Flash", usage);
   assert.equal(glmFlash.cost_source, "catalog");
-  assert.equal(glmFlash.cost_usd, 5e-7 * million + 3e-8 * million);
-  const deepseek = catalogCostUsd("deepinfra/deepseek-ai/DeepSeek-V4.1-Flash", usage);
-  assert.equal(deepseek.cost_source, "catalog");
-  assert.equal(deepseek.cost_usd, 6e-7 * million + 6e-9 * million);
+  assert.ok(Math.abs(glmFlash.cost_usd - (0.5 + 0.03)) < 1e-9);
+  assert.equal(glmFlash.pricing_version, modelCatalog.pricingVersion());
+  assert.match(glmFlash.pricing_version, /^models\.dev \d{4}-\d{2}-\d{2}$/);
   const mixed = catalogCostUsd("deepinfra/zai-org/GLM-5.3-Flash", {
     input_tokens: million,
     output_tokens: million,
     cache_read_tokens: 400_000,
   });
-  assert.equal(mixed.cost_usd, 1.5e-7 * 600_000 + 5e-7 * million + 3e-8 * 400_000);
-  assert.equal(catalogCostUsd("unknown/model", usage).cost_source, "unavailable");
-  const table = catalogRateTable();
-  assert.deepEqual(
-    table.map((item) => item.id),
-    CATALOG.filter((item) => item.kind === "marketplace").map((item) =>
-      catalogModelId(item.provider, item.model),
-    ),
-  );
+  assert.ok(Math.abs(mixed.cost_usd - (0.15 * 0.6 + 0.5 + 0.03 * 0.4)) < 1e-9);
   assert.equal(catalogCostUsd("kimi/kimi-for-coding", usage).cost_source, "unavailable");
-  for (const row of table) {
-    assert.ok(row.rates.input > 0);
-    assert.ok(row.rates.output > 0);
-    assert.ok(row.rates.cacheRead > 0);
-  }
-});
-
-test("apiKeyForModel requires provider prefixes", () => {
-  assert.throws(() => apiKeyForModel("openrouter/x", {}), /OPENROUTER_API_KEY is not set/);
-  assert.throws(() => apiKeyForModel("deepinfra/x", {}), /DEEPINFRA_API_KEY is not set/);
-  assert.throws(() => apiKeyForModel("other/x", {}), /catalog provider prefix/);
-  assert.throws(() => apiKeyForModel("kimi/kimi-for-coding", {}), /Kimi Code key is not connected/);
-  assert.equal(apiKeyForModel("openrouter/x", { OPENROUTER_API_KEY: "k" }), "k");
-  assert.equal(apiKeyForModel("kimi/kimi-for-coding", {}, "org-kimi"), "org-kimi");
+  assert.equal(catalogCostUsd("local/qwen", usage).cost_source, "unavailable");
+  assert.equal(catalogCostUsd("openai/gpt-5-dated-2099-01-01", usage).cost_source, "unavailable");
+  assert.equal(catalogCostUsd("unknown/model", usage).cost_source, "unavailable");
 });
 
 test("reasoningEffortForModel maps Kimi Code levels", () => {
@@ -225,7 +197,7 @@ test("reasoningEffortForModel maps Kimi Code levels", () => {
   assert.equal(reasoningEffortForModel("openrouter/openai/gpt-6-luna", "high"), "high");
 });
 
-test("probeProviderKey accepts a 200 from the coding endpoint", async () => {
+test("listProviderModels accepts a 200 and returns the listed ids", async () => {
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ data: [{ id: "kimi-for-coding" }] }));
@@ -234,34 +206,94 @@ test("probeProviderKey accepts a 200 from the coding endpoint", async () => {
   const address = server.address();
   assert.ok(address && typeof address === "object");
   try {
-    await probeProviderKey("kimi", "sk-test", {
-      fetch: async (url, init) => {
-        assert.equal(String(url).endsWith("/models"), true);
+    const ids = await listProviderModels(provider("kimi"), {
+      apiKey: "sk-test",
+      fetch: async (url: string | URL | Request, init?: RequestInit) => {
+        assert.equal(String(url), "https://api.kimi.ai/coding/v1/models");
         assert.equal((init?.headers as Record<string, string>)["User-Agent"], MODEL_USER_AGENT);
+        assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer sk-test");
         return fetch(`http://127.0.0.1:${address.port}/models`, init);
       },
     });
+    assert.deepEqual(ids, ["kimi-for-coding"]);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
 });
 
-test("probeProviderKey rejects a 401", async () => {
+test("listProviderModels rejects a 401 and names the provider", async () => {
   await assert.rejects(
     () =>
-      probeProviderKey("kimi", "bad", {
+      listProviderModels(provider("kimi"), {
+        apiKey: "bad",
         fetch: async () => new Response("no", { status: 401 }),
       }),
     /Kimi Code rejected the key/,
   );
+  await assert.rejects(
+    () => listProviderModels(provider("openai"), { apiKey: " ", fetch: async () => new Response("[]") }),
+    /api_key is required/,
+  );
 });
 
-test("apiKeyForModel prefers an organisation key", () => {
-  assert.equal(
-    apiKeyForModel("openrouter/x", { OPENROUTER_API_KEY: "platform" }, "org-key"),
-    "org-key",
-  );
-  assert.equal(apiKeyForModel("openrouter/x", { OPENROUTER_API_KEY: "platform" }), "platform");
+test("listProviderModels reaches a local endpoint at its saved URL, with no key when none is set", async () => {
+  const seen: Array<{ url: string; auth: string | undefined }> = [];
+  const ids = await listProviderModels(provider("local"), {
+    apiKey: "",
+    baseURL: "http://127.0.0.1:11434/v1/",
+    fetch: async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), auth: (init?.headers as Record<string, string>).Authorization });
+      return new Response(JSON.stringify({ data: [{ id: "qwen3:8b" }, { id: "llama" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  assert.deepEqual(ids, ["qwen3:8b", "llama"]);
+  assert.deepEqual(seen, [{ url: "http://127.0.0.1:11434/v1/models", auth: undefined }]);
+  await assert.rejects(() => listProviderModels(provider("local"), { apiKey: "" }), /needs a base URL/);
+});
+
+test("completionRequestBody shapes the body per provider", () => {
+  const base = {
+    messages: [{ role: "user", content: "hi" }],
+    temperature: 0.4,
+    max_tokens: 64,
+    thinking_level: "medium",
+  };
+  const openai = completionRequestBody({ ...base, model: "openai/gpt-5-dated-2099-01-01" });
+  assert.equal(openai.model, "gpt-5-dated-2099-01-01");
+  assert.equal(openai.max_completion_tokens, 64);
+  assert.equal("max_tokens" in openai, false);
+  assert.equal(openai.reasoning_effort, "medium");
+  assert.equal("reasoning" in openai, false);
+  assert.equal("cache_control" in openai, false);
+  assert.equal(openai.temperature, 0.4, "an unlisted id takes a temperature");
+  assert.deepEqual(openai.messages, base.messages);
+
+  const openrouter = completionRequestBody({ ...base, model: "openrouter/anthropic/claude-opus-5" });
+  assert.equal(openrouter.model, "anthropic/claude-opus-5");
+  assert.equal(openrouter.max_tokens, 64);
+  assert.deepEqual(openrouter.reasoning, { effort: "medium" });
+  assert.equal("reasoning_effort" in openrouter, false);
+  assert.deepEqual(openrouter.cache_control, { type: "ephemeral" });
+  assert.equal("temperature" in openrouter, false, "the catalog says this model sets its own temperature");
+
+  const deepinfra = completionRequestBody({ ...base, model: "deepinfra/zai-org/GLM-5.3-Flash" });
+  assert.equal(deepinfra.max_tokens, 64);
+  assert.equal(deepinfra.reasoning_effort, "medium");
+  assert.equal(deepinfra.temperature, 0.4);
+  assert.equal("cache_control" in deepinfra, false);
+
+  const kimi = completionRequestBody({ ...base, model: "kimi/k3", thinking_level: "high" });
+  assert.equal(kimi.reasoning_effort, "max");
+  assert.equal(kimi.max_tokens, 64);
+
+  const local = completionRequestBody({ ...base, model: "local/qwen3:8b", thinking_level: "none" });
+  assert.equal(local.model, "qwen3:8b");
+  assert.equal("reasoning_effort" in local, false);
+  assert.equal(local.temperature, 0.4);
+  assert.throws(() => completionRequestBody({ ...base, model: "gpt-5" }), /\{provider\}\/\{model\}/);
 });
 
 test("redactApiKey strips the provider secret", () => {

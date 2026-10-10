@@ -59,7 +59,6 @@ unless `.env` says otherwise). It holds the host-side trees:
   are canonical. The tree is required to exist at boot.
 - `attachments/`: `ATTACHMENTS_ROOT`. Chat images, one file per
   attachment under its organisation's directory.
-- `lightrag/`: the development stack's docs index.
 
 The path is absolute because OpenSandbox bind-mounts each workspace
 by that same path. `make state` creates the trees. `./setup.sh`
@@ -106,7 +105,7 @@ reason.
 | Target | Files | Services |
 | --- | --- | --- |
 | `docker compose up` | `docker-compose.yml` | postgres, opensandbox, orchestrator on the core image: the stack as shipped ([Install](../getting-started/install.md)). Only the orchestrator is published, on `127.0.0.1:8080` |
-| `make up` (dev) | `docker-compose.dev.yml` = `docker-compose.yml` + `docker-compose.watch.yml` + `docker-compose.docs.yml` | The same three, with the development overlay, and lightrag and preview for docs search |
+| `make up` (dev) | `docker-compose.dev.yml` = `docker-compose.yml` + `docker-compose.watch.yml` | The same three, with the development overlay |
 
 The stack mounts the Docker socket. Sandboxes are containers it
 starts beside itself.
@@ -160,9 +159,8 @@ It also accepts the all-zero master key the Makefile gives a
 development stack (`ALLOW_ZERO_MASTER_KEY=1`). The shipped stack
 refuses that key ([SEC-14](security-register.md)).
 
-The development stack publishes docs search at `127.0.0.1:9622`
-(indexer `127.0.0.1:9621`). The image carries the web app's build as
-of the last `make up` and serves it at the site root.
+The image carries the web app's build as of the last `make up` and
+serves it at the site root.
 
 `make dev` brings the stack up and runs the app's Vite server on
 `127.0.0.1:5173`. The Vite server reloads the UI in place on every

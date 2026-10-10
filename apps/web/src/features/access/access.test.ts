@@ -220,7 +220,7 @@ test("a tool that waits for a platform key is not offered, and says which", () =
         enables: "The lookup_find tool",
         state: set ? "on" : "off",
         variables: [{ name: "LOOKUP_API_KEY", optional: false, set }],
-        provides: { model_providers: [], native_tools: ["lookup_find"], connectors: [] },
+        provides: { native_tools: ["lookup_find"], connectors: [] },
       },
     ],
   });

@@ -3,7 +3,13 @@ import type { ArtifactStore } from "../artifacts/index.js";
 import { collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds } from "../artifacts/index.js";
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/validation.js";
-import { DEFAULT_MODEL, isMarketplaceModel } from "../llm/catalog.js";
+import {
+  ModelNotConnectedError,
+  assertModelConnected,
+  coreModelCredentials,
+  type ModelCredentialsProvider,
+} from "../llm/credentials.js";
+import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { memoryOf } from "../agents/validation.js";
@@ -39,7 +45,8 @@ export type StudioServiceDeps = {
   mcp?: StudioMcpClient | null;
   admission?: AdmissionCoordinator;
   policy?: OrgPolicy;
-  resolveOrgApiKey?: (orgId: string, model: string) => Promise<string | null>;
+  /** What the coach's model provider is called with; core's own rows when absent. */
+  credentials?: ModelCredentialsProvider;
   publishFilesChanged?: (guildId: string) => Promise<void>;
   isAgentBusy?: (agentId: string) => boolean;
 };
@@ -50,18 +57,19 @@ export class StudioService {
   runner: StudioRunner;
   admission: AdmissionCoordinator;
   policy: OrgPolicy;
+  credentials: ModelCredentialsProvider;
 
   constructor(public deps: StudioServiceDeps) {
     this.store = new StudioStore(deps.repo.pool);
     this.drafts = new StudioDrafts(this.store, deps.artifacts);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
+    this.credentials = deps.credentials ?? coreModelCredentials(deps.repo);
     this.runner = new StudioRunner({
       store: this.store,
       admission: this.admission,
       policy: this.policy,
-      getOrgMonthlyUsage: (orgId, month) => deps.repo.getOrgMonthlyUsage(orgId, month),
-      ...(deps.resolveOrgApiKey ? { resolveOrgApiKey: deps.resolveOrgApiKey } : {}),
+      credentials: this.credentials,
     });
   }
 
@@ -108,7 +116,7 @@ export class StudioService {
     ) {
       throw new StudioError(404, "guild not found");
     }
-    const model = this.validateModel(args.model);
+    const model = await this.validateModel(String(args.org.id), args.model);
     const temperature = this.validateTemperature(args.temperature);
     if (args.parentSessionId) {
       const parent = await this.store.getSession(args.parentSessionId);
@@ -185,10 +193,22 @@ export class StudioService {
     return this.viewSession(session);
   }
 
-  validateModel(model: string): string {
-    const id = (model || DEFAULT_MODEL).trim();
+  /** The coach's model: a marketplace model whose provider the organisation has connected. */
+  async validateModel(orgId: string, model: string): Promise<string> {
+    const id = model.trim();
+    if (!id) {
+      throw new StudioUnprocessableError("model is required");
+    }
     if (!isMarketplaceModel(id)) {
-      throw new StudioUnprocessableError("unknown model");
+      throw new StudioUnprocessableError("the coach needs a marketplace model");
+    }
+    try {
+      await assertModelConnected(this.credentials, orgId, id);
+    } catch (error) {
+      if (error instanceof ModelNotConnectedError) {
+        throw new StudioUnprocessableError(error.message);
+      }
+      throw error;
     }
     return id;
   }
@@ -748,7 +768,7 @@ export class StudioService {
       org,
       mode: "optimize",
       sourceGuildId: String(session.source_guild_id),
-      model: String(config.model ?? DEFAULT_MODEL),
+      model: String(config.model ?? ""),
       temperature: Number(config.temperature ?? STUDIO_DEFAULT_TEMPERATURE),
       parentSessionId: String(session.id),
       summary,

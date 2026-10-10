@@ -9,6 +9,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearConnectorKeys, testEnv } from "../helpers/env.js";
+import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, templatesRoot } from "../helpers/fixtures.js";
 import { PlaceholderMap } from "../helpers/placeholders.js";
 import {
@@ -66,6 +67,7 @@ test("R3 feature HTTP recordings replay against an isolated database", async () 
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "openrouter");
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
   const app = await buildApp(database, {

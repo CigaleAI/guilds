@@ -5,7 +5,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -36,6 +36,7 @@ test("guild and agent names can be updated, with uniqueness and notes folders", 
   const notes = new NotesStore(notesRoot, templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const app = await buildApp(database, {
     repo,
     notes,
@@ -116,7 +117,7 @@ test("guild and agent names can be updated, with uniqueness and notes folders", 
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: JSON_HEADERS,
-      payload: { name: "researcher", config: { model: DEFAULT_MODEL, browser: false } },
+      payload: { name: "researcher", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(agent.statusCode, 201, agent.body);
     const agentId = String(agent.json().id);
@@ -124,7 +125,7 @@ test("guild and agent names can be updated, with uniqueness and notes folders", 
       method: "POST",
       url: `/api/guilds/${otherId}/agents`,
       headers: JSON_HEADERS,
-      payload: { name: "scribe", config: { model: DEFAULT_MODEL, browser: false } },
+      payload: { name: "scribe", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(sibling.statusCode, 201, sibling.body);
 

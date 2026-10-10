@@ -3,8 +3,7 @@ import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   useAgent,
   useAgentScripts,
-  useModels,
-  useOrgModelKeys,
+  useOrgModels,
   useSaveAgentSettings,
 } from "../../../api/queries";
 import type { AgentDetail } from "../../../api/types";
@@ -68,9 +67,8 @@ export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);
   const scripts = useAgentScripts(agentId);
-  const models = useModels();
   const { org } = useIdentity();
-  const modelKeys = useOrgModelKeys(org.id);
+  const models = useOrgModels(org.id);
   const save = useSaveAgentSettings(agentId, guildId);
   const [draft, setDraft] = useState<Form | null>(null);
 
@@ -87,10 +85,7 @@ export function AgentSettings() {
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
   const set = (patch: Partial<Form>) => setDraft({ ...form, ...patch });
-  const errors = configErrors(form, {
-    catalog: models.data,
-    connectedProviders: modelKeys.isSuccess ? modelKeys.data.map((item) => item.provider) : undefined,
-  });
+  const errors = configErrors(form, { models: models.data });
   const nameError = form.name.trim() ? agentHandleError(form.name.trim()) : handleHint;
   const invalid = Boolean(nameError) || Object.keys(errors).length > 0;
 
@@ -196,9 +191,9 @@ export function AgentSettings() {
             </Group>
           ) : null}
           <Group title="Box">
-            <BoxPicker form={form} onChange={(next) => set(next)} catalog={models.data} error={errors.box} />
+            <BoxPicker form={form} onChange={(next) => set(next)} models={models.data} error={errors.box} />
             {form.box === "standard" ? (
-              <StandardFields form={form} onChange={(next) => set(next)} catalog={models.data} />
+              <StandardFields form={form} onChange={(next) => set(next)} models={models.data} />
             ) : null}
           </Group>
           <Group title="Agent capabilities">

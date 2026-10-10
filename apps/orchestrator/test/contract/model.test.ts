@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { streamCompletion } from "../../src/llm/index.js";
+import { parseModelId, streamCompletion } from "../../src/llm/index.js";
 
+// The live contract: MODEL_CONTRACT_MODEL names a {provider}/{model} on any provider core speaks
+// to, MODEL_CONTRACT_API_KEY is the key it runs with, and MODEL_CONTRACT_BASE_URL points a local
+// endpoint.
 const gated =
-  process.env.RUN_MODEL_CONTRACT !== "1" || !process.env.OPENROUTER_API_KEY
-    ? "set RUN_MODEL_CONTRACT=1 and OPENROUTER_API_KEY to run the live model contract"
+  process.env.RUN_MODEL_CONTRACT !== "1" || !process.env.MODEL_CONTRACT_MODEL || !process.env.MODEL_CONTRACT_API_KEY
+    ? "set RUN_MODEL_CONTRACT=1, MODEL_CONTRACT_MODEL, and MODEL_CONTRACT_API_KEY to run the live model contract"
     : false;
 
 function contractModel(): string {
-  const model = process.env.MODEL_CONTRACT_MODEL ?? "openrouter/openai/gpt-4o-mini";
-  if (!model.startsWith("openrouter/") && !model.startsWith("deepinfra/")) {
-    throw new Error("MODEL_CONTRACT_MODEL must start with openrouter/ or deepinfra/");
+  const model = process.env.MODEL_CONTRACT_MODEL ?? "";
+  if (!parseModelId(model)) {
+    throw new Error("MODEL_CONTRACT_MODEL must be {provider}/{model} with a provider core speaks to");
   }
   return model;
 }
@@ -21,9 +24,8 @@ async function stream(messages: Array<Record<string, unknown>>, extra: {
   max_tokens: number;
 }): Promise<{ payload: Record<string, unknown>; metadata: Record<string, unknown> }> {
   const model = contractModel();
-  const apiKey = model.startsWith("deepinfra/")
-    ? process.env.DEEPINFRA_API_KEY ?? process.env.OPENROUTER_API_KEY
-    : process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.MODEL_CONTRACT_API_KEY;
+  const baseURL = (process.env.MODEL_CONTRACT_BASE_URL ?? "").trim();
   const request: {
     model: string;
     messages: Array<Record<string, unknown>>;
@@ -32,11 +34,13 @@ async function stream(messages: Array<Record<string, unknown>>, extra: {
     tools?: unknown[] | null;
     tool_choice?: unknown;
     apiKey?: string;
+    baseURL?: string;
   } = {
     model,
     messages,
     temperature: 0,
     max_tokens: extra.max_tokens,
+    ...(baseURL ? { baseURL } : {}),
   };
   if (extra.tools) {
     request.tools = extra.tools;
@@ -57,7 +61,7 @@ async function stream(messages: Array<Record<string, unknown>>, extra: {
   return done;
 }
 
-test("openrouter streaming contract", { skip: gated }, async () => {
+test("the provider streams text, tool calls, usage, and cost through the client", { skip: gated }, async () => {
   const text = await stream(
     [{ role: "user", content: "Reply with exactly COMPAT_OK." }],
     { max_tokens: 32 },

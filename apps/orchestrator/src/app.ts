@@ -16,6 +16,7 @@ import type { Database } from "./db/client.js";
 import {
   extensionIdentity,
   extensionInstanceAdmin,
+  extensionModelCredentials,
   extensionPolicy,
   extensionWebApp,
   type ServerExtension,
@@ -27,6 +28,8 @@ import { sandboxSubprotocol } from "./http/sandbox-proxy.js";
 import { registerWebApp } from "./http/web-app.js";
 import { CORE_INTEGRATIONS } from "./instance/integrations.js";
 import { repoRoot } from "./lib/paths.js";
+import { coreModelCredentials } from "./llm/credentials.js";
+import { ModelsService } from "./llm/models.js";
 import { registerClientErrorRoute } from "./observability/client-errors.js";
 import { fastifyRequestIdOptions, registerHttpObservability } from "./observability/http.js";
 
@@ -139,11 +142,19 @@ export async function buildApp(
     const policy = deps.policy ?? extensionPolicy(extensions, deps);
     const identity = deps.identity ?? extensionIdentity(extensions, deps);
     const instanceAdmin = deps.instanceAdmin ?? extensionInstanceAdmin(extensions, deps);
+    const modelCredentials =
+      deps.modelCredentials ??
+      extensionModelCredentials(extensions, deps) ??
+      coreModelCredentials(deps.repo, deps.masterKey);
+    const models =
+      deps.models ?? new ModelsService({ repo: deps.repo, credentials: modelCredentials, masterKey: deps.masterKey });
     const full = {
       database,
       ...deps,
       artifacts,
       integrations,
+      modelCredentials,
+      models,
       ...(policy ? { policy } : {}),
       ...(identity ? { identity } : {}),
       ...(instanceAdmin ? { instanceAdmin } : {}),

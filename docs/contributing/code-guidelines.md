@@ -7,7 +7,7 @@ check tooling is in [Development](development.md).
 
 A name says what the thing does. A reader does not open the body.
 
-- Functions are a verb over a domain noun (`resolveOrgApiKey`,
+- Functions are a verb over a domain noun (`resolveModelCredentials`,
   `seedOperator`, `materialiseScripts`).
 - Types and tables are the domain noun (`Repositories`,
   `artifact_collections`).

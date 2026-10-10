@@ -12,7 +12,6 @@
     "test:orchestrator": "pnpm --filter @guildsrun/orchestrator test",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "test:docs-mcp": "pnpm --filter @guildsrun/docs-mcp test",
     "storybook": "pnpm --filter @guildsrun/ui storybook",
     "build:storybook": "pnpm --filter @guildsrun/ui build-storybook",
     "design-system-doc": "pnpm --filter @guildsrun/ui design-system-doc",

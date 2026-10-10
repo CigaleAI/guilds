@@ -6,7 +6,7 @@ import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -22,7 +22,7 @@ const AUTH = {
 };
 
 const CONFIG = {
-  model: DEFAULT_MODEL,
+  model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
   max_steps: 30,
@@ -46,6 +46,7 @@ test("studio activity lists each wake with what started it and what it produced"
   const notes = new NotesStore(tempDir("guilds-studio-activity-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
@@ -143,7 +144,7 @@ test("studio activity lists each wake with what started it and what it produced"
       method: "POST",
       url: "/api/studio/sessions",
       headers: AUTH,
-      payload: { mode: "optimize", source_guild_id: "guild_act", coach_config: { model: DEFAULT_MODEL, temperature: 0.2 } },
+      payload: { mode: "optimize", source_guild_id: "guild_act", coach_config: { model: TEST_MODEL, temperature: 0.2 } },
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };

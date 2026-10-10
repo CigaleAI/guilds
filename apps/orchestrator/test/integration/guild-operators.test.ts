@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -33,6 +33,7 @@ test("guild admins manage operators, and private guilds show only to operators",
   const notes = new NotesStore(tempDir("guilds-operators-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const app = await buildApp(database, {
     repo,
     notes,
@@ -174,14 +175,14 @@ test("guild admins manage operators, and private guilds show only to operators",
       method: "POST",
       url: `/api/guilds/${privateId}/agents`,
       headers: { ...OWNER, ...json },
-      payload: { name: "teammate-ops", config: { model: DEFAULT_MODEL, browser: false } },
+      payload: { name: "teammate-ops", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(clash.statusCode, 409, clash.body);
     const agent = await app.inject({
       method: "POST",
       url: `/api/guilds/${sharedId}/agents`,
       headers: { ...OWNER, ...json },
-      payload: { name: "outsider-ops", config: { model: DEFAULT_MODEL, browser: false } },
+      payload: { name: "outsider-ops", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(agent.statusCode, 201, agent.body);
     await repo.insertMember("org_home", String(outsider.id), "member", new Date());

@@ -15,6 +15,7 @@ import {
   STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
   STUDIO_PROJECTION_POLICY_VERSION,
 } from "./constants.js";
+import type { ModelCredentialsProvider } from "../llm/credentials.js";
 import type { StudioStore } from "./store.js";
 import { studioToolMap, type StudioTool, type StudioToolContext } from "./tools.js";
 
@@ -23,9 +24,8 @@ export { generationLive };
 export type StudioRunnerDeps = {
   store: StudioStore;
   admission: AdmissionCoordinator;
-  resolveOrgApiKey?: (orgId: string, model: string) => Promise<string | null>;
+  credentials?: ModelCredentialsProvider;
   policy?: OrgPolicy;
-  getOrgMonthlyUsage?: (orgId: string, month: string) => Promise<Record<string, unknown> | null>;
 };
 
 function studioConversationStore(store: StudioStore): ConversationStore {
@@ -62,9 +62,8 @@ export class StudioRunner {
       admissionKind: "studio",
       projectionPolicyVersion: STUDIO_PROJECTION_POLICY_VERSION,
       minUnstubbedToolResults: STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
-      ...(deps.resolveOrgApiKey ? { resolveOrgApiKey: deps.resolveOrgApiKey } : {}),
+      ...(deps.credentials ? { credentials: deps.credentials } : {}),
       ...(deps.policy ? { policy: deps.policy } : {}),
-      ...(deps.getOrgMonthlyUsage ? { getOrgMonthlyUsage: deps.getOrgMonthlyUsage } : {}),
       onToolResult: async (sessionId, name, result, publish) => {
         if (name === "studio_create_task_draft" && !("error" in result)) {
           await publish(sessionId, "draft.changed", result);

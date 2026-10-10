@@ -1421,8 +1421,6 @@ and `incomplete` when some are.
 
 | Integration | Variables | Switches on |
 |---|---|---|
-| `openrouter` | `OPENROUTER_API_KEY` | OpenRouter models for an organisation with no OpenRouter key of its own |
-| `deepinfra` | `DEEPINFRA_API_KEY` | DeepInfra models for an organisation with no DeepInfra key of its own |
 | `web-search` | `TAVILY_API_KEY` | The Tavily connector's platform login, `tavily_search` |
 | `group-routing` | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat |
 | `github-app` | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories |
@@ -1434,8 +1432,7 @@ and `incomplete` when some are.
 - the box's `auth_mode`
 - each integration's state
 - which of its variables are set, never a value
-- what it switches on: model providers, native tools, and connector
-  slugs
+- what it switches on: native tools and connector slugs
 
 The operator app reads it and turns off what depends on a missing
 integration, naming the variables that would switch it on:
@@ -1444,10 +1441,10 @@ integration, naming the variables that would switch it on:
   state
 - the Tools view marks a connector without its App or OAuth client
   **Not set up**
-- a banner above every page says no model key is set when the box
-  and the organisation hold none at all
-- the model picker marks a provider neither holds a key for
-  `No key yet`
+
+No integration serves a model provider; an organisation connects its
+own under **Settings**, **Model keys**
+([Users and organisations](users-and-organisations.md#model-providers)).
 
 Setting the variables is
 [Configure](../getting-started/configure.md).

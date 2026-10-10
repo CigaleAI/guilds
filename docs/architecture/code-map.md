@@ -18,7 +18,7 @@ flowchart LR
   Orch --> PG[(PostgreSQL)]
   Orch --> Place["sandbox provider"]
   Place --> OS[OpenSandbox]
-  Orch --> LLM[organisation / instance<br/>model keys]
+  Orch --> LLM[model providers<br/>on the organisation's keys]
   OS --> Docker["agent-runtime-lite: scripts<br/>agent-runtime: coding + Chromium"]
 ```
 
@@ -27,18 +27,15 @@ flowchart LR
 ```text
 guilds.run/
   apps/orchestrator/        Node control plane (this is the app)
-  apps/docs-mcp/            Local documentation MCP over LightRAG
   apps/web/                 React operator app (served at the site root)
   packages/ui/              @guildsrun/ui design system (tokens, components, Storybook)
   runtime/                  Dockerfile (agent-runtime:0.3, the standard box), Dockerfile.lite (agent-runtime-lite:0.1, the lite box), and the helpers baked into them
   templates/degen-capital/  Example guild prompts
   fixtures/compat/          Frozen HTTP/SSE/schema/crypto/adapter contracts
-  deploy/docs-preview/      nginx + static viewer for docs search
   docs/                     Documentation (this set)
   docker-compose.yml        The core stack as shipped: postgres, opensandbox, orchestrator on loopback
   docker-compose.watch.yml  Development overlay: source mounts and reload, Postgres on loopback
-  docker-compose.dev.yml    = product + watch + docker-compose.docs.yml, core alone
-  docker-compose.docs.yml   LightRAG + chapter preview
+  docker-compose.dev.yml    = product + watch, core alone
   setup.sh                  Writes .env (state path and generated secrets) and builds the unpublished images
   .env.example              Core's settings, by integration; an edition lists its additions in an .env.example of its own
   scripts/                  check.sh (the whole check, run by CI and before a push; with EDITION_ROOT it checks an edition, adding the steps in its check.steps), images.sh (the OpenSandbox and runtime images), smoke-core-stack.sh (the shipped stack, end to end)
@@ -125,8 +122,7 @@ orchestrator serves.
 
 - `shell/` — sidebar with agents flagged for broken Task links,
   collapsed rail folded with ⌘B / Ctrl+B, account menu. On a phone
-  the sidebar opens as a drawer from a top bar. A banner above every
-  page when neither the organisation nor the server has a model key.
+  the sidebar opens as a drawer from a top bar.
 - `guild/` — guild workspace and group chat, opened at a message by
   `?seq=`. The header's member avatars open the inspector. The
   header's message budget. The guild menu's Studio, new agent and
@@ -232,12 +228,16 @@ orchestrator serves.
   servers added by hand, and an export. The instance's keys with each
   integration's state.
 - `settings/` — the operator's own name, colour and timezone. The
-  organisation's name and slug. Its members. Its model keys. Its
-  secrets and tools over `access/`. Its usage by guild and agent.
-- `instance/` — what the server's integrations mean for a screen.
-  The model, native tool, and connector that waits for an instance
-  key. The hint a model picker shows for it. The banner when no
-  model key exists at all.
+  organisation's name and slug. Its members. Its model keys: each
+  provider's state, the connect form, the catalog to choose models
+  from, and the default. Its secrets and tools over `access/`. Its
+  usage by guild and agent.
+- `models/` — what every model picker shares: the options from the
+  organisation's chosen models grouped by provider, the default to
+  preselect, what a model does not take, and the guide shown in a
+  picker's place while no provider is connected.
+- `instance/` — what the server's integrations mean for a screen:
+  the native tool and connector that waits for an instance key.
 - `inbox/` — issues and tags for the operator across the guilds
   they operate.
 - `home/`
@@ -358,7 +358,7 @@ agent runs. Studio and Builder share `conversation/`.
 | `schedules/` | Cron and random-window validation and planning (`timing.ts`, `window.ts`), `Schedules` service, human-readable cadence |
 | `scripts/` | Agent `script` catalog, run snapshot, materialise `/home/agent/scripts/` |
 | `sandbox/` | `RunSandboxes` (one OpenSandbox: ensure, idle, destroy), core's sandbox provider; `sweep.ts` orphan workspaces |
-| `llm/` | Model client, catalog, token counting, cost; `org-keys.ts` for an organisation's own model keys |
+| `llm/` | `providers.ts` (the provider table and the `{provider}/{model}` prefix), `catalog.ts` and `models-dev.ts` (the models.dev catalog: fetch, cache, snapshot, mapping), `credentials.ts` (the model credentials extension point and core's default over the organisation's rows), `models.ts` (an organisation's providers, chosen models, and default), `client.ts` (the OpenAI client with per-provider request shaping), `tokens.ts`, `cost.ts` |
 | `policy/` | Organisation policy: `OrgPolicy` (an organisation's limits and whether it may work), core's open policy, and the checks core runs against it (agent, browser, coding, and guild caps, the monthly Studio and Builder quota) |
 | `avatars/` | [DiceBear](https://www.dicebear.com/) SVG rendering (`clay.ts` body variants) |
 | `issues/` | Guild-level tooling reports from `report_issue` |

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL } from "../helpers/models.js";
 import {
   captureGuild,
   portableRoleConfig,
@@ -55,7 +55,7 @@ function captureDeps(options: {
       avatar_shape: "hex",
       avatar_color: "#11aa22",
       config: {
-        model: DEFAULT_MODEL,
+        model: TEST_MODEL,
         temperature: 0.2,
         max_tokens: 1024,
         max_steps: 8,
@@ -71,7 +71,7 @@ function captureDeps(options: {
       id: "a_writer",
       name: "writer",
       focus: "Write",
-      config: { model: DEFAULT_MODEL, browser: true },
+      config: { model: TEST_MODEL, browser: true },
     },
   ];
   return {
@@ -201,11 +201,11 @@ function captureDeps(options: {
 
 test("portable role config keeps generation keys and drops local ids", () => {
   const config = portableRoleConfig(
-    { model: DEFAULT_MODEL, browser: true, connection_id: "conn_1", sandbox_id: "sbx" },
+    { model: TEST_MODEL, browser: true, connection_id: "conn_1", sandbox_id: "sbx" },
     true,
   );
   assert.equal(config.browser, true);
-  assert.equal(config.model, DEFAULT_MODEL);
+  assert.equal(config.model, TEST_MODEL);
   assert.equal(config.browser_language, "en-US");
   assert.equal("connection_id" in config, false);
   assert.equal("sandbox_id" in config, false);
@@ -284,7 +284,7 @@ test("captureGuild records a single-role specialization and org connector scope"
           id: "a_scout",
           name: "scout",
           focus: "Watch",
-          config: { model: DEFAULT_MODEL, browser: false },
+          config: { model: TEST_MODEL, browser: false },
         },
       ],
       servers: [

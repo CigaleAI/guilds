@@ -143,17 +143,13 @@ Organisation routes:
   owners, admins the rest
 - usage: `GET /api/usage` returns the current organisation's guilds
   the caller may see, by guild and agent
-- model keys: `GET /api/orgs/:id/model-providers` for every member,
-  `PUT`/`DELETE /api/orgs/:id/model-providers/:provider` for owners
-  and admins
-  ([Tools and connectors](tools-and-connectors.md))
+- model providers: below
 
 An organisation's limits come from the organisation policy:
 
 - how many agents, browser agents, coding agents, and guilds it may
   hold
 - how many generations run at once
-- a monthly spend
 
 Core's policy sets none of them. The instance-wide ceiling on
 concurrent generations is `MAX_CONCURRENT_GENERATIONS`
@@ -161,6 +157,43 @@ concurrent generations is `MAX_CONCURRENT_GENERATIONS`
 
 An edition may supply a policy of its own
 ([Extension points](../architecture/extension-points.md)).
+
+## Model providers
+
+An organisation connects a key per model provider, chooses the models
+it offers from each, and names one default
+([Orchestrator](../architecture/orchestrator.md#model-client)). A run
+is `provider + credentials + model`; the server holds no key of its
+own.
+
+Per connected provider the organisation holds the key, encrypted as
+every credential is (`api_key`, and `base_url` for the local
+endpoint), the key's last characters, and the chosen model ids as
+plain data. It holds one `default_model`, or none. Removing a key
+removes the provider's row and its chosen models, and clears the
+default when it was among them. A provider is **connected** when
+credentials resolve for the organisation: in core, when a key is
+saved.
+
+- `GET /api/orgs/:id/models`, for every member: the organisation's
+  `default`, its `providers` (`id`, `label`, `kind`, `connected`,
+  `key_hint`, and `base_url` for the local endpoint), and its chosen
+  `models` with their capacities (`thinking`, `temperature`,
+  `attachments`, `context`, `price` per million tokens, `kind`,
+  `coding_only`). Every picker reads this.
+- `GET /api/orgs/:id/model-providers/:provider/catalog`, for every
+  member: the provider's full catalog, or the local endpoint's live
+  list once its URL is saved. Only Model keys reads this.
+- `PUT /api/orgs/:id/model-providers/:provider`, for owners and
+  admins: `api_key` (kept when left out on a connected provider),
+  `base_url` for the local endpoint, and `models`, the chosen ids as
+  `{provider}/{model}`. The key is probed with `GET {baseURL}/models`
+  before the row is written; a rejected key answers 422.
+- `PUT /api/orgs/:id/default-model`, for owners and admins: `model`,
+  one of the chosen models on a connected marketplace provider, or
+  null.
+- `DELETE /api/orgs/:id/model-providers/:provider`, for owners and
+  admins.
 
 **Instance admin** is who administers the instance:
 

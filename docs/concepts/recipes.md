@@ -444,6 +444,17 @@ Live task edits stay in Prompt Studio.
 `recipe_applies.status`: `preview`, then `skeleton`, then `checklist`,
 then `ready`, or `aborted`.
 
+A role's `config.model` is a recommendation, kept exactly as written.
+Validation warns about one that is unknown, not connected for the
+organisation, or a coding-API model on a role without `coding`, and
+never refuses a recipe for a model reason. The apply preview shows a
+picker per role, preselected with the recommendation when the
+organisation has it, else the organisation's default, else nothing;
+the apply request carries `models`, the model chosen for each role,
+and nothing is created while a role has none. The Builder writes the
+coach's model into the roles it drafts without one; capturing a guild
+keeps each agent's live model.
+
 #### Preview
 
 `POST /api/recipes/:id/preview` resolves, without writing:
@@ -451,7 +462,10 @@ then `ready`, or `aborted`.
 - guild name in this organisation
 - each role's `name_suggestion` against charset, reserved `user`, and
   names visible here (a global agent-name 409 is handled at insert)
-- each `config.model` against `GET /api/models`
+- each role's model: the operator's choice, else the role's
+  recommendation when the organisation has its provider, else the
+  organisation's default, else none; the preview's `models` lists
+  each role's `recommended` and resolved `model`
 - the organisation's remaining capacity for the whole batch: agents,
   browser agents, and coding agents (roles with `config.coding: true`),
   each against the organisation's limit, `null` where nothing caps it

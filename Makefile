@@ -6,11 +6,9 @@
 CORE ?= .
 COMPOSE ?= docker compose
 STATE_ROOT ?= $(abspath .state)
-DOCS_HOST_ROOT ?= $(abspath $(CORE)/docs)
 
 export CORE
 export STATE_ROOT
-export DOCS_HOST_ROOT
 
 .DEFAULT_GOAL := contract
 
@@ -40,9 +38,9 @@ endif
 ifndef COMPOSE_DEV
 $(error EDITION=$(EDITION) names no development stack: an edition sets COMPOSE_DEV)
 endif
-COMPOSE_ALL := $(COMPOSE) -f $(CORE)/docker-compose.yml -f $(CORE)/docker-compose.docs.yml $(EDITION_COMPOSE_FILES)
+COMPOSE_ALL := $(COMPOSE) -f $(CORE)/docker-compose.yml $(EDITION_COMPOSE_FILES)
 
-.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image runtime-lite-image core-image build up up-dev dev down reset verify check soak compat-verify docs-up docs-index docs-down
+.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image runtime-lite-image core-image build up up-dev dev down reset verify check soak compat-verify
 
 contract: contract-opensandbox contract-model
 
@@ -50,14 +48,14 @@ contract-opensandbox:
 	RUN_OPENSANDBOX_CONTRACT=1 pnpm --filter @guildsrun/orchestrator exec node --import tsx --test test/contract/opensandbox.test.ts test/contract/coding.test.ts
 
 contract-model:
-	@if [ ! -f .env ]; then echo "OPENROUTER_API_KEY is required"; exit 1; fi
+	@if [ ! -f .env ]; then echo "MODEL_CONTRACT_MODEL and MODEL_CONTRACT_API_KEY are required in .env"; exit 1; fi
 	@set -a && . ./.env && set +a && \
-		if [ -z "$$OPENROUTER_API_KEY" ]; then echo "OPENROUTER_API_KEY is required"; exit 1; fi && \
-		env -u MODEL_CONTRACT_MODEL RUN_MODEL_CONTRACT=1 \
+		if [ -z "$$MODEL_CONTRACT_MODEL" ] || [ -z "$$MODEL_CONTRACT_API_KEY" ]; then echo "MODEL_CONTRACT_MODEL and MODEL_CONTRACT_API_KEY are required in .env"; exit 1; fi && \
+		RUN_MODEL_CONTRACT=1 \
 			pnpm --filter @guildsrun/orchestrator exec node --import tsx --test test/contract/model.test.ts
 
 state:
-	mkdir -p "$(STATE_ROOT)/notes" "$(STATE_ROOT)/workspaces" "$(STATE_ROOT)/attachments" "$(STATE_ROOT)/connectors" "$(STATE_ROOT)/postgres" "$(STATE_ROOT)/opensandbox" "$(STATE_ROOT)/lightrag"
+	mkdir -p "$(STATE_ROOT)/notes" "$(STATE_ROOT)/workspaces" "$(STATE_ROOT)/attachments" "$(STATE_ROOT)/connectors" "$(STATE_ROOT)/postgres" "$(STATE_ROOT)/opensandbox"
 
 opensandbox-image:
 	$(CORE)/scripts/images.sh opensandbox
@@ -130,20 +128,3 @@ soak:
 
 compat-verify:
 	pnpm --filter @guildsrun/orchestrator compat:verify
-
-docs-up: state
-	$(COMPOSE_DEV) up --detach --wait lightrag preview
-
-docs-index:
-	@key="$$({ [ -f .env ] && set -a && . ./.env && set +a; printf '%s' "$$LIGHTRAG_API_KEY"; })"; \
-		if [ -n "$$key" ]; then \
-			curl -fsS -X POST -H "X-API-Key: $$key" http://127.0.0.1:9621/documents/scan; \
-		else \
-			curl -fsS -X POST http://127.0.0.1:9621/documents/scan; \
-		fi; \
-		echo; \
-		echo "Search segments at http://127.0.0.1:9622/ (not the LightRAG chat UI)"
-
-docs-down:
-	$(COMPOSE_DEV) stop lightrag preview
-	$(COMPOSE_DEV) rm -f lightrag preview

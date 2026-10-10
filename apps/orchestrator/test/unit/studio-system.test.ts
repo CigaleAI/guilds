@@ -10,7 +10,7 @@ import {
 } from "../../src/studio/system.js";
 import { STUDIO_TOOLS, sliceStudioBytes, studioListAgents, studioToolMap, normalizeStudioListFilter, normalizeStudioListWarning, resolveSourceGuildAgent, studioAgentHandleFromArgs } from "../../src/studio/tools.js";
 import { STUDIO_DEFAULT_TEMPERATURE, STUDIO_TASK_EXCERPT_WORDS } from "../../src/studio/constants.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL } from "../helpers/models.js";
 
 test("studio system template tells the coach to use the session UTC clock", () => {
   const text = readStudioSystemTemplate();
@@ -44,7 +44,7 @@ test("studio system prompt marks evidence untrusted and withholds publish", () =
         task_hash: "abc",
       },
     ],
-    config: { model: DEFAULT_MODEL, temperature: STUDIO_DEFAULT_TEMPERATURE },
+    config: { model: TEST_MODEL, temperature: STUDIO_DEFAULT_TEMPERATURE },
     template: "You are the operator's prompt architect.\nYou may not publish.\n",
   });
   assert.match(composed.content, /prompt architect/);

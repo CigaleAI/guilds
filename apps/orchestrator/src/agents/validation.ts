@@ -1,4 +1,4 @@
-import { CATALOG_IDS, catalogById } from "../llm/catalog.js";
+import { isCodingOnlyModel, parseModelId } from "../llm/providers.js";
 
 export const NAME_RE = /^[a-z][a-z0-9-]{0,62}$/;
 export const CONFIG_KEYS = new Set([
@@ -400,13 +400,14 @@ function rejectUnknownOrMissingConfigKeys(filled: Record<string, unknown>): void
   throw new AgentValidationError(parts.join("; "));
 }
 
-function requireCatalogModel(value: unknown): string {
+/** A stored model id: `{provider}/{model}` with a provider core speaks to; the catalog is not consulted. */
+function requireModelId(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new AgentValidationError("model must be a non-empty string");
   }
   const model = value.trim();
-  if (!CATALOG_IDS.has(model)) {
-    throw new AgentValidationError(`unknown model: ${model}`);
+  if (!parseModelId(model)) {
+    throw new AgentValidationError(`unknown model provider: ${model}`);
   }
   return model;
 }
@@ -433,7 +434,7 @@ function requireBooleanField(value: unknown, field: string): boolean {
 }
 
 function rejectCodingOnlyModelWithoutCoding(model: string, coding: boolean): void {
-  if (catalogById(model)?.coding_only && !coding) {
+  if (isCodingOnlyModel(model) && !coding) {
     throw new AgentValidationError("coding API models are only for coding agents");
   }
 }
@@ -441,7 +442,7 @@ function rejectCodingOnlyModelWithoutCoding(model: string, coding: boolean): voi
 export function validateConfig(config: Record<string, unknown>): AgentConfig {
   const filled = fillMissingAgentConfig(config);
   rejectUnknownOrMissingConfigKeys(filled);
-  const model = requireCatalogModel(filled.model);
+  const model = requireModelId(filled.model);
   const coding = requireBooleanField(filled.coding, "coding");
   const browser = requireBooleanField(filled.browser, "browser");
   rejectCodingOnlyModelWithoutCoding(model, coding);

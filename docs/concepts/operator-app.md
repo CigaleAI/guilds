@@ -67,11 +67,6 @@ on `compat-cookie`).
 The `guilds_user` and `guilds_org` cookies carry both for SSE
 streams, which cannot send headers.
 
-When the organisation has no model key and this server has none
-either, a banner above every page says so and names the two ways to
-give one
-([Install](../getting-started/install.md#the-first-model-key)).
-
 Markdown (messages, notes, Tasks, instructions) renders as GitHub
 Markdown that keeps single line breaks.
 `![[…]]` embeds and tagged handles show as chips.
@@ -135,7 +130,10 @@ Folded guilds and the retracted state are remembered in
 - optional focus (100 characters; seeds `task`)
 - an avatar picker (mascot set, a random variant, one of six
   identity colours)
-- model
+- model, from the organisation's chosen models grouped by provider,
+  preselected with its default when it has one; with no provider
+  connected the form shows a guide to **Model keys** in its place
+  ([Install](../getting-started/install.md#the-first-model-key))
 - thinking level and temperature (each switched off only for models
   the catalog flags as not taking it)
 - max output tokens / max steps / max tool calls / max input tokens
@@ -327,12 +325,12 @@ The strip scrolls sideways when they do not fit.
   expanded.
 
   The composer always shows a paperclip.
-  When the catalog model accepts attachments it adds JPEG, PNG,
-  GIF, or WebP images (at most four, 10 MiB each).
+  When the catalog says the agent's model accepts attachments it
+  adds JPEG, PNG, GIF, or WebP images (at most four, 10 MiB each).
   A message may be images with no caption.
 
-  When the model does not, the paperclip is disabled and a tooltip
-  names that model.
+  When the model does not, or it is not among the organisation's
+  chosen models, the paperclip is disabled and a tooltip says so.
   The transcript shows those images on the operator bubble.
 
   `?run=<run id>` opens that run's exact history, streaming while
@@ -725,7 +723,8 @@ Filters: **All**, **Tags**, **Issues**, each with its count.
   **Mark as resolved** resolves it for every operator (**Reopen**
   on a resolved card).
   **Investigate in Studio** (on an open issue) creates a Studio
-  session on the issue's guild with the default coach model, opens
+  session on the issue's guild with the organisation's default
+  model (a toast asks for one on Model keys when none is set), opens
   the inspector on the reporting agent's History tab at the run
   that raised the issue, and pins the issue to the coach composer
   with a drafted question
@@ -827,17 +826,20 @@ them:
 - **Members**: every member with their role.
   Owners and admins change roles (an admin never touches an owner)
   and remove members after a confirm.
-- **Model keys** (`keys`): marketplace keys (`openrouter`,
-  `deepinfra`) and coding APIs (`kimi`) the organisation holds.
-  Only a key's last characters show.
-  A Kimi Code key is required to run a coding agent on that
-  provider.
-  The instance has no fallback.
-  A marketplace provider the instance holds no key for says a key
-  is required too.
-  With no key on the organisation and none on the server, the
-  banner above every page stays until one is connected here or set
-  on the server.
+- **Model keys** (`keys`): every provider, split into Marketplace
+  (`openai`, `openrouter`, `xai`, `deepinfra`, `local`) and Coding
+  APIs (`kimi`). It is the one place the catalog is browsed. Owners
+  and admins connect a provider with the organisation's key (the
+  local endpoint takes a base URL and an optional key); the key is
+  probed and a rejected one is not saved. Only a key's last
+  characters show. A connected provider lists its chosen models,
+  and **Choose models** opens its catalog with a search over label
+  and id, each row with what the model takes, its context window,
+  and its price; ticked rows are what every picker offers. **Make
+  default** on a chosen marketplace model names the organisation's
+  default, shown at the top; **Clear default** leaves none.
+  **Remove** drops the key and its chosen models, and the default
+  when it was among them.
 - **Secrets**, **Tools**: the organisation-scope access view.
 - **Usage**: the organisation's totals, then each guild and agent,
   with the Studio coach and deleted guilds and agents as rows of
@@ -888,7 +890,12 @@ No key is entered or shown
   Settings. The apply preview's **Connectors to install** lists each
   connector the box lacks: an instance admin installs a registry one
   there, and an owner or admin adds one the recipe carries as the
-  organisation's own server.
+  organisation's own server. Each agent card on the preview takes a
+  name and a model, picked from the organisation's chosen models and
+  preselected with the recipe's recommendation when the organisation
+  has it, else the default; **Create guild** waits until every agent
+  has one, and a guide to Model keys stands in for the pickers while
+  no provider is connected.
 
 ## State and events
 

@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef } from "react";
 import {
   useAgent,
   useCancelRun,
-  useModels,
+  useOrgModels,
   useResumeRun,
   useRunMessages,
   useSendRunMessage,
@@ -17,6 +17,7 @@ import { ChangesPanel } from "./ChangesPanel";
 import { HistoryDrawer } from "./HistoryDrawer";
 import { RunStatus, useChatSession } from "./SessionChrome";
 import { Transcript } from "./Transcript";
+import { useIdentity } from "../../../app/identity";
 import { runIsCapped, runTitle } from "../runState";
 
 const bottomSlack = 64;
@@ -30,7 +31,8 @@ export function AgentChat() {
     useChatSession();
   const wide = useMediaQuery(wideScreen);
   const agent = useAgent(agentId);
-  const models = useModels();
+  const { org } = useIdentity();
+  const models = useOrgModels(org.id);
   const messages = useRunMessages(runId);
   const start = useStartRun(agentId);
   const send = useSendRunMessage(agentId);
@@ -82,7 +84,7 @@ export function AgentChat() {
       ? "Checking whether this model accepts images"
       : catalogModel
         ? `${catalogModel.label} does not accept images`
-        : "This agent's model does not accept images";
+        : "This agent's model is not among the organisation's chosen models";
   const current = run.data;
   const ended = current ? current.status !== "active" || Boolean(current.archived_at) : false;
   const continuedIn = current?.continued_by_run_id ?? null;

@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -20,7 +20,7 @@ const OWNER = {
   "X-Guilds-Org": "org_home",
   "content-type": "application/json",
 };
-const CONFIG = { model: DEFAULT_MODEL, browser: false };
+const CONFIG = { model: TEST_MODEL, browser: false };
 
 const dbName = uniqueDbName("agent_platform_wake_triggers");
 
@@ -35,6 +35,7 @@ test("agents store wake triggers at create and through settings", { timeout: 60_
   const notes = new NotesStore(tempDir("guilds-wake-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const app = await buildApp(database, {
     repo,
     notes,

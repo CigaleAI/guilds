@@ -1,5 +1,5 @@
 import type { CollectionColumn } from "../../src/artifacts/columns.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL } from "./models.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
 import {
   builderAuthor,
@@ -9,7 +9,7 @@ import {
 } from "../../src/recipes/schema.js";
 
 const CONFIG = {
-  model: DEFAULT_MODEL,
+  model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
   max_steps: 30,

@@ -24,16 +24,13 @@ Where each module lives is the [Code map](code-map.md).
   `opensandbox/execd:v1.1.0`, runtimes `agent-runtime:0.3` (the standard
   box) and `agent-runtime-lite:0.1` (the lite box), TypeScript SDK
   from that same commit (`sdks/sandbox/javascript`)
-- Token counting: `js-tiktoken` through an explicit encoding map, with a
-  serialized-message length fallback for unknown models
-- Cost: provider-reported `cost_usd` first, then a catalog rate for that
-  model. Catalog fallback prices uncached input, cache reads, and output;
-  `cache_read_tokens` is a subset of `input_tokens`. Every catalog model
-  has a rate; a model without one fails at load. `PRICING_VERSION` names
-  the LiteLLM table the GPT-5.6, Claude, and DeepInfra Qwen rows were
-  copied from. OpenRouter GPT-6 Luna, GPT-6.1 Sol, GPT-6 Luna Pro,
-  Gemini 3.8 Flash, Qwen3.8 Flash, and DeepInfra GLM-5.3, GLM-5.3-Flash,
-  and DeepSeek-V4.1-Flash use that provider's published list price.
+- Token counting: `js-tiktoken` with one encoding, `o200k_base`, for
+  every model
+- Cost: provider-reported `cost_usd` first, then the catalog's rate for
+  the model on a billed provider, else `cost_source: unavailable`. The
+  catalog rate prices uncached input, cache reads, and output;
+  `cache_read_tokens` is a subset of `input_tokens`. A message records
+  the catalog's fetch date as `pricing_version`
 
 `src/config/index.ts` validates the environment once into a typed
 `AppConfig`:
@@ -56,6 +53,9 @@ Where each module lives is the [Code map](code-map.md).
 - `TOOL_RESULT_MAX_BYTES`
 - `HOST`
 - `PORT`
+
+The model catalog reads `MODELS_DEV_URL` on its own
+([Configure](../getting-started/configure.md#model-catalog)).
 
 `loadConfig` accepts the modes an edition identifies requests in
 beside core's two. The instance keys are read through the registry
@@ -365,35 +365,100 @@ interface ModelClient {
 }
 ```
 
-The wrapper uses the official OpenAI client with a
-provider-specific base URL and API key. Marketplace providers are
-OpenRouter and DeepInfra. Coding-API providers start with Kimi Code
-(`https://api.kimi.ai/coding/v1`). Stored model ids remain
-`{provider}/{model}`.
+The wrapper uses the official OpenAI client, pointed at the
+provider's Chat Completions base URL with the credentials the run
+resolved. A run is `provider + credentials + model`. Stored model ids
+are `{provider}/{model}`.
 
-An organisation's own key changes key resolution, not this
-interface. `resolveOrgApiKey` picks the organisation's key for the
-provider, else the instance key for marketplace models. A Kimi Code
-model requires the organisation key. There is no instance fallback.
+### Providers
 
-Requests send `User-Agent: guilds.run`. Kimi thinking levels map
-`low` → `low`, `medium` → `high`, `high` → `max`. Coding-API cost
-is `unavailable` and does not count against the organisation
-policy's monthly spend limit.
+One row per provider (`src/llm/providers.ts`) is its whole
+definition. A provider's kind, whether it is billed, and whether it
+needs `coding` come from the id prefix, never from a catalog row.
+
+| Id | Kind | Billed | Catalog | Base URL |
+|---|---|---|---|---|
+| `openai` | marketplace | yes | models.dev `openai` | `https://api.openai.com/v1` |
+| `openrouter` | marketplace | yes | models.dev `openrouter` | `https://openrouter.ai/api/v1` |
+| `xai` | marketplace | yes | models.dev `xai` | `https://api.x.ai/v1` |
+| `deepinfra` | marketplace | yes | models.dev `deepinfra` | `https://api.deepinfra.com/v1/openai` |
+| `local` | marketplace | no | the endpoint's `/models` | the organisation's URL |
+| `kimi` | coding | no | models.dev `kimi-code-plan-global` | `https://api.kimi.ai/coding/v1` |
+
+An unbilled provider's calls record `cost_source: unavailable`.
+
+### Catalog
+
+[models.dev](https://models.dev) (`https://models.dev/api.json`) is
+the catalog (`src/llm/catalog.ts`, `src/llm/models-dev.ts`). The
+orchestrator fetches it on the first read and again on a read once
+the cache is older than an hour. A failed refresh keeps the last good
+cache and is retried after five minutes. Before the first fetch, and
+on a box with no network, the snapshot in
+`src/llm/models-dev.snapshot.json` serves it:
+`pnpm --filter @guildsrun/orchestrator models:snapshot` rewrites that
+file from the feed, reduced to the five hosted providers and the
+fields the catalog reads. The whole feed is never checked in.
+
+A row is kept when `tool_call` is true, `status` is not
+`deprecated`, and text is among its input and output modalities. Each
+kept row maps to an entry: `{provider}/{id}`, `name` → label,
+`reasoning` → `thinking`, `temperature`, `attachment` or `image` among
+the input modalities → `attachments`, `limit.context`, and `cost` per
+million tokens → rates per token for a billed provider. The feed's
+fetch date, or the snapshot's, is the `pricing_version` a message
+records.
+
+A model id that is well-formed for a known provider but missing from
+the last fetch stays valid, with the default capacities: thinking on,
+temperature on, attachments off. The local endpoint is not in
+models.dev; once its URL is saved, `GET {baseURL}/models` lists it,
+and its models take those same capacities.
+
+### Credentials
+
+Core asks one function for the credentials of a provider for an
+organisation: `ModelCredentialsProvider` (`src/llm/credentials.ts`),
+an extension point whose core default reads the organisation's row
+([Extension points](extension-points.md)). Agent save, Studio and
+Builder start, and every completion resolve credentials through it. A
+provider whose credentials resolve is **connected**; one that does not
+refuses the save with `connect a … key on Model keys` and ends a run
+with `generation.model_key`. A `PolicyError` it throws ends the run
+with its message, as the organisation policy does.
+
+The function may return an `onUsage` callback. Core calls it once per
+completion with the run id, the model, the token usage, and the cost
+with its source; a failure is logged and never fails the run. Core
+keeps no spend gate of its own.
+
+### Requests
+
+Requests send `User-Agent: guilds.run`. Automatic retries are off.
+The request timeout scales with `max_tokens`, from two to ten minutes.
 
 - Inputs are the complete ordered OpenAI-style message history.
-- OpenRouter requests send top-level `cache_control` and mark the
-  last text message so Anthropic and Qwen prompt caching is on.
-  DeepInfra caches prefixes automatically.
 - Tool schemas pass through without framework transformation.
-- A `thinking_level` other than `none` is sent as
-  `reasoning: { effort }` and `reasoning_effort`.
-- Streaming emits text deltas and one final assembled assistant
-  payload.
-- Automatic retries are disabled. Request timeout is 120 seconds.
+- `temperature` is omitted when the catalog says the model does not
+  take one.
+- The body differs per provider in three places:
+
+| Provider | Output cap | Thinking | Prompt cache |
+|---|---|---|---|
+| `openai` | `max_completion_tokens` | `reasoning_effort` | none |
+| `openrouter` | `max_tokens` | `reasoning: { effort }` | `cache_control` on the last text, and top-level |
+| `xai`, `deepinfra`, `local` | `max_tokens` | `reasoning_effort` | none |
+| `kimi` | `max_tokens` | `reasoning_effort`, `low` → `low`, `medium` → `high`, `high` → `max` | none |
+
+OpenAI rejects a field it does not know, so a request to it carries
+only the fields in its row.
+
+- Streaming emits text deltas, reasoning deltas, and one final
+  assembled assistant payload.
 - Final metadata: `usage.input_tokens`, `usage.output_tokens`,
   `usage.cache_read_tokens`, `latency_ms`, `finish_reason`, served
-  `model`, `response_id`, `provider_request_id`, and `cost_usd`.
+  `model`, `response_id`, `provider_request_id`, `cost_usd`,
+  `cost_source`, and `pricing_version` when the catalog priced it.
   Accounting reads `cost_usd` only.
 
 ## Sandbox and tools

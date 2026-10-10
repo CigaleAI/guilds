@@ -1,10 +1,12 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useCreateStudioSession, useGuilds, useModels, useStudioSessions } from "../../api/queries";
-import { marketplaceCatalogModels } from "../../api/types";
+import { useCreateStudioSession, useGuilds, useOrgModels, useStudioSessions } from "../../api/queries";
+import { hasConnectedProvider } from "../../api/types";
+import { useIdentity } from "../../app/identity";
 import { messageTime } from "../../app/format";
-import { ModelKeyGapHint, useModelKeyGap } from "../instance/ModelKeyGapHint";
+import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
+import { modelOptions, preselectedModel } from "../models/models";
 import {
   Button,
   Select,
@@ -24,15 +26,16 @@ export function StudioLanding() {
   const navigate = useNavigate();
   const guilds = useGuilds();
   const sessions = useStudioSessions();
-  const models = useModels();
+  const { org } = useIdentity();
+  const models = useOrgModels(org.id);
   const create = useCreateStudioSession();
   const [guildId, setGuildId] = useState(search.guild ?? "");
   const [model, setModel] = useState("");
   const [temperature, setTemperature] = useState("0.2");
 
   const chosenGuild = guildId || guilds.data?.[0]?.id || "";
-  const chosenModel = model || models.data?.default || "";
-  const keyGap = useModelKeyGap(chosenModel);
+  const chosenModel = model || preselectedModel(models.data, { marketplaceOnly: true });
+  const noProvider = hasConnectedProvider(models.data) === false;
   const listed = (sessions.data ?? []).filter(
     (session) => !guildId || session.source_guild_id === guildId,
   );
@@ -60,6 +63,9 @@ export function StudioLanding() {
             what happened, and proposes Task changes for you to publish.
           </p>
         </div>
+        {noProvider ? (
+          <ConnectProviderGuide what="a Studio session" />
+        ) : (
         <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl bg-surface p-5">
           <div className="grid gap-4 md:grid-cols-3">
             <Select
@@ -72,13 +78,10 @@ export function StudioLanding() {
             <Select
               tone="paper"
               label="Coach model"
+              placeholder="Choose a model"
               value={chosenModel}
               onValueChange={setModel}
-              options={marketplaceCatalogModels(models.data).map((item) => ({
-                value: item.id,
-                label: item.label,
-              }))}
-              {...(keyGap ? { hint: <ModelKeyGapHint integration={keyGap} /> } : {})}
+              options={modelOptions(models.data, { current: chosenModel, marketplaceOnly: true })}
             />
             <TextField
               tone="paper"
@@ -105,6 +108,7 @@ export function StudioLanding() {
             Start a session
           </Button>
         </form>
+        )}
 
         <section aria-label="Sessions" className="flex flex-col gap-2">
           <h2 className="type-label text-muted">Your sessions{guildId ? " on this guild" : ""}</h2>

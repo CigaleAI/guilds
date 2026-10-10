@@ -14,7 +14,9 @@ import {
   maxScriptsOf,
   validateAgentName,
 } from "../agents/validation.js";
-import { DEFAULT_MODEL } from "../llm/catalog.js";
+import { coreModelCredentials } from "../llm/credentials.js";
+import { ModelsService } from "../llm/models.js";
+import { parseModelId } from "../llm/providers.js";
 import { operatorActor } from "../artifacts/grants.js";
 import {
   ArtifactError,
@@ -64,6 +66,8 @@ export type ApplyDeps = {
   policy?: OrgPolicy;
   /** The registry a missing connector may install from: the box's `REGISTRY_URL` when absent, none when null. */
   registry?: RegistryClient | null;
+  /** The organisation's connected providers and default model; core's own rows when absent. */
+  models?: ModelsService;
 };
 
 type NameDecision = { role: string; name: string };
@@ -75,6 +79,11 @@ type ConnectionDecision = {
   connection_id?: string;
 };
 type SecretDecision = { name: string; action: "reuse" | "rename" | "skip"; dest_name?: string };
+/** The model the operator picked for a role on the apply preview. */
+type ModelDecision = { role: string; model: string };
+
+/** A role's model on the preview: what the recipe recommends, and what apply will create it with. */
+export type RoleModel = { role: string; recommended: string | null; model: string | null };
 
 /**
  * What apply will do with one recipe collection: create it, reuse the live
@@ -90,6 +99,7 @@ export type ApplyChoices = {
   guild_name?: string;
   guild_id?: string;
   names?: NameDecision[];
+  models?: ModelDecision[];
   connections?: ConnectionDecision[];
   secrets?: SecretDecision[];
   activate_keys?: string[];
@@ -115,10 +125,47 @@ function mapApply(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 export class RecipeApplyService {
-  constructor(public deps: ApplyDeps) {}
+  private models: ModelsService;
+
+  constructor(public deps: ApplyDeps) {
+    this.models =
+      deps.models ?? new ModelsService({ repo: deps.repo, credentials: coreModelCredentials(deps.repo) });
+  }
 
   private get policy(): OrgPolicy {
     return this.deps.policy ?? OPEN_POLICY;
+  }
+
+  /**
+   * The model each role is created with: the operator's choice, else the recommendation when the
+   * organisation has its provider, else the organisation's default, else none.
+   */
+  private resolveModels(
+    recipe: RecipeDocument,
+    decisions: ModelDecision[],
+    connected: Set<string>,
+    defaultModel: string | null,
+  ): RoleModel[] {
+    const chosen = new Map(decisions.map((item) => [item.role, String(item.model ?? "").trim()]));
+    return recipe.roles.map((role) => {
+      const coding = role.config.coding === true;
+      const fits = (id: string | null): id is string => {
+        const parsed = id ? parseModelId(id) : null;
+        return Boolean(parsed && connected.has(parsed.provider.id) && (coding || parsed.provider.kind !== "coding"));
+      };
+      const recommended = typeof role.config.model === "string" && role.config.model.trim() ? role.config.model.trim() : null;
+      const choice = chosen.get(role.role) || null;
+      if (choice) {
+        if (!parseModelId(choice)) {
+          throw new RecipeError(`models.${role.role}: model must be {provider}/{model}`);
+        }
+        if (!fits(choice)) {
+          throw new RecipeError(`models.${role.role}: ${choice} is not offered to this role`);
+        }
+      }
+      const model = choice ?? (fits(recommended) ? recommended : fits(defaultModel) ? defaultModel : null);
+      return { role: role.role, recommended, model };
+    });
   }
 
   /**
@@ -161,7 +208,6 @@ export class RecipeApplyService {
     const servers = (await this.deps.repo.listMcpServers(orgId))
       .filter((row) => row.enabled !== false)
       .map((row) => String(row.slug));
-    const connected = await this.deps.repo.listOrgModelProviders(orgId);
     return {
       publishedServers: new Set(servers),
       ...(recipe ? { registryConnectors: await this.registryOffers(recipe, servers) } : {}),
@@ -169,7 +215,7 @@ export class RecipeApplyService {
       remainingBrowserAgents: remaining(limits.maxBrowserAgents, browsers),
       remainingCodingAgents: remaining(limits.maxCodingAgents, coders),
       groupLimit: 20,
-      connectedProviders: new Set(connected.map((row) => String(row.provider))),
+      connectedProviders: await this.models.connectedProviders(orgId),
     };
   }
 
@@ -184,7 +230,13 @@ export class RecipeApplyService {
     const ctx = await this.validationContext(String(org.id), recipe);
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const findings = validateRecipe(recipe, ctx);
-    const prepared = prepareRecipeForApply(recipe, ctx.publishedServers);
+    const models = this.resolveModels(
+      recipe,
+      choices.models ?? [],
+      ctx.connectedProviders ?? new Set(),
+      await this.models.defaultModel(String(org.id)),
+    );
+    const prepared = prepareRecipeForApply(recipe, ctx.publishedServers, roleModelMap(models));
     const collections = await this.planCollections(org, prepared, user);
     findings.push(...collectionConflicts(collections));
     const errors = applyBlockingErrors(findings);
@@ -234,6 +286,7 @@ export class RecipeApplyService {
       guild_name: guildName,
       guild_id: destGuild ? destGuild.id : null,
       names: [...names.entries()].map(([role, name]) => ({ role, name })),
+      models,
       collisions,
       connections,
       installs,
@@ -272,8 +325,13 @@ export class RecipeApplyService {
     if ((preview.collisions as string[]).length) {
       throw new RecipeConflictError(`agent names already exist: ${(preview.collisions as string[]).join(", ")}`);
     }
+    const roleModels = preview.models as RoleModel[];
+    const unchosen = roleModels.filter((item) => !item.model).map((item) => item.role);
+    if (unchosen.length) {
+      throw new RecipeError(`choose a model for ${unchosen.join(", ")}`);
+    }
     const ctx = await this.validationContext(String(org.id));
-    const recipe = prepareRecipeForApply(parseRecipe(recipeRow.body), ctx.publishedServers);
+    const recipe = prepareRecipeForApply(parseRecipe(recipeRow.body), ctx.publishedServers, roleModelMap(roleModels));
     if (!choices.guild_id) {
       await assertCanCreateGuild(this.policy, this.deps.repo, String(org.id));
     }
@@ -1284,17 +1342,21 @@ function schedulesForRole(role: RecipeRole, recipe: RecipeDocument): RecipeSched
     }));
 }
 
+/** The models the preview resolved, by role. */
+function roleModelMap(models: RoleModel[]): Map<string, string> {
+  return new Map(models.flatMap((item) => (item.model ? [[item.role, item.model] as const] : [])));
+}
+
 /**
- * The agent config a role applies as: the role's, with the model defaulted, the browser and
- * coding flags settled, and the box the flags call for. A recipe carries no box of its own.
+ * The agent config a role applies as: the role's, with the model the operator chose (else the
+ * recipe's recommendation), the browser and coding flags settled, and the box the flags call
+ * for. A recipe carries no box of its own.
  */
-export function configFromRecipeRole(role: RecipeRole): Record<string, unknown> {
+export function configFromRecipeRole(role: RecipeRole, model?: string): Record<string, unknown> {
   const roleConfig = { ...role.config };
   delete roleConfig.box;
-  const model =
-    typeof roleConfig.model === "string" && roleConfig.model.trim()
-      ? roleConfig.model.trim()
-      : DEFAULT_MODEL;
+  const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
+  const chosen = model ?? recommended;
   return addMissingBox(
     addMissingCliScriptingAndMemory(
       addMissingThinkingLevel(
@@ -1302,7 +1364,7 @@ export function configFromRecipeRole(role: RecipeRole): Record<string, unknown> 
           addMissingRunLimits(
             addMissingTemperatureAndStepLimits({
               ...roleConfig,
-              model,
+              model: chosen,
               browser: Boolean(role.browser.required || roleConfig.browser),
               coding: roleConfig.coding === true,
             }),
@@ -1313,10 +1375,14 @@ export function configFromRecipeRole(role: RecipeRole): Record<string, unknown> 
   );
 }
 
-export function prepareRecipeForApply(recipe: RecipeDocument, publishedServers?: Set<string>): RecipeDocument {
+export function prepareRecipeForApply(
+  recipe: RecipeDocument,
+  publishedServers?: Set<string>,
+  models?: Map<string, string>,
+): RecipeDocument {
   void publishedServers;
   for (const role of recipe.roles) {
-    role.config = configFromRecipeRole(role);
+    role.config = configFromRecipeRole(role, models?.get(role.role));
     if (!role.task.body.trim()) {
       role.task.body = roleTaskText(role, recipe);
     }

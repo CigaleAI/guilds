@@ -44,7 +44,6 @@ export type OrgLimits = {
   maxCodingAgents: number | null;
   maxGuilds: number | null;
   maxConcurrentRuns: number | null;
-  monthlyCostLimitUsd: number | null;
   /** Studio and Builder generations a month, counted together. */
   monthlyCoachRuns: number | null;
   /** Remote MCP servers the organisation adds of its own. */
@@ -92,7 +91,6 @@ export const UNLIMITED: OrgLimits = {
   maxCodingAgents: null,
   maxGuilds: null,
   maxConcurrentRuns: null,
-  monthlyCostLimitUsd: null,
   monthlyCoachRuns: null,
   maxMcpServers: null,
   monthlyConnectorCalls: {},

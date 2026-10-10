@@ -13,6 +13,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearConnectorKeys, testEnv } from "../helpers/env.js";
+import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, loadTextFixture, templatesRoot } from "../helpers/fixtures.js";
 import {
   ExportSandboxes,
@@ -79,11 +80,11 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const env = testEnv(databaseUrl);
   Object.assign(process.env, env);
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  process.env.OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY ?? "compat-not-used";
   const database = await connect(databaseUrl);
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "openrouter");
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);

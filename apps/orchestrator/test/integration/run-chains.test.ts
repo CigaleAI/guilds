@@ -13,6 +13,7 @@ import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { FakeSandboxes } from "../helpers/generation.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -65,6 +66,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
   const notes = new NotesStore(tempDir("guilds-chain-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "openrouter");
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const sandbox = new HostCodeSandbox();
   const sandboxes = new FakeSandboxes();

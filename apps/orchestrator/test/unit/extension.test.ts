@@ -6,6 +6,7 @@ import type { Repositories } from "../../src/db/repositories.js";
 import {
   extensionIdentity,
   extensionInstanceAdmin,
+  extensionModelCredentials,
   extensionOrgCreated,
   extensionPolicy,
   extensionSandboxes,
@@ -24,6 +25,16 @@ test("extensions without a hook, a policy, or an identity leave core's own in pl
   assert.equal(extensionPolicy(plain, { repo }), undefined);
   assert.equal(extensionIdentity(plain, { repo }), undefined);
   assert.equal(extensionInstanceAdmin(plain, { repo }), undefined);
+  assert.equal(extensionModelCredentials(plain, { repo }), undefined);
+});
+
+test("the first extension that supplies model credentials is the one used", () => {
+  const credentials = { modelCredentials: async () => ({ apiKey: "edition" }) };
+  const supplied = extensionModelCredentials(
+    [{ name: "a" }, { name: "b", modelCredentials: () => credentials }, { name: "c", modelCredentials: () => credentials }],
+    { repo },
+  );
+  assert.equal(supplied, credentials);
 });
 
 test("every extension's hook for a new organisation runs, in order", async () => {

@@ -9,6 +9,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
@@ -83,6 +84,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
   const notes = new NotesStore(tempDir("guilds-repositories-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "openrouter");
   const app = await buildApp(database, {
     repo,
     notes,
@@ -323,6 +325,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   const notes = new NotesStore(tempDir("guilds-repositories-guilds-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "openrouter");
   const app = await buildApp(database, {
     repo,
     notes,
@@ -514,6 +517,7 @@ test("several GitHub installations open a picker so a guild can choose the accou
   const notes = new NotesStore(tempDir("guilds-repositories-picker-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "openrouter");
   const app = await buildApp(database, {
     repo,
     notes,

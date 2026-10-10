@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { blockingApplySteps, checklistFromPlan, configFromRecipeRole, deferLaunchSteps, prepareRecipeForApply, skipApplyChecklistStep } from "../../src/recipes/apply.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL } from "../helpers/models.js";
 import {
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TOKENS,
@@ -59,8 +59,9 @@ test("apply fills sparse builder config so the browser can start", () => {
   const sparse = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
   sparse.roles[0]!.config = { browser: true };
   sparse.roles[0]!.browser.required = true;
-  const filled = configFromRecipeRole(sparse.roles[0]!);
-  assert.equal(filled.model, DEFAULT_MODEL);
+  assert.equal(configFromRecipeRole(sparse.roles[0]!).model, "");
+  const filled = configFromRecipeRole(sparse.roles[0]!, TEST_MODEL);
+  assert.equal(filled.model, TEST_MODEL);
   assert.equal(filled.browser, true);
   assert.equal(filled.temperature, DEFAULT_TEMPERATURE);
   assert.equal(filled.max_tokens, DEFAULT_MAX_TOKENS);

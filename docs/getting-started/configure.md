@@ -55,8 +55,6 @@ says which variables would switch it on.
 
 | Integration | Variables | Switches on | Without it |
 |---|---|---|---|
-| OpenRouter | `OPENROUTER_API_KEY` | OpenRouter models for an organisation with no OpenRouter key of its own | The models stay selectable. For an organisation with no key either, a banner above every page says no model key is set and names the two ways to give one, the picker marks them `No OpenRouter key yet`, and a run fails at its first model call with `OPENROUTER_API_KEY is not set` |
-| DeepInfra | `DEEPINFRA_API_KEY` | DeepInfra models for an organisation with no DeepInfra key of its own | As for OpenRouter |
 | Web search | `TAVILY_API_KEY` | The Tavily connector on the platform's key, `tavily_search` | Runs leave the tool out; an organisation may connect a Tavily key of its own |
 | Group routing | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat, beyond tag rules | Tag rules and the last 10 messages |
 | GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing variables, and disables Connect |
@@ -69,8 +67,9 @@ A key reaches the server through `.env` alone. The Compose file passes
 the file with `env_file`. A variable exported in the shell does not
 reach the container.
 
-Model keys an organisation sets for itself live under **Settings**,
-**Model keys**. They resolve before the instance's.
+No integration serves a model provider. An organisation connects its
+own keys under **Settings**, **Model keys**
+([Install](install.md#the-first-model-key)).
 
 Connectors that sign in with OAuth return to
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`, or to the loopback address
@@ -98,6 +97,12 @@ from another machine.
 |---|---|---|
 | `MAX_CONCURRENT_GENERATIONS` | `0` | Generations running at once across the whole box; `0` is no ceiling. Each organisation's own cap applies under it |
 
+## Model catalog
+
+| Variable | Default | Role |
+|---|---|---|
+| `MODELS_DEV_URL` | `https://models.dev/api.json` | Where the model catalog is fetched from, on the first read and again once an hour. Set empty, the box stays on the catalog snapshot it ships with ([Orchestrator](../architecture/orchestrator.md#catalog)) |
+
 ## Error reporting
 
 | Variable | Default | Role |
@@ -111,9 +116,5 @@ from another machine.
 Read by the development stack and the contracts, not by the shipped
 one ([Development](../contributing/development.md)):
 
-- `MODEL_CONTRACT_MODEL`
-- `DOCS_LLM_MODEL`
-- `DOCS_EMBEDDING_MODEL`
-- `DOCS_EMBEDDING_DIM`
-- `LIGHTRAG_API_KEY`
-- `LIGHTRAG_URL`
+- `MODEL_CONTRACT_MODEL`, `MODEL_CONTRACT_API_KEY`, and
+  `MODEL_CONTRACT_BASE_URL` for a local endpoint

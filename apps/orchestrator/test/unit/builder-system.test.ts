@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL } from "../helpers/models.js";
 import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "../../src/builder/system.js";
 import { RECIPE_WRITE_HINT } from "../../src/builder/constants.js";
 import { builderWriteRecipe } from "../../src/builder/tools.js";
@@ -68,7 +68,7 @@ test("builder system prompt maps Memory and routines onto recipe fields", () => 
 test("builder system message ships a write shape separate from the session document", () => {
   const recipe = parseRecipe(emptyRecipe({ source: { kind: "builder", session_id: "bld_test" } }));
   const composed = composeBuilderSystemMessage({
-    config: { model: DEFAULT_MODEL, temperature: 0.2 },
+    config: { model: TEST_MODEL, temperature: 0.2 },
     recipe,
     expectedBodyVersion: 1,
     now: new Date("2026-09-18T20:00:00.000Z"),
@@ -89,7 +89,7 @@ test("builder system message lists operator access cuts", () => {
   applyAccessEdit(recipe, { action: "set_tool", server: "mail", role: "reader", tool: "mail_ping", enabled: false });
   applyAccessEdit(recipe, { action: "remove_connection", server: "crm" });
   const composed = composeBuilderSystemMessage({
-    config: { model: DEFAULT_MODEL, temperature: 0.2 },
+    config: { model: TEST_MODEL, temperature: 0.2 },
     recipe,
     expectedBodyVersion: 2,
     now: new Date("2026-09-18T20:00:00.000Z"),

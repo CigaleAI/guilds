@@ -37,7 +37,6 @@ import {
 } from "../attachments/index.js";
 import type { AttachmentRef } from "../attachments/index.js";
 import { jsonObj } from "../db/json.js";
-import { catalogPayload } from "../llm/catalog.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { awaitingSettings, markDisconnected } from "../mcp/index.js";
@@ -143,7 +142,7 @@ import {
   type SecretAccess,
   type SecretViewer,
 } from "../secrets/access.js";
-import { assertOrgModelKey, ModelKeyRequiredError } from "../llm/org-keys.js";
+import { ModelNotConnectedError, assertModelConnected, coreModelCredentials } from "../llm/credentials.js";
 import {
   LimitError,
   OPEN_POLICY,
@@ -505,6 +504,7 @@ async function refuseSoleGuildAdmin(
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { repo, notes, scripts, schedules, artifacts } = deps;
   const policy = deps.policy ?? OPEN_POLICY;
+  const modelCredentials = deps.modelCredentials ?? coreModelCredentials(repo, deps.masterKey);
   const issues = new Issues(repo);
   const notifications = new Notifications(repo);
   deps.generation?.group_chat.observe((guildId, event, data) => notifications.observe(guildId, event, data));
@@ -533,11 +533,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
-  });
-
-  app.get("/api/models", async (request) => {
-    await currentUser(repo, request, deps);
-    return catalogPayload();
   });
 
   /** What this box is: how it identifies a request and which integrations it has, never a key. */
@@ -1292,7 +1287,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         body.avatar_color === undefined ? undefined : String(body.avatar_color),
       );
       const config = validateConfig(withCodingLimits((body.config ?? {}) as Record<string, unknown>));
-      await assertOrgModelKey(repo, String(guild.org_id), config.model);
+      await assertModelConnected(modelCredentials, String(guild.org_id), config.model);
       await assertCanCreateAgent(policy, repo, String(guild.org_id), {
         browser: config.browser,
         coding: config.coding,
@@ -1327,7 +1322,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       if (error instanceof AgentValidationError) {
         throw new HttpError(422, error.message);
       }
-      if (error instanceof PolicyError || error instanceof ModelKeyRequiredError) {
+      if (error instanceof PolicyError || error instanceof ModelNotConnectedError) {
         throw new HttpError(error.status, error.message);
       }
       if (error instanceof GuildAgentLimitError || error instanceof GuildNameTaken) {
@@ -1951,7 +1946,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const config = validateConfig((body.config ?? {}) as Record<string, unknown>);
-      await assertOrgModelKey(repo, String(existing.org_id), config.model);
+      await assertModelConnected(modelCredentials, String(existing.org_id), config.model);
       const previous = agentConfigObject(existing);
       if (config.browser && !previous.browser) {
         await assertCanEnableBrowser(policy, repo, String(existing.org_id), false);
@@ -2024,7 +2019,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       if (error instanceof NotesError) {
         throw notesWriteHttp(error);
       }
-      if (error instanceof PolicyError || error instanceof ModelKeyRequiredError) {
+      if (error instanceof PolicyError || error instanceof ModelNotConnectedError) {
         throw new HttpError(error.status, error.message);
       }
       throw error;

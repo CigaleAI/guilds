@@ -8,7 +8,7 @@ import { CapabilityService } from "../../src/capabilities/index.js";
 import { generationLive } from "../../src/conversation/runner.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { persistGuild } from "../../src/guilds/persist.js";
 import { RecipeApplyService } from "../../src/recipes/apply.js";
@@ -32,7 +32,7 @@ const AUTH = {
 };
 
 const CONFIG = {
-  model: DEFAULT_MODEL,
+  model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
   max_steps: 30,
@@ -55,6 +55,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
   const notes = new NotesStore(tempDir("guilds-builder-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
@@ -89,7 +90,7 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       method: "POST",
       url: "/api/builder/sessions",
       headers: AUTH,
-      payload: { model: DEFAULT_MODEL },
+      payload: { model: TEST_MODEL },
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json();

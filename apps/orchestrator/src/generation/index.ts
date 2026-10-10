@@ -34,8 +34,7 @@ import {
   type GroupRunner,
 } from "../groupchat/index.js";
 import { guildOperators } from "../guilds/validation.js";
-import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
-import { utcMonth } from "../usage.js";
+import { OPEN_POLICY, PolicyError, type OrgPolicy } from "../policy/index.js";
 import { attachmentImageCount, countRunInputTokens } from "../attachments/hydrate.js";
 import { IMAGE_INPUT_TOKENS, type AttachmentRef, type AttachmentService } from "../attachments/index.js";
 import {
@@ -45,7 +44,17 @@ import {
   TOOL_RESULT_STUB_MIN_BYTES,
   projectToolResults,
 } from "../conversation/projection.js";
-import { isCodingOnlyModel, missingOrgKeyMessage, providerNameForModel } from "../llm/catalog.js";
+import { modelCatalog } from "../llm/catalog.js";
+import {
+  ModelNotConnectedError,
+  NO_CREDENTIALS,
+  coreModelCredentials,
+  modelUsageOf,
+  reportModelUsage,
+  resolveModelCredentials,
+  type ModelCredentials,
+  type ModelCredentialsProvider,
+} from "../llm/credentials.js";
 import { newId } from "../lib/ids.js";
 import { AsyncEvent, EventQueue, sleep } from "../lib/event.js";
 import {
@@ -1014,7 +1023,7 @@ export type GenerationDb = AccessDatabase &
       },
     ): Promise<Record<string, unknown> | null>;
     getOrgMonthlyUsage?(orgId: string, month: string): Promise<Record<string, unknown> | null>;
-    resolveOrgApiKey?(orgId: string, model: string): Promise<string | null>;
+    getOrgModelProvider?(orgId: string, provider: string): Promise<Record<string, unknown> | null>;
   };
 
 export type GenerationNotes = Partial<DirectoryNotes> &
@@ -1101,6 +1110,7 @@ export class GenerationLoop implements GroupRunner {
   lock_generation = 0;
   admission = new AdmissionCoordinator();
   policy: OrgPolicy;
+  credentials: ModelCredentialsProvider;
   _busy = new Set<string>();
   _busy_agents = new Set<string>();
   _deleting_guilds = new Set<string>();
@@ -1137,6 +1147,8 @@ export class GenerationLoop implements GroupRunner {
       attachments?: AttachmentService | null;
       admission?: AdmissionCoordinator;
       policy?: OrgPolicy;
+      /** What a model provider is called with; core's own rows over `db` when absent. */
+      credentials?: ModelCredentialsProvider;
       groupRouter?: GroupRouter;
     } = {},
   ) {
@@ -1151,6 +1163,11 @@ export class GenerationLoop implements GroupRunner {
       this.admission = options.admission;
     }
     this.policy = options.policy ?? OPEN_POLICY;
+    this.credentials =
+      options.credentials ??
+      (db.getOrgModelProvider
+        ? coreModelCredentials({ getOrgModelProvider: (orgId, provider) => db.getOrgModelProvider!(orgId, provider) })
+        : NO_CREDENTIALS);
     this._idle_timeout_ms = options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS;
     this._scheduler_tick_ms = options.schedulerTickMs ?? SCHEDULER_TICK_MS;
     if (options.cancelGraceMs !== undefined) {
@@ -2759,26 +2776,13 @@ export class GenerationLoop implements GroupRunner {
     const agentId = this._run_agent.get(runId);
     const orgId = agentId ? this.admission.orgId("agent", agentId) : undefined;
     if (orgId) {
-      const { limits, blocked } = await this.policy.standing(orgId);
+      const { blocked } = await this.policy.standing(orgId);
       if (blocked) {
         throw new RunLimitError("generation.subscription", blocked.message);
       }
-      const limit = limits.monthlyCostLimitUsd;
-      if (limit !== null && !isCodingOnlyModel(options.model) && this.db.getOrgMonthlyUsage) {
-        const usage = await this.db.getOrgMonthlyUsage(orgId, utcMonth());
-        if (Number(usage?.cost_usd ?? 0) >= limit) {
-          throw new RunLimitError("generation.spend_limit", "monthly cost limit reached");
-        }
-      }
     }
-    let apiKey: string | undefined;
-    if (orgId && this.db.resolveOrgApiKey) {
-      apiKey = (await this.db.resolveOrgApiKey(orgId, options.model)) ?? undefined;
-    }
-    if (isCodingOnlyModel(options.model) && !apiKey) {
-      const provider = providerNameForModel(options.model) ?? "kimi";
-      throw new RunLimitError("generation.model_key", missingOrgKeyMessage(provider));
-    }
+    const credentials = await this._model_credentials(orgId ?? "", options.model);
+    void modelCatalog.ensureFresh();
     const agen = streamCompletionImpl({
       model: options.model,
       messages: options.messages,
@@ -2786,8 +2790,9 @@ export class GenerationLoop implements GroupRunner {
       max_tokens: options.max_tokens,
       tools: options.tools,
       signal: abort.signal,
+      apiKey: credentials.apiKey,
+      ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
       ...(options.thinking_level ? { thinking_level: options.thinking_level } : {}),
-      ...(apiKey ? { apiKey } : {}),
     });
     const iterator = agen[Symbol.asyncIterator]();
     let completion: Completion | null = null;
@@ -2852,7 +2857,23 @@ export class GenerationLoop implements GroupRunner {
     if (completion === null) {
       throw new LLMError("empty completion");
     }
+    await reportModelUsage(credentials, modelUsageOf(runId, options.model, completion.metadata));
     return completion;
+  }
+
+  /** The credentials the run calls the model with; a provider that is not connected ends the run. */
+  async _model_credentials(orgId: string, model: string): Promise<ModelCredentials> {
+    try {
+      return await resolveModelCredentials(this.credentials, orgId, model);
+    } catch (error) {
+      if (error instanceof ModelNotConnectedError) {
+        throw new RunLimitError("generation.model_key", error.message);
+      }
+      if (error instanceof PolicyError) {
+        throw new RunLimitError("generation.model_credentials", error.message);
+      }
+      throw error;
+    }
   }
 
   _on_cancel = async (

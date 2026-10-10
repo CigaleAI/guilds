@@ -189,9 +189,11 @@ It increments rollup counters for:
 - the instance as a whole (`global`)
 - `org_monthly_usage`
 
-Those counters are the Usage pages. They are also the organisation's
-monthly spend limit, when its policy sets one. The per-row column is
-for later accounting queries.
+Those counters are the Usage pages. The per-row column is for later
+accounting queries. What a run costs whom is the model credentials'
+concern ([Extension points](../architecture/extension-points.md)):
+core calls their `onUsage` once per completion and keeps no spend
+gate.
 
 Deleting an agent or guild drops that scope's counter row and its
 messages. Parent totals stay.

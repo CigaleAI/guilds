@@ -3,12 +3,9 @@ import { test } from "node:test";
 import type { Instance, InstanceIntegration } from "../../api/types";
 import {
   connectorSetupGap,
-  hasModelKey,
   integrationFor,
-  missingModelKeyPhrase,
   missingVariables,
   missingVariablesPhrase,
-  modelKeyGap,
   toolIntegrationGap,
 } from "./instance";
 
@@ -29,7 +26,7 @@ function integration(
       optional: value === "optional",
       set: value === true,
     })),
-    provides: { model_providers: [], native_tools: [], connectors: [], ...provides },
+    provides: { native_tools: [], connectors: [], ...provides },
   };
 }
 
@@ -37,21 +34,6 @@ function instance(...integrations: InstanceIntegration[]): Instance {
   return { auth_mode: "compat-cookie", integrations };
 }
 
-const openrouterOff = integration(
-  "openrouter",
-  { OPENROUTER_API_KEY: false },
-  { model_providers: ["openrouter"] },
-);
-const openrouterOn = integration(
-  "openrouter",
-  { OPENROUTER_API_KEY: true },
-  { model_providers: ["openrouter"] },
-);
-const deepinfraOff = integration(
-  "deepinfra",
-  { DEEPINFRA_API_KEY: false },
-  { model_providers: ["deepinfra"] },
-);
 const searchOff = integration("web-search", { TAVILY_API_KEY: false }, { connectors: ["tavily"] });
 const githubPartial = integration(
   "github-app",
@@ -69,8 +51,7 @@ const routing = integration("group-routing", {
 });
 
 test("an integration is found by what it switches on", () => {
-  const box = instance(openrouterOff, searchOff, githubPartial);
-  assert.equal(integrationFor(box, "model_providers", "openrouter")?.id, "openrouter");
+  const box = instance(searchOff, githubPartial);
   assert.equal(integrationFor(box, "connectors", "tavily")?.id, "web-search");
   assert.equal(integrationFor(box, "connectors", "github")?.id, "github-app");
   assert.equal(integrationFor(box, "connectors", "notion"), undefined);
@@ -106,64 +87,6 @@ test("a native tool waits for its integration and no other tool does", () => {
     null,
     "nothing is flagged before the server answers",
   );
-});
-
-test("a model lacks a key only when neither the organisation nor the server has one", () => {
-  const model = { provider: "openrouter" };
-  assert.equal(modelKeyGap(model, [], instance(openrouterOff))?.id, "openrouter");
-  assert.equal(
-    modelKeyGap(model, ["openrouter"], instance(openrouterOff)),
-    null,
-    "the organisation's key serves it",
-  );
-  assert.equal(modelKeyGap(model, [], instance(openrouterOn)), null, "the server's key serves it");
-  assert.equal(
-    modelKeyGap(model, undefined, instance(openrouterOff)),
-    null,
-    "the organisation's keys are still loading",
-  );
-  assert.equal(modelKeyGap(model, [], undefined), null, "the server has not answered");
-  assert.equal(modelKeyGap(undefined, [], instance(openrouterOff)), null);
-  assert.equal(
-    modelKeyGap({ provider: "kimi" }, [], instance(openrouterOff)),
-    null,
-    "a provider the server never holds a key for is not the server's gap",
-  );
-});
-
-test("a box has a model key when the organisation or the server has one", () => {
-  assert.equal(hasModelKey([], instance(openrouterOff, deepinfraOff)), false);
-  assert.equal(
-    hasModelKey(["openrouter"], instance(openrouterOff, deepinfraOff)),
-    true,
-    "the organisation's key serves it",
-  );
-  assert.equal(
-    hasModelKey(["kimi"], instance(openrouterOff)),
-    true,
-    "a coding key is still a model key",
-  );
-  assert.equal(
-    hasModelKey([], instance(openrouterOn, deepinfraOff)),
-    true,
-    "the server's key serves it",
-  );
-  assert.equal(
-    hasModelKey(undefined, instance(openrouterOff)),
-    null,
-    "the organisation's keys are still loading",
-  );
-  assert.equal(hasModelKey([], undefined), null, "the server has not answered");
-  assert.equal(
-    hasModelKey([], instance(searchOff)),
-    false,
-    "a non-model integration does not count",
-  );
-  assert.equal(
-    missingModelKeyPhrase(instance(openrouterOff, deepinfraOff)),
-    "OPENROUTER_API_KEY or DEEPINFRA_API_KEY",
-  );
-  assert.equal(missingModelKeyPhrase(instance(openrouterOn, deepinfraOff)), "DEEPINFRA_API_KEY");
 });
 
 test("a connector that cannot start its sign-in names what the server lacks", () => {

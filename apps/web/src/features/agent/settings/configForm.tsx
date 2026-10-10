@@ -1,15 +1,13 @@
-import { useInstance, useModels, useOrgModelKeys } from "../../../api/queries";
-import type { AgentConfig, Box, Instance, ModelCatalog, ThinkingLevel } from "../../../api/types";
+import { useOrgModels } from "../../../api/queries";
+import type { AgentConfig, Box, OrgModels, ThinkingLevel } from "../../../api/types";
 import { isCodingOnlyModel } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Checkbox, FormField, RadioGroup, Select, Slider, TextField } from "@guildsrun/ui";
-import type { SelectOption, SelectOptionGroup } from "@guildsrun/ui";
-import { modelKeyGap } from "../../instance/instance";
-import { ModelKeyGapHint } from "../../instance/ModelKeyGapHint";
+import { modelLimits, modelOptions, modelProviderConnected, providerLabel } from "../../models/models";
 import { ModelKeysLink } from "../../settings/ModelKeysLink";
-/** A new agent's model settings, as the server defaults them. */
+/** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
 export const defaultAgentConfig: AgentConfig = {
-  model: "deepinfra/zai-org/GLM-5.3-Flash",
+  model: "",
   temperature: 1,
   max_tokens: 8192,
   max_steps: 30,
@@ -126,8 +124,7 @@ export type ConfigErrors = Partial<
 >;
 
 export type ConfigErrorContext = {
-  catalog?: ModelCatalog | undefined;
-  connectedProviders?: readonly string[] | undefined;
+  models?: OrgModels | undefined;
 };
 
 export function configFormOf(config: AgentConfig): ConfigForm {
@@ -168,31 +165,22 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
     errors.temperature = "A number.";
   if (form.box === "standard" && !form.browser && !form.coding)
     errors.box = "A standard box has Browser or Coding on. Pick Lite to drop both.";
-  if (isCodingOnlyModel(form.model, context.catalog)) {
-    if (!form.coding) {
-      errors.model = "Turn Coding on to use this model.";
-    } else if (
-      context.connectedProviders &&
-      !context.connectedProviders.includes(form.model.split("/")[0] ?? "")
-    ) {
-      errors.model = "Connect a Kimi Code key on Model keys first.";
-    }
+  if (!form.model) {
+    errors.model = "Choose a model.";
+  } else if (isCodingOnlyModel(form.model, context.models) && !form.coding) {
+    errors.model = "Turn Coding on to use this model.";
+  } else if (modelProviderConnected(context.models, form.model) === false) {
+    errors.model = `Connect a ${providerLabel(context.models, form.model)} key on Model keys first.`;
   }
   return errors;
 }
 
-/** What a model does not take: reasoning, or a temperature it sets itself. */
-function modelLimits(catalog: ModelCatalog | undefined, modelId: string) {
-  const model = catalog?.models.find((item) => item.id === modelId);
-  return { thinkingOff: model?.thinking === false, temperatureOff: model?.temperature === false };
-}
-
 /** The config to send; a model that does not reason gets thinking off. */
-export function configOf(form: ConfigForm, catalog: ModelCatalog | undefined): AgentConfig {
+export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
   return {
     model: form.model,
     temperature: Number(form.temperature),
-    thinking_level: modelLimits(catalog, form.model).thinkingOff ? "none" : form.thinking,
+    thinking_level: modelLimits(models, form.model).thinkingOff ? "none" : form.thinking,
     box: form.box,
     cli: form.cli,
     browser: form.browser,
@@ -210,40 +198,6 @@ export function configOf(form: ConfigForm, catalog: ModelCatalog | undefined): A
   };
 }
 
-function modelOptions(
-  catalog: ModelCatalog | undefined,
-  current: string,
-  coding: boolean,
-  connected: readonly string[] | undefined,
-  instance: Instance | undefined,
-): SelectOptionGroup[] {
-  if (!catalog) return [{ label: "Current", options: [{ value: current, label: current }] }];
-  const groups = catalog.providers.map((provider) => {
-    if (provider.kind === "coding" && !coding) {
-      return { label: provider.label, options: [] };
-    }
-    const options: SelectOption[] = catalog.models
-      .filter((model) => model.provider === provider.id)
-      .map((model) => {
-        const needsKey = model.requires_org_key && !(connected ?? []).includes(model.provider);
-        return {
-          value: model.id,
-          label: model.label,
-          ...(needsKey
-            ? { disabled: true, description: "Connect a key on Model keys" }
-            : modelKeyGap(model, connected, instance)
-              ? { description: "No key yet" }
-              : {}),
-        };
-      });
-    return { label: provider.label, options };
-  });
-  if (!catalog.models.some((model) => model.id === current)) {
-    groups.unshift({ label: "Not in the catalog", options: [{ value: current, label: current }] });
-  }
-  return groups.filter((group) => group.options.length > 0);
-}
-
 type FieldsProps = {
   form: ConfigForm;
   onChange: (patch: Partial<ConfigForm>) => void;
@@ -251,10 +205,11 @@ type FieldsProps = {
 };
 
 function modelFieldMessage(message: string) {
-  if (message === "Connect a Kimi Code key on Model keys first.") {
+  const match = /^Connect a (.+) key on Model keys first\.$/.exec(message);
+  if (match) {
     return (
       <>
-        Connect a Kimi Code key on <ModelKeysLink /> first.
+        Connect a {match[1]} key on <ModelKeysLink /> first.
       </>
     );
   }
@@ -263,31 +218,23 @@ function modelFieldMessage(message: string) {
 
 /** Model, thinking and temperature; what the chosen model does not take is switched off. */
 export function ModelFields({ form, onChange, errors }: FieldsProps) {
-  const models = useModels();
   const { org } = useIdentity();
-  const modelKeys = useOrgModelKeys(org.id);
-  const instance = useInstance();
-  const connected = modelKeys.data?.map((item) => item.provider);
-  const keyGap = modelKeyGap(
-    models.data?.models.find((item) => item.id === form.model),
-    connected,
-    instance.data,
-  );
+  const models = useOrgModels(org.id);
   const { thinkingOff, temperatureOff } = modelLimits(models.data, form.model);
+  const codingConnected = models.data?.providers.some((item) => item.kind === "coding" && item.connected);
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Select
         tone="surface"
         label="Model"
+        placeholder="Choose a model"
         value={form.model}
         onValueChange={(value) => onChange({ model: value })}
-        options={modelOptions(models.data, form.model, form.coding, connected, instance.data)}
+        options={modelOptions(models.data, { current: form.model, coding: form.coding })}
         hint={
-          keyGap ? (
-            <ModelKeyGapHint integration={keyGap} />
-          ) : form.coding ? (
+          form.coding && !codingConnected ? (
             <>
-              Kimi Code models need a key on <ModelKeysLink />.
+              Coding APIs appear here once a key is connected on <ModelKeysLink />.
             </>
           ) : undefined
         }
@@ -409,7 +356,7 @@ function CapabilityField({
 export function withCoding(
   form: ConfigForm,
   coding: boolean,
-  catalog?: ModelCatalog | undefined,
+  models?: OrgModels | undefined,
 ): ConfigForm {
   const from = coding ? defaultAgentConfig : codingLimits;
   const to = coding ? codingLimits : defaultAgentConfig;
@@ -417,8 +364,8 @@ export function withCoding(
     ...form,
     coding,
     ...(coding ? { cli: true, scripting: true } : {}),
-    ...(!coding && isCodingOnlyModel(form.model, catalog)
-      ? { model: defaultAgentConfig.model, thinking: "none" as ThinkingLevel }
+    ...(!coding && isCodingOnlyModel(form.model, models)
+      ? { model: models?.default ?? "", thinking: "none" as ThinkingLevel }
       : {}),
     max_steps: form.max_steps === String(from.max_steps) ? String(to.max_steps) : form.max_steps,
     max_tool_calls:
@@ -432,9 +379,9 @@ export function withCoding(
  * The form moved onto a box. Standard turns browser and coding on, with the coding budgets, CLI
  * and scripting; lite turns both off and takes the default budgets back.
  */
-export function withBox(form: ConfigForm, box: Box, catalog?: ModelCatalog | undefined): ConfigForm {
+export function withBox(form: ConfigForm, box: Box, models?: OrgModels | undefined): ConfigForm {
   const standard = box === "standard";
-  return { ...withCoding(form, standard, catalog), box, browser: standard };
+  return { ...withCoding(form, standard, models), box, browser: standard };
 }
 
 const boxOptions: Array<{ value: Box; title: string; hint: string }> = [
@@ -454,12 +401,12 @@ const boxOptions: Array<{ value: Box; title: string; hint: string }> = [
 export function BoxPicker({
   form,
   onChange,
-  catalog,
+  models,
   error,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
-  catalog?: ModelCatalog | undefined;
+  models?: OrgModels | undefined;
   error?: string | undefined;
 }) {
   return (
@@ -469,7 +416,7 @@ export function BoxPicker({
         aria-label="Box"
         className="gap-3"
         value={form.box}
-        onValueChange={(value) => onChange(withBox(form, value as Box, catalog))}
+        onValueChange={(value) => onChange(withBox(form, value as Box, models))}
         options={boxOptions.map((option) => ({
           value: option.value,
           label: (
@@ -505,11 +452,11 @@ export function BrowserLanguageField({ form, onChange }: { form: ConfigForm; onC
 export function StandardFields({
   form,
   onChange,
-  catalog,
+  models,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
-  catalog?: ModelCatalog | undefined;
+  models?: OrgModels | undefined;
 }) {
   return (
     <>
@@ -524,7 +471,7 @@ export function StandardFields({
         label="Coding"
         hint="Adds the shell and code tools. It also turns on CLI and scripting. It takes one of the plan's coding slots. The sandbox is replaced when this changes."
         checked={form.coding}
-        onChange={(coding) => onChange(withCoding(form, coding, catalog))}
+        onChange={(coding) => onChange(withCoding(form, coding, models))}
       />
     </>
   );

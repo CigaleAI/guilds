@@ -348,17 +348,17 @@ them off on either box.
   tab stays. Missing means on. It is not itself a binding.
 - `thinking_level` is `none`, `low`, `medium`, or `high`. Stored
   default is `none`. When it is not `none` the model request carries
-  `reasoning: { effort }` (and `reasoning_effort`). The picker greys
-  it out only for catalog models flagged `thinking: false`, and saves
-  `none` for them.
-- `temperature` is always sent. The picker greys it out only for
-  catalog models flagged `temperature: false`, whose provider drops
-  the value.
-- `attachments` on `GET /api/models` is true when that catalog entry
-  accepts image parts. The Chat composer always shows a paperclip. It
-  is disabled with a tooltip when the flag is false.
-  DeepSeek-V4.1-Flash and every Kimi Code id accept them. Open-weight
-  Qwen3.8 2.4T does not. Group chat does not take attachments.
+  the effort in the field the provider takes
+  ([Orchestrator](../architecture/orchestrator.md#model-client)).
+  The picker greys it out for a model the catalog flags
+  `thinking: false`, and saves `none` for it.
+- `temperature` is sent unless the catalog flags the model
+  `temperature: false`; the picker greys it out for such a model.
+- `attachments` on a model of `GET /api/orgs/:id/models` is true when
+  the catalog says it takes image parts. The Chat composer always
+  shows a paperclip. It is disabled with a tooltip when the flag is
+  false, and when the agent's model is not among the organisation's
+  chosen models. Group chat does not take attachments.
 
 Native tools and sandbox env values come from bindings (instance →
 organisation → guild → agent), not from this JSON.
@@ -377,21 +377,28 @@ generation ends.
 Toggling `cli`, `scripting`, or `memory` does not replace the
 sandbox.
 
-`model` is a catalog id (`{provider}/{model}`). The operator assigns
-one catalog entry per agent.
+`model` is `{provider}/{model}`: a provider core speaks to
+(`openai`, `openrouter`, `xai`, `deepinfra`, `local`, or `kimi`) and
+the id that provider knows the model by. On save and on run the
+provider must be connected for the organisation under **Settings**,
+**Model keys**. Whether the catalog lists the id, or the organisation
+chose it, is not checked: a catalog change or an unticked model never
+breaks an existing agent.
 
-New agents default to `deepinfra/zai-org/GLM-5.3-Flash`.
+No model is assumed. A new agent starts on the organisation's default
+model when it has one, else the operator chooses; nothing is saved
+without a choice.
 
-`GET /api/models` returns that catalog for the picker. The catalog
-includes:
+The picker lists the organisation's chosen models, grouped by
+provider, from `GET /api/orgs/:id/models`
+([Users and organisations](users-and-organisations.md#model-providers)).
+Each model carries what it takes (`thinking`, `temperature`,
+`attachments`), its `context` window, and its `price` per million
+tokens, as the catalog says. A stored model the organisation no longer
+offers still shows as the current value.
 
-- the default
-- each provider's `kind` (`marketplace` or `coding`)
-- whether a model is `coding_only` and `requires_org_key`
-- whether it accepts `attachments`
-
-Kimi Code ids (`kimi/…`) are only valid when `coding` is on and the
-organisation has a Kimi Code key.
+Kimi Code ids (`kimi/…`) are only valid when `coding` is on; the
+picker lists coding rows only for an agent with `coding` on.
 
 Studio and Builder stay on marketplace models. Each run freezes the
 chosen string.

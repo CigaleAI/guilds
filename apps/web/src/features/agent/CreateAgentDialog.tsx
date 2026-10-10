@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { useCreateAgent, useModels, useOrgModelKeys } from "../../api/queries";
+import { useCreateAgent, useOrgModels } from "../../api/queries";
+import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {
   identityHex,
@@ -15,6 +16,8 @@ import {
   DialogHeader,
 } from "@guildsrun/ui";
 import { agentHandleError } from "../names";
+import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
+import { preselectedModel } from "../models/models";
 import { AvatarPicker } from "./settings/AvatarPicker";
 import {
   BoxPicker,
@@ -50,9 +53,8 @@ type CreateAgentDialogProps = {
  */
 export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
   const navigate = useNavigate();
-  const models = useModels();
   const { org } = useIdentity();
-  const modelKeys = useOrgModelKeys(org.id);
+  const models = useOrgModels(org.id);
   const create = useCreateAgent(guild?.id ?? "");
   const [name, setName] = useState("");
   const [focus, setFocus] = useState("");
@@ -62,13 +64,11 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
     config ??
     configFormOf({
       ...defaultAgentConfig,
-      model: models.data?.default ?? defaultAgentConfig.model,
+      model: preselectedModel(models.data, { coding: false }),
     });
-  const errors = configErrors(form, {
-    catalog: models.data,
-    connectedProviders: modelKeys.isSuccess ? modelKeys.data.map((item) => item.provider) : undefined,
-  });
+  const errors = configErrors(form, { models: models.data });
   const nameError = agentHandleError(name.trim());
+  const noProvider = hasConnectedProvider(models.data) === false;
 
   const close = () => {
     setName("");
@@ -145,11 +145,15 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
               />
             </Group>
             <Group title="Model">
-              <ModelFields
-                form={form}
-                onChange={(patch) => setConfig({ ...form, ...patch })}
-                errors={errors}
-              />
+              {noProvider ? (
+                <ConnectProviderGuide what="an agent" />
+              ) : (
+                <ModelFields
+                  form={form}
+                  onChange={(patch) => setConfig({ ...form, ...patch })}
+                  errors={errors}
+                />
+              )}
             </Group>
             <Group title="Run limits">
               <LimitFields
@@ -169,7 +173,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
               <BoxPicker
                 form={form}
                 onChange={(next) => setConfig(next)}
-                catalog={models.data}
+                models={models.data}
                 error={errors.box}
               />
               {form.box === "standard" ? (
@@ -189,7 +193,10 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
             <DialogClose asChild>
               <Button variant="ghost">Cancel</Button>
             </DialogClose>
-            <Button type="submit" disabled={create.isPending || !name.trim() || Boolean(nameError)}>
+            <Button
+              type="submit"
+              disabled={create.isPending || !name.trim() || Boolean(nameError) || noProvider || !form.model}
+            >
               {create.isPending ? "Creating…" : "Create agent"}
             </Button>
           </DialogFooter>

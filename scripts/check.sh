@@ -110,7 +110,6 @@ orchestrator_lane() {
     step lint pnpm -r lint &&
     step compat-verify pnpm --filter @guildsrun/orchestrator compat:verify &&
     step test-orchestrator pnpm --filter @guildsrun/orchestrator test &&
-    step test-docs-mcp pnpm --filter @guildsrun/docs-mcp test &&
     edition_steps orchestrator
 }
 

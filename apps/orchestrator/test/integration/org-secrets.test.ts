@@ -5,7 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -67,7 +67,7 @@ before(async () => {
   await repo.insertGuild("guild_open", "open-desk", now, "org_home");
   await repo.insertGuild("guild_side", "side-desk", now, "org_home");
   await repo.insertGuild("guild_hidden", "hidden-lab", now, "org_home", "", 20, "private", "user_operator");
-  const config = { model: DEFAULT_MODEL };
+  const config = { model: TEST_MODEL };
   await repo.insertAgent("a_open", "guild_open", "opener", config, now);
   await repo.insertAgent("a_open_two", "guild_open", "second", config, now);
   await repo.insertAgent("a_side", "guild_side", "sider", config, now);
@@ -272,7 +272,7 @@ test("access changes replace the set and refresh the agents they reach", async (
 
 test("a secret goes with the guild or agent that held its last grant", async () => {
   const now = new Date();
-  const config = { model: DEFAULT_MODEL };
+  const config = { model: TEST_MODEL };
   await repo.insertGuild("guild_doomed", "doomed-desk", now, "org_home");
   await repo.insertAgent("a_doomed", "guild_doomed", "doomed", config, now);
   await repo.insertAgent("a_gone", "guild_side", "leaver", config, now);

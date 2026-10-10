@@ -6,7 +6,6 @@ import { useInboxStream } from "../../api/streams";
 import { useSlots } from "../../app/slots";
 import { useStoredFlag } from "../../app/storage";
 import { IconButton, BrandMark, dialogScrim } from "@guildsrun/ui";
-import { ModelKeySetupBanner } from "../instance/ModelKeySetupBanner";
 import { GuildRail } from "./GuildRail";
 import { GuildSidebar } from "./GuildSidebar";
 
@@ -14,8 +13,7 @@ import { GuildSidebar } from "./GuildSidebar";
 const retractedKey = "guilds-rail-retracted";
 
 /**
- * The workspace frame: navigation on the left, the current page on paper. A banner above the
- * page says when neither the organisation nor the server has a model key. On a phone the
+ * The workspace frame: navigation on the left, the current page on paper. On a phone the
  * navigation opens as a drawer from a top bar and closes once a page is picked.
  */
 export function AppShell() {
@@ -74,7 +72,6 @@ export function AppShell() {
         </RadixDialog.Portal>
       </RadixDialog.Root>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden contain-paint bg-paper md:rounded-2xl md:shadow-float">
-        <ModelKeySetupBanner />
         {shellBanners.map((Notice, index) => (
           <Notice key={index} />
         ))}

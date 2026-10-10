@@ -1,4 +1,5 @@
-import { catalogPayload } from "../llm/catalog.js";
+import { coreModelCredentials } from "../llm/credentials.js";
+import { ModelsService } from "../llm/models.js";
 import { isSearchable } from "../connectors/builder.js";
 import { manifestTools, overriddenTool, toolStartsOff } from "../connectors/load.js";
 import { connectorFacts } from "../connectors/view.js";
@@ -99,10 +100,15 @@ function assertNoSecrets(value: unknown, path = "capability"): void {
 }
 
 export class CapabilityService {
+  private models: ModelsService;
+
   constructor(
     private repo: Repositories,
     private policy: OrgPolicy = OPEN_POLICY,
-  ) {}
+    models?: ModelsService,
+  ) {
+    this.models = models ?? new ModelsService({ repo, credentials: coreModelCredentials(repo) });
+  }
 
   /** The enabled servers the organisation may use, with its logins on each. */
   private async servers(ctx: CapabilityOrgContext): Promise<
@@ -188,13 +194,12 @@ export class CapabilityService {
       browser: BROWSER_CAPABILITY,
       coding: CODING_CAPABILITY,
       catalog,
-      models: catalogPayload(),
+      models: await this.models.read(ctx.orgId),
       limits: {
         max_agents: limits.maxAgents,
         max_browser_agents: limits.maxBrowserAgents,
         max_coding_agents: limits.maxCodingAgents,
         max_concurrent_runs: limits.maxConcurrentRuns,
-        monthly_cost_limit_usd: limits.monthlyCostLimitUsd,
         monthly_studio_builder_runs: limits.monthlyCoachRuns,
       },
       remaining: {

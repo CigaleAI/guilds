@@ -25,6 +25,8 @@ export type BuilderToolContext = BuilderCapabilityContext & {
   recipeId: string;
   expectedWrite?: boolean;
   recipes: RecipeStore;
+  /** The coach's own model: the recommendation a role without one is written with. */
+  coachModel?: string;
   validationContext: () => Promise<ValidationContext>;
   onRecipeChanged?: (recipe: Record<string, unknown>) => Promise<void>;
 };
@@ -395,6 +397,7 @@ export const builderWriteRecipe = {
       }
       const previous = parseRecipe(row.body);
       const next = parseRecipe(args.recipe);
+      recommendCoachModel(next, ctx.coachModel ?? "");
       const rejected = builderWriteRejection(previous, next);
       if (rejected) {
         return { error: rejected };
@@ -422,6 +425,19 @@ export const builderWriteRecipe = {
     }
   },
 };
+
+/** A role the coach wrote without a model is recommended the coach's own. */
+export function recommendCoachModel(recipe: RecipeDocument, coachModel: string): void {
+  const model = coachModel.trim();
+  if (!model) {
+    return;
+  }
+  for (const role of recipe.roles) {
+    if (typeof role.config.model !== "string" || !role.config.model.trim()) {
+      role.config.model = model;
+    }
+  }
+}
 
 export const builderValidateRecipe = {
   name: "builder_validate_recipe",

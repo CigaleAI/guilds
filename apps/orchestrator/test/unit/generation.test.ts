@@ -2227,12 +2227,10 @@ describe("generation", { concurrency: 1 }, () => {
     });
   });
 
-  test("spend limit skips coding-API models", async () => {
+  test("a provider the organisation has not connected fails the model call before streaming", async () => {
     const db = new FakeDB({});
-    db.monthlyUsage = { cost_usd: 0.05 };
-    db.orgApiKey = null;
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), {}, {
-      policy: limitedPolicy({ monthlyCostLimitUsd: 0.01 }),
+      credentials: { modelCredentials: async () => null },
     });
     await loop._begin("r_1", "a_1");
     await assert.rejects(
@@ -2247,16 +2245,20 @@ describe("generation", { concurrency: 1 }, () => {
       (error: unknown) => {
         assert.ok(error instanceof generationMod.RunLimitError);
         assert.equal(error.operation, "generation.model_key");
+        assert.match(error.message, /connect a Kimi Code key on Model keys/);
         return true;
       },
     );
   });
 
-  test("spend limit fails the model call before streaming", async () => {
+  test("a policy refusal from the credentials fails the model call with its message", async () => {
     const db = new FakeDB({});
-    db.monthlyUsage = { cost_usd: 0.05 };
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), {}, {
-      policy: limitedPolicy({ monthlyCostLimitUsd: 0.01 }),
+      credentials: {
+        modelCredentials: async () => {
+          throw new PolicyError(402, "budget exhausted: top up to continue");
+        },
+      },
     });
     await loop._begin("r_1", "a_1");
     await assert.rejects(
@@ -2270,10 +2272,49 @@ describe("generation", { concurrency: 1 }, () => {
         }),
       (error: unknown) => {
         assert.ok(error instanceof generationMod.RunLimitError);
-        assert.equal(error.operation, "generation.spend_limit");
+        assert.equal(error.operation, "generation.model_credentials");
+        assert.equal(error.message, "budget exhausted: top up to continue");
         return true;
       },
     );
+  });
+
+  test("the credentials' usage callback hears each completion and never fails the run", async () => {
+    const db = new FakeDB({});
+    const heard: Array<Record<string, unknown>> = [];
+    const seen: Array<Record<string, unknown>> = [];
+    live.streamCompletion = async function* stream(options: { apiKey?: string; baseURL?: string }) {
+      seen.push({ apiKey: options.apiKey, baseURL: options.baseURL });
+      yield ["delta", "hi"];
+      yield ["done", completionReply("hi")];
+    };
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), {}, {
+      credentials: {
+        modelCredentials: async () => ({
+          apiKey: "org-key",
+          baseURL: "http://127.0.0.1:1/v1",
+          onUsage: async (usage) => {
+            heard.push(usage as unknown as Record<string, unknown>);
+            throw new Error("accounting is down");
+          },
+        }),
+      },
+    });
+    await loop._begin("r_1", "a_1");
+    const completion = await loop._llm_completion("r_1", {
+      model: "openrouter/openai/gpt-5.6-luna",
+      messages: [],
+      temperature: 0,
+      max_tokens: 8,
+      tools: null,
+    });
+    assert.equal(completion.payload.content, "hi");
+    assert.deepEqual(seen, [{ apiKey: "org-key", baseURL: "http://127.0.0.1:1/v1" }]);
+    assert.equal(heard.length, 1);
+    assert.equal(heard[0]?.run_id, "r_1");
+    assert.equal(heard[0]?.model, "openrouter/openai/gpt-5.6-luna");
+    assert.equal(heard[0]?.cost_source, "unavailable");
+    restoreBindings();
   });
 
   test("an organisation the policy bars fails the model call before streaming", async () => {

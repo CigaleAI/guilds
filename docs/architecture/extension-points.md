@@ -24,8 +24,8 @@ its own repository.
    provider, payment provider, or object store. Every instance key
    is optional: the operator sets the ones they want, each switches
    its feature on, and a feature without its key is off and says
-   so. A run needs one model key, the instance's or the
-   organisation's.
+   so. A run needs the organisation's own model key: core reads no
+   instance key for a model provider.
 4. **Core does not authenticate.** Whoever reaches the port is the
    operator. The stack listens on loopback. A box reached from
    elsewhere sits behind the operator's own proxy, and that proxy
@@ -61,7 +61,8 @@ and `trusted-header`. Paths below are under
 | Extension point | Interface | Core's default |
 |---|---|---|
 | Identity | `IdentityProvider` (`http/identity.ts`): `currentUser(request)`, an optional `onSend` for a provider that renews a credential, and `describe()` for what its sign-in page needs; supplied by `ServerExtension.identity` | The request's user from the `X-Guilds-User` header or `guilds_user` cookie (`compat-cookie`), or from the proxy's email header (`trusted-header`). A mode core does not implement, with no provider for it, signs no one in. `GET /api/auth/config` and `GET /api/auth/me` are core's (`http/me-routes.ts`); a provider's `describe()` adds to the first |
-| Organisation policy | `OrgPolicy` (`policy/index.ts`): `standing(orgId)` returns the organisation's `OrgLimits` (agent, browser-agent, coding-agent, guild, and concurrent-run caps, the monthly spend limit, the monthly Studio and Builder quota, and their generation budgets, the organisation's own MCP servers, and monthly calls on a connector's platform login by slug) and whether it is blocked; supplied by `ServerExtension.policy` | `OPEN_POLICY`: no cap, and every organisation may run, under the instance's own ceiling (`MAX_CONCURRENT_GENERATIONS`). Core checks every cap against the policy it is given, and a refusal names the limits' `source` (`<source> limit reached: agents`) |
+| Organisation policy | `OrgPolicy` (`policy/index.ts`): `standing(orgId)` returns the organisation's `OrgLimits` (agent, browser-agent, coding-agent, guild, and concurrent-run caps, the monthly Studio and Builder quota, and their generation budgets, the organisation's own MCP servers, and monthly calls on a connector's platform login by slug) and whether it is blocked; supplied by `ServerExtension.policy` | `OPEN_POLICY`: no cap, and every organisation may run, under the instance's own ceiling (`MAX_CONCURRENT_GENERATIONS`). Core checks every cap against the policy it is given, and a refusal names the limits' `source` (`<source> limit reached: agents`) |
+| Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`): `modelCredentials(orgId, provider)` returns the `apiKey`, an optional `baseURL`, and an optional `onUsage` callback core calls once per completion with the run id, model, token usage, and cost; null while the provider is not connected; may throw a `PolicyError`, which core shows and does not start the run on; supplied by `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys, decrypted, with no callback. Who pays, whether a budget exists, and what the callback does are the implementation's; core keeps no spend gate ([Orchestrator](orchestrator.md#credentials)) |
 | Organisation created | `OrgCreatedHook` (`db/repositories.ts`), run inside the transaction that creates an organisation; supplied by `ServerExtension.orgCreated` | Nothing. Hooks from several extensions run in order, and a hook passed for one creation replaces them |
 | Sandbox provider | `SandboxProvider` (`extension.ts`): the sandboxes generation drives, with `start` and `close`; supplied by `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) on `OPENSANDBOX_URL` and `WORKSPACE_ROOT` |
 | Blob store | `BlobStore` (`attachments/`); supplied by `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT`, which is `STATE_ROOT/attachments` on the Compose stack; `MemoryBlobStore` without one, which the tests use |
@@ -133,6 +134,8 @@ its deployment files.
 
 An instance key is a credential the box holds for everyone on it,
 as opposed to an organisation's model key, secret, or connection.
+No instance key serves a model provider: the organisation's own key
+does ([Orchestrator](orchestrator.md#credentials)).
 Each belongs to an integration. An integration is on when all of
 its variables are set.
 
@@ -151,7 +154,7 @@ its variables are set.
   user) reports each integration's state (`on`, `off`, or
   `incomplete` when some of its required variables are set), which
   variables are set, never a value, and what it switches on: model
-  providers, native tools, and connector slugs. The operator app
+  native tools and connector slugs. The operator app
   turns off what depends on a missing integration and names the
   variables that would switch it on. Admin's Platform keys tab
   lists every integration with its state.
@@ -162,8 +165,6 @@ its variables are set.
 
 | Integration | Variables | Switches on | Without it |
 |---|---|---|---|
-| OpenRouter | `OPENROUTER_API_KEY` | OpenRouter models for an organisation with no OpenRouter key of its own | The models stay selectable. For an organisation with no key either, a banner above every page says no model key is set and names the two ways to give one, the picker marks them `No key yet`, and a run fails at its first model call with the variable's name |
-| DeepInfra | `DEEPINFRA_API_KEY` | DeepInfra models for an organisation with no DeepInfra key of its own | As for OpenRouter |
 | Web search | `TAVILY_API_KEY` | The Tavily connector's platform login, `tavily_search` | The platform login is disconnected and runs leave `tavily_search` out; an organisation may connect a Tavily key of its own |
 | Group routing | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat | Tag rules and the last 10 messages |
 | GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing variables, and disables Connect; a Connect sent anyway answers 422 |

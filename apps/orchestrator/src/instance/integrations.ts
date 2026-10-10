@@ -21,8 +21,6 @@ function variableValue(variable: IntegrationVariable, env: NodeJS.ProcessEnv): s
 
 /** The parts of the product an integration switches on, by id, for a client that lists them. */
 export type IntegrationProvides = {
-  /** Model providers the instance's key serves for an organisation with no key of its own. */
-  modelProviders?: readonly string[];
   nativeTools?: readonly string[];
 };
 
@@ -44,7 +42,7 @@ export type IntegrationStatus = {
   enables: string;
   state: IntegrationState;
   variables: Array<{ name: string; optional: boolean; set: boolean }>;
-  provides: { model_providers: string[]; native_tools: string[]; connectors: string[] };
+  provides: { native_tools: string[]; connectors: string[] };
 };
 
 type VariableName<I extends Integration> = I["variables"][number]["name"];
@@ -58,22 +56,6 @@ function integration<const V extends readonly IntegrationVariable[]>(definition:
 }): { id: string; label: string; enables: string; variables: V; provides?: IntegrationProvides } {
   return definition;
 }
-
-export const OPENROUTER = integration({
-  id: "openrouter",
-  label: "OpenRouter",
-  enables: "OpenRouter models for an organisation with no OpenRouter key of its own",
-  variables: [{ name: "OPENROUTER_API_KEY" }],
-  provides: { modelProviders: ["openrouter"] },
-});
-
-export const DEEPINFRA = integration({
-  id: "deepinfra",
-  label: "DeepInfra",
-  enables: "DeepInfra models for an organisation with no DeepInfra key of its own",
-  variables: [{ name: "DEEPINFRA_API_KEY" }],
-  provides: { modelProviders: ["deepinfra"] },
-});
 
 export const WEB_SEARCH = integration({
   id: "web-search",
@@ -136,8 +118,6 @@ export const CONNECTOR_CODE = integration({
 });
 
 export const CORE_INTEGRATIONS: readonly Integration[] = [
-  OPENROUTER,
-  DEEPINFRA,
   WEB_SEARCH,
   GROUP_ROUTING,
   GITHUB_APP,
@@ -158,12 +138,6 @@ export function installedIntegrations(): readonly Integration[] {
 export function installIntegrations(extra: readonly Integration[]): void {
   installed = [...CORE_INTEGRATIONS, ...extra];
 }
-
-/** The marketplace providers an instance key can serve, by provider id. */
-export const MODEL_PROVIDER_INTEGRATIONS: Record<string, typeof OPENROUTER | typeof DEEPINFRA> = {
-  openrouter: OPENROUTER,
-  deepinfra: DEEPINFRA,
-};
 
 /** One variable's trimmed value: its default while unset, empty when unset with none. */
 export function integrationVariable<const I extends Integration>(
@@ -232,7 +206,6 @@ export function integrationStatuses(
       set: Boolean((env[variable.name] ?? "").trim()),
     })),
     provides: {
-      model_providers: [...(integration.provides?.modelProviders ?? [])],
       native_tools: [...(integration.provides?.nativeTools ?? [])],
       connectors: connectorsOf(integration.id),
     },

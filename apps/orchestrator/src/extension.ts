@@ -9,6 +9,7 @@ import type { IdentityProvider } from "./http/identity.js";
 import type { InstanceAdmin } from "./http/instance-admin.js";
 import type { ConnectorEntry } from "./connectors/registry.js";
 import type { Integration } from "./instance/integrations.js";
+import type { ModelCredentialsProvider } from "./llm/credentials.js";
 import type { OrgPolicy } from "./policy/index.js";
 
 /** The sandboxes agents run in, with the lifecycle the composition root drives. */
@@ -34,6 +35,8 @@ export type ServerExtension = {
   orgCreated?: OrgCreatedHook;
   /** The organisation policy that replaces core's open one. */
   policy?(services: { repo: Repositories }): OrgPolicy;
+  /** The credentials a model provider is called with for an organisation, in place of core's own rows. */
+  modelCredentials?(services: { repo: Repositories }): ModelCredentialsProvider;
   /** The identity provider for this configuration, when the edition identifies requests itself. */
   identity?(deps: Pick<AppDeps, "repo" | "config">): IdentityProvider | undefined;
   /** Who may administer the instance, in place of core's rule. */
@@ -123,6 +126,20 @@ export function extensionOrgCreated(extensions: readonly ServerExtension[]): Org
       await hook(client, org, now);
     }
   };
+}
+
+/** The model credentials provider the extensions supply, if one does. */
+export function extensionModelCredentials(
+  extensions: readonly ServerExtension[],
+  services: { repo: Repositories },
+): ModelCredentialsProvider | undefined {
+  for (const extension of extensions) {
+    const credentials = extension.modelCredentials?.(services);
+    if (credentials) {
+      return credentials;
+    }
+  }
+  return undefined;
 }
 
 /** The organisation policy the extensions supply, if one does. */

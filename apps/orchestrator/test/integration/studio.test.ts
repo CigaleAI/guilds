@@ -7,7 +7,7 @@ import { runItem } from "../../src/db/views.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
-import { DEFAULT_MODEL } from "../../src/llm/catalog.js";
+import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -54,7 +54,7 @@ const AUTH = {
 };
 
 const CONFIG = {
-  model: DEFAULT_MODEL,
+  model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
   max_steps: 30,
@@ -85,6 +85,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
   const notes = new NotesStore(tempDir("guilds-studio-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
@@ -156,7 +157,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       payload: {
         mode: "optimize",
         source_guild_id: "guild_studio",
-        coach_config: { model: DEFAULT_MODEL, temperature: 0.2 },
+        coach_config: { model: TEST_MODEL, temperature: 0.2 },
       },
     });
     assert.equal(created.statusCode, 200, created.body);
@@ -167,7 +168,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       source_guild: { about?: string; objective?: string };
     };
     assert.equal(session.source_guild_id, "guild_studio");
-    assert.equal(session.coach.model, DEFAULT_MODEL);
+    assert.equal(session.coach.model, TEST_MODEL);
     assert.equal(session.source_guild.about, "Optimize this guild");
     assert.match(String(session.source_guild.objective ?? ""), /Coordinate research and writing/);
 
@@ -196,7 +197,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       payload: {
         mode: "optimize",
         source_guild_id: "guild_studio",
-        coach_config: { model: DEFAULT_MODEL, temperature: 0.2 },
+        coach_config: { model: TEST_MODEL, temperature: 0.2 },
       },
     });
     assert.ok([401, 403, 404].includes(denied.statusCode));
@@ -324,6 +325,7 @@ test("studio reads agent access, script source, and granted connections", { time
   const notes = new NotesStore(tempDir("guilds-studio-access-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
@@ -429,7 +431,7 @@ test("studio reads agent access, script source, and granted connections", { time
       payload: {
         mode: "optimize",
         source_guild_id: "guild_access",
-        coach_config: { model: DEFAULT_MODEL, temperature: 0.2 },
+        coach_config: { model: TEST_MODEL, temperature: 0.2 },
       },
     });
     assert.equal(created.statusCode, 200, created.body);
@@ -574,6 +576,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   const notes = new NotesStore(tempDir("guilds-studio-evidence-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
@@ -662,7 +665,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       method: "POST",
       url: "/api/studio/sessions",
       headers: AUTH,
-      payload: { mode: "optimize", source_guild_id: "guild_ev", coach_config: { model: DEFAULT_MODEL, temperature: 0.2 } },
+      payload: { mode: "optimize", source_guild_id: "guild_ev", coach_config: { model: TEST_MODEL, temperature: 0.2 } },
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
@@ -849,7 +852,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       method: "POST",
       url: "/api/studio/sessions",
       headers: AUTH,
-      payload: { mode: "optimize", source_guild_id: "guild_ev", coach_config: { model: DEFAULT_MODEL, temperature: 0.2 }, parent_session_id: session.id },
+      payload: { mode: "optimize", source_guild_id: "guild_ev", coach_config: { model: TEST_MODEL, temperature: 0.2 }, parent_session_id: session.id },
     });
     assert.equal(child.statusCode, 200, child.body);
     assert.equal((child.json() as { parent_session_id: string }).parent_session_id, session.id);
@@ -857,7 +860,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       method: "POST",
       url: "/api/studio/sessions",
       headers: AUTH,
-      payload: { mode: "optimize", source_guild_id: "guild_ev", coach_config: { model: DEFAULT_MODEL, temperature: 0.2 }, parent_session_id: "stu_missing" },
+      payload: { mode: "optimize", source_guild_id: "guild_ev", coach_config: { model: TEST_MODEL, temperature: 0.2 }, parent_session_id: "stu_missing" },
     });
     assert.equal(orphanParent.statusCode, 404);
 
@@ -895,6 +898,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
   const notes = new NotesStore(tempDir("guilds-studio-edits-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
@@ -938,7 +942,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       method: "POST",
       url: "/api/studio/sessions",
       headers: AUTH,
-      payload: { mode: "optimize", source_guild_id: "guild_ed", coach_config: { model: DEFAULT_MODEL, temperature: 0.2 } },
+      payload: { mode: "optimize", source_guild_id: "guild_ed", coach_config: { model: TEST_MODEL, temperature: 0.2 } },
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
@@ -1076,6 +1080,7 @@ test("studio proposes tables to create, change, and delete that the operator app
   const notes = new NotesStore(tempDir("guilds-studio-tables-notes-"), templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
@@ -1119,7 +1124,7 @@ test("studio proposes tables to create, change, and delete that the operator app
       method: "POST",
       url: "/api/studio/sessions",
       headers: AUTH,
-      payload: { mode: "optimize", source_guild_id: "guild_tb", coach_config: { model: DEFAULT_MODEL, temperature: 0.2 } },
+      payload: { mode: "optimize", source_guild_id: "guild_tb", coach_config: { model: TEST_MODEL, temperature: 0.2 } },
     });
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };

@@ -7,6 +7,7 @@ import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
 import { clearConnectorKeys, testEnv } from "../helpers/env.js";
+import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, templatesRoot } from "../helpers/fixtures.js";
 import { PlaceholderMap } from "../helpers/placeholders.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -15,8 +16,8 @@ const R2_CASES = [
   "health-ok",
   "system-prompt",
   "list-users",
-  "models-auth",
-  "models-single-user-no-header",
+  "org-models-auth",
+  "org-models-single-user-no-header",
   "guild-404",
   "agent-404",
   "org-404",
@@ -24,7 +25,7 @@ const R2_CASES = [
   "user-invalid",
   "org-invalid",
   "user-create",
-  "models-missing-user",
+  "org-models-missing-user",
   "foreign-guild-create",
   "guild-tenancy",
   "list-orgs",
@@ -95,6 +96,7 @@ test("R2 feature HTTP recordings replay against an isolated database", async () 
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "openrouter");
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
   const app = await buildApp(database, { repo, notes, scripts, schedules });

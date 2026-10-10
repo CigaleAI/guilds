@@ -11,6 +11,7 @@ import { Repositories } from "./db/repositories.js";
 import {
   extensionBlobStore,
   extensionConnectors,
+  extensionModelCredentials,
   extensionOrgCreated,
   extensionPolicy,
   extensionSandboxes,
@@ -19,6 +20,8 @@ import {
 } from "./extension.js";
 import { AdmissionCoordinator } from "./generation/admission.js";
 import { GenerationLoop } from "./generation/index.js";
+import { coreModelCredentials } from "./llm/credentials.js";
+import { ModelsService } from "./llm/models.js";
 import { McpPool, TOOLS_TTL_MS } from "./mcp/index.js";
 import { NotesStore } from "./notes/store.js";
 import { OPEN_POLICY } from "./policy/index.js";
@@ -62,6 +65,8 @@ export async function createServer(
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
   const masterKey = decodeMasterKey(config.secretsMasterKey);
+  const modelCredentials = extensionModelCredentials(extensions, { repo }) ?? coreModelCredentials(repo, masterKey);
+  const models = new ModelsService({ repo, credentials: modelCredentials, masterKey });
   const mcp = new McpPool(TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");
   mcp.policy = policy;
   const sandboxes: SandboxProvider =
@@ -85,6 +90,7 @@ export async function createServer(
     attachments,
     admission: new AdmissionCoordinator(config.maxConcurrentGenerations),
     policy,
+    credentials: modelCredentials,
   });
   await generation.reconcile();
   generation.startScheduler();
@@ -97,7 +103,7 @@ export async function createServer(
     mcp,
     admission: generation.admission,
     policy,
-    resolveOrgApiKey: (orgId, model) => repo.resolveOrgApiKey(orgId, model),
+    credentials: modelCredentials,
     publishFilesChanged: async (guildId) => {
       await generation.group_chat.publish(guildId, "guild.files.changed", {
         scope: "agent",
@@ -108,7 +114,7 @@ export async function createServer(
   });
   await studio.reconcile();
   const recipes = new RecipeStore(repo.pool);
-  const capabilities = new CapabilityService(repo, policy);
+  const capabilities = new CapabilityService(repo, policy, models);
   const apply = new RecipeApplyService({
     repo,
     recipes,
@@ -117,6 +123,7 @@ export async function createServer(
     scripts,
     schedules,
     policy,
+    models,
   });
   const builder = new BuilderService({
     repo,
@@ -125,7 +132,7 @@ export async function createServer(
     apply,
     admission: generation.admission,
     policy,
-    resolveOrgApiKey: (orgId, model) => repo.resolveOrgApiKey(orgId, model),
+    credentials: modelCredentials,
     mcp,
   });
   await builder.reconcile();
@@ -149,6 +156,8 @@ export async function createServer(
       apply,
       builder,
       policy,
+      modelCredentials,
+      models,
     },
     extensions,
   );
