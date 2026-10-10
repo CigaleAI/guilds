@@ -85,9 +85,9 @@ export type Agent = {
   /** `#rrggbb`. */
   avatar_color: string;
   browser: boolean;
-  /** Code tools and a larger sandbox with Node.js, build tools and git. */
+  /** Code tools, with Node.js, build tools and git in the sandbox. */
   coding: boolean;
-  /** The machine it runs on: `standard` with browser or coding on, `lite` otherwise. */
+  /** The machine it runs on. */
   box: Box;
   archived_at: string | null;
   /** A run is generating for this agent right now. */
@@ -97,10 +97,21 @@ export type Agent = {
 export type ThinkingLevel = "none" | "low" | "medium" | "high";
 
 /**
- * The two boxes an agent runs on. `lite` is the small guest for scripts, notes, MCP and the CLI;
- * `standard` is the large guest with the coding tools and Chromium.
+ * The boxes an agent runs on. `lite` is the small guest for scripts, notes, MCP and the CLI, with
+ * no browser and no code tools. The others carry Chromium and the toolchains: `standard` is the
+ * browser agent's machine, `code` the coding agent's larger one, and `custom` is sized by the
+ * operator.
  */
-export type Box = "lite" | "standard";
+export type Box = "lite" | "standard" | "code" | "custom";
+
+/** A custom box's size: CPUs in quarter steps and memory in MiB, within these bounds. */
+export const customBoxBounds = {
+  minCpu: 0.5,
+  maxCpu: 4,
+  cpuStep: 0.25,
+  minMemoryMib: 512,
+  maxMemoryMib: 8192,
+} as const;
 
 export type AgentConfig = {
   model: string;
@@ -122,8 +133,14 @@ export type AgentConfig = {
   scripting: boolean;
   memory: boolean;
   thinking_level: ThinkingLevel;
-  /** Follows the flags: `standard` with browser or coding on, `lite` with both off. */
+  /**
+   * The machine: lite has browser and coding off; standard has coding off; code has it on; custom
+   * leaves it to the operator. The browser is the operator's on every box but lite.
+   */
   box: Box;
+  /** A custom box's size; absent on every other box. */
+  cpu?: number;
+  memory_mib?: number;
 };
 
 /** One agent with its model settings; `access` is its resolved tools, secrets and grants. */
@@ -1730,6 +1747,12 @@ export type ApplyChoices = {
   names: Array<{ role: string; name: string }>;
   models: Array<{ role: string; model: string }>;
   connections: ApplyConnectionChoice[];
+};
+
+/** `GET /api/guilds/:id/apply`: the open checklist, and agents that still need a post-apply browser login. */
+export type GuildApplyState = {
+  apply: ApplyRow | null;
+  browser_logins: string[];
 };
 
 /** A recipe applied to a new guild: what it created, and the checklist left before its routines start. */

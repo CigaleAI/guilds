@@ -13,7 +13,9 @@ import {
 const avatarSets = [
   { value: "critters", label: "Critters" },
   { value: "cameo", label: "Cameo" },
-  { value: "pixelbot", label: "Pixel bots" },
+  { value: "clay", label: "Clay" },
+  { value: "cutouts", label: "Cutouts" },
+  { value: "voxel-bot", label: "Voxel bots" },
   { value: "bottts-neutral", label: "Bottts" },
 ] as const;
 
@@ -25,8 +27,15 @@ function randomSeed(length = 8): string {
 }
 
 function setOf(shape: string): string {
-  const colon = shape.indexOf(":");
-  return colon > 0 ? shape.slice(0, colon) : "";
+  const text = shape.trim().toLowerCase();
+  if (!text) return "";
+  const colon = text.indexOf(":");
+  if (colon > 0) return text.slice(0, colon);
+  const styles = [...avatarSets].map((item) => item.value).sort((a, b) => b.length - a.length);
+  for (const style of styles) {
+    if (text.startsWith(`${style}-`)) return style;
+  }
+  return "clay";
 }
 
 type AvatarPickerProps = {

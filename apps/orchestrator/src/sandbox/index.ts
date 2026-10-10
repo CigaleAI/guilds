@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { boxForFlags, DEFAULT_BROWSER_LANGUAGE, type Box } from "../agents/validation.js";
+import { boxForFlags, DEFAULT_BROWSER_LANGUAGE, type Box, type CustomSize } from "../agents/validation.js";
 import { environmentFingerprint } from "../credentials/crypto.js";
 import { AGENT_HOME } from "../lib/agent-file.js";
 import { orchestratorRoot } from "../lib/paths.js";
@@ -19,12 +19,15 @@ export const CLI_PORT = 7681;
 export const CLI_ENTRYPOINT = "/usr/local/bin/agent-cli-start";
 export const CLI_START_SECONDS = 20;
 const CLI_TOKEN_RE = /^[0-9a-f]{48}$/;
-/** Memory of a lite box: scripts, notes, MCP, and the CLI. */
+/** Size of a lite box: scripts, notes, MCP, and the CLI. */
 export const LITE_SANDBOX_MEMORY_MIB = 256;
 export const LITE_SANDBOX_CPU = "0.5";
-/** Memory of a standard box: the coding tools and Chromium. */
-export const STANDARD_SANDBOX_MEMORY_MIB = 4096;
-export const STANDARD_SANDBOX_CPU = "2";
+/** Size of a standard box: Chromium, and the browser tools. */
+export const STANDARD_SANDBOX_MEMORY_MIB = 2048;
+export const STANDARD_SANDBOX_CPU = "1";
+/** Size of a code box: Chromium and the coding toolchains. */
+export const CODE_SANDBOX_MEMORY_MIB = 4096;
+export const CODE_SANDBOX_CPU = "2";
 const HOST_HOME_RE = /guilds\.run|chrome-error:\/\//i;
 const BLANK_NAVIGATE = `python3 /usr/local/bin/guilds-browser ${Buffer.from(JSON.stringify({ op: "navigate", url: "about:blank" })).toString("base64")}`;
 
@@ -146,10 +149,10 @@ type OpenSandboxModule = {
   };
 };
 
-/** The agent's workspace with its scripts directory, and the browser profile on a standard box. */
+/** The agent's workspace with its scripts directory, and the browser profile on every box but lite. */
 export function prepareWorkspace(workspaceRoot: string, agentId: string, box: Box = "standard"): string {
   const workspace = path.join(workspaceRoot, agentId);
-  if (box === "standard") {
+  if (box !== "lite") {
     mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
   }
   mkdirSync(path.join(workspace, SCRIPTS_DIR), { recursive: true });
@@ -234,22 +237,28 @@ export function sandboxMetadata(
   fingerprint: string,
   secretIds: string[],
   options: {
+    box?: Box;
     browser?: boolean;
     coding?: boolean;
     browserLanguage?: string;
+    size?: CustomSize | null | undefined;
     hostId?: string | undefined;
     image?: string;
   } = {},
 ): Record<string, string> {
+  const flags = sandboxFlags(options);
+  const resource = sandboxResource(flags);
   const metadata: Record<string, string> = {
     agent_id: agentId,
     environment_fingerprint: fingerprint,
-    browser: options.browser ? "1" : "0",
-    coding: options.coding ? "1" : "0",
-    kind: boxForFlags({ browser: Boolean(options.browser), coding: Boolean(options.coding) }),
+    browser: flags.browser ? "1" : "0",
+    coding: flags.coding ? "1" : "0",
+    kind: flags.box,
+    cpu: resource.cpu,
+    memory: resource.memory,
   };
-  if (options.browser) {
-    metadata.browser_language = options.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE;
+  if (flags.browser) {
+    metadata.browser_language = flags.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE;
   }
   if (options.hostId) {
     metadata.host_id = options.hostId;
@@ -263,25 +272,61 @@ export function sandboxMetadata(
   return metadata;
 }
 
-export type SandboxFlags = { browser: boolean; coding: boolean; browserLanguage?: string };
-
-/** The box the flags call for: `standard` with browser or coding on, `lite` otherwise. */
-export function sandboxKind(flags: SandboxFlags): Box {
-  return boxForFlags(flags);
-}
-
-const SANDBOX_RESOURCES: Record<Box, Record<string, string>> = {
-  lite: { cpu: LITE_SANDBOX_CPU, memory: `${LITE_SANDBOX_MEMORY_MIB}Mi` },
-  standard: { cpu: STANDARD_SANDBOX_CPU, memory: `${STANDARD_SANDBOX_MEMORY_MIB}Mi` },
+/**
+ * What decides the sandbox an agent runs in: its box, the browser and coding flags, Chrome's
+ * language, and on a custom box its size.
+ */
+export type SandboxFlags = {
+  box: Box;
+  browser: boolean;
+  coding: boolean;
+  browserLanguage?: string;
+  size?: CustomSize | null | undefined;
 };
 
-export function sandboxResource(flags: SandboxFlags): Record<string, string> {
-  return { ...SANDBOX_RESOURCES[sandboxKind(flags)] };
+/** The flags from an options bag; a missing box is the one the flags call for. */
+export function sandboxFlags(options: {
+  box?: Box;
+  browser?: boolean;
+  coding?: boolean;
+  browserLanguage?: string;
+  size?: CustomSize | null | undefined;
+}): SandboxFlags {
+  const browser = options.browser ?? false;
+  const coding = options.coding ?? false;
+  return {
+    box: options.box ?? boxForFlags({ browser, coding }),
+    browser,
+    coding,
+    browserLanguage: options.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE,
+    size: options.size ?? null,
+  };
+}
+
+/** What a sandbox is created with, as OpenSandbox takes it: CPUs and memory with a `Mi` suffix. */
+export type SandboxResource = { cpu: string; memory: string };
+
+const SANDBOX_RESOURCES: Record<Exclude<Box, "custom">, SandboxResource> = {
+  lite: { cpu: LITE_SANDBOX_CPU, memory: `${LITE_SANDBOX_MEMORY_MIB}Mi` },
+  standard: { cpu: STANDARD_SANDBOX_CPU, memory: `${STANDARD_SANDBOX_MEMORY_MIB}Mi` },
+  code: { cpu: CODE_SANDBOX_CPU, memory: `${CODE_SANDBOX_MEMORY_MIB}Mi` },
+};
+
+/** The CPU and memory the box gets: its tier's, or on a custom box the operator's size. */
+export function sandboxResource(flags: SandboxFlags): SandboxResource {
+  if (flags.box === "custom") {
+    if (!flags.size) {
+      throw new SandboxError("a custom box needs cpu and memory_mib");
+    }
+    return { cpu: String(flags.size.cpu), memory: `${flags.size.memory_mib}Mi` };
+  }
+  return { ...SANDBOX_RESOURCES[flags.box] };
 }
 
 /**
- * Whether a running sandbox is the one this run would create. With `image`, a sandbox started from
- * another image is not: the helpers the tools call are part of the image.
+ * Whether a running sandbox is the one this run would create: the same box and size, the same
+ * flags and language. With `image`, a sandbox started from another image is not: the helpers the
+ * tools call are part of the image.
  */
 export function sandboxMatches(
   metadata: unknown,
@@ -297,6 +342,13 @@ export function sandboxMatches(
     return false;
   }
   if (image !== undefined && body.image !== imageFingerprint(image)) {
+    return false;
+  }
+  if (body.kind !== flags.box) {
+    return false;
+  }
+  const resource = sandboxResource(flags);
+  if (body.cpu !== resource.cpu || body.memory !== resource.memory) {
     return false;
   }
   if ((body.browser === "1") !== flags.browser || (body.coding === "1") !== flags.coding) {
@@ -662,7 +714,7 @@ async function loadOpenSandbox(): Promise<OpenSandboxModule> {
 }
 
 export class RunSandboxes {
-  /** The image a standard box runs. */
+  /** The image every box but lite runs: Chromium and the coding toolchains. */
   image: string;
   /** The image a lite box runs. */
   imageLite: string;
@@ -722,9 +774,9 @@ export class RunSandboxes {
     return this.manager;
   }
 
-  /** The image the box these flags call for runs. */
+  /** The image the box runs. */
   imageFor(flags: SandboxFlags): string {
-    return sandboxKind(flags) === "standard" ? this.image : this.imageLite;
+    return flags.box === "lite" ? this.imageLite : this.image;
   }
 
   async ensure(
@@ -732,19 +784,17 @@ export class RunSandboxes {
     secrets: Record<string, string>,
     secretIds: string[],
     options: {
+      box?: Box;
       browser?: boolean;
       coding?: boolean;
       browserLanguage?: string;
+      size?: CustomSize | null | undefined;
       scripts?: RunScriptSnapshot[];
       liveExtra?: Array<{ name: unknown; source: unknown } | Record<string, unknown>>;
     } = {},
   ): Promise<SandboxHandle> {
-    const browser = options.browser ?? false;
-    const flags: SandboxFlags = {
-      browser,
-      coding: options.coding ?? false,
-      browserLanguage: options.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE,
-    };
+    const flags = sandboxFlags(options);
+    const browser = flags.browser;
     const manager = this.requireManager();
     const sdk = await this.module();
     const matches = await listInfos(manager, {
@@ -772,15 +822,13 @@ export class RunSandboxes {
         await this.waitForBrowser(sandbox);
       }
     } else {
-      const workspace = prepareWorkspace(this.workspaceRoot, agentId, sandboxKind(flags));
+      const workspace = prepareWorkspace(this.workspaceRoot, agentId, flags.box);
       const createOptions: Record<string, unknown> = {
         timeout: null,
         timeoutSeconds: null,
         env: sandboxEnvironment(secrets, flags),
         metadata: sandboxMetadata(agentId, fingerprint, secretIds, {
-          browser,
-          coding: flags.coding,
-          browserLanguage: flags.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE,
+          ...flags,
           hostId: this.hostId,
           image,
         }),

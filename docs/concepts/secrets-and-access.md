@@ -5,7 +5,7 @@ agents it names, as an environment variable in their sandboxes. Access
 is who gets each secret, what else reaches a sandbox, and the
 per-scope view where an operator sets both secrets and tools. Which
 tools exist and how they are bound is
-[Tools and connectors](tools-and-connectors.md).
+[Catalog](../tools-and-connectors/catalog.md).
 
 ## Secrets
 
@@ -237,7 +237,7 @@ in `apps/orchestrator/src/lib/agent-file.ts` are the only way in:
 
 The code tools never take this path. They run inside the container,
 so a link resolves there
-([Code tools](tools-and-connectors.md#code-tools)).
+([Code tools](../tools-and-connectors/code.md)).
 
 ## Access views
 
@@ -269,7 +269,7 @@ connector with its connection, its listed tools, and their resolved
 state), every entry with its effective value and where it comes from.
 `GET /api/secrets?guild_id=` and `?agent_id=` are the Secrets side.
 `PUT` and `DELETE /api/bindings` write a switch at one scope
-([Tools and connectors](tools-and-connectors.md#catalog-connections-bindings)).
+([Catalog](../tools-and-connectors/catalog.md#catalog-connections-bindings)).
 
 ## What an operator relies on
 

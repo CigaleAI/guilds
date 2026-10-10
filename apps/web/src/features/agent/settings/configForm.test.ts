@@ -62,39 +62,99 @@ test("limits the operator already changed stay as typed", () => {
   assert.equal(coding.max_tool_calls, "200");
 });
 
-test("a new agent starts on the lite box; standard turns both flags on with the coding budgets", () => {
+test("a new agent starts on the lite box; each box settles the flags it owns", () => {
   const form = configFormOf(defaultAgentConfig);
   assert.equal(form.box, "lite");
+  assert.equal(form.cpu, "");
   assert.equal(configOf(form, undefined).box, "lite");
+  assert.equal("cpu" in configOf(form, undefined), false);
   const standard = withBox(form, "standard");
   assert.equal(standard.box, "standard");
   assert.equal(standard.browser, true);
-  assert.equal(standard.coding, true);
-  assert.equal(standard.cli, true);
-  assert.equal(standard.scripting, true);
-  assert.equal(standard.max_steps, "200");
-  assert.equal(standard.max_tool_calls, "200");
+  assert.equal(standard.coding, false);
+  assert.equal(standard.max_steps, "30");
   assert.equal(configOf(standard, undefined).box, "standard");
-  const lite = withBox({ ...standard, model: "kimi/kimi-for-coding" }, "lite");
+  const code = withBox(standard, "code");
+  assert.equal(code.box, "code");
+  assert.equal(code.browser, true);
+  assert.equal(code.coding, true);
+  assert.equal(code.cli, true);
+  assert.equal(code.scripting, true);
+  assert.equal(code.max_steps, "200");
+  assert.equal(code.max_tool_calls, "200");
+  assert.equal(configOf(code, undefined).box, "code");
+  const lite = withBox({ ...code, model: "kimi/kimi-for-coding" }, "lite");
   assert.equal(lite.box, "lite");
   assert.equal(lite.browser, false);
   assert.equal(lite.coding, false);
   assert.equal(lite.max_steps, "30");
   assert.equal(lite.max_tool_calls, "50");
   assert.equal(lite.model, "");
+  // The browser is the operator's on every box but lite: switching it off keeps the box.
+  const quiet = { ...code, browser: false };
+  assert.equal(configErrors(quiet).box, undefined);
+  assert.equal(configOf(quiet, undefined).browser, false);
+});
+
+test("a custom box keeps the coding switch, starts its size from the tier it leaves, and sends it", () => {
+  const form = configFormOf(defaultAgentConfig);
+  const custom = withBox(form, "custom");
+  assert.equal(custom.box, "custom");
+  assert.equal(custom.browser, true);
+  assert.equal(custom.coding, false);
+  assert.equal(custom.cpu, "1");
+  assert.equal(custom.memory_mib, "2048");
+  const fromCode = withBox(withBox(form, "code"), "custom");
+  assert.equal(fromCode.coding, true);
+  assert.equal(fromCode.cpu, "2");
+  assert.equal(fromCode.memory_mib, "4096");
+  assert.equal(fromCode.max_steps, "200");
+  const sent = configOf({ ...custom, cpu: "2.5", memory_mib: "6144" }, undefined);
+  assert.equal(sent.cpu, 2.5);
+  assert.equal(sent.memory_mib, 6144);
+  // Leaving custom drops the size.
+  const back = withBox({ ...custom, cpu: "2.5", memory_mib: "6144" }, "standard");
+  assert.equal(back.cpu, "");
+  assert.equal("cpu" in configOf(back, undefined), false);
+  // A stored size comes back into the form.
+  const stored = configFormOf({ ...defaultAgentConfig, box: "custom", browser: true, cpu: 1.75, memory_mib: 3072 });
+  assert.equal(stored.cpu, "1.75");
+  assert.equal(stored.memory_mib, "3072");
 });
 
 test("a stored config without a box reads the box its flags call for", () => {
   const { box: _box, ...stored } = defaultAgentConfig;
   assert.equal(configFormOf(stored as typeof defaultAgentConfig).box, "lite");
-  assert.equal(configFormOf({ ...stored, coding: true } as typeof defaultAgentConfig).box, "standard");
+  assert.equal(configFormOf({ ...stored, coding: true } as typeof defaultAgentConfig).box, "code");
   assert.equal(configFormOf({ ...stored, browser: true } as typeof defaultAgentConfig).box, "standard");
+  assert.equal(configFormOf({ ...stored, browser: true, coding: true } as typeof defaultAgentConfig).box, "code");
 });
 
-test("a standard box with browser and coding both off is an error", () => {
-  const standard = withBox(configFormOf(defaultAgentConfig), "standard");
+test("the box refuses the flags it settles, and a custom size out of bounds", () => {
+  const form = configFormOf(defaultAgentConfig);
+  assert.equal(configErrors(form).box, undefined);
+  assert.match(configErrors({ ...form, browser: true }).box ?? "", /lite box/);
+  const standard = withBox(form, "standard");
   assert.equal(configErrors(standard).box, undefined);
   assert.equal(configErrors({ ...standard, browser: false }).box, undefined);
-  assert.match(configErrors({ ...standard, browser: false, coding: false }).box ?? "", /Pick Lite/);
-  assert.equal(configErrors(configFormOf(defaultAgentConfig)).box, undefined);
+  assert.match(configErrors({ ...standard, coding: true }).box ?? "", /Pick Code or Custom/);
+  const code = withBox(form, "code");
+  assert.equal(configErrors(code).box, undefined);
+  assert.match(configErrors({ ...code, coding: false }).box ?? "", /code box has coding on/);
+  const custom = withBox(form, "custom");
+  assert.equal(configErrors(custom).box, undefined);
+  assert.equal(configErrors(custom).cpu, undefined);
+  assert.equal(configErrors(custom).memory_mib, undefined);
+  assert.equal(configErrors({ ...custom, coding: true }).box, undefined);
+  assert.match(configErrors({ ...custom, cpu: "" }).cpu ?? "", /0.5 to 4 CPUs/);
+  assert.match(configErrors({ ...custom, cpu: "0.25" }).cpu ?? "", /0.5 to 4 CPUs/);
+  assert.match(configErrors({ ...custom, cpu: "4.5" }).cpu ?? "", /0.5 to 4 CPUs/);
+  assert.match(configErrors({ ...custom, cpu: "1.1" }).cpu ?? "", /steps of 0.25/);
+  assert.equal(configErrors({ ...custom, cpu: "3.75" }).cpu, undefined);
+  assert.match(configErrors({ ...custom, memory_mib: "256" }).memory_mib ?? "", /512 to 8192/);
+  assert.match(configErrors({ ...custom, memory_mib: "8193" }).memory_mib ?? "", /512 to 8192/);
+  assert.match(configErrors({ ...custom, memory_mib: "1024.5" }).memory_mib ?? "", /whole number/);
+  assert.equal(configErrors({ ...custom, memory_mib: "8192" }).memory_mib, undefined);
+  // The size is not checked on the other boxes.
+  assert.equal(configErrors({ ...standard, cpu: "99" }).cpu, undefined);
 });

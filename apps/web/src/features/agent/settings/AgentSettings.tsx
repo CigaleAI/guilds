@@ -1,18 +1,13 @@
 import { useParams } from "@tanstack/react-router";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import {
-  useAgent,
-  useAgentScripts,
-  useOrgModels,
-  useSaveAgentSettings,
-} from "../../../api/queries";
+import { useAgent, useOrgModels, useSaveAgentSettings } from "../../../api/queries";
 import type { AgentDetail } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Button, TextAreaField, TextField, Banner, SkeletonRows, toast } from "@guildsrun/ui";
 import { agentHandleError, handleHint } from "../../names";
-import { RemoveAllScriptsButton } from "../scripts/AgentScripts";
 import { AvatarPicker } from "./AvatarPicker";
 import {
+  BoxFields,
   BoxPicker,
   CapabilitiesFields,
   configErrors,
@@ -21,7 +16,6 @@ import {
   DiskFields,
   LimitFields,
   ModelFields,
-  StandardFields,
   type ConfigForm,
 } from "./configForm";
 
@@ -31,7 +25,7 @@ export function formatMib(mib: number): string {
 }
 
 /** The server's cap on an agent's focus. */
-export const focusMax = 100;
+export const focusMax = 150;
 
 /** The server's cap on an agent's wake triggers. */
 const wakeTriggersMax = 500;
@@ -60,13 +54,13 @@ export function Group({ title, children }: { title: string; children: ReactNode 
 
 /**
  * How the agent looks and runs: its name, focus and mascot, what wakes it in group chat, its model
- * and reasoning, its run limits, its script cap, its box (Lite or Standard, with Browser and its
- * language and Coding on a standard one), and its extras (CLI, scripting, Memory).
+ * and reasoning, its run limits, its script cap, its box (Lite, Standard, Code or Custom, with the
+ * Browser switch and its language on every box but lite, and on a custom one its size and the
+ * Coding switch), and its extras (CLI, scripting, Memory).
  */
 export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);
-  const scripts = useAgentScripts(agentId);
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
   const save = useSaveAgentSettings(agentId, guildId);
@@ -182,19 +176,11 @@ export function AgentSettings() {
                 onChange={(event) => set({ max_scripts: event.currentTarget.value })}
                 {...(errors.max_scripts ? { error: errors.max_scripts } : {})}
               />
-              <div className="flex flex-wrap items-center gap-3 rounded-xl bg-t-plum p-4">
-                <p className="min-w-60 flex-1 text-sm text-plum-t">
-                  Remove every script from this agent's sandbox, including any that are also tools.
-                </p>
-                <RemoveAllScriptsButton agentId={agentId} count={scripts.data?.length ?? 0} />
-              </div>
             </Group>
           ) : null}
           <Group title="Box">
             <BoxPicker form={form} onChange={(next) => set(next)} models={models.data} error={errors.box} />
-            {form.box === "standard" ? (
-              <StandardFields form={form} onChange={(next) => set(next)} models={models.data} />
-            ) : null}
+            <BoxFields form={form} onChange={(next) => set(next)} models={models.data} errors={errors} />
           </Group>
           <Group title="Agent capabilities">
             <CapabilitiesFields form={form} onChange={(next) => set(next)} />

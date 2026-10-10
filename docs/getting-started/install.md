@@ -50,7 +50,8 @@ Then open `http://127.0.0.1:8080/`.
 
 The two runtime images:
 
-- `agent-runtime:0.3` — standard box (coding and a browser)
+- `agent-runtime:0.3` — the standard, code and custom boxes (a browser
+  and the coding toolchains)
 - `agent-runtime-lite:0.1` — lite box (scripts and a terminal)
 
 Running `./setup.sh` again keeps every value `.env` already has.

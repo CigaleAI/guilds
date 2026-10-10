@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { liveTurnActive, type LiveTurn } from "../../api/liveTurn";
 import type { StudioMessage } from "../../api/types";
 import { isoTime, messageTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";
@@ -12,7 +13,13 @@ import {
 } from "@guildsrun/ui";
 import type { IdentityTone } from "@guildsrun/ui";
 import { FlowView } from "../agent/chat/FlowView";
-import { buildFlowSegments, turnText, type FlowSegment } from "../agent/runs/runFlowModel";
+import { Reasoning } from "../agent/chat/Reasoning";
+import {
+  buildFlowSegments,
+  turnReasoning,
+  turnText,
+  type FlowSegment,
+} from "../agent/runs/runFlowModel";
 import { asRunMessages } from "./coachRows";
 
 /** One row of a coach conversation, readable by the run flow model. */
@@ -21,7 +28,7 @@ export type CoachRow = ReturnType<typeof asRunMessages>[number];
 type CoachLogProps = {
   messages: StudioMessage[] | undefined;
   /** The coach's reply as it is being written. */
-  live: string;
+  live: LiveTurn | null;
   generating: boolean;
   coach: { name: string; tone: IdentityTone };
   /** Shown before the operator has written anything. */
@@ -108,7 +115,8 @@ export function CoachLog({
             );
           }
           const text = turnText(message);
-          if (!text.trim()) {
+          const reasoning = turnReasoning(message);
+          if (!text.trim() && !reasoning) {
             return message.metadata.finish_reason === "length" ? (
               <p key={message.seq} className="text-xs text-t-ochre-fg">
                 The coach reached its output limit before replying.
@@ -117,13 +125,24 @@ export function CoachLog({
           }
           return (
             <AgentMessage key={message.seq} {...coach} bubble="surface" {...time}>
-              <Markdown density="compact">{text}</Markdown>
+              <div className="flex flex-col gap-2">
+                {reasoning ? <Reasoning text={reasoning} /> : null}
+                {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
+                {message.metadata.finish_reason === "length" ? (
+                  <p className="text-xs text-t-ochre-fg">
+                    The coach reached its output limit before replying.
+                  </p>
+                ) : null}
+              </div>
             </AgentMessage>
           );
         })}
-        {live ? (
+        {liveTurnActive(live) ? (
           <AgentMessage {...coach} bubble="surface">
-            <Markdown density="compact">{live}</Markdown>
+            <div className="flex flex-col gap-2">
+              {live?.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}
+              {live?.text ? <Markdown density="compact">{live.text}</Markdown> : null}
+            </div>
           </AgentMessage>
         ) : generating ? (
           <TypingIndicator {...coach} bubble="surface" />

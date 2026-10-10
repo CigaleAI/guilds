@@ -631,6 +631,27 @@ export class RecipeApplyService {
     return row ? mapApply(row) : null;
   }
 
+  async listReadyForGuild(guildId: string): Promise<Record<string, unknown> | null> {
+    const result = await this.deps.repo.pool.query(
+      `SELECT * FROM recipe_applies
+        WHERE guild_id = $1 AND status = 'ready'
+        ORDER BY updated_at DESC LIMIT 1`,
+      [guildId],
+    );
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? mapApply(row) : null;
+  }
+
+  /** The open checklist, and agents whose recipe login was deferred until after activate. */
+  async guildApplyState(guildId: string): Promise<{
+    apply: Record<string, unknown> | null;
+    browser_logins: string[];
+  }> {
+    const open = await this.listOpenForGuild(guildId);
+    if (open) return { apply: open, browser_logins: [] };
+    return { apply: null, browser_logins: browserLoginAgentIds(await this.listReadyForGuild(guildId)) };
+  }
+
   async verifyStep(applyRow: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>> {
     const checklist = [...((applyRow.checklist as Array<Record<string, unknown>>) ?? [])];
     const step = checklist.find((item) => item.id === stepId);
@@ -1267,6 +1288,24 @@ export function skipApplyChecklistStep(
   };
 }
 
+/** Agents a ready apply still asks to log in by hand (`resolution: later` after activate). */
+export function browserLoginAgentIds(applyRow: Record<string, unknown> | null | undefined): string[] {
+  if (!applyRow || applyRow.status !== "ready") return [];
+  const plan = (jsonObj(applyRow.plan) ?? applyRow.plan ?? {}) as Record<string, unknown>;
+  const names = (Array.isArray(plan.names) ? plan.names : []) as Array<Record<string, unknown>>;
+  const checklist = Array.isArray(applyRow.checklist)
+    ? applyRow.checklist
+    : ((jsonObj(applyRow.checklist) as unknown[]) ?? []);
+  const roles = new Set(
+    (checklist as Array<Record<string, unknown>>)
+      .filter((item) => item.kind === "browser" && item.resolution === "later")
+      .map((item) => String(item.role ?? "")),
+  );
+  return names
+    .filter((item) => typeof item.agent_id === "string" && roles.has(String(item.role)))
+    .map((item) => String(item.agent_id));
+}
+
 export function deferLaunchSteps(
   checklist: Array<Record<string, unknown>>,
   now = new Date(),
@@ -1350,11 +1389,14 @@ function roleModelMap(models: RoleModel[]): Map<string, string> {
 /**
  * The agent config a role applies as: the role's, with the model the operator chose (else the
  * recipe's recommendation), the browser and coding flags settled, and the box the flags call
- * for. A recipe carries no box of its own.
+ * for: code with coding on, standard with the browser alone, lite with neither. A recipe carries
+ * no box or custom size of its own.
  */
 export function configFromRecipeRole(role: RecipeRole, model?: string): Record<string, unknown> {
   const roleConfig = { ...role.config };
   delete roleConfig.box;
+  delete roleConfig.cpu;
+  delete roleConfig.memory_mib;
   const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
   const chosen = model ?? recommended;
   return addMissingBox(

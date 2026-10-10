@@ -186,6 +186,10 @@ export class ConversationRunner {
     const orgId = String(args.session.org_id);
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
+    await this.publish(sessionId, "generation.started", {
+      session_id: sessionId,
+      generation: args.generation,
+    });
     const config = (args.session.config_snapshot ?? {}) as Record<string, unknown>;
     const model = String(config.model ?? "");
     const temperature = Number(config.temperature ?? 0.2);

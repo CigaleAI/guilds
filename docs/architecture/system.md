@@ -114,7 +114,8 @@ starts beside itself.
 (`scripts/images.sh`):
 
 - the OpenSandbox server from its pinned commit
-- `agent-runtime:0.3` for a standard box, from `runtime/`
+- `agent-runtime:0.3` for the standard, code and custom boxes, from
+  `runtime/`
 - `agent-runtime-lite:0.1` for a lite box, from `runtime/`
 
 The orchestrator service runs the core image
@@ -225,7 +226,7 @@ orchestrator on 8080.
    That directory is also a folder on the orchestrator's machine.
    Tools that take a path in it have the orchestrator open it
    directly, only through the workspace file rules
-   ([Tools and connectors](../concepts/tools-and-connectors.md)). A
+   ([Catalog](../tools-and-connectors/catalog.md)). A
    link the agent planted cannot point the orchestrator at its own
    files. The check-then-open race that remains is SEC-3 in the
    [security register](security-register.md).

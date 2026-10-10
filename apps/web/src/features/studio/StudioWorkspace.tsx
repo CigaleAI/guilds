@@ -70,7 +70,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
   const search = useSearch({ from: "/studio/$sessionId" });
   const navigate = useNavigate();
   const session = useStudioSession(sessionId);
-  const messages = useStudioMessages(sessionId);
+  const messages = useStudioMessages(sessionId, session.data?.generation_state !== "idle");
   const live = session.data?.status === "active";
   const inventory = useStudioInventory(sessionId, live);
   const drafts = useStudioDrafts(sessionId);

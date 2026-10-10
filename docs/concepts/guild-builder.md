@@ -207,7 +207,7 @@ Studio tools are absent.
 
 Catalog copy (`description`, `limitations`, `setup_hint`) comes from
 each connector's manifest, with the instance admin's overrides
-applied ([Catalog](tools-and-connectors.md#catalog-connections-bindings)).
+applied ([Catalog](../tools-and-connectors/catalog.md#catalog-connections-bindings)).
 Platform admins edit it at **Admin → Connector catalog** (`/admin`).
 The builder names the enabled connectors' manifest tools, and the
 tools the organisation's own logins have listed.
@@ -278,7 +278,11 @@ A session's workspace is two panes, the blueprint of its draft recipe
 and the coach chat, split by a draggable bar whose share persists
 (one pane at a time on a narrow screen).
 
-The workspace follows the session's stream.
+The workspace follows the session's stream
+(`generation.started`, `assistant.delta`,
+`assistant.reasoning.delta`, `message.committed`, `recipe.changed`,
+`generation.finished`, `session.error`).
+The coach log shows reasoning as it streams, then the reply.
 While the coach works, it also re-reads the session and its messages
 every 2.5 s.
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useCancelBuilder, usePostBuilderMessage } from "../../api/queries";
+import type { LiveTurn } from "../../api/liveTurn";
 import type { BuilderSession, StudioMessage } from "../../api/types";
 import { Composer, Banner, toast } from "@guildsrun/ui";
 import type { FlowSegment } from "../agent/runs/runFlowModel";
@@ -27,7 +28,7 @@ export function openRequest(messages: readonly StudioMessage[]): boolean {
 type BuilderChatProps = {
   session: BuilderSession;
   messages: StudioMessage[] | undefined;
-  live: string;
+  live: LiveTurn | null;
 };
 
 /**
@@ -38,7 +39,7 @@ export function BuilderChat({ session, messages, live }: BuilderChatProps) {
   const post = usePostBuilderMessage(session.id);
   const cancel = useCancelBuilder(session.id);
   const [answeredHere, setAnsweredHere] = useState<ReadonlySet<string>>(() => new Set());
-  const generating = session.generation_state !== "idle";
+  const generating = session.generation_state !== "idle" || post.isPending;
   const active = session.status === "active";
   const idle = active && !generating && !post.isPending;
   const pending = useMemo(

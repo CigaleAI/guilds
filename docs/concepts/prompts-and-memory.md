@@ -90,7 +90,7 @@ schedule wake-up arrives as a Schedule wake-up user message carrying
 the stored instruction and a `previous_run_at` ([Runs](runs.md)).
 
 A connector may add one State key through its adapter's `state` hook
-([Adapters](tools-and-connectors.md#adapters)). The key exists only
+([Adapters](../tools-and-connectors/connectors.md#adapters)). The key exists only
 when the agent has that connector on with a connected login and the
 hook returns a value; the State intro gains the manifest's
 `state.intro` sentence only alongside the key. Every hook runs at run

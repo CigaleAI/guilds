@@ -65,7 +65,7 @@ export const BROWSER_CAPABILITY = {
     "Playwright Chromium in the agent sandbox when a site has no published connector. Set config.browser and browser.required on that role, write login instructions, and record design.browser (site, viable, login_failure_policy). After apply, the live agent asks the operator to take control of its browser and log in from the Browser tab. 60s orchestrator timeout, 15s per action, 1280×720. Login state lives in the workspace profile and expires silently.",
   tools: [...BROWSER_TOOLS],
   costs: {
-    sandbox: "2 CPU, 4 GiB",
+    sandbox: "a standard box, 1 CPU, 2 GiB",
     limit: "max_browser_agents",
   },
   apply_step: {
@@ -83,7 +83,7 @@ export const CODING_CAPABILITY = {
     "A coding agent clones the guild's repositories into its sandbox, searches, edits, runs, and debugs code, and hands work over through git branches and pull requests. Set config.coding on the role and list the repositories the guild needs in the recipe's repositories (name and purpose; no URL or credential). Node.js, build tools, git, gh, and mise are in the sandbox; the workspace, caches, and toolchains persist. A run near its input limit continues in a new run from the agent's own hand-off.",
   tools: [...CODING_TOOLS],
   costs: {
-    sandbox: "2 CPU, 4 GiB",
+    sandbox: "a code box, 2 CPU, 4 GiB",
     limit: "max_coding_agents",
   },
   apply_step: {

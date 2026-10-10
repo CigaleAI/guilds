@@ -459,21 +459,27 @@ The sandbox is created:
 - when the operator opens the Browser tab on a `browser: true` agent
 - when the operator starts the CLI tab
 
-It is one of two boxes, after the agent's browser and coding flags:
+It is the agent's box:
 
-- a lite sandbox (neither flag) runs the lite image
-  (`SANDBOX_IMAGE_LITE`) with 0.5 CPU and 256Mi memory
-- a standard sandbox (either flag) runs the standard image
-  (`SANDBOX_IMAGE`) with 2 CPU and 4Gi
+- a lite sandbox runs the lite image (`SANDBOX_IMAGE_LITE`) with
+  0.5 CPU and 256Mi memory
+- a standard sandbox runs the standard image (`SANDBOX_IMAGE`) with
+  1 CPU and 2Gi
+- a code sandbox runs the standard image with 2 CPU and 4Gi
+- a custom sandbox runs the standard image at the agent's `cpu` and
+  `memory_mib`
+
+The sandbox carries its box, CPU, and memory as labels. A run whose
+agent moved to another box, or resized a custom one, replaces it.
 
 The sandbox directory is mounted at `/home/agent`. Every secret that
 reaches the agent is injected as an environment variable named after
 the secret
 ([Secrets and access](secrets-and-access.md#what-reaches-a-sandbox)).
 
-A coding sandbox also gets `HOME=/home/agent`. On a standard box that
-tree includes `/home/agent/.browser` for Chromium profile state. A lite
-box's tree has no browser profile.
+A coding sandbox also gets `HOME=/home/agent`. On every box but lite
+that tree includes `/home/agent/.browser` for Chromium profile state.
+A lite box's tree has no browser profile.
 
 A new run is a new conversation on the same machine. The container may
 already have been stopped. Commands run as root in the container, for
@@ -589,7 +595,7 @@ Consequences:
   sandbox stops
 
 A coding agent runs commands with the `shell` tool
-([Tools and connectors](tools-and-connectors.md#code-tools)).
+([Code tools](../tools-and-connectors/code.md)).
 
 For every other agent, reusable Python is the one way to execute code:
 an agent-level `script` artifact. A run snapshots source and
@@ -618,7 +624,7 @@ repositories:
 1. **Tokens.** For each GitHub connection the guild's repositories use,
    it mints an installation access token limited to those repositories
    with contents and pull requests write
-   ([Tools and connectors](tools-and-connectors.md#github)). It writes
+   ([GitHub](../tools-and-connectors/github.md)). It writes
    every token through the sandbox file API to
    `/run/guilds/git-tokens.json`, outside the workspace, and adds each
    to the generation's redaction set. A disconnected connection, GitHub
@@ -696,8 +702,8 @@ The agent's `max_scripts` setting (default 10) caps how many names the
 catalog may hold. `script_create` and pane writes of a new name past
 that count are refused. A replace of an existing name is not.
 
-`DELETE /api/agents/:id/scripts` and the Settings and Scripts panes
-remove every row. The Scripts pane and `script_list` / `script_read`
+`DELETE /api/agents/:id/scripts` and the Scripts pane remove every
+row. The Scripts pane and `script_list` / `script_read`
 read the live catalog. `script_create` writes a row and `script_delete`
 deletes it.
 

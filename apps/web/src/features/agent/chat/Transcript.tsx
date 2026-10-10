@@ -1,7 +1,7 @@
 import { Clock, MessageSquare } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { attachmentBlobUrl } from "../../../api/attachments";
-import type { LiveTurn } from "../../../api/streams";
+import { liveTurnActive, type LiveTurn } from "../../../api/liveTurn";
 import type { AgentDetail, MessageAttachment, Run, RunMessage } from "../../../api/types";
 import { agentLook } from "../../../app/agents";
 import { isoTime, messageTime } from "../../../app/format";
@@ -26,6 +26,7 @@ import {
   type FlowSegment,
 } from "../runs/runFlowModel";
 import { FlowView, type RevealStep } from "./FlowView";
+import { Reasoning } from "./Reasoning";
 import { offeredToolGroups, promptSectionsOf } from "./runContext";
 import { SecretRequestCard } from "./SecretRequestCard";
 
@@ -112,17 +113,6 @@ function WakeNote({ icon, children }: { icon: typeof Clock; children: string }) 
       <Icon icon={icon} size={14} />
       {children}
     </div>
-  );
-}
-
-function Reasoning({ text, streaming = false }: { text: string; streaming?: boolean }) {
-  return (
-    <details open={streaming} className="text-sm">
-      <summary className="cursor-pointer font-semibold text-fg-2">
-        {streaming ? "Thinking…" : "Reasoning"}
-      </summary>
-      <p className="mt-1.5 whitespace-pre-wrap text-fg-2">{text}</p>
-    </details>
   );
 }
 
@@ -247,7 +237,7 @@ export function Transcript({ agent, run, messages, live, reveal, onAskCall }: Tr
         );
       })}
 
-      {live && (live.text || live.reasoning) ? (
+      {liveTurnActive(live) ? (
         <AgentMessage name={agent.name} {...look} bubble="surface">
           <div className="flex flex-col gap-2">
             {live.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}

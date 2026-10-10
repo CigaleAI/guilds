@@ -5,7 +5,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { persistAgent } from "../agents/persist.js";
 import {
   AgentValidationError,
+  boxOf,
   browserLanguageOf,
+  customSizeOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
   validateAvatarColor,
@@ -1994,7 +1996,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           throw error;
         }
       }
+      const previousSize = customSizeOf(previous);
+      const size = customSizeOf(config);
       const sandboxChanged =
+        boxOf(previous) !== config.box ||
+        previousSize?.cpu !== size?.cpu ||
+        previousSize?.memory_mib !== size?.memory_mib ||
         Boolean(previous.browser) !== config.browser ||
         Boolean(previous.coding) !== config.coding ||
         (config.browser && browserLanguageOf(previous) !== config.browser_language);

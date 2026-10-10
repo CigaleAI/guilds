@@ -57,11 +57,11 @@ says which variables would switch it on.
 |---|---|---|---|
 | Web search | `TAVILY_API_KEY` | The Tavily connector on the platform's key, `tavily_search` | Runs leave the tool out; an organisation may connect a Tavily key of its own |
 | Group routing | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat, beyond tag rules | Tag rules and the last 10 messages |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing variables, and disables Connect |
-| Google connectors | `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` | The Gmail and Drive connectors | As for the GitHub App |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories ([GitHub](../tools-and-connectors/github.md)) | Tools marks the connector **Not set up**, names the missing variables, and disables Connect |
+| Google connectors | `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` | The Gmail and Drive connectors ([Gmail and Drive](../tools-and-connectors/google.md)) | As for the GitHub App |
 | Error reporting | `SENTRY_DSN` | Errors and traces sent to Sentry | Structured logs only ([Operate](operate.md#logs)) |
-| Registry | `REGISTRY_URL`, the guilds.run registry while unset; `REGISTRY_PUBLIC_KEY` to require a signed index | Installing connectors and recipes from a registry ([Registry](../concepts/tools-and-connectors.md#registry)) | Set empty, the box is offline: nothing installs, and recipe apply names a missing connector unknown |
-| Connector code | `CONNECTORS_CODE_TIER=1`, and `CONNECTORS_ROOT` (`STATE_ROOT/connectors` on the Compose stack) | Registry connectors that carry adapter code, from an index `REGISTRY_PUBLIC_KEY` verifies ([Code tier](../concepts/tools-and-connectors.md#code-tier)) | A code install is refused, and code already on disk is not loaded |
+| Registry | `REGISTRY_URL`, the guilds.run registry while unset; `REGISTRY_PUBLIC_KEY` to require a signed index | Installing connectors and recipes from a registry ([Registry](../tools-and-connectors/registry.md)) | Set empty, the box is offline: nothing installs, and recipe apply names a missing connector unknown |
+| Connector code | `CONNECTORS_CODE_TIER=1`, and `CONNECTORS_ROOT` (`STATE_ROOT/connectors` on the Compose stack) | Registry connectors that carry adapter code, from an index `REGISTRY_PUBLIC_KEY` verifies ([Code tier](../tools-and-connectors/registry.md#code-tier)) | A code install is refused, and code already on disk is not loaded |
 
 A key reaches the server through `.env` alone. The Compose file passes
 the file with `env_file`. A variable exported in the shell does not
@@ -75,7 +75,9 @@ Connectors that sign in with OAuth return to
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`, or to the loopback address
 when `PUBLIC_BASE_URL` is empty. Register that URI on the OAuth client
 or GitHub App you configure
-([Remote access](remote-access.md)).
+([Gmail and Drive](../tools-and-connectors/google.md),
+[GitHub](../tools-and-connectors/github.md),
+[Remote access](remote-access.md)).
 
 ## Reaching the box
 

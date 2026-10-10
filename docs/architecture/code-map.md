@@ -19,7 +19,7 @@ flowchart LR
   Orch --> Place["sandbox provider"]
   Place --> OS[OpenSandbox]
   Orch --> LLM[model providers<br/>on the organisation's keys]
-  OS --> Docker["agent-runtime-lite: scripts<br/>agent-runtime: coding + Chromium"]
+  OS --> Docker["agent-runtime-lite: scripts<br/>agent-runtime: Chromium + coding, sized by box"]
 ```
 
 ## Repository
@@ -29,7 +29,7 @@ guilds.run/
   apps/orchestrator/        Node control plane (this is the app)
   apps/web/                 React operator app (served at the site root)
   packages/ui/              @guildsrun/ui design system (tokens, components, Storybook)
-  runtime/                  Dockerfile (agent-runtime:0.3, the standard box), Dockerfile.lite (agent-runtime-lite:0.1, the lite box), and the helpers baked into them
+  runtime/                  Dockerfile (agent-runtime:0.3, every box but lite), Dockerfile.lite (agent-runtime-lite:0.1, the lite box), and the helpers baked into them
   templates/degen-capital/  Example guild prompts
   fixtures/compat/          Frozen HTTP/SSE/schema/crypto/adapter contracts
   docs/                     Documentation (this set)
@@ -110,7 +110,7 @@ orchestrator serves.
 | `src/main.tsx`, `index.html` | Entry: mounts the app with no slot filled |
 | `src/mount.tsx` | `mount(slots)`: applies the stored theme, installs error reporting, names the edition's sign-in page, and mounts the app with React's error hooks reporting too; a path the edition's slots own renders without loading identity |
 | `src/app/` | App frame: boot (identity before any page), `slots.ts` (`AppSlots`, what an edition adds to the app: pages shown before identity, the sign-in page and sign-out, Settings and Admin tabs, notices above every page, a panel under the member list), router (`/`, `/inbox`, `/settings` (`?tab=`: core's `general|members|keys|secrets|tools|usage` and any an edition adds), `/admin` (`?tab=`: core's `catalog|instance` and an edition's), `/builder` and `/builder/$sessionId`, `/recipes`, `/recipes/$recipeId` and its `…/apply` preview, `/applies/$applyId` (an apply's checklist), `/studio` (`?guild=`), `/studio/$sessionId` (`?agent=&tab=&item=&call=&seq=`: the inspected agent, its tab, the item selected in that tab and the run step to reveal), `/databases[/$collectionId]` (`?tab=columns|access`), the guild's pages at `/guilds/$guildId` (group chat, `?seq=` to open it at a message), `…/settings`, `…/state` (`…/state/files`, `…/state/databases`, `…/state/artifacts`), `…/routines`, `…/issues`, `…/usage`, `…/tools` and `…/secrets`, the agent inspector's tabs at `/guilds/$guildId/agents/$agentId` (Chat, `?run=` for one session and `&call=` or `&seq=` for a step in it), `…/prompt`, `…/state` (`…/state/memory`, `…/state/notes`, `…/state/databases`, `…/state/scripts`, `…/state/artifacts`), `…/history` (opens Chat with the session drawer), `…/routine`, `…/browser`, `…/cli`, `…/tools`, `…/secrets`, `…/usage` and `…/settings`), theme choice, identity context, localStorage helpers, media queries, agent looks (identity colour and mascot URL), time formatting |
-| `src/api/` | Typed API client and shapes (every call carries the tab's `X-Request-Id`), `clientLog.ts` (reports uncaught errors, unhandled rejections, render errors, and 5xx or network API failures to `/api/client-errors`, deduplicated and capped), identity loading, TanStack Query hooks, SSE hooks (guild chat, inbox, run, Studio and Builder streams, refetching on every reconnect since the server replays nothing; the guild stream also refreshes file reads when a file changes and an agent's routines when they change, and the run stream carries the turn being written) |
+| `src/api/` | Typed API client and shapes (every call carries the tab's `X-Request-Id`), `clientLog.ts` (reports uncaught errors, unhandled rejections, render errors, and 5xx or network API failures to `/api/client-errors`, deduplicated and capped), identity loading, TanStack Query hooks, SSE hooks (guild chat, inbox, run, Studio and Builder streams, refetching on every reconnect since the server replays nothing; the guild stream also refreshes file reads when a file changes and an agent's routines when they change, and the run, Studio and Builder streams carry the turn being written, including reasoning) |
 | `src/features/` | Pages. Each feature is listed after this table. |
 | `src/features/agent/runs/` | A run's rows grouped into generations, steps and tool calls, with their stats; tool kinds and tool-call formatting |
 | `public/` | Files served as-is (favicon), by every edition's build |
@@ -164,10 +164,9 @@ orchestrator serves.
   - Usage tab — its lifetime model usage.
   - Settings tab (`settings/`) — edits its name, focus, mascot and
     identity colour, wake triggers, model, thinking, run limits,
-    script cap, browser and browser language, and can remove all
-    its scripts.
-  - The header flags broken Task links. A browser agent's strip
-    asks for its browser login until marked done. The inspector's
+    script cap, browser and browser language.
+  - The header flags broken Task links. A recipe-applied browser
+    login shows a strip until marked done. The inspector's
     menu deletes it. `runState.ts` names runs and says where each
     stands.
 - `files/` — the notes browser the agent's State Notes view and the
@@ -364,7 +363,7 @@ agent runs. Studio and Builder share `conversation/`.
 | `sandbox/` | `RunSandboxes` (one OpenSandbox: ensure, idle, destroy), core's sandbox provider; `sweep.ts` orphan workspaces |
 | `llm/` | `providers.ts` (the provider table and the `{provider}/{model}` prefix), `catalog.ts` and `models-dev.ts` (the models.dev catalog: fetch, cache, snapshot, mapping), `credentials.ts` (the model credentials extension point and core's default over the organisation's rows), `models.ts` (an organisation's providers, chosen models, and default), `client.ts` (the OpenAI client with per-provider request shaping), `tokens.ts`, `cost.ts` |
 | `policy/` | Organisation policy: `OrgPolicy` (an organisation's limits and whether it may work), core's open policy, and the checks core runs against it (agent, browser, coding, and guild caps, the monthly Studio and Builder quota) |
-| `avatars/` | [DiceBear](https://www.dicebear.com/) SVG rendering (`clay.ts` body variants) |
+| `avatars/` | [DiceBear](https://www.dicebear.com/) SVG rendering (`clay.ts` body variants; also cutouts and voxel-bot) |
 | `issues/` | Guild-level tooling reports from `report_issue` |
 | `notifications/` | The inbox view (open issues and unread tags per operator) and its per-user change stream |
 | `studio/` | Prompt Studio sessions, tools, drafts, publish, State preview, focus pins (`focus.ts`), edit requests (`edits.ts`) and table requests (`tables.ts`), the guild activity ledger (`activity.ts`), `system.md` |

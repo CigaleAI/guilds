@@ -20,8 +20,8 @@ import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { preselectedModel } from "../models/models";
 import { AvatarPicker } from "./settings/AvatarPicker";
 import {
+  BoxFields,
   BoxPicker,
-  BrowserLanguageField,
   CapabilitiesFields,
   configErrors,
   configFormOf,
@@ -49,7 +49,8 @@ type CreateAgentDialogProps = {
 
 /**
  * A new agent in a guild: its name, look, focus, model, and the box it runs on. Its focus seeds
- * its Task. Lite is the default; Standard turns coding and the browser on together.
+ * its Task. Lite is the default; Standard adds the browser, Code adds coding too, and Custom is
+ * sized by the operator.
  */
 export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
   const navigate = useNavigate();
@@ -176,9 +177,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
                 models={models.data}
                 error={errors.box}
               />
-              {form.box === "standard" ? (
-                <BrowserLanguageField form={form} onChange={(next) => setConfig(next)} />
-              ) : null}
+              <BoxFields form={form} onChange={(next) => setConfig(next)} models={models.data} errors={errors} />
             </Group>
             <Group title="Agent capabilities">
               <CapabilitiesFields form={form} onChange={(next) => setConfig(next)} />

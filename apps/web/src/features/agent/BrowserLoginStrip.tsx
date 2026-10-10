@@ -1,18 +1,42 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Globe } from "lucide-react";
-import { useGuildApply } from "../../api/queries";
+import { useGuildApply, useGuildBrowserLogins } from "../../api/queries";
 import { useStoredFlag } from "../../app/storage";
 import { Button, Icon } from "@guildsrun/ui";
+
+/** True after a recipe apply deferred this agent's browser login, until the operator marks it done. */
+export function showBrowserLoginStrip(input: {
+  done: boolean;
+  applyOpen: boolean;
+  applyPending: boolean;
+  agentId: string;
+  browserLogins: readonly string[];
+}): boolean {
+  if (input.done || input.applyPending || input.applyOpen) return false;
+  return input.browserLogins.includes(input.agentId);
+}
+
 /**
- * A browser agent needs the operator to log it in to its site by hand, which nothing can detect;
- * the strip asks until the operator marks it done. While the guild's recipe checklist is open it
- * waits: logins come once the guild is activated.
+ * A recipe that needs a take-control login leaves this strip on the live agent after activate.
+ * Turning the browser on in Settings does not. The operator marks it done; nothing can detect the
+ * login. While the guild's recipe checklist is open it waits.
  */
 export function BrowserLoginStrip({ guildId, agentId }: { guildId: string; agentId: string }) {
   const [done, setDone] = useStoredFlag(`guilds-setup-dismissed:${agentId}:browser-login`);
   const apply = useGuildApply(guildId);
+  const logins = useGuildBrowserLogins(guildId);
   const onBrowser = useMatchRoute()({ to: "/guilds/$guildId/agents/$agentId/browser" });
-  if (done || apply.isPending || apply.data) return null;
+  if (
+    !showBrowserLoginStrip({
+      done,
+      applyOpen: Boolean(apply.data),
+      applyPending: apply.isPending,
+      agentId,
+      browserLogins: logins.data ?? [],
+    })
+  ) {
+    return null;
+  }
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-t-sig px-6 py-2.5 text-sm text-t-sig-fg">
       <Icon icon={Globe} size={16} />

@@ -26,7 +26,8 @@ A request with no `Origin` is not a browser's and passes
 Connector sign-ins return to
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`. Register that URI on the
 OAuth client or GitHub App you set in `.env`
-([Tools and connectors](../concepts/tools-and-connectors.md)).
+([Gmail and Drive](../tools-and-connectors/google.md),
+[GitHub](../tools-and-connectors/github.md)).
 
 The provider does not need a path to the box. Only the operator's
 browser does.

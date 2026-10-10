@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the images the core stack runs that no registry publishes: the OpenSandbox server, from
-# its pinned commit, and the two agent runtimes, from runtime/: the standard box's image and the
-# lite box's.
+# its pinned commit, and the two agent runtimes, from runtime/: the standard image, which every box
+# but lite runs, and the lite box's.
 #
 #   scripts/images.sh [opensandbox] [runtime] [runtime-lite]    all three when none is named
 #

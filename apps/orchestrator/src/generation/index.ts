@@ -7,6 +7,9 @@ import {
   DEFAULT_MAX_WORKSPACE_MIB,
   boxOf,
   browserLanguageOf,
+  customSizeOf,
+  type Box,
+  type CustomSize,
   keepToolResultGenerationsOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
@@ -568,6 +571,7 @@ export function configSnapshot(
     browser_language: browserLanguageOf(config),
     coding: Boolean(config.coding),
     box: boxOf(config),
+    ...(customSizeOf(config) ?? {}),
     scripting: config.scripting !== false,
     memory: memoryOf(config),
     thinking_level: config.thinking_level ?? "none",
@@ -1056,9 +1060,11 @@ export type GenerationSandboxes = {
     secrets: Record<string, string>,
     secretIds: string[],
     options?: {
+      box?: Box;
       browser?: boolean;
       coding?: boolean;
       browserLanguage?: string;
+      size?: CustomSize | null | undefined;
       scripts?: RunScriptSnapshot[];
       liveExtra?: Array<{ name: unknown; source: unknown } | Record<string, unknown>>;
     },
@@ -1753,9 +1759,11 @@ export class GenerationLoop implements GroupRunner {
       .filter((id): id is string => typeof id === "string");
     try {
       const sandbox = await this.sandboxes.ensure(agentId, secrets, secretIds, {
+        box: config.box,
         browser: true,
         coding: config.coding,
         browserLanguage: config.browser_language,
+        size: customSizeOf(config),
       });
       this._schedule_idle(agentId);
       return sandbox;
@@ -1853,9 +1861,11 @@ export class GenerationLoop implements GroupRunner {
     let sandbox: SandboxHandle;
     try {
       sandbox = await this.sandboxes.ensure(agentId, secrets, secretIds, {
+        box: config.box,
         browser: config.browser,
         coding: config.coding,
         browserLanguage: config.browser_language,
+        size: customSizeOf(config),
       });
     } catch (error) {
       if (error instanceof SandboxError) {
@@ -3042,9 +3052,11 @@ export class GenerationLoop implements GroupRunner {
         : await this.scripts.snapshot(String(agent.id));
       const liveRows = await this.scripts.listForAgent(String(agent.id));
       sandbox = await this.sandboxes.ensure(String(agent.id), env, secretIds, {
+        box: boxOf(snapshot),
         browser: Boolean(snapshot.browser),
         coding: Boolean(snapshot.coding),
         browserLanguage: browserLanguageOf(snapshot),
+        size: customSizeOf(snapshot),
         scripts: pinned,
         liveExtra: liveExtraForAgent(pinned, liveRows),
       });

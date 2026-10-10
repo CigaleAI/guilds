@@ -16,7 +16,7 @@ export type AppConfig = {
   templatesRoot: string;
   opensandboxUrl: string;
   opensandboxApiKey: string;
-  /** The image a standard box runs: coding tools and Chromium. */
+  /** The image every box but lite runs: coding tools and Chromium. */
   sandboxImage: string;
   /** The image a lite box runs; the standard image when `SANDBOX_IMAGE_LITE` is unset. */
   sandboxImageLite: string;

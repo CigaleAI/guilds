@@ -16,6 +16,8 @@ export class ExportSandboxes {
   running = new Set<string>();
   browserFlags: Record<string, boolean> = {};
   codingFlags: Record<string, boolean> = {};
+  boxes: Record<string, string> = {};
+  sizes: Record<string, { cpu: number; memory_mib: number } | null> = {};
   destroyed: string[] = [];
   workspaceRoot: string;
 
@@ -47,11 +49,18 @@ export class ExportSandboxes {
     agentId: string,
     _secrets: Record<string, string>,
     _secretIds: string[],
-    options: { browser?: boolean; coding?: boolean } = {},
+    options: {
+      box?: string;
+      browser?: boolean;
+      coding?: boolean;
+      size?: { cpu: number; memory_mib: number } | null | undefined;
+    } = {},
   ) {
     this.running.add(agentId);
     this.browserFlags[agentId] = Boolean(options.browser);
     this.codingFlags[agentId] = Boolean(options.coding);
+    this.boxes[agentId] = options.box ?? "lite";
+    this.sizes[agentId] = options.size ?? null;
     mkdirSync(path.join(this.workspaceRoot, agentId), { recursive: true });
     return this.sandbox(agentId);
   }
@@ -85,6 +94,8 @@ export class ExportSandboxes {
     this.running.delete(agentId);
     delete this.browserFlags[agentId];
     delete this.codingFlags[agentId];
+    delete this.boxes[agentId];
+    delete this.sizes[agentId];
   }
 
   async listRunningAgentIds(): Promise<Set<string>> {

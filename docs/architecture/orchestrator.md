@@ -21,8 +21,8 @@ Where each module lives is the [Code map](code-map.md).
   [`@dicebear/*`](https://www.dicebear.com/) for avatars, `@sentry/node`
 - Tests: `node:test` through `tsx`
 - OpenSandbox server commit `473ff611d93670a149ce6600f27ed194b18cce89`,
-  `opensandbox/execd:v1.1.0`, runtimes `agent-runtime:0.3` (the standard
-  box) and `agent-runtime-lite:0.1` (the lite box), TypeScript SDK
+  `opensandbox/execd:v1.1.0`, runtimes `agent-runtime:0.3` (every box
+  but lite) and `agent-runtime-lite:0.1` (the lite box), TypeScript SDK
   from that same commit (`sdks/sandbox/javascript`)
 - Token counting: `js-tiktoken` with one encoding, `o200k_base`, for
   every model
@@ -42,7 +42,7 @@ Where each module lives is the [Code map](code-map.md).
 - `TEMPLATES_ROOT` (the prompt templates, `src/prompts` by default)
 - `OPENSANDBOX_URL`
 - `OPENSANDBOX_API_KEY`
-- `SANDBOX_IMAGE`
+- `SANDBOX_IMAGE` (the image every box but lite runs)
 - `SANDBOX_IMAGE_LITE` (the standard image when unset, so a lite box
   boots before the lite image is configured, without the memory
   saving)
@@ -97,8 +97,10 @@ Configurable only in tests:
 - adapter HTTP timeout = 30 seconds
 - TypeSafe call timeout = 8 seconds, 2 retries with backoff
 - `TOOL_RESULT_MAX_BYTES` default = 65536
-- sandbox resources = 0.5 CPU and 256Mi on a lite box, 2 CPU and 4Gi
-  on a standard box (`config.browser` or `config.coding` true)
+- sandbox resources = 0.5 CPU and 256Mi on a lite box, 1 CPU and 2Gi
+  on a standard box, 2 CPU and 4Gi on a code box, and the agent's
+  `cpu` and `memory_mib` on a custom box (0.5 to 4 CPUs in steps of
+  0.25, 512 to 8192 MiB)
 - browser desktop = 1280×720
 - event queue per subscriber = 4096
 

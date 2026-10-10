@@ -5,6 +5,7 @@ import {
   addMissingBox,
   addMissingBoxAndFlags,
   boxOf,
+  customSizeOf,
   DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
   DEFAULT_MAX_INPUT_TOKENS,
   DEFAULT_MAX_SCRIPTS,
@@ -60,8 +61,9 @@ test("about and focus are optional and capped", () => {
   assert.equal(validateAbout("  weekly synthesis  "), "weekly synthesis");
   assert.equal(validateFocus(null), "");
   assert.equal(validateFocus("  papers  "), "papers");
+  assert.equal(validateFocus("x".repeat(150)).length, 150);
   assert.throws(() => validateAbout("x".repeat(201)), /200/);
-  assert.throws(() => validateFocus("x".repeat(101)), /100/);
+  assert.throws(() => validateFocus("x".repeat(151)), /150/);
 });
 
 test("wake triggers are optional and capped", () => {
@@ -164,6 +166,8 @@ test("avatar defaults and rejects unknown", () => {
   assert.equal(validateAvatarShape("critters:bell-123"), "critters:bell-123");
   assert.equal(validateAvatarShape("cameo:profile"), "cameo:profile");
   assert.equal(validateAvatarShape("pixelbot:99"), "pixelbot:99");
+  assert.equal(validateAvatarShape("cutouts:paper-1"), "cutouts:paper-1");
+  assert.equal(validateAvatarShape("voxel-bot:cube-9"), "voxel-bot:cube-9");
   assert.equal(validateAvatarShape("bottts-neutral:sparky"), "bottts-neutral:sparky");
   assert.equal(validateAvatarColor(null), "#7c5cff");
   assert.equal(validateAvatarColor("  #FF4D8D  "), "#ff4d8d");
@@ -242,19 +246,66 @@ test("a payload may name the box alone; the flags it leaves out follow it", () =
   const standard = validateConfig({ model, box: "standard" });
   assert.equal(standard.box, "standard");
   assert.equal(standard.browser, true);
-  assert.equal(standard.coding, true);
-  const codingOnly = validateConfig({ model, box: "standard", browser: false });
-  assert.equal(codingOnly.browser, false);
-  assert.equal(codingOnly.coding, true);
+  assert.equal(standard.coding, false);
+  const code = validateConfig({ model, box: "code" });
+  assert.equal(code.box, "code");
+  assert.equal(code.browser, true);
+  assert.equal(code.coding, true);
+  const custom = validateConfig({ model, box: "custom", cpu: 2, memory_mib: 3072 });
+  assert.equal(custom.browser, true);
+  assert.equal(custom.coding, false);
+  assert.equal(custom.cpu, 2);
+  assert.equal(custom.memory_mib, 3072);
+  // The browser is the operator's on every box but lite; coding is theirs on a custom box.
+  assert.equal(validateConfig({ model, box: "standard", browser: false }).browser, false);
+  assert.equal(validateConfig({ model, box: "code", browser: false }).browser, false);
+  assert.equal(validateConfig({ model, box: "custom", coding: true, cpu: 2, memory_mib: 3072 }).coding, true);
   assert.equal(validateConfig({ model, box: "lite" }).coding, false);
   assert.throws(() => validateConfig({ model, box: "lite", coding: true }), /a lite box has browser and coding off/);
+  assert.throws(() => validateConfig({ model, box: "lite", browser: true }), /a lite box has browser and coding off/);
+  assert.throws(() => validateConfig({ model, box: "standard", coding: true }), /a standard box has coding off/);
+  assert.throws(() => validateConfig({ model, box: "code", coding: false }), /a code box has coding on/);
+  assert.deepEqual(addMissingBoxAndFlags({ box: "standard" }), { box: "standard", browser: true, coding: false });
+  assert.deepEqual(addMissingBoxAndFlags({ box: "code" }), { box: "code", browser: true, coding: true });
+  assert.deepEqual(addMissingBoxAndFlags({ box: "custom" }), { box: "custom", browser: true, coding: false });
+  assert.deepEqual(addMissingBoxAndFlags({ coding: true }), { coding: true, box: "code", browser: true });
+  assert.deepEqual(addMissingBoxAndFlags({ browser: true }), { browser: true, box: "standard", coding: false });
+  assert.deepEqual(addMissingBoxAndFlags({}), { box: "lite", browser: false, coding: false });
+});
+
+test("a custom box has a size within the bounds; no other box has one", () => {
+  const model = VALID_CONFIG.model;
+  assert.throws(() => validateConfig({ model, box: "custom" }), /cpu must be between 0.5 and 4 in steps of 0.25/);
+  assert.throws(() => validateConfig({ model, box: "custom", cpu: 0.25, memory_mib: 1024 }), /cpu must be between/);
+  assert.throws(() => validateConfig({ model, box: "custom", cpu: 4.25, memory_mib: 1024 }), /cpu must be between/);
+  assert.throws(() => validateConfig({ model, box: "custom", cpu: 1.1, memory_mib: 1024 }), /cpu must be between/);
+  assert.throws(() => validateConfig({ model, box: "custom", cpu: "2", memory_mib: 1024 }), /cpu must be between/);
   assert.throws(
-    () => validateConfig({ model, box: "standard", browser: false, coding: false }),
-    /a standard box has browser or coding on/,
+    () => validateConfig({ model, box: "custom", cpu: 2 }),
+    /memory_mib must be an integer between 512 and 8192/,
   );
-  assert.deepEqual(addMissingBoxAndFlags({ box: "standard" }), { box: "standard", browser: true, coding: true });
-  assert.deepEqual(addMissingBoxAndFlags({ coding: true }), { coding: true, browser: false, box: "standard" });
-  assert.deepEqual(addMissingBoxAndFlags({}), { browser: false, coding: false, box: "lite" });
+  assert.throws(() => validateConfig({ model, box: "custom", cpu: 2, memory_mib: 256 }), /memory_mib must be/);
+  assert.throws(() => validateConfig({ model, box: "custom", cpu: 2, memory_mib: 8193 }), /memory_mib must be/);
+  assert.throws(() => validateConfig({ model, box: "custom", cpu: 2, memory_mib: 1024.5 }), /memory_mib must be/);
+  const edges = validateConfig({ model, box: "custom", cpu: 0.5, memory_mib: 512 });
+  assert.equal(edges.cpu, 0.5);
+  assert.equal(edges.memory_mib, 512);
+  const top = validateConfig({ model, box: "custom", cpu: 4, memory_mib: 8192 });
+  assert.equal(top.cpu, 4);
+  assert.equal(top.memory_mib, 8192);
+  assert.equal(validateConfig({ model, box: "custom", cpu: 1.75, memory_mib: 1024 }).cpu, 1.75);
+  for (const box of ["lite", "standard", "code"]) {
+    const config = validateConfig({ model, box });
+    assert.equal("cpu" in config, false, `${box} carries no cpu`);
+    assert.equal("memory_mib" in config, false, `${box} carries no memory_mib`);
+    assert.throws(() => validateConfig({ model, box, cpu: 2 }), /cpu and memory_mib are only for a custom box/);
+    assert.throws(() => validateConfig({ model, box, memory_mib: 1024 }), /cpu and memory_mib are only for a custom box/);
+  }
+  assert.deepEqual(customSizeOf({ box: "custom", cpu: 2, memory_mib: 3072 }), { cpu: 2, memory_mib: 3072 });
+  assert.equal(customSizeOf({ box: "custom", cpu: 2 }), null);
+  assert.equal(customSizeOf({ box: "custom", cpu: 9, memory_mib: 3072 }), null);
+  assert.equal(customSizeOf({ box: "code", cpu: 2, memory_mib: 3072 }), null);
+  assert.equal(customSizeOf(null), null);
 });
 
 test("config defaults missing run limits", () => {
@@ -343,10 +394,11 @@ test("config supports thinking_level and defaults missing to none", () => {
 test("a missing box follows the flags, and a stored box must agree with them", () => {
   assert.equal(validateConfig(VALID_CONFIG).box, "lite");
   assert.equal(validateConfig({ ...VALID_CONFIG, browser: true }).box, "standard");
-  assert.equal(validateConfig({ ...VALID_CONFIG, coding: true }).box, "standard");
-  assert.equal(validateConfig({ ...VALID_CONFIG, browser: true, coding: true }).box, "standard");
+  assert.equal(validateConfig({ ...VALID_CONFIG, coding: true }).box, "code");
+  assert.equal(validateConfig({ ...VALID_CONFIG, browser: true, coding: true }).box, "code");
   assert.equal(validateConfig({ ...VALID_CONFIG, box: "lite" }).box, "lite");
-  assert.equal(validateConfig({ ...VALID_CONFIG, coding: true, box: "standard" }).box, "standard");
+  assert.equal(validateConfig({ ...VALID_CONFIG, coding: true, box: "code" }).box, "code");
+  assert.equal(validateConfig({ ...VALID_CONFIG, browser: true, box: "standard" }).box, "standard");
   assert.throws(
     () => validateConfig({ ...VALID_CONFIG, browser: true, box: "lite" }),
     /a lite box has browser and coding off/,
@@ -356,20 +408,23 @@ test("a missing box follows the flags, and a stored box must agree with them", (
     /a lite box has browser and coding off/,
   );
   assert.equal(
-    validateConfig({ ...VALID_CONFIG, box: "standard" }).coding,
+    validateConfig({ ...VALID_CONFIG, box: "code" }).coding,
     true,
     "the flag the payload leaves out follows its box",
   );
   assert.throws(
-    () => validateConfig({ ...VALID_CONFIG, coding: false, box: "standard" }),
-    /a standard box has browser or coding on/,
+    () => validateConfig({ ...VALID_CONFIG, coding: true, box: "standard" }),
+    /a standard box has coding off/,
   );
-  assert.throws(() => validateConfig({ ...VALID_CONFIG, box: "desktop" }), /box must be lite or standard/);
+  assert.throws(() => validateConfig({ ...VALID_CONFIG, box: "desktop" }), /box must be lite, standard, code, or custom/);
   assert.equal(boxOf({ browser: false, coding: false }), "lite");
   assert.equal(boxOf({ browser: true }), "standard");
-  assert.equal(boxOf({ box: "standard", coding: true }), "standard");
+  assert.equal(boxOf({ coding: true }), "code");
+  assert.equal(boxOf({ box: "custom", coding: true }), "custom");
+  assert.equal(boxOf({ box: "desktop", coding: true }), "code", "an unknown box follows the flags");
   assert.equal(boxOf(null), "lite");
-  assert.deepEqual(addMissingBox({ coding: true }), { coding: true, box: "standard" });
+  assert.deepEqual(addMissingBox({ coding: true }), { coding: true, box: "code" });
+  assert.deepEqual(addMissingBox({ browser: true }), { browser: true, box: "standard" });
   assert.deepEqual(addMissingBox({ box: "lite" }), { box: "lite" });
 });
 

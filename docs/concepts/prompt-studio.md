@@ -817,8 +817,10 @@ Connection grant body: `{ "granted": true | false }`.
 The connection must be reachable from the source guild and
 `connected`.
 
-SSE: `assistant.delta`, `assistant.reasoning.delta`, `message.committed`,
-`draft.changed`, `generation.finished`, `session.error`.
+SSE: `generation.started`, `assistant.delta`,
+`assistant.reasoning.delta`, `message.committed`, `draft.changed`,
+`generation.finished`, `session.error`.
+The coach log shows reasoning as it streams, then the reply.
 
 Template: `apps/orchestrator/src/studio/system.md`.
 Shared placement and trust blocks:

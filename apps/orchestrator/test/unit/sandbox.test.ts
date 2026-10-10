@@ -12,7 +12,7 @@ import {
   metadataSecretIds,
   prepareWorkspace,
   imageFingerprint,
-  sandboxKind,
+  sandboxFlags,
   sandboxMatches,
   sandboxMetadata,
   sandboxEnvironment,
@@ -54,6 +54,8 @@ test("sandbox metadata is label-safe", () => {
     browser: "0",
     coding: "0",
     kind: "lite",
+    cpu: "0.5",
+    memory: "256Mi",
     "sid.sec_1": "1",
     "sid.sec_2": "1",
   });
@@ -67,7 +69,7 @@ test("sandbox metadata is label-safe", () => {
   assert.deepEqual([...metadataSecretIds({ secret_ids: "invalid" })], []);
 });
 
-test("prepareWorkspace creates the browser profile on a standard box", () => {
+test("prepareWorkspace creates the browser profile on every box but lite", () => {
   const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
   const workspace = prepareWorkspace(root, "a_1");
   assert.equal(workspace, path.join(root, "a_1"));
@@ -76,6 +78,8 @@ test("prepareWorkspace creates the browser profile on a standard box", () => {
   const again = prepareWorkspace(root, "a_1", "standard");
   assert.equal(again, workspace);
   assert.equal(readFileSync(path.join(workspace, ".browser", "cookies"), "utf8"), "keep");
+  assert.equal(existsSync(path.join(prepareWorkspace(root, "a_code", "code"), ".browser")), true);
+  assert.equal(existsSync(path.join(prepareWorkspace(root, "a_custom", "custom"), ".browser")), true);
 });
 
 test("prepareWorkspace skips the browser profile on a lite box", () => {
@@ -85,35 +89,54 @@ test("prepareWorkspace skips the browser profile on a lite box", () => {
   assert.equal(existsSync(path.join(workspace, ".browser")), false);
 });
 
-test("sandbox metadata records the browser and coding flags and the box they call for", () => {
-  const enabled = sandboxMetadata("a_1", "fp", [], { browser: true, coding: true });
-  assert.equal(enabled.browser, "1");
-  assert.equal(enabled.coding, "1");
-  assert.equal(enabled.kind, "standard");
-  assert.equal(enabled.browser_language, "en-US");
-  assert.equal(sandboxMetadata("a_1", "fp", []).coding, "0");
-  assert.equal(sandboxMetadata("a_1", "fp", []).kind, "lite");
-  assert.equal(sandboxMetadata("a_1", "fp", [], { coding: true }).kind, "standard");
-  assert.equal(sandboxMetadata("a_1", "fp", [], { browser: true }).kind, "standard");
-  assert.equal(sandboxMetadata("a_1", "fp", []).browser_language, undefined);
+test("sandbox metadata records the box, its size, and the browser and coding flags", () => {
+  const code = sandboxMetadata("a_1", "fp", [], { box: "code", browser: true, coding: true });
+  assert.equal(code.browser, "1");
+  assert.equal(code.coding, "1");
+  assert.equal(code.kind, "code");
+  assert.equal(code.cpu, "2");
+  assert.equal(code.memory, "4096Mi");
+  assert.equal(code.browser_language, "en-US");
+  const lite = sandboxMetadata("a_1", "fp", []);
+  assert.equal(lite.coding, "0");
+  assert.equal(lite.kind, "lite");
+  assert.equal(lite.cpu, "0.5");
+  assert.equal(lite.memory, "256Mi");
+  assert.equal(lite.browser_language, undefined);
+  const standard = sandboxMetadata("a_1", "fp", [], { box: "standard", browser: true });
+  assert.equal(standard.kind, "standard");
+  assert.equal(standard.cpu, "1");
+  assert.equal(standard.memory, "2048Mi");
+  const custom = sandboxMetadata("a_1", "fp", [], { box: "custom", browser: true, size: { cpu: 1.5, memory_mib: 3072 } });
+  assert.equal(custom.kind, "custom");
+  assert.equal(custom.cpu, "1.5");
+  assert.equal(custom.memory, "3072Mi");
   assert.equal(
-    sandboxMetadata("a_1", "fp", [], { browser: true, browserLanguage: "fr-FR" }).browser_language,
+    sandboxMetadata("a_1", "fp", [], { box: "standard", browser: true, browserLanguage: "fr-FR" }).browser_language,
     "fr-FR",
   );
+  // A missing box is the one the flags call for.
+  assert.equal(sandboxMetadata("a_1", "fp", [], { coding: true }).kind, "code");
+  assert.equal(sandboxMetadata("a_1", "fp", [], { browser: true }).kind, "standard");
 });
 
-test("a standard box is the large guest; a lite box is the small one", () => {
-  assert.equal(sandboxKind({ browser: false, coding: false }), "lite");
-  assert.equal(sandboxKind({ browser: true, coding: false }), "standard");
-  assert.equal(sandboxKind({ browser: false, coding: true }), "standard");
-  assert.equal(sandboxKind({ browser: true, coding: true }), "standard");
-  assert.deepEqual(sandboxResource({ browser: true, coding: false }), { cpu: "2", memory: "4096Mi" });
-  assert.deepEqual(sandboxResource({ browser: false, coding: true }), { cpu: "2", memory: "4096Mi" });
-  assert.deepEqual(sandboxResource({ browser: true, coding: true }), { cpu: "2", memory: "4096Mi" });
-  assert.deepEqual(sandboxResource({ browser: false, coding: false }), { cpu: "0.5", memory: "256Mi" });
+test("each box has its size; a custom box takes the operator's", () => {
+  assert.deepEqual(sandboxResource(sandboxFlags({ box: "lite" })), { cpu: "0.5", memory: "256Mi" });
+  assert.deepEqual(sandboxResource(sandboxFlags({ box: "standard", browser: true })), { cpu: "1", memory: "2048Mi" });
+  assert.deepEqual(sandboxResource(sandboxFlags({ box: "code", browser: true, coding: true })), { cpu: "2", memory: "4096Mi" });
+  assert.deepEqual(
+    sandboxResource(sandboxFlags({ box: "custom", browser: true, size: { cpu: 4, memory_mib: 8192 } })),
+    { cpu: "4", memory: "8192Mi" },
+  );
+  assert.throws(() => sandboxResource(sandboxFlags({ box: "custom" })), /a custom box needs cpu and memory_mib/);
+  // The flags alone: coding means code, the browser alone means standard, neither means lite.
+  assert.equal(sandboxFlags({ browser: false, coding: false }).box, "lite");
+  assert.equal(sandboxFlags({ browser: true, coding: false }).box, "standard");
+  assert.equal(sandboxFlags({ browser: false, coding: true }).box, "code");
+  assert.equal(sandboxFlags({ browser: true, coding: true }).box, "code");
 });
 
-test("each box runs its own image, and the lite box falls back to the standard image", () => {
+test("the lite box runs the lite image and every other box the standard one; lite falls back to it", () => {
   const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
   const both = new RunSandboxes({
     url: "http://opensandbox:8080",
@@ -122,16 +145,17 @@ test("each box runs its own image, and the lite box falls back to the standard i
     imageLite: "agent-runtime-lite:0.1",
     workspaceRoot: root,
   });
-  assert.equal(both.imageFor({ browser: false, coding: false }), "agent-runtime-lite:0.1");
-  assert.equal(both.imageFor({ browser: false, coding: true }), "agent-runtime:0.3");
-  assert.equal(both.imageFor({ browser: true, coding: false }), "agent-runtime:0.3");
+  assert.equal(both.imageFor(sandboxFlags({ box: "lite" })), "agent-runtime-lite:0.1");
+  assert.equal(both.imageFor(sandboxFlags({ box: "standard", browser: true })), "agent-runtime:0.3");
+  assert.equal(both.imageFor(sandboxFlags({ box: "code", browser: true, coding: true })), "agent-runtime:0.3");
+  assert.equal(both.imageFor(sandboxFlags({ box: "custom", size: { cpu: 1, memory_mib: 1024 } })), "agent-runtime:0.3");
   const one = new RunSandboxes({
     url: "http://opensandbox:8080",
     apiKey: "test",
     image: "agent-runtime:0.3",
     workspaceRoot: root,
   });
-  assert.equal(one.imageFor({ browser: false, coding: false }), "agent-runtime:0.3");
+  assert.equal(one.imageFor(sandboxFlags({ box: "lite" })), "agent-runtime:0.3");
   assert.equal(
     new RunSandboxes({ url: "http://opensandbox:8080", apiKey: "test", image: "agent-runtime:0.3", imageLite: "", workspaceRoot: root })
       .imageLite,
@@ -139,31 +163,47 @@ test("each box runs its own image, and the lite box falls back to the standard i
   );
 });
 
-test("a sandbox from the other box's image is not the run's sandbox", () => {
-  const lite = { browser: false, coding: false };
-  const standard = { browser: false, coding: true };
+test("a sandbox from another box, or another size, is not the run's sandbox", () => {
+  const lite = sandboxFlags({ box: "lite" });
+  const code = sandboxFlags({ box: "code", browser: true, coding: true });
   const onLite = sandboxMetadata("a_1", "fp", [], { image: "agent-runtime-lite:0.1" });
   assert.equal(sandboxMatches(onLite, "fp", lite, "agent-runtime-lite:0.1"), true);
   assert.equal(sandboxMatches(onLite, "fp", lite, "agent-runtime:0.3"), false, "a lite agent still on the standard image");
-  assert.equal(sandboxMatches(onLite, "fp", standard, "agent-runtime:0.3"), false);
-  const onStandard = sandboxMetadata("a_1", "fp", [], { coding: true, image: "agent-runtime:0.3" });
-  assert.equal(onStandard.kind, "standard");
-  assert.equal(sandboxMatches(onStandard, "fp", standard, "agent-runtime:0.3"), true);
-  assert.equal(sandboxMatches(onStandard, "fp", lite, "agent-runtime-lite:0.1"), false);
+  assert.equal(sandboxMatches(onLite, "fp", code, "agent-runtime:0.3"), false);
+  const onCode = sandboxMetadata("a_1", "fp", [], { ...code, image: "agent-runtime:0.3" });
+  assert.equal(onCode.kind, "code");
+  assert.equal(sandboxMatches(onCode, "fp", code, "agent-runtime:0.3"), true);
+  assert.equal(sandboxMatches(onCode, "fp", lite, "agent-runtime-lite:0.1"), false);
+  // A standard box and a custom one of the same size are different boxes.
+  const standard = sandboxFlags({ box: "standard", browser: true });
+  const customAsStandard = sandboxFlags({ box: "custom", browser: true, size: { cpu: 1, memory_mib: 2048 } });
+  const onStandard = sandboxMetadata("a_1", "fp", [], standard);
+  assert.equal(sandboxMatches(onStandard, "fp", standard), true);
+  assert.equal(sandboxMatches(onStandard, "fp", customAsStandard), false);
+  // A custom box resized is replaced.
+  const small = sandboxFlags({ box: "custom", browser: true, size: { cpu: 1, memory_mib: 2048 } });
+  const large = sandboxFlags({ box: "custom", browser: true, size: { cpu: 2, memory_mib: 2048 } });
+  const onSmall = sandboxMetadata("a_1", "fp", [], small);
+  assert.equal(sandboxMatches(onSmall, "fp", small), true);
+  assert.equal(sandboxMatches(onSmall, "fp", large), false);
+  assert.equal(sandboxMatches(onSmall, "fp", { ...small, size: { cpu: 1, memory_mib: 4096 } }), false);
 });
 
 test("a coding sandbox keeps HOME in the workspace", () => {
-  assert.deepEqual(sandboxEnvironment({ API: "x" }, { browser: false, coding: true }), {
+  assert.deepEqual(sandboxEnvironment({ API: "x" }, sandboxFlags({ box: "code", browser: false, coding: true })), {
     API: "x",
     HOME: "/home/agent",
   });
-  assert.deepEqual(sandboxEnvironment({ HOME: "/elsewhere" }, { browser: false, coding: true }).HOME, "/home/agent");
-  assert.deepEqual(sandboxEnvironment({ API: "x" }, { browser: true, coding: false }), {
+  assert.deepEqual(
+    sandboxEnvironment({ HOME: "/elsewhere" }, sandboxFlags({ box: "code", browser: false, coding: true })).HOME,
+    "/home/agent",
+  );
+  assert.deepEqual(sandboxEnvironment({ API: "x" }, sandboxFlags({ box: "standard", browser: true })), {
     API: "x",
     GUILDS_BROWSER_LANGUAGE: "en-US",
   });
   assert.deepEqual(
-    sandboxEnvironment({ API: "x" }, { browser: true, coding: false, browserLanguage: "ja" }),
+    sandboxEnvironment({ API: "x" }, sandboxFlags({ box: "standard", browser: true, browserLanguage: "ja" })),
     { API: "x", GUILDS_BROWSER_LANGUAGE: "ja" },
   );
 });
@@ -175,27 +215,31 @@ test("sandbox metadata records host_id when provided", () => {
   assert.equal(without.host_id, undefined);
 });
 
-test("sandboxMatches fingerprint, browser, coding, and language", () => {
-  const off = { browser: false, coding: false };
-  const browser = { browser: true, coding: false };
-  const coding = { browser: false, coding: true };
-  const metadata = sandboxMetadata("a_1", "fp", ["sec_1"], { browser: true });
+test("sandboxMatches fingerprint, box, size, browser, coding, and language", () => {
+  const off = sandboxFlags({ box: "lite" });
+  const browser = sandboxFlags({ box: "standard", browser: true });
+  const coding = sandboxFlags({ box: "code", browser: false, coding: true });
+  const metadata = sandboxMetadata("a_1", "fp", ["sec_1"], browser);
   assert.equal(sandboxMatches(metadata, "fp", browser), true);
   assert.equal(sandboxMatches(metadata, "fp", { ...browser, browserLanguage: "fr-FR" }), false);
   assert.equal(sandboxMatches(metadata, "fp", off), false);
-  assert.equal(sandboxMatches(metadata, "fp", { browser: true, coding: true }), false);
+  assert.equal(sandboxMatches(metadata, "fp", { ...browser, browser: false }), false, "the browser switched off on the same box");
+  assert.equal(sandboxMatches(metadata, "fp", sandboxFlags({ box: "code", browser: true, coding: true })), false);
   assert.equal(sandboxMatches(metadata, "other", browser), false);
   assert.equal(sandboxMatches({ environment_fingerprint: "fp" }, "fp", browser), false);
   assert.equal(sandboxMatches({ environment_fingerprint: "fp", browser: "1" }, "fp", browser), false);
-  assert.equal(sandboxMatches({ environment_fingerprint: "fp", browser: "0" }, "fp", off), true);
-  assert.equal(sandboxMatches({ environment_fingerprint: "fp", browser: "0" }, "fp", coding), false);
-  const coder = sandboxMetadata("a_1", "fp", [], { coding: true });
+  assert.equal(
+    sandboxMatches({ environment_fingerprint: "fp", browser: "0" }, "fp", off),
+    false,
+    "a sandbox without its box and size labels is replaced",
+  );
+  const coder = sandboxMetadata("a_1", "fp", [], coding);
   assert.equal(sandboxMatches(coder, "fp", coding), true);
   assert.equal(sandboxMatches(coder, "fp", off), false);
 });
 
 test("a sandbox started from another image is not the run's sandbox", () => {
-  const off = { browser: false, coding: false };
+  const off = sandboxFlags({ box: "lite" });
   const pinned = "registry.example/project/agent-runtime@sha256:" + "ab".repeat(32);
   const metadata = sandboxMetadata("a_1", "fp", [], { image: pinned });
   assert.equal(metadata.image, imageFingerprint(pinned));
@@ -439,7 +483,7 @@ test("the lite image carries the scripts launcher and the CLI, and none of the s
   }
 });
 
-test("ensure creates a lite agent's sandbox from the lite image and a coder's from the standard one", async () => {
+test("ensure creates each box from its image, at its size", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-images-"));
   const created: Array<{ image: string; resource: unknown; metadata: Record<string, string> }> = [];
   const wrapped = wrapOpenSandbox({
@@ -476,7 +520,9 @@ test("ensure creates a lite agent's sandbox from the lite image and a coder's fr
   });
   await sandboxes.start();
   await sandboxes.ensure("a_lite", {}, []);
-  await sandboxes.ensure("a_coder", {}, [], { coding: true });
+  await sandboxes.ensure("a_coder", {}, [], { box: "code", browser: false, coding: true });
+  await sandboxes.ensure("a_browser", {}, [], { box: "standard", browser: false });
+  await sandboxes.ensure("a_custom", {}, [], { box: "custom", browser: false, size: { cpu: 3, memory_mib: 6144 } });
   assert.equal(created[0]?.image, "agent-runtime-lite:0.1");
   assert.deepEqual(created[0]?.resource, { cpu: "0.5", memory: "256Mi" });
   assert.equal(created[0]?.metadata.kind, "lite");
@@ -484,8 +530,16 @@ test("ensure creates a lite agent's sandbox from the lite image and a coder's fr
   assert.equal(existsSync(path.join(root, "a_lite", ".browser")), false);
   assert.equal(created[1]?.image, "agent-runtime:0.3");
   assert.deepEqual(created[1]?.resource, { cpu: "2", memory: "4096Mi" });
-  assert.equal(created[1]?.metadata.kind, "standard");
+  assert.equal(created[1]?.metadata.kind, "code");
   assert.equal(existsSync(path.join(root, "a_coder", ".browser")), true);
+  assert.equal(created[2]?.image, "agent-runtime:0.3");
+  assert.deepEqual(created[2]?.resource, { cpu: "1", memory: "2048Mi" });
+  assert.equal(created[2]?.metadata.kind, "standard");
+  assert.equal(created[3]?.image, "agent-runtime:0.3");
+  assert.deepEqual(created[3]?.resource, { cpu: "3", memory: "6144Mi" });
+  assert.equal(created[3]?.metadata.kind, "custom");
+  assert.equal(created[3]?.metadata.cpu, "3");
+  assert.equal(created[3]?.metadata.memory, "6144Mi");
   await sandboxes.close();
 });
 

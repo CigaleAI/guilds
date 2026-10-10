@@ -10,7 +10,7 @@ export type AgentHeaderProps = Omit<ComponentProps<"header">, "children"> & {
   tone: IdentityTone;
   src?: string;
   state: AgentState;
-  /** What the agent is for (`focus`, up to 100 characters), or a control to add one. */
+  /** What the agent is for (`focus`, up to 150 characters), or a control to add one. */
   focus?: ReactNode;
   /** Trailing IconButtons: expand, options (⋯), close. */
   actions?: ReactNode;

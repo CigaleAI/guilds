@@ -2,7 +2,9 @@ import { Avatar, Style } from "@dicebear/core";
 import botttsNeutralDef from "@dicebear/styles/bottts-neutral.json" with { type: "json" };
 import cameoDef from "@dicebear/styles/cameo.json" with { type: "json" };
 import crittersDef from "@dicebear/styles/critters.json" with { type: "json" };
+import cutoutsDef from "@dicebear/styles/cutouts.json" with { type: "json" };
 import pixelbotDef from "@dicebear/styles/pixelbot.json" with { type: "json" };
+import voxelBotDef from "@dicebear/styles/voxel-bot.json" with { type: "json" };
 import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "../agents/validation.js";
 import { clayAvatarSvg, parseClayShape } from "./clay.js";
 
@@ -14,16 +16,21 @@ export const SUPPORTED_AVATAR_STYLES = [
   "pixelbot",
   "bottts-neutral",
   "clay",
+  "cutouts",
+  "voxel-bot",
 ] as const;
 
 export type AvatarStyleName = (typeof SUPPORTED_AVATAR_STYLES)[number];
 
 const STYLE_SET = new Set<string>(SUPPORTED_AVATAR_STYLES);
+const PREFIX_STYLES = [...SUPPORTED_AVATAR_STYLES].sort((a, b) => b.length - a.length);
 
 const crittersStyle = new Style(crittersDef);
 const cameoStyle = new Style(cameoDef);
 const pixelbotStyle = new Style(pixelbotDef);
 const botttsNeutralStyle = new Style(botttsNeutralDef);
+const cutoutsStyle = new Style(cutoutsDef);
+const voxelBotStyle = new Style(voxelBotDef);
 
 function hexDigits(value: string): string {
   return value.replace("#", "").toLowerCase();
@@ -65,20 +72,13 @@ export function parseAvatarShape(raw?: string | null): {
     }
   }
 
-  for (const style of ["critters", "cameo", "pixelbot", "bottts-neutral"]) {
+  for (const style of PREFIX_STYLES) {
     if (text.startsWith(`${style}-`)) {
       return {
-        style: style as AvatarStyleName,
+        style,
         seed: text.slice(style.length + 1) || DEFAULT_AVATAR_SHAPE,
       };
     }
-  }
-
-  if (text.startsWith("clay:")) {
-    return {
-      style: "clay",
-      seed: text.slice("clay:".length) || DEFAULT_AVATAR_SHAPE,
-    };
   }
 
   return { style: "clay", seed: text };
@@ -122,6 +122,26 @@ export function renderAvatarSvg(
       const avatar = new Avatar(botttsNeutralStyle, {
         seed,
         backgroundColor: [hex],
+      });
+      return avatar.toString();
+    }
+    case "cutouts": {
+      const avatar = new Avatar(cutoutsStyle, {
+        seed,
+        backgroundColor: [],
+        paperFaceColor: [hex],
+        paperBackColor: [darkenHex(color, 0.28)],
+        paperHairColor: [darkenHex(color, 0.4)],
+      });
+      return avatar.toString();
+    }
+    case "voxel-bot": {
+      const avatar = new Avatar(voxelBotStyle, {
+        seed,
+        backgroundColor: [],
+        bodyColor: [hex],
+        accentColor: [darkenHex(color, 0.28)],
+        glowColor: [hex],
       });
       return avatar.toString();
     }

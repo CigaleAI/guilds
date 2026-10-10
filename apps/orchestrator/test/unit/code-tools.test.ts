@@ -306,10 +306,10 @@ test("coding defaults to off, and a new coding agent gets the coding budgets", (
   assert.equal(coder.max_steps, 200);
   assert.equal(coder.max_tool_calls, 200);
   assert.equal(coder.max_input_tokens, 100000);
-  const standard = validateConfig(withCodingLimits({ model: AGENT_CONFIG.model, box: "standard" }));
-  assert.equal(standard.coding, true, "a standard box alone turns coding on");
-  assert.equal(standard.max_steps, 200);
-  assert.equal(standard.max_tool_calls, 200);
+  const code = validateConfig(withCodingLimits({ model: AGENT_CONFIG.model, box: "code" }));
+  assert.equal(code.coding, true, "a code box alone turns coding on");
+  assert.equal(code.max_steps, 200);
+  assert.equal(code.max_tool_calls, 200);
   const explicit = validateConfig(withCodingLimits({ ...AGENT_CONFIG, coding: true, max_steps: 12 }));
   assert.equal(explicit.max_steps, 12);
   assert.equal(explicit.max_tool_calls, AGENT_CONFIG.max_tool_calls);

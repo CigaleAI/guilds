@@ -1,7 +1,18 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { applyLiveDelta, type LiveTurn } from "./liveTurn";
 import { keys } from "./queries";
-import type { GroupChatState, GroupMessage, RunMessage, StudioMessage } from "./types";
+import type {
+  BuilderSession,
+  GroupChatState,
+  GroupMessage,
+  Run,
+  RunMessage,
+  StudioMessage,
+  StudioSession,
+} from "./types";
+
+export type { LiveTurn } from "./liveTurn";
 
 type StreamOptions = {
   /** Event names to listen for. */
@@ -153,18 +164,14 @@ const runEvents = [
   "run.continued",
 ] as const;
 
-/** What the model is writing right now, before its turn is committed. */
-export type LiveTurn = { reasoning: string; text: string };
-
 /**
- * Follows one run while it generates: streamed reasoning and text arrive as `LiveTurn`, committed
- * rows go straight into the cached transcript, and the end of a generation refreshes the run. A
- * run that continues in a new one of its chain hands `onContinued` the new run's id.
+ * Follows one open run: streamed reasoning and text arrive as `LiveTurn`, committed rows go
+ * straight into the cached transcript, and the end of a generation refreshes the run. A run that
+ * continues in a new one of its chain hands `onContinued` the new run's id.
  */
 export function useRunStream(
   agentId: string,
   runId: string | undefined,
-  generating: boolean,
   onContinued?: (nextRunId: string) => void,
 ): LiveTurn | null {
   const client = useQueryClient();
@@ -182,19 +189,22 @@ export function useRunStream(
     void client.invalidateQueries({ queryKey: keys.agent(agentId) });
   };
 
-  useEventStream(runId && generating ? `/api/runs/${encodeURIComponent(runId)}/stream` : null, {
+  useEventStream(runId ? `/api/runs/${encodeURIComponent(runId)}/stream` : null, {
     events: runEvents,
     onOpen: refreshRun,
     onEvent: (name, data) => {
       if (!runId) return;
       if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
-        const text = (data as { text?: string } | null)?.text ?? "";
-        setLive((turn) => {
-          const next = turn ?? { reasoning: "", text: "" };
-          return name === "assistant.delta"
-            ? { ...next, text: next.text + text }
-            : { ...next, reasoning: next.reasoning + text };
-        });
+        setLive((turn) => applyLiveDelta(turn, name, data));
+        return;
+      }
+      if (name === "generation.started") {
+        client.setQueryData<Run>(keys.run(runId), (run) =>
+          run ? { ...run, generating: true } : run,
+        );
+        client.setQueryData<Run[]>(keys.agentRuns(agentId), (runs) =>
+          runs?.map((run) => (run.id === runId ? { ...run, generating: true } : run)),
+        );
         return;
       }
       if (name === "message.committed") {
@@ -228,7 +238,9 @@ export function useRunStream(
 }
 
 const studioEvents = [
+  "generation.started",
   "assistant.delta",
+  "assistant.reasoning.delta",
   "message.committed",
   "draft.changed",
   "generation.finished",
@@ -242,40 +254,52 @@ const studioEvents = [
 export function useStudioStream(
   sessionId: string,
   onDraft: (draft: { target_agent_id?: string }) => void,
-): string {
+): LiveTurn | null {
   const client = useQueryClient();
-  const [live, setLive] = useState("");
+  const [live, setLive] = useState<LiveTurn | null>(null);
   const [tracked, setTracked] = useState(sessionId);
   if (tracked !== sessionId) {
     setTracked(sessionId);
-    setLive("");
+    setLive(null);
   }
-  const refresh = () => void client.invalidateQueries({ queryKey: ["studio", sessionId] });
+  const refresh = () => void client.invalidateQueries({ queryKey: keys.studio(sessionId) });
 
   useEventStream(`/api/studio/sessions/${encodeURIComponent(sessionId)}/stream`, {
     events: studioEvents,
     onOpen: refresh,
     onEvent: (name, data) => {
-      if (name === "assistant.delta") {
-        const text = (data as { content?: string } | null)?.content ?? "";
-        setLive((current) => current + text);
+      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
+        setLive((turn) => applyLiveDelta(turn, name, data));
+        return;
+      }
+      if (name === "generation.started") {
+        client.setQueryData<StudioSession>(keys.studio(sessionId), (session) =>
+          session ? { ...session, generation_state: "generating" } : session,
+        );
         return;
       }
       if (name === "message.committed") {
         const message = (data as { message?: StudioMessage } | null)?.message;
         if (!message) return;
-        client.setQueryData<StudioMessage[]>(["studio", sessionId, "messages"], (messages) =>
+        client.setQueryData<StudioMessage[]>(keys.studioMessages(sessionId), (messages) =>
           messages && !messages.some((known) => known.seq === message.seq)
             ? [...messages, message].sort((a, b) => a.seq - b.seq)
             : messages,
         );
-        if (message.payload.role === "assistant") setLive("");
+        if (message.payload.role === "assistant") setLive(null);
         return;
       }
       if (name === "draft.changed") {
         onDraft((data as { draft?: { target_agent_id?: string } } | null)?.draft ?? {});
+        refresh();
+        return;
       }
-      setLive("");
+      setLive(null);
+      if (name === "generation.finished") {
+        client.setQueryData<StudioSession>(keys.studio(sessionId), (session) =>
+          session ? { ...session, generation_state: "idle" } : session,
+        );
+      }
       refresh();
     },
   });
@@ -283,55 +307,74 @@ export function useStudioStream(
 }
 
 const builderEvents = [
+  "generation.started",
   "assistant.delta",
+  "assistant.reasoning.delta",
   "message.committed",
   "recipe.changed",
   "generation.finished",
   "session.error",
-];
+] as const;
 
 /**
  * Follows a Builder session: the coach's reply as it is written, committed rows into the cached
  * conversation, and the session and its recipe re-read when the coach writes the draft or stops.
  */
-export function useBuilderStream(sessionId: string, onError: (detail: string) => void): string {
+export function useBuilderStream(
+  sessionId: string,
+  onError: (detail: string) => void,
+): LiveTurn | null {
   const client = useQueryClient();
-  const [live, setLive] = useState("");
+  const [live, setLive] = useState<LiveTurn | null>(null);
   const [tracked, setTracked] = useState(sessionId);
   if (tracked !== sessionId) {
     setTracked(sessionId);
-    setLive("");
+    setLive(null);
   }
   const refresh = () => {
-    void client.invalidateQueries({ queryKey: ["builder", sessionId] });
-    void client.invalidateQueries({ queryKey: ["recipes"] });
+    void client.invalidateQueries({ queryKey: keys.builder(sessionId) });
+    void client.invalidateQueries({ queryKey: keys.recipes });
   };
 
   useEventStream(`/api/builder/sessions/${encodeURIComponent(sessionId)}/stream`, {
     events: builderEvents,
     onOpen: refresh,
     onEvent: (name, data) => {
-      if (name === "assistant.delta") {
-        const body = data as { content?: string; text?: string } | null;
-        setLive((current) => current + (body?.content ?? body?.text ?? ""));
+      if (name === "assistant.reasoning.delta" || name === "assistant.delta") {
+        setLive((turn) => applyLiveDelta(turn, name, data));
+        return;
+      }
+      if (name === "generation.started") {
+        client.setQueryData<BuilderSession>(keys.builder(sessionId), (session) =>
+          session ? { ...session, generation_state: "generating" } : session,
+        );
         return;
       }
       if (name === "message.committed") {
         const message = (data as { message?: StudioMessage } | null)?.message;
         if (!message) return;
-        client.setQueryData<StudioMessage[]>(["builder", sessionId, "messages"], (messages) =>
+        client.setQueryData<StudioMessage[]>(keys.builderMessages(sessionId), (messages) =>
           messages && !messages.some((known) => known.seq === message.seq)
             ? [...messages, message].sort((a, b) => a.seq - b.seq)
             : messages,
         );
-        if (message.payload.role === "assistant") setLive("");
+        if (message.payload.role === "assistant") setLive(null);
+        return;
+      }
+      if (name === "recipe.changed") {
+        refresh();
         return;
       }
       if (name === "session.error") {
         const detail = (data as { detail?: unknown } | null)?.detail;
         if (typeof detail === "string") onError(detail);
       }
-      setLive("");
+      setLive(null);
+      if (name === "generation.finished") {
+        client.setQueryData<BuilderSession>(keys.builder(sessionId), (session) =>
+          session ? { ...session, generation_state: "idle" } : session,
+        );
+      }
       refresh();
     },
   });

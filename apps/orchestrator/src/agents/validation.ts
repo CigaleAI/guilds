@@ -19,7 +19,11 @@ export const CONFIG_KEYS = new Set([
   "memory",
   "thinking_level",
   "box",
+  "cpu",
+  "memory_mib",
 ]);
+/** Keys a config may leave out: a custom box's size, absent on every other box. */
+export const OPTIONAL_CONFIG_KEYS = new Set(["cpu", "memory_mib"]);
 export const DEFAULT_TEMPERATURE = 1;
 export const DEFAULT_MAX_TOKENS = 8192;
 export const DEFAULT_MAX_STEPS = 30;
@@ -45,13 +49,23 @@ export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "none";
 /** Chrome UI and Accept-Language when the agent has a browser and none is stored. */
 export const DEFAULT_BROWSER_LANGUAGE = "en-US";
 /**
- * The two boxes an agent runs on. `lite` is the small guest for scripts, notes, MCP, and the
- * CLI, with `browser` and `coding` off; `standard` is the large guest with the coding tools and
- * Chromium, with at least one of them on.
+ * The boxes an agent runs on. `lite` is the small guest for scripts, notes, MCP, and the CLI,
+ * with `browser` and `coding` off. The others run the standard image, with Chromium and the
+ * toolchains: `standard` is the browser agent's machine, with `coding` off; `code` is the coding
+ * agent's, larger, with `coding` on; `custom` is sized by the operator (`cpu`, `memory_mib`),
+ * with `coding` their choice. On every box but lite, `browser` is the operator's choice, on by
+ * default.
  */
-export const BOXES = ["lite", "standard"] as const;
+export const BOXES = ["lite", "standard", "code", "custom"] as const;
 export type Box = (typeof BOXES)[number];
 export const DEFAULT_BOX: Box = "lite";
+/** A custom box's size: CPUs in quarter steps and memory in MiB, each within these bounds. */
+export const CUSTOM_MIN_CPU = 0.5;
+export const CUSTOM_MAX_CPU = 4;
+export const CUSTOM_CPU_STEP = 0.25;
+export const CUSTOM_MIN_MEMORY_MIB = 512;
+export const CUSTOM_MAX_MEMORY_MIB = 8192;
+export type CustomSize = { cpu: number; memory_mib: number };
 /** Chrome language tags an agent may use. */
 export const BROWSER_LANGUAGES = [
   "ar",
@@ -98,7 +112,7 @@ export const BROWSER_LANGUAGES = [
 ] as const;
 export type BrowserLanguage = (typeof BROWSER_LANGUAGES)[number];
 const BROWSER_LANGUAGE_SET = new Set<string>(BROWSER_LANGUAGES);
-export const FOCUS_MAX = 100;
+export const FOCUS_MAX = 150;
 export const WAKE_TRIGGERS_MAX = 500;
 export const AVATAR_SEED_RE = /^[a-z0-9][a-z0-9:-]{0,62}$/;
 export const AVATAR_COLOR_RE = /^#[0-9a-f]{6}$/;
@@ -130,6 +144,9 @@ export type AgentConfig = {
   memory: boolean;
   thinking_level: ThinkingLevel;
   box: Box;
+  /** A custom box's size; absent on every other box. */
+  cpu?: number;
+  memory_mib?: number;
 };
 
 export function validateAgentName(name: string): string {
@@ -195,47 +212,119 @@ export function addMissingBrowser(config: Record<string, unknown>): Record<strin
   return fillMissingKeys(config, { browser: false });
 }
 
-/** The box the flags call for: `standard` with browser or coding on, `lite` otherwise. */
+/** The box the flags call for: `code` with coding on, `standard` with the browser alone, `lite` with neither. */
 export function boxForFlags(flags: { browser?: unknown; coding?: unknown }): Box {
-  return flags.browser === true || flags.coding === true ? "standard" : "lite";
+  if (flags.coding === true) {
+    return "code";
+  }
+  return flags.browser === true ? "standard" : "lite";
 }
 
-/** The agent's box; a missing key follows the flags. */
+function isBox(value: unknown): value is Box {
+  return typeof value === "string" && (BOXES as readonly string[]).includes(value);
+}
+
+/** The agent's box; a missing or unknown key follows the flags. */
 export function boxOf(config: unknown): Box {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     return DEFAULT_BOX;
   }
   const record = config as Record<string, unknown>;
-  return record.box === "standard" || record.box === "lite" ? record.box : boxForFlags(record);
+  return isBox(record.box) ? record.box : boxForFlags(record);
 }
 
 export function addMissingBox(config: Record<string, unknown>): Record<string, unknown> {
   return fillMissingKeys(config, { box: boxForFlags(config) });
 }
 
-/**
- * The flags a payload leaves out follow its box: a standard box turns browser and coding on, a
- * lite box turns both off. With no box either, the agent is lite. A box the flags then disagree
- * with is refused by `validateBox`.
- */
-export function addMissingBoxAndFlags(config: Record<string, unknown>): Record<string, unknown> {
-  const standard = config.box === "standard";
-  return addMissingBox(fillMissingKeys(config, { browser: standard, coding: standard }));
+/** The flags a box settles, and the default for the ones it leaves to the operator. */
+function flagsForBox(box: Box): { browser: boolean; coding: boolean } {
+  switch (box) {
+    case "lite":
+      return { browser: false, coding: false };
+    case "standard":
+      return { browser: true, coding: false };
+    case "code":
+      return { browser: true, coding: true };
+    case "custom":
+      return { browser: true, coding: false };
+  }
 }
 
-/** A box, which must be the one the flags call for. */
+/**
+ * The flags a payload leaves out follow its box: lite turns both off; standard turns the browser
+ * on and coding off; code turns both on; custom turns the browser on and coding off. With no box
+ * either, the box follows the flags the payload does name, and lite with none. A box the flags
+ * then disagree with is refused by `validateBox`.
+ */
+export function addMissingBoxAndFlags(config: Record<string, unknown>): Record<string, unknown> {
+  const withBox = addMissingBox(config);
+  return fillMissingKeys(withBox, flagsForBox(boxOf(withBox)));
+}
+
+/** A box, which must agree with the flags: lite has both off, standard has coding off, code has it on. */
 export function validateBox(value: unknown, flags: { browser: boolean; coding: boolean }): Box {
-  if (value !== "lite" && value !== "standard") {
-    throw new AgentValidationError("box must be lite or standard");
+  if (!isBox(value)) {
+    throw new AgentValidationError("box must be lite, standard, code, or custom");
   }
-  if (value !== boxForFlags(flags)) {
-    throw new AgentValidationError(
-      value === "lite"
-        ? "a lite box has browser and coding off"
-        : "a standard box has browser or coding on",
-    );
+  if (value === "lite" && (flags.browser || flags.coding)) {
+    throw new AgentValidationError("a lite box has browser and coding off");
+  }
+  if (value === "standard" && flags.coding) {
+    throw new AgentValidationError("a standard box has coding off");
+  }
+  if (value === "code" && !flags.coding) {
+    throw new AgentValidationError("a code box has coding on");
   }
   return value;
+}
+
+/**
+ * A custom box's size, which it must have within the bounds; any other box has none. Returns
+ * `null` for a box without a size.
+ */
+export function validateCustomSize(box: Box, cpu: unknown, memoryMib: unknown): CustomSize | null {
+  if (box !== "custom") {
+    if (cpu !== undefined || memoryMib !== undefined) {
+      throw new AgentValidationError("cpu and memory_mib are only for a custom box");
+    }
+    return null;
+  }
+  if (
+    typeof cpu !== "number" ||
+    !Number.isFinite(cpu) ||
+    cpu < CUSTOM_MIN_CPU ||
+    cpu > CUSTOM_MAX_CPU ||
+    !Number.isInteger(cpu / CUSTOM_CPU_STEP)
+  ) {
+    throw new AgentValidationError(
+      `cpu must be between ${CUSTOM_MIN_CPU} and ${CUSTOM_MAX_CPU} in steps of ${CUSTOM_CPU_STEP}`,
+    );
+  }
+  if (
+    typeof memoryMib !== "number" ||
+    !Number.isInteger(memoryMib) ||
+    memoryMib < CUSTOM_MIN_MEMORY_MIB ||
+    memoryMib > CUSTOM_MAX_MEMORY_MIB
+  ) {
+    throw new AgentValidationError(
+      `memory_mib must be an integer between ${CUSTOM_MIN_MEMORY_MIB} and ${CUSTOM_MAX_MEMORY_MIB}`,
+    );
+  }
+  return { cpu, memory_mib: memoryMib };
+}
+
+/** A custom box's stored size; `null` on another box or when the size is missing or malformed. */
+export function customSizeOf(config: unknown): CustomSize | null {
+  if (!config || typeof config !== "object" || Array.isArray(config) || boxOf(config) !== "custom") {
+    return null;
+  }
+  const record = config as Record<string, unknown>;
+  try {
+    return validateCustomSize("custom", record.cpu, record.memory_mib);
+  } catch {
+    return null;
+  }
 }
 
 export function addMissingCliScriptingAndMemory(
@@ -386,7 +475,7 @@ function fillMissingAgentConfig(config: Record<string, unknown>): Record<string,
 
 function rejectUnknownOrMissingConfigKeys(filled: Record<string, unknown>): void {
   const extra = [...Object.keys(filled)].filter((key) => !CONFIG_KEYS.has(key)).sort();
-  const missing = [...CONFIG_KEYS].filter((key) => !(key in filled)).sort();
+  const missing = [...CONFIG_KEYS].filter((key) => !OPTIONAL_CONFIG_KEYS.has(key) && !(key in filled)).sort();
   if (extra.length === 0 && missing.length === 0) {
     return;
   }
@@ -446,6 +535,8 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
   const coding = requireBooleanField(filled.coding, "coding");
   const browser = requireBooleanField(filled.browser, "browser");
   rejectCodingOnlyModelWithoutCoding(model, coding);
+  const box = validateBox(filled.box, { browser, coding });
+  const size = validateCustomSize(box, filled.cpu, filled.memory_mib);
   return {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),
@@ -466,6 +557,7 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),
     thinking_level: validateThinkingLevel(filled.thinking_level),
-    box: validateBox(filled.box, { browser, coding }),
+    box,
+    ...(size ?? {}),
   };
 }

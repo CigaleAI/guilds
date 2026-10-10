@@ -551,7 +551,8 @@ Each step has a derived id. Examples:
 - `external:…`
 
 A recipe with `repositories` adds a `conn:github` step (Connect GitHub)
-when its connections do not already name `github`.
+when its connections do not already name `github`
+([GitHub](../tools-and-connectors/github.md)).
 It adds one `repo:<name>` step per repository.
 That step's setup is the repository's purpose and where to add it
 (the guild's Settings, under Repositories, with that name).
@@ -582,8 +583,8 @@ connected later from Tools.
 
 Browser login is not an apply checklist task.
 
-After activate, a browser-enabled agent's inspector shows a **Browser
-login needed** strip.
+After activate, each agent the recipe required a browser login for
+shows a **Browser login needed** strip on its inspector.
 The strip has **Open Browser** (the agent's Browser tab, where the
 operator takes control and logs in) and **Mark as done**.
 The strip stays hidden while the guild's checklist is open.
@@ -624,6 +625,11 @@ POST   /api/applies/:id/steps/:step_id/confirm
 POST   /api/applies/:id/activate
 POST   /api/applies/:id/abort
 ```
+
+`GET /api/guilds/:guild_id/apply` returns `{ apply, browser_logins }`.
+`apply` is the open checklist, or null once it is done or aborted.
+`browser_logins` is the agent ids a ready apply still asks to log
+in by hand.
 
 ### Apply screens
 

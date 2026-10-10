@@ -167,8 +167,8 @@ its variables are set.
 |---|---|---|---|
 | Web search | `TAVILY_API_KEY` | The Tavily connector's platform login, `tavily_search` | The platform login is disconnected and runs leave `tavily_search` out; an organisation may connect a Tavily key of its own |
 | Group routing | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat | Tag rules and the last 10 messages |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing variables, and disables Connect; a Connect sent anyway answers 422 |
-| Google connectors | `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` | The Gmail and Drive connectors | As for the GitHub App |
+| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories ([GitHub](../tools-and-connectors/github.md)) | Tools marks the connector **Not set up**, names the missing variables, and disables Connect; a Connect sent anyway answers 422 |
+| Google connectors | `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` | The Gmail and Drive connectors ([Gmail and Drive](../tools-and-connectors/google.md)) | As for the GitHub App |
 | Error reporting | `SENTRY_DSN` | Sentry | Structured logs only |
 | Registry | `REGISTRY_URL`, the guilds.run registry while unset; `REGISTRY_PUBLIC_KEY` | Installing connectors and recipes from a registry; with the key, only from a signed index | Set empty, the box is offline |
 | Connector code | `CONNECTORS_CODE_TIER=1`, `CONNECTORS_ROOT` | Registry connectors with adapter code, loaded at boot | A code install is refused and code on disk is not loaded |

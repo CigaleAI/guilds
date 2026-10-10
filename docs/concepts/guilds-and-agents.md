@@ -26,7 +26,7 @@ The Settings tab edits:
 - routines
 - the group-chat message limit
 
-An agent has an optional `focus` (at most 100 characters).
+An agent has an optional `focus` (at most 150 characters).
 
 About, description, and focus attach to the hydrated system prompt's
 State snapshot (`group.about`, `group.description`, and each member's
@@ -88,7 +88,8 @@ DELETE /api/guilds/:id/repositories/:repository_id
 `GET` returns `{ repositories, github_connections }`.
 
 GitHub-backed repositories are picked on the GitHub integration
-(Tools) at organisation, guild, or agent scope. A narrower scope
+(Tools) at organisation, guild, or agent scope
+([GitHub](../tools-and-connectors/github.md)). A narrower scope
 inherits the wider login's set until it connects its own.
 
 `repositories` are this guild's extra git URLs (anonymous, or a login
@@ -258,26 +259,33 @@ Unknown keys are rejected. Missing ones take defaults:
 - thinking `none`
 - browser language `en-US`
 
-A missing `box` follows the flags. Missing flags follow the box:
+A missing `box` follows the flags: `code` with `coding` on, `standard`
+with `browser` alone, `lite` with neither. Missing flags follow the
+box:
 
-- `standard` turns `browser` and `coding` on
-- `lite` turns both off
+- `lite` turns `browser` and `coding` off
+- `standard` turns `browser` on and `coding` off
+- `code` turns both on
+- `custom` turns `browser` on and `coding` off
 - a payload that names neither makes a lite agent
 
-The box alone is enough to create an agent.
+The box alone is enough to create an agent, except `custom`, which
+also needs `cpu` and `memory_mib`.
 
 An agent created with `coding` on and no step or tool-call limit
 starts with 200 steps and 200 tool calls instead.
 
-The create and Settings forms offer the box under **Box**, Lite or
-Standard. They offer CLI, scripting, and Memory under Agent
-capabilities.
+The create and Settings forms offer the box under **Box**: Lite,
+Standard, Code or Custom. They offer CLI, scripting, and Memory under
+Agent capabilities.
 
-A new agent is Lite. Picking Standard turns browser and coding on
-together, with CLI, scripting, and the coding budgets.
+A new agent is Lite. Picking Standard turns the browser on. Picking
+Code turns browser and coding on together, with CLI, scripting, and
+the coding budgets. Picking Custom turns the browser on, keeps the
+coding switch where it is, and asks for the size.
 
 CLI, scripting, and Memory start on. The operator can turn any of
-them off on either box.
+them off on any box.
 
 - `max_scripts` is how many reusable Python scripts the agent may
   keep. Creating a new name past that count is refused. Replacing an
@@ -307,33 +315,39 @@ them off on either box.
   machine. It selects the CLI tab and the CLI API. It is not a
   binding. The runtime image already includes ttyd. The flag only
   exposes it.
-- `box` is the machine the agent runs on, `lite` or `standard`. It
-  follows the two flags below: `standard` when `browser` or `coding`
-  is on, `lite` when both are off. A payload whose box disagrees with
-  its flags is refused. A stored config without the key reads as the
-  box its flags call for. Lite is the small guest (0.5 CPU, 256Mi, the
-  lite image: Python, the scripts launcher, ttyd) and never has
-  `shell`, the code tools, a package manager, or a browser. Standard
-  is the large guest (2 CPU, 4Gi, the standard image). Changing the
-  box replaces the sandbox. An agent on standard with only one of the
-  two flags keeps the other off. The unused toolchain stays in the
-  image and is not offered.
-- `browser` is whether this agent's machine includes Chromium. It
-  selects the Browser pane, a live 1280×720 Chromium/noVNC session on
-  the standard box, and the eight Playwright tools on that agent's
-  runs. It is not a binding. The two runtime images are instance-wide.
+- `box` is the machine the agent runs on: `lite`, `standard`, `code`,
+  or `custom`. Lite is the small guest (0.5 CPU, 256Mi, the lite
+  image: Python, the scripts launcher, ttyd) and never has `shell`,
+  the code tools, a package manager, or a browser; it has `browser`
+  and `coding` off. The other three run the standard image, with
+  Chromium and the toolchains. Standard is the browser agent's machine
+  (1 CPU, 2Gi) with `coding` off. Code is the coding agent's machine
+  (2 CPU, 4Gi) with `coding` on. Custom is sized by the operator,
+  `cpu` from 0.5 to 4 in steps of 0.25 and `memory_mib` from 512 to
+  8192, with `coding` their choice; the two size keys exist only on a
+  custom box. On every box but lite the operator chooses `browser`,
+  on by default. A payload whose box disagrees with its flags is
+  refused. A stored config without the key reads as the box its flags
+  call for. Changing the box, or a custom box's size, replaces the
+  sandbox. A toolchain the flags leave off stays in the image and is
+  not offered.
+- `browser` is whether this agent has Chromium. It selects the Browser
+  pane, a live 1280×720 Chromium/noVNC session on the agent's box,
+  and the eight Playwright tools on that agent's runs. It is not a
+  binding. The two runtime images are instance-wide.
 - `browser_language` is Chrome's UI and Accept-Language when
   `browser` is on: a tag from a fixed list, stored default `en-US`.
   Changing it destroys an idle sandbox so the next ensure starts
   Chrome in that language. Timezone still comes from the sandbox
   egress IP.
-- `coding` makes the agent a coding agent: the standard box with
-  `HOME` at `/home/agent`, so package caches, toolchains, and git
-  configuration persist across idle stops, the code tools
-  ([Tools and connectors](tools-and-connectors.md#code-tools)), and
-  the `coding` section of the system prompt. It is independent of
-  `browser`. An agent that debugs a web front end has both. It is not
-  a binding. The organisation policy's `max_coding_agents` bounds how
+- `coding` makes the agent a coding agent: `HOME` at `/home/agent`,
+  so package caches, toolchains, and git configuration persist across
+  idle stops, the code tools
+  ([Code tools](../tools-and-connectors/code.md)), and
+  the `coding` section of the system prompt. It is on with the code
+  box, off with lite and standard, and the operator's with custom. It
+  is independent of `browser`. An agent that debugs a web front end
+  has both. It is not a binding. The organisation policy's `max_coding_agents` bounds how
   many agents have it. Core sets no bound. Where an edition's policy
   does, creating a coding agent, or turning the flag on, is refused
   above it.
@@ -407,8 +421,9 @@ Appearance lives beside config, not inside it.
 
 `avatar_shape` is a seed matching `^[a-z0-9][a-z0-9:-]{0,62}$`,
 optionally prefixed with a [DiceBear](https://www.dicebear.com/) style
-(`critters`, `cameo`, `pixelbot`, `bottts-neutral`, or `clay`) as
-`style:seed`. With no prefix the renderer uses `clay`.
+(`critters`, `cameo`, `clay`, `cutouts`, `voxel-bot`,
+`bottts-neutral`, or `pixelbot`) as `style:seed`. With no prefix the
+renderer uses `clay`.
 
 The stored default is `teardrop` (clay). The create dialog starts on a
 random `critters:<seed>` in the signal identity colour (`#1fafd1`).
@@ -417,7 +432,9 @@ random `critters:<seed>` in the signal identity colour (`#1fafd1`).
 
 The orchestrator renders `GET /avatars/:style.svg?seed=…&color=…` with
 `apps/orchestrator/src/avatars/`. The create dialog and agent Settings
-pick a style, a random seed, and one of six identity colours.
+pick critters, cameo, clay, cutouts, voxel-bot, or bottts-neutral, a
+random seed, and one of six identity colours. Stored `pixelbot:`
+shapes still render.
 
 `PUT /api/agents/:id/config` accepts the config keys plus optional
 `name`, `avatar_shape`, `avatar_color`, `focus`, and `wake_triggers`.

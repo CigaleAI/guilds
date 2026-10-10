@@ -80,6 +80,7 @@ import type {
   ApplyChoices,
   ApplyPreview,
   ApplyRow,
+  GuildApplyState,
   ActivityView,
   BuilderCapabilities,
   BuilderSession,
@@ -317,11 +318,16 @@ export function useMarkGroupChatRead(guildId: string) {
   });
 }
 
+/** Re-read a generating run or coach session if its stream falls silent. */
+const generatingPollMs = 2500;
+
 /** Every run of an agent, most recently active first. */
 export function useAgentRuns(agentId: string) {
   return useQuery({
     queryKey: keys.agentRuns(agentId),
     queryFn: () => api<Run[]>(`/api/agents/${encodeURIComponent(agentId)}/runs`),
+    refetchInterval: (query) =>
+      query.state.data?.some((run) => run.generating) ? generatingPollMs : false,
   });
 }
 
@@ -378,6 +384,7 @@ export function useRun(runId: string | undefined) {
     queryKey: keys.run(runId ?? ""),
     queryFn: () => api<Run>(runPath(runId ?? "")),
     enabled: Boolean(runId),
+    refetchInterval: (query) => (query.state.data?.generating ? generatingPollMs : false),
   });
 }
 
@@ -423,6 +430,7 @@ export function useStartRun(agentId: string) {
 /** Continues an active run with the operator's next message. */
 export function useSendRunMessage(agentId: string) {
   const refresh = useRunRefresh(agentId);
+  const client = useQueryClient();
   return useMutation({
     mutationFn: async ({
       runId,
@@ -441,6 +449,15 @@ export function useSendRunMessage(agentId: string) {
           ...(attachment_ids.length ? { attachment_ids } : {}),
         },
       });
+    },
+    onMutate: async ({ runId }) => {
+      await client.cancelQueries({ queryKey: keys.run(runId) });
+      const previous = client.getQueryData<Run>(keys.run(runId));
+      if (previous) client.setQueryData(keys.run(runId), { ...previous, generating: true });
+      return { previous };
+    },
+    onError: (_error, { runId }, context) => {
+      if (context?.previous) client.setQueryData(keys.run(runId), context.previous);
     },
     onSuccess: refresh,
   });
@@ -1721,7 +1738,12 @@ export function useStudioSessions() {
 }
 
 export function useStudioSession(id: string) {
-  return useQuery({ queryKey: keys.studio(id), queryFn: () => api<StudioSession>(studioPath(id)) });
+  return useQuery({
+    queryKey: keys.studio(id),
+    queryFn: () => api<StudioSession>(studioPath(id)),
+    refetchInterval: (query) =>
+      query.state.data && query.state.data.generation_state !== "idle" ? generatingPollMs : false,
+  });
 }
 
 /**
@@ -1769,10 +1791,11 @@ export function useCreateStudioSession() {
   });
 }
 
-export function useStudioMessages(id: string) {
+export function useStudioMessages(id: string, generating: boolean) {
   return useQuery({
     queryKey: keys.studioMessages(id),
     queryFn: () => api<StudioMessage[]>(`${studioPath(id)}/messages`),
+    refetchInterval: generating ? generatingPollMs : false,
   });
 }
 
@@ -1783,11 +1806,25 @@ function useStudioRefresh(id: string) {
 
 /** Sends the operator's message, pinned to what `focus` names when given. */
 export function usePostStudioMessage(id: string) {
-  const refresh = useStudioRefresh(id);
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (input: { content: string; focus?: unknown }) =>
       api<StudioSession>(`${studioPath(id)}/messages`, { method: "POST", body: input }),
-    onSuccess: refresh,
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: keys.studio(id) });
+      const previous = client.getQueryData<StudioSession>(keys.studio(id));
+      if (previous) {
+        client.setQueryData(keys.studio(id), { ...previous, generation_state: "generating" });
+      }
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous) client.setQueryData(keys.studio(id), context.previous);
+    },
+    onSuccess: (session) => {
+      client.setQueryData(keys.studio(id), session);
+      void client.invalidateQueries({ queryKey: keys.studioMessages(id) });
+    },
   });
 }
 
@@ -2107,12 +2144,25 @@ export function useApply(id: string) {
   return useQuery({ queryKey: keys.apply(id), queryFn: () => api<ApplyRow>(applyPath(id)) });
 }
 
+function fetchGuildApply(guildId: string) {
+  return api<GuildApplyState>(`${guildPath(guildId)}/apply`);
+}
+
 /** The guild's apply while its checklist is open; null once it is done or aborted. */
 export function useGuildApply(guildId: string) {
   return useQuery({
     queryKey: keys.guildApply(guildId),
-    queryFn: () =>
-      api<{ apply: ApplyRow | null }>(`${guildPath(guildId)}/apply`).then((body) => body.apply),
+    queryFn: () => fetchGuildApply(guildId),
+    select: (body) => body.apply,
+  });
+}
+
+/** Agents a ready recipe apply still asks to log in by hand. Empty while the checklist is open. */
+export function useGuildBrowserLogins(guildId: string) {
+  return useQuery({
+    queryKey: keys.guildApply(guildId),
+    queryFn: () => fetchGuildApply(guildId),
+    select: (body) => body.browser_logins ?? [],
   });
 }
 
@@ -2193,14 +2243,12 @@ export function useStartBuilder() {
 }
 
 /** While the coach works, the session and its conversation are re-read every few seconds, in case the stream falls silent. */
-const builderPollMs = 2500;
-
 export function useBuilderSession(id: string) {
   return useQuery({
     queryKey: keys.builder(id),
     queryFn: () => api<BuilderSession>(builderPath(id)),
     refetchInterval: (query) =>
-      query.state.data && query.state.data.generation_state !== "idle" ? builderPollMs : false,
+      query.state.data && query.state.data.generation_state !== "idle" ? generatingPollMs : false,
   });
 }
 
@@ -2208,7 +2256,7 @@ export function useBuilderMessages(id: string, generating: boolean) {
   return useQuery({
     queryKey: keys.builderMessages(id),
     queryFn: () => api<StudioMessage[]>(`${builderPath(id)}/messages`),
-    refetchInterval: generating ? builderPollMs : false,
+    refetchInterval: generating ? generatingPollMs : false,
   });
 }
 
@@ -2221,11 +2269,25 @@ function useBuilderRefresh(id: string) {
 }
 
 export function usePostBuilderMessage(id: string) {
-  const refresh = useBuilderRefresh(id);
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (content: string) =>
       api<BuilderSession>(`${builderPath(id)}/messages`, { method: "POST", body: { content } }),
-    onSuccess: refresh,
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: keys.builder(id) });
+      const previous = client.getQueryData<BuilderSession>(keys.builder(id));
+      if (previous) {
+        client.setQueryData(keys.builder(id), { ...previous, generation_state: "generating" });
+      }
+      return { previous };
+    },
+    onError: (_error, _content, context) => {
+      if (context?.previous) client.setQueryData(keys.builder(id), context.previous);
+    },
+    onSuccess: (session) => {
+      client.setQueryData(keys.builder(id), session);
+      void client.invalidateQueries({ queryKey: keys.builderMessages(id) });
+    },
   });
 }
 

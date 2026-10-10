@@ -4,7 +4,15 @@ import type { IdentityTone } from "@guildsrun/ui";
 type Styled = Pick<Agent | AgentBrief, "avatar_shape" | "avatar_color">;
 
 /** Mascot styles the orchestrator renders at /avatars/<style>.svg. */
-const artStyles = ["critters", "cameo", "pixelbot", "bottts-neutral", "clay"] as const;
+const artStyles = [
+  "bottts-neutral",
+  "voxel-bot",
+  "pixelbot",
+  "critters",
+  "cutouts",
+  "cameo",
+  "clay",
+] as const;
 
 function styleAndSeed(shape: string): { style: string; seed: string } {
   const text = shape.trim().toLowerCase();

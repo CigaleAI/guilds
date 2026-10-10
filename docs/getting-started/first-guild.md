@@ -63,8 +63,9 @@ guild menu) opens **Create an agent**.
   input tokens.
 - **Disk** — the workspace cap, 10240 MiB by default.
 - **Box** — Lite, the default, for scripts, notes, connectors and a
-  terminal on the smallest machine. Or Standard, which turns coding
-  and the browser on together and gives the agent the large machine.
+  terminal on the smallest machine. Standard adds a browser on a
+  medium machine. Code adds coding too, on the large machine. Custom
+  is the browser machine at a size you type, with coding on or off.
 - **Agent capabilities** — CLI, scripting, and Memory, all on by
   default.
 
@@ -214,14 +215,18 @@ verified, confirmed, or skipped.
 
 **Activate routines** unpauses the schedules the recipe brought.
 
-A browser-enabled agent then shows a **Browser login needed** strip
-with **Open Browser**, where you log the agent in to its sites.
+An agent the recipe required a browser login for then shows a
+**Browser login needed** strip with **Open Browser**, where you log
+the agent in to its sites.
 
 **Save as recipe** in a guild's menu captures your own guild the same
 way. **Export** writes the file.
 
 ## From here
 
+- **Tools** — native tools, token connectors, and the Gmail and
+  GitHub apps
+  ([Catalog](../tools-and-connectors/catalog.md)).
 - **Inbox** — issues agents report and messages that tag you.
 - **Databases** — the organisation's tables, their records, and who
   reaches them.

@@ -76,8 +76,8 @@ export function portableRoleConfig(
   );
   const out: Record<string, unknown> = {};
   for (const key of CONFIG_KEYS) {
-    // The box follows the browser and coding flags, so a recipe carries the flags alone.
-    if (key === "box") {
+    // A recipe carries the flags alone: at apply the box follows them, and a custom size stays behind.
+    if (key === "box" || key === "cpu" || key === "memory_mib") {
       continue;
     }
     if (key in filled) {

@@ -138,7 +138,7 @@ Folded guilds and the retracted state are remembered in
 **Add agent**:
 
 - name (changeable later in Settings)
-- optional focus (100 characters; seeds `task`)
+- optional focus (150 characters; seeds `task`)
 - an avatar picker (mascot set, a random variant, one of six
   identity colours)
 - model, from the organisation's chosen models grouped by provider,
@@ -149,7 +149,8 @@ Folded guilds and the retracted state are remembered in
   the catalog flags as not taking it)
 - max output tokens / max steps / max tool calls / max input tokens
 - **Max disk** (`max_workspace_mib`, default 10240 MiB)
-- under **Box**, **Lite** or **Standard**
+- under **Box**, **Lite**, **Standard**, **Code** or **Custom**, and
+  what the chosen box leaves to the operator
 - under **Agent capabilities**, CLI, scripting, and Memory (all on
   by default)
 
@@ -158,13 +159,23 @@ It has scripts, notes, connectors and a terminal on the smallest
 machine.
 It has no browser and no code tools.
 
-**Standard** has coding and a browser on the large machine, 2 CPU /
+**Standard** has a browser on the medium machine, 1 CPU / 2 GiB, and
+no code tools.
+It counts against the browser-agent capacity.
+
+**Code** has coding and a browser on the large machine, 2 CPU /
 4 GiB.
 It counts against the browser-agent and coding-agent capacity.
-
 It turns browser, coding, CLI and scripting on.
 It moves step and tool-call limits still at their defaults to 200.
-It shows the browser language.
+
+**Custom** is the browser machine at a size the operator types: CPUs
+from 0.5 to 4 in steps of 0.25, memory from 512 to 8192 MiB. It
+starts from the size of the box the form leaves. It shows a Coding
+switch, off unless the form already had it on.
+
+Every box but Lite shows a Browser switch, on by default, and the
+browser language while it is on.
 
 A new agent opens on its Prompt tab.
 
@@ -305,11 +316,13 @@ button names them and opens the Prompt tab.
 
 Its menu deletes the agent after the operator types its name.
 
-A browser-enabled agent shows a **Browser login needed** strip with
+After a recipe apply that required a browser login, that agent's
+inspector shows a **Browser login needed** strip with
 **Open Browser** and **Mark as done** (remembered per agent in
 `localStorage` as
 `guilds-setup-dismissed:<agent>:browser-login`).
 The strip stays hidden while the guild's recipe checklist is open.
+Turning the browser on in Settings does not show it.
 
 Tabs, each with an icon, one route each.
 The strip scrolls sideways when they do not fit.
@@ -573,13 +586,14 @@ The strip scrolls sideways when they do not fit.
   temperature, the four run limits, **Max disk** (MiB, default
   10240).
   Under **Scripts** (while scripting is on): the script cap
-  (default 10) and remove-all.
-  Under **Box**: Lite or Standard (moving to Standard turns browser
-  and coding on; moving to Lite turns both off; either replaces the
-  sandbox) and, on a standard box, Browser (and its language when
-  browser is on) and Coding, which an agent that moved onto
-  Standard with only one of them may use to turn the other on (a
-  standard box with both off cannot be saved).
+  (default 10).
+  Under **Box**: Lite, Standard, Code or Custom (moving to Lite turns
+  browser and coding off; to Standard turns the browser on and coding
+  off; to Code turns both on; to Custom turns the browser on and asks
+  for the size; any move replaces the sandbox). On every box but Lite,
+  Browser (and its language when it is on). On Custom, the CPUs and
+  memory, and Coding. A box whose settled flag is switched the other
+  way cannot be saved.
   Under **Agent capabilities**: CLI, scripting, and Memory.
 
 ## Access view (Tools and Secrets)
@@ -648,7 +662,7 @@ search box on each looked-up property, editable on the scope's own
 login and read-only when inherited.
 
 Local adapters group their tools under one server like any other
-([Tools and connectors](tools-and-connectors.md)).
+([Catalog](../tools-and-connectors/catalog.md)).
 
 **Secrets** lists the organisation's sandbox environment variables
 ([Secrets and access](secrets-and-access.md)).
@@ -872,7 +886,7 @@ offers beside what is installed: **Install** a connector the box
 lacks, **Update** a registry install that trails the newest version,
 or **Remove** one with its logins and bindings; an unverified entry
 asks for confirmation first
-([Registry](tools-and-connectors.md#registry)).
+([Registry](../tools-and-connectors/registry.md)).
 
 **Platform keys** (`?tab=instance`) lists the server's optional
 integrations from `GET /api/instance`.
@@ -917,15 +931,18 @@ SSE carries transient deltas and newly committed rows:
 - one stream per open guild (chat, delivery state, issues, files,
   routines, and scripts)
 - one for the inbox
-- one per generating run
+- one per open run
 - one per open Studio or Builder session
 
 Each stream re-reads what it covers on every (re)connect, since the
 server replays nothing, so reload reconstructs the same chat and
 the same resolved access view.
 
-While the Builder's coach works, its session and messages are also
-re-read every 2.5 s.
+A run stream marks the run generating when `generation.started`
+arrives, and streams reasoning and text into the transcript.
+Studio and Builder streams do the same for the coach, and while
+the coach works their session and messages are also re-read every
+2.5 s.
 
 Every API call carries the tab's `X-Request-Id` (kept in
 `sessionStorage` as `guilds-request-id`), so server logs line up

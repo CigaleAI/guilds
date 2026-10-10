@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blockingApplySteps, checklistFromPlan, configFromRecipeRole, deferLaunchSteps, prepareRecipeForApply, skipApplyChecklistStep } from "../../src/recipes/apply.js";
+import { blockingApplySteps, browserLoginAgentIds, checklistFromPlan, configFromRecipeRole, deferLaunchSteps, prepareRecipeForApply, skipApplyChecklistStep } from "../../src/recipes/apply.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import {
   DEFAULT_MAX_STEPS,
@@ -10,6 +10,31 @@ import {
 import { operatorAuthor, linkedInNotionRecipe, huskLeadMatcherRecipe } from "../helpers/recipe-docs.js";
 import { parseRecipe } from "../../src/recipes/schema.js";
 import { validateRecipe } from "../../src/recipes/validate.js";
+
+test("ready apply names agents whose browser login was deferred", () => {
+  const deferred = deferLaunchSteps([
+    { id: "browser:watcher", kind: "browser", role: "watcher", status: "open" },
+    { id: "browser:writer", kind: "browser", role: "writer", status: "confirmed", resolution: "done" },
+    { id: "activate", kind: "activate", status: "open" },
+  ]);
+  assert.deepEqual(
+    browserLoginAgentIds({
+      status: "ready",
+      plan: { names: [{ role: "watcher", agent_id: "a_watch" }, { role: "writer", agent_id: "a_write" }] },
+      checklist: deferred,
+    }),
+    ["a_watch"],
+  );
+  assert.deepEqual(
+    browserLoginAgentIds({
+      status: "checklist",
+      plan: { names: [{ role: "watcher", agent_id: "a_watch" }] },
+      checklist: deferred,
+    }),
+    [],
+  );
+  assert.deepEqual(browserLoginAgentIds(null), []);
+});
 
 test("apply checklist defers browser login until after apply", () => {
   const recipe = linkedInNotionRecipe(operatorAuthor());

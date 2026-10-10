@@ -1,6 +1,6 @@
-# The lite box: the small guest an agent with neither browser nor coding runs on. Python for its
-# scripts, ttyd for the CLI tab, and nothing of the standard image's toolchains: no Chromium, VNC,
-# Playwright, Node.js, gh, mise, Graft, guilds-code, guilds-browser, or build-essential.
+# The lite box: the small guest with neither browser nor coding. Python for its scripts, ttyd for
+# the CLI tab, and nothing of the standard image's toolchains: no Chromium, VNC, Playwright,
+# Node.js, gh, mise, Graft, guilds-code, guilds-browser, or build-essential.
 FROM python:3.12-slim
 
 RUN apt-get update \

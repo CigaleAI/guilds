@@ -25,7 +25,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("an agent is created on a lite or a standard box, and a box change replaces its sandbox", { timeout: 60_000 }, async () => {
+test("an agent is created on one of the four boxes, and a box or size change replaces its sandbox", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const env = testEnv(databaseUrl);
   Object.assign(process.env, env);
@@ -52,69 +52,94 @@ test("an agent is created on a lite or a standard box, and a box change replaces
     mcp: new McpPool(),
     generation,
   });
-  try {
-    const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "box-desk" } });
-    assert.equal(guild.statusCode, 201, guild.body);
-    const guildId = String(guild.json().id);
-
-    // The default is the lite box: no browser, no coding.
-    const lite = await app.inject({
+  const createAgent = (name: string, config: Record<string, unknown>) =>
+    app.inject({
       method: "POST",
       url: `/api/guilds/${guildId}/agents`,
       headers: JSON_AUTH,
-      payload: { name: "scripter", config: { model: TEST_MODEL } },
+      payload: { name, config: { model: TEST_MODEL, ...config } },
     });
+  let guildId = "";
+  try {
+    const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "box-desk" } });
+    assert.equal(guild.statusCode, 201, guild.body);
+    guildId = String(guild.json().id);
+
+    // The default is the lite box: no browser, no coding.
+    const lite = await createAgent("scripter", {});
     assert.equal(lite.statusCode, 201, lite.body);
     assert.equal(lite.json().box, "lite");
     assert.equal(lite.json().config.box, "lite");
     assert.equal(lite.json().config.browser, false);
     assert.equal(lite.json().config.coding, false);
+    assert.equal("cpu" in lite.json().config, false);
     const liteId = String(lite.json().id);
 
-    // The box alone is enough: standard turns browser and coding on.
-    const standard = await app.inject({
-      method: "POST",
-      url: `/api/guilds/${guildId}/agents`,
-      headers: JSON_AUTH,
-      payload: { name: "coder", config: { model: TEST_MODEL, box: "standard" } },
-    });
+    // The box alone is enough: standard turns the browser on and keeps coding off, with the default budgets.
+    const standard = await createAgent("browser", { box: "standard" });
     assert.equal(standard.statusCode, 201, standard.body);
     assert.equal(standard.json().box, "standard");
-    assert.equal(standard.json().config.box, "standard");
     assert.equal(standard.json().config.browser, true);
-    assert.equal(standard.json().config.coding, true);
-    assert.equal(standard.json().config.max_steps, 200, "a new coding agent takes the coding budgets");
+    assert.equal(standard.json().config.coding, false);
+    assert.equal(standard.json().config.max_steps, 30);
 
-    // A box that disagrees with the flags is refused.
-    const disagree = await app.inject({
-      method: "POST",
-      url: `/api/guilds/${guildId}/agents`,
-      headers: JSON_AUTH,
-      payload: { name: "mixed", config: { model: TEST_MODEL, box: "lite", coding: true } },
-    });
+    // Code turns both on, with the coding budgets.
+    const code = await createAgent("coder", { box: "code" });
+    assert.equal(code.statusCode, 201, code.body);
+    assert.equal(code.json().box, "code");
+    assert.equal(code.json().config.browser, true);
+    assert.equal(code.json().config.coding, true);
+    assert.equal(code.json().config.max_steps, 200, "a new coding agent takes the coding budgets");
+
+    // Custom takes the operator's size, with the browser on and coding off unless named.
+    const custom = await createAgent("sized", { box: "custom", cpu: 2.5, memory_mib: 6144, coding: true });
+    assert.equal(custom.statusCode, 201, custom.body);
+    assert.equal(custom.json().box, "custom");
+    assert.equal(custom.json().config.browser, true);
+    assert.equal(custom.json().config.coding, true);
+    assert.equal(custom.json().config.cpu, 2.5);
+    assert.equal(custom.json().config.memory_mib, 6144);
+    const customId = String(custom.json().id);
+
+    // The browser is the operator's on every box but lite.
+    const quiet = await createAgent("quiet", { box: "code", browser: false });
+    assert.equal(quiet.statusCode, 201, quiet.body);
+    assert.equal(quiet.json().config.browser, false);
+    assert.equal(quiet.json().config.coding, true);
+
+    // A box that disagrees with the flags, or a size where none belongs, is refused.
+    const disagree = await createAgent("mixed", { box: "lite", coding: true });
     assert.equal(disagree.statusCode, 422, disagree.body);
     assert.match(disagree.json().detail, /a lite box has browser and coding off/);
-    const empty = await app.inject({
-      method: "POST",
-      url: `/api/guilds/${guildId}/agents`,
-      headers: JSON_AUTH,
-      payload: { name: "empty", config: { model: TEST_MODEL, box: "standard", browser: false, coding: false } },
-    });
-    assert.equal(empty.statusCode, 422, empty.body);
-    assert.match(empty.json().detail, /a standard box has browser or coding on/);
+    const standardCoder = await createAgent("standard-coder", { box: "standard", coding: true });
+    assert.equal(standardCoder.statusCode, 422, standardCoder.body);
+    assert.match(standardCoder.json().detail, /a standard box has coding off/);
+    const codeWithout = await createAgent("code-without", { box: "code", coding: false });
+    assert.equal(codeWithout.statusCode, 422, codeWithout.body);
+    assert.match(codeWithout.json().detail, /a code box has coding on/);
+    const unsized = await createAgent("unsized", { box: "custom" });
+    assert.equal(unsized.statusCode, 422, unsized.body);
+    assert.match(unsized.json().detail, /cpu must be between 0.5 and 4/);
+    const oversized = await createAgent("oversized", { box: "custom", cpu: 8, memory_mib: 4096 });
+    assert.equal(oversized.statusCode, 422, oversized.body);
+    assert.match(oversized.json().detail, /cpu must be between 0.5 and 4/);
+    const sizedStandard = await createAgent("sized-standard", { box: "standard", cpu: 2, memory_mib: 4096 });
+    assert.equal(sizedStandard.statusCode, 422, sizedStandard.body);
+    assert.match(sizedStandard.json().detail, /cpu and memory_mib are only for a custom box/);
 
     // The member list carries each agent's box.
     const listed = await app.inject({ method: "GET", url: `/api/guilds/${guildId}/agents`, headers: AUTH });
     assert.equal(listed.statusCode, 200, listed.body);
     assert.deepEqual(
       Object.fromEntries(listed.json().map((agent: { name: string; box: string }) => [agent.name, agent.box])),
-      { scripter: "lite", coder: "standard" },
+      { scripter: "lite", browser: "standard", coder: "code", sized: "custom", quiet: "code" },
     );
 
-    // The lite agent's sandbox runs without browser or coding; moving it to standard replaces it.
+    // The lite agent's sandbox runs on the lite box; moving it to standard replaces it.
     const started = await app.inject({ method: "POST", url: `/api/agents/${liteId}/cli`, headers: AUTH });
     assert.equal(started.statusCode, 200, started.body);
     assert.ok(sandboxes.running.has(liteId));
+    assert.equal(sandboxes.boxes[liteId], "lite");
     assert.equal(sandboxes.browserFlags[liteId], false);
     assert.equal(sandboxes.codingFlags[liteId], false);
     const detail = await app.inject({ method: "GET", url: `/api/agents/${liteId}`, headers: AUTH });
@@ -123,7 +148,7 @@ test("an agent is created on a lite or a standard box, and a box change replaces
       method: "PUT",
       url: `/api/agents/${liteId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...detail.json().config, box: "standard", browser: true, coding: true } },
+      payload: { config: { ...detail.json().config, box: "standard", browser: true } },
     });
     assert.equal(moved.statusCode, 200, moved.body);
     assert.equal(moved.json().box, "standard");
@@ -131,12 +156,12 @@ test("an agent is created on a lite or a standard box, and a box change replaces
     assert.deepEqual(sandboxes.destroyed, [liteId], "the lite sandbox is destroyed for the standard image");
     assert.equal(sandboxes.running.has(liteId), false);
 
-    // And back: a lite payload with a flag still on is refused; with both off it goes through.
+    // And back: a lite payload with the browser still on is refused; with both off it goes through.
     const stillOn = await app.inject({
       method: "PUT",
       url: `/api/agents/${liteId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...moved.json().config, box: "lite", browser: false } },
+      payload: { config: { ...moved.json().config, box: "lite" } },
     });
     assert.equal(stillOn.statusCode, 422, stillOn.body);
     const back = await app.inject({
@@ -147,6 +172,32 @@ test("an agent is created on a lite or a standard box, and a box change replaces
     });
     assert.equal(back.statusCode, 200, back.body);
     assert.equal(back.json().box, "lite");
+
+    // A custom agent's sandbox takes its size; resizing it replaces the sandbox.
+    const customStarted = await app.inject({ method: "POST", url: `/api/agents/${customId}/cli`, headers: AUTH });
+    assert.equal(customStarted.statusCode, 200, customStarted.body);
+    assert.equal(sandboxes.boxes[customId], "custom");
+    assert.deepEqual(sandboxes.sizes[customId], { cpu: 2.5, memory_mib: 6144 });
+    const destroyedBefore = sandboxes.destroyed.length;
+    const resized = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${customId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...custom.json().config, memory_mib: 8192 } },
+    });
+    assert.equal(resized.statusCode, 200, resized.body);
+    assert.equal(resized.json().config.memory_mib, 8192);
+    assert.deepEqual(sandboxes.destroyed.slice(destroyedBefore), [customId], "a resized custom box gets a new sandbox");
+    // Leaving custom drops the size with the box.
+    const toCode = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${customId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...resized.json().config, box: "code", cpu: undefined, memory_mib: undefined } },
+    });
+    assert.equal(toCode.statusCode, 200, toCode.body);
+    assert.equal(toCode.json().box, "code");
+    assert.equal("cpu" in toCode.json().config, false);
   } finally {
     await app.close();
     await generation.close();

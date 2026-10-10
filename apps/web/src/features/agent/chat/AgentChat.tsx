@@ -41,9 +41,7 @@ export function AgentChat() {
   const log = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
-  const live = useRunStream(agentId, runId, run.data?.generating ?? false, (next) =>
-    selectRun(next),
-  );
+  const live = useRunStream(agentId, runId, (next) => selectRun(next));
 
   useLayoutEffect(() => {
     atBottom.current = true;

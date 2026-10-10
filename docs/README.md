@@ -66,8 +66,6 @@ How the product works, for the operator.
   generation; sandboxes
 - [Group chat](concepts/group-chat.md) — tags, recipients, the cursor
   queue, posting
-- [Tools and connectors](concepts/tools-and-connectors.md) — native
-  tools, the catalog, connections, bindings
 - [Secrets and access](concepts/secrets-and-access.md) — secrets,
   grants, what reaches a sandbox
 - [Recipes](concepts/recipes.md) — portable guild configuration
@@ -76,6 +74,24 @@ How the product works, for the operator.
 - [Guild builder](concepts/guild-builder.md) — design a recipe from a
   conversation
 - [Operator app](concepts/operator-app.md) — the screens
+
+## Tools and connectors
+
+Native tools, the catalog, and the apps a box registers so agents
+can reach Gmail, Drive, and GitHub.
+
+- [Catalog](tools-and-connectors/catalog.md) — native and MCP
+  catalogs, connections, bindings, what a run offers
+- [Native tools](tools-and-connectors/native.md) — notes, tables,
+  memory, browser, scripts, routines, secrets
+- [Code tools](tools-and-connectors/code.md) — shell, files, search
+- [Connectors](tools-and-connectors/connectors.md) — token logins
+  and remote MCP
+- [Gmail and Drive](tools-and-connectors/google.md) — the Google
+  Cloud OAuth client
+- [GitHub](tools-and-connectors/github.md) — the GitHub App
+- [Registry](tools-and-connectors/registry.md) — connectors beyond
+  the image
 
 ## Architecture
 

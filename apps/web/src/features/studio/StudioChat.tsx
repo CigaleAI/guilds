@@ -9,6 +9,7 @@ import {
   usePostStudioMessage,
   useStudioEdit,
 } from "../../api/queries";
+import type { LiveTurn } from "../../api/liveTurn";
 import type { StudioEdit, StudioMessage, StudioSession } from "../../api/types";
 import {
   Button,
@@ -41,7 +42,7 @@ const coach = { name: "coach", tone: "signal" as const };
 type StudioChatProps = {
   session: StudioSession;
   messages: StudioMessage[] | undefined;
-  live: string;
+  live: LiveTurn | null;
   /** Evidence the next message is about; sending it clears the pin. */
   pin: StudioPin | null;
   onUnpin: () => void;
@@ -58,7 +59,7 @@ export function StudioChat({ session, messages, live, pin, onUnpin }: StudioChat
   const askElsewhere = useAskInNewSession(session);
   const cancel = useCancelStudio(session.id);
   const [fresh, setFresh] = useState(false);
-  const generating = session.generation_state !== "idle";
+  const generating = session.generation_state !== "idle" || post.isPending || askElsewhere.isPending;
 
   const failed = (error: Error) =>
     toast({ kind: "error", title: "Couldn't message the coach", description: error.message });

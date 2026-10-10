@@ -375,7 +375,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/guilds/:guild_id/apply", async (request) => {
     const user = await currentUser(repo, request, deps);
     const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    return { apply: await applyOf(deps).listOpenForGuild(String(guild.id)) };
+    return applyOf(deps).guildApplyState(String(guild.id));
   });
 
   app.post("/api/applies/:apply_id/overlays", async (request) => {
