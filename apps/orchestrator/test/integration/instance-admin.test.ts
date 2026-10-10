@@ -3,6 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -37,6 +38,15 @@ test("the instance is administered by the seed organisation's owners, or by whom
     (await app.inject({ method: "GET", url, headers })).statusCode;
   const flag = async (app: typeof core, headers: Record<string, string>) =>
     (await app.inject({ method: "GET", url: "/api/auth/me", headers })).json().platform_admin;
+  const putKey = async (app: typeof core, headers: Record<string, string>) =>
+    (
+      await app.inject({
+        method: "PUT",
+        url: "/api/admin/instance/keys/web-search",
+        headers: { ...headers, "content-type": "application/json" },
+        payload: { values: { api_key: "tvly-matrix" } },
+      })
+    ).statusCode;
 
   try {
     // Core's rule: an owner of the seed organisation.
@@ -46,6 +56,8 @@ test("the instance is administered by the seed organisation's owners, or by whom
       assert.equal(await status(core, url, OWNER), 200, url);
       assert.equal(await status(core, url, MEMBER), 404, url);
     }
+    assert.equal(await putKey(core, OWNER), 200);
+    assert.equal(await putKey(core, MEMBER), 404);
 
     // An edition's rule replaces it everywhere it is asked.
     assert.equal(await flag(overridden, OWNER), false);
@@ -54,6 +66,8 @@ test("the instance is administered by the seed organisation's owners, or by whom
       assert.equal(await status(overridden, url, OWNER), 404, url);
       assert.equal(await status(overridden, url, MEMBER), 200, url);
     }
+    assert.equal(await putKey(overridden, OWNER), 404);
+    assert.equal(await putKey(overridden, MEMBER), 200);
 
     // The profile route is core's: a member renames themselves without any extension.
     const renamed = await core.inject({
@@ -66,6 +80,7 @@ test("the instance is administered by the seed organisation's owners, or by whom
     assert.equal(renamed.json().name, "member-two");
     assert.equal(renamed.json().platform_admin, false);
   } finally {
+    setInstanceKeys({});
     await core.close();
     await overridden.close();
     await database.close();

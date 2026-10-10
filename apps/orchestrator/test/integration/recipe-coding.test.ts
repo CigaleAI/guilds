@@ -4,12 +4,13 @@ import { buildApp } from "../../src/app.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { RecipeApplyService } from "../../src/recipes/apply.js";
 import { RecipeStore } from "../../src/recipes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
-import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -75,6 +76,18 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
     assert.equal(preview.json().creates.agents[0].coding, true);
     assert.deepEqual(preview.json().creates.repositories, [{ name: "api", purpose: "" }]);
     assert.equal(preview.json().remaining.coding_agents, null, "nothing caps coding agents here");
+    assert.deepEqual(
+      preview.json().setups,
+      [{ server: "github", integration: "github-app", label: "GitHub App" }],
+      "repositories need the GitHub App, which a platform admin has not stored",
+    );
+    setInstanceKeys(
+      storeKeys({ "github-app": { app_id: "4242", slug: "guilds-run-test", private_key: "pem", client_id: "Iv1.client", client_secret: "client-secret" } }),
+    );
+    const withApp = await call("POST", `/api/recipes/${recipeId}/preview`, {});
+    assert.equal(withApp.statusCode, 200, withApp.body);
+    assert.deepEqual(withApp.json().setups, []);
+    setInstanceKeys({});
 
     const applied = await call("POST", `/api/recipes/${recipeId}/apply`, {
       guild_name: "code-target",
@@ -102,6 +115,7 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
     const step = (checked.json().checklist as Array<Record<string, unknown>>).find((item) => item.id === "repo:api");
     assert.equal(step?.status, "verified");
   } finally {
+    setInstanceKeys({});
     await app.close();
     await database.close();
   }

@@ -166,9 +166,10 @@ It is not a live row dump.
 Optional `connections[].manifest` carries an organisation's own remote
 server whole, in the `connector.json` format, so a box that lacks it
 can add it. Its slug is the connection's `server`, and it must be
-endpoint-only: an endpoint, token or dynamic OAuth, no instance key,
-no `state` hook. Capture writes it for a server the organisation added
-of its own.
+endpoint-only and hold nothing at instance level: an endpoint, no
+`auth.instance` of any form, OAuth only `dynamic`, no `state` hook
+(`recipeManifestProblem`). Capture writes it for a server the
+organisation added of its own.
 
 A connection whose server the box lacks is a blocking error:
 
@@ -477,6 +478,12 @@ keeps each agent's live model.
   an instance admin installs, or from the recipe (`server`,
   `from: "recipe"`, `display_name`, `description`, `url`, `auth`),
   which an owner or admin adds as the organisation's own server
+- which of the connectors the recipe needs the box has but a platform
+  admin has not set up, GitHub included when the recipe lists
+  repositories; the preview's `setups` lists each one (`server`,
+  `integration`, `label`). The apply goes on; those connections
+  cannot connect until the integration is filled under **Admin**,
+  **Platform keys**
 - existing destination org connections that can satisfy a server
 - each secret name against the organisation's secrets
   A name the organisation holds is a collision and defaults to
@@ -573,6 +580,11 @@ on.
 | Repository `name` | the guild has a repository of that name (verified), or skipped |
 | Browser for role R | deferred until after activate; the live agent asks the operator to log in |
 | External item | operator attests (confirmed) |
+
+A connection step whose connector a platform admin has not set up on
+the box shows that gap, keeps Connect disabled, and offers **Set up**
+(Admin, Platform keys) to a platform admin; it closes once the login
+is connected or the step is skipped.
 
 Connect, secret, repository, and overlay steps can be skipped
 (`POST …/confirm` with `skip: true`).

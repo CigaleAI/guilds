@@ -10,8 +10,8 @@ import {
 } from "../mcp/catalog.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser } from "./identity.js";
-import { isInstanceAdmin } from "./instance-admin.js";
+import { refreshConnectorIntegrations } from "../instance/connectors.js";
+import { requireInstanceAdmin } from "./instance-admin.js";
 
 function bodyOf(request: FastifyRequest): Record<string, unknown> {
   const body = request.body;
@@ -27,14 +27,6 @@ function param(request: FastifyRequest, name: string): string {
     throw new HttpError(404, "Not Found");
   }
   return value;
-}
-
-async function requireInstanceAdmin(deps: AppDeps, request: FastifyRequest) {
-  const user = await currentUser(deps.repo, request, deps);
-  if (!(await isInstanceAdmin(deps, String(user.id)))) {
-    throw new HttpError(404, "Not Found");
-  }
-  return user;
 }
 
 function catalogHttp(error: unknown): never {
@@ -65,6 +57,7 @@ export async function registerAdminMcpRoutes(app: FastifyInstance, deps: AppDeps
     await requireInstanceAdmin(deps, request);
     try {
       const row = await createConnector(repo, bodyOf(request));
+      await refreshConnectorIntegrations(repo);
       reply.code(201);
       return catalogServerItem(row);
     } catch (error) {
@@ -84,7 +77,9 @@ export async function registerAdminMcpRoutes(app: FastifyInstance, deps: AppDeps
     await requireInstanceAdmin(deps, request);
     const server = await requireServer(request);
     try {
-      return catalogServerItem(await patchConnector(repo, server, bodyOf(request)));
+      const patched = await patchConnector(repo, server, bodyOf(request));
+      await refreshConnectorIntegrations(repo);
+      return catalogServerItem(patched);
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new HttpError(409, "slug or tool prefix already exists");

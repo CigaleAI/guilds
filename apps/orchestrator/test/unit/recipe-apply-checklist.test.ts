@@ -193,8 +193,16 @@ test("a carried manifest must be an endpoint-only connector under the connection
   const base = { slug: "notion", display_name: "Notion", endpoint: { url: "https://mcp.example.com/mcp" }, auth: { kind: "token" }, description: "" };
   assert.throws(() => parseRecipe(carrying({ ...base, slug: "other" })), /does not match its folder/);
   assert.throws(
-    () => parseRecipe(carrying({ ...base, auth: { kind: "token", instance: { integration: "web-search", variable: "TAVILY_API_KEY" } } })),
-    /instance key/,
+    () => parseRecipe(carrying({ ...base, auth: { kind: "token", instance: { integration: "web-search", field: "api_key" } } })),
+    /asks for the box's web-search key/,
+  );
+  assert.throws(
+    () => parseRecipe(carrying({ ...base, auth: { kind: "token", instance: { own: true } } })),
+    /asks for an instance key, which an organisation's server cannot hold/,
+  );
+  assert.throws(
+    () => parseRecipe(carrying({ ...base, auth: { kind: "oauth", oauth: { strategy: "configured" } } })),
+    /signs in with a configured client; an organisation's server registers its own/,
   );
   assert.throws(() => parseRecipe(carrying({ ...base, endpoint: { url: "http://10.0.0.5/mcp" } })), /connections\[0\]\.manifest/);
 });

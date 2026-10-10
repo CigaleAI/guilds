@@ -12,10 +12,11 @@ import {
   discover,
   ensureClient,
   serverDiscovery,
-  envClient,
+  providerClient,
   exchangeCode,
   oauthCallbackHtml,
   oauthCallbackUrl,
+  oauthSetupState,
   pendingOauth,
   pendingOauthPayload,
   pendingReplaces,
@@ -30,6 +31,7 @@ import {
 } from "../../src/oauth/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { loadTextFixture } from "../helpers/fixtures.js";
+import { storeKeys } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 
 const GMAIL_SCOPES = CONNECTORS.bySlug("gmail")!.manifest.auth.oauth!.scopes!;
@@ -400,15 +402,55 @@ test("register without endpoint fails", async () => {
   await assert.rejects(() => registerClient(discovery, "http://127.0.0.1:8080/cb"), /dynamic client registration/);
 });
 
-test("gmail env client", () => {
-  const empty = {};
-  assert.equal(envClient(GMAIL_SERVER, empty), null);
+test("gmail and drive take their OAuth client from the Google connectors keys", () => {
+  const empty = { keys: {} };
+  assert.equal(providerClient(GMAIL_SERVER, empty), null);
   assert.equal(configuredClient(GMAIL_SERVER, empty), null);
-  const env = { GMAIL_OAUTH_CLIENT_ID: "gid", GMAIL_OAUTH_CLIENT_SECRET: "gsecret" };
-  assert.deepEqual(envClient(GMAIL_SERVER, env), { client_id: "gid", client_secret: "gsecret" });
-  assert.equal(configuredClient(GMAIL_SERVER, env)?.client_id, "gid");
-  assert.deepEqual(envClient(DRIVE_SERVER, env), { client_id: "gid", client_secret: "gsecret" });
-  assert.equal(envClient({ slug: "notion", config: {} }, env), null);
+  const google = { keys: storeKeys({ "google-connectors": { client_id: "gid", client_secret: "gsecret" } }) };
+  assert.deepEqual(providerClient(GMAIL_SERVER, google), { client_id: "gid", client_secret: "gsecret" });
+  assert.equal(configuredClient(GMAIL_SERVER, google)?.client_id, "gid");
+  assert.deepEqual(providerClient(DRIVE_SERVER, google), { client_id: "gid", client_secret: "gsecret" });
+  assert.equal(providerClient({ slug: "notion", config: {} }, google), null);
+  const env = { env: { GMAIL_OAUTH_CLIENT_ID: "gid", GMAIL_OAUTH_CLIENT_SECRET: "gsecret" }, keys: {} };
+  assert.equal(providerClient(GMAIL_SERVER, env), null, "the environment no longer serves the client");
+});
+
+const ACME_MANIFEST = {
+  slug: "acme",
+  display_name: "Acme",
+  endpoint: { url: "https://acme.example/mcp" },
+  auth: { kind: "oauth", oauth: { strategy: "configured" } },
+  description: "",
+};
+
+const ACME_SERVER = {
+  id: "mcp_acme",
+  slug: "acme",
+  auth: "oauth",
+  oauth_strategy: "configured",
+  config: { url: "https://acme.example/mcp" },
+  manifest: ACME_MANIFEST,
+};
+
+test("a connector's own configured client is the instance key connector:<slug>, and discovers from its endpoint", async () => {
+  const empty = { keys: {} };
+  assert.equal(providerClient(ACME_SERVER, empty), null);
+  assert.equal(configuredClient(ACME_SERVER, empty), null);
+  assert.equal(oauthSetupState(ACME_SERVER, empty), "unsupported");
+  const own = { keys: storeKeys({ "connector:acme": { client_id: "aid", client_secret: "asecret" } }) };
+  assert.deepEqual(providerClient(ACME_SERVER, own), { client_id: "aid", client_secret: "asecret" });
+  assert.deepEqual(configuredClient(ACME_SERVER, own), { client_id: "aid", client_secret: "asecret" });
+  assert.equal(oauthSetupState(ACME_SERVER, own), "configured");
+  const google = { keys: storeKeys({ "google-connectors": { client_id: "gid", client_secret: "gsecret" } }) };
+  assert.equal(providerClient(ACME_SERVER, google), null, "the box's Google client is not this connector's");
+  const dynamic = {
+    ...ACME_SERVER,
+    oauth_strategy: "dynamic",
+    manifest: { ...ACME_MANIFEST, auth: { kind: "oauth", oauth: { strategy: "dynamic" } } },
+  };
+  assert.equal(providerClient(dynamic, own), null);
+  assert.equal(oauthSetupState(dynamic, own), "dynamic");
+  await assert.rejects(() => serverDiscovery({ ...ACME_SERVER, config: {} }), /missing a url/);
 });
 
 test("a connector with no endpoint discovers its provider's OAuth endpoints", async () => {
@@ -425,7 +467,7 @@ test("a connector with no endpoint discovers its provider's OAuth endpoints", as
   await assert.rejects(() => serverDiscovery({ slug: "custom", auth: "oauth", config: {} }), /missing a url/);
 });
 
-test("ensureClient gmail uses env and restricts scopes", async () => {
+test("ensureClient gmail uses the Google connectors keys and restricts scopes", async () => {
   const db = {
     async updateMcpServerConfig(): Promise<null> {
       throw new Error("gmail must not persist a catalog oauth client");
@@ -442,7 +484,7 @@ test("ensureClient gmail uses env and restricts scopes", async () => {
       client: mockFetch(() => {
         throw new Error("gmail must not fetch MCP metadata");
       }),
-      env: { GMAIL_OAUTH_CLIENT_ID: "gid", GMAIL_OAUTH_CLIENT_SECRET: "gsecret" },
+      sources: { keys: storeKeys({ "google-connectors": { client_id: "gid", client_secret: "gsecret" } }) },
     },
   );
   assert.deepEqual(registered, { client_id: "gid", client_secret: "gsecret" });
@@ -459,7 +501,7 @@ test("ensureClient gmail uses env and restricts scopes", async () => {
   assert.ok(!url.includes("mail.google.com"));
 });
 
-test("ensureClient drive uses env and restricts scopes", async () => {
+test("ensureClient drive uses the Google connectors keys and restricts scopes", async () => {
   const db = {
     async updateMcpServerConfig(): Promise<null> {
       throw new Error("drive must not persist a catalog oauth client");
@@ -474,7 +516,7 @@ test("ensureClient drive uses env and restricts scopes", async () => {
     "http://127.0.0.1:8080/api/mcp/oauth/callback",
     {
       client: mockFetch(driveDiscoveryHandler),
-      env: { GMAIL_OAUTH_CLIENT_ID: "gid", GMAIL_OAUTH_CLIENT_SECRET: "gsecret" },
+      sources: { keys: storeKeys({ "google-connectors": { client_id: "gid", client_secret: "gsecret" } }) },
     },
   );
   assert.deepEqual(registered, { client_id: "gid", client_secret: "gsecret" });
@@ -493,7 +535,7 @@ test("ensureClient drive uses env and restricts scopes", async () => {
   assert.ok(!params.get("scope")?.includes("drive.file"));
 });
 
-test("ensureClient gmail without env fails", async () => {
+test("ensureClient gmail without the Google connectors keys fails", async () => {
   const db = {
     async updateMcpServerConfig(): Promise<null> {
       return null;
@@ -505,7 +547,7 @@ test("ensureClient gmail without env fails", async () => {
   await assert.rejects(
     () =>
       ensureClient(db, GMAIL_SERVER, "http://127.0.0.1:8080/api/mcp/oauth/callback", {
-        env: {},
+        sources: { keys: {} },
       }),
     (error: unknown) => error instanceof OAuthError && /OAuth client is not configured/.test(error.message),
   );

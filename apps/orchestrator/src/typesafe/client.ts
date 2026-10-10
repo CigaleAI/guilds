@@ -1,4 +1,4 @@
-import { GROUP_ROUTING, integrationVariable } from "../instance/integrations.js";
+import { GROUP_ROUTING, integrationValue, type IntegrationSources } from "../instance/integrations.js";
 import { httpRequest, readJson, type FetchFn } from "../net/http.js";
 import { redactApiKey } from "../llm/client.js";
 
@@ -95,13 +95,16 @@ export type TypeSafeRetryOptions = {
   sleep?: (ms: number) => Promise<void>;
 };
 
-export function typeSafeApiKey(env: NodeJS.ProcessEnv = process.env): string {
-  return integrationVariable(GROUP_ROUTING, "TYPESAFE_API_KEY", env);
+/** The group routing key from the instance keys; empty while the integration is off. */
+export function typeSafeApiKey(sources?: IntegrationSources): string {
+  return integrationValue(GROUP_ROUTING, "api_key", sources);
 }
 
-export function typeSafeModel(env: NodeJS.ProcessEnv = process.env): string {
-  return integrationVariable(GROUP_ROUTING, "TYPESAFE_MODEL", env) || TYPESAFE_MODEL;
+export function typeSafeModel(sources?: IntegrationSources): string {
+  return integrationValue(GROUP_ROUTING, "model", sources) || TYPESAFE_MODEL;
 }
+
+const KEY_NOT_SET = "the group routing key is not set";
 
 function asTypeSafeError(error: unknown, apiKey: string | null, attempts: number): TypeSafeError {
   if (error instanceof TypeSafeError) {
@@ -315,15 +318,14 @@ export async function evaluateSystemOne(args: {
   apiKey?: string;
   fetch?: FetchFn;
   timeoutMs?: number;
-  env?: NodeJS.ProcessEnv;
+  sources?: IntegrationSources;
   retry?: TypeSafeRetryOptions;
 }): Promise<TypeSafeResult> {
-  const env = args.env ?? process.env;
-  const apiKey = (args.apiKey ?? typeSafeApiKey(env)).trim();
+  const apiKey = (args.apiKey ?? typeSafeApiKey(args.sources)).trim();
   if (!apiKey) {
-    throw new TypeSafeError("TYPESAFE_API_KEY is not set");
+    throw new TypeSafeError(KEY_NOT_SET);
   }
-  const model = (args.model ?? typeSafeModel(env)).trim() || TYPESAFE_MODEL;
+  const model = (args.model ?? typeSafeModel(args.sources)).trim() || TYPESAFE_MODEL;
   const timeoutMs = args.timeoutMs ?? TYPESAFE_TIMEOUT_MS;
   const maxRetries = Math.max(0, args.retry?.maxRetries ?? TYPESAFE_MAX_RETRIES);
   const sleep = args.retry?.sleep ?? defaultSleep;
@@ -390,37 +392,38 @@ export async function evaluateSystemOne(args: {
   }
 }
 
+/**
+ * A client over the group routing key. The key is read on every call, so a key the admin enters
+ * or removes under Platform keys takes effect without a restart; `configured` follows it.
+ */
 export function createTypeSafeClient(
   options: {
     apiKey?: string | null;
     evaluate?: TypeSafeEvaluateFn;
     fetch?: FetchFn;
-    env?: NodeJS.ProcessEnv;
+    sources?: IntegrationSources;
     timeoutMs?: number;
     model?: string;
     retry?: TypeSafeRetryOptions;
   } = {},
 ): TypeSafeClient {
-  const env = options.env ?? process.env;
-  const apiKey = (options.apiKey ?? typeSafeApiKey(env)).trim();
   if (options.evaluate) {
     return { configured: true, evaluate: options.evaluate };
   }
-  if (!apiKey) {
-    return {
-      configured: false,
-      evaluate: async () => {
-        throw new TypeSafeError("TYPESAFE_API_KEY is not set");
-      },
-    };
-  }
+  const key = () => (options.apiKey ?? typeSafeApiKey(options.sources)).trim();
   return {
-    configured: true,
+    get configured() {
+      return Boolean(key());
+    },
     evaluate: (args) => {
+      const apiKey = key();
+      if (!apiKey) {
+        return Promise.reject(new TypeSafeError(KEY_NOT_SET));
+      }
       const request: Parameters<typeof evaluateSystemOne>[0] = {
         ...args,
         apiKey,
-        env,
+        ...(options.sources ? { sources: options.sources } : {}),
       };
       if (options.fetch) {
         request.fetch = options.fetch;

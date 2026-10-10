@@ -8,7 +8,7 @@ import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
-import { HEX_MASTER_KEY, clearConnectorKeys, testEnv } from "../helpers/env.js";
+import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, templatesRoot } from "../helpers/fixtures.js";
 import { PlaceholderMap } from "../helpers/placeholders.js";
@@ -60,7 +60,7 @@ after(async () => {
 });
 
 test("R3 feature HTTP recordings replay against an isolated database", async () => {
-  clearConnectorKeys();
+  clearInstanceKeys();
   const databaseUrl = await createIsolatedDatabase(dbName);
   const env = testEnv(databaseUrl);
   const database = await connect(databaseUrl);

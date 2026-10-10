@@ -11,7 +11,8 @@ import { McpPool } from "../../src/mcp/index.js";
 import { UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
 import { REGISTRY } from "../../src/toolbox/index.js";
 import { identityOutput, processOutput } from "../../src/toolbox/output.js";
-import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
 
@@ -21,23 +22,18 @@ const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TAVILY = CONNECTORS.bySlug("tavily")!;
 const SERVER = { id: "mcp_tavily", slug: "tavily", auth: "token" };
 
-/** Sets TAVILY_API_KEY for one block, then puts back what was there. */
-async function withInstanceKey<T>(value: string | undefined, work: () => Promise<T>): Promise<T> {
-  const previous = process.env.TAVILY_API_KEY;
-  if (value === undefined) {
-    delete process.env.TAVILY_API_KEY;
-  } else {
-    process.env.TAVILY_API_KEY = value;
-  }
+/** Holds the web search key in the process's instance keys for one block, then empties them. */
+async function withInstanceKey<T>(value: string, work: () => Promise<T>): Promise<T> {
+  setInstanceKeys(storeKeys({ "web-search": { api_key: value } }));
   try {
     return await work();
   } finally {
-    if (previous === undefined) {
-      delete process.env.TAVILY_API_KEY;
-    } else {
-      process.env.TAVILY_API_KEY = previous;
-    }
+    setInstanceKeys({});
   }
+}
+
+function webSearch(apiKey: string) {
+  return { keys: storeKeys({ "web-search": { api_key: apiKey } }) };
 }
 
 function login(scope: "platform" | "org", payload: Record<string, unknown>, status = "connected") {
@@ -135,7 +131,7 @@ test("search HTTP error", async () => {
 test("web search is the Tavily connector's search tool, not a native tool", () => {
   assert.ok(!(NATIVE_TOOLS as readonly string[]).includes("tavily_search"));
   assert.equal(REGISTRY.tavily_search, undefined);
-  assert.deepEqual(TAVILY.manifest.auth.instance, { integration: "web-search", variable: "TAVILY_API_KEY" });
+  assert.deepEqual(TAVILY.manifest.auth.instance, { integration: "web-search", field: "api_key" });
   assert.deepEqual(
     TAVILY.manifest.tools?.map((tool) => tool.name),
     ["search"],
@@ -143,17 +139,18 @@ test("web search is the Tavily connector's search tool, not a native tool", () =
 });
 
 test("the instance key serves the platform login while the integration is on", () => {
-  assert.equal(instanceKey(TAVILY.manifest, {}), null);
-  assert.equal(instanceKey(TAVILY.manifest, { TAVILY_API_KEY: "  " }), null);
-  assert.equal(instanceKey(TAVILY.manifest, { TAVILY_API_KEY: " tvly-instance " }), "tvly-instance");
-  assert.deepEqual(instanceCredentials(TAVILY.manifest, { TAVILY_API_KEY: "tvly-instance" }), { token: "tvly-instance" });
-  assert.deepEqual(instanceCredentials(TAVILY.manifest, {}), {});
-  assert.equal(instanceKey(CONNECTORS.bySlug("gmail")!.manifest, { TAVILY_API_KEY: "tvly-instance" }), null);
+  assert.equal(instanceKey(TAVILY.manifest, { keys: {} }), null);
+  assert.equal(instanceKey(TAVILY.manifest, webSearch("  ")), null);
+  assert.equal(instanceKey(TAVILY.manifest, webSearch(" tvly-instance ")), "tvly-instance");
+  assert.deepEqual(instanceCredentials(TAVILY.manifest, webSearch("tvly-instance")), { token: "tvly-instance" });
+  assert.deepEqual(instanceCredentials(TAVILY.manifest, { keys: {} }), {});
+  assert.equal(instanceKey(CONNECTORS.bySlug("gmail")!.manifest, webSearch("tvly-instance")), null);
+  assert.equal(instanceKey(TAVILY.manifest, { env: { TAVILY_API_KEY: "tvly-env" }, keys: {} }), null, "the environment no longer serves the key");
 });
 
-test("the instance key is redacted from tool output", () => {
-  assert.deepEqual(instanceRedactions({}), {});
-  const redactions = instanceRedactions({ TAVILY_API_KEY: "tvly-platform-key" });
+test("the instance key is redacted from tool output under the connector's field", () => {
+  assert.deepEqual(instanceRedactions({ keys: {} }), {});
+  const redactions = instanceRedactions(webSearch("tvly-platform-key"));
   assert.deepEqual(redactions, { platform_tavily_api_key: "tvly-platform-key" });
   const [content] = processOutput("ERROR: key tvly-platform-key rejected", identityOutput, redactions, 4096);
   assert.equal(content, "ERROR: key [REDACTED:platform_tavily_api_key] rejected");

@@ -59,7 +59,9 @@ The model catalog reads `MODELS_DEV_URL` on its own
 
 `loadConfig` accepts the modes an edition identifies requests in
 beside core's two. The instance keys are read through the registry
-in `src/instance/integrations.ts`
+in `src/instance/integrations.ts` and the encrypted store it
+snapshots (`src/instance/keys.ts`), so a platform key a platform
+admin enters takes effect without a restart
 ([Extension points](extension-points.md#instance-keys)).
 
 A few modules read their own optional variables:

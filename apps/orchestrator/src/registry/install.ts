@@ -1,5 +1,6 @@
 import { rmSync } from "node:fs";
 import type { Repositories } from "../db/repositories.js";
+import { connectorIntegrationId } from "../instance/integrations.js";
 import { serverIdOf } from "../connectors/manifest.js";
 import { assertSlugFree, CatalogError } from "../mcp/catalog.js";
 import { generateToolPrefix, isReservedToolPrefix } from "../mcp/policy.js";
@@ -192,10 +193,11 @@ export async function updateConnectors(
   return moved;
 }
 
-/** Removes a registry connector with its logins, the bindings that name it, and its code on disk. */
+/** Removes a registry connector with its logins, the bindings that name it, the key it declared of its own, and its code on disk. */
 export async function removeConnector(repo: Repositories, slug: string, connectorsRoot: string | null = null): Promise<void> {
   const row = await registryRow(repo, slug);
   await repo.deleteConnector(String(row.id));
+  await repo.deleteInstanceKey(connectorIntegrationId(slug));
   if (connectorsRoot) {
     removeCodePackage(connectorsRoot, slug);
   }

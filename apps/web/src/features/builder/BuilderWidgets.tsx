@@ -71,6 +71,7 @@ export function ConnectCard({
       ? (widget.servers.find((item) => item.id === picked) ?? widget.server)
       : widget.server;
   const name = server?.display_name || server?.slug || "the service";
+  const notSetUp = server?.oauth_setup_state === "unsupported";
   const orgConnected =
     scope === "org" && (widget.alreadyConnected || server?.connection_state === "connected");
   const connect = useServerConnect({ scope: "org", id: org.id }, () => {
@@ -124,12 +125,18 @@ export function ConnectCard({
         </div>
       ) : null}
       <p className="text-sm text-fg-2">{status}</p>
+      {!settled && notSetUp ? (
+        <p className="text-xs text-muted">
+          Not set up on this server: a platform admin sets it up under Admin → Platform keys.
+        </p>
+      ) : null}
       {!settled ? (
         <div className="flex flex-wrap gap-2">
           {scope === "org" ? (
             <Button
               size="sm"
-              disabled={!live || !server || connect.busy}
+              disabled={!live || !server || connect.busy || notSetUp}
+              {...(notSetUp ? { title: "Not set up on this server" } : {})}
               onClick={() =>
                 server &&
                 connect.start({

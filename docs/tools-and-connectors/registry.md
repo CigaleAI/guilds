@@ -45,21 +45,34 @@ Installing a connector (`apps/orchestrator/src/registry/`):
    differs from the index's
 5. validates `connector.json` with the loader, its slug against the
    entry's
-6. refuses what the package may not claim. Without code it is
-   endpoint-only: no endpoint, `auth.instance`, an OAuth strategy other
-   than `dynamic`, or a `state` hook is refused. With code, `auth.instance`
-   and an OAuth strategy other than `dynamic` are refused, and the
-   install needs the code tier and a verified index (below)
+6. refuses what the package may not claim. With or without code, a
+   package may not reach for the box's own wiring: a shipped
+   integration's key (`auth.instance.integration`), the box's OAuth
+   client (`auth.oauth.provider`), or the GitHub App (`github_app`)
+   (`boxWiringProblem`, `apps/orchestrator/src/connectors/manifest.ts`).
+   It may declare a key or an OAuth client of its own
+   (`auth.instance: { "own": true }`, or `configured` with no
+   provider), which the instance admin fills in by name for that
+   connector alone ([Instance keys](connectors.md#instance-keys)).
+   Without code it is endpoint-only as well: it needs an endpoint and
+   may not declare a `state` hook (`endpointOnlyProblem`). With code
+   (`codeManifestProblem`, `apps/orchestrator/src/registry/client.ts`),
+   the install needs the code tier and a verified index (below)
 7. writes a platform row: `source` `registry`, the entry's `version`,
    `verified`, and `publisher`, on at install, its tool prefix
    generated against every prefix on the box
+8. lists the key or client the connector declared of its own under
+   **Admin → Platform keys** as `connector:<slug>`. Until a platform
+   admin fills it, Connector catalog and Tools mark the connector
+   **Not set up** with a **Set up** link there
 
 The row has no folder. Updating replaces its manifest, version,
 verification, experimental mark, and publisher with the newest
 entry's; its switch, OAuth client, overrides, logins, and bindings
 stay, and every login lists its tools again on its next use. Removing it deletes it
-with its logins and the bindings that name it. A `core` or `local` row
-is neither updated nor removed this way.
+with its logins, the bindings that name it, and the key it declared
+of its own. A `core` or `local` row is neither updated nor removed
+this way.
 
 From the orchestrator's directory (`docker compose exec orchestrator`
 on the Compose stack):
@@ -92,7 +105,9 @@ organisation's catalog, and each organisation connects it and turns
 it on or not. An install, update, or removal from Admin takes effect
 in the running server at once; **Reload connectors**
 (`POST /api/admin/registry/reload`) does the same for what the CLI
-changed.
+changed. Each of these rebuilds the list of connector-declared
+integrations Platform keys offers (`refreshConnectorIntegrations`,
+`apps/orchestrator/src/instance/connectors.ts`).
 
 ## Code tier
 

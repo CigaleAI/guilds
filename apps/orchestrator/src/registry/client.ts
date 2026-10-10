@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { endpointOnlyProblem, loadManifest, ManifestError, type Manifest } from "../connectors/manifest.js";
-import { integrationVariable, REGISTRY } from "../instance/integrations.js";
+import { type Manifest, ManifestError, boxWiringProblem, endpointOnlyProblem, loadManifest } from "../connectors/manifest.js";
+import { integrationValue, REGISTRY } from "../instance/integrations.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { parseRecipe, type RecipeDocument } from "../recipes/schema.js";
 import type { KeyObject } from "node:crypto";
@@ -17,7 +17,7 @@ import { PACKAGE_MAX_BYTES, readTarball } from "./tar.js";
 
 /** The registry this box reads: `REGISTRY_URL`, the registry integration's default while unset, none (offline) when empty. */
 export function registryUrl(env: NodeJS.ProcessEnv = process.env): string | null {
-  return integrationVariable(REGISTRY, "REGISTRY_URL", env).replace(/\/+$/, "") || null;
+  return integrationValue(REGISTRY, "REGISTRY_URL", { env }).replace(/\/+$/, "") || null;
 }
 
 /** The files of a package, with a single top-level directory taken off. */
@@ -41,17 +41,12 @@ export type ConnectorPackage = { manifest: Manifest; adapter: Buffer | null; log
 
 /**
  * Why a manifest whose package carries code claims what a runtime install may not, or null. Its
- * adapter runs in this process, so the box's own wiring stays out of reach of its manifest: no
- * instance key, and OAuth only with a dynamically registered client.
+ * adapter runs in this process, so the box's own wiring stays out of reach of its manifest: a
+ * shipped integration's key, the box's OAuth client, the GitHub App. A key or client it declares
+ * of its own is the instance admin's to fill.
  */
 export function codeManifestProblem(manifest: Manifest): string | null {
-  if (manifest.auth.instance) {
-    return `connector ${manifest.slug} asks for an instance key, which only a connector the box ships may use`;
-  }
-  if (manifest.auth.oauth && manifest.auth.oauth.strategy !== "dynamic") {
-    return `connector ${manifest.slug} signs in with the box's ${manifest.auth.oauth.strategy} client; it must register its own`;
-  }
-  return null;
+  return boxWiringProblem(manifest);
 }
 
 /**
@@ -161,6 +156,6 @@ export function registryClient(env: NodeJS.ProcessEnv = process.env, fetchFn?: F
   if (url === null) {
     return null;
   }
-  const key = integrationVariable(REGISTRY, "REGISTRY_PUBLIC_KEY", env);
+  const key = integrationValue(REGISTRY, "REGISTRY_PUBLIC_KEY", { env });
   return new RegistryClient(url, fetchFn, key ? registryPublicKey(key) : null);
 }

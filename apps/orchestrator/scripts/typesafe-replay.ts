@@ -6,9 +6,10 @@
 //   npm run typesafe:replay -- --guild <guild_id> --message "text"
 //                                                   hypothetical user post
 //   add --json for the raw report, --min 0.7 to try another confidence gate.
-import { loadToolConfig } from "../src/config/index.js";
+import { decodeMasterKey, loadToolConfig } from "../src/config/index.js";
 import { connect } from "../src/db/client.js";
 import { Repositories } from "../src/db/repositories.js";
+import { InstanceKeys } from "../src/instance/keys.js";
 import { createTypeSafeClient } from "../src/typesafe/client.js";
 import { formatRecipientReplay, replayRecipients } from "../src/typesafe/replay.js";
 
@@ -71,14 +72,15 @@ function parseArgs(argv: string[]): {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const client = createTypeSafeClient();
-if (!client.configured) {
-  process.stderr.write("TYPESAFE_API_KEY is not set\n");
-  process.exit(2);
-}
 const config = loadToolConfig();
 const database = await connect(config.databaseUrl);
 try {
+  await new InstanceKeys(database.pool, decodeMasterKey(config.secretsMasterKey)).load();
+  const client = createTypeSafeClient();
+  if (!client.configured) {
+    process.stderr.write("the group routing key is not set; a platform admin sets it under Admin, Platform keys\n");
+    process.exit(2);
+  }
   const repo = new Repositories(database.pool);
   const guild = await repo.getGuild(args.guild);
   if (guild === null) {

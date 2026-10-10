@@ -1,9 +1,11 @@
+import { Link, useLocation } from "@tanstack/react-router";
 import { Link2, Play, Trash2, Unlink } from "lucide-react";
 import { useCallback, useState } from "react";
 import { lookupWithLogin, useInstance, useSaveSettings, type AccessOwner } from "../../api/queries";
 import type { McpServerAccess, McpToolAccess } from "../../api/types";
+import { useIdentity } from "../../app/identity";
 import { Button, FilterBar, IntegrationCard, Tag, ToolRow, toast, Icon } from "@guildsrun/ui";
-import { connectorSetupGap } from "../instance/instance";
+import { connectorSetupGap, setupSearch } from "../instance/instance";
 import {
   bindingOrigin,
   connectionStatus,
@@ -48,6 +50,8 @@ export function ServerCard({
 
   const instance = useInstance();
   const setupGap = connectorSetupGap(server, instance.data);
+  const { user } = useIdentity();
+  const location = useLocation();
   const owned = ownedConnection(server, owner.scope);
   const active = server.tools.filter((tool) => tool.enabled).length;
   const listed = filterTools(server.tools, query, filter);
@@ -79,7 +83,7 @@ export function ServerCard({
           onClick={onConnect}
           disabled={busy || setupGap !== null}
           title={
-            setupGap ??
+            setupGap?.text ??
             (server.connection_id
               ? "Sign in with a login of its own instead of the inherited one"
               : "Sign in to this server")
@@ -141,7 +145,16 @@ export function ServerCard({
                 <Tag tone="ochre" font="sans">
                   Not set up
                 </Tag>
-                {setupGap}
+                {setupGap.text}
+                {user.platform_admin && setupGap.integration ? (
+                  <Link
+                    to="/admin"
+                    search={setupSearch(setupGap.integration, location.href)}
+                    className="underline"
+                  >
+                    Set up
+                  </Link>
+                ) : null}
               </span>
             </>
           ) : (

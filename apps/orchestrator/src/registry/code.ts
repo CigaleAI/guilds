@@ -6,7 +6,7 @@ import { loadManifest, serverIdOf } from "../connectors/manifest.js";
 import { ConnectorRegistry, type ConnectorEntry } from "../connectors/registry.js";
 import type { Adapter } from "../connectors/types.js";
 import type { Repositories } from "../db/repositories.js";
-import { CONNECTOR_CODE, integrationValues, integrationVariable } from "../instance/integrations.js";
+import { CONNECTOR_CODE, integrationValue, integrationValues } from "../instance/integrations.js";
 import { writeLog } from "../observability/log.js";
 import type { ConnectorPackage } from "./client.js";
 
@@ -20,12 +20,12 @@ const served = new Map<string, string>();
 
 /** Where code connectors live on disk: `CONNECTORS_ROOT`, whether or not the code tier is on. */
 export function connectorsRoot(env: NodeJS.ProcessEnv = process.env): string | null {
-  return integrationVariable(CONNECTOR_CODE, "CONNECTORS_ROOT", env) || null;
+  return integrationValue(CONNECTOR_CODE, "CONNECTORS_ROOT", { env }) || null;
 }
 
 /** The root code connectors install to and load from while the code tier is on (`CONNECTORS_CODE_TIER=1`); null while it is off. */
 export function codeTierRoot(env: NodeJS.ProcessEnv = process.env): string | null {
-  const values = integrationValues(CONNECTOR_CODE, env);
+  const values = integrationValues(CONNECTOR_CODE, { env });
   return values && values.CONNECTORS_CODE_TIER === "1" && values.CONNECTORS_ROOT ? values.CONNECTORS_ROOT : null;
 }
 

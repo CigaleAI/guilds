@@ -130,5 +130,6 @@ Ready. Start the stack:
 Then open http://127.0.0.1:${port:-8080}/
 
 Keep .env: SECRETS_MASTER_KEY is the only copy of the key your stored credentials are encrypted
-with. The integrations listed in .env are optional; set the ones you want and restart.
+with. Platform keys (the GitHub App, the Google OAuth client, web search, group routing) are
+entered under Admin, Platform keys once the stack is up.
 DONE

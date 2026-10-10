@@ -2,6 +2,7 @@ import { isSystemOfRecord, storageHint } from "../connectors/builder.js";
 import { connectorFacts } from "../connectors/view.js";
 import type { Repositories } from "../db/repositories.js";
 import type { CapabilityService } from "../capabilities/index.js";
+import { oauthSetupState } from "../oauth/index.js";
 import {
   findReusableOrgConnection,
   resolvePublishedServer,
@@ -23,6 +24,7 @@ function compactServer(row: Record<string, unknown>, extras: Record<string, unkn
     slug: row.slug,
     display_name: row.display_name || row.slug,
     auth: row.auth,
+    oauth_setup_state: oauthSetupState(row),
     setup_hint: row.setup_hint ?? null,
     ...(row.auth === "token" ? { auth_fields: connectorFacts(row).auth_fields } : {}),
     ...extras,

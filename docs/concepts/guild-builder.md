@@ -22,6 +22,10 @@ The coach never logs into anything.
 It never creates a live agent.
 It never holds a credential.
 
+A write picks one [DiceBear](https://www.dicebear.com/) family for the
+guild and a unique variant and identity colour for each role. The coach
+does not choose the mascots.
+
 [Prompt Studio](prompt-studio.md) stays optimize-only on a live guild.
 
 ## Contract
@@ -214,6 +218,12 @@ tools the organisation's own logins have listed.
 
 An empty stored tool list means "not connected here yet", never "this
 server cannot do that."
+
+A connector whose `oauth_setup_state` is `unsupported` is not set up
+on this box. The coach says that a platform admin fills its keys
+under **Admin**, **Platform keys** before anyone can connect it, and
+asks the operator to do that or to pick another service. The connect
+widget shows the connector as **Not set up** with Connect disabled.
 
 `builder_validate_recipe` blocks `status=ready` on structural errors:
 

@@ -8,7 +8,7 @@ import type {
   McpServerAccess,
 } from "../../api/types";
 import type { BindingOrigin } from "@guildsrun/ui";
-import { missingVariablesPhrase, toolIntegrationGap } from "../instance/instance";
+import { missingFieldsPhrase, toolIntegrationGap } from "../instance/instance";
 /** One switch in the Tools tab: what it binds, and how the agent gets it now. */
 export type BindingTarget = { kind: CatalogKind; id: string };
 
@@ -174,7 +174,10 @@ export function nativeToolDisplay(
   if (waitsFor) {
     return {
       enabled: false,
-      caption: `Offered once this server has ${missingVariablesPhrase(waitsFor)} set`,
+      caption:
+        waitsFor.source === "store"
+          ? `Offered once a platform admin sets up ${waitsFor.label} under Admin → Platform keys`
+          : `Offered once this server has ${missingFieldsPhrase(waitsFor)} set`,
       bindable: false,
     };
   }

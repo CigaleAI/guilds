@@ -1,30 +1,76 @@
 # GitHub
 
-`github` is backed by one GitHub App per box. The operator registers
-the box's own App and puts its credentials in `.env`. Until those
-are set, Tools marks the connector **Not set up** and disables
-Connect ([Integrations](catalog.md#integrations)).
+`github` is backed by one GitHub App per box. The **GitHub App**
+integration holds it, under **Admin**, **Platform keys**, in five
+fields:
 
-The orchestrator reads:
+- App ID (`app_id`)
+- App slug (`slug`)
+- Private key (PEM) (`private_key`)
+- Client ID (`client_id`)
+- Client secret (`client_secret`)
 
-- `GITHUB_APP_ID`
-- `GITHUB_APP_SLUG`
-- `GITHUB_APP_PRIVATE_KEY` (PEM, with `\n` escapes or real
-  newlines)
-- `GITHUB_APP_CLIENT_ID`
-- `GITHUB_APP_CLIENT_SECRET`
-
-A missing value is a Connect error (422 with
-`setup_state: unsupported`).
+Until all five are set, Tools marks the connector **Not set up**
+with the missing fields and disables Connect; a Connect sent anyway
+is a 422 with `setup_state: unsupported`
+([Integrations](catalog.md#integrations)).
 
 The App:
 
 - asks for the repository permissions Contents and Pull requests
   (read and write) and Metadata (read)
 - requests user authorization (OAuth) during installation and
-  redirects on update, with `PUBLIC_BASE_URL` +
-  `/api/mcp/oauth/callback` as its callback URL
-- subscribes to no webhook
+  redirects on update, with `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`
+  as its callback URL, or the address the box is reached at when
+  `PUBLIC_BASE_URL` is empty
+- is private and subscribes to no webhook
+
+## Registering the App
+
+A platform admin registers it one of two ways.
+
+**Create the GitHub App**, on Platform keys, registers it from a
+manifest. The dialog takes an optional App name (GitHub caps it at
+34 characters; the default is `Guilds (<host>)`) and an optional
+organisation login (without one, the App belongs to the admin's own
+account). The browser posts the manifest to GitHub, the admin
+confirms it there, and GitHub returns them to the box with the five
+fields stored and the integration on. The manifest carries the
+settings above, `url` = the box's address, the manifest callback as
+`redirect_url`, and as callback URLs
+`<PUBLIC_BASE_URL>/api/mcp/oauth/callback` plus, when the admin
+reached the box at another address (`http://localhost:8080` with
+`PUBLIC_BASE_URL` empty), that address's `/api/mcp/oauth/callback`
+too.
+
+The flow: `POST /api/admin/instance/keys/github-app/manifest` with
+`{ name?, owner?, return_to? }` answers `{ action, manifest, state }`
+and sets a state cookie (`guilds_github_manifest`, HttpOnly,
+SameSite=Lax, 20 minutes, path = the callback). GitHub redirects to
+`GET /api/admin/instance/keys/github-app/manifest/callback?code&state`,
+which checks that the cookie's state matches a flow this process
+started, trades the code once at
+`POST https://api.github.com/app-manifests/{code}/conversions` (no
+token), stores the fields for the admin who started the flow, and
+redirects to `return_to` (a path on this app only) or to
+`/admin?tab=instance&integration=github-app`. A failure redirects
+there with `setup_error=state|conversion|store` and stores nothing
+([Security register](../architecture/security-register.md), SEC-22).
+
+**Paste.** Register the App on GitHub by hand (Settings, Developer
+settings, GitHub Apps) with the settings above and the callback URL,
+generate a client secret and a private key, and enter the App ID,
+the slug (the last segment of `https://github.com/apps/<slug>`), the
+PEM (as is, in the text area; one line with `\n` escapes is also
+accepted), the client ID, and the client secret in the form.
+
+**Replacing it.** Entering an App with another App ID, or removing
+the integration, disconnects every GitHub login installed with the
+old App, since their installations belong to it. The form asks for
+confirmation with the count; the API answers 409 with
+`replaces_app: true` and `connections` until `confirm_replace` is
+sent. A new private key or client secret on the same App ID
+disconnects nothing.
 
 Connect is offered at organisation, guild, and agent scope. It
 follows the pending-connection path of the browser logins. The App

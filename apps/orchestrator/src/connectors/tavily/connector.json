@@ -12,7 +12,7 @@
     ],
     "instance": {
       "integration": "web-search",
-      "variable": "TAVILY_API_KEY"
+      "field": "api_key"
     }
   },
   "description": "Search the live web through Tavily: title, URL, and snippet for each source of a natural-language query.",

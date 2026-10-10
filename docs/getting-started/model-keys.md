@@ -1,25 +1,16 @@
 # Model keys
 
-Agents run on the organisation's own key for a model provider. The
-server holds none: nothing in `.env` names a model, and no integration
-serves one. Keys live under **Settings**, **Model keys**.
+Agents run on your organisation's own key for a model provider. The
+server holds none: nothing in `.env` names a model, and no
+integration serves one. Until a provider is connected nothing can
+run, and the app waits on the welcome dialog.
 
-A run is `provider + credentials + model`. The organisation connects
-a provider with its key, chooses which of that provider's models to
-offer, and marks one as the default. Every model picker in the app
-lists those chosen models and nothing else.
+This page connects the first provider. What you need is a key from
+one provider, or a local server that speaks the OpenAI API. The
+dialog takes three steps: paste the key, tick the models your agents
+may use, and mark one as the default.
 
-Three kinds of key reach the box. Only the first is a model key:
-
-| Key | Who holds it | Where |
-|---|---|---|
-| Model key | The organisation, for its agents' runs | **Settings**, **Model keys** |
-| Secret | The organisation, handed to the agents it names as an environment variable | **Secrets** ([Secrets and access](../concepts/secrets-and-access.md)) |
-| Platform key | The box, for everyone on it: web search, group routing, the GitHub App, Google, Sentry | `.env` ([Configure](configure.md#integrations)) |
-
-An agent never sees a model key. Its sandbox gets secrets only.
-
-## Providers
+## Pick a provider
 
 | Provider | Models | Key from | Cost shown |
 |---|---|---|---|
@@ -30,14 +21,14 @@ An agent never sees a model key. Its sandbox gets secrets only.
 | Local endpoint | Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run | None required | No |
 | Kimi Code | Kimi models on a Kimi Code plan, for coding agents | [kimi.com/code](https://www.kimi.com/code) | No |
 
+Any one of the first five is enough for the whole of
+[Your first guild](first-guild.md). One OpenRouter key reaches models
+from several makers; a local endpoint needs no account at all.
+
 The first five are **Marketplace** providers: agents, Studio, and the
 Builder run on them. Kimi Code is a **Coding API**: its models are
 offered only to an agent with **Coding** on, cannot be the default,
 and are not used by Studio or the Builder.
-
-Every provider is called through its OpenAI-compatible Chat
-Completions endpoint, by the orchestrator alone. The key is sent to
-that provider and nowhere else.
 
 The provider bills the account the key belongs to. guilds.run keeps
 no spend cap: a limit set on the provider's side is the only one. On
@@ -46,26 +37,57 @@ the provider's own figure when it reports one and from the catalog's
 rates otherwise, and the **Usage** tabs add it up. A local endpoint
 and Kimi Code record no cost.
 
+Every provider is called through its OpenAI-compatible Chat
+Completions endpoint, by the orchestrator alone. The key is sent to
+that provider and nowhere else.
+
 ## The welcome dialog
 
 A box with no provider connected opens on a welcome dialog over the
-app. It cannot be dismissed. It walks an owner or admin through one
+app. It cannot be dismissed. An owner or admin walks through one
 provider:
 
-1. **Pick a provider.**
-2. **Connect.** Paste the key. It is checked against the provider
-   before it is saved; a rejected key is not saved, and the dialog
-   says why. The local endpoint takes a base URL and an optional key.
-3. **Choose models.** Tick at least one model from the provider's
-   catalog. Every picker in the app offers these.
-4. **Pick a default.** New agents, Studio, and the Builder start on
-   it. **Skip for now** leaves none. A coding provider ends at step 3.
+1. **Pick a provider.** A tile per provider, with a line on what it
+   is for. Coding providers stand apart under **For coding agents
+   only**.
+2. **Connect.** Paste the key into **API key**. The field links to
+   where the provider issues one. **Connect** sends it to the
+   provider before saving it: a rejected key is not saved, and the
+   dialog says why. The local endpoint takes a **Base URL** and an
+   optional key.
+3. **Choose models.** The provider's catalog, with a search over
+   name and id. Tick at least one. These are the models every picker
+   in the app offers, and nothing else. **Continue** saves the list.
+4. **Pick a default.** One of the ticked models. New agents, Studio,
+   and the Builder start on it. **Finish** saves it. **Skip for now**
+   leaves none, and the create-agent form then waits for a choice. A
+   coding provider ends at step 3.
+
+The dialog closes. On a box with no guild the page says **No guilds
+yet** and offers **Create a guild** or the Builder.
+[Your first guild](first-guild.md) takes the first, so each screen is
+met once.
 
 A member who is not an owner or admin sees the dialog with a note to
 ask one. The page opens on its own once a provider is connected.
 
 More providers are connected afterwards under **Settings**, **Model
 keys**, which holds the same controls.
+
+## Three kinds of key
+
+Three kinds of key reach the box. Only the first is a model key:
+
+| Key | Who holds it | Where |
+|---|---|---|
+| Model key | The organisation, for its agents' runs | **Settings**, **Model keys** |
+| Secret | The organisation, handed to the agents it names as an environment variable | **Secrets** ([Secrets and access](../concepts/secrets-and-access.md)) |
+| Platform key | The box, for everyone on it: web search, group routing, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](configure.md#platform-keys)); Sentry and the registry are `.env` settings |
+
+An agent never sees a model key. Its sandbox gets secrets only.
+
+A run is `provider + credentials + model`: the organisation's key for
+the provider, and one of the models it chose for it.
 
 ## Settings, Model keys
 

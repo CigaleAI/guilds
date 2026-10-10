@@ -60,9 +60,10 @@ Recipients of each message:
 An untagged agent post does not start peers. Skip-advanced agents still
 see those messages in a later selected run's snapshot.
 
-When `TYPESAFE_API_KEY` is set, the dispatcher asks Jev one Choice over
-the pending members plus `none`. It is given the latest public message
-as `latest` and the up to three public rows before it as `context`.
+When the Group routing platform key is set (**Admin**, **Platform
+keys**), the dispatcher asks Jev one Choice over the pending members
+plus `none`. It is given the latest public message as `latest` and
+the up to three public rows before it as `context`.
 Each option is the agent's `focus` and the first 1,200 characters of
 its Task prompt.
 
@@ -214,10 +215,10 @@ State in that system row carries the same snapshot as a direct run.
   public rows through the snapshot (`sentBy`, `content`, `tagged`).
   `sentBy` is the author-name snapshot, a member or an operator.
 
-When `TYPESAFE_API_KEY` is set, Jev answers one yes/no Noul per row of
-the last 40 ("does this agent need this message to act on the latest
-one?", bodies clipped to 2,000 characters for the call). Code keeps
-the 10 highest.
+When the Group routing platform key is set, Jev answers one yes/no
+Noul per row of the last 40 ("does this agent need this message to
+act on the latest one?", bodies clipped to 2,000 characters for the
+call). Code keeps the 10 highest.
 
 The latest row and any row that tags the receiving agent always stay.
 A failed TypeSafe call keeps the last 10.

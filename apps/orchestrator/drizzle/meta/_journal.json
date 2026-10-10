@@ -15,6 +15,13 @@
       "when": 1791590400000,
       "tag": "0002_model_providers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791654235012,
+      "tag": "0003_instance_keys",
+      "breakpoints": true
     }
   ]
 }

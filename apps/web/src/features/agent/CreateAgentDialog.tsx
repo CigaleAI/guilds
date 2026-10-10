@@ -48,9 +48,9 @@ type CreateAgentDialogProps = {
 };
 
 /**
- * A new agent in a guild: its name, look, focus, model, and the box it runs on. Its focus seeds
- * its Task. Lite is the default; Standard adds the browser, Code adds coding too, and Custom is
- * sized by the operator.
+ * A new agent in a guild: its name, look, focus, model, run limits, disk and script caps, and the
+ * box it runs on. Its focus seeds its Task. Lite is the default; Standard adds the browser, Code
+ * adds coding too, and Custom is sized by the operator.
  */
 export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
   const navigate = useNavigate();

@@ -12,17 +12,28 @@ import {
   appJwt,
   exchangeUserCode,
   githubAppConfig,
+  GithubError,
   GithubInstallationGoneError,
   installationForUser,
   installationToken,
   installUrl,
   parseGithubUrl,
+  requireGithubApp,
   resolveGithubInstallation,
   userAuthorizationUrl,
   userInstallations,
   type GithubAppConfig,
 } from "../../src/github/index.js";
-import { HEX_MASTER_KEY } from "../helpers/env.js";
+import {
+  clearGithubManifestStateCookie,
+  convertManifestCode,
+  GITHUB_MANIFEST_STATE_COOKIE,
+  githubAppManifest,
+  githubManifestStateCookie,
+  MANIFEST_CALLBACK_PATH,
+  manifestAction,
+} from "../../src/github/manifest.js";
+import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const PEM = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -52,16 +63,113 @@ function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-test("the App needs all five values; a pasted key's \\n sequences become newlines", () => {
-  const env = {
-    GITHUB_APP_ID: "1",
-    GITHUB_APP_SLUG: "app",
-    GITHUB_APP_PRIVATE_KEY: "-----BEGIN KEY-----\\nabc\\n-----END KEY-----",
-    GITHUB_APP_CLIENT_ID: "cid",
-    GITHUB_APP_CLIENT_SECRET: "secret",
+test("the App needs all five values from the instance keys; a pasted key's \\n sequences become newlines", () => {
+  const values = {
+    app_id: "1",
+    slug: "app",
+    private_key: "-----BEGIN KEY-----\\nabc\\n-----END KEY-----",
+    client_id: "cid",
+    client_secret: "secret",
   };
-  assert.equal(githubAppConfig(env)?.privateKey, "-----BEGIN KEY-----\nabc\n-----END KEY-----");
-  assert.equal(githubAppConfig({ ...env, GITHUB_APP_CLIENT_SECRET: " " }), null);
+  assert.deepEqual(githubAppConfig({ keys: storeKeys({ "github-app": values }) }), {
+    appId: "1",
+    slug: "app",
+    privateKey: "-----BEGIN KEY-----\nabc\n-----END KEY-----",
+    clientId: "cid",
+    clientSecret: "secret",
+  });
+  assert.equal(githubAppConfig({ keys: storeKeys({ "github-app": { ...values, client_secret: " " } }) }), null);
+  assert.equal(githubAppConfig({ keys: {} }), null);
+  assert.equal(
+    githubAppConfig({ env: { GITHUB_APP_ID: "1", GITHUB_APP_SLUG: "app", GITHUB_APP_PRIVATE_KEY: "k", GITHUB_APP_CLIENT_ID: "c", GITHUB_APP_CLIENT_SECRET: "s" }, keys: {} }),
+    null,
+    "the environment no longer serves the App",
+  );
+  assert.throws(
+    () => requireGithubApp({ keys: storeKeys({ "github-app": { app_id: "1" } }) }),
+    (error: unknown) =>
+      error instanceof GithubError && /App slug, Private key \(PEM\), Client ID, Client secret missing/.test(error.message),
+  );
+});
+
+test("the manifest registers the App on the box's address, adding the request's own callback when it differs", () => {
+  const manifest = githubAppManifest({ baseUrl: "https://guilds.example/", requestOrigin: "http://127.0.0.1:8080" });
+  assert.equal(manifest.name, "Guilds (guilds.example)");
+  assert.equal(manifest.url, "https://guilds.example");
+  assert.equal(manifest.redirect_url, `https://guilds.example${MANIFEST_CALLBACK_PATH}`);
+  assert.deepEqual(manifest.callback_urls, [
+    "https://guilds.example/api/mcp/oauth/callback",
+    "http://127.0.0.1:8080/api/mcp/oauth/callback",
+  ]);
+  assert.deepEqual(manifest.hook_attributes, { url: "https://guilds.example/api/github/webhook", active: false });
+  assert.deepEqual(manifest.default_permissions, { contents: "write", pull_requests: "write", metadata: "read" });
+  assert.equal(manifest.public, false);
+  assert.equal(manifest.request_oauth_on_install, true);
+  assert.equal(manifest.setup_on_update, true);
+  const same = githubAppManifest({ baseUrl: "https://guilds.example", requestOrigin: "https://guilds.example/", name: " Team box " });
+  assert.deepEqual(same.callback_urls, ["https://guilds.example/api/mcp/oauth/callback"]);
+  assert.equal(same.name, "Team box");
+  assert.equal(githubAppManifest({ baseUrl: "https://guilds.example", requestOrigin: "https://guilds.example", name: "  " }).name, "Guilds (guilds.example)");
+});
+
+test("the manifest is posted to the admin's account or to an organisation, carrying the state", () => {
+  assert.equal(manifestAction(null, "s t"), "https://github.com/settings/apps/new?state=s%20t");
+  assert.equal(manifestAction("acme-org", "abc"), "https://github.com/organizations/acme-org/settings/apps/new?state=abc");
+});
+
+test("the manifest state cookie is bound to the callback path and short-lived; clearing it expires it", () => {
+  assert.equal(GITHUB_MANIFEST_STATE_COOKIE, "guilds_github_manifest");
+  assert.equal(
+    githubManifestStateCookie("s t", false),
+    `guilds_github_manifest=s%20t; Path=${MANIFEST_CALLBACK_PATH}; HttpOnly; SameSite=Lax; Max-Age=1200`,
+  );
+  assert.equal(
+    githubManifestStateCookie("abc", true),
+    `guilds_github_manifest=abc; Path=${MANIFEST_CALLBACK_PATH}; HttpOnly; SameSite=Lax; Max-Age=1200; Secure`,
+  );
+  assert.equal(
+    clearGithubManifestStateCookie(false),
+    `guilds_github_manifest=; Path=${MANIFEST_CALLBACK_PATH}; HttpOnly; SameSite=Lax; Max-Age=0`,
+  );
+  assert.equal(
+    clearGithubManifestStateCookie(true),
+    `guilds_github_manifest=; Path=${MANIFEST_CALLBACK_PATH}; HttpOnly; SameSite=Lax; Max-Age=0; Secure`,
+  );
+});
+
+test("a manifest code converts into the App's fields; GitHub refusing it or omitting the key is an error", async () => {
+  const fake = fakeFetch(() =>
+    json(201, {
+      id: 4242,
+      slug: "guilds-box",
+      pem: PEM,
+      client_id: "Iv1.client",
+      client_secret: "client-secret",
+      html_url: "https://github.com/apps/guilds-box",
+    }),
+  );
+  const converted = await convertManifestCode("code 1", { fetch: fake.fetch });
+  assert.deepEqual(converted, {
+    app_id: "4242",
+    slug: "guilds-box",
+    private_key: PEM,
+    client_id: "Iv1.client",
+    client_secret: "client-secret",
+    html_url: "https://github.com/apps/guilds-box",
+  });
+  assert.equal(fake.calls[0]?.url, "https://api.github.com/app-manifests/code%201/conversions");
+  assert.equal(fake.calls[0]?.init.method, "POST");
+  assert.equal((fake.calls[0]?.init.headers as Record<string, string>).Authorization, undefined, "the conversion needs no token");
+  const refused = fakeFetch(() => json(422, { message: "Validation Failed" }));
+  await assert.rejects(
+    convertManifestCode("bad", { fetch: refused.fetch }),
+    (error: unknown) => error instanceof GithubError && error.status === 422 && /422 Validation Failed/.test(error.message),
+  );
+  const keyless = fakeFetch(() => json(201, { id: 4242, slug: "s", client_id: "c", client_secret: "x" }));
+  await assert.rejects(
+    convertManifestCode("c", { fetch: keyless.fetch }),
+    (error: unknown) => error instanceof GithubError && error.status === null && /returned no pem/.test(error.message),
+  );
 });
 
 test("the App token is an RS256 JWT issued by the App, valid under ten minutes", () => {

@@ -41,7 +41,7 @@ A view inside a page is a search parameter (`?tab=…`, `?run=…`,
 `?seq=…`).
 
 `/` opens the last guild visited, or the first.
-With none it offers the Builder.
+With none it offers Create a guild or the Builder.
 
 The [code map](../architecture/code-map.md) lists every route.
 
@@ -148,11 +148,13 @@ Folded guilds and the retracted state are remembered in
 - thinking level and temperature (each switched off only for models
   the catalog flags as not taking it)
 - max output tokens / max steps / max tool calls / max input tokens
-- **Max disk** (`max_workspace_mib`, default 10240 MiB)
-- under **Box**, **Lite**, **Standard**, **Code** or **Custom**, and
-  what the chosen box leaves to the operator
-- under **Agent capabilities**, CLI, scripting, and Memory (all on
-  by default)
+- **Max disk** (`max_workspace_mib`, default 10240 MiB) beside
+  **Max scripts** (`max_scripts`, default 10)
+- under **Box**, four buttons: **Lite**, **Standard**, **Code** or
+  **Custom**, and what the chosen box leaves to the operator
+- under **Agent capabilities**, four buttons: Browser, CLI,
+  scripting, and Memory (CLI, scripting, and Memory on by default;
+  Browser off and unavailable on Lite)
 
 **Lite** is the default.
 It has scripts, notes, connectors and a terminal on the smallest
@@ -172,10 +174,11 @@ It moves step and tool-call limits still at their defaults to 200.
 **Custom** is the browser machine at a size the operator types: CPUs
 from 0.5 to 4 in steps of 0.25, memory from 512 to 8192 MiB. It
 starts from the size of the box the form leaves. It shows a Coding
-switch, off unless the form already had it on.
+button, off unless the form already had it on.
 
-Every box but Lite shows a Browser switch, on by default, and the
-browser language while it is on.
+**Browser** is an agent capability: off and unavailable on Lite, on
+by default on the other boxes. The browser language shows while it
+is on.
 
 A new agent opens on its Prompt tab.
 
@@ -584,17 +587,16 @@ The strip scrolls sideways when they do not fit.
 - **Settings**: name, focus, the avatar picker, wake triggers
   ("Wake me when", showing the focus while empty), model, thinking,
   temperature, the four run limits, **Max disk** (MiB, default
-  10240).
-  Under **Scripts** (while scripting is on): the script cap
-  (default 10).
-  Under **Box**: Lite, Standard, Code or Custom (moving to Lite turns
-  browser and coding off; to Standard turns the browser on and coding
-  off; to Code turns both on; to Custom turns the browser on and asks
-  for the size; any move replaces the sandbox). On every box but Lite,
-  Browser (and its language when it is on). On Custom, the CPUs and
-  memory, and Coding. A box whose settled flag is switched the other
-  way cannot be saved.
-  Under **Agent capabilities**: CLI, scripting, and Memory.
+  10240) beside **Max scripts** (default 10).
+  Under **Box**: four buttons for Lite, Standard, Code or Custom
+  (moving to Lite turns browser and coding off; to Standard turns
+  the browser on and coding off; to Code turns both on; to Custom
+  turns the browser on and asks for the size; any move replaces the
+  sandbox). On Custom, the CPUs and memory, and Coding. A box whose
+  settled flag is switched the other way cannot be saved.
+  Under **Agent capabilities**: four buttons for Browser, CLI,
+  scripting, and Memory. Browser is off and unavailable on Lite;
+  its language shows while it is on.
 
 ## Access view (Tools and Secrets)
 
@@ -615,9 +617,11 @@ Organisation **Tools** has three sub-tabs:
 - artifact scope (the four artifact grants)
 
 A connector the server cannot sign in to is marked **Not set up**
-with the variables the server lacks, and its Connect is disabled.
-A native tool that waits for an instance key has no switch and says
-which variable offers it.
+with the fields its integration lacks, and its Connect is disabled;
+a platform admin gets **Set up**, a link to **Admin**, **Platform
+keys** with that integration preselected and a way back. A native
+tool that waits for a platform key has no switch and says it is
+offered once a platform admin sets up its integration there.
 
 Guild and agent **Tools** have integrations and native tools.
 Artifact scope lives on each **State** tab.
@@ -881,7 +885,9 @@ admin turns a connector on or off, edits its copy over the manifest
 (the manifest's value shown beside an edited field), sets whether
 each tool starts On for a new login, exports it as `connector.json`,
 and adds a remote MCP server by hand. A row shows its version when it
-has one. **Install from the registry** lists what the box's registry
+has one. A connector whose integration is not on is marked **Not set
+up**, with a **Set up** link to Platform keys opened on that
+integration. **Install from the registry** lists what the box's registry
 offers beside what is installed: **Install** a connector the box
 lacks, **Update** a registry install that trails the newest version,
 or **Remove** one with its logins and bindings; an unverified entry
@@ -889,11 +895,21 @@ asks for confirmation first
 ([Registry](../tools-and-connectors/registry.md)).
 
 **Platform keys** (`?tab=instance`) lists the server's optional
-integrations from `GET /api/instance`.
-Each one's state (on, incomplete, or off), what it switches on, and
-which of its variables are set.
-No key is entered or shown
-([Configure](../getting-started/configure.md)).
+integrations from `GET /api/instance`, the `connector:<slug>` ones
+connectors declare of their own included: each one's state (on,
+incomplete, or off), what it switches on, and which of its fields
+are set, with when and by whom. A platform admin enters a store
+integration's values in its form
+(`PUT /api/admin/instance/keys/:integration`) and removes them
+(`DELETE`); a value is never shown again. The environment
+integrations are read-only. **Create the GitHub App** registers the
+box's App from a manifest, in a dialog that takes an optional name
+and organisation. Replacing the App with one of another App ID, or
+removing it, asks for confirmation with the count of GitHub logins
+it disconnects. `?integration=<id>` preselects one; the **Set up**
+links from Tools and a recipe's preview land there
+([Configure](../getting-started/configure.md#platform-keys),
+[GitHub](../tools-and-connectors/github.md#registering-the-app)).
 
 ## Workspaces
 
@@ -915,7 +931,14 @@ No key is entered or shown
   Settings. The apply preview's **Connectors to install** lists each
   connector the box lacks: an instance admin installs a registry one
   there, and an owner or admin adds one the recipe carries as the
-  organisation's own server. Each agent card on the preview takes a
+  organisation's own server. Its **Connectors to set up** lists each
+  connector the box has but a platform admin has not set up, GitHub
+  included when the recipe lists repositories: a platform admin gets
+  a **Set up** link, anyone else reads that a platform admin sets it
+  up under **Admin**, **Platform keys**. The checklist's connection
+  step shows the same gap, disables Connect, and offers **Set up** to
+  a platform admin; it still closes once connected or skipped. Each
+  agent card on the preview takes a
   name and a model, picked from the organisation's chosen models and
   preselected with the recipe's recommendation when the organisation
   has it, else the default; **Create guild** waits until every agent

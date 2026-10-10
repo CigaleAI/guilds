@@ -1,7 +1,10 @@
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import { persistAgent } from "../agents/persist.js";
+import { serverManifest } from "../connectors/load.js";
 import { GITHUB_SLUG } from "../github/index.js";
+import { integrationForConnector } from "../instance/integrations.js";
+import { oauthSetupState } from "../oauth/index.js";
 import { persistGuild } from "../guilds/persist.js";
 import { GuildAgentLimitError, assertGuildAgentRoom, validateGuildName } from "../guilds/validation.js";
 import {
@@ -219,6 +222,33 @@ export class RecipeApplyService {
     };
   }
 
+  /**
+   * The connectors the recipe needs that the box has but a platform admin has not set up: a
+   * connection's server, and GitHub when the recipe lists repositories. The apply goes on; these
+   * steps cannot connect until the integration is filled under Admin, Platform keys.
+   */
+  private async setupsNeeded(
+    orgId: string,
+    recipe: RecipeDocument,
+  ): Promise<Array<{ server: string; integration: string | null; label: string }>> {
+    const wanted = new Set(recipe.connections.map((connection) => connection.server));
+    if (recipe.repositories.length) {
+      wanted.add(GITHUB_SLUG);
+    }
+    const rows = (await this.deps.repo.listMcpServers(orgId)).filter(
+      (row) => row.enabled !== false && wanted.has(String(row.slug)) && oauthSetupState(row) === "unsupported",
+    );
+    return rows.map((row) => {
+      const manifest = serverManifest(row);
+      const integration = manifest ? integrationForConnector(manifest) : null;
+      return {
+        server: String(row.slug),
+        integration: integration?.id ?? null,
+        label: integration?.label ?? manifest?.display_name ?? String(row.slug),
+      };
+    });
+  }
+
   async preview(
     org: Record<string, unknown>,
     recipeRow: Record<string, unknown>,
@@ -280,6 +310,7 @@ export class RecipeApplyService {
         const offered = ctx.registryConnectors?.get(connection.server);
         return offered ? [{ server: connection.server, from: "registry", ...offered }] : [];
       });
+    const setups = await this.setupsNeeded(String(org.id), prepared);
     return {
       recipe_id: recipeRow.id,
       recipe_name: prepared.meta.name,
@@ -290,6 +321,7 @@ export class RecipeApplyService {
       collisions,
       connections,
       installs,
+      setups,
       secrets,
       collections,
       findings,

@@ -67,7 +67,7 @@ and `trusted-header`. Paths below are under
 | Sandbox provider | `SandboxProvider` (`extension.ts`): the sandboxes generation drives, with `start` and `close`; supplied by `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) on `OPENSANDBOX_URL` and `WORKSPACE_ROOT` |
 | Blob store | `BlobStore` (`attachments/`); supplied by `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT`, which is `STATE_ROOT/attachments` on the Compose stack; `MemoryBlobStore` without one, which the tests use |
 | Instance admin | `InstanceAdmin` (`http/instance-admin.ts`): who administers the instance; supplied by `ServerExtension.instanceAdmin` | An owner of the seed organisation `org_home` |
-| Instance integrations | `Integration[]` (`instance/integrations.ts`); `ServerExtension.integrations` | The registry below; an edition's are listed with core's in `GET /api/instance` |
+| Instance integrations | `Integration[]` (`instance/integrations.ts`), each declaring its `source` (`store` or `env`) and its `fields`; `ServerExtension.integrations` | The registry below; an edition's are listed with core's in `GET /api/instance`, and its store integrations are written through the same admin routes |
 | Connectors | `ConnectorEntry[]` (`connectors/registry.ts`), each built from a connector folder with `folderEntry(manifest, adapter, folder, { publisher })`; `ServerExtension.connectors` | Core's folders under `src/connectors/`. An edition's are installed after core's before the seed runs, listed and seeded like core's, and a slug core already has fails boot |
 | Database | `ServerExtension.migrate(pool)` and `seed(pool)` | Core's chain and seeds; an extension's run after them, on every boot |
 | Routes | `ServerExtension.routes(app, deps)` | Registered on the Fastify app before core's routes |
@@ -136,48 +136,86 @@ An instance key is a credential the box holds for everyone on it,
 as opposed to an organisation's model key, secret, or connection.
 No instance key serves a model provider: the organisation's own key
 does ([Orchestrator](orchestrator.md#credentials)).
-Each belongs to an integration. An integration is on when all of
-its variables are set.
+Each belongs to an integration. An integration declares its fields
+(`name`, `label`, `secret`, `optional`, `multiline`, `placeholder`)
+and its `source`, `store` or `env`. It is `on` when every required
+field has a value, `incomplete` when some do, and `off` when none
+does; an optional field tunes it and never switches it off.
 
 - Core requires none and starts with none.
-- A key reaches the server through its environment, and by no
-  other way. The operator app shows an integration's state and
-  takes no key. The operator writes it in `.env`
+- A `store` integration's values are entered by a platform admin on
+  Admin's Platform keys tab, through
+  `PUT /api/admin/instance/keys/:integration`, and removed with
+  `DELETE` on the same path (`http/admin-instance-routes.ts`; anyone
+  but an instance admin gets 404). The store (`instance/keys.ts`)
+  keeps one row per integration in `instance_keys`, encrypted with
+  AES-GCM under `SECRETS_MASTER_KEY`, with who wrote it and when.
+  It is decrypted into a process snapshot at boot and again after
+  every write, and a reader resolves a field from that snapshot at
+  call time, so a change takes effect without a restart. A write's
+  effects (`instance/changes.ts`) sync the platform logins, and a
+  GitHub App replaced by one with another App ID, or removed,
+  disconnects every GitHub login installed with it, after the admin
+  confirms with the count. No route returns a value.
+- An `env` integration's values are read from the orchestrator's
+  environment at start. The operator writes them in `.env`
   ([Configure](../getting-started/configure.md)). The Compose files
-  name no instance key. A key reaches the container from `.env`
-  through `env_file`, so one set in the shell alone does not.
+  name no instance key; `.env` reaches the container through
+  `env_file`, so a variable set in the shell alone does not.
+  Platform keys shows them read-only.
 - One registry (`src/instance/integrations.ts`) names every
-  integration, its variables, and what it switches on. Modules ask
-  the registry, not the environment. An edition registers its own
-  integrations through its extension.
+  integration, its source, its fields, and what it switches on.
+  Modules ask the registry (`integrationValue`, `integrationValues`,
+  `missingFields`, `integrationState`), not the environment or the
+  table. An edition registers its own integrations through its
+  extension, in the same shape: each declares its `source` and its
+  `fields`, and a `store` one is written through the same routes.
+- A connector may declare an integration of its own,
+  `connector:<slug>`: a platform key (`auth.instance: { "own": true }`
+  on a token connector; its fields are the login fields) or an OAuth
+  client (`configured` with no provider; `client_id` and
+  `client_secret`). `instance/connectors.ts` derives these from the
+  platform connector rows at boot and after a connector is
+  installed, updated, removed, reloaded, created, or patched, and
+  `installedIntegrations()` lists core's, an edition's, then these.
+  They are store integrations like the others, written through the
+  same routes; a registry connector's row is deleted with it. The
+  `{ integration, field }` form of `auth.instance`, the box's OAuth
+  client (`oauth.provider`), and the GitHub App are for connectors
+  the box ships, core or an edition: a connector installed at
+  runtime may not name them
+  ([Registry](../tools-and-connectors/registry.md)).
 - The instance descriptor (`GET /api/instance`, any signed-in
-  user) reports each integration's state (`on`, `off`, or
-  `incomplete` when some of its required variables are set), which
-  variables are set, never a value, and what it switches on: model
-  native tools and connector slugs. The operator app
-  turns off what depends on a missing integration and names the
-  variables that would switch it on. Admin's Platform keys tab
-  lists every integration with its state.
+  user) reports each integration's `source`, its state, which
+  fields are set (for an env field, whether the variable itself is
+  set; a default does not count), never a value, its setup flow
+  when it has one, and what it switches on: native tools and
+  connector slugs. An instance admin also sees when and by whom a
+  store integration was written. The operator app turns off what
+  depends on a missing integration, names it, and offers a platform
+  admin the way to Platform keys. Admin's Platform keys tab lists
+  every integration with its state and takes a store integration's
+  values.
 - An instance key is the instance's own. A connector's platform
   login on one counts each organisation's calls a month, and
   `OrgLimits.monthlyConnectorCalls` caps them; core's open policy
   caps none.
 
-| Integration | Variables | Switches on | Without it |
-|---|---|---|---|
-| Web search | `TAVILY_API_KEY` | The Tavily connector's platform login, `tavily_search` | The platform login is disconnected and runs leave `tavily_search` out; an organisation may connect a Tavily key of its own |
-| Group routing | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat | Tag rules and the last 10 messages |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories ([GitHub](../tools-and-connectors/github.md)) | Tools marks the connector **Not set up**, names the missing variables, and disables Connect; a Connect sent anyway answers 422 |
-| Google connectors | `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` | The Gmail and Drive connectors ([Gmail and Drive](../tools-and-connectors/google.md)) | As for the GitHub App |
-| Error reporting | `SENTRY_DSN` | Sentry | Structured logs only |
-| Registry | `REGISTRY_URL`, the guilds.run registry while unset; `REGISTRY_PUBLIC_KEY` | Installing connectors and recipes from a registry; with the key, only from a signed index | Set empty, the box is offline |
-| Connector code | `CONNECTORS_CODE_TIER=1`, `CONNECTORS_ROOT` | Registry connectors with adapter code, loaded at boot | A code install is refused and code on disk is not loaded |
+| Integration | Source | Fields | Switches on | Without it |
+|---|---|---|---|---|
+| Web search | store | `api_key` | The Tavily connector's platform login, `tavily_search` | The platform login is disconnected and runs leave `tavily_search` out; an organisation may connect a Tavily key of its own |
+| Group routing | store | `api_key`, and `model` to tune it | Recipient and history selection in group chat | Tag rules and the last 10 messages |
+| GitHub App | store | `app_id`, `slug`, `private_key`, `client_id`, `client_secret`, entered by hand or filled by the manifest flow ([GitHub](../tools-and-connectors/github.md#registering-the-app)) | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing fields, and disables Connect; a Connect sent anyway answers 422 |
+| Google connectors | store | `client_id`, `client_secret` | The Gmail and Drive connectors ([Gmail and Drive](../tools-and-connectors/google.md)) | As for the GitHub App |
+| Error reporting | env | `SENTRY_DSN` | Sentry | Structured logs only |
+| Registry | env | `REGISTRY_URL`, the guilds.run registry while unset; `REGISTRY_PUBLIC_KEY` | Installing connectors and recipes from a registry; with the key, only from a signed index | Set empty, the box is offline |
+| Connector code | env | `CONNECTORS_CODE_TIER=1`, `CONNECTORS_ROOT` | Registry connectors with adapter code, loaded at boot | A code install is refused and code on disk is not loaded |
 
 `SECRETS_MASTER_KEY`, the PostgreSQL password, and the OpenSandbox
 key are not integrations. The box cannot run without them.
-`./setup.sh` generates them. The variables are listed by hand in
-`.env.example`. Code and the other pages call instance keys
-platform keys.
+`./setup.sh` generates them. `.env.example` lists the environment
+integrations' variables by hand and no store integration's. Code
+and the other pages call instance keys platform keys.
 
 ## Data
 

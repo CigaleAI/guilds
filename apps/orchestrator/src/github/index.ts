@@ -1,5 +1,10 @@
 import { createSign } from "node:crypto";
-import { GITHUB_APP, integrationValues, missingVariables } from "../instance/integrations.js";
+import {
+  GITHUB_APP,
+  integrationValues,
+  missingFields,
+  type IntegrationSources,
+} from "../instance/integrations.js";
 import { proxyFetch, readJson, type FetchFn } from "../net/http.js";
 
 /**
@@ -40,27 +45,28 @@ export class GithubInstallationGoneError extends GithubError {
   }
 }
 
-/** The App from the environment, or null while any of its five values is missing. */
-export function githubAppConfig(env: NodeJS.ProcessEnv = process.env): GithubAppConfig | null {
-  const values = integrationValues(GITHUB_APP, env);
+/** The App from the instance keys, or null while any of its five fields is missing. */
+export function githubAppConfig(sources?: IntegrationSources): GithubAppConfig | null {
+  const values = integrationValues(GITHUB_APP, sources);
   if (values === null) {
     return null;
   }
   return {
-    appId: values.GITHUB_APP_ID,
-    slug: values.GITHUB_APP_SLUG,
-    // A key pasted into an env file often carries literal \n sequences.
-    privateKey: values.GITHUB_APP_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    clientId: values.GITHUB_APP_CLIENT_ID,
-    clientSecret: values.GITHUB_APP_CLIENT_SECRET,
+    appId: values.app_id,
+    slug: values.slug,
+    // A key pasted from a one-line form often carries literal \n sequences.
+    privateKey: values.private_key.replace(/\\n/g, "\n"),
+    clientId: values.client_id,
+    clientSecret: values.client_secret,
   };
 }
 
-export function requireGithubApp(env: NodeJS.ProcessEnv = process.env): GithubAppConfig {
-  const config = githubAppConfig(env);
+export function requireGithubApp(sources?: IntegrationSources): GithubAppConfig {
+  const config = githubAppConfig(sources);
   if (config === null) {
+    const missing = missingFields(GITHUB_APP, sources).map((field) => field.label);
     throw new GithubError(
-      `the GitHub App is not configured: ${missingVariables(GITHUB_APP, env).join(", ")} missing`,
+      `the GitHub App is not configured: ${missing.join(", ")} missing; a platform admin sets it under Admin, Platform keys`,
     );
   }
   return config;

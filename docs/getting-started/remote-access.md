@@ -1,10 +1,15 @@
 # Remote access
 
 The stack listens on loopback and does not authenticate. Whoever
-reaches the port is the operator.
+reaches the port is the operator. That is right for one person on
+one machine.
 
-To use it from another machine, put your own gate in front and tell
-the orchestrator the name it is reached by:
+There are two ways to reach the box from elsewhere. A tailnet lets a
+set of devices in, and everyone it lets in is the same operator. An
+authenticating proxy gives each person an account of their own.
+
+Both start the same way: put your own gate in front and tell the
+orchestrator the name it is reached by:
 
 ```text
 PUBLIC_BASE_URL=https://<the name people open>
@@ -25,7 +30,8 @@ A request with no `Origin` is not a browser's and passes
 
 Connector sign-ins return to
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`. Register that URI on the
-OAuth client or GitHub App you set in `.env`
+Google Cloud client; **Create the GitHub App** registers it on the
+App itself, and an App registered by hand needs it too
 ([Gmail and Drive](../tools-and-connectors/google.md),
 [GitHub](../tools-and-connectors/github.md)).
 

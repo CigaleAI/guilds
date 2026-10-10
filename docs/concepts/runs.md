@@ -130,8 +130,8 @@ Group Chat info user message (`latestMessage`, `youWereTagged`) for
 the snapshot sequence.
 
 History through that snapshot is already in State as the last 10
-public rows (`group_chat_history`). When `TYPESAFE_API_KEY` is set,
-Jev picks 10 rows from the last 40 (fallback: last 10).
+public rows (`group_chat_history`). When the Group routing platform
+key is set, Jev picks 10 rows from the last 40 (fallback: last 10).
 
 When Memory is on they must call `memory_write` once. If generation
 returns without that row the orchestrator inserts a reminder and

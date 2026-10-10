@@ -10,6 +10,7 @@ import {
 import { namespacedName } from "../../src/mcp/names.js";
 import { oauthSetupState, oauthStrategy, startsBrowserOauth } from "../../src/oauth/index.js";
 import { LIST_TOOLS_MAX, McpError, McpSession } from "../../src/mcp/index.js";
+import { storeKeys } from "../helpers/env.js";
 
 test("reserved slugs and generated prefixes stay collision-proof", () => {
   assert.equal(isReservedSlug("note"), true);
@@ -50,13 +51,13 @@ test("oauth setup state distinguishes configured, dynamic, and unsupported", () 
   assert.equal(oauthStrategy({ auth: "oauth", slug: "notion" }), "dynamic");
   assert.equal(startsBrowserOauth({ auth: "oauth", slug: "custom" }), true);
   assert.equal(
-    oauthSetupState({ auth: "oauth", slug: "gmail", oauth_strategy: "configured" }, {}),
+    oauthSetupState({ auth: "oauth", slug: "gmail", oauth_strategy: "configured" }, { keys: {} }),
     "unsupported",
   );
   assert.equal(
     oauthSetupState(
       { auth: "oauth", slug: "gmail", oauth_strategy: "configured" },
-      { GMAIL_OAUTH_CLIENT_ID: "id", GMAIL_OAUTH_CLIENT_SECRET: "secret" },
+      { keys: storeKeys({ "google-connectors": { client_id: "id", client_secret: "secret" } }) },
     ),
     "configured",
   );

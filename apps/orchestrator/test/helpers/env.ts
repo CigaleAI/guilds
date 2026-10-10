@@ -2,20 +2,20 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AppConfig } from "../../src/config/index.js";
-import { GITHUB_APP, GOOGLE_CONNECTORS } from "../../src/instance/integrations.js";
+import { setInstanceKeys, type InstanceKeySnapshot } from "../../src/instance/integrations.js";
 
 export const HEX_MASTER_KEY = "0".repeat(64);
 
-/**
- * Drops the connector instance keys from this test process, so a connector's setup state reads as
- * it does on the box the recordings come from, whatever the shell exports.
- */
-export function clearConnectorKeys(): void {
-  for (const integration of [GITHUB_APP, GOOGLE_CONNECTORS]) {
-    for (const variable of integration.variables) {
-      delete process.env[variable.name];
-    }
-  }
+/** Empties this process's instance keys, so every store integration reads as off. */
+export function clearInstanceKeys(): void {
+  setInstanceKeys({});
+}
+
+/** A snapshot holding the given values per integration id, as the store would load them. */
+export function storeKeys(values: Record<string, Record<string, string>>, at = "2026-10-10T00:00:00.000Z"): InstanceKeySnapshot {
+  return Object.fromEntries(
+    Object.entries(values).map(([integration, fields]) => [integration, { values: fields, updated_at: at, set_by: "operator" }]),
+  );
 }
 
 export function tempDir(prefix: string): string {

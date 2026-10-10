@@ -5,6 +5,7 @@ import {
   recentGroupRows,
   storedTags,
 } from "../groupchat/history.js";
+import type { IntegrationSources } from "../instance/integrations.js";
 import { writeLog } from "../observability/log.js";
 import {
   TypeSafeError,
@@ -331,11 +332,11 @@ export async function selectGroupHistory(args: {
 export function createGroupRouter(
   options: {
     client?: TypeSafeClient;
-    env?: NodeJS.ProcessEnv;
+    sources?: IntegrationSources;
     confidenceMin?: number;
   } = {},
 ): GroupRouter {
-  const client = options.client ?? createTypeSafeClient(options.env ? { env: options.env } : {});
+  const client = options.client ?? createTypeSafeClient(options.sources ? { sources: options.sources } : {});
   const confidenceMin = options.confidenceMin ?? RECIPIENT_CONFIDENCE_MIN;
   return {
     get configured() {
@@ -428,7 +429,7 @@ export function createGroupRouter(
 
 export function defaultGroupRouter(): GroupRouter {
   if (process.env.NODE_TEST_CONTEXT) {
-    return createGroupRouter({ env: {} });
+    return createGroupRouter({ sources: { env: {}, keys: {} } });
   }
   return createGroupRouter();
 }

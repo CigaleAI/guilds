@@ -3194,6 +3194,32 @@ export class Repositories {
     return Number(result.rows[0]?.count ?? 0);
   }
 
+  /** How many logins to a server are not disconnected, at every scope. */
+  async countServerConnections(serverId: string): Promise<number> {
+    const result = await this.pool.query(
+      `SELECT COUNT(*)::int AS count FROM mcp_connections WHERE mcp_server_id = $1 AND status <> 'disconnected'`,
+      [serverId],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  /** Marks every login to a server disconnected, at every scope; returns how many it changed. */
+  async disconnectServerConnections(serverId: string, now = new Date()): Promise<number> {
+    const result = await this.pool.query(
+      `UPDATE mcp_connections
+          SET status = 'disconnected', oauth_state = NULL, updated_at = $2
+        WHERE mcp_server_id = $1 AND status <> 'disconnected'`,
+      [serverId, now.toISOString()],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /** Drops an integration's stored values without reading them; true when a row was there. */
+  async deleteInstanceKey(integrationId: string): Promise<boolean> {
+    const result = await this.pool.query(`DELETE FROM instance_keys WHERE integration = $1`, [integrationId]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async countOrgAgents(orgId: string): Promise<number> {
     const result = await this.pool.query(
       `SELECT COUNT(*)::int AS count

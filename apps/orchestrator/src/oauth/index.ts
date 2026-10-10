@@ -3,25 +3,31 @@ import { proxyFetch, type FetchFn } from "../net/http.js";
 import { jsonObj } from "../db/json.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";
-import { GOOGLE_CONNECTORS, integrationValues, type Integration } from "../instance/integrations.js";
-import { installedConnectors } from "../connectors/index.js";
+import {
+  GOOGLE_CONNECTORS,
+  integrationValues,
+  type Integration,
+  type IntegrationSources,
+} from "../instance/integrations.js";
+import { serverManifest } from "../connectors/load.js";
 import type { Manifest } from "../connectors/manifest.js";
+import { connectorIntegration } from "../instance/connectors.js";
 
-/** An instance integration that holds an OAuth client: its variables, and how its provider authorizes. */
+/** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */
 type OAuthProvider = {
   integration: Integration;
   clientId: string;
   clientSecret: string;
-  /** How a connector with no endpoint of its own discovers the provider's authorization server. */
-  discovery: OAuthDiscovery;
+  /** How a connector with no endpoint of its own discovers the provider's authorization server; null for a client of the connector's own, which discovers from its endpoint. */
+  discovery: OAuthDiscovery | null;
   accessType: string | null;
 };
 
 const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
   [GOOGLE_CONNECTORS.id]: {
     integration: GOOGLE_CONNECTORS,
-    clientId: "GMAIL_OAUTH_CLIENT_ID",
-    clientSecret: "GMAIL_OAUTH_CLIENT_SECRET",
+    clientId: "client_id",
+    clientSecret: "client_secret",
     discovery: {
       resource: "",
       authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -34,14 +40,31 @@ const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
   },
 };
 
-/** The manifest's OAuth block for a server, or null for a hand-made server or a non-OAuth one. */
+/** The effective manifest's OAuth block for a server, or null for a non-OAuth one. */
 function manifestOauth(server: Record<string, unknown>): NonNullable<Manifest["auth"]["oauth"]> | null {
-  return installedConnectors().forServer(server)?.manifest.auth.oauth ?? null;
+  return serverManifest(server)?.auth.oauth ?? null;
 }
 
+/**
+ * The integration that holds a server's OAuth client: the shipped one its manifest's provider
+ * names, or, for a configured client with no provider, the connector's own.
+ */
 function providerOf(server: Record<string, unknown>): OAuthProvider | null {
-  const provider = manifestOauth(server)?.provider;
-  return provider ? (OAUTH_PROVIDERS[provider] ?? null) : null;
+  const manifest = serverManifest(server);
+  const oauth = manifest?.auth.oauth;
+  if (!manifest || !oauth) {
+    return null;
+  }
+  if (oauth.provider) {
+    return OAUTH_PROVIDERS[oauth.provider] ?? null;
+  }
+  if (oauth.strategy !== "configured") {
+    return null;
+  }
+  const integration = connectorIntegration(manifest);
+  return integration
+    ? { integration, clientId: "client_id", clientSecret: "client_secret", discovery: null, accessType: null }
+    : null;
 }
 
 /** Whether the server's login is the platform GitHub App's installation flow. */
@@ -97,16 +120,16 @@ export function startsBrowserOauth(server: Record<string, unknown>): boolean {
 
 export function oauthSetupState(
   server: Record<string, unknown>,
-  env: NodeJS.ProcessEnv = process.env,
+  sources?: IntegrationSources,
 ): "not_applicable" | "dynamic" | "configured" | "unsupported" {
   if (isGithubApp(server)) {
-    return githubAppConfig(env) ? "configured" : "unsupported";
+    return githubAppConfig(sources) ? "configured" : "unsupported";
   }
   const strategy = oauthStrategy(server);
   if (strategy === "none" || server.auth !== "oauth") {
     return "not_applicable";
   }
-  if (configuredClient(server, env)) {
+  if (configuredClient(server, sources)) {
     return "configured";
   }
   if (strategy === "configured") {
@@ -191,15 +214,15 @@ export function storedClient(server: Record<string, unknown>): Record<string, un
 }
 
 /** The OAuth client the manifest's provider integration holds, or null while that integration is off. */
-export function envClient(
+export function providerClient(
   server: Record<string, unknown>,
-  env: NodeJS.ProcessEnv = process.env,
+  sources?: IntegrationSources,
 ): Record<string, unknown> | null {
   const provider = providerOf(server);
   if (provider === null) {
     return null;
   }
-  const values = integrationValues(provider.integration, env) as Record<string, string> | null;
+  const values = integrationValues(provider.integration, sources) as Record<string, string> | null;
   if (values === null) {
     return null;
   }
@@ -208,9 +231,9 @@ export function envClient(
 
 export function configuredClient(
   server: Record<string, unknown>,
-  env: NodeJS.ProcessEnv = process.env,
+  sources?: IntegrationSources,
 ): Record<string, unknown> | null {
-  return storedClient(server) ?? envClient(server, env);
+  return storedClient(server) ?? providerClient(server, sources);
 }
 
 export function clientCoversRedirect(client: Record<string, unknown>, redirectUri: string): boolean {
@@ -403,7 +426,7 @@ export async function serverDiscovery(
     return scopedDiscovery(server, await discover(url.trim(), options));
   }
   const provider = providerOf(server);
-  if (provider === null) {
+  if (provider === null || provider.discovery === null) {
     throw new OAuthError("mcp server is missing a url");
   }
   return scopedDiscovery(server, { ...provider.discovery });
@@ -596,7 +619,7 @@ export async function ensureClient(
   db: OauthDb,
   server: Record<string, unknown>,
   redirectUri: string,
-  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined; env?: NodeJS.ProcessEnv | undefined } = {},
+  options: { client?: FetchFn | undefined; proxyUrl?: string | undefined; sources?: IntegrationSources | undefined } = {},
 ): Promise<[OAuthDiscovery, Record<string, unknown>]> {
   const strategy = oauthStrategy(server);
   if (strategy === "none" || server.auth !== "oauth") {
@@ -607,9 +630,9 @@ export async function ensureClient(
   if (current !== null && clientCoversRedirect(current, redirectUri)) {
     return [discovery, current];
   }
-  const env = envClient(server, options.env);
-  if (env !== null) {
-    return [discovery, env];
+  const provided = providerClient(server, options.sources);
+  if (provided !== null) {
+    return [discovery, provided];
   }
   if (strategy === "configured") {
     throw new OAuthUnsupportedError("OAuth client is not configured");

@@ -21,6 +21,8 @@ import {
   type TypeSafeQuestion,
 } from "../../src/typesafe/index.js";
 import { formatRecipientReplay, replayRecipients } from "../../src/typesafe/replay.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { storeKeys } from "../helpers/env.js";
 
 function noulAnswers(values: Record<string, number>) {
   return Object.fromEntries(
@@ -268,8 +270,39 @@ test("evaluateSystemOne fails closed on missing, out-of-range or unknown answers
   );
 });
 
-test("createTypeSafeClient is unconfigured without a key", () => {
-  const client = createTypeSafeClient({ env: {} });
+test("createTypeSafeClient is unconfigured without a key", async () => {
+  const client = createTypeSafeClient({ sources: { env: {}, keys: {} } });
+  assert.equal(client.configured, false);
+  await assert.rejects(
+    () => client.evaluate({ state: {}, questions: {} }),
+    (error: unknown) => error instanceof TypeSafeError && error.message === "the group routing key is not set",
+  );
+});
+
+test("a client follows the group routing key the admin stores, without a restart", async () => {
+  const seen: string[] = [];
+  const client = createTypeSafeClient({
+    fetch: mockFetch((_url, init) => {
+      seen.push(String((init?.headers as Record<string, string>).authorization));
+      return { status: 200, json: choiceResult("writer") };
+    }),
+    retry: { maxRetries: 0 },
+  });
+  const questions: Record<string, TypeSafeQuestion> = {
+    recipient: { type: "choice", instructions: "?", criteria: { none: null, writer: null } },
+  };
+  assert.equal(client.configured, false);
+  await assert.rejects(() => client.evaluate({ state: {}, questions }), /the group routing key is not set/);
+  assert.deepEqual(seen, []);
+  setInstanceKeys(storeKeys({ "group-routing": { api_key: "k" } }));
+  try {
+    assert.equal(client.configured, true);
+    const result = await client.evaluate({ state: {}, questions });
+    assert.equal(result.model, "jev-1.13.0");
+    assert.deepEqual(seen, ["Bearer k"]);
+  } finally {
+    setInstanceKeys({});
+  }
   assert.equal(client.configured, false);
 });
 

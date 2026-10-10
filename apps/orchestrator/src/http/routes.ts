@@ -115,7 +115,8 @@ import { scriptItem } from "../scripts/catalog.js";
 import { ScriptError } from "../scripts/validation.js";
 import { scheduleItem } from "../schedules/item.js";
 import { ScheduleError } from "../schedules/cron.js";
-import { CORE_INTEGRATIONS, integrationStatuses } from "../instance/integrations.js";
+import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
+import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
 import { Issues, IssueError } from "../issues/index.js";
 import { Notifications } from "../notifications/index.js";
 import { usageFields } from "../usage.js";
@@ -516,6 +517,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerStudioRoutes(app, deps);
   await registerAdminMcpRoutes(app, deps);
   await registerAdminRegistryRoutes(app, deps);
+  await registerAdminInstanceRoutes(app, deps);
   await registerOrgConnectorRoutes(app, deps);
   await registerBuilderCapabilityRoutes(app, deps);
   await registerBuilderSessionRoutes(app, deps);
@@ -537,12 +539,16 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  /** What this box is: how it identifies a request and which integrations it has, never a key. */
+  /**
+   * What this box is: how it identifies a request and which integrations it has, never a key.
+   * An instance admin also sees when and by whom each store integration was written.
+   */
   app.get("/api/instance", async (request) => {
-    await currentUser(repo, request, deps);
+    const user = await currentUser(repo, request, deps);
+    const audit = await isInstanceAdmin(deps, String(user.id));
     return {
       auth_mode: deps.config?.authMode ?? "compat-cookie",
-      integrations: integrationStatuses(deps.integrations ?? CORE_INTEGRATIONS),
+      integrations: integrationStatuses(deps.integrations ?? installedIntegrations(), undefined, undefined, { audit }),
     };
   });
 

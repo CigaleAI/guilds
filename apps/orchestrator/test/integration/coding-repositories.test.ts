@@ -8,7 +8,8 @@ import { Repositories } from "../../src/db/repositories.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
-import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -16,14 +17,15 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_HEADERS = { ...OWNER, "content-type": "application/json" };
 const dbName = uniqueDbName("agent_platform_coding_repositories");
-const APP_ENV = {
-  GITHUB_APP_ID: "4242",
-  GITHUB_APP_SLUG: "guilds-run-test",
-  GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048 })
+/** The box's GitHub App, as the instance admin stored it. */
+const APP_KEYS = {
+  app_id: "4242",
+  slug: "guilds-run-test",
+  private_key: generateKeyPairSync("rsa", { modulusLength: 2048 })
     .privateKey.export({ type: "pkcs8", format: "pem" })
     .toString(),
-  GITHUB_APP_CLIENT_ID: "Iv1.client",
-  GITHUB_APP_CLIENT_SECRET: "client-secret",
+  client_id: "Iv1.client",
+  client_secret: "client-secret",
 };
 
 after(async () => {
@@ -74,8 +76,7 @@ function github(url: string, init: RequestInit = {}): Response {
 
 test("guild repositories, the GitHub connection, and its repository picker", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const saved = { ...process.env };
-  Object.assign(process.env, APP_ENV);
+  setInstanceKeys(storeKeys({ "github-app": APP_KEYS }));
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) =>
     github(String(url), init)) as typeof fetch;
@@ -300,13 +301,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     });
   } finally {
     globalThis.fetch = realFetch;
-    for (const key of Object.keys(APP_ENV)) {
-      if (saved[key] === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = saved[key];
-      }
-    }
+    setInstanceKeys({});
     await app.close();
     await database.close();
   }
@@ -314,8 +309,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
 
 test("a second guild reuses the GitHub App and picks its own repositories", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const saved = { ...process.env };
-  Object.assign(process.env, APP_ENV);
+  setInstanceKeys(storeKeys({ "github-app": APP_KEYS }));
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) =>
     github(String(url), init)) as typeof fetch;
@@ -478,13 +472,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     assert.equal(agentPicked.json().repositories[0]?.default_branch, "trunk");
   } finally {
     globalThis.fetch = realFetch;
-    for (const key of Object.keys(APP_ENV)) {
-      if (saved[key] === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = saved[key];
-      }
-    }
+    setInstanceKeys({});
     await app.close();
     await database.close();
     await dropIsolatedDatabase(extraDb);
@@ -493,8 +481,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
 
 test("several GitHub installations open a picker so a guild can choose the account", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const saved = { ...process.env };
-  Object.assign(process.env, APP_ENV);
+  setInstanceKeys(storeKeys({ "github-app": APP_KEYS }));
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     const parsed = new URL(String(url));
@@ -576,13 +563,7 @@ test("several GitHub installations open a picker so a guild can choose the accou
     assert.equal(guild.statusCode, 201);
   } finally {
     globalThis.fetch = realFetch;
-    for (const key of Object.keys(APP_ENV)) {
-      if (saved[key] === undefined) {
-        delete process.env[key];
-      } else {
-        process.env[key] = saved[key];
-      }
-    }
+    setInstanceKeys({});
     await app.close();
     await database.close();
     await dropIsolatedDatabase(extraDb);

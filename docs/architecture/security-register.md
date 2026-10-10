@@ -8,6 +8,9 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-23 | A runtime connector may declare an instance key of its own | Fixed 2026-10-10 |
+| SEC-22 | The GitHub App manifest callback takes a creation code from the browser | Fixed 2026-10-10 |
+| SEC-21 | Platform keys are written through the API | Fixed 2026-10-10 |
 | SEC-20 | Connector code installed at runtime runs inside the orchestrator | Open |
 | SEC-19 | A registry's index is unsigned, so `verified` is only that registry's word | Fixed 2026-10-09 where `REGISTRY_PUBLIC_KEY` is set |
 | SEC-18 | A connector installed at runtime could claim the box's credentials | Fixed 2026-10-09 |
@@ -29,6 +32,105 @@ Ids are never reused.
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
 
+## SEC-23 — A runtime connector may declare an instance key of its own
+
+**Status:** fixed by design 2026-10-10, as connector-declared
+integrations shipped.
+
+**Where:** `boxWiringProblem` (`src/connectors/manifest.ts`), applied
+to every registry install with or without code
+(`endpointOnlyProblem` there, `codeManifestProblem` in
+`src/registry/client.ts`), and `refreshConnectorIntegrations`
+(`src/instance/connectors.ts`).
+
+**Exposure:** a registry connector's manifest now asks the instance
+admin for a credential: a platform key for its platform login, or
+the client id and secret of an OAuth client. A manifest that could
+name one of the box's own credentials would run its endpoint on the
+Tavily key, the Google client, or the GitHub App; one that could
+name another connector's key would read that connector's.
+
+**Fix:** a connector installed at runtime may only ask for a key or
+client scoped to its own id, `connector:<slug>`: `auth.instance`
+`{ "own": true }` on a token connector, or `configured` OAuth with
+no provider. Naming a shipped integration's key
+(`auth.instance.integration`), the box's OAuth client
+(`oauth.provider`), or the GitHub App is refused at install. The
+admin fills the key by name under Platform keys, for that connector
+alone; values never return through any route; the row is deleted
+with the connector. An organisation's own server holds nothing at
+instance level (`recipeManifestProblem`).
+
+**Residual risk:** an admin who fills a key for a malicious
+connector hands that connector that key alone, and the endpoint it
+names receives what the login sends (SEC-17).
+
+## SEC-22 — The GitHub App manifest callback takes a creation code from the browser
+
+**Status:** fixed by design 2026-10-10, as the manifest flow
+shipped.
+
+**Where:** `GET /api/admin/instance/keys/github-app/manifest/callback`
+(`src/http/admin-instance-routes.ts`, `src/github/manifest.ts`).
+
+**Exposure:** after the admin confirms the App on GitHub, GitHub
+sends their browser back to the box with a `code`, and the box
+trades it for a new App's credentials and stores them as the box's
+GitHub App. A forged redirect, or one replayed from another flow,
+could try to store an attacker's App, whose owner then holds the
+private key the box signs with (SEC-12), or send the admin on to
+another site.
+
+**Fix:** the callback accepts a `state` only when it matches the
+`guilds_github_manifest` cookie (HttpOnly, SameSite=Lax, scoped to
+the callback path, 20 minutes) and names a flow this process
+started for an instance admin; a flow is consumed once. The code is
+exchanged once, over HTTPS with `api.github.com`, with no token. The
+App is stored for the admin who started the flow. `return_to` is
+restricted to a same-origin path. A failed state check, conversion,
+or write stores nothing and sends the admin to Platform keys with
+`setup_error`.
+
+**Residual risk:** a pending flow lives in process memory, so a
+restart between the confirmation on GitHub and the redirect fails
+the state check and the admin starts again. The admin's own browser
+is trusted to post the manifest it was given.
+
+## SEC-21 — Platform keys are written through the API
+
+**Status:** fixed by design 2026-10-10, when the platform keys
+moved from the environment into the store.
+
+**Where:** `PUT` and `DELETE /api/admin/instance/keys/:integration`
+(`src/http/admin-instance-routes.ts`), the store
+(`src/instance/keys.ts`), and the `instance_keys` table.
+
+**Exposure:** the box's own credentials (the GitHub App, the Google
+OAuth client, the Tavily and TypeSafe keys) are written over HTTP by
+a signed-in user instead of by whoever edits `.env` on the host. A
+write path any member could reach, or one that echoed values back,
+would hand the box's identity to that member or to anyone reading
+a response.
+
+**Fix:** the routes answer only an instance admin; anyone else gets
+404. Values are validated against the integration's fields (an
+unknown field or a missing required one is 400; an env integration
+cannot be written), encrypted with AES-GCM under
+`SECRETS_MASTER_KEY` as one row per integration, and never read
+back: every response and `GET /api/instance` carry which fields are
+set, never a value. Each row records who wrote it and when, shown
+to an instance admin. Replacing the GitHub App with another App ID,
+or removing it, needs an explicit confirmation and disconnects the
+logins installed with the old App, so no login keeps an
+installation of an App the box no longer holds. The Tavily and
+TypeSafe keys moved into the same store, so `.env` and
+`.env.example` carry no platform key.
+
+**Residual risk:** an instance admin's session writes the box's
+credentials, and so does a compromised admin account. A database
+dump holds every platform key's ciphertext, as it does every
+login's; the master key stays in `.env`.
+
 ## SEC-20 — Connector code installed at runtime runs inside the orchestrator
 
 **Status:** open, by design since 2026-10-09; opt-in.
@@ -47,8 +149,11 @@ for it, runs code with the control plane's authority.
 **Mitigation:** the tier is off unless `CONNECTORS_CODE_TIER=1`. A code
 package installs only from an index `REGISTRY_PUBLIC_KEY` verifies and
 only when that index marks it verified; `--unverified` does not apply
-to code. Its manifest may not name an instance key or the box's OAuth
-clients. The size and SHA-256 of every package are checked against
+to code. Its manifest may not reach for the box's own wiring: a
+shipped integration's key, the box's OAuth client, or the GitHub App
+(SEC-23); a key or client it declares of its own is the admin's to
+fill for that connector alone. The size and SHA-256 of every package
+are checked against
 the signed index. Only the instance admin installs one, and code loads
 only from the operator's `CONNECTORS_ROOT`; a box with the tier off
 logs code it finds there instead of loading it. Hosted turns the tier
@@ -94,7 +199,9 @@ takes the index as served for connectors without code and recipes.
 ## SEC-18 — A connector installed at runtime could claim the box's credentials
 
 **Status:** fixed 2026-10-09, when registry installs and recipe-carried
-servers were introduced.
+servers were introduced. Since 2026-10-10 the rule is the box-wiring
+check of SEC-23: a runtime connector may declare a key or client of
+its own, never one of the box's; a recipe's server still holds none.
 
 **Where:** `endpointOnlyProblem` (`src/connectors/manifest.ts`),
 applied by the registry client (`src/registry/client.ts`), the
@@ -313,19 +420,24 @@ provider request carries a data URL.
 
 **Found:** 2026-09-30, building the GitHub connection.
 
-**Where:** `GITHUB_APP_PRIVATE_KEY` in the orchestrator
-environment. `src/github/index.ts` signs App tokens with it.
+**Where:** the `private_key` field of the GitHub App integration,
+an `instance_keys` row (`src/instance/keys.ts`). `src/github/index.ts`
+signs App tokens with it. Until 2026-10-10 it was
+`GITHUB_APP_PRIVATE_KEY` in the orchestrator environment.
 
 **Exposure:** the key authenticates as the App. The App can
 request a token for any installation of it: every connected
 account's selected repositories, across organisations.
 
-**Control in place:** the key stays in the orchestrator
-environment with the other platform keys and never enters a
-sandbox. Installation ids stay in encrypted connection payloads.
+**Control in place:** the key is an encrypted `instance_keys` row
+under the master key, written only by a platform admin through the
+admin route or the manifest callback (SEC-21, SEC-22), never
+returned by any route, and never enters a sandbox. Installation ids
+stay in encrypted connection payloads.
 
-**Residual risk:** a control-plane compromise reaches every
-connected account's selected repositories.
+**Residual risk:** a database dump holds the key's ciphertext, and
+the master key in `.env` opens it. A control-plane compromise
+reaches every connected account's selected repositories.
 
 ## SEC-11 — A GitHub install callback could name another account's installation
 

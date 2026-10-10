@@ -211,15 +211,31 @@ test("browser and coding tools follow the agent's capability, not a binding", ()
 });
 
 test("a tool that waits for a platform key is not offered, and says which", () => {
-  const box = (set: boolean): Instance => ({
+  const box = (
+    set: boolean,
+    source: Instance["integrations"][number]["source"] = "env",
+  ): Instance => ({
     auth_mode: "compat-cookie",
     integrations: [
       {
         id: "lookup",
         label: "Lookup",
         enables: "The lookup_find tool",
+        source,
         state: set ? "on" : "off",
-        variables: [{ name: "LOOKUP_API_KEY", optional: false, set }],
+        fields: [
+          {
+            name: "LOOKUP_API_KEY",
+            label: "Lookup API key",
+            optional: false,
+            secret: true,
+            multiline: false,
+            set,
+          },
+        ],
+        setup: null,
+        updated_at: null,
+        set_by: null,
         provides: { native_tools: ["lookup_find"], connectors: [] },
       },
     ],
@@ -227,7 +243,12 @@ test("a tool that waits for a platform key is not offered, and says which", () =
   const search = binding("lookup_find");
   assert.deepEqual(nativeToolDisplay(search, "agent", undefined, box(false)), {
     enabled: false,
-    caption: "Offered once this server has LOOKUP_API_KEY set",
+    caption: "Offered once this server has Lookup API key set",
+    bindable: false,
+  });
+  assert.deepEqual(nativeToolDisplay(search, "agent", undefined, box(false, "store")), {
+    enabled: false,
+    caption: "Offered once a platform admin sets up Lookup under Admin → Platform keys",
     bindable: false,
   });
   assert.deepEqual(nativeToolDisplay(search, "agent", undefined, box(true)), {

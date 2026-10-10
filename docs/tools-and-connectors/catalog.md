@@ -135,10 +135,10 @@ Three objects:
   | `display_name`, `description`, `limitations`, `setup_hint` | Operator copy |
   | `endpoint.url` | The remote MCP server, public HTTPS |
   | `auth.kind` | `token`, `oauth`, or `none` |
-  | `auth.fields` | A token login's inputs `{ name, label, secret, optional, placeholder }`; omitted means one field named `token` |
+  | `auth.fields` | A token login's inputs `{ name, label, secret, optional, multiline, placeholder }` (`multiline` is a text area); omitted means one field named `token` |
   | `auth.header` | The header an endpoint's token travels in; default a bearer `Authorization` header |
-  | `auth.oauth` | `{ strategy, provider, scopes }`: `dynamic`, `configured` (the client the `provider` integration holds), or `github_app` |
-  | `auth.instance` | `{ integration, variable }`: the instance key that serves the connector's platform login while that integration is on ([Instance keys](connectors.md#instance-keys)) |
+  | `auth.oauth` | `{ strategy, provider, scopes }`: `dynamic`; `configured` with a `provider` (the client that shipped integration holds); `configured` with none (a client of the connector's own, `connector:<slug>` under Platform keys, which needs an `endpoint` to discover its authorization server); or `github_app` |
+  | `auth.instance` | `{ integration, field }`: that field of a shipped integration serves the connector's platform login while the integration is on, for a connector the box ships. `{ own: true }`: a token connector's own platform key, `connector:<slug>`, whose fields are its login fields ([Instance keys](connectors.md#instance-keys)) |
   | `requires.integration` | The instance integration the connector needs |
   | `tools[]` | `{ name, description, input_schema, mutating }`, the curated list |
   | `policy.default_off` | Name patterns (`*` matches any run) that start Off |
@@ -178,7 +178,9 @@ Three objects:
   (`GET /api/mcp/servers/{id}/logo`, the folder's `logo.svg` served
   with a `default-src 'none'` policy). The instance admin
   edits the catalog under **Admin → Connector catalog**
-  (`/api/admin/mcp/servers`):
+  (`/api/admin/mcp/servers`), where a connector whose integration is
+  not on is marked **Not set up** with a **Set up** link to Platform
+  keys, opened on that integration:
 
   - `PATCH /api/admin/mcp/servers/{id}` switches a connector on or
     off; on a `local` row it edits the fields, on any other it writes
@@ -344,46 +346,77 @@ Every connector's access view carries `oauth_setup_state`:
 - `unsupported` when the box holds no OAuth client or App for it
 
 The Tools view marks an unsupported connector **Not set up**. It
-names the variables the box lacks and disables Connect
-([Integrations](#integrations)).
+names the fields its integration lacks, disables Connect, and offers
+a platform admin **Set up**, a link to **Admin**, **Platform keys**
+with that integration preselected ([Integrations](#integrations)).
 
 ## Integrations
 
-An integration is something the box as a whole can do once the
-operator sets its key in `.env`, as opposed to a login an
-organisation connects. One registry
-(`apps/orchestrator/src/instance/integrations.ts`) names each one,
-the environment variables it reads, and what it switches on.
-Modules ask the registry, not the environment. An integration is
-`on` when every variable it requires is set, `off` when none is,
-and `incomplete` when some are.
+An integration is something the box as a whole can do once it has
+its key, as opposed to a login an organisation connects. One
+registry (`apps/orchestrator/src/instance/integrations.ts`) names
+each one, the fields it takes, where their values come from, and
+what it switches on. A `store` integration's values are entered by
+a platform admin under **Admin**, **Platform keys** and kept
+encrypted in `instance_keys`; an `env` integration's are read from
+the environment at start. Modules ask the registry, not the
+environment or the table. An integration is `on` when every field it
+requires is set, `off` when none is, and `incomplete` when some are.
 
-| Integration | Variables | Switches on |
-|---|---|---|
-| `web-search` | `TAVILY_API_KEY` | The Tavily connector's platform login, `tavily_search` |
-| `group-routing` | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat |
-| `github-app` | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories ([GitHub](github.md)) |
-| `google-connectors` | `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` | The Gmail and Drive connectors ([Gmail and Drive](google.md)) |
-| `error-reporting` | `SENTRY_DSN` | Sentry |
+A connector may declare an integration of its own: a platform key
+(`auth.instance: { "own": true }` on a token connector, whose fields
+are its login fields, `secret` unless a field says `secret: false`)
+or an OAuth client (`configured` with no `provider`: Client ID
+`client_id` and Client secret `client_secret`). Its id is
+`connector:<slug>`, its label the connector's display name (or
+"<name> OAuth client"), its source `store`, and it
+`provides.connectors: [slug]`. It is listed with the others, filled
+through the same routes, and its row is deleted with the registry
+connector. The list is rebuilt from the platform connector rows
+(`apps/orchestrator/src/instance/connectors.ts`,
+`refreshConnectorIntegrations`) at boot and after a registry
+install, update, removal, or reload, and after a hand-made server is
+created or patched, so a hand-made platform server with a configured
+client of its own gets one too; an organisation's own server cannot
+use a configured client. `installedIntegrations()` lists core's, an
+edition's, then the connector-declared ones.
+
+| Integration | Source | Fields | Switches on |
+|---|---|---|---|
+| `web-search` | store | `api_key` | The Tavily connector's platform login, `tavily_search` |
+| `group-routing` | store | `api_key`, and `model` to tune it | Recipient and history selection in group chat |
+| `github-app` | store | `app_id`, `slug`, `private_key`, `client_id`, `client_secret` | The GitHub connector and a guild's repositories ([GitHub](github.md)) |
+| `google-connectors` | store | `client_id`, `client_secret` | The Gmail and Drive connectors ([Gmail and Drive](google.md)) |
+| `error-reporting` | env | `SENTRY_DSN` | Sentry |
+| `registry` | env | `REGISTRY_URL`, `REGISTRY_PUBLIC_KEY` | Installing connectors and recipes from a registry ([Registry](registry.md)) |
+| `connector-code` | env | `CONNECTORS_CODE_TIER`, `CONNECTORS_ROOT` | Registry connectors that carry adapter code ([Code tier](registry.md#code-tier)) |
 
 `GET /api/instance` (any user of the box) reports:
 
 - the box's `auth_mode`
-- each integration's state
-- which of its variables are set, never a value
-- what it switches on: native tools and connector slugs
+- each integration's `id`, `label`, `enables`, `source`, and `state`
+- its `fields` (`name`, `label`, `optional`, `secret`, `multiline`,
+  `set`), never a value; for an env field, `set` means the variable
+  itself is set, and a default does not count
+- its `setup` flow: `github-app-manifest` for the GitHub App, else
+  null
+- `updated_at` and `set_by` for an instance admin, null for anyone
+  else
+- what it `provides`: `native_tools` and `connectors`
 
 The operator app reads it and turns off what depends on a missing
-integration, naming the variables that would switch it on:
+integration, naming it and the fields it lacks:
 
 - **Admin**, **Platform keys** lists every integration with its
-  state
+  state and takes a store integration's values (`PUT` and
+  `DELETE /api/admin/instance/keys/:integration`, instance admin
+  only)
 - the Tools view marks a connector without its App or OAuth client
-  **Not set up**
+  **Not set up** and offers a platform admin **Set up**
 
 No integration serves a model provider; an organisation connects its
 own under **Settings**, **Model keys**
 ([Users and organisations](../concepts/users-and-organisations.md#model-providers)).
 
-Setting the variables is
-[Configure](../getting-started/configure.md).
+Entering a platform key is
+[Configure](../getting-started/configure.md#platform-keys).

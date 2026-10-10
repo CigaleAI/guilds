@@ -1,4 +1,9 @@
-import type { Instance, InstanceIntegration, McpServerAccess } from "../../api/types";
+import type {
+  Instance,
+  InstanceIntegration,
+  IntegrationField,
+  McpServerAccess,
+} from "../../api/types";
 
 type Provided = keyof InstanceIntegration["provides"];
 
@@ -13,16 +18,14 @@ export function integrationFor(
   return instance?.integrations.find((item) => item.provides[kind].includes(id));
 }
 
-/** The required variables an integration still lacks. */
-export function missingVariables(integration: InstanceIntegration): string[] {
-  return integration.variables
-    .filter((variable) => !variable.optional && !variable.set)
-    .map((variable) => variable.name);
+/** The required fields an integration still lacks. */
+export function missingFields(integration: InstanceIntegration): IntegrationField[] {
+  return integration.fields.filter((field) => !field.optional && !field.set);
 }
 
-/** The variables that would switch an integration on, as a phrase: `A`, `A and B`, `A, B, and C`. */
-export function missingVariablesPhrase(integration: InstanceIntegration): string {
-  return names.format(missingVariables(integration));
+/** The fields that would switch an integration on, by label: `A`, `A and B`, `A, B, and C`. */
+export function missingFieldsPhrase(integration: InstanceIntegration): string {
+  return names.format(missingFields(integration).map((field) => field.label));
 }
 
 /**
@@ -37,15 +40,44 @@ export function toolIntegrationGap(
   return integration && integration.state !== "on" ? integration : null;
 }
 
-/** Why a connector's sign-in cannot start on this server, or null when it can. */
+/** Why a connector's sign-in cannot start here, and the platform key that would let it, when one does. */
+export type ConnectorSetupGap = { text: string; integration: string | null };
+
+/**
+ * Why a connector's sign-in cannot start on this server, or null when it can. `integration` is
+ * the platform key a platform admin enters to set it up; null when no key on this box does.
+ */
 export function connectorSetupGap(
   server: Pick<McpServerAccess, "slug" | "oauth_setup_state">,
   instance: Instance | undefined,
-): string | null {
+): ConnectorSetupGap | null {
   if (server.oauth_setup_state !== "unsupported") return null;
   const integration = integrationFor(instance, "connectors", server.slug);
   if (!integration || integration.state === "on") {
-    return "This server has no OAuth client for this connector.";
+    return { text: "This server has no OAuth client for this connector.", integration: null };
   }
-  return `Needs ${missingVariablesPhrase(integration)} set on this server.`;
+  const missing = missingFieldsPhrase(integration);
+  return {
+    text: `${integration.label} is not set up on this server${missing ? `: ${missing} missing` : ""}.`,
+    integration: integration.id,
+  };
+}
+
+/** The Admin search that opens one integration under Platform keys, and where to come back to. */
+export function setupSearch(
+  integrationId: string,
+  returnTo?: string,
+): { tab: "instance"; integration: string; return_to?: string } {
+  return {
+    tab: "instance",
+    integration: integrationId,
+    ...(returnTo ? { return_to: returnTo } : {}),
+  };
+}
+
+/** A `return_to` the app may follow: a path on this origin, never another site. */
+export function safeReturnTo(value: string | undefined): string | null {
+  return value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
+    ? value
+    : null;
 }

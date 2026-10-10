@@ -1,88 +1,180 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { CONNECTORS } from "../../src/connectors/index.js";
 import {
   CORE_INTEGRATIONS,
+  ERROR_REPORTING,
   GITHUB_APP,
   GROUP_ROUTING,
+  REGISTRY,
   WEB_SEARCH,
+  instanceKeys,
+  integrationForConnector,
   integrationState,
   integrationStatuses,
+  integrationValue,
   integrationValues,
-  integrationVariable,
-  missingVariables,
+  missingFields,
+  setInstanceKeys,
 } from "../../src/instance/integrations.js";
+import { storeKeys } from "../helpers/env.js";
 
-const GITHUB_ENV = {
-  GITHUB_APP_ID: "1",
-  GITHUB_APP_SLUG: "guilds",
-  GITHUB_APP_PRIVATE_KEY: "pem",
-  GITHUB_APP_CLIENT_ID: "client",
-  GITHUB_APP_CLIENT_SECRET: "secret",
-};
+const GITHUB_VALUES = { app_id: "1", slug: "guilds", private_key: "pem-value", client_id: "client-value", client_secret: "secret-value" };
 
-test("an integration is on only with every required variable set", () => {
-  assert.equal(integrationState(GITHUB_APP, {}), "off");
-  assert.equal(integrationState(GITHUB_APP, GITHUB_ENV), "on");
-  assert.equal(integrationState(GITHUB_APP, { ...GITHUB_ENV, GITHUB_APP_SLUG: "  " }), "incomplete");
-  assert.deepEqual(missingVariables(GITHUB_APP, { GITHUB_APP_ID: "1", GITHUB_APP_SLUG: "guilds" }), [
-    "GITHUB_APP_PRIVATE_KEY",
-    "GITHUB_APP_CLIENT_ID",
-    "GITHUB_APP_CLIENT_SECRET",
-  ]);
-});
+function github(values: Record<string, string>) {
+  return { keys: storeKeys({ "github-app": values }) };
+}
 
-test("an optional variable tunes an integration without switching it", () => {
-  assert.equal(integrationState(GROUP_ROUTING, { TYPESAFE_MODEL: "jev-next" }), "off");
-  assert.equal(integrationState(GROUP_ROUTING, { TYPESAFE_API_KEY: "key" }), "on");
-  assert.deepEqual(integrationValues(GROUP_ROUTING, { TYPESAFE_API_KEY: " key " }), {
-    TYPESAFE_API_KEY: "key",
-    TYPESAFE_MODEL: "",
-  });
-  assert.equal(integrationVariable(GROUP_ROUTING, "TYPESAFE_MODEL", { TYPESAFE_MODEL: "jev-next" }), "jev-next");
-});
-
-test("values come back only while the integration is on", () => {
-  assert.equal(integrationValues(GITHUB_APP, { GITHUB_APP_ID: "1" }), null);
-  assert.equal(integrationValues(GITHUB_APP, GITHUB_ENV)?.GITHUB_APP_CLIENT_SECRET, "secret");
-  assert.equal(integrationValues(WEB_SEARCH, {}), null);
-});
-
-test("statuses name each integration and its variables without a value", () => {
-  const env = { ...GITHUB_ENV, TAVILY_API_KEY: "tvly-secret-value", GITHUB_APP_PRIVATE_KEY: "" };
-  const statuses = integrationStatuses(CORE_INTEGRATIONS, env);
+test("a store integration is on only with every required field set, and reads nothing from the environment", () => {
+  assert.equal(integrationState(GITHUB_APP, { keys: {} }), "off");
+  assert.equal(integrationState(GITHUB_APP, github(GITHUB_VALUES)), "on");
+  assert.equal(integrationState(GITHUB_APP, github({ ...GITHUB_VALUES, slug: "  " })), "incomplete");
   assert.deepEqual(
-    statuses.map((item) => [item.id, item.state]),
+    missingFields(GITHUB_APP, github({ app_id: "1", slug: "guilds" })).map((field) => field.name),
+    ["private_key", "client_id", "client_secret"],
+  );
+  assert.equal(
+    integrationState(WEB_SEARCH, { env: { api_key: "tvly", TAVILY_API_KEY: "tvly" }, keys: {} }),
+    "off",
+    "a variable named like a store field is not a value",
+  );
+});
+
+test("an env integration reads its variables; a default keeps it on without counting as set", () => {
+  assert.equal(integrationState(REGISTRY, { env: {} }), "on");
+  assert.equal(integrationValue(REGISTRY, "REGISTRY_URL", { env: {} }), "https://registry.guilds.run");
+  assert.equal(integrationState(REGISTRY, { env: { REGISTRY_URL: "" } }), "off");
+  assert.equal(integrationValue(REGISTRY, "REGISTRY_URL", { env: { REGISTRY_URL: " https://r.example " } }), "https://r.example");
+  assert.deepEqual(missingFields(ERROR_REPORTING, { env: {} }), [{ name: "SENTRY_DSN", label: "Sentry DSN" }]);
+  assert.equal(integrationState(ERROR_REPORTING, { env: { SENTRY_DSN: "https://k@sentry.example/1" } }), "on");
+  assert.equal(
+    integrationState(ERROR_REPORTING, { env: {}, keys: storeKeys({ "error-reporting": { SENTRY_DSN: "x" } }) }),
+    "off",
+    "a store row is not a value for an env integration",
+  );
+});
+
+test("an optional field tunes an integration without switching it", () => {
+  const routing = (values: Record<string, string>) => ({ keys: storeKeys({ "group-routing": values }) });
+  assert.equal(integrationState(GROUP_ROUTING, routing({ model: "jev-next" })), "off");
+  assert.equal(integrationState(GROUP_ROUTING, routing({ api_key: "key" })), "on");
+  assert.deepEqual(integrationValues(GROUP_ROUTING, routing({ api_key: " key " })), { api_key: "key", model: "" });
+  assert.equal(integrationValue(GROUP_ROUTING, "model", routing({ model: "jev-next" })), "jev-next");
+});
+
+test("values come back only while the integration is on, typed by field name", () => {
+  assert.equal(integrationValues(GITHUB_APP, github({ app_id: "1" })), null);
+  const values = integrationValues(GITHUB_APP, github(GITHUB_VALUES));
+  assert.equal(values?.client_secret, "secret-value");
+  assert.equal(values?.app_id, "1");
+  assert.equal(integrationValues(WEB_SEARCH, { keys: {} }), null);
+});
+
+test("readers resolve store fields from the process snapshot unless given other keys", () => {
+  setInstanceKeys(storeKeys({ "web-search": { api_key: "tvly-snapshot" } }));
+  try {
+    assert.equal(integrationValue(WEB_SEARCH, "api_key"), "tvly-snapshot");
+    assert.equal(integrationState(WEB_SEARCH), "on");
+    assert.equal(integrationState(WEB_SEARCH, { keys: {} }), "off");
+    assert.equal(integrationState(WEB_SEARCH, { env: {} }), "on", "an env override leaves the keys alone");
+    assert.equal(instanceKeys()["web-search"]?.set_by, "operator");
+  } finally {
+    setInstanceKeys({});
+  }
+  assert.equal(integrationState(WEB_SEARCH), "off");
+});
+
+test("statuses name each integration, its source and its fields with labels, never a value", () => {
+  const sources = {
+    env: { REGISTRY_PUBLIC_KEY: "pk" },
+    keys: storeKeys({
+      "web-search": { api_key: "tvly-secret-value" },
+      "github-app": { ...GITHUB_VALUES, private_key: "" },
+    }),
+  };
+  const statuses = integrationStatuses(CORE_INTEGRATIONS, sources);
+  assert.deepEqual(
+    statuses.map((item) => [item.id, item.source, item.state]),
     [
-      ["web-search", "on"],
-      ["group-routing", "off"],
-      ["github-app", "incomplete"],
-      ["google-connectors", "off"],
-      ["error-reporting", "off"],
-      ["registry", "on"],
-      ["connector-code", "off"],
+      ["web-search", "store", "on"],
+      ["group-routing", "store", "off"],
+      ["github-app", "store", "incomplete"],
+      ["google-connectors", "store", "off"],
+      ["error-reporting", "env", "off"],
+      ["registry", "env", "on"],
+      ["connector-code", "env", "off"],
     ],
   );
-  const github = statuses.find((item) => item.id === "github-app");
+  const githubStatus = statuses.find((item) => item.id === "github-app")!;
+  assert.equal(githubStatus.setup, "github-app-manifest");
+  assert.deepEqual(githubStatus.fields.filter((field) => !field.set).map((field) => field.name), ["private_key"]);
+  assert.deepEqual(githubStatus.fields.find((field) => field.name === "private_key"), {
+    name: "private_key",
+    label: "Private key (PEM)",
+    optional: false,
+    secret: true,
+    multiline: true,
+    set: false,
+  });
+  const registry = statuses.find((item) => item.id === "registry")!;
+  assert.equal(registry.setup, null);
   assert.deepEqual(
-    github?.variables.filter((variable) => !variable.set).map((variable) => variable.name),
-    ["GITHUB_APP_PRIVATE_KEY"],
+    registry.fields.map((field) => [field.name, field.optional, field.set]),
+    [
+      ["REGISTRY_URL", false, false],
+      ["REGISTRY_PUBLIC_KEY", true, true],
+    ],
+    "the default URL keeps the registry on, but the variable itself is unset",
   );
+  assert.ok(statuses.every((item) => item.updated_at === null && item.set_by === null), "no audit unless asked");
   const text = JSON.stringify(statuses);
-  for (const value of ["tvly-secret-value", "secret", "client"]) {
+  for (const value of ["tvly-secret-value", "secret-value", "client-value", "pem-value", "pk"]) {
     assert.equal(text.includes(`"${value}"`), false, `${value} must not appear`);
   }
 });
 
-test("no two integrations share an id or a variable", () => {
+test("audit adds when and by whom a store row was written; the environment has no audit", () => {
+  const sources = {
+    env: { SENTRY_DSN: "dsn" },
+    keys: storeKeys({ "web-search": { api_key: "k" } }, "2026-10-09T08:00:00.000Z"),
+  };
+  const audited = integrationStatuses(CORE_INTEGRATIONS, sources, undefined, { audit: true });
+  const web = audited.find((item) => item.id === "web-search")!;
+  assert.equal(web.updated_at, "2026-10-09T08:00:00.000Z");
+  assert.equal(web.set_by, "operator");
+  const routing = audited.find((item) => item.id === "group-routing")!;
+  assert.equal(routing.updated_at, null);
+  assert.equal(routing.set_by, null);
+  const errors = audited.find((item) => item.id === "error-reporting")!;
+  assert.equal(errors.state, "on");
+  assert.equal(errors.updated_at, null);
+  assert.equal(errors.set_by, null);
+  const plain = integrationStatuses(CORE_INTEGRATIONS, sources).find((item) => item.id === "web-search")!;
+  assert.equal(plain.updated_at, null);
+  assert.equal(plain.set_by, null);
+});
+
+test("a connector names the integration it requires or takes its platform key from", () => {
+  assert.equal(integrationForConnector(CONNECTORS.bySlug("tavily")!.manifest)?.id, "web-search");
+  assert.equal(integrationForConnector(CONNECTORS.bySlug("github")!.manifest)?.id, "github-app");
+  assert.equal(integrationForConnector(CONNECTORS.bySlug("gmail")!.manifest)?.id, "google-connectors");
+  assert.equal(integrationForConnector(CONNECTORS.bySlug("drive")!.manifest)?.id, "google-connectors");
+  assert.equal(integrationForConnector(CONNECTORS.bySlug("notion")!.manifest), null);
+  assert.equal(integrationForConnector(CONNECTORS.bySlug("tavily")!.manifest, [GITHUB_APP]), null, "only among the given integrations");
+});
+
+test("no two integrations share an id, and no integration two field names", () => {
   const ids = CORE_INTEGRATIONS.map((item) => item.id);
   assert.equal(new Set(ids).size, ids.length);
-  const names = CORE_INTEGRATIONS.flatMap((item) => item.variables.map((variable) => variable.name));
-  assert.equal(new Set(names).size, names.length);
+  for (const integration of CORE_INTEGRATIONS) {
+    const names = integration.fields.map((field) => field.name);
+    assert.equal(new Set(names).size, names.length, integration.id);
+  }
 });
 
 test("statuses say which tools and connectors each integration switches on, and none serves a model", () => {
   const provides = Object.fromEntries(
-    integrationStatuses(CORE_INTEGRATIONS, {}).map((item) => [item.id, item.provides]),
+    integrationStatuses(CORE_INTEGRATIONS, { keys: {} }).map((item) => [item.id, item.provides]),
   );
   assert.equal("openrouter" in provides, false);
   assert.equal("deepinfra" in provides, false);

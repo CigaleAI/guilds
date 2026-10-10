@@ -74,22 +74,10 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
             >
               <Link to="/inbox" />
             </UtilityLink>
-            <UtilityLink
-              asChild
-              density="compact"
-              icon={Sparkles}
-              tone="signal"
-              title="Builder"
-            >
+            <UtilityLink asChild density="compact" icon={Sparkles} tone="signal" title="Builder">
               <Link to="/builder" />
             </UtilityLink>
-            <UtilityLink
-              asChild
-              density="compact"
-              icon={BookOpen}
-              tone="plum-tint"
-              title="Recipes"
-            >
+            <UtilityLink asChild density="compact" icon={BookOpen} tone="plum-tint" title="Recipes">
               <Link to="/recipes" />
             </UtilityLink>
             <UtilityLink
@@ -158,8 +146,16 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
         {guilds.data && listed.length === 0 ? (
           <p className="px-2 py-3 text-sm text-muted">
             No guilds yet.{" "}
+            <button
+              type="button"
+              className="cursor-pointer font-semibold text-fg underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              onClick={() => setCreatingGuild(true)}
+            >
+              Create a guild
+            </button>{" "}
+            for full control, or{" "}
             <Link to="/builder" className="font-semibold text-signal-t underline">
-              Start one with the Builder
+              use the Builder
             </Link>
             .
           </p>

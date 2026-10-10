@@ -58,7 +58,7 @@ of core is a repository of its own that holds this one as a submodule
 | `src/extension.ts` | `ServerExtension`: what an edition adds to core. Its own migrations, boot seeds, routes, instance keys, the hook for a new organisation, and its own organisation policy, identity provider, and sandbox provider, and the build of the operator app it serves |
 | `src/app.ts` | Fastify app: the React app's build at the site root, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
 | `src/` | Domain modules (table below) |
-| `drizzle/` | Core's migrations: `0001_baseline`, the snapshot of core's schema (`0001.notes.md` says how it is regenerated), then the numbered migrations after it |
+| `drizzle/` | Core's migrations: `0001_baseline`, the snapshot of core's schema (`0001.notes.md` says how it is regenerated), then the numbered migrations after it: `0002_model_providers` (an organisation's model keys), `0003_instance_keys` (the encrypted platform keys) |
 | `test/` | `unit/`, `integration/`, `contract/`, `helpers/` |
 | `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog` (rewrites the HTTP fixture when catalog shapes change), `build-connector` (bundles a connector folder into a registry package), `sweep-workspaces`, `typesafe-replay` |
 | `Dockerfile` | The core image. Pinned Node image; a `web` stage builds `apps/web` and Storybook, the final stage copies `src`, `scripts`, `drizzle` and the web build |
@@ -164,7 +164,8 @@ orchestrator serves.
   - Usage tab — its lifetime model usage.
   - Settings tab (`settings/`) — edits its name, focus, mascot and
     identity colour, wake triggers, model, thinking, run limits,
-    script cap, browser and browser language.
+    disk and script caps, box, capabilities (Browser, CLI,
+    scripting, Memory), and browser language.
   - The header flags broken Task links. A recipe-applied browser
     login shows a strip until marked done. The inspector's
     menu deletes it. `runState.ts` names runs and says where each
@@ -219,14 +220,18 @@ orchestrator serves.
   and needs (`plan/`: the pure plan model and its view, shared with
   the Builder), Task rewrites, connector tools switched per agent
   or connectors dropped, approving, exporting. The apply preview
-  with the new guild's and agents' names and the login each
-  connector starts with. The apply checklist of logins, secrets and
-  outside setup, skipping, activating or aborting. The strip on a
+  with the new guild's and agents' names, the login each connector
+  starts with, and the connectors a platform admin still sets up.
+  The apply checklist of logins, secrets and outside setup,
+  skipping, activating or aborting. The strip on a
   guild whose checklist is still open.
 - `admin/` — for platform admins. The connector catalog: each
   connector's switch, its copy over the manifest, its tools' defaults,
-  servers added by hand, and an export. The instance's keys with each
-  integration's state.
+  servers added by hand, and an export. Platform keys: each
+  integration's state and fields, the form a store integration's
+  values are entered in and removed from, and `githubManifest.ts`,
+  which posts the GitHub App manifest to GitHub for **Create the
+  GitHub App**.
 - `settings/` — the operator's own name, colour and timezone. The
   organisation's name and slug. Its members. Its model keys: each
   provider's state, the connect form, the catalog to choose models
@@ -240,10 +245,13 @@ orchestrator serves.
   not take, and the guide shown in a picker's place while no provider
   is connected.
 - `instance/` — what the server's integrations mean for a screen:
-  the native tool and connector that waits for an instance key.
+  the native tool and connector that waits for a platform key, and
+  the **Set up** link to Platform keys a platform admin gets.
 - `inbox/` — issues and tags for the operator across the guilds
   they operate.
-- `home/`
+- `home/` — `/` opens the last guild visited, or the first. With
+  none, a start with DiceBear mascots and two ways in: Create a
+  guild, or the Builder.
 
 ### `packages/ui/`
 
@@ -336,14 +344,14 @@ agent runs. Studio and Builder share `conversation/`.
 
 | Directory | Goal |
 | --- | --- |
-| `http/` | `routes.ts` (guilds, agents, runs, attachments, group chat, files, collections and records, collection access, schedules, scripts, secrets, MCP, bindings, usage, the instance descriptor at `GET /api/instance`), `coding-routes.ts` (guild repositories, a GitHub login's reachable and selected repositories, a run's changes and diff), `model-provider-routes.ts` (an organisation's own model keys), `me-routes.ts` (`/api/auth/config` and the request's own user at `/api/auth/me`), `instance-admin.ts` (who administers the instance), `studio-routes.ts`, `builder-routes.ts`, `builder-capability-routes.ts`, `recipe-routes.ts`, `admin-mcp-routes.ts`, `admin-registry-routes.ts` (the registry's connectors beside the box's, install, update, remove), `org-connector-routes.ts` (an organisation's own remote servers); `identity.ts` (the `AUTH_MODE` seam: core's two modes, or the `IdentityProvider` an extension supplies), `cookies.ts`, `origin.ts` (the host and origin a request may come from), `usage-view.ts`, `access.ts`, `artifact-files.ts` (Host Finder, collections, records, export, clear records, and grants over the artifact store), `items.ts`, `sse.ts`, `sandbox-proxy.ts` (noVNC and terminal, HTTP and WebSocket), `web-app.ts` (serves `apps/web/dist` at the site root: hashed assets immutable, browser page requests the server does not own fall back to `index.html`) |
+| `http/` | `routes.ts` (guilds, agents, runs, attachments, group chat, files, collections and records, collection access, schedules, scripts, secrets, MCP, bindings, usage, the instance descriptor at `GET /api/instance`: each integration's state and fields, never a value), `coding-routes.ts` (guild repositories, a GitHub login's reachable and selected repositories, a run's changes and diff), `model-provider-routes.ts` (an organisation's own model keys), `me-routes.ts` (`/api/auth/config` and the request's own user at `/api/auth/me`), `instance-admin.ts` (who administers the instance), `admin-instance-routes.ts` (a store integration's values, entered and removed by the instance admin, and the GitHub App manifest flow), `studio-routes.ts`, `builder-routes.ts`, `builder-capability-routes.ts`, `recipe-routes.ts`, `admin-mcp-routes.ts`, `admin-registry-routes.ts` (the registry's connectors beside the box's, install, update, remove), `org-connector-routes.ts` (an organisation's own remote servers); `identity.ts` (the `AUTH_MODE` seam: core's two modes, or the `IdentityProvider` an extension supplies), `cookies.ts`, `origin.ts` (the host and origin a request may come from), `usage-view.ts`, `access.ts`, `artifact-files.ts` (Host Finder, collections, records, export, clear records, and grants over the artifact store), `items.ts`, `sse.ts`, `sandbox-proxy.ts` (noVNC and terminal, HTTP and WebSocket), `web-app.ts` (serves `apps/web/dist` at the site root: hashed assets immutable, browser page requests the server does not own fall back to `index.html`) |
 | `generation/` | `GenerationLoop`: create runs, stream the model, invoke tools, publish SSE, cron ticker; `chain.ts` for run chains (the hand-off request, the continuation message, chain positions); `admission.ts` for organisation concurrency. Each model call projects tool results through `conversation/projection.ts` |
 | `toolbox/` | Native tool registry: `artifacts.ts` (note and record tools), `memory.ts`, `script.ts`, `schedule.ts`, `browser.ts`, `code.ts` (the code tools over `guilds-code`, repeated-read pointers, exploration), `group.ts`, `report.ts`, `secret.ts` (`secret_store`, `secret_request`); `shell.ts` runs sandbox commands; `output.ts` is the result pipeline |
-| `registry/` | `index.ts` (the registry index schema, versions), `tar.ts` (reads a gzipped package), `client.ts` (`REGISTRY_URL`, the index, packages checked against their hashes, endpoint-only manifests), `install.ts` (install, update, remove, and list registry connectors), `code.ts` (the code tier: a version's folder under `CONNECTORS_ROOT`, and serving each row's version in the running process) |
-| `connectors/` | One folder per connector (`<slug>/connector.json`, `adapter.ts`, its client code, `logo.svg`); `manifest.ts` (the TypeBox manifest schema and loader), `types.ts` (the adapter contract), `registry.ts` (entries by slug and server id), `index.ts` (core's list and the installed set an extension adds to), `connect.ts` (the token Connect operation), `view.ts` (what the API says beside a server row), `builder.ts` (searchable workspaces and systems of record), `instance.ts` (the instance key a platform login calls with, and its redaction), `format.ts` (compact TSV) |
+| `registry/` | `index.ts` (the registry index schema, versions), `tar.ts` (reads a gzipped package), `client.ts` (`REGISTRY_URL`, the index, packages checked against their hashes, and what a runtime manifest may claim), `install.ts` (install, update, remove, and list registry connectors), `code.ts` (the code tier: a version's folder under `CONNECTORS_ROOT`, and serving each row's version in the running process) |
+| `connectors/` | One folder per connector (`<slug>/connector.json`, `adapter.ts`, its client code, `logo.svg`); `manifest.ts` (the TypeBox manifest schema and loader, and the box-wiring, endpoint-only, and recipe checks on a manifest), `types.ts` (the adapter contract), `registry.ts` (entries by slug and server id), `index.ts` (core's list and the installed set an extension adds to), `connect.ts` (the token Connect operation), `view.ts` (what the API says beside a server row), `builder.ts` (searchable workspaces and systems of record), `instance.ts` (the instance key a platform login calls with, its redaction, and the platform logins synced at boot and after a key write), `format.ts` (compact TSV) |
 | `mcp/` | `McpPool`: the remote MCP client and sessions, adapter dispatch through the registry, `mcp_tools` listing, connector State hooks; `catalog.ts` admin validation; `policy.ts` default-off overlays from the manifests, Studio readability, and reserved slugs; `verbs.ts` the writing verbs a tool name may carry; `names.ts` namespacing |
 | `oauth/` | Dynamic-client (PKCE), configured-client, and GitHub App Connect from each manifest's `auth.oauth`, provider discovery for a connector with no endpoint, callback HTML |
-| `github/` | The GitHub App: App token, install and user-authorize URLs, user code exchange, the installation the authorizing user can reach (or a picker when they have several), installation tokens and repositories |
+| `github/` | The GitHub App: App token, install and user-authorize URLs, user code exchange, the installation the authorizing user can reach (or a picker when they have several), installation tokens and repositories; `manifest.ts` (the App manifest for this box, the state cookie, and trading a manifest code for the App) |
 | `coding/` | Guild repositories and a GitHub login's selected set (`repositories.ts`: validation, payloads, State entries) and a coding run's git side (`git.ts`: identity, installation tokens per connection, the token file) |
 | `access/` | Binding resolution platform → org → guild → agent; `runtime.ts` resolves a run's tools, MCP, and secrets |
 | `credentials/` | AES-GCM encrypt/decrypt, environment fingerprint, connection and binding metadata views, secret name and description validation, connection owner-scope visibility |
@@ -363,7 +371,7 @@ agent runs. Studio and Builder share `conversation/`.
 | `sandbox/` | `RunSandboxes` (one OpenSandbox: ensure, idle, destroy), core's sandbox provider; `sweep.ts` orphan workspaces |
 | `llm/` | `providers.ts` (the provider table and the `{provider}/{model}` prefix), `catalog.ts` and `models-dev.ts` (the models.dev catalog: fetch, cache, snapshot, mapping), `credentials.ts` (the model credentials extension point and core's default over the organisation's rows), `models.ts` (an organisation's providers, chosen models, and default), `client.ts` (the OpenAI client with per-provider request shaping), `tokens.ts`, `cost.ts` |
 | `policy/` | Organisation policy: `OrgPolicy` (an organisation's limits and whether it may work), core's open policy, and the checks core runs against it (agent, browser, coding, and guild caps, the monthly Studio and Builder quota) |
-| `avatars/` | [DiceBear](https://www.dicebear.com/) SVG rendering (`clay.ts` body variants; also cutouts and voxel-bot) |
+| `avatars/` | [DiceBear](https://www.dicebear.com/) SVG rendering (`clay.ts` body variants; also cutouts and voxel-bot); `looks.ts` assigns a guild family and a unique variant per builder role |
 | `issues/` | Guild-level tooling reports from `report_issue` |
 | `notifications/` | The inbox view (open issues and unread tags per operator) and its per-user change stream |
 | `studio/` | Prompt Studio sessions, tools, drafts, publish, State preview, focus pins (`focus.ts`), edit requests (`edits.ts`) and table requests (`tables.ts`), the guild activity ledger (`activity.ts`), `system.md` |
@@ -374,7 +382,7 @@ agent runs. Studio and Builder share `conversation/`.
 | `guilds/` `agents/` `organisations/` `users/` | Validation and persistence |
 | `usage.ts` | Usage counter keys, deltas, tree |
 | `config/` | Env → `AppConfig`, core's settings; refuses the all-zero master key outside a development stack; `loadToolConfig` for command-line tools, which run in whatever mode the box is in |
-| `instance/` | `integrations.ts`: the registry of instance keys. Each optional integration, the environment variables it reads, what it switches on, and its state (`on`, `off`, `incomplete`); the modules that need a key read it through here |
+| `instance/` | `integrations.ts`: the registry of instance keys. Each optional integration, its source (`store` or `env`), its fields, what it switches on, and its state (`on`, `off`, `incomplete`); the modules that need a key read it through here, from the process snapshot or the environment. `keys.ts`: the `instance_keys` store, one AES-GCM row per integration under the master key, loaded into the snapshot at boot and after every write. `changes.ts`: what a write does besides: the platform logins synced, and the GitHub logins of a replaced or removed App disconnected. `connectors.ts`: the integrations connectors declare of their own (`connector:<slug>`, a platform key or an OAuth client), derived from the platform connector rows at boot and after a connector changes |
 | `cli/` | `seed:system` / `seed:operator`; `connector.ts` (`pnpm connector install`, `update`, `remove`, `list` against the registry) |
 | `observability/` | Structured logs, request ids, client-error intake, Sentry |
 | `net/` | Outbound HTTP with optional forward proxy; endpoint validation |

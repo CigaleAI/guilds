@@ -40,7 +40,9 @@ import type {
   GithubLogin,
   GithubSelectedRepository,
   GithubRepository,
+  GithubAppManifestStart,
   Instance,
+  InstanceKeysResult,
   Issue,
   McpConnection,
   McpCredentials,
@@ -134,7 +136,8 @@ export const keys = {
   instance: ["instance"] as const,
   identity: ["identity"] as const,
   orgModels: (orgId: string) => ["org", orgId, "models"] as const,
-  providerCatalog: (orgId: string, provider: string) => ["org", orgId, "model-catalog", provider] as const,
+  providerCatalog: (orgId: string, provider: string) =>
+    ["org", orgId, "model-catalog", provider] as const,
   orgUsage: ["usage", "org"] as const,
   adminCatalog: ["admin", "catalog"] as const,
   adminRegistry: ["admin", "registry"] as const,
@@ -822,12 +825,78 @@ export function useAgentUsage(agentId: string) {
   });
 }
 
-/** What this server is and which integrations it has; that changes only with a restart. */
+/** What this server is and which integrations it has. */
 export function useInstance() {
   return useQuery({
     queryKey: keys.instance,
     queryFn: () => api<Instance>("/api/instance"),
     staleTime: Infinity,
+  });
+}
+
+/** A platform key changes what every scope is offered, so the instance, every access read and the catalog refresh. */
+export function useInstanceRefresh() {
+  const client = useQueryClient();
+  return () => {
+    void client.invalidateQueries({ queryKey: keys.instance });
+    void client.invalidateQueries({ queryKey: keys.accessAll });
+    void client.invalidateQueries({ queryKey: keys.adminCatalog });
+  };
+}
+
+const instanceKeysPath = (integration: string) =>
+  `/api/admin/instance/keys/${encodeURIComponent(integration)}`;
+
+/** Enters a store integration's values; replacing the GitHub App while logins exist needs `confirmReplace`. */
+export function useSaveInstanceKeys() {
+  const refresh = useInstanceRefresh();
+  return useMutation({
+    mutationFn: ({
+      integration,
+      values,
+      confirmReplace,
+    }: {
+      integration: string;
+      values: Record<string, string>;
+      confirmReplace?: boolean;
+    }) =>
+      api<InstanceKeysResult>(instanceKeysPath(integration), {
+        method: "PUT",
+        body: { values, ...(confirmReplace ? { confirm_replace: true } : {}) },
+      }),
+    onSuccess: refresh,
+  });
+}
+
+/** Deletes a store integration's values; removing the GitHub App while logins exist needs `confirmReplace`. */
+export function useRemoveInstanceKeys() {
+  const refresh = useInstanceRefresh();
+  return useMutation({
+    mutationFn: ({
+      integration,
+      confirmReplace,
+    }: {
+      integration: string;
+      confirmReplace?: boolean;
+    }) =>
+      api<InstanceKeysResult>(
+        `${instanceKeysPath(integration)}${confirmReplace ? "?confirm_replace=1" : ""}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: refresh,
+  });
+}
+
+/** Starts creating the GitHub App from a manifest: what the browser posts to GitHub next. */
+export function useStartGithubAppManifest() {
+  const refresh = useInstanceRefresh();
+  return useMutation({
+    mutationFn: (input: { name?: string; owner?: string; return_to?: string }) =>
+      api<GithubAppManifestStart>("/api/admin/instance/keys/github-app/manifest", {
+        method: "POST",
+        body: input,
+      }),
+    onSuccess: refresh,
   });
 }
 
@@ -1478,9 +1547,9 @@ export function useProviderCatalog(orgId: string, provider: ModelProvider, enabl
   return useQuery({
     queryKey: keys.providerCatalog(orgId, provider),
     queryFn: () =>
-      api<{ models: CatalogModel[] }>(`${orgModelsPath(orgId)}/model-providers/${provider}/catalog`).then(
-        (body) => body.models,
-      ),
+      api<{ models: CatalogModel[] }>(
+        `${orgModelsPath(orgId)}/model-providers/${provider}/catalog`,
+      ).then((body) => body.models),
     enabled,
     retry: false,
   });

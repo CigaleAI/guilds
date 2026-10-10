@@ -18,13 +18,13 @@ import {
   type RemoteInfo,
   type RemoteSession,
 } from "../connectors/types.js";
-import type { Manifest } from "../connectors/manifest.js";
+import { authFields, type Manifest } from "../connectors/manifest.js";
 import { redact } from "../secrets/index.js";
 import type { OrgPolicy } from "../policy/index.js";
 import { utcMonth } from "../usage.js";
 
 import { namespacedName } from "./names.js";
-import { overriddenTool, toolStartsOff } from "../connectors/load.js";
+import { overriddenTool, serverManifest, toolStartsOff } from "../connectors/load.js";
 import { awaitingSettings, connectionSettings } from "../connectors/login.js";
 import { instanceCredentials } from "../connectors/instance.js";
 
@@ -280,8 +280,17 @@ export function connectionCredentials(connection: Record<string, unknown>): Cred
 
 
 
-function credentialToken(credentials: Credentials): string {
-  return credentials.access_token || credentials.token || "";
+/** What an endpoint session sends: an OAuth access token, else the login's `token`, else its first credential field. */
+function credentialToken(credentials: Credentials, manifest: Manifest | null): string {
+  if (credentials.access_token) {
+    return credentials.access_token;
+  }
+  if (credentials.token) {
+    return credentials.token;
+  }
+  const first = manifest ? authFields(manifest)[0]?.name : undefined;
+  const value = first ? credentials[first] : undefined;
+  return typeof value === "string" ? value : "";
 }
 
 function headersFor(token: string, manifest: Manifest | null): Record<string, string> {
@@ -297,7 +306,12 @@ export function authHeaders(
   server: Record<string, unknown>,
   connectors: ConnectorRegistry = installedConnectors(),
 ): Record<string, string> {
-  return headersFor(credentialToken(connectionCredentials(connection)), connectors.forServer(server)?.manifest ?? null);
+  const manifest = connectors.forServer(server)?.manifest ?? serverManifest(server);
+  const credentials =
+    connection.owner_scope === "platform" && manifest?.auth.instance
+      ? instanceCredentials(manifest)
+      : connectionCredentials(connection);
+  return headersFor(credentialToken(credentials, manifest), manifest);
 }
 
 /** A tool from a remote `tools/list`, with its annotations, null when absent. */
@@ -798,7 +812,7 @@ export class McpPool {
   private remoteForCredentials(server: Record<string, unknown>, resolved: Resolved, credentials: Credentials): RemoteSession {
     const session = new McpSession(
       serverUrl(server),
-      headersFor(credentialToken(credentials), resolved.manifest),
+      headersFor(credentialToken(credentials, resolved.manifest), resolved.manifest),
       this.endpointFetch,
     );
     return {
@@ -845,8 +859,9 @@ export class McpPool {
         settings ?? connectionSettings(login.connection),
         workspaceDir,
       );
-      const instance = login.connection.owner_scope === "platform" && resolved.manifest?.auth.instance;
-      return work(instance ? instanceCredentials(resolved.manifest!) : connectionCredentials(login.connection), ctx);
+      const manifest = resolved.manifest ?? serverManifest(server);
+      const instance = login.connection.owner_scope === "platform" && manifest?.auth.instance;
+      return work(instance && manifest ? instanceCredentials(manifest) : connectionCredentials(login.connection), ctx);
     };
     try {
       if (isOauth(server)) {

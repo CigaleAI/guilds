@@ -12,6 +12,7 @@ import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import type { Repositories } from "../db/repositories.js";
+import { assignGuildLooks } from "../avatars/looks.js";
 import { emptyRecipe } from "../recipes/minimal.js";
 import { RecipeStore } from "../recipes/store.js";
 import { RecipeApplyService, type ApplyChoices } from "../recipes/apply.js";
@@ -78,7 +79,10 @@ export class BuilderService {
     }
   }
 
-  viewSession(session: Record<string, unknown>, recipe?: Record<string, unknown> | null): Record<string, unknown> {
+  viewSession(
+    session: Record<string, unknown>,
+    recipe?: Record<string, unknown> | null,
+  ): Record<string, unknown> {
     return {
       id: session.id,
       org_id: session.org_id,
@@ -283,15 +287,28 @@ export class BuilderService {
         now,
         client,
       );
-      return { session: updated ?? locked, generation, system, recipe: parsed, expectedBodyVersion, userMessage };
+      return {
+        session: updated ?? locked,
+        generation,
+        system,
+        recipe: parsed,
+        expectedBodyVersion,
+        userMessage,
+      };
     });
-    await this.runner.publish(String(started.session.id), "message.committed", { message: started.userMessage });
-    const limits = (await this.policy.standing(String(started.session.org_id))).limits.coach.builder;
+    await this.runner.publish(String(started.session.id), "message.committed", {
+      message: started.userMessage,
+    });
+    const limits = (await this.policy.standing(String(started.session.org_id))).limits.coach
+      .builder;
     this.runner.start({
       session: started.session,
       user,
       generation: started.generation,
-      generationContext: composeBuilderGenerationContext(started.recipe, started.expectedBodyVersion),
+      generationContext: composeBuilderGenerationContext(
+        started.recipe,
+        started.expectedBodyVersion,
+      ),
       systemContent: started.system.content,
       tools: builderConversationTools(),
       toolContext: this.toolContext(started.session),
@@ -304,7 +321,11 @@ export class BuilderService {
   }
 
   async cancel(session: Record<string, unknown>): Promise<Record<string, unknown>> {
-    await this.store.updateSession(String(session.id), { generation_state: "cancelling" }, new Date());
+    await this.store.updateSession(
+      String(session.id),
+      { generation_state: "cancelling" },
+      new Date(),
+    );
     this.runner.cancel(String(session.id));
     return this.viewSession({ ...session, generation_state: "cancelling" });
   }
@@ -351,7 +372,10 @@ export class BuilderService {
     );
   }
 
-  async editAccess(session: Record<string, unknown>, input: unknown): Promise<Record<string, unknown>> {
+  async editAccess(
+    session: Record<string, unknown>,
+    input: unknown,
+  ): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
     const cuts = applyAccessEdits(recipe, parseAccessEdits(input));
@@ -384,16 +408,31 @@ export class BuilderService {
   async publish(session: Record<string, unknown>): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
+    let current = row;
+    if (assignGuildLooks(recipe.roles)) {
+      current = await this.deps.recipes.writeBody(
+        String(row.id),
+        Number(row.body_version),
+        recipe,
+        {},
+        new Date(),
+      );
+    }
     const ctx = await this.deps.apply.validationContext(String(session.org_id));
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const errors = blockingErrors(validateRecipe(recipe, ctx));
     if (errors.length) {
       throw new BuilderError(422, errors.map((item) => item.message).join("; "));
     }
-    return (await this.deps.recipes.setStatus(String(row.id), "ready", new Date())) ?? row;
+    return (await this.deps.recipes.setStatus(String(current.id), "ready", new Date())) ?? current;
   }
 
-  async deploy(session: Record<string, unknown>, org: Record<string, unknown>, user: Record<string, unknown>, choices: ApplyChoices = {}) {
+  async deploy(
+    session: Record<string, unknown>,
+    org: Record<string, unknown>,
+    user: Record<string, unknown>,
+    choices: ApplyChoices = {},
+  ) {
     const recipe = await this.recipeFor(session);
     return this.deps.apply.createSkeleton(org, user, recipe, choices);
   }

@@ -24,6 +24,7 @@ const AuthField = Type.Object(
     label: Type.String({ minLength: 1 }),
     secret: Type.Optional(Type.Boolean()),
     optional: Type.Optional(Type.Boolean()),
+    multiline: Type.Optional(Type.Boolean()),
     placeholder: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
@@ -45,10 +46,13 @@ const Auth = Type.Object(
       ),
     ),
     instance: Type.Optional(
-      Type.Object(
-        { integration: Type.String({ minLength: 1 }), variable: Type.String({ minLength: 1 }) },
-        { additionalProperties: false },
-      ),
+      Type.Union([
+        Type.Object(
+          { integration: Type.String({ minLength: 1 }), field: Type.String({ pattern: "^[a-z][a-z0-9_]*$" }) },
+          { additionalProperties: false },
+        ),
+        Type.Object({ own: Type.Literal(true) }, { additionalProperties: false }),
+      ]),
     ),
   },
   { additionalProperties: false },
@@ -118,24 +122,60 @@ export function matchesPattern(name: string, patterns: readonly string[]): boole
 }
 
 /**
- * Why a manifest that arrives without code (a registry package, a recipe's organisation server)
- * claims more than an endpoint-only connector may, or null when it does not. It needs an endpoint
- * the pool calls and signs in with a token or a dynamically registered OAuth client of the login's
- * own: nothing of the box's (an instance key, an instance OAuth client, the GitHub App), and no
- * state hook, which is adapter code.
+ * Why a manifest installed at runtime reaches for the box's own wiring, or null when it does not:
+ * a shipped integration's key, the box's OAuth client, or the GitHub App stay with the connectors
+ * the box ships. A key or an OAuth client the connector declares of its own is not that: the
+ * instance admin fills it in by name, for that connector alone.
+ */
+export function boxWiringProblem(manifest: Manifest): string | null {
+  const instance = manifest.auth.instance;
+  if (instance && "integration" in instance) {
+    return `connector ${manifest.slug} asks for the box's ${instance.integration} key, which only a connector the box ships may use; a key of its own is declared with own`;
+  }
+  const oauth = manifest.auth.oauth;
+  if (oauth?.strategy === "github_app") {
+    return `connector ${manifest.slug} signs in with the box's GitHub App, which only a connector the box ships may use`;
+  }
+  if (oauth?.strategy === "configured" && oauth.provider) {
+    return `connector ${manifest.slug} signs in with the box's ${oauth.provider} client; it declares a client of its own or registers one`;
+  }
+  return null;
+}
+
+/**
+ * Why a manifest that arrives without code (a registry package) claims more than an endpoint-only
+ * connector may, or null when it does not. It needs an endpoint the pool calls, nothing of the
+ * box's wiring, and no state hook, which is adapter code.
  */
 export function endpointOnlyProblem(manifest: Manifest): string | null {
   if (!manifest.endpoint) {
     return `connector ${manifest.slug} has no endpoint; without adapter code it needs one`;
   }
-  if (manifest.auth.instance) {
-    return `connector ${manifest.slug} asks for an instance key, which only a connector the box ships may use`;
-  }
-  if (manifest.auth.oauth && manifest.auth.oauth.strategy !== "dynamic") {
-    return `connector ${manifest.slug} signs in with the box's ${manifest.auth.oauth.strategy} client; it must register its own`;
+  const wiring = boxWiringProblem(manifest);
+  if (wiring !== null) {
+    return wiring;
   }
   if (manifest.state) {
     return `connector ${manifest.slug} declares a state hook, which needs adapter code`;
+  }
+  return null;
+}
+
+/**
+ * Why a recipe's organisation server claims more than an organisation may hold, or null: it is
+ * endpoint-only, and holds nothing at instance level, neither a platform key nor a configured
+ * client. It signs in with a token or a dynamically registered client of the login's own.
+ */
+export function recipeManifestProblem(manifest: Manifest): string | null {
+  const problem = endpointOnlyProblem(manifest);
+  if (problem !== null) {
+    return problem;
+  }
+  if (manifest.auth.instance) {
+    return `connector ${manifest.slug} asks for an instance key, which an organisation's server cannot hold`;
+  }
+  if (manifest.auth.oauth && manifest.auth.oauth.strategy !== "dynamic") {
+    return `connector ${manifest.slug} signs in with a configured client; an organisation's server registers its own`;
   }
   return null;
 }
@@ -169,6 +209,14 @@ export function loadManifest(raw: unknown, folder?: string): Manifest {
   }
   if (manifest.auth.kind !== "token" && manifest.auth.fields) {
     throw new ManifestError(`connector ${manifest.slug} lists credential fields without token auth`);
+  }
+  if (manifest.auth.instance && "own" in manifest.auth.instance && manifest.auth.kind !== "token") {
+    throw new ManifestError(`connector ${manifest.slug} declares a platform key of its own without token auth`);
+  }
+  if (manifest.auth.oauth?.strategy === "configured" && !manifest.auth.oauth.provider && !manifest.endpoint) {
+    throw new ManifestError(
+      `connector ${manifest.slug} signs in with a configured client of its own and needs an endpoint to discover its authorization server`,
+    );
   }
   const names = new Set<string>();
   for (const tool of manifest.tools ?? []) {

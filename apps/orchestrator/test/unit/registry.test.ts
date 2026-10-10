@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { endpointOnlyProblem, loadManifest } from "../../src/connectors/manifest.js";
+import { boxWiringProblem, endpointOnlyProblem, loadManifest, recipeManifestProblem } from "../../src/connectors/manifest.js";
 import { integrationState, REGISTRY } from "../../src/instance/integrations.js";
-import { registryUrl } from "../../src/registry/client.js";
+import { codeManifestProblem, registryUrl } from "../../src/registry/client.js";
 import {
   assertSigned,
   canonicalJson,
@@ -20,8 +20,8 @@ test("the registry is the default one while REGISTRY_URL is unset, and offline w
   assert.equal(registryUrl({}), "https://registry.guilds.run");
   assert.equal(registryUrl({ REGISTRY_URL: "https://registry.example.com/" }), "https://registry.example.com");
   assert.equal(registryUrl({ REGISTRY_URL: " " }), null);
-  assert.equal(integrationState(REGISTRY, {}), "on");
-  assert.equal(integrationState(REGISTRY, { REGISTRY_URL: "" }), "off");
+  assert.equal(integrationState(REGISTRY, { env: {} }), "on");
+  assert.equal(integrationState(REGISTRY, { env: { REGISTRY_URL: "" } }), "off");
 });
 
 test("versions order numerically and the newest is picked unless one is named", () => {
@@ -75,13 +75,13 @@ test("a manifest that claims the box's credentials is refused, with or without c
   const registry = fakeRegistry();
   registry.connector("coded", "1.0.0", {
     "connector.json": JSON.stringify(
-      endpointManifest("coded", { auth: { kind: "token", instance: { integration: "web-search", variable: "TAVILY_API_KEY" } } }),
+      endpointManifest("coded", { auth: { kind: "token", instance: { integration: "web-search", field: "api_key" } } }),
     ),
     "adapter.js": "export default {}",
   });
   registry.connector("keyed", "1.0.0", {
     "connector.json": JSON.stringify(
-      endpointManifest("keyed", { auth: { kind: "token", instance: { integration: "openrouter", variable: "OPENROUTER_API_KEY" } } }),
+      endpointManifest("keyed", { auth: { kind: "token", instance: { integration: "openrouter", field: "api_key" } } }),
     ),
   });
   registry.connector("google", "1.0.0", {
@@ -91,9 +91,9 @@ test("a manifest that claims the box's credentials is refused, with or without c
   });
   registry.connector("mismatch", "1.0.0", { "connector.json": JSON.stringify(endpointManifest("other")) });
   const [coded, keyed, google, mismatch] = registry.index.connectors;
-  await assert.rejects(() => registry.client.connectorPackage(coded!), /instance key/);
-  await assert.rejects(() => registry.client.connectorPackage(keyed!), /instance key/);
-  await assert.rejects(() => registry.client.connectorPackage(google!), /configured client/);
+  await assert.rejects(() => registry.client.connectorPackage(coded!), /asks for the box's web-search key/);
+  await assert.rejects(() => registry.client.connectorPackage(keyed!), /asks for the box's openrouter key/);
+  await assert.rejects(() => registry.client.connectorPackage(google!), /signs in with the box's google-connectors client/);
   await assert.rejects(() => registry.client.connectorPackage(mismatch!), /does not match its folder/);
 });
 
@@ -107,6 +107,46 @@ test("an endpoint-only manifest names no endpoint-less tools, box credentials, o
     String(endpointOnlyProblem(loadManifest(endpointManifest("acme", { state: { key: "acme", intro: "Acme." } })))),
     /state hook/,
   );
+});
+
+test("a key or a client of a connector's own passes every check; the box's keys, client, and App pass none", () => {
+  const ownKey = loadManifest(endpointManifest("acme", { auth: { kind: "token", instance: { own: true } } }));
+  const ownClient = loadManifest(endpointManifest("portal", { auth: { kind: "oauth", oauth: { strategy: "configured" } } }));
+  const ref = loadManifest(endpointManifest("ref", { auth: { kind: "token", instance: { integration: "web-search", field: "api_key" } } }));
+  const provided = loadManifest(endpointManifest("mail", { auth: { kind: "oauth", oauth: { strategy: "configured", provider: "google-connectors" } } }));
+  const app = loadManifest(endpointManifest("gh", { auth: { kind: "oauth", oauth: { strategy: "github_app" } } }));
+  for (const check of [boxWiringProblem, endpointOnlyProblem, codeManifestProblem]) {
+    assert.equal(check(ownKey), null, check.name);
+    assert.equal(check(ownClient), null, check.name);
+    assert.equal(
+      check(ref),
+      "connector ref asks for the box's web-search key, which only a connector the box ships may use; a key of its own is declared with own",
+      check.name,
+    );
+    assert.equal(
+      check(provided),
+      "connector mail signs in with the box's google-connectors client; it declares a client of its own or registers one",
+      check.name,
+    );
+    assert.match(String(check(app)), /connector gh signs in with the box's GitHub App/, check.name);
+  }
+  // Without code a package still needs an endpoint and may not hook state; code may do both.
+  const stateful = loadManifest(endpointManifest("coded", { state: { key: "coded", intro: "Coded." } }));
+  assert.match(String(endpointOnlyProblem(stateful)), /state hook/);
+  assert.equal(boxWiringProblem(stateful), null);
+  assert.equal(codeManifestProblem(stateful), null);
+  const endpointless = loadManifest({ ...endpointManifest("coded"), endpoint: undefined });
+  assert.match(String(endpointOnlyProblem(endpointless)), /no endpoint/);
+  assert.equal(codeManifestProblem(endpointless), null);
+  // A recipe's organisation server holds nothing at instance level: no key of its own, no configured client.
+  assert.equal(recipeManifestProblem(loadManifest(endpointManifest("plain"))), null);
+  assert.equal(recipeManifestProblem(loadManifest(endpointManifest("dyn", { auth: { kind: "oauth", oauth: { strategy: "dynamic" } } }))), null);
+  assert.equal(recipeManifestProblem(ownKey), "connector acme asks for an instance key, which an organisation's server cannot hold");
+  assert.equal(recipeManifestProblem(ownClient), "connector portal signs in with a configured client; an organisation's server registers its own");
+  assert.match(String(recipeManifestProblem(ref)), /asks for the box's web-search key/);
+  assert.match(String(recipeManifestProblem(provided)), /signs in with the box's google-connectors client/);
+  assert.match(String(recipeManifestProblem(stateful)), /state hook/);
+  assert.match(String(recipeManifestProblem(endpointless)), /no endpoint/);
 });
 
 test("a package may carry a bundled adapter, never its source", async () => {

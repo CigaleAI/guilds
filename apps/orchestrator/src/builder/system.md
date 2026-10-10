@@ -48,7 +48,10 @@ is not an embed. Do not paste the same schema into every `task.body`.
 2. Call `builder_list_capabilities` before naming any system. If the operator
    names a system or action that is not obvious, call
    `builder_search_capabilities`. Call `builder_describe_server` for one
-   complete connector record. When a searchable workspace
+   complete connector record. A connector whose `oauth_setup_state` is
+   `unsupported` is not set up on this box: a platform admin fills its keys
+   under Admin, Platform keys before anyone can connect it. Say so, and ask
+   the operator to do that or to pick another service. When a searchable workspace
    ({{SEARCHABLE_WORKSPACES}}) is already connected at organisation scope,
    call `builder_search_connected` and ask which databases or pages to use.
    If that search would help but the workspace is not connected, call
@@ -68,20 +71,20 @@ is not an embed. Do not paste the same schema into every `task.body`.
    3. a browser role plus an operator take-control login step at apply;
    4. a narrowed composition of available capabilities;
    5. an explicit user decision, or a refusal.
-   When a fact is still unknown (a venue is named but missing from a
-   connector's documented list, a destination is ambiguous, a login owner
-   is unclear), call `builder_ask_question` in the same turn. Write it into
-   `design.systems` as `resolution: "decision"` or `"narrowed_composition"`
-   with `accepted: false` and a `reason` that starts with `OPEN QUESTION.`
-   That record is a pending question, not a settled connector. Keep using
-   `builder_ask_question` until the operator answers, then set
-   `accepted: true` or replace the system with the chosen path.
-   Builder-written scripts are documents only. They cannot run in the builder.
-   Browser fallback is the path when the operator wants a web page that has no
-   published connector. Write a browser-enabled role. After apply, the live
-   agent asks the operator to take control of that agent's Chromium and log in
-   from the Browser tab. Neither the builder nor apply authenticates on their
-   behalf.
+      When a fact is still unknown (a venue is named but missing from a
+      connector's documented list, a destination is ambiguous, a login owner
+      is unclear), call `builder_ask_question` in the same turn. Write it into
+      `design.systems` as `resolution: "decision"` or `"narrowed_composition"`
+      with `accepted: false` and a `reason` that starts with `OPEN QUESTION.`
+      That record is a pending question, not a settled connector. Keep using
+      `builder_ask_question` until the operator answers, then set
+      `accepted: true` or replace the system with the chosen path.
+      Builder-written scripts are documents only. They cannot run in the builder.
+      Browser fallback is the path when the operator wants a web page that has no
+      published connector. Write a browser-enabled role. After apply, the live
+      agent asks the operator to take control of that agent's Chromium and log in
+      from the Browser tab. Neither the builder nor apply authenticates on their
+      behalf.
 5. Specialize the roster. Default to **two or more roles** whenever the work
    has more than one standing purpose, skill, system, cadence, or body of
    learned context. Each role gets:
@@ -97,14 +100,14 @@ is not an embed. Do not paste the same schema into every `task.body`.
      Working files the agent revises are named in Task and read with
      `note_get`, not copied into the prompt. Agents cannot edit Task;
      Memory and files are how they extend themselves.
-   Record each split in `design.specialization` (`narrower_tools`,
-   `narrower_access`, `narrower_context`, `volume`, or `other`). A distinct
-   memory and playbook is `narrower_context`. Keep one role only when the
-   entire job is one skill, one cadence, one login, and one playbook — and
-   write that reason into `design.specialization`. Do not invent a role per
-   verb when two verbs are the same specialist (browser watch plus browser
-   extract stay together). Do not dump unrelated skills onto one agent to keep
-   the roster small.
+     Record each split in `design.specialization` (`narrower_tools`,
+     `narrower_access`, `narrower_context`, `volume`, or `other`). A distinct
+     memory and playbook is `narrower_context`. Keep one role only when the
+     entire job is one skill, one cadence, one login, and one playbook — and
+     write that reason into `design.specialization`. Do not invent a role per
+     verb when two verbs are the same specialist (browser watch plus browser
+     extract stay together). Do not dump unrelated skills onto one agent to keep
+     the roster small.
 6. Compatible hub, not a pile of solos. Two or more roles that must communicate
    require a durable queue/fan-in collection, or an explicitly budgeted tagged
    `group_post` protocol. Record that in `design.handoffs`. Each Task names who
@@ -252,6 +255,8 @@ the gate to apply and share.
 Field names (do not invent aliases):
 
 - role handle is `role`, create-time slug is `name_suggestion` — never `name` on a role
+- Do not set `avatar_shape` or `avatar_color`. The write picks one DiceBear
+  family for the guild and a unique variant and identity colour for each role.
 - standing prompt is `task.body` (string), plus `embeds` listing each `![[guild/…]]` / `![[org/…]]` / `![[agent/<role>/…]]` in the body — never `task.text`
 - role wakes are `schedules`: `{ key, cron or window, description, instruction }` — never `routines` or `memory` on the role
 - `design.routines` holds cadence/dedupe metadata for those schedule keys
@@ -266,7 +271,7 @@ Field names (do not invent aliases):
 - browser fallback (no published connector): `config.browser: true`, matching
   `browser.required: true`, `browser.instructions` naming the site and what the
   operator must log into, and `design.browser[]` with `{ role, site, viable,
-  login_failure_policy }`. That is what creates the apply take-control login
+login_failure_policy }`. That is what creates the apply take-control login
   step. Do not invent a connector. The six `browser_*` tools are offered by the
   `config.browser` flag — do not list them under `native_tools`.
 - coding (a role that reads, changes, runs, and ships code in git repositories):

@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
-import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "../../src/builder/system.js";
+import {
+  composeBuilderGenerationContext,
+  composeBuilderSystemMessage,
+} from "../../src/builder/system.js";
 import { RECIPE_WRITE_HINT } from "../../src/builder/constants.js";
 import { builderWriteRecipe } from "../../src/builder/tools.js";
-import { readBuilderSystemTemplate, readBuilderWriteExample } from "../../src/conversation/templates.js";
+import {
+  readBuilderSystemTemplate,
+  readBuilderWriteExample,
+} from "../../src/conversation/templates.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
 import { applyAccessEdit, parseRecipe } from "../../src/recipes/schema.js";
 import { fixtureDeskRecipe } from "../helpers/recipe-docs.js";
@@ -63,6 +69,7 @@ test("builder system prompt maps Memory and routines onto recipe fields", () => 
   assert.match(text, /OPEN QUESTION/);
   assert.match(text, /access\.tool_removed/);
   assert.match(text, /access\.connector_removed/);
+  assert.match(text, /Do not set `avatar_shape` or `avatar_color`/);
 });
 
 test("builder system message ships a write shape separate from the session document", () => {
@@ -86,7 +93,13 @@ test("builder system message ships a write shape separate from the session docum
 
 test("builder system message lists operator access cuts", () => {
   const recipe = parseRecipe(fixtureDeskRecipe());
-  applyAccessEdit(recipe, { action: "set_tool", server: "mail", role: "reader", tool: "mail_ping", enabled: false });
+  applyAccessEdit(recipe, {
+    action: "set_tool",
+    server: "mail",
+    role: "reader",
+    tool: "mail_ping",
+    enabled: false,
+  });
   applyAccessEdit(recipe, { action: "remove_connection", server: "crm" });
   const composed = composeBuilderSystemMessage({
     config: { model: TEST_MODEL, temperature: 0.2 },
@@ -100,15 +113,22 @@ test("builder system message lists operator access cuts", () => {
 });
 
 test("builder_write_recipe tool schema names role and task.body", () => {
-  const params = (builderWriteRecipe.schema as { function: { parameters: Record<string, unknown> } }).function
-    .parameters;
+  const params = (
+    builderWriteRecipe.schema as { function: { parameters: Record<string, unknown> } }
+  ).function.parameters;
   const recipe = params.properties as {
     recipe: {
       properties: {
         roles: { items: { properties: Record<string, unknown> } };
         collections: {
           items: {
-            properties: Record<string, { enum?: string[]; items?: { properties: Record<string, unknown>; required: string[] } }>;
+            properties: Record<
+              string,
+              {
+                enum?: string[];
+                items?: { properties: Record<string, unknown>; required: string[] };
+              }
+            >;
             required: string[];
             additionalProperties: boolean;
           };
@@ -116,25 +136,53 @@ test("builder_write_recipe tool schema names role and task.body", () => {
       };
     };
   };
-  const noteProps = (recipe.recipe.properties as unknown as { notes: { items: { properties: Record<string, unknown> } } })
-    .notes.items.properties;
-  assert.deepEqual(Object.keys(noteProps).sort(), ["author", "body", "id", "key", "kind", "level", "role"]);
+  const noteProps = (
+    recipe.recipe.properties as unknown as {
+      notes: { items: { properties: Record<string, unknown> } };
+    }
+  ).notes.items.properties;
+  assert.deepEqual(Object.keys(noteProps).sort(), [
+    "author",
+    "body",
+    "id",
+    "key",
+    "kind",
+    "level",
+    "role",
+  ]);
   const roleProps = recipe.recipe.properties.roles.items.properties;
   assert.ok(roleProps.role);
   assert.ok(roleProps.task);
   assert.equal(roleProps.name, undefined);
-  const task = roleProps.task as { properties: Record<string, unknown>; additionalProperties?: boolean };
+  const task = roleProps.task as {
+    properties: Record<string, unknown>;
+    additionalProperties?: boolean;
+  };
   assert.ok(task.properties.body);
   assert.equal(task.properties.text, undefined);
   assert.equal("additionalProperties" in task, false);
   const collection = recipe.recipe.properties.collections.items;
-  assert.deepEqual(Object.keys(collection.properties).sort(), ["columns", "guild", "name", "purpose", "scope", "writers"]);
+  assert.deepEqual(Object.keys(collection.properties).sort(), [
+    "columns",
+    "guild",
+    "name",
+    "purpose",
+    "scope",
+    "writers",
+  ]);
   assert.deepEqual(collection.required, ["name", "purpose", "columns"]);
   assert.equal("additionalProperties" in collection, false);
   assert.deepEqual(collection.properties.guild?.enum, ["read", "write"]);
   assert.deepEqual(collection.properties.scope?.enum, ["guild", "org"]);
   const column = collection.properties.columns?.items;
   assert.ok(column);
-  assert.deepEqual(Object.keys(column.properties).sort(), ["description", "name", "required", "type", "unique", "values"]);
+  assert.deepEqual(Object.keys(column.properties).sort(), [
+    "description",
+    "name",
+    "required",
+    "type",
+    "unique",
+    "values",
+  ]);
   assert.deepEqual(column.required, ["name", "type", "description"]);
 });

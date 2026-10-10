@@ -78,7 +78,7 @@ function chatterRows(count: number, startSeq = 1): Array<Record<string, unknown>
 }
 
 function router() {
-  return createGroupRouter({ client: createTypeSafeClient() });
+  return createGroupRouter({ client: createTypeSafeClient({ apiKey: process.env.TYPESAFE_API_KEY ?? "" }) });
 }
 
 async function routeRows(rows: Array<Record<string, unknown>>) {

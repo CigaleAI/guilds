@@ -12,7 +12,8 @@ import {
   mcpSchema,
   rpcPayload,
 } from "../../src/mcp/index.js";
-import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { setInstanceKeys } from "../../src/instance/integrations.js";
+import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -346,6 +347,62 @@ test("auth headers send OpenSea API key", () => {
   assert.deepEqual(authHeaders(connection, { slug: "opensea" }), { "X-API-KEY": "os-test" });
   assert.deepEqual(authHeaders(connection, { slug: "cigale" }), { Authorization: "Bearer os-test" });
   assert.deepEqual(authHeaders(connection, { slug: "etherscan" }), { Authorization: "Bearer os-test" });
+});
+
+test("a platform login sends the key its connector declares of its own; an organisation's login its own token", () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const manifest = {
+    slug: "acme",
+    display_name: "Acme",
+    endpoint: { url: "https://mcp.acme.example.com/mcp" },
+    auth: { kind: "token", header: { name: "X-Acme-Key", prefix: "" }, instance: { own: true } },
+    description: "",
+  };
+  const server = { id: "mcp_acme", slug: "acme", auth: "token", manifest };
+  const bearer = { ...server, manifest: { ...manifest, auth: { kind: "token", instance: { own: true } } } };
+  const [ciphertext, nonce] = encryptPayload({}, KEY);
+  const platform = { id: "conn_platform", status: "connected", owner_scope: "platform", owner_id: null, ciphertext, nonce };
+  const org = connectionOf("org-token", { owner_scope: "org", owner_id: "org_1" });
+  assert.deepEqual(authHeaders(platform, server), {}, "no key stored yet");
+  assert.deepEqual(authHeaders(org, server), { "X-Acme-Key": "org-token" });
+  setInstanceKeys(storeKeys({ "connector:acme": { token: "platform-key" } }));
+  try {
+    assert.deepEqual(authHeaders(platform, server), { "X-Acme-Key": "platform-key" });
+    assert.deepEqual(authHeaders(platform, bearer), { Authorization: "Bearer platform-key" });
+    assert.deepEqual(authHeaders(org, server), { "X-Acme-Key": "org-token" }, "an organisation's login keeps its own token");
+    assert.deepEqual(authHeaders(platform, { ...server, manifest: { ...manifest, auth: { kind: "token" } } }), {}, "no platform key without auth.instance");
+  } finally {
+    setInstanceKeys({});
+  }
+  assert.deepEqual(authHeaders(platform, server), {});
+});
+
+test("an endpoint session sends a login's first credential field when it is not named token", () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const manifest = {
+    slug: "acme",
+    display_name: "Acme",
+    endpoint: { url: "https://mcp.acme.example.com/mcp" },
+    auth: {
+      kind: "token",
+      fields: [{ name: "api_key", label: "Acme key" }],
+      header: { name: "X-Acme-Key", prefix: "" },
+      instance: { own: true },
+    },
+    description: "",
+  };
+  const server = { id: "mcp_acme", slug: "acme", auth: "token", manifest };
+  const [orgCiphertext, orgNonce] = encryptPayload({ api_key: "org-key" }, KEY);
+  const org = { id: "conn_org", status: "connected", owner_scope: "org", owner_id: "org_1", ciphertext: orgCiphertext, nonce: orgNonce };
+  const [ciphertext, nonce] = encryptPayload({}, KEY);
+  const platform = { id: "conn_platform", status: "connected", owner_scope: "platform", owner_id: null, ciphertext, nonce };
+  assert.deepEqual(authHeaders(org, server), { "X-Acme-Key": "org-key" });
+  setInstanceKeys(storeKeys({ "connector:acme": { api_key: "platform-key" } }));
+  try {
+    assert.deepEqual(authHeaders(platform, server), { "X-Acme-Key": "platform-key" });
+  } finally {
+    setInstanceKeys({});
+  }
 });
 
 test("sync OpenSea writes default-off and destructive tools Off, and reads On", async () => {

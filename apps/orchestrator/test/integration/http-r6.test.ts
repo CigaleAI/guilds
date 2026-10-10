@@ -12,7 +12,7 @@ import { ArtifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
-import { HEX_MASTER_KEY, clearConnectorKeys, testEnv } from "../helpers/env.js";
+import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, loadTextFixture, templatesRoot } from "../helpers/fixtures.js";
 import {
@@ -75,7 +75,7 @@ after(async () => {
 });
 
 test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }, async () => {
-  clearConnectorKeys();
+  clearInstanceKeys();
   const databaseUrl = await createIsolatedDatabase(dbName);
   const env = testEnv(databaseUrl);
   Object.assign(process.env, env);

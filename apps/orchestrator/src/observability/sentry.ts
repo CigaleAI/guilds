@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import type { Scope } from "@sentry/node";
-import { ERROR_REPORTING, integrationVariable } from "../instance/integrations.js";
+import { ERROR_REPORTING, integrationValue } from "../instance/integrations.js";
 import type { LogFields, LogLevel } from "./log.js";
 
 function sampleRate(name: string, fallback: number): number {
@@ -22,7 +22,7 @@ export function initSentry(): boolean {
   if (process.env.NODE_TEST_CONTEXT) {
     return false;
   }
-  const dsn = integrationVariable(ERROR_REPORTING, "SENTRY_DSN");
+  const dsn = integrationValue(ERROR_REPORTING, "SENTRY_DSN");
   if (!dsn) {
     return false;
   }

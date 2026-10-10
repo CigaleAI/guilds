@@ -1,4 +1,9 @@
-import type { AccessEdit, ConnectorAuthField, StudioMessage } from "../../api/types";
+import type {
+  AccessEdit,
+  ConnectorAuthField,
+  McpServerAccess,
+  StudioMessage,
+} from "../../api/types";
 import { pendingDesignQuestions } from "../recipes/plan/planModel";
 
 /**
@@ -7,6 +12,15 @@ import { pendingDesignQuestions } from "../recipes/plan/planModel";
  */
 
 export type ConnectScope = "org" | "guild" | "agent";
+
+type OauthSetupState = McpServerAccess["oauth_setup_state"];
+
+const setupStates: readonly OauthSetupState[] = [
+  "not_applicable",
+  "dynamic",
+  "configured",
+  "unsupported",
+];
 
 /** A connector the coach names, as the widget carries it. */
 export type WidgetServer = {
@@ -18,6 +32,8 @@ export type WidgetServer = {
   /** The inputs a key login asks for. */
   auth_fields?: ConnectorAuthField[];
   connection_state?: "connected" | "registered_not_connected";
+  /** Whether this server can start the connector's sign-in; `unsupported` until a platform admin sets it up. */
+  oauth_setup_state?: OauthSetupState;
 };
 
 export type ConnectWidget = {
@@ -63,6 +79,7 @@ function serverOf(value: unknown): WidgetServer | null {
   const row = record(value);
   if (!row || typeof row.id !== "string") return null;
   const auth = row.auth === "token" || row.auth === "none" ? row.auth : "oauth";
+  const setup = setupStates.find((state) => state === row.oauth_setup_state);
   return {
     id: row.id,
     slug: text(row.slug),
@@ -75,6 +92,7 @@ function serverOf(value: unknown): WidgetServer | null {
     ...(row.connection_state === "connected" || row.connection_state === "registered_not_connected"
       ? { connection_state: row.connection_state }
       : {}),
+    ...(setup ? { oauth_setup_state: setup } : {}),
   };
 }
 

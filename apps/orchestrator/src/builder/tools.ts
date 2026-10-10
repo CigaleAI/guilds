@@ -1,3 +1,4 @@
+import { assignGuildLooks } from "../avatars/looks.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
 import { searchConnectedWorkspace, type BuilderMcpClient } from "./connected.js";
 import {
@@ -9,7 +10,12 @@ import {
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import type { Repositories } from "../db/repositories.js";
-import { operatorAccessCuts, parseRecipe, stampBuilderWrite, type RecipeDocument } from "../recipes/schema.js";
+import {
+  operatorAccessCuts,
+  parseRecipe,
+  stampBuilderWrite,
+  type RecipeDocument,
+} from "../recipes/schema.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { RecipeStore } from "../recipes/store.js";
 import { validateRecipe, type ValidationContext } from "../recipes/validate.js";
@@ -88,7 +94,10 @@ export const builderDescribeServer = {
   },
 };
 
-export function builderWriteRejection(previous: RecipeDocument, next: RecipeDocument): string | null {
+export function builderWriteRejection(
+  previous: RecipeDocument,
+  next: RecipeDocument,
+): string | null {
   if (next.roles.length > 0 && next.roles.every((role) => !role.task.body.trim())) {
     return "refusing a roster with empty task.body on every role. Write standing tasks on the full specialized roster; do not probe the schema with an empty one-role document.";
   }
@@ -140,15 +149,26 @@ const recipeDocumentParameter = {
       items: {
         type: "object",
         properties: {
-          role: { type: "string", description: "Handle matching ^[a-z][a-z0-9-]{0,62}$. Never `name`." },
+          role: {
+            type: "string",
+            description: "Handle matching ^[a-z][a-z0-9-]{0,62}$. Never `name`.",
+          },
           name_suggestion: { type: "string" },
           focus: { type: "string" },
           wake_triggers: {
             type: "string",
-            description: "What untagged group-chat messages this role wakes for. Omit to use focus.",
+            description:
+              "What untagged group-chat messages this role wakes for. Omit to use focus.",
           },
-          avatar_shape: { type: "string" },
-          avatar_color: { type: "string" },
+          avatar_shape: {
+            type: "string",
+            description:
+              "Omit. The write picks one DiceBear family for the guild and a unique variant per role.",
+          },
+          avatar_color: {
+            type: "string",
+            description: "Omit. The write assigns a unique identity colour per role.",
+          },
           config: {
             type: "object",
             description:
@@ -161,7 +181,8 @@ const recipeDocumentParameter = {
               embeds: {
                 type: "array",
                 items: { type: "string" },
-                description: "guild/<key>, org/<key>, or agent/<role>/<key> for each ![[…]] in task.body. A bare filename does not inline.",
+                description:
+                  "guild/<key>, org/<key>, or agent/<role>/<key> for each ![[…]] in task.body. A bare filename does not inline.",
               },
               author: authorProperties,
             },
@@ -176,7 +197,10 @@ const recipeDocumentParameter = {
               type: "object",
               properties: {
                 key: { type: "string" },
-                cron: { type: "string", description: "5-field UTC cron. Set cron or window, not both." },
+                cron: {
+                  type: "string",
+                  description: "5-field UTC cron. Set cron or window, not both.",
+                },
                 window: {
                   type: "object",
                   description: "Random daily wake-ups between start and end local time.",
@@ -215,33 +239,47 @@ const recipeDocumentParameter = {
     },
     collections: {
       type: "array",
-      description: "Typed tables at the organisation. Apply creates each one or reuses a live table of that name.",
+      description:
+        "Typed tables at the organisation. Apply creates each one or reuses a live table of that name.",
       items: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Table name matching ^[a-z][a-z0-9_-]{0,62}$, unique in the organisation." },
-          purpose: { type: "string", description: "One line: what one record is and who writes it." },
+          name: {
+            type: "string",
+            description: "Table name matching ^[a-z][a-z0-9_-]{0,62}$, unique in the organisation.",
+          },
+          purpose: {
+            type: "string",
+            description: "One line: what one record is and who writes it.",
+          },
           columns: {
             type: "array",
-            description: "The typed columns, in display order. Every record write is validated against them.",
+            description:
+              "The typed columns, in display order. Every record write is validated against them.",
             items: {
               type: "object",
               properties: {
                 name: {
                   type: "string",
-                  description: "^[a-z][a-z0-9_]{0,63}$; id, created_at, updated_at, created_by, and updated_by are reserved.",
+                  description:
+                    "^[a-z][a-z0-9_]{0,63}$; id, created_at, updated_at, created_by, and updated_by are reserved.",
                 },
                 type: { type: "string", enum: ["text", "number", "boolean", "datetime", "array"] },
-                description: { type: "string", description: "What the value means, for the agents. At most 200 characters." },
+                description: {
+                  type: "string",
+                  description: "What the value means, for the agents. At most 200 characters.",
+                },
                 required: { type: "boolean" },
                 unique: {
                   type: "boolean",
-                  description: "Text or number only, at most one per collection. A record_add that repeats the value merges into that record.",
+                  description:
+                    "Text or number only, at most one per collection. A record_add that repeats the value merges into that record.",
                 },
                 values: {
                   type: "array",
                   items: { type: "string" },
-                  description: "Text or array only: the closed list of accepted values. A queue's state column uses this.",
+                  description:
+                    "Text or array only: the closed list of accepted values. A queue's state column uses this.",
                 },
               },
               required: ["name", "type", "description"],
@@ -254,11 +292,16 @@ const recipeDocumentParameter = {
             description:
               "guild: this guild owns the table and every agent in it reads and writes; org: the organisation holds it and guild is the grant. Default org.",
           },
-          guild: { type: "string", enum: ["read", "write"], description: "An org table: the mode every agent in the guild gets." },
+          guild: {
+            type: "string",
+            enum: ["read", "write"],
+            description: "An org table: the mode every agent in the guild gets.",
+          },
           writers: {
             type: "array",
             items: { type: "string" },
-            description: "An org table: role handles that get their own write grant. Needed when guild is read and the role writes.",
+            description:
+              "An org table: role handles that get their own write grant. Needed when guild is read and the role writes.",
           },
         },
         required: ["name", "purpose", "columns"],
@@ -334,8 +377,14 @@ const recipeDocumentParameter = {
       items: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Folder name under /home/agent/repos, matching ^[a-z][a-z0-9_-]{0,62}$." },
-          purpose: { type: "string", description: "One line: what the repository holds and what the guild does in it." },
+          name: {
+            type: "string",
+            description: "Folder name under /home/agent/repos, matching ^[a-z][a-z0-9_-]{0,62}$.",
+          },
+          purpose: {
+            type: "string",
+            description: "One line: what the repository holds and what the guild does in it.",
+          },
         },
         required: ["name", "purpose"],
         additionalProperties: false,
@@ -361,8 +410,7 @@ export function builderWriteToolResult(
 
 export const builderWriteRecipe = {
   name: "builder_write_recipe",
-  description:
-    `Replace the session's draft recipe. ${RECIPE_WRITE_HINT} Prefer two or more specialized roles with distinct task.body text and a hand-off. Send complete JSON with expected_body_version. Truncated arguments are rejected — shrink prompt prose, not the roster. Do not probe the schema with a one-role empty document.`,
+  description: `Replace the session's draft recipe. ${RECIPE_WRITE_HINT} Prefer two or more specialized roles with distinct task.body text and a hand-off. Send complete JSON with expected_body_version. Truncated arguments are rejected — shrink prompt prose, not the roster. Do not probe the schema with a one-role empty document.`,
   schema: functionSchema(
     "builder_write_recipe",
     `Replace the session's draft recipe. ${RECIPE_WRITE_HINT} Prefer two or more specialized roles with distinct task.body text. Send complete JSON with expected_body_version.`,
@@ -393,7 +441,11 @@ export const builderWriteRecipe = {
       }
       const currentVersion = Number(row.body_version);
       if (expected !== currentVersion) {
-        return { error: "recipe body_version conflict", code: "conflict", body_version: currentVersion };
+        return {
+          error: "recipe body_version conflict",
+          code: "conflict",
+          body_version: currentVersion,
+        };
       }
       const previous = parseRecipe(row.body);
       const next = parseRecipe(args.recipe);
@@ -403,6 +455,7 @@ export const builderWriteRecipe = {
         return { error: rejected };
       }
       const stamped = stampBuilderWrite(next, previous);
+      assignGuildLooks(stamped.roles, previous.roles);
       const written = await ctx.recipes.writeBody(
         ctx.recipeId,
         expected,
@@ -468,7 +521,10 @@ export const builderSearchConnected = {
     "builder_search_connected",
     "Search an organisation-connected workspace that the catalog marks searchable. Use after that workspace is connected at org scope.",
     {
-      query: { type: "string", description: "Search phrase, table name, or empty to list recent records." },
+      query: {
+        type: "string",
+        description: "Search phrase, table name, or empty to list recent records.",
+      },
       server_ref: {
         type: "string",
         description: "Catalog slug or server id. Defaults to the first searchable workspace.",
@@ -498,7 +554,10 @@ export const builderAskOrgConnection = {
     "builder_ask_org_connection",
     "Show a chat widget that asks the operator to connect one published connector to the organisation now. This pauses the turn until they connect or skip.",
     {
-      server_ref: { type: "string", description: "Catalog slug or server id from list or search results." },
+      server_ref: {
+        type: "string",
+        description: "Catalog slug or server id from list or search results.",
+      },
       reason: {
         type: "string",
         description: "Why this organisation login is needed, in one or two sentences.",
@@ -538,7 +597,8 @@ export const builderAskConnection = {
       recommended_scope: {
         type: "string",
         enum: ["org", "guild", "agent"],
-        description: "Best owner for this login. Org can connect now; guild and agent wait for apply.",
+        description:
+          "Best owner for this login. Org can connect now; guild and agent wait for apply.",
       },
       allow_scope_change: {
         type: "boolean",
@@ -590,14 +650,26 @@ export const builderAskQuestion = {
               },
             },
             allow_other: { type: "boolean", description: "Show an Other field. Defaults to true." },
-            multi_select: { type: "boolean", description: "Allow more than one option. Defaults to false." },
+            multi_select: {
+              type: "boolean",
+              description: "Allow more than one option. Defaults to false.",
+            },
           },
           required: ["question"],
         },
       },
-      question: { type: "string", description: "Shorthand for a single question when questions[] is omitted." },
+      question: {
+        type: "string",
+        description: "Shorthand for a single question when questions[] is omitted.",
+      },
       header: { type: "string" },
-      options: { type: "array", items: { type: "object", properties: { label: { type: "string" }, description: { type: "string" } } } },
+      options: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { label: { type: "string" }, description: { type: "string" } },
+        },
+      },
     },
     [],
   ),

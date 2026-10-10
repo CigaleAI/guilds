@@ -6,8 +6,9 @@ import { codeTierRoot, connectorsRoot, syncCodeConnectors, type CodeSync } from 
 import { installConnector, removeConnector, updateConnectors } from "../registry/install.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser } from "./identity.js";
-import { isInstanceAdmin } from "./instance-admin.js";
+import { syncInstanceLogins } from "../connectors/instance.js";
+import { refreshConnectorIntegrations } from "../instance/connectors.js";
+import { requireInstanceAdmin } from "./instance-admin.js";
 
 function bodyOf(request: FastifyRequest): Record<string, unknown> {
   const body = request.body;
@@ -58,19 +59,15 @@ export function latestEntries<E extends { version: string }>(
 export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { repo } = deps;
 
-  async function requireInstanceAdmin(request: FastifyRequest): Promise<void> {
-    const user = await currentUser(repo, request, deps);
-    if (!(await isInstanceAdmin(deps, String(user.id)))) {
-      throw new HttpError(404, "Not Found");
-    }
-  }
-
   /**
    * Serves what the database now says in this process, without a restart: code connectors are
    * loaded, swapped, or taken out, and every login lists its tools again on its next use.
    */
   async function applyChange(): Promise<CodeSync> {
     const sync = await syncCodeConnectors(repo);
+    await refreshConnectorIntegrations(repo);
+    await deps.instanceKeys?.load();
+    await syncInstanceLogins(repo, deps.masterKey);
     deps.mcp?.forgetListings();
     return sync;
   }
@@ -84,7 +81,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
   }
 
   app.get("/api/admin/registry", async (request) => {
-    await requireInstanceAdmin(request);
+    await requireInstanceAdmin(deps, request);
     const client = registryOf(deps);
     if (client === null) {
       return { offline: true, url: null, connectors: [] };
@@ -111,7 +108,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
   });
 
   app.post("/api/admin/registry/connectors", async (request, reply) => {
-    await requireInstanceAdmin(request);
+    await requireInstanceAdmin(deps, request);
     const body = bodyOf(request);
     try {
       const { row } = await installConnector(repo, onlineClient(), typeof body.slug === "string" ? body.slug : "", {
@@ -129,7 +126,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
   });
 
   app.post("/api/admin/registry/connectors/:slug/update", async (request) => {
-    await requireInstanceAdmin(request);
+    await requireInstanceAdmin(deps, request);
     try {
       const body = bodyOf(request);
       const moved = await updateConnectors(repo, onlineClient(), {
@@ -147,7 +144,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
   });
 
   app.delete("/api/admin/registry/connectors/:slug", async (request, reply) => {
-    await requireInstanceAdmin(request);
+    await requireInstanceAdmin(deps, request);
     try {
       await removeConnector(repo, param(request, "slug"), connectorsRoot());
     } catch (error) {
@@ -159,7 +156,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
 
   /** Serves what the database and `CONNECTORS_ROOT` hold now: after a CLI install, update, or remove. */
   app.post("/api/admin/registry/reload", async (request) => {
-    await requireInstanceAdmin(request);
+    await requireInstanceAdmin(deps, request);
     return applyChange();
   });
 }

@@ -1,11 +1,14 @@
 # Configure
 
-`.env` in the checkout is the only place the stack is configured.
+`.env` in the checkout configures the stack. A first box needs
+nothing here: `./setup.sh` wrote the four values it runs on. This
+page is for the rest: the keys the box holds for everyone on it, how
+the box is reached, its limits, and the model catalog.
 
-`docker compose up` reads it. The operator app shows each setting's
-state and takes none.
-
-After a change, restart:
+`docker compose up` reads `.env`. A platform key is not in it: a
+platform admin enters one in the operator app, under **Admin**,
+**Platform keys**, and it takes effect at once. Every other setting
+is read at start. After a change to `.env`, restart:
 
 ```text
 docker compose up --detach --wait
@@ -36,45 +39,60 @@ these. You do not set them:
 
 ## Integrations
 
-An integration is a credential the box holds for everyone on it.
-
-That is different from an organisation's own model key, connection, or
-secret. Each integration is optional. It is on once every variable it
-requires has a value.
+An integration is one of the box's optional capabilities: a
+credential the box holds for everyone on it, as opposed to an
+organisation's own model key, connection, or secret. Each declares
+the fields it takes and where their values come from. A platform
+key is entered in the operator app. An environment integration is
+read from `.env`. An integration is on once every field it requires
+has a value, incomplete when some do, and off when none does.
 
 The registry is `apps/orchestrator/src/instance/integrations.ts`.
-**Admin**, **Platform keys** lists each one with:
+**Admin**, **Platform keys** lists each one with its state, what it
+switches on, and which fields are set. It never shows a value. A
+screen that depends on a missing integration names it and, for a
+platform admin, links there.
 
-- its state (on, off, or incomplete when some of its variables are
-  set)
-- what it switches on
-- which variables are set
+### Platform keys
 
-It never shows a value. A screen that depends on a missing integration
-says which variables would switch it on.
+A platform admin enters these under **Admin**, **Platform keys**.
+Each is stored encrypted under `SECRETS_MASTER_KEY`, one row per
+integration, and takes effect at once: no restart. A value never
+comes back out. The form shows which fields are set, and a platform
+admin sees when and by whom. Removing an integration there switches
+it off. `.env` carries none of these.
+
+| Integration | Fields | Switches on | Without it |
+|---|---|---|---|
+| Web search | Tavily API key | The Tavily connector on the platform's key, `tavily_search` | Runs leave the tool out; an organisation may connect a Tavily key of its own |
+| Group routing | TypeSafe API key, and a model to tune it | Recipient and history selection in group chat, beyond tag rules | Tag rules and the last 10 messages |
+| GitHub App | App ID, App slug, private key (PEM), client ID, client secret; **Create the GitHub App** fills them from GitHub ([GitHub](../tools-and-connectors/github.md#registering-the-app)) | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing fields, and disables Connect |
+| Google connectors | Client ID, client secret ([Gmail and Drive](../tools-and-connectors/google.md)) | The Gmail and Drive connectors | As for the GitHub App |
+
+### Environment
+
+These are read from `.env` at start. **Platform keys** shows them
+read-only. A key reaches the server through `.env` alone: the
+Compose file passes the file with `env_file`, and a variable exported
+in the shell does not reach the container.
 
 | Integration | Variables | Switches on | Without it |
 |---|---|---|---|
-| Web search | `TAVILY_API_KEY` | The Tavily connector on the platform's key, `tavily_search` | Runs leave the tool out; an organisation may connect a Tavily key of its own |
-| Group routing | `TYPESAFE_API_KEY`, and `TYPESAFE_MODEL` to tune it | Recipient and history selection in group chat, beyond tag rules | Tag rules and the last 10 messages |
-| GitHub App | `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | The GitHub connector and a guild's repositories ([GitHub](../tools-and-connectors/github.md)) | Tools marks the connector **Not set up**, names the missing variables, and disables Connect |
-| Google connectors | `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET` | The Gmail and Drive connectors ([Gmail and Drive](../tools-and-connectors/google.md)) | As for the GitHub App |
 | Error reporting | `SENTRY_DSN` | Errors and traces sent to Sentry | Structured logs only ([Operate](operate.md#logs)) |
 | Registry | `REGISTRY_URL`, the guilds.run registry while unset; `REGISTRY_PUBLIC_KEY` to require a signed index | Installing connectors and recipes from a registry ([Registry](../tools-and-connectors/registry.md)) | Set empty, the box is offline: nothing installs, and recipe apply names a missing connector unknown |
 | Connector code | `CONNECTORS_CODE_TIER=1`, and `CONNECTORS_ROOT` (`STATE_ROOT/connectors` on the Compose stack) | Registry connectors that carry adapter code, from an index `REGISTRY_PUBLIC_KEY` verifies ([Code tier](../tools-and-connectors/registry.md#code-tier)) | A code install is refused, and code already on disk is not loaded |
-
-A key reaches the server through `.env` alone. The Compose file passes
-the file with `env_file`. A variable exported in the shell does not
-reach the container.
 
 No integration serves a model provider. An organisation connects its
 own keys under **Settings**, **Model keys**
 ([Model keys](model-keys.md)).
 
 Connectors that sign in with OAuth return to
-`<PUBLIC_BASE_URL>/api/mcp/oauth/callback`, or to the loopback address
-when `PUBLIC_BASE_URL` is empty. Register that URI on the OAuth client
-or GitHub App you configure
+`<PUBLIC_BASE_URL>/api/mcp/oauth/callback`, or, when `PUBLIC_BASE_URL`
+is empty, to the loopback address the box is reached at
+(`http://localhost:8080/api/mcp/oauth/callback` on the local stack).
+**Create the GitHub App** registers that callback on the App itself.
+Register it by hand on the Google Cloud client, and on a GitHub App
+you register by hand
 ([Gmail and Drive](../tools-and-connectors/google.md),
 [GitHub](../tools-and-connectors/github.md),
 [Remote access](remote-access.md)).

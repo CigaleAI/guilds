@@ -1,12 +1,14 @@
 # Gmail and Drive
 
-Gmail and Drive share one Google Cloud OAuth client on the box.
-The operator registers a Web application, enables the APIs, and
-sets `GMAIL_OAUTH_CLIENT_ID` and `GMAIL_OAUTH_CLIENT_SECRET`. Until
-those are set, Tools marks both connectors **Not set up** and
+Gmail and Drive share one Google Cloud OAuth client on the box: the
+**Google connectors** integration under **Admin**, **Platform keys**.
+A platform admin registers a Web application on Google Cloud,
+enables the APIs, and pastes its Client ID and Client secret there.
+Until both are set, Tools marks both connectors **Not set up** and
 disables Connect ([Integrations](catalog.md#integrations)).
 
-The redirect URI is `PUBLIC_BASE_URL` + `/api/mcp/oauth/callback`.
+The redirect URI is `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`, or
+the address the box is reached at when `PUBLIC_BASE_URL` is empty.
 The operator's browser follows that redirect, so the provider needs
 no path to the box
 ([Remote access](../getting-started/remote-access.md)). Register
@@ -14,8 +16,8 @@ that URI on the Cloud client.
 
 Connect follows the same callback and refresh path as Notion
 ([Connectors](connectors.md#browser-oauth)). The client is the
-Google Cloud Web application in the orchestrator environment.
-Missing credentials are a Connect error.
+Google Cloud Web application the integration holds, read at each
+Connect. Missing credentials are a Connect error.
 
 ## Gmail
 

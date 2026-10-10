@@ -8,8 +8,6 @@ import {
   PLATFORM_NATIVE_TOOLS,
 } from "./catalog.js";
 import { installedConnectors } from "../../connectors/index.js";
-import { instanceKey } from "../../connectors/instance.js";
-import { Repositories } from "../repositories.js";
 
 /**
  * Writes every installed connector's row from its folder, replacing the manifest and where it
@@ -81,49 +79,10 @@ export async function moveDriveFolders(pool: pg.Pool, now = new Date()): Promise
   }
 }
 
-/**
- * Gives every connector an instance key serves a platform login while that integration is on:
- * an empty encrypted payload, since the key is read at call time, and an enabled platform
- * binding on it, which every scope inherits and any scope may turn off. While the integration
- * is off, that login is disconnected.
- */
-export async function syncInstanceLogins(pool: pg.Pool, now = new Date(), env: NodeJS.ProcessEnv = process.env): Promise<void> {
-  const repo = new Repositories(pool);
-  for (const entry of installedConnectors().entries()) {
-    if (!entry.manifest.auth.instance) {
-      continue;
-    }
-    const on = instanceKey(entry.manifest, env) !== null;
-    const login = await repo.getMcpConnectionForOwner(entry.id, "platform", null);
-    if (login === null) {
-      if (on) {
-        const [ciphertext, nonce] = encryptPayload({});
-        await repo.connectMcp(newId("conn"), newId("bind"), entry.id, "platform", null, ciphertext, nonce, now, {
-          status: "connected",
-          accountHint: "platform key",
-        });
-      }
-      continue;
-    }
-    const status = on ? "connected" : "disconnected";
-    if (login.status !== status) {
-      await repo.saveMcpConnection(String(login.id), {
-        ciphertext: login.ciphertext as Buffer,
-        nonce: login.nonce as Buffer,
-        status,
-        accountHint: String(login.account_hint ?? ""),
-        oauthState: null,
-        now,
-      });
-    }
-  }
-}
-
 export async function seedSystem(pool: pg.Pool, now = new Date()): Promise<void> {
   const timestamp = now.toISOString();
   await projectConnectors(pool, now);
   await moveDriveFolders(pool, now);
-  await syncInstanceLogins(pool, now);
   for (const server of DROPPED_MCP_SERVERS) {
     await pool.query(`DELETE FROM connectors WHERE id = $1`, [server.id]);
     await pool.query(

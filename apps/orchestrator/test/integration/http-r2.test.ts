@@ -6,7 +6,7 @@ import { Repositories } from "../../src/db/repositories.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
-import { clearConnectorKeys, testEnv } from "../helpers/env.js";
+import { clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, templatesRoot } from "../helpers/fixtures.js";
 import { PlaceholderMap } from "../helpers/placeholders.js";
@@ -89,7 +89,7 @@ after(async () => {
 });
 
 test("R2 feature HTTP recordings replay against an isolated database", async () => {
-  clearConnectorKeys();
+  clearInstanceKeys();
   const databaseUrl = await createIsolatedDatabase(dbName);
   const env = testEnv(databaseUrl);
   const database = await connect(databaseUrl);

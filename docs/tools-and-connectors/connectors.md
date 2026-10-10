@@ -4,28 +4,51 @@ A connector is a catalog server: a remote MCP endpoint, a local
 adapter, or both ([Catalog](catalog.md)). Most take a token the
 organisation pastes. Notion and Sentry open a browser sign-in and
 register their own client. [Gmail and Drive](google.md) and
-[GitHub](github.md) use a client the box holds, which means
-registering an app and putting its credentials in `.env`.
+[GitHub](github.md) use a client the box holds: a platform admin
+registers an app and enters its credentials under **Admin**,
+**Platform keys** ([Integrations](catalog.md#integrations)).
 
 ## Instance keys
 
-A connector whose manifest names `auth.instance` runs on a key the
-operator sets in `.env`, for every organisation. Web search is one:
-the Tavily connector (slug `tavily`, tool `tavily_search`) names the
-`web-search` integration and `TAVILY_API_KEY`. `search` takes
-natural-language `query`, searches at depth `advanced`, and returns
-title, URL, and snippet for each source.
+A connector whose manifest names `auth.instance` runs on a key a
+platform admin enters under **Admin**, **Platform keys**, for every
+organisation. `auth.instance` is `{ integration, field }`: the
+connector's platform login takes that field of that integration. Web
+search is one: the Tavily connector (slug `tavily`, tool
+`tavily_search`) names the `web-search` integration's `api_key`.
+`search` takes natural-language `query`, searches at depth
+`advanced`, and returns title, URL, and snippet for each source.
 
-- Boot gives the connector a platform login while its integration is
-  on: an empty encrypted payload, `connected`, with an enabled
-  platform binding that every scope inherits and any scope may turn
-  Off. While the integration is off that login is `disconnected`,
-  and a run leaves its tools out instead of failing.
-- The pool reads the key at call time. It is never stored, never
-  enters the sandbox, and run output redacts it as
-  `[REDACTED:platform_<variable>]`.
+- `syncInstanceLogins` (`src/connectors/instance.ts`) gives the
+  connector a platform login while its integration is on: an empty
+  encrypted payload, `connected`, with an enabled platform binding
+  that every scope inherits and any scope may turn Off. While the
+  integration is off that login is `disconnected`, and a run leaves
+  its tools out instead of failing. It runs at boot, once the key
+  store is loaded, and again after every platform key write, so
+  entering or removing the key takes effect without a restart.
+- The pool reads the key at call time. It is never stored on the
+  login, never enters the sandbox, and run output redacts it as
+  `[REDACTED:platform_<slug>_<field>]` (`platform_tavily_api_key`).
 - An organisation may still connect a key of its own. That login
   resolves like any other and calls with its own key.
+
+A connector may hold a key or an OAuth client of its own instead of
+one of the box's. `auth.instance: { "own": true }` on a token
+connector makes its login fields a platform key, `connector:<slug>`
+under **Platform keys**: the pool reads every field at call time as
+the platform login's credentials, sent the way the connector's token
+travels; the login follows the integration's state through the same
+sync as Tavily's; and run output redacts each field as
+`platform_<slug>_<field>`. `auth.oauth.strategy: "configured"` with
+no `provider` makes Client ID and Client secret a platform key of
+the same id; the authorization server is discovered from the
+connector's endpoint, and while the client is unset the connector's
+`oauth_setup_state` is `unsupported` (**Not set up**). The
+`{ integration, field }` form reads one of the box's shipped
+integrations and is for connectors the box ships, core or an
+edition; a connector installed at runtime declares its own
+([Registry](registry.md)).
 
 Calls on a platform login are counted per organisation, connector,
 and UTC month in `connector_calls`. `OrgLimits.monthlyConnectorCalls`

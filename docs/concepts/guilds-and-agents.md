@@ -275,9 +275,10 @@ also needs `cpu` and `memory_mib`.
 An agent created with `coding` on and no step or tool-call limit
 starts with 200 steps and 200 tool calls instead.
 
-The create and Settings forms offer the box under **Box**: Lite,
-Standard, Code or Custom. They offer CLI, scripting, and Memory under
-Agent capabilities.
+The create and Settings forms offer the box under **Box** as four
+buttons: Lite, Standard, Code or Custom. They offer Browser, CLI,
+scripting, and Memory under Agent capabilities as four buttons.
+Browser is off and unavailable on Lite.
 
 A new agent is Lite. Picking Standard turns the browser on. Picking
 Code turns browser and coding on together, with CLI, scripting, and
@@ -427,6 +428,8 @@ renderer uses `clay`.
 
 The stored default is `teardrop` (clay). The create dialog starts on a
 random `critters:<seed>` in the signal identity colour (`#1fafd1`).
+A builder write picks one mascot family for the guild and a unique
+variant and identity colour for each role.
 
 `avatar_color` is a six-digit hex (default `#7c5cff`).
 

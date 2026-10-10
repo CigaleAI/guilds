@@ -54,9 +54,9 @@ export function Group({ title, children }: { title: string; children: ReactNode 
 
 /**
  * How the agent looks and runs: its name, focus and mascot, what wakes it in group chat, its model
- * and reasoning, its run limits, its script cap, its box (Lite, Standard, Code or Custom, with the
- * Browser switch and its language on every box but lite, and on a custom one its size and the
- * Coding switch), and its extras (CLI, scripting, Memory).
+ * and reasoning, its run limits, its disk and script caps, its box (Lite, Standard, Code or Custom,
+ * and on a custom one its size and the Coding switch), and its extras (Browser, CLI, scripting,
+ * Memory; Browser is off on lite, and its language shows while it is on).
  */
 export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -163,21 +163,6 @@ export function AgentSettings() {
           <Group title="Disk">
             <DiskFields form={form} onChange={set} errors={errors} />
           </Group>
-          {form.scripting ? (
-            <Group title="Scripts">
-              <TextField
-                tone="surface"
-                label="Max scripts"
-                type="number"
-                min={1}
-                step={1}
-                hint="Reusable Python files this agent may keep. Creating another is refused past this number."
-                value={form.max_scripts}
-                onChange={(event) => set({ max_scripts: event.currentTarget.value })}
-                {...(errors.max_scripts ? { error: errors.max_scripts } : {})}
-              />
-            </Group>
-          ) : null}
           <Group title="Box">
             <BoxPicker form={form} onChange={(next) => set(next)} models={models.data} error={errors.box} />
             <BoxFields form={form} onChange={(next) => set(next)} models={models.data} errors={errors} />

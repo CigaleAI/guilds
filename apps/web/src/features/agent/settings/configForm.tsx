@@ -1,8 +1,18 @@
+import {
+  Bookmark,
+  Code2,
+  Feather,
+  FileCode,
+  Globe,
+  SlidersHorizontal,
+  SquareTerminal,
+  type LucideIcon,
+} from "lucide-react";
 import { useOrgModels } from "../../../api/queries";
 import type { AgentConfig, Box, OrgModels, ThinkingLevel } from "../../../api/types";
 import { customBoxBounds, isCodingOnlyModel } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
-import { Checkbox, FormField, RadioGroup, Select, Slider, TextField } from "@guildsrun/ui";
+import { cn, FormField, Icon, Select, Slider, TextField } from "@guildsrun/ui";
 import { modelLimits, modelOptions, modelProviderConnected, providerLabel } from "../../models/models";
 import { ModelKeysLink } from "../../settings/ModelKeysLink";
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
@@ -347,20 +357,33 @@ export function LimitFields({ form, onChange, errors }: FieldsProps) {
   );
 }
 
-/** Workspace disk cap, in MiB. */
+/** Workspace disk cap, in MiB, beside how many scripts the agent may keep. */
 export function DiskFields({ form, onChange, errors }: FieldsProps) {
   return (
-    <TextField
-      tone="surface"
-      label="Max disk"
-      type="number"
-      min={1}
-      step={1}
-      hint="MiB the agent's workspace may hold. A generation will not start if the workspace is already over this. 10240 is 10 GiB."
-      value={form.max_workspace_mib}
-      onChange={(event) => onChange({ max_workspace_mib: event.currentTarget.value })}
-      {...(errors.max_workspace_mib ? { error: errors.max_workspace_mib } : {})}
-    />
+    <div className="grid gap-4 md:grid-cols-2">
+      <TextField
+        tone="surface"
+        label="Max disk"
+        type="number"
+        min={1}
+        step={1}
+        hint="MiB the agent's workspace may hold. A generation will not start if the workspace is already over this. 10240 is 10 GiB."
+        value={form.max_workspace_mib}
+        onChange={(event) => onChange({ max_workspace_mib: event.currentTarget.value })}
+        {...(errors.max_workspace_mib ? { error: errors.max_workspace_mib } : {})}
+      />
+      <TextField
+        tone="surface"
+        label="Max scripts"
+        type="number"
+        min={1}
+        step={1}
+        hint="Reusable Python files this agent may keep. Creating another is refused past this number."
+        value={form.max_scripts}
+        onChange={(event) => onChange({ max_scripts: event.currentTarget.value })}
+        {...(errors.max_scripts ? { error: errors.max_scripts } : {})}
+      />
+    </div>
   );
 }
 
@@ -374,26 +397,72 @@ export function capabilityOn(
   return Boolean(config?.[key]);
 }
 
+function ChoiceButton({
+  title,
+  hint,
+  selected,
+  onClick,
+  disabled,
+  icon,
+  radio,
+}: {
+  title: string;
+  hint: string;
+  selected: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  icon?: LucideIcon;
+  /** Exclusive choice in a radiogroup; omit for an on/off capability. */
+  radio?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      {...(radio
+        ? { role: "radio", "aria-checked": selected, "data-selected": selected ? "true" : undefined }
+        : { "aria-pressed": selected })}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex h-full min-w-0 cursor-pointer flex-col items-start gap-1 rounded-xl bg-surface px-3.5 py-3 text-left transition-colors",
+        "hover:bg-paper-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+        "selected:bg-ink-fill selected:text-on-ink selected:hover:bg-ink-fill",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+      )}
+    >
+      <span className="flex items-center gap-1.5 text-sm font-semibold">
+        {icon ? <Icon icon={icon} size={16} /> : null}
+        {title}
+      </span>
+      <span className={cn("text-xs text-pretty", selected ? "opacity-80" : "text-muted")}>{hint}</span>
+    </button>
+  );
+}
+
 function CapabilityField({
   label,
   hint,
   checked,
   onChange,
+  disabled,
+  icon,
 }: {
   label: string;
   hint: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  icon?: LucideIcon;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <Checkbox
-        label={label}
-        checked={checked}
-        onCheckedChange={(next) => onChange(next === true)}
-      />
-      <p className="pl-7 text-sm text-fg-2">{hint}</p>
-    </div>
+    <ChoiceButton
+      title={label}
+      hint={hint}
+      selected={checked}
+      onClick={() => onChange(!checked)}
+      {...(disabled !== undefined ? { disabled } : {})}
+      {...(icon ? { icon } : {})}
+    />
   );
 }
 
@@ -449,26 +518,34 @@ export function withBox(form: ConfigForm, box: Box, models?: OrgModels | undefin
   }
 }
 
-const boxOptions: Array<{ value: Box; title: string; hint: string }> = [
+const boxOptions: Array<{ value: Box; title: string; summary: string; hint: string; icon: LucideIcon }> = [
   {
     value: "lite",
     title: "Lite",
+    summary: "0.5 CPU · 256 MiB",
     hint: "Scripts, notes, connectors and a terminal on the smallest machine: 0.5 CPU, 256 MiB. No browser, no code tools.",
+    icon: Feather,
   },
   {
     value: "standard",
     title: "Standard",
+    summary: "1 CPU · 2 GiB",
     hint: "A browser on a medium machine: 1 CPU, 2 GiB, with Chromium. No code tools. Takes one browser slot from the plan.",
+    icon: Globe,
   },
   {
     value: "code",
     title: "Code",
+    summary: "2 CPU · 4 GiB",
     hint: "Coding and a browser on the large machine: 2 CPU, 4 GiB, with Node.js, build tools, git and Chromium. Takes one browser slot and one coding slot from the plan.",
+    icon: Code2,
   },
   {
     value: "custom",
     title: "Custom",
+    summary: "Size you choose",
     hint: `The browser machine at a size you choose, ${customBoxBounds.minCpu} to ${customBoxBounds.maxCpu} CPUs and ${customBoxBounds.minMemoryMib} to ${customBoxBounds.maxMemoryMib} MiB, with coding on or off.`,
+    icon: SlidersHorizontal,
   },
 ];
 
@@ -484,24 +561,22 @@ export function BoxPicker({
   models?: OrgModels | undefined;
   error?: string | undefined;
 }) {
+  const chosen = boxOptions.find((option) => option.value === form.box);
   return (
-    <FormField controlId="agent-box" labelFor={false} error={error}>
-      <RadioGroup
-        id="agent-box"
-        aria-label="Box"
-        className="gap-3"
-        value={form.box}
-        onValueChange={(value) => onChange(withBox(form, value as Box, models))}
-        options={boxOptions.map((option) => ({
-          value: option.value,
-          label: (
-            <span className="flex flex-col gap-0.5">
-              <span>{option.title}</span>
-              <span className="text-sm text-fg-2">{option.hint}</span>
-            </span>
-          ),
-        }))}
-      />
+    <FormField controlId="agent-box" labelFor={false} error={error} hint={chosen?.hint}>
+      <div role="radiogroup" id="agent-box" aria-label="Box" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {boxOptions.map((option) => (
+          <ChoiceButton
+            key={option.value}
+            radio
+            title={option.title}
+            hint={option.summary}
+            icon={option.icon}
+            selected={form.box === option.value}
+            onClick={() => onChange(withBox(form, option.value, models))}
+          />
+        ))}
+      </div>
     </FormField>
   );
 }
@@ -561,9 +636,8 @@ function CustomSizeFields({
 }
 
 /**
- * What the chosen box leaves to the operator: nothing on lite; the Browser switch (and its
- * language) on every other box; on custom, the Coding switch and the size as well. Switching the
- * browser or coding, or resizing, replaces the sandbox.
+ * What the chosen box leaves to the operator: nothing on lite, standard and code; on custom, the
+ * size and the Coding button. Switching coding, or resizing, replaces the sandbox.
  */
 export function BoxFields({
   form,
@@ -576,30 +650,24 @@ export function BoxFields({
   models?: OrgModels | undefined;
   errors: ConfigErrors;
 }) {
-  if (form.box === "lite") return null;
+  if (form.box !== "custom") return null;
   return (
     <>
-      {form.box === "custom" ? <CustomSizeFields form={form} onChange={onChange} errors={errors} /> : null}
-      <CapabilityField
-        label="Browser"
-        hint="Adds the Browser tab and browser tools. Its signed-in profile lives in the agent's sandbox, which is replaced when this changes. It takes one of the plan's browser slots."
-        checked={form.browser}
-        onChange={(browser) => onChange({ ...form, browser })}
-      />
-      {form.browser ? <BrowserLanguageField form={form} onChange={onChange} /> : null}
-      {form.box === "custom" ? (
+      <CustomSizeFields form={form} onChange={onChange} errors={errors} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <CapabilityField
           label="Coding"
-          hint="Adds the shell and code tools. It also turns on CLI and scripting. It takes one of the plan's coding slots. The sandbox is replaced when this changes."
+          hint="Shell and code tools. Turns on CLI and scripting. Uses a coding slot; replaces the sandbox."
+          icon={Code2}
           checked={form.coding}
           onChange={(coding) => onChange(withCoding(form, coding, models))}
         />
-      ) : null}
+      </div>
     </>
   );
 }
 
-/** The extras any box may have: CLI, scripting, and Memory. */
+/** Browser, CLI, scripting, and Memory. Browser is off and unavailable on lite. */
 export function CapabilitiesFields({
   form,
   onChange,
@@ -607,26 +675,45 @@ export function CapabilitiesFields({
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
 }) {
+  const lite = form.box === "lite";
   return (
     <>
-      <CapabilityField
-        label="CLI"
-        hint="Adds the CLI tab, a terminal on the agent's machine."
-        checked={form.cli}
-        onChange={(cli) => onChange({ ...form, cli })}
-      />
-      <CapabilityField
-        label="Scripting"
-        hint="Adds the Scripts tab and the script tools."
-        checked={form.scripting}
-        onChange={(scripting) => onChange({ ...form, scripting })}
-      />
-      <CapabilityField
-        label="Memory"
-        hint="Adds Memory to the opening system prompt and the memory_write tool. The agent writes whatever it wants to remember between runs."
-        checked={form.memory}
-        onChange={(memory) => onChange({ ...form, memory })}
-      />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <CapabilityField
+          label="Browser"
+          hint={
+            lite
+              ? "A lite box has no browser."
+              : "Browser tab and tools. Uses a browser slot; replaces the sandbox."
+          }
+          icon={Globe}
+          checked={form.browser}
+          disabled={lite}
+          onChange={(browser) => onChange({ ...form, browser })}
+        />
+        <CapabilityField
+          label="CLI"
+          hint="The CLI tab, a terminal on the machine."
+          icon={SquareTerminal}
+          checked={form.cli}
+          onChange={(cli) => onChange({ ...form, cli })}
+        />
+        <CapabilityField
+          label="Scripting"
+          hint="The Scripts tab and the script tools."
+          icon={FileCode}
+          checked={form.scripting}
+          onChange={(scripting) => onChange({ ...form, scripting })}
+        />
+        <CapabilityField
+          label="Memory"
+          hint="Notes the agent keeps between runs."
+          icon={Bookmark}
+          checked={form.memory}
+          onChange={(memory) => onChange({ ...form, memory })}
+        />
+      </div>
+      {form.browser ? <BrowserLanguageField form={form} onChange={onChange} /> : null}
     </>
   );
 }

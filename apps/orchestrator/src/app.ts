@@ -26,7 +26,8 @@ import { registerRequestOrigin } from "./http/origin.js";
 import { registerDomainRoutes } from "./http/routes.js";
 import { sandboxSubprotocol } from "./http/sandbox-proxy.js";
 import { registerWebApp } from "./http/web-app.js";
-import { CORE_INTEGRATIONS } from "./instance/integrations.js";
+import { installIntegrations } from "./instance/integrations.js";
+import { InstanceKeys } from "./instance/keys.js";
 import { repoRoot } from "./lib/paths.js";
 import { coreModelCredentials } from "./llm/credentials.js";
 import { ModelsService } from "./llm/models.js";
@@ -135,10 +136,7 @@ export async function buildApp(
   );
   if (deps) {
     const artifacts = deps.artifacts ?? new ArtifactStore(database.pool, deps.notes.templates);
-    const integrations = [
-      ...CORE_INTEGRATIONS,
-      ...extensions.flatMap((extension) => extension.integrations ?? []),
-    ];
+    installIntegrations(extensions.flatMap((extension) => extension.integrations ?? []));
     const policy = deps.policy ?? extensionPolicy(extensions, deps);
     const identity = deps.identity ?? extensionIdentity(extensions, deps);
     const instanceAdmin = deps.instanceAdmin ?? extensionInstanceAdmin(extensions, deps);
@@ -148,11 +146,12 @@ export async function buildApp(
       coreModelCredentials(deps.repo, deps.masterKey);
     const models =
       deps.models ?? new ModelsService({ repo: deps.repo, credentials: modelCredentials, masterKey: deps.masterKey });
+    const instanceKeys = deps.instanceKeys ?? new InstanceKeys(database.pool, deps.masterKey);
     const full = {
       database,
       ...deps,
       artifacts,
-      integrations,
+      instanceKeys,
       modelCredentials,
       models,
       ...(policy ? { policy } : {}),

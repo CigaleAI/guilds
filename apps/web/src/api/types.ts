@@ -7,19 +7,48 @@ export type AuthConfig = {
   mode: AuthMode;
 };
 
-/** How far an integration is set up: `incomplete` has some of its required variables and lacks others. */
+/** How far an integration is set up: `incomplete` has some of its required fields and lacks others. */
 export type IntegrationState = "on" | "off" | "incomplete";
 
-/** An optional integration of this server and the environment variables that switch it on, never a value. */
+/** Where an integration's values come from: entered under Admin → Platform keys, or the server's environment. */
+export type IntegrationSource = "store" | "env";
+
+/** One value an integration takes, and whether the server holds it; never the value itself. */
+export type IntegrationField = {
+  name: string;
+  label: string;
+  optional: boolean;
+  secret: boolean;
+  multiline: boolean;
+  set: boolean;
+};
+
+/** An optional integration of this server: what it switches on, where its values come from, and which are set. */
 export type InstanceIntegration = {
   id: string;
   label: string;
   /** What the server gains while the integration is on. */
   enables: string;
+  source: IntegrationSource;
   state: IntegrationState;
-  variables: { name: string; optional: boolean; set: boolean }[];
+  fields: IntegrationField[];
+  /** A guided setup the integration offers beside its form. */
+  setup: "github-app-manifest" | null;
+  /** When and by whom its values were last entered; null for everyone but a platform admin. */
+  updated_at: string | null;
+  set_by: string | null;
   /** The native tools and connector slugs it switches on. */
   provides: { native_tools: string[]; connectors: string[] };
+};
+
+/** `PUT`/`DELETE /api/admin/instance/keys/:integration`: the integration after the change, and the logins it dropped. */
+export type InstanceKeysResult = { integration: InstanceIntegration; disconnected: number };
+
+/** `POST /api/admin/instance/keys/github-app/manifest`: where the browser posts the manifest, and the manifest. */
+export type GithubAppManifestStart = {
+  action: string;
+  manifest: Record<string, unknown>;
+  state: string;
 };
 
 /** What this server is: how it identifies a request and which integrations it has. */
@@ -1659,6 +1688,12 @@ export type ApplyInstall =
       auth: "none" | "token" | "oauth";
     };
 
+/**
+ * A connector the recipe needs that the box has but no platform admin has set up; `integration`
+ * is the platform key that sets it up, null when none on this box does.
+ */
+export type ApplySetup = { server: string; integration: string | null; label: string };
+
 /** `POST /api/recipes/:id/preview`: the apply plan, its findings, and what it creates (recipes/apply.ts). */
 export type ApplyPreview = {
   recipe_id: string;
@@ -1672,6 +1707,8 @@ export type ApplyPreview = {
   connections: PlannedConnection[];
   /** Connectors the recipe names that the box lacks; each blocks apply until it is installed. */
   installs: ApplyInstall[];
+  /** Connectors the box has that no platform admin has set up; the guild cannot connect them until one does. */
+  setups: ApplySetup[];
   secrets: PlannedSecret[];
   collections: CollectionPlan[];
   findings: RecipeFinding[];

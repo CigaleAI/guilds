@@ -1,4 +1,4 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   ChevronDown,
   ChevronRight,
@@ -13,6 +13,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import {
   catalogExportUrl,
   useAdminCatalog,
+  useInstance,
   useReloadRegistry,
   useSaveCatalogServer,
   useSaveCatalogTool,
@@ -49,6 +50,7 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import { connectorLogo } from "../access/connectorLogo";
+import { integrationFor, setupSearch } from "../instance/instance";
 import { InstanceTab } from "./InstanceTab";
 import { RegistryDialog } from "./RegistryDialog";
 
@@ -126,6 +128,8 @@ function Catalog({ servers }: { servers: CatalogServer[] | undefined }) {
   const [open, setOpen] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState(false);
   const reload = useReloadRegistry();
+  const instance = useInstance();
+  const location = useLocation();
 
   if (!servers) {
     return (
@@ -231,6 +235,8 @@ function Catalog({ servers }: { servers: CatalogServer[] | undefined }) {
             const expanded = open === server.id;
             const edits =
               server.overridden.length + server.tools.filter((tool) => tool.overridden).length;
+            const integration = integrationFor(instance.data, "connectors", server.slug);
+            const notSetUp = integration && integration.state !== "on" ? integration : null;
             return (
               <div key={server.id} className="border-b border-line last:border-b-0">
                 <div className="flex items-center gap-3 px-4 py-3 hover:bg-paper">
@@ -263,12 +269,26 @@ function Catalog({ servers }: { servers: CatalogServer[] | undefined }) {
                         experimental
                       </Tag>
                     ) : null}
+                    {notSetUp ? (
+                      <Tag tone="ochre" font="sans">
+                        Not set up
+                      </Tag>
+                    ) : null}
                     {edits ? (
                       <span className="type-meta text-muted">
                         {edits} edit{edits === 1 ? "" : "s"}
                       </span>
                     ) : null}
                   </button>
+                  {notSetUp ? (
+                    <Link
+                      to="/admin"
+                      search={setupSearch(notSetUp.id, location.href)}
+                      className="text-sm underline"
+                    >
+                      Set up
+                    </Link>
+                  ) : null}
                   <OnOffSwitch
                     label={`${server.display_name} on this box`}
                     value={server.enabled}

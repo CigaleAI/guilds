@@ -729,6 +729,26 @@ export const orgModelProviders = pgTable(
   ],
 );
 
+/** A store integration's values, encrypted under the master key; one row per integration id. */
+export const instanceKeys = pgTable(
+  "instance_keys",
+  {
+    integration: text("integration").primaryKey(),
+    ciphertext: bytea("ciphertext").notNull(),
+    nonce: bytea("nonce").notNull(),
+    setByUserId: text("set_by_user_id"),
+    createdAt: timestamptz("created_at").notNull(),
+    updatedAt: timestamptz("updated_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.setByUserId],
+      foreignColumns: [users.id],
+      name: "instance_keys_set_by_user_id_fkey",
+    }).onDelete("set null"),
+  ],
+);
+
 export const orgMonthlyUsage = pgTable(
   "org_monthly_usage",
   {

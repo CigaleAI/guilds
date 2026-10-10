@@ -70,11 +70,20 @@ export function stepStatus(step: ApplyStep, connected: boolean): string {
   return "Needs confirmation";
 }
 
-/** What to do next on an open login or secret step; null when the step says it all. */
-export function stepHint(step: ApplyStep, connected: boolean): string | null {
+/**
+ * What to do next on an open login or secret step; null when the step says it all. A login step
+ * whose connector is not set up on this server (`setupGap`) says what a platform admin does first.
+ */
+export function stepHint(
+  step: ApplyStep,
+  connected: boolean,
+  setupGap: string | null = null,
+): string | null {
   if (stepClosed(step)) return null;
   if (step.kind === "connection" && !connected) {
-    return "Connect it here; the step is checked once the login works.";
+    return setupGap
+      ? `${setupGap} A platform admin sets it up under Admin → Platform keys; then connect it here.`
+      : "Connect it here; the step is checked once the login works.";
   }
   if (step.kind === "secret")
     return "Add the secret under the guild's Secrets, then check this step.";

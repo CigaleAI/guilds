@@ -168,8 +168,11 @@ They keep separate tool families.
   [Secrets and access](../concepts/secrets-and-access.md#secret_store-and-secret_request).
 
 Web search is not a native tool: it is the Tavily connector's
-`tavily_search`, served on the instance key
-([Instance keys](connectors.md#instance-keys)).
+`tavily_search`, served on the Web search platform key a platform
+admin enters under **Admin**, **Platform keys**
+([Instance keys](connectors.md#instance-keys)). A native tool that
+waits on a platform key has no switch in Tools and says it is offered
+once a platform admin sets up its integration there.
 
 Whether a run offers a native tool is
 [What a run offers](catalog.md#what-a-run-offers).

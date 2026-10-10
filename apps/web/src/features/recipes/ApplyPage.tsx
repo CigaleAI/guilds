@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   Check,
   CircleCheck,
@@ -16,9 +16,11 @@ import {
   useActivateApply,
   useApply,
   useConfirmStep,
+  useInstance,
   useVerifyStep,
 } from "../../api/queries";
 import type { ApplyRow, ApplyStep } from "../../api/types";
+import { useIdentity } from "../../app/identity";
 import {
   Button,
   Banner,
@@ -30,6 +32,7 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { useServerConnect, type ConnectableServer } from "../access/ConnectDialogs";
+import { connectorSetupGap, setupSearch } from "../instance/instance";
 import {
   applyOpen,
   checklistProgress,
@@ -74,6 +77,9 @@ function Checklist({ apply }: { apply: ApplyRow }) {
   const navigate = useNavigate();
   const owner = { scope: "guild" as const, id: apply.guild_id };
   const access = useAccess(owner);
+  const instance = useInstance();
+  const { user } = useIdentity();
+  const location = useLocation();
   const verify = useVerifyStep(apply.id);
   const confirm = useConfirmStep(apply.id);
   const activate = useActivateApply(apply.id);
@@ -187,8 +193,9 @@ function Checklist({ apply }: { apply: ApplyRow }) {
           <Milestone title="Guild created" detail={createdSummary(apply.preview.creates)} />
           {steps.map((step) => {
             const { server, connected: isConnected } = stepConnector(step, servers);
+            const gap = server ? connectorSetupGap(server, instance.data) : null;
             const closed = stepClosed(step);
-            const hint = problems[step.id] ?? stepHint(step, isConnected);
+            const hint = problems[step.id] ?? stepHint(step, isConnected, gap?.text ?? null);
             return (
               <li
                 key={step.id}
@@ -215,14 +222,24 @@ function Checklist({ apply }: { apply: ApplyRow }) {
                 {open && !closed ? (
                   <div className="flex flex-wrap gap-2">
                     {step.kind === "connection" && !isConnected && server ? (
-                      <Button
-                        size="sm"
-                        disabled={busy || connect.busy}
-                        onClick={() => connect.start(server)}
-                      >
-                        <Icon icon={Link2} size={14} />
-                        Connect {server.name}
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={busy || connect.busy || gap !== null}
+                          {...(gap ? { title: gap.text } : {})}
+                          onClick={() => connect.start(server)}
+                        >
+                          <Icon icon={Link2} size={14} />
+                          Connect {server.name}
+                        </Button>
+                        {gap?.integration && user.platform_admin ? (
+                          <Button asChild variant="outline" size="sm">
+                            <Link to="/admin" search={setupSearch(gap.integration, location.href)}>
+                              Set up
+                            </Link>
+                          </Button>
+                        ) : null}
+                      </>
                     ) : null}
                     {step.closure === "verified" ? (
                       <Button

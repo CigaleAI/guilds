@@ -65,6 +65,57 @@ One package runs alone with pnpm:
 - `pnpm --filter @guildsrun/orchestrator start` serves the
   orchestrator outside Docker, against the `.env` it reads
 
+## Local state
+
+Everything the stack keeps lives under `STATE_ROOT`, the absolute
+path `.env` names (`.state/` in the checkout). Each tree is
+bind-mounted into the container that uses it. The stack creates no
+named Docker volume, so `docker volume ls` shows nothing of it and
+`docker compose down -v` removes nothing.
+
+| Tree | Holds |
+| --- | --- |
+| `postgres/` | The PostgreSQL data directory: every table |
+| `opensandbox/` | The OpenSandbox server's SQLite lifecycle store |
+| `workspaces/` | One directory per agent: scripts, the browser profile, a coding agent's home |
+| `notes/` | The Obsidian vault: system prompt, guild and agent notes |
+| `attachments/` | Chat images, one file per attachment |
+| `connectors/` | Connector packages installed from a registry |
+
+### Resetting
+
+`make reset` starts over from an empty box:
+
+```sh
+make reset
+```
+
+It runs `make down`, removes the six trees, and runs `make up`. On
+the empty database the orchestrator applies its migrations and seeds
+the operator user and the `home` organisation. The target refuses to
+run when `STATE_ROOT` is `/srv`, the production path.
+
+To drop the database and keep the rest:
+
+```sh
+make down
+rm -rf .state/postgres
+make up
+```
+
+The other trees then hold notes, workspaces, and attachments of
+guilds and agents the database no longer knows. They are inert; the
+next `make reset` removes them.
+
+A reset leaves `.env`, the built images, and `node_modules` as they
+are. Running `./setup.sh` afterwards keeps every value `.env` already
+has.
+
+The code in the checkout is what the reset stack runs: the
+orchestrator from its bind-mounted source, the operator app as built
+into the image by `make up` (which rebuilds it) or served live by
+`make dev`.
+
 ## Check
 
 `scripts/check.sh` is the whole check. It starts its own

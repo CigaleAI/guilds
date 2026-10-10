@@ -7,6 +7,7 @@ import {
   createdSummary,
   skippedSteps,
   stepConnector,
+  stepHint,
   stepStatus,
   workOpen,
 } from "./applySteps";
@@ -53,6 +54,21 @@ test("a login step reads the guild's connector by its slug", () => {
   assert.deepEqual(stepConnector(first, servers), { server: servers[0], connected: true });
   assert.equal(stepStatus(first, true), "Connected · ready to check");
   assert.equal(stepStatus(first, false), "Not connected yet");
+});
+
+test("an open login step says to connect, or what a platform admin sets up first", () => {
+  const [first] = checklist;
+  assert.ok(first);
+  assert.equal(
+    stepHint(first, false),
+    "Connect it here; the step is checked once the login works.",
+  );
+  assert.equal(
+    stepHint(first, false, "GitHub App is not set up on this server: Private key missing."),
+    "GitHub App is not set up on this server: Private key missing. A platform admin sets it up under Admin → Platform keys; then connect it here.",
+  );
+  assert.equal(stepHint(first, true, "GitHub App is not set up on this server."), null);
+  assert.equal(stepHint(step("conn:notion", "connection", "verified"), false, "gap"), null);
 });
 
 test("skipped logins and secrets are named, not every skipped step", () => {

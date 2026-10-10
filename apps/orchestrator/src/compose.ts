@@ -34,6 +34,9 @@ import { StudioService } from "./studio/index.js";
 import { installConnectors } from "./connectors/index.js";
 import { syncCodeConnectors } from "./registry/code.js";
 import { installIntegrations } from "./instance/integrations.js";
+import { refreshConnectorIntegrations } from "./instance/connectors.js";
+import { InstanceKeys } from "./instance/keys.js";
+import { syncInstanceLogins } from "./connectors/instance.js";
 
 export type Server = {
   app: FastifyInstance;
@@ -60,11 +63,15 @@ export async function createServer(
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool, { orgCreated: extensionOrgCreated(extensions) });
   await syncCodeConnectors(repo);
+  await refreshConnectorIntegrations(repo);
+  const masterKey = decodeMasterKey(config.secretsMasterKey);
+  const instanceKeys = new InstanceKeys(database.pool, masterKey);
+  await instanceKeys.load();
+  await syncInstanceLogins(repo, masterKey);
   const policy = extensionPolicy(extensions, { repo }) ?? OPEN_POLICY;
   const artifacts = new ArtifactStore(database.pool, config.templatesRoot);
   const scripts = new Scripts(repo);
   const schedules = new Schedules(repo, notes);
-  const masterKey = decodeMasterKey(config.secretsMasterKey);
   const modelCredentials = extensionModelCredentials(extensions, { repo }) ?? coreModelCredentials(repo, masterKey);
   const models = new ModelsService({ repo, credentials: modelCredentials, masterKey });
   const mcp = new McpPool(TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");
@@ -146,6 +153,7 @@ export async function createServer(
       schedules,
       config,
       masterKey,
+      instanceKeys,
       mcp,
       generation,
       attachments,

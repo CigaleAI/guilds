@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { ArrowLeft, CircleCheck, Rocket } from "lucide-react";
 import { useState } from "react";
 import {
@@ -9,9 +9,15 @@ import {
   useRecipe,
   useRecipePreview,
 } from "../../api/queries";
-import type { ApplyConnectionChoice, ApplyInstall, PlannedConnection } from "../../api/types";
+import type {
+  ApplyConnectionChoice,
+  ApplyInstall,
+  ApplySetup,
+  PlannedConnection,
+} from "../../api/types";
 import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
+import { setupSearch } from "../instance/instance";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { modelOptions } from "../models/models";
 import {
@@ -173,6 +179,8 @@ export function ApplyPreviewPage() {
         {data.installs.length ? (
           <Installs installs={data.installs} onInstalled={() => void preview.refetch()} />
         ) : null}
+
+        {data.setups.length ? <Setups setups={data.setups} /> : null}
 
         {noProvider ? <ConnectProviderGuide what="this guild's agents" /> : null}
 
@@ -370,6 +378,41 @@ function Installs({
         confirmLabel="Install unverified"
         onConfirm={() => (confirming ? fromRegistry(confirming, false) : undefined)}
       />
+    </section>
+  );
+}
+
+/**
+ * The connectors the recipe needs that the box has but no platform admin has set up. The guild
+ * cannot connect them until one enters the platform key under Admin → Platform keys.
+ */
+function Setups({ setups }: { setups: ApplySetup[] }) {
+  const { user } = useIdentity();
+  const location = useLocation();
+  return (
+    <section className="flex flex-col gap-2 rounded-xl bg-surface p-4">
+      <h3 className="type-label text-muted">Connectors to set up · {setups.length}</h3>
+      <ul className="flex flex-col gap-2">
+        {setups.map((item) => (
+          <li key={item.server} className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="min-w-0 flex-1 text-fg-2">
+              {item.label} is not set up on this server, so{" "}
+              <span className="font-mono">{item.server}</span> can't be connected.
+            </span>
+            {user.platform_admin && item.integration ? (
+              <Button asChild size="sm">
+                <Link to="/admin" search={setupSearch(item.integration, location.href)}>
+                  Set up
+                </Link>
+              </Button>
+            ) : (
+              <span className="text-xs text-muted">
+                A platform admin sets it up under Admin → Platform keys.
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

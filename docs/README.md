@@ -36,17 +36,23 @@ the one page that keeps history.
 
 ## Getting started
 
-- [Install](getting-started/install.md) — requirements, setup, first
-  start, the first operator
-- [Model keys](getting-started/model-keys.md) — providers, where a
-  key comes from, the welcome dialog, choosing models, the default,
-  replacing and removing a key
-- [Your first guild](getting-started/first-guild.md) — a guild, an
-  agent, the group chat, a routine, a recipe
-- [Configure](getting-started/configure.md) — `.env`: required values,
-  integrations, limits
-- [Remote access](getting-started/remote-access.md) — reaching the box
-  from another machine
+Three pages, in order, take an empty machine to a working guild:
+
+1. [Install](getting-started/install.md) — requirements, the three
+   commands, what runs, where the state lives
+2. [Model keys](getting-started/model-keys.md) — the welcome dialog:
+   a provider, its models, the default; managing keys afterwards
+3. [Your first guild](getting-started/first-guild.md) — a guild, an
+   agent, its Task, the group chat, the run, memory, a routine, a
+   tool, a recipe
+
+Then, when the box needs it:
+
+- [Configure](getting-started/configure.md) — platform keys, and
+  `.env`: environment integrations, reaching the box, limits, the
+  model catalog
+- [Remote access](getting-started/remote-access.md) — reaching the
+  box from another machine, with one operator or with accounts
 - [Operate](getting-started/operate.md) — update, back up, restore,
   logs, when it fails
 
@@ -115,7 +121,8 @@ For the people who change the code.
 
 - [Contributing](CONTRIBUTING.md) — licence, pull requests, the check
 - [Development](contributing/development.md) — the development stack,
-  verify, check, the pre-push hook, CI, fixtures
+  local state and reset, verify, check, the pre-push hook, CI,
+  fixtures
 - [Code guidelines](contributing/code-guidelines.md) — names, function
   size, scaffolding, boundaries, tests, docs
 

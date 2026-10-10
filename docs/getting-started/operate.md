@@ -1,5 +1,9 @@
 # Operate
 
+The box in day-to-day use: updating it, backing it up and restoring
+it, reading its logs, and what its messages mean when it refuses to
+start.
+
 ## Update
 
 ```text

@@ -23,6 +23,7 @@ import { isReadOnlyRemote, ListedTool, McpError, McpPool, STATE_TIMEOUT_MS } fro
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { QUOTES, WITH_QUOTES } from "../helpers/quotes.js";
+import { endpointManifest } from "../helpers/registry.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -60,6 +61,37 @@ test("every connector folder holds a valid manifest named after it, and the core
     assert.ok(manifest.endpoint || existsSync(path.join(CONNECTORS_DIR, folder, "adapter.ts")) || !manifest.tools?.length, folder);
   }
   assert.throws(() => loadManifest({ ...CONNECTORS.bySlug("qonto")!.manifest }, "other"), ManifestError);
+});
+
+test("a manifest declares a key or a client of its own within the rules", () => {
+  const own = loadManifest(
+    endpointManifest("acme", {
+      auth: { kind: "token", fields: [{ name: "cert", label: "Certificate", multiline: true }], instance: { own: true } },
+    }),
+  );
+  assert.deepEqual(own.auth.instance, { own: true });
+  assert.equal(own.auth.fields?.[0]?.multiline, true);
+  const configured = loadManifest(endpointManifest("portal", { auth: { kind: "oauth", oauth: { strategy: "configured" } } }));
+  assert.equal(configured.auth.oauth?.provider, undefined);
+  const shipped = loadManifest({
+    ...endpointManifest("mail", { auth: { kind: "oauth", oauth: { strategy: "configured", provider: "google-connectors" } } }),
+    endpoint: undefined,
+  });
+  assert.equal(shipped.auth.oauth?.provider, "google-connectors", "a provider brings its own discovery");
+  const refused = (raw: Record<string, unknown>, pattern: RegExp) =>
+    assert.throws(() => loadManifest(raw), (error: unknown) => error instanceof ManifestError && pattern.test(error.message));
+  refused(
+    endpointManifest("acme", { auth: { kind: "oauth", oauth: { strategy: "dynamic" }, instance: { own: true } } }),
+    /connector acme declares a platform key of its own without token auth/,
+  );
+  refused(
+    { ...endpointManifest("portal", { auth: { kind: "oauth", oauth: { strategy: "configured" } } }), endpoint: undefined },
+    /connector portal signs in with a configured client of its own and needs an endpoint to discover its authorization server/,
+  );
+  refused(endpointManifest("acme", { auth: { kind: "token", instance: { own: false } } }), /auth\/instance/);
+  refused(endpointManifest("acme", { auth: { kind: "token", instance: { integration: "web-search" } } }), /auth\/instance/);
+  refused(endpointManifest("acme", { auth: { kind: "token", instance: { own: true, integration: "web-search", field: "api_key" } } }), /auth\/instance/);
+  refused(endpointManifest("acme", { auth: { kind: "token", fields: [{ name: "k", label: "K", multiline: "yes" }] } }), /multiline/);
 });
 
 test("manifests keep their tools, endpoints, settings, and state within the rules", () => {
