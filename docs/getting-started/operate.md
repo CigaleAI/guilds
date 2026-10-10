@@ -114,9 +114,10 @@ monitor outside the box.
 | `AUTH_MODE must be compat-cookie, trusted-header` | `.env` names a mode core does not have |
 | `TRUSTED_PROXY_SECRET is required when AUTH_MODE=trusted-header`, and the same for `PUBLIC_BASE_URL` and `OPERATOR_EMAIL` | The proxy mode is missing one of its three settings ([Remote access](remote-access.md)) |
 | `OPERATOR_EMAIL is another user's email` | A user other than the box's first already holds that address |
-| Create agent, Studio, the Builder, or recipe apply shows `Connect a model provider first` | The organisation has no provider connected. Connect one under **Settings**, **Model keys** ([Install](install.md#the-first-model-key)) |
-| A run ends with `connect a … key on Model keys` | The organisation has no key for that agent's model provider, or removed it; connect one under **Settings**, **Model keys** |
-| The picker lists a model under `Not offered` | The agent's stored model is no longer among the organisation's chosen models; it still runs while the provider's key is connected |
+| Create agent, Studio, the Builder, or recipe apply shows `Connect a model provider first` | The organisation has no provider connected. Connect one under **Settings**, **Model keys** ([Model keys](model-keys.md#without-a-key)) |
+| A run ends with `connect a … key on Model keys` | The organisation has no key for that agent's model provider, or removed it; connect one under **Settings**, **Model keys** ([Model keys](model-keys.md#replace-or-remove-a-key)) |
+| Model keys answers `<Provider> rejected the key` or `did not accept the key` | The provider refused `GET /models` with that key; nothing was saved ([Model keys](model-keys.md#the-key-check)) |
+| The picker lists a model under `Not offered` | The agent's stored model is no longer among the organisation's chosen models; it still runs while the provider's key is connected ([Model keys](model-keys.md#choose-models)) |
 | Model keys cannot browse a provider's catalog, or lists stale models | The box could not fetch models.dev and serves its last catalog or the snapshot it ships with ([Configure](configure.md#model-catalog)) |
 | Stored credentials fail to decrypt after a restore | The restore runs under a different `SECRETS_MASTER_KEY` than the one the data was written with |
 

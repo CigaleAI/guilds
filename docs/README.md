@@ -37,7 +37,10 @@ the one page that keeps history.
 ## Getting started
 
 - [Install](getting-started/install.md) — requirements, setup, first
-  start, first model key
+  start, the first operator
+- [Model keys](getting-started/model-keys.md) — providers, where a
+  key comes from, the welcome dialog, choosing models, the default,
+  replacing and removing a key
 - [Your first guild](getting-started/first-guild.md) — a guild, an
   agent, the group chat, a routine, a recipe
 - [Configure](getting-started/configure.md) — `.env`: required values,

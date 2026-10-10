@@ -69,7 +69,7 @@ reach the container.
 
 No integration serves a model provider. An organisation connects its
 own keys under **Settings**, **Model keys**
-([Install](install.md#the-first-model-key)).
+([Model keys](model-keys.md)).
 
 Connectors that sign in with OAuth return to
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`, or to the loopback address

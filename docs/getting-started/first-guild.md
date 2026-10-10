@@ -55,10 +55,10 @@ guild menu) opens **Create an agent**.
   what the agent is for. The focus seeds its Task. An avatar picker
   gives it a [DiceBear](https://www.dicebear.com/) mascot and one of
   six identity colours.
-- **Model** — the model, and a thinking level and temperature where
-  the model takes them. With no key yet, a banner above every page
-  says so and the picker names the two ways to give one
-  ([Install](install.md#the-first-model-key)).
+- **Model** — one of the organisation's chosen models, preselected
+  with its default, and a thinking level and temperature where the
+  model takes them. While no provider is connected, a guide to Model
+  keys stands in for the picker ([Model keys](model-keys.md)).
 - **Run limits** — max output tokens, max steps, max tool calls, max
   input tokens.
 - **Disk** — the workspace cap, 10240 MiB by default.
