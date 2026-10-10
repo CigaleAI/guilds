@@ -22,8 +22,6 @@ different level of abstraction.
 - **Share the love.** Recipes carry a working guild to someone who
   does not want to design one from scratch.
 
-The longer account is [Philosophy](philosophy.md).
-
 These pages are for the people who run it, the people who use it, and
 the people who change it.
 
