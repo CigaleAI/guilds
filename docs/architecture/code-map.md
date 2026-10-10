@@ -122,7 +122,8 @@ orchestrator serves.
 
 - `shell/` — sidebar with agents flagged for broken Task links,
   collapsed rail folded with ⌘B / Ctrl+B, account menu. On a phone
-  the sidebar opens as a drawer from a top bar.
+  the sidebar opens as a drawer from a top bar. The model setup gate
+  over every page while no provider is connected.
 - `guild/` — guild workspace and group chat, opened at a message by
   `?seq=`. The header's member avatars open the inspector. The
   header's message budget. The guild menu's Studio, new agent and
@@ -232,10 +233,13 @@ orchestrator serves.
   provider's state, the connect form, the catalog to choose models
   from, and the default. Its secrets and tools over `access/`. Its
   usage by guild and agent.
-- `models/` — what every model picker shares: the options from the
-  organisation's chosen models grouped by provider, the default to
-  preselect, what a model does not take, and the guide shown in a
-  picker's place while no provider is connected.
+- `models/` — the organisation's model setup and what every picker
+  shares: the providers with their connect forms, catalog picker,
+  chosen models and default (shown on Model keys and in the setup
+  gate), the gate itself, the picker options from the chosen models
+  grouped by provider, the default to preselect, what a model does
+  not take, and the guide shown in a picker's place while no provider
+  is connected.
 - `instance/` — what the server's integrations mean for a screen:
   the native tool and connector that waits for an instance key.
 - `inbox/` — issues and tags for the operator across the guilds

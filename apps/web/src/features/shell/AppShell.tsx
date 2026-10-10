@@ -6,6 +6,7 @@ import { useInboxStream } from "../../api/streams";
 import { useSlots } from "../../app/slots";
 import { useStoredFlag } from "../../app/storage";
 import { IconButton, BrandMark, dialogScrim } from "@guildsrun/ui";
+import { ModelSetupGate } from "../models/ModelSetupGate";
 import { GuildRail } from "./GuildRail";
 import { GuildSidebar } from "./GuildSidebar";
 
@@ -13,7 +14,8 @@ import { GuildSidebar } from "./GuildSidebar";
 const retractedKey = "guilds-rail-retracted";
 
 /**
- * The workspace frame: navigation on the left, the current page on paper. On a phone the
+ * The workspace frame: navigation on the left, the current page on paper, and the model setup
+ * gate over everything while the organisation has no provider connected. On a phone the
  * navigation opens as a drawer from a top bar and closes once a page is picked.
  */
 export function AppShell() {
@@ -75,6 +77,7 @@ export function AppShell() {
         {shellBanners.map((Notice, index) => (
           <Notice key={index} />
         ))}
+        <ModelSetupGate />
         <Outlet />
       </main>
     </div>

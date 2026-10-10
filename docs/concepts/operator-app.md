@@ -67,6 +67,17 @@ on `compat-cookie`).
 The `guilds_user` and `guilds_org` cookies carry both for SSE
 streams, which cannot send headers.
 
+While the organisation has no model provider connected, a welcome
+dialog over every page gates the app: nothing can run until one is.
+An owner or admin picks a provider from tiles with its logo and a
+line on what it is for, pastes the key (the local endpoint takes a
+URL) with a link to where the provider issues one, ticks the models
+to offer, and picks the default; a coding-only provider ends after
+its models. A member reads that an owner or admin connects the first
+provider. The dialog cannot be closed until a provider is connected,
+and stays open through the two steps after so the pickers are not
+left empty ([Install](../getting-started/install.md#the-first-model-key)).
+
 Markdown (messages, notes, Tasks, instructions) renders as GitHub
 Markdown that keeps single line breaks.
 `![[…]]` embeds and tagged handles show as chips.

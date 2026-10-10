@@ -12,6 +12,7 @@ the work below, each under its own terms.
 | JetBrains Mono, by JetBrains (`@fontsource/jetbrains-mono`) | The operator app's stylesheet | SIL Open Font License 1.1 |
 | Clay, Cameo, Critters, and Pixelbot avatar styles, by DiceBear (`@dicebear/styles`) | Agent avatars the orchestrator draws | CC0 1.0 |
 | Bottts Neutral avatar style, a remix of Bottts by Pablo Stanley (`@dicebear/styles`) | Agent avatars the orchestrator draws | Free for personal and commercial use (https://bottts.com/) |
+| The OpenAI, OpenRouter, xAI, DeepInfra, and Kimi marks, as drawn in the models.dev repository (https://github.com/sst/models.dev) | The operator app's model setup and Model keys | The repository is MIT; each mark belongs to its owner and names that provider only |
 | npm packages | The orchestrator image and the operator app's bundle | Each package's own: MIT, Apache-2.0, ISC, BSD, BlueOak-1.0.0, 0BSD, Unlicense, and one LGPL-3.0-only library (`rpc-websockets`). `pnpm licenses list --prod` prints them all |
 
 ## Built or fetched beside it

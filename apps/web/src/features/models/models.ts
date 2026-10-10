@@ -1,5 +1,5 @@
 import type { SelectOption, SelectOptionGroup } from "@guildsrun/ui";
-import type { OrgModels } from "../../api/types";
+import type { ModelProvider, OrgModels } from "../../api/types";
 
 /**
  * The picker's options: the organisation's chosen models grouped by provider. Coding rows appear
@@ -63,3 +63,35 @@ export function modelProviderConnected(models: OrgModels | undefined, modelId: s
 export function providerLabel(models: OrgModels | undefined, modelId: string): string {
   return models?.providers.find((provider) => provider.id === providerOf(modelId))?.label ?? providerOf(modelId);
 }
+
+/** The three steps of the organisation's model setup, each done or not, as the setup gate shows them. */
+export type SetupStep = { id: "provider" | "models" | "default"; label: string; done: boolean };
+
+export function setupProgress(models: OrgModels | undefined): SetupStep[] {
+  const connected = models?.providers.some((provider) => provider.connected) ?? false;
+  const chosen = (models?.models.length ?? 0) > 0;
+  return [
+    { id: "provider", label: "Connect a provider with the organisation's key", done: connected },
+    { id: "models", label: "Choose the models to offer", done: chosen },
+    { id: "default", label: "Mark one as the default", done: Boolean(models?.default) },
+  ];
+}
+
+/** What a provider is for, and where its key comes from, as the setup shows them. */
+export type ProviderMeta = { blurb: string; keyURL: string | null; urlPlaceholder?: string };
+
+export const PROVIDER_META: Record<ModelProvider, ProviderMeta> = {
+  openai: { blurb: "GPT models, straight from OpenAI.", keyURL: "https://platform.openai.com/api-keys" },
+  openrouter: {
+    blurb: "Hundreds of models behind one key, Claude and Gemini included.",
+    keyURL: "https://openrouter.ai/settings/keys",
+  },
+  xai: { blurb: "Grok models from xAI.", keyURL: "https://console.x.ai/" },
+  deepinfra: { blurb: "Open-weight models, priced low.", keyURL: "https://deepinfra.com/dash/api_keys" },
+  local: {
+    blurb: "Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run.",
+    keyURL: null,
+    urlPlaceholder: "http://127.0.0.1:11434/v1",
+  },
+  kimi: { blurb: "Kimi models on a Kimi Code plan, for coding agents.", keyURL: "https://www.kimi.com/code" },
+};

@@ -113,7 +113,12 @@ machine, is [Remote access](remote-access.md).
 ## The first model key
 
 A run needs the organisation's own key for a model provider. The
-server holds none. Under **Settings**, **Model keys**:
+server holds none: keys live in the database, encrypted with
+`SECRETS_MASTER_KEY` like every stored credential, and `.env` never
+carries one. On first start, a welcome dialog over the app walks
+the owner through it, one provider at a time, and does not close
+until a provider is connected. The same controls stay under
+**Settings**, **Model keys**:
 
 1. Choose a provider: OpenAI, OpenRouter, xAI, DeepInfra, a local
    OpenAI-compatible endpoint, or Kimi Code for coding agents.
@@ -122,9 +127,9 @@ server holds none. Under **Settings**, **Model keys**:
 3. Choose the models to offer from the provider's catalog.
 4. Mark one as the organisation's default.
 
-Until a provider is connected, creating an agent, starting Studio or
-the Builder, and applying a recipe show a guide to Model keys in
-place of the model picker
+Until a provider is connected the dialog stays, and creating an
+agent, starting Studio or the Builder, and applying a recipe show a
+guide to Model keys in place of the model picker
 ([Operator app](../concepts/operator-app.md#settings-settings)).
 
 Every key in `.env` is optional ([Configure](configure.md)).
