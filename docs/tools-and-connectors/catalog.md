@@ -369,7 +369,7 @@ are its login fields, `secret` unless a field says `secret: false`)
 or an OAuth client (`configured` with no `provider`: Client ID
 `client_id` and Client secret `client_secret`). Its id is
 `connector:<slug>`, its label the connector's display name (or
-"<name> OAuth client"), its source `store`, and it
+`<name> OAuth client`), its source `store`, and it
 `provides.connectors: [slug]`. It is listed with the others, filled
 through the same routes, and its row is deleted with the registry
 connector. The list is rebuilt from the platform connector rows
