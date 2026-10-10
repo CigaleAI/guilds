@@ -247,6 +247,43 @@ CREATE TABLE public.collection_access (
 --> statement-breakpoint
 
 --
+-- Name: connector_calls; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.connector_calls (
+    org_id text NOT NULL,
+    connector_id text NOT NULL,
+    month text NOT NULL,
+    calls integer DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone NOT NULL
+);
+--> statement-breakpoint
+
+--
+-- Name: connectors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.connectors (
+    id text NOT NULL,
+    slug text NOT NULL,
+    tool_prefix text NOT NULL,
+    owner_org_id text,
+    manifest jsonb NOT NULL,
+    source text NOT NULL,
+    version text DEFAULT ''::text NOT NULL,
+    verified boolean DEFAULT false NOT NULL,
+    publisher text DEFAULT ''::text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    oauth_client jsonb,
+    overrides jsonb DEFAULT '{}'::jsonb NOT NULL,
+    installed_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone NOT NULL,
+    experimental boolean DEFAULT false NOT NULL,
+    CONSTRAINT connectors_source_check CHECK ((source = ANY (ARRAY['core'::text, 'registry'::text, 'local'::text])))
+);
+--> statement-breakpoint
+
+--
 -- Name: file_changes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -377,6 +414,7 @@ CREATE TABLE public.guild_repositories (
     connection_id text,
     created_at timestamp with time zone NOT NULL,
     updated_at timestamp with time zone NOT NULL,
+    github_id bigint,
     CONSTRAINT guild_repositories_name_check CHECK ((name ~ '^[a-z][a-z0-9_-]{0,62}$'::text))
 );
 --> statement-breakpoint
@@ -409,27 +447,6 @@ CREATE TABLE public.guilds (
 --> statement-breakpoint
 
 --
--- Name: mcp_catalog_tools; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.mcp_catalog_tools (
-    id text NOT NULL,
-    mcp_server_id text NOT NULL,
-    remote_name text NOT NULL,
-    namespaced_name text NOT NULL,
-    description text DEFAULT ''::text NOT NULL,
-    input_schema jsonb NOT NULL,
-    source text NOT NULL,
-    publication_state text DEFAULT 'draft'::text NOT NULL,
-    default_enabled boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    CONSTRAINT mcp_catalog_tools_publication_state_check CHECK ((publication_state = ANY (ARRAY['draft'::text, 'published'::text, 'disabled'::text]))),
-    CONSTRAINT mcp_catalog_tools_source_check CHECK ((source = ANY (ARRAY['manifest'::text, 'admin'::text, 'runtime_candidate'::text])))
-);
---> statement-breakpoint
-
---
 -- Name: mcp_connections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -449,39 +466,10 @@ CREATE TABLE public.mcp_connections (
     status text DEFAULT 'pending'::text NOT NULL,
     oauth_state text,
     org_id text,
-    pinned_prices jsonb DEFAULT '[]'::jsonb NOT NULL,
-    github_repositories jsonb DEFAULT '[]'::jsonb NOT NULL,
+    settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT mcp_connections_owner_refs CHECK ((((owner_scope = 'platform'::text) AND (owner_id IS NULL) AND (org_id IS NULL) AND (guild_id IS NULL) AND (agent_id IS NULL)) OR ((owner_scope = 'org'::text) AND (owner_id = org_id) AND (guild_id IS NULL) AND (agent_id IS NULL)) OR ((owner_scope = 'guild'::text) AND (owner_id = guild_id) AND (org_id IS NULL) AND (agent_id IS NULL)) OR ((owner_scope = 'agent'::text) AND (owner_id = agent_id) AND (org_id IS NULL) AND (guild_id IS NULL)))),
     CONSTRAINT mcp_connections_owner_scope_check CHECK ((owner_scope = ANY (ARRAY['platform'::text, 'org'::text, 'guild'::text, 'agent'::text]))),
     CONSTRAINT mcp_connections_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'connected'::text, 'disconnected'::text])))
-);
---> statement-breakpoint
-
---
--- Name: mcp_servers; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.mcp_servers (
-    id text NOT NULL,
-    slug text NOT NULL,
-    display_name text NOT NULL,
-    transport text NOT NULL,
-    config jsonb NOT NULL,
-    auth text NOT NULL,
-    created_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone NOT NULL,
-    description text DEFAULT ''::text NOT NULL,
-    limitations text,
-    setup_hint text,
-    publication_state text DEFAULT 'published'::text NOT NULL,
-    tool_prefix text NOT NULL,
-    oauth_strategy text DEFAULT 'none'::text NOT NULL,
-    copy_source text DEFAULT 'manifest'::text NOT NULL,
-    CONSTRAINT mcp_servers_auth_check CHECK ((auth = ANY (ARRAY['none'::text, 'token'::text, 'oauth'::text]))),
-    CONSTRAINT mcp_servers_copy_source_check CHECK ((copy_source = ANY (ARRAY['manifest'::text, 'admin'::text]))),
-    CONSTRAINT mcp_servers_oauth_strategy_check CHECK ((oauth_strategy = ANY (ARRAY['none'::text, 'dynamic'::text, 'configured'::text]))),
-    CONSTRAINT mcp_servers_publication_state_check CHECK ((publication_state = ANY (ARRAY['draft'::text, 'published'::text, 'disabled'::text]))),
-    CONSTRAINT mcp_servers_transport_check CHECK ((transport = ANY (ARRAY['stdio'::text, 'http'::text])))
 );
 --> statement-breakpoint
 
@@ -498,7 +486,8 @@ CREATE TABLE public.mcp_tools (
     input_schema jsonb NOT NULL,
     listed_at timestamp with time zone NOT NULL,
     mcp_server_id text NOT NULL,
-    catalog_tool_id text NOT NULL
+    read_only_hint boolean,
+    destructive_hint boolean
 );
 --> statement-breakpoint
 
@@ -1008,6 +997,22 @@ ALTER TABLE ONLY public.collection_access
 --> statement-breakpoint
 
 --
+-- Name: connector_calls connector_calls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_calls
+    ADD CONSTRAINT connector_calls_pkey PRIMARY KEY (org_id, connector_id, month);
+--> statement-breakpoint
+
+--
+-- Name: connectors connectors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connectors
+    ADD CONSTRAINT connectors_pkey PRIMARY KEY (id);
+--> statement-breakpoint
+
+--
 -- Name: file_changes file_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1096,38 +1101,6 @@ ALTER TABLE ONLY public.guilds
 --> statement-breakpoint
 
 --
--- Name: mcp_catalog_tools mcp_catalog_tools_id_server_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_catalog_tools
-    ADD CONSTRAINT mcp_catalog_tools_id_server_key UNIQUE (id, mcp_server_id);
---> statement-breakpoint
-
---
--- Name: mcp_catalog_tools mcp_catalog_tools_namespaced_name_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_catalog_tools
-    ADD CONSTRAINT mcp_catalog_tools_namespaced_name_key UNIQUE (namespaced_name);
---> statement-breakpoint
-
---
--- Name: mcp_catalog_tools mcp_catalog_tools_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_catalog_tools
-    ADD CONSTRAINT mcp_catalog_tools_pkey PRIMARY KEY (id);
---> statement-breakpoint
-
---
--- Name: mcp_catalog_tools mcp_catalog_tools_server_remote_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_catalog_tools
-    ADD CONSTRAINT mcp_catalog_tools_server_remote_key UNIQUE (mcp_server_id, remote_name);
---> statement-breakpoint
-
---
 -- Name: mcp_connections mcp_connections_id_server_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1141,30 +1114,6 @@ ALTER TABLE ONLY public.mcp_connections
 
 ALTER TABLE ONLY public.mcp_connections
     ADD CONSTRAINT mcp_connections_pkey PRIMARY KEY (id);
---> statement-breakpoint
-
---
--- Name: mcp_servers mcp_servers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_servers
-    ADD CONSTRAINT mcp_servers_pkey PRIMARY KEY (id);
---> statement-breakpoint
-
---
--- Name: mcp_servers mcp_servers_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_servers
-    ADD CONSTRAINT mcp_servers_slug_key UNIQUE (slug);
---> statement-breakpoint
-
---
--- Name: mcp_servers mcp_servers_tool_prefix_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_servers
-    ADD CONSTRAINT mcp_servers_tool_prefix_key UNIQUE (tool_prefix);
 --> statement-breakpoint
 
 --
@@ -1501,6 +1450,27 @@ CREATE INDEX collection_access_by_subject ON public.collection_access USING btre
 --> statement-breakpoint
 
 --
+-- Name: connectors_org_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX connectors_org_slug_key ON public.connectors USING btree (owner_org_id, slug) WHERE (owner_org_id IS NOT NULL);
+--> statement-breakpoint
+
+--
+-- Name: connectors_platform_slug_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX connectors_platform_slug_key ON public.connectors USING btree (slug) WHERE (owner_org_id IS NULL);
+--> statement-breakpoint
+
+--
+-- Name: connectors_tool_prefix_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX connectors_tool_prefix_key ON public.connectors USING btree (tool_prefix);
+--> statement-breakpoint
+
+--
 -- Name: file_changes_by_artifact; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1557,27 +1527,6 @@ CREATE INDEX guilds_by_org ON public.guilds USING btree (org_id);
 --> statement-breakpoint
 
 --
--- Name: mcp_catalog_tools_by_server; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX mcp_catalog_tools_by_server ON public.mcp_catalog_tools USING btree (mcp_server_id, publication_state);
---> statement-breakpoint
-
---
--- Name: mcp_catalog_tools_desc_trgm; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX mcp_catalog_tools_desc_trgm ON public.mcp_catalog_tools USING gin (description public.gin_trgm_ops);
---> statement-breakpoint
-
---
--- Name: mcp_catalog_tools_name_trgm; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX mcp_catalog_tools_name_trgm ON public.mcp_catalog_tools USING gin (namespaced_name public.gin_trgm_ops);
---> statement-breakpoint
-
---
 -- Name: mcp_connections_oauth_state; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1596,20 +1545,6 @@ CREATE UNIQUE INDEX mcp_connections_platform_unique ON public.mcp_connections US
 --
 
 CREATE UNIQUE INDEX mcp_connections_scoped_unique ON public.mcp_connections USING btree (mcp_server_id, owner_scope, owner_id) WHERE (owner_id IS NOT NULL);
---> statement-breakpoint
-
---
--- Name: mcp_servers_desc_trgm; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX mcp_servers_desc_trgm ON public.mcp_servers USING gin (description public.gin_trgm_ops);
---> statement-breakpoint
-
---
--- Name: mcp_servers_display_trgm; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX mcp_servers_display_trgm ON public.mcp_servers USING gin (display_name public.gin_trgm_ops);
 --> statement-breakpoint
 
 --
@@ -1955,6 +1890,30 @@ ALTER TABLE ONLY public.collection_access
 --> statement-breakpoint
 
 --
+-- Name: connector_calls connector_calls_connector_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_calls
+    ADD CONSTRAINT connector_calls_connector_id_fkey FOREIGN KEY (connector_id) REFERENCES public.connectors(id) ON DELETE CASCADE;
+--> statement-breakpoint
+
+--
+-- Name: connector_calls connector_calls_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_calls
+    ADD CONSTRAINT connector_calls_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id) ON DELETE CASCADE;
+--> statement-breakpoint
+
+--
+-- Name: connectors connectors_owner_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connectors
+    ADD CONSTRAINT connectors_owner_org_id_fkey FOREIGN KEY (owner_org_id) REFERENCES public.orgs(id) ON DELETE CASCADE;
+--> statement-breakpoint
+
+--
 -- Name: file_changes file_changes_artifact_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2079,7 +2038,7 @@ ALTER TABLE ONLY public.guild_operators
 --
 
 ALTER TABLE ONLY public.guild_repositories
-    ADD CONSTRAINT guild_repositories_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.mcp_connections(id) ON DELETE SET NULL;
+    ADD CONSTRAINT guild_repositories_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.mcp_connections(id) ON DELETE CASCADE;
 --> statement-breakpoint
 
 --
@@ -2096,14 +2055,6 @@ ALTER TABLE ONLY public.guild_repositories
 
 ALTER TABLE ONLY public.guilds
     ADD CONSTRAINT guilds_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id);
---> statement-breakpoint
-
---
--- Name: mcp_catalog_tools mcp_catalog_tools_mcp_server_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_catalog_tools
-    ADD CONSTRAINT mcp_catalog_tools_mcp_server_id_fkey FOREIGN KEY (mcp_server_id) REFERENCES public.mcp_servers(id) ON DELETE CASCADE;
 --> statement-breakpoint
 
 --
@@ -2127,7 +2078,7 @@ ALTER TABLE ONLY public.mcp_connections
 --
 
 ALTER TABLE ONLY public.mcp_connections
-    ADD CONSTRAINT mcp_connections_mcp_server_id_fkey FOREIGN KEY (mcp_server_id) REFERENCES public.mcp_servers(id) ON DELETE CASCADE;
+    ADD CONSTRAINT mcp_connections_mcp_server_id_fkey FOREIGN KEY (mcp_server_id) REFERENCES public.connectors(id) ON DELETE CASCADE;
 --> statement-breakpoint
 
 --
@@ -2136,14 +2087,6 @@ ALTER TABLE ONLY public.mcp_connections
 
 ALTER TABLE ONLY public.mcp_connections
     ADD CONSTRAINT mcp_connections_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.orgs(id) ON DELETE CASCADE;
---> statement-breakpoint
-
---
--- Name: mcp_tools mcp_tools_catalog_server_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mcp_tools
-    ADD CONSTRAINT mcp_tools_catalog_server_fkey FOREIGN KEY (catalog_tool_id, mcp_server_id) REFERENCES public.mcp_catalog_tools(id, mcp_server_id);
 --> statement-breakpoint
 
 --

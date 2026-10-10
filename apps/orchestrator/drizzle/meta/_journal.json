@@ -8,55 +8,6 @@
       "when": 1791331200000,
       "tag": "0001_baseline",
       "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1791373200000,
-      "tag": "0002_guild_repository_github",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1791378000000,
-      "tag": "0003_agent_box",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1791464400000,
-      "tag": "0004_connectors",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1791468000000,
-      "tag": "0005_connection_settings",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1791471600000,
-      "tag": "0006_tool_annotations",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1791475200000,
-      "tag": "0007_connector_calls",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1791478800000,
-      "tag": "0008_connector_experimental",
-      "breakpoints": true
     }
   ]
 }
