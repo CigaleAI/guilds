@@ -15,7 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@guildsrun/ui";
-import { agentHandleError } from "../names";
+import { liveHandleError } from "../names";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { preselectedModel } from "../models/models";
 import { AvatarPicker } from "./settings/AvatarPicker";
@@ -61,6 +61,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
   const [focus, setFocus] = useState("");
   const [look, setLook] = useState(freshLook);
   const [config, setConfig] = useState<ConfigForm | null>(null);
+  const [nameStarted, setNameStarted] = useState(false);
   const form =
     config ??
     configFormOf({
@@ -68,21 +69,23 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
       model: preselectedModel(models.data, { coding: false }),
     });
   const errors = configErrors(form, { models: models.data });
-  const nameError = agentHandleError(name.trim());
+  const nameError = liveHandleError(name, nameStarted, "agent");
   const noProvider = hasConnectedProvider(models.data) === false;
+  const invalid = Boolean(nameError) || !name.trim() || Object.keys(errors).length > 0;
 
   const close = () => {
     setName("");
     setFocus("");
     setLook(freshLook());
     setConfig(null);
+    setNameStarted(false);
     create.reset();
     onClose();
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!guild || nameError || Object.keys(errors).length) return;
+    if (!guild || invalid) return;
     create.mutate(
       {
         name: name.trim(),
@@ -124,7 +127,11 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
                 placeholder="researcher"
                 hint="Other agents tag it with @name. You can change it later in Settings."
                 value={name}
-                onChange={(event) => setName(event.currentTarget.value)}
+                onChange={(event) => {
+                  setNameStarted(true);
+                  setName(event.currentTarget.value);
+                }}
+                onBlur={() => setNameStarted(true)}
                 {...(nameError ? { error: nameError } : {})}
               />
               <TextField
@@ -194,7 +201,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
             </DialogClose>
             <Button
               type="submit"
-              disabled={create.isPending || !name.trim() || Boolean(nameError) || noProvider || !form.model}
+              disabled={create.isPending || invalid || noProvider}
             >
               {create.isPending ? "Creating…" : "Create agent"}
             </Button>

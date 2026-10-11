@@ -14,3 +14,17 @@ export function agentHandleError(name: string): string | undefined {
   if (name === "user") return "Reserved for tagging every operator.";
   return handleError(name);
 }
+
+/**
+ * Handle error while the operator is typing. Empty stays quiet until they have started, then the
+ * format rule (and `@user` on an agent) shows as they type.
+ */
+export function liveHandleError(
+  name: string,
+  started: boolean,
+  kind: "guild" | "agent" = "guild",
+): string | undefined {
+  const trimmed = name.trim();
+  if (!trimmed) return started ? handleHint : undefined;
+  return kind === "agent" ? agentHandleError(trimmed) : handleError(trimmed);
+}

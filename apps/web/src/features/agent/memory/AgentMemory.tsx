@@ -181,6 +181,7 @@ function LiveMemory({ agentId, guildId, displayPath, entry, draft, onDraft }: Li
           emptyText="The memory is empty."
           placeholder="Write in markdown…"
           defaultMode="preview"
+          sourceKey={displayPath}
           value={value}
           savedValue={saved}
           onChange={(text) => onDraft(text === saved ? null : text)}

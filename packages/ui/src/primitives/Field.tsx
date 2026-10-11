@@ -4,7 +4,7 @@ import { cn } from "../cn";
 
 /**
  * A field's frame: lead icon · value · trail action. The frame shows focus (2px ring) and
- * invalid (plum stroke); the control inside stays unstyled.
+ * invalid (plum stroke and tint); the control inside stays unstyled.
  */
 export const field = cva(
   [
@@ -27,7 +27,7 @@ export const field = cva(
         surface: "bg-surface",
       },
       invalid: {
-        true: "inset-ring-[1.5px] inset-ring-plum-t",
+        true: "inset-ring-2 inset-ring-plum-t bg-t-plum",
         false: "",
       },
     },

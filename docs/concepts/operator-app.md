@@ -332,8 +332,10 @@ The strip scrolls sideways when they do not fit.
 
 - **Chat**: sessions with the agent.
 
-  Without `?run=` it shows the run that is generating, or a new
-  session.
+  Without `?run=` it shows the run that is generating, keeps that
+  run when the generation finishes, or a new session when none is.
+  After three minutes with no action on a finished generation, the
+  next time the window is focused the inspector closes.
 
   The tab strip carries a clock that opens the session drawer
   (`?history=true`) and a plus that starts a new session.

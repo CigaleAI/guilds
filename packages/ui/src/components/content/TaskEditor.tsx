@@ -43,6 +43,11 @@ export type TaskEditorProps = Omit<ComponentProps<"div">, "onChange"> & {
   isBrokenEmbed?: (path: string) => boolean;
   placeholder?: string;
   defaultMode?: TaskEditorMode;
+  /**
+   * Identity of the text being shown. When it changes the editor returns to `defaultMode`, so a
+   * newly opened note opens in Preview even if the last one was in Edit.
+   */
+  sourceKey?: string;
   /** What is edited, naming the text box and the view switch: "Task", "Note". */
   label?: string;
   /** Shown in Preview when there is no text. */
@@ -75,6 +80,7 @@ export function TaskEditor({
   isBrokenEmbed,
   placeholder = "Describe this agent's standing purpose…",
   defaultMode = "edit",
+  sourceKey,
   label = "Task",
   emptyText = "The Task is empty.",
   className,
@@ -82,6 +88,11 @@ export function TaskEditor({
   ...props
 }: TaskEditorProps) {
   const [mode, setMode] = useState<TaskEditorMode>(defaultMode);
+  const [modeKey, setModeKey] = useState(sourceKey);
+  if (sourceKey !== undefined && sourceKey !== modeKey) {
+    setModeKey(sourceKey);
+    setMode(defaultMode);
+  }
   const [focused, setFocused] = useState(false);
   const [caretLine, setCaretLine] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

@@ -387,6 +387,7 @@ function NoteView({
           emptyText="This note is empty."
           placeholder="Write in markdown…"
           defaultMode="preview"
+          sourceKey={item.display_path}
           value={value}
           savedValue={saved}
           onChange={(text) => onDraft(text === saved ? null : text)}

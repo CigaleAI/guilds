@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { useFinishedChatIdleClose } from "./chat/chatLinger";
 import { useAgent, useBrokenEmbeds, useDeleteAgent } from "../../api/queries";
 import { agentLook } from "../../app/agents";
 import { useMediaQuery, wideScreen } from "../../app/media";
@@ -88,6 +89,12 @@ export function AgentInspector() {
     setFull(!full);
   };
   const close = () => void navigate({ to: "/guilds/$guildId", params: { guildId } });
+  useFinishedChatIdleClose({
+    agentId,
+    generating: Boolean(agent.data?.generating),
+    enabled: onChat,
+    onClose: close,
+  });
 
   return (
     <Sheet open onOpenChange={(open) => !open && close()}>
