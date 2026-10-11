@@ -1,10 +1,12 @@
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { Clock, Plus } from "lucide-react";
 import { useAgentRuns, useAgentSchedules, useRun } from "../../../api/queries";
 import type { Run, Schedule } from "../../../api/types";
 import { messageTime } from "../../../app/format";
 import { IconButton, StatusBadge, Tooltip } from "@guildsrun/ui";
 import { runState, runTitle } from "../runState";
+import { heldChatRun, holdChatRun } from "./chatLinger";
 
 type ChatSearch = {
   run?: string;
@@ -47,14 +49,21 @@ export function RunStatus({ run, className }: { run: Run; className?: string }) 
   );
 }
 
-/** The open session, shared by the chat and the tab-strip chrome. */
+/**
+ * The open session, shared by the chat and the tab-strip chrome. A generating run is held so the
+ * transcript stays when that generation finishes; plus or a row in history replaces the hold.
+ */
 export function useChatSession() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const search = useSearch({ from: "/guilds/$guildId/agents/$agentId" });
   const navigate = useNavigate();
   const runs = useAgentRuns(agentId);
   const schedules = useAgentSchedules(agentId);
-  const runId = search.run ?? runs.data?.find((candidate) => candidate.generating)?.id;
+  const generatingId = runs.data?.find((candidate) => candidate.generating)?.id;
+  useEffect(() => {
+    if (generatingId) holdChatRun(agentId, generatingId);
+  }, [agentId, generatingId]);
+  const runId = search.run ?? generatingId ?? heldChatRun(agentId);
   const run = useRun(runId);
 
   const go = (patch: { run?: string | null; history?: boolean }) => {
@@ -64,7 +73,10 @@ export function useChatSession() {
       search: nextChatSearch(search, patch),
     });
   };
-  const selectRun = (id: string | null) => go({ run: id });
+  const selectRun = (id: string | null) => {
+    holdChatRun(agentId, id);
+    go({ run: id });
+  };
   const toggleHistory = () => go({ history: !search.history });
 
   const recent = (runs.data ?? []).filter((candidate) => !candidate.archived_at).slice(0, 12);

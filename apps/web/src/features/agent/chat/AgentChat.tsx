@@ -23,8 +23,9 @@ import { runIsCapped, runTitle } from "../runState";
 const bottomSlack = 64;
 
 /**
- * The agent's conversations. Without `?run=`, the chat shows the run that is generating, or a new
- * session when none is; `?history=true` opens the session drawer beside the transcript.
+ * The agent's conversations. Without `?run=`, the chat shows the run that is generating, keeps that
+ * run when it finishes, or a new session when none is; `?history=true` opens the session drawer
+ * beside the transcript.
  */
 export function AgentChat() {
   const { agentId, search, runId, run, schedules, selectRun, toggleHistory, recent } =

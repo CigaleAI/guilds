@@ -142,7 +142,8 @@ orchestrator serves.
     the agent. Answers the agent's secret requests from a card
     under the step that asked. `chat/SessionChrome.tsx` sits on the
     tab strip with a clock for the session drawer and a plus for a
-    new session.
+    new session. A finished generation stays on Chat; after three
+    idle minutes the next window focus closes the inspector.
   - Prompt tab (`prompt/`) — edits the Task with its versions,
     embeds and change history.
   - State tab (`AgentState.tsx`) — Memory (`memory/`: every memory

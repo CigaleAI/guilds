@@ -60,7 +60,7 @@ export function FormField({
   ...props
 }: FormFieldProps) {
   const ids = formFieldIds(controlId);
-  const labelClass = "text-sm font-semibold text-fg";
+  const labelClass = cn("text-sm font-semibold", error ? "text-plum-t" : "text-fg");
   const helper = error ? (
     <span id={ids.error} className="flex min-w-0 items-start gap-1.5 text-xs text-plum-t">
       <Icon icon={CircleAlert} size={14} className="mt-px" />

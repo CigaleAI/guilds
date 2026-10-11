@@ -14,7 +14,7 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@guildsrun/ui";
-import { handleError } from "../names";
+import { handleHint, liveHandleError } from "../names";
 
 /** A new guild: its name, what it is for, and whether only its operators see it. */
 export function CreateGuildDialog({
@@ -30,13 +30,15 @@ export function CreateGuildDialog({
   const [about, setAbout] = useState("");
   const [description, setDescription] = useState("");
   const [isPrivate, setPrivate] = useState(true);
-  const nameError = handleError(name.trim());
+  const [nameStarted, setNameStarted] = useState(false);
+  const nameError = liveHandleError(name, nameStarted);
 
   const close = () => {
     setName("");
     setAbout("");
     setDescription("");
     setPrivate(true);
+    setNameStarted(false);
     create.reset();
     onOpenChange(false);
   };
@@ -77,8 +79,13 @@ export function CreateGuildDialog({
               autoFocus
               autoComplete="off"
               placeholder="research"
+              hint={handleHint}
               value={name}
-              onChange={(event) => setName(event.currentTarget.value)}
+              onChange={(event) => {
+                setNameStarted(true);
+                setName(event.currentTarget.value);
+              }}
+              onBlur={() => setNameStarted(true)}
               {...(nameError ? { error: nameError } : {})}
             />
             <TextAreaField
