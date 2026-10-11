@@ -40,7 +40,10 @@ export function useFinishedChatIdleClose(args: {
   const lastActionAt = useRef<number | null>(null);
   const wasGenerating = useRef(args.generating);
   const onCloseRef = useRef(args.onClose);
-  onCloseRef.current = args.onClose;
+
+  useEffect(() => {
+    onCloseRef.current = args.onClose;
+  }, [args.onClose]);
 
   useEffect(() => {
     if (!args.enabled) {
