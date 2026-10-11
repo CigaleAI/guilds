@@ -88,6 +88,11 @@ export function TaskEditor({
   ...props
 }: TaskEditorProps) {
   const [mode, setMode] = useState<TaskEditorMode>(defaultMode);
+  const [modeKey, setModeKey] = useState(sourceKey);
+  if (sourceKey !== undefined && sourceKey !== modeKey) {
+    setModeKey(sourceKey);
+    setMode(defaultMode);
+  }
   const [focused, setFocused] = useState(false);
   const [caretLine, setCaretLine] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -97,11 +102,6 @@ export function TaskEditor({
 
   const dirty = value !== savedValue;
   const lines = value.split("\n");
-
-  useLayoutEffect(() => {
-    if (sourceKey === undefined) return;
-    setMode(defaultMode);
-  }, [sourceKey, defaultMode]);
 
   useLayoutEffect(() => {
     latestValue.current = value;
