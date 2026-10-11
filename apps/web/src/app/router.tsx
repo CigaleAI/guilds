@@ -217,10 +217,16 @@ const agentDatabasesRoute = createRoute({
   ),
 });
 
+/** `path` opens that note first, by display path. */
+function parseFileSearch(search: Record<string, unknown>): { path?: string } {
+  return typeof search.path === "string" && search.path ? { path: search.path } : {};
+}
+
 const guildFilesRoute = createRoute({
   getParentRoute: () => guildStateRoute,
   path: "files",
   component: lazyRouteComponent(() => import("../features/files/NotesTabs"), "GuildFilesTab"),
+  validateSearch: parseFileSearch,
 });
 
 const guildArtifactsRoute = createRoute({
@@ -269,6 +275,7 @@ const agentNotesRoute = createRoute({
   getParentRoute: () => agentStateRoute,
   path: "notes",
   component: lazyRouteComponent(() => import("../features/files/NotesTabs"), "AgentNotesTab"),
+  validateSearch: parseFileSearch,
 });
 
 const guildToolsRoute = createRoute({

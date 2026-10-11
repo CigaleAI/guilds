@@ -1,5 +1,5 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { FileCode, Plus, Trash2 } from "lucide-react";
+import { FileCode, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import {
   useAgent,
@@ -7,12 +7,15 @@ import {
   useCreateScript,
   useDeleteAllScripts,
   useDeleteScript,
+  useLatestChange,
 } from "../../../api/queries";
-import type { Script } from "../../../api/types";
-
+import type { FileChange, Script } from "../../../api/types";
+import { relativeTime } from "../../../app/format";
 import {
   Button,
+  CodeBlock,
   IconButton,
+  Tag,
   TextAreaField,
   TextField,
   Banner,
@@ -28,63 +31,136 @@ import {
   toast,
   Icon,
 } from "@guildsrun/ui";
-import { LatestChange } from "../../files/LatestChange";
+import { ChangeHistory, useOpenStepInAgent } from "../../files/LatestChange";
+import { changeActor } from "../prompt/taskContext";
 import { capabilityOn, defaultAgentConfig } from "../settings/configForm";
 
 /** The server's rules: a script name like a tool name, and not the reserved `manifest`. */
 const scriptName = /^[a-z][a-z0-9_-]{0,62}$/;
 
-function Code({ children }: { children: string }) {
+/** Who wrote the script's current version: this agent through a run, or a person. */
+function Provenance({
+  change,
+  agentName,
+  onOpenStep,
+}: {
+  change: FileChange;
+  agentName: string;
+  onOpenStep: () => void;
+}) {
+  const actor = changeActor(change);
+  const when = relativeTime(change.created_at);
+  if (actor.kind === "run") {
+    return (
+      <button
+        type="button"
+        onClick={onOpenStep}
+        title={`Open the step that wrote it · run ${actor.runId} · ${when}`}
+        className="cursor-pointer truncate text-sm text-muted transition-colors hover:text-fg"
+      >
+        written by {agentName} · run{" "}
+        <span className="font-mono text-xs">…{actor.runId.slice(-6)}</span>
+      </button>
+    );
+  }
   return (
-    <pre className="max-h-80 overflow-auto rounded-md bg-paper p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg">
-      {children}
-    </pre>
+    <span className="truncate text-sm text-muted" title={when}>
+      written by {actor.name}
+    </span>
   );
 }
 
+type Disclosure = "history" | "parameters";
+
 function ScriptCard({
   script,
+  agentName,
   guildId,
+  onEdit,
   onDelete,
 }: {
   script: Script;
+  agentName: string;
   guildId: string;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
+  const latest = useLatestChange(script.display_path);
+  const openStep = useOpenStepInAgent(guildId);
+  const [showing, setShowing] = useState<Disclosure | null>(null);
+  const change = latest.data ?? null;
+  const toggle = (view: Disclosure) => setShowing((current) => (current === view ? null : view));
+  const footerLink =
+    "cursor-pointer underline-offset-2 transition-colors hover:text-fg hover:underline";
   return (
-    <article className="flex flex-col gap-3 rounded-xl bg-surface p-4">
-      <div className="flex items-start gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="font-mono text-md font-medium">{script.name}</span>
-          <p className="text-sm text-fg-2">{script.description}</p>
-        </div>
-        <IconButton
-          icon={Trash2}
-          label={`Delete ${script.name}`}
-          variant="ghost"
-          size={28}
-          onClick={onDelete}
-        />
+    <article className="flex flex-col overflow-hidden rounded-xl bg-surface">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3.5 pb-2.5">
+        <span className="font-mono text-md font-semibold">{script.name}.py</span>
+        {change ? <Tag tone="surface">v{change.version}</Tag> : null}
+        <span className="ml-auto flex min-w-0 items-center gap-2">
+          {change ? (
+            <Provenance
+              change={change}
+              agentName={agentName}
+              onOpenStep={() => {
+                if (change.run) openStep({ ...change, run: change.run });
+              }}
+            />
+          ) : null}
+          <Button variant="outline" size="sm" onClick={onEdit}>
+            <Icon icon={Pencil} size={14} />
+            Edit
+          </Button>
+          <IconButton
+            icon={Trash2}
+            label={`Delete ${script.name}`}
+            variant="ghost"
+            size={28}
+            onClick={onDelete}
+          />
+        </span>
       </div>
-      {script.display_path ? (
-        <LatestChange displayPath={script.display_path} guildId={guildId} />
-      ) : null}
-      {script.parameters ? (
-        <details className="text-sm">
-          <summary className="cursor-pointer font-semibold">
+      <p className="px-4 pb-3.5 text-sm text-fg-2">{script.description}</p>
+      <CodeBlock code={script.source} language="python" lineNumbers className="rounded-none" />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 font-mono text-2xs text-muted">
+        <span className="min-w-0 truncate">/home/agent/scripts/{script.name}.py</span>
+        {script.display_path ? (
+          <button
+            type="button"
+            aria-expanded={showing === "history"}
+            onClick={() => toggle("history")}
+            className={footerLink}
+          >
+            History
+          </button>
+        ) : null}
+        {script.parameters ? (
+          <button
+            type="button"
+            aria-expanded={showing === "parameters"}
+            onClick={() => toggle("parameters")}
+            className={footerLink}
+          >
             Parameters · also a tool named {script.name}
-          </summary>
-          <div className="mt-2">
-            <Code>{JSON.stringify(script.parameters, null, 2)}</Code>
-          </div>
-        </details>
+          </button>
+        ) : null}
+        <span className="ml-auto">python · sandboxed in {agentName}'s workspace</span>
+      </div>
+      {showing === "history" && script.display_path ? (
+        <ChangeHistory
+          displayPath={script.display_path}
+          guildId={guildId}
+          className="mx-4 mb-4"
+        />
       ) : null}
-      <details className="text-sm">
-        <summary className="cursor-pointer font-semibold">Source</summary>
-        <div className="mt-2">
-          <Code>{script.source}</Code>
-        </div>
-      </details>
+      {showing === "parameters" && script.parameters ? (
+        <CodeBlock
+          code={JSON.stringify(script.parameters, null, 2)}
+          language="json"
+          density="compact"
+          className="mx-4 mb-4"
+        />
+      ) : null}
     </article>
   );
 }
@@ -143,10 +219,12 @@ export function AgentScripts() {
   const scripts = useAgentScripts(agentId);
   const remove = useDeleteScript(agentId);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Script | null>(null);
   const [deleting, setDeleting] = useState<Script | null>(null);
   const count = scripts.data?.length ?? 0;
   const maxScripts = agent.data?.config.max_scripts ?? defaultAgentConfig.max_scripts;
   const atCap = count >= maxScripts;
+  const agentName = agent.data?.name ?? "the agent";
 
   const addButton = (
     <Button size="sm" disabled={atCap} onClick={() => setAdding(true)}>
@@ -214,7 +292,9 @@ export function AgentScripts() {
             <ScriptCard
               key={script.name}
               script={script}
+              agentName={agentName}
               guildId={guildId}
+              onEdit={() => setEditing(script)}
               onDelete={() => setDeleting(script)}
             />
           ))
@@ -222,10 +302,19 @@ export function AgentScripts() {
       </div>
 
       <ScriptForm
+        key={editing ? editing.name : "new"}
         agentId={agentId}
+        script={editing}
         existing={scripts.data?.map((script) => script.name) ?? []}
-        open={adding}
-        onOpenChange={setAdding}
+        open={adding || editing !== null}
+        onOpenChange={(open) => {
+          if (open) {
+            setAdding(true);
+            return;
+          }
+          setAdding(false);
+          setEditing(null);
+        }}
       />
       <ConfirmDialog
         kind="destructive"
@@ -257,22 +346,27 @@ export function AgentScripts() {
   );
 }
 
+/** Adds a script, or saves a new version of `script`; saving under an existing name replaces it. */
 function ScriptForm({
   agentId,
+  script,
   existing,
   open,
   onOpenChange,
 }: {
   agentId: string;
+  script: Script | null;
   existing: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const create = useCreateScript(agentId);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [source, setSource] = useState("");
-  const [parameters, setParameters] = useState("");
+  const [name, setName] = useState(script?.name ?? "");
+  const [description, setDescription] = useState(script?.description ?? "");
+  const [source, setSource] = useState(script?.source ?? "");
+  const [parameters, setParameters] = useState(
+    script?.parameters ? JSON.stringify(script.parameters, null, 2) : "",
+  );
 
   const trimmed = name.trim();
   const nameError = !trimmed
@@ -329,7 +423,14 @@ function ScriptForm({
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
       <DialogContent size="lg">
         <form onSubmit={submit} className="flex min-h-0 flex-col">
-          <DialogHeader title="Add a script" description="Python the agent runs in its sandbox." />
+          <DialogHeader
+            title={script ? `Edit ${script.name}.py` : "Add a script"}
+            description={
+              script
+                ? "Saving records a new version in the agent's sandbox."
+                : "Python the agent runs in its sandbox."
+            }
+          />
           <DialogBody>
             <TextField
               tone="surface"
@@ -339,11 +440,14 @@ function ScriptForm({
               autoComplete="off"
               placeholder="send_usdc"
               value={name}
+              disabled={script !== null}
               onChange={(event) => setName(event.currentTarget.value)}
               hint={
-                existing.includes(trimmed)
-                  ? "A script with this name exists; saving replaces it."
-                  : undefined
+                script
+                  ? "A script keeps its name; add a new script to use another."
+                  : existing.includes(trimmed)
+                    ? "A script with this name exists; saving replaces it."
+                    : undefined
               }
               {...(nameError ? { error: nameError } : {})}
             />
@@ -393,7 +497,7 @@ function ScriptForm({
               type="submit"
               disabled={create.isPending || !trimmed || Boolean(nameError || parametersError)}
             >
-              {create.isPending ? "Saving…" : "Add script"}
+              {create.isPending ? "Saving…" : script ? "Save" : "Add script"}
             </Button>
           </DialogFooter>
         </form>

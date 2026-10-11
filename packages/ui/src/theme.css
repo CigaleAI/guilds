@@ -88,6 +88,15 @@
   --color-on-panel: var(--on-panel);
   --color-on-panel-muted: var(--on-panel-muted);
 
+  --color-code-bg: var(--code-bg);
+  --color-code-fg: var(--code-fg);
+  --color-code-muted: var(--code-muted);
+  --color-code-keyword: var(--code-keyword);
+  --color-code-string: var(--code-string);
+  --color-code-number: var(--code-number);
+  --color-code-function: var(--code-function);
+  --color-code-decorator: var(--code-decorator);
+
   --color-signal: var(--signal);
   --color-signal-2: var(--signal-2);
   --color-mauve: var(--mauve);

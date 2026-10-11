@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useFileChanges, useLatestChange } from "../../api/queries";
 import type { FileChange } from "../../api/types";
 import { relativeTime } from "../../app/format";
-import { Button, VersionBar, SkeletonRows, Tag } from "@guildsrun/ui";
+import { Button, VersionBar, SkeletonRows, Tag, cn } from "@guildsrun/ui";
 import { changeActor } from "../agent/prompt/taskContext";
 
 /** Opens the run step that made a change. */
@@ -43,6 +43,56 @@ function actorText(change: FileChange): string {
   return actor.kind === "agent" ? `agent ${actor.name}` : actor.name;
 }
 
+type ChangeHistoryProps = {
+  displayPath: string;
+  /** Where "Open step" goes; by default the agent's chat at that step. */
+  onOpenStep?: OpenChangeStep | undefined;
+  /** The guild to open a run in when the change does not name one. */
+  guildId?: string | undefined;
+  className?: string;
+};
+
+/** Every recorded change to a file, newest first, each with the run step that made it. */
+export function ChangeHistory({ displayPath, onOpenStep, guildId, className }: ChangeHistoryProps) {
+  const history = useFileChanges(displayPath);
+  const openInAgent = useOpenStepInAgent(guildId);
+  const openStep = onOpenStep ?? openInAgent;
+  return (
+    <div
+      className={cn(
+        "flex max-h-72 flex-col gap-1 overflow-y-auto rounded-lg bg-paper p-2",
+        className,
+      )}
+    >
+      {history.isPending ? (
+        <SkeletonRows rows={3} label="Loading the history" />
+      ) : history.isError ? (
+        <p className="px-1 text-sm text-plum-t">{history.error.message}</p>
+      ) : history.data.length === 0 ? (
+        <p className="px-1 text-sm text-muted">No recorded changes.</p>
+      ) : (
+        history.data.map((item) => {
+          const run = item.run;
+          return (
+            <div key={item.id} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs">
+              <Tag tone="well">v{item.version}</Tag>
+              <span className="shrink-0 text-muted">{relativeTime(item.created_at)}</span>
+              <span className="min-w-0 flex-1 truncate text-fg-2" title={actorText(item)}>
+                {item.operation} · {actorText(item)}
+              </span>
+              {run ? (
+                <Button variant="ghost" size="xs" onClick={() => openStep({ ...item, run })}>
+                  Open step
+                </Button>
+              ) : null}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 type LatestChangeProps = {
   displayPath: string;
   /** Where "Open step" goes; by default the agent's chat at that step. */
@@ -59,17 +109,12 @@ type LatestChangeProps = {
 export function LatestChange({ displayPath, onOpenStep, guildId, className }: LatestChangeProps) {
   const latest = useLatestChange(displayPath);
   const [open, setOpen] = useState(false);
-  const history = useFileChanges(open ? displayPath : undefined);
   const openInAgent = useOpenStepInAgent(guildId);
   const openStep = onOpenStep ?? openInAgent;
-  const stepOf = (change: FileChange) => {
-    const run = change.run;
-    return run ? () => openStep({ ...change, run }) : undefined;
-  };
 
   if (!latest.data) return null;
   const change = latest.data;
-  const step = stepOf(change);
+  const run = change.run;
 
   return (
     <div className={className}>
@@ -77,40 +122,16 @@ export function LatestChange({ displayPath, onOpenStep, guildId, className }: La
         version={change.version}
         when={relativeTime(change.created_at)}
         actor={changeActor(change)}
-        {...(step ? { onOpenStep: step } : {})}
+        {...(run ? { onOpenStep: () => openStep({ ...change, run }) } : {})}
         onHistory={() => setOpen(!open)}
       />
       {open ? (
-        <div className="mt-1.5 flex max-h-72 flex-col gap-1 overflow-y-auto rounded-lg bg-paper p-2">
-          {history.isPending ? (
-            <SkeletonRows rows={3} label="Loading the history" />
-          ) : history.isError ? (
-            <p className="px-1 text-sm text-plum-t">{history.error.message}</p>
-          ) : history.data.length === 0 ? (
-            <p className="px-1 text-sm text-muted">No recorded changes.</p>
-          ) : (
-            history.data.map((item) => {
-              const open = stepOf(item);
-              return (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-2 rounded-md px-1.5 py-1 text-xs"
-                >
-                  <Tag tone="well">v{item.version}</Tag>
-                  <span className="shrink-0 text-muted">{relativeTime(item.created_at)}</span>
-                  <span className="min-w-0 flex-1 truncate text-fg-2" title={actorText(item)}>
-                    {item.operation} · {actorText(item)}
-                  </span>
-                  {open ? (
-                    <Button variant="ghost" size="xs" onClick={open}>
-                      Open step
-                    </Button>
-                  ) : null}
-                </div>
-              );
-            })
-          )}
-        </div>
+        <ChangeHistory
+          displayPath={displayPath}
+          onOpenStep={openStep}
+          guildId={guildId}
+          className="mt-1.5"
+        />
       ) : null}
     </div>
   );

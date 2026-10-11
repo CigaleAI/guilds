@@ -273,7 +273,7 @@ Tabs, one route each:
   `/guilds/<id>/state` (`/state` opens Files).
   Sub-tabs, each with an icon, one route each:
   - **Files**: the notes browser over guild- and organisation-level
-    notes.
+    notes; `?path=<display path>` opens that note first.
   - **Databases**: the guild's own databases and the organisation
     databases it can be given (below).
   - **Artifact scope**: the four artifact grants: how far this
@@ -403,15 +403,35 @@ The strip scrolls sideways when they do not fit.
   - model and tool time
   - tokens
   - cost
+  - how it ended: **completed**, **running…**, or its error count
+  - a **mutations** chip counting the calls that changed state
   - a strip of the steps coloured by outcome
-  - **Mutations** / **Errors** filters that dim the other calls
 
-  Each step is a row titled with the first line of what the model
-  wrote or thought.
-  Calls requested together sit in a batch box and ran in order.
+  The error and mutations chips are toggles: pressed, each dims
+  every call outside its filter.
+  Hovering the title names the model.
+
+  Each step is a row: a dot coloured by outcome, the first sentence
+  of what the model wrote or thought (the tools it called when it
+  wrote nothing), then its call count, model time, tokens and cost,
+  each with its breakdown on hover.
+  A step that changed state carries a **wrote** chip and a step
+  with a failed call a **failed** chip; both toggle the header's
+  filters.
+  A step cut by `finish_reason: length` carries **max tokens**; any
+  finish reason other than stopping or calling tools is tagged too.
+
+  An open step shows, in order: the model's reasoning (clamped to
+  six lines, with **Show all** and a copy button), the text it
+  wrote alongside its calls, then the calls it requested, numbered
+  in the order they ran.
 
   Tool calls are coloured by kind (memory, read, write, execute,
   act, post, connected).
+
+  A `note_write`, `memory_write` or `script_create` call carries a
+  chip naming the note, memory or script it wrote, which opens it
+  in the agent's State tab.
 
   Opening a call expands that call's card onto its arguments and
   result, each as a folding JSON tree or raw text with a copy
@@ -434,13 +454,6 @@ The strip scrolls sideways when they do not fit.
   A file call reads **Read**, **Edit**, or **Write** and the path,
   an edit followed by its added and removed line counts, and a
   repeated read by the step it points to.
-
-  In a batch the open call stacks to full width so the detail stays
-  with it.
-
-  An open step lists what the model reported (model, finish reason,
-  tokens in, out, and cached, cost with its source, response id)
-  and shows its reasoning and text, each with a copy button.
 
   The latest generation, a running one, and failed steps start
   open.
@@ -526,6 +539,8 @@ The strip scrolls sideways when they do not fit.
     last.
     **Open step** opens the writing run in its agent's Chat tab at
     the tool call (`?run=…&call=…`).
+    `?path=<display path>` opens that note first, which is where a
+    `note_write` call's chip in the chat leads.
     **History** lists every recorded change
     (`GET /api/file-changes?display_path=…`), each with its own
     **Open step**.
@@ -541,13 +556,17 @@ The strip scrolls sideways when they do not fit.
     the guild reaches.
     Each click writes it at once.
     A name opens that database on the Databases page.
-  - **Scripts**: that agent's `script` artifacts (name,
-    description, parameters, source) with a provenance strip per
-    script.
+  - **Scripts**: that agent's `script` artifacts, one card each:
+    the file name with its version and who wrote it (the run,
+    which opens at its step, or the person), the description, the
+    source with line numbers and Python highlighting in Solarized
+    dark, and a footer naming the sandbox path and the language.
+    **Edit** reopens the script in the form; **History** lists its
+    changes; a script with parameters shows them on demand.
     Hidden while `scripting` is off.
     A script with parameters is also offered to the agent as a
     tool of its own.
-    Add, delete, and remove all here, against the agent's
+    Add, edit, delete, and remove all here, against the agent's
     `max_scripts` cap.
     The agent uses `script_*`.
   - **Artifact scope**: the four artifact grants: how far this
