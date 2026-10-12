@@ -167,6 +167,9 @@ Completions API: Ollama, LM Studio, vLLM, or one of your own.
 
 - **Base URL** is required and starts with `http://` or `https://`.
   It is the API root, `/v1` included where the server uses it.
+  From the installed stack it is
+  `http://host.docker.internal:<port>/v1`. `<port>` is the port a
+  browser on the machine already uses.
 - **API key** is optional. Leave it empty when the server asks for
   none; the check then calls `/models` without one.
 - Its catalog is the endpoint's live `/models` list, read each time
@@ -174,13 +177,50 @@ Completions API: Ollama, LM Studio, vLLM, or one of your own.
   temperature on, and images off.
 - No cost is recorded.
 
-The orchestrator calls the URL from inside its container, so
-`127.0.0.1` there is the container, not your machine. On Docker
-Desktop a server on the host is
-`http://host.docker.internal:<port>/v1`. On a Linux host the
-orchestrator has no `host.docker.internal`: use the host's address on
-the Compose network's bridge, and have the server listen on that
-interface rather than on loopback alone.
+The orchestrator calls that URL from inside its container.
+`host.docker.internal` names the machine as the container sees it:
+Compose maps it to the host's address on the Docker bridge. On a
+default Docker install that address is `172.17.0.1`. A Base URL of
+`http://127.0.0.1:<port>/v1` points at the container itself, and the
+connection is refused.
+
+The server has to accept connections on that bridge address. One
+that listens only on the machine's loopback never sees the call: it
+hangs, then times out.
+
+**A program on the machine**, outside Docker (Ollama, LM Studio,
+llama.cpp), listens on `127.0.0.1` unless told otherwise. Start it
+on every interface, on the same port. Ollama:
+
+```text
+OLLAMA_HOST=0.0.0.0:11434
+```
+
+The Base URL is `http://host.docker.internal:11434/v1`. LM Studio
+has to serve on the network, and llama.cpp takes `--host 0.0.0.0`.
+Listening on `0.0.0.0` also makes the server reachable from other
+machines on the local network.
+
+**Another container** is reached through the port published on the
+machine, which is the port in the Base URL. The port inside that
+container is a different number. A publish limited to loopback is
+enough for a browser and not for the orchestrator. Publish the same
+host port on the bridge address as well. With the server listening
+on `8080` inside its container and the browser using `8081`:
+
+```yaml
+ports:
+  - "127.0.0.1:8081:8080"
+  - "172.17.0.1:8081:8080"
+```
+
+The browser keeps `http://127.0.0.1:8081`. The Base URL is
+`http://host.docker.internal:8081/v1`. The server stays off the
+local network. On a machine whose bridge address is not
+`172.17.0.1`, use the address `host.docker.internal` resolves to.
+Publishing `8081:8080` alone also lets the orchestrator through:
+Docker then binds every interface, so the port is open on the local
+network too.
 
 ## Without a key
 
