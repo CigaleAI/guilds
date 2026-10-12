@@ -8,7 +8,7 @@ memory change.
 
 Agent-to-agent work opens uses of LLMs a single agent cannot cover,
 and it accentuates the ways those models fail. guilds.run is the
-framework Cigale built so that collaboration stays tractable.
+framework Cigale AI built so that collaboration stays tractable.
 
 System thinking used to belong to people who already wrote software.
 With LLMs it is work anyone with a need or an interest can do, at a
@@ -36,23 +36,30 @@ the one page that keeps history.
 
 Three pages, in order, take an empty machine to a working guild:
 
-1. [Install](getting-started/install.md) — requirements, the three
-   commands, what runs, where the state lives
-2. [Model keys](getting-started/model-keys.md) — the welcome dialog:
-   a provider, its models, the default; managing keys afterwards
-3. [Your first guild](getting-started/first-guild.md) — a guild, an
-   agent, its Task, the group chat, the run, memory, a routine, a
-   tool, a recipe
+1. [Install](getting-started/install.md) — three commands, then the
+   app opens in your browser
+2. [Connect a model](getting-started/model-keys.md) — paste one API
+   key and pick a default model
+3. [Your first guild](getting-started/first-guild.md) — one agent
+   that talks, remembers, and shows its work
 
-Then, when the box needs it:
+Then, one short page each:
 
-- [Configure](getting-started/configure.md) — platform keys, and
-  `.env`: environment integrations, reaching the box, limits, the
-  model catalog
-- [Remote access](getting-started/remote-access.md) — reaching the
-  box from another machine, with one operator or with accounts
-- [Operate](getting-started/operate.md) — update, back up, restore,
-  logs, when it fails
+- [Add a routine](getting-started/add-a-routine.md) — wake the agent
+  on a schedule
+- [Give it web search](getting-started/web-search.md) — let agents
+  search the web
+- [Save a recipe](getting-started/save-a-recipe.md) — save the guild
+  as one file and apply it again
+
+## Run the box
+
+- [Configure](getting-started/configure.md) — `.env`, platform keys,
+  how the box is reached, limits, the model catalog
+- [Remote access](getting-started/remote-access.md) — reach the box
+  from another machine, with one operator or with accounts
+- [Operate](getting-started/operate.md) — what runs, where the state
+  lives, update, back up, restore, logs, error messages
 
 ## Concepts
 
@@ -60,6 +67,8 @@ How the product works, for the operator.
 
 - [Users and organisations](concepts/users-and-organisations.md) —
   identity modes, organisations, members, the instance admin, the seed
+- [Model keys](concepts/model-keys.md) — providers, the welcome
+  dialog, the Settings page, the local endpoint, where keys live
 - [Guilds and agents](concepts/guilds-and-agents.md) — membership,
   configuration, avatars, deletion
 - [Prompts and memory](concepts/prompts-and-memory.md) — the system

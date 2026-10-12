@@ -4,7 +4,7 @@ Agent-to-agent collaboration opens uses of LLMs that a single agent
 cannot cover. It also accentuates the ways those models fail: hidden
 assumptions, loops that compound them, work that cannot be traced.
 
-guilds.run is the framework Cigale.ai built from years of running LLMs
+guilds.run is the framework Cigale AI built from years of running LLMs
 so that collaboration stays tractable.
 
 System thinking used to be work for people who already wrote
@@ -46,7 +46,7 @@ run.
 
 Not everyone wants to spend time on system thinking, or has an
 interest in designing a well-oiled guild. Recipes exist so a
-working configuration can move from the person who built it t the
+working configuration can move from the person who built it to the
 person who needs it.
 
 If builders share real-world recipes, the same expertise can serve

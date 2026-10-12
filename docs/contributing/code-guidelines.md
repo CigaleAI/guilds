@@ -81,6 +81,22 @@ keeps the history of each issue.
 A change to behaviour updates the page that describes it in the
 same commit.
 
+A page listed under **Getting started** in the
+[index](../README.md#getting-started) is a tutorial. It is written
+for someone who has never seen the product:
+
+- The subject comes first, then the verb. One action per sentence.
+- Steps are in the imperative: open, click, paste, type.
+- Each step ends with what the reader sees.
+- A word the reader has not met is defined in a sentence of its own,
+  or linked, before it is used.
+- A sentence says what is, not what is not.
+- No parentheses, no chained colons, no file paths, no HTTP verbs.
+  Depth lives on a concept page, reached by a link.
+
+Every other page is reference. It is complete and exact, and it
+follows the same sentence rules where they do not cost precision.
+
 ## Commits
 
 One change per commit. The message is one sentence in the

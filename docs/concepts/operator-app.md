@@ -76,7 +76,7 @@ to offer, and picks the default; a coding-only provider ends after
 its models. A member reads that an owner or admin connects the first
 provider. The dialog cannot be closed until a provider is connected,
 and stays open through the two steps after so the pickers are not
-left empty ([Model keys](../getting-started/model-keys.md#the-welcome-dialog)).
+left empty ([Model keys](model-keys.md#the-welcome-dialog)).
 
 Markdown (messages, notes, Tasks, instructions) renders as GitHub
 Markdown that keeps single line breaks.
@@ -144,7 +144,7 @@ Folded guilds and the retracted state are remembered in
 - model, from the organisation's chosen models grouped by provider,
   preselected with its default when it has one; with no provider
   connected the form shows a guide to **Model keys** in its place
-  ([Model keys](../getting-started/model-keys.md))
+  ([Model keys](model-keys.md))
 - thinking level and temperature (each switched off only for models
   the catalog flags as not taking it)
 - max output tokens / max steps / max tool calls / max input tokens
