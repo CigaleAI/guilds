@@ -122,6 +122,16 @@
   --elev-float: 0 30px 60px -40px rgb(34 27 31 / 0.4);
   --elev-modal: 0 40px 80px -40px rgb(34 27 31 / 0.6);
 
+  /* Code: source the operator reads, set in Solarized dark on both themes. */
+  --code-bg: #002b36;
+  --code-fg: #93a1a1;
+  --code-muted: #586e75;
+  --code-keyword: #859900;
+  --code-string: #2aa198;
+  --code-number: #d33682;
+  --code-function: #b58900;
+  --code-decorator: #cb4b16;
+
   color-scheme: light;
 }
 

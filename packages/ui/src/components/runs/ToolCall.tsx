@@ -1,7 +1,6 @@
 import { cva } from "class-variance-authority";
-import { ChevronDown } from "lucide-react";
-import { Slot } from "radix-ui";
-import { useId, type ComponentProps, type ReactNode } from "react";
+import { ArrowUpRight, ChevronDown } from "lucide-react";
+import { useId, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { cn } from "../../cn";
 import { ResultGlyph } from "../../primitives/Dot";
 import { Icon } from "../../primitives/Icon";
@@ -52,20 +51,20 @@ export const toolCall = cva("flex w-full min-w-0 flex-col rounded-lg bg-paper te
       false: "",
     },
     expanded: {
-      true: "col-span-full ring-1 ring-rule",
+      true: "ring-1 ring-rule",
       false: "",
     },
   },
   defaultVariants: { dimmed: false, expanded: false },
 });
 
-export type ToolCallProps = Omit<ComponentProps<"div">, "onClick"> & {
+export type ToolCallProps = Omit<ComponentProps<"article">, "onClick"> & {
   name: string;
   kind: ToolKind;
   level?: ToolLevel | null;
   /** Connected server that served the call, when its name does not already say so. */
   server?: string | null;
-  /** Position in its batch, from 1; omit for a call requested alone. */
+  /** Position among the calls its step requested, from 1; omit for a call requested alone. */
   index?: number;
   /** One-line summary of the arguments, such as "List schedules" or "cron 0 0 * * *". */
   hint?: string;
@@ -80,10 +79,10 @@ export type ToolCallProps = Omit<ComponentProps<"div">, "onClick"> & {
   expanded?: boolean;
   /** Arguments, result and metadata, shown under the summary while expanded. */
   detail?: ReactNode;
-  /** Makes the summary a button, to expand or inspect it. */
-  onClick?: ComponentProps<"button">["onClick"];
-  /** Render the child element (a link or button) as the call. */
-  asChild?: boolean;
+  /** Where what the call touched lives, as a ToolCallLink. */
+  link?: ReactNode;
+  /** Opens or closes the call; the row and its chevron both call it. */
+  onClick?: () => void;
 };
 
 function Outcome({ status }: { status: ToolCallStatus }) {
@@ -101,6 +100,24 @@ function Outcome({ status }: { status: ToolCallStatus }) {
   return <ResultGlyph result={status} />;
 }
 
+export type ToolCallLinkProps = ComponentProps<"a">;
+
+/** A chip on a call naming the note, memory or script it touched, and leading there. */
+export function ToolCallLink({ className, children, ...props }: ToolCallLinkProps) {
+  return (
+    <a
+      className={cn(
+        "inline-flex max-w-48 shrink-0 items-center gap-0.5 rounded-sm px-1.5 py-0.5 font-mono text-2xs text-fg inset-ring inset-ring-line-3 transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+        className,
+      )}
+      {...props}
+    >
+      <span className="min-w-0 truncate">{children}</span>
+      <Icon icon={ArrowUpRight} size={14} className="text-muted" />
+    </a>
+  );
+}
+
 /** One tool call the model requested: what it touched, how it ended and how long it took. Opening it keeps the detail in this card. */
 export function ToolCall({
   name,
@@ -115,86 +132,81 @@ export function ToolCall({
   dimmed,
   expanded = false,
   detail,
+  link,
   onClick,
-  asChild,
   className,
-  children,
   ...props
 }: ToolCallProps) {
   const bodyId = useId();
-  const interactive = Boolean(onClick) || Boolean(asChild);
   const showDetail = expanded && detail !== undefined && detail !== null;
-  const summary = (
-    <>
-      <span className="flex min-w-0 items-center gap-2">
-        {index !== undefined ? (
-          <Tag tone="well" className="size-5 justify-center px-0 py-0">
-            {index}
-          </Tag>
-        ) : null}
-        <span className="min-w-0 shrink truncate font-mono text-xs font-medium">{name}</span>
-        <Pill fill={toolKindFill[kind]} className="h-4.5 px-2 text-2xs font-bold">
-          {kind}
-        </Pill>
-        {server ? <Tag tone="well">{server}</Tag> : null}
-        {level ? (
-          <Tag tone="term" className="font-sans">
-            {toolLevelLabel[level]}
-          </Tag>
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-xs text-muted">{hint}</span>
-        <Outcome status={status} />
-        {duration ? <span className="shrink-0 type-meta text-muted">{duration}</span> : null}
-        {interactive ? (
-          <Icon
-            icon={ChevronDown}
-            size={14}
-            className={cn("text-muted transition-transform", !expanded && "-rotate-90")}
-          />
-        ) : null}
-      </span>
-      {error ? (
-        <span
-          className={cn("truncate text-xs text-plum-t", index !== undefined && "pl-7")}
-          title={error}
-        >
-          {error}
-        </span>
-      ) : null}
-    </>
-  );
-  const headerClass = cn(
-    "flex w-full min-w-0 flex-col gap-1 px-2.5 py-2 text-left",
-    interactive &&
-      "cursor-pointer transition-colors hover:bg-paper-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
-    showDetail ? "rounded-t-lg border-b border-line" : "rounded-lg",
-  );
-  const frameClass = cn(toolCall({ dimmed: dimmed ?? false, expanded }), className);
-
-  if (asChild) {
-    return (
-      <Slot.Root className={cn(frameClass, headerClass)} {...props}>
-        <Slot.Slottable>{children}</Slot.Slottable>
-        {summary}
-      </Slot.Root>
-    );
-  }
+  /** Clicks on the summary open the call, unless they land on something that acts on its own. */
+  const onSummaryClick = onClick
+    ? (event: MouseEvent<HTMLDivElement>) => {
+        if ((event.target as Element).closest("a, button")) return;
+        onClick();
+      }
+    : undefined;
 
   return (
-    <article data-expanded={expanded ? "true" : undefined} className={frameClass} {...props}>
-      {onClick ? (
-        <button
-          type="button"
-          onClick={onClick}
-          className={headerClass}
-          aria-expanded={expanded}
-          aria-controls={showDetail ? bodyId : undefined}
-        >
-          {summary}
-        </button>
-      ) : (
-        <div className={headerClass}>{summary}</div>
-      )}
+    <article
+      data-expanded={expanded ? "true" : undefined}
+      className={cn(toolCall({ dimmed: dimmed ?? false, expanded }), className)}
+      {...props}
+    >
+      <div
+        onClick={onSummaryClick}
+        className={cn(
+          "flex w-full min-w-0 flex-col gap-1 px-2.5 py-1.5 text-left",
+          onClick && "cursor-pointer transition-colors hover:bg-paper-hi",
+          showDetail ? "rounded-t-lg border-b border-line" : "rounded-lg",
+        )}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          {index !== undefined ? (
+            <Tag tone="well" className="size-5 justify-center px-0 py-0">
+              {index}
+            </Tag>
+          ) : null}
+          <span className="min-w-0 shrink truncate font-mono text-xs font-medium">{name}</span>
+          <Pill fill={toolKindFill[kind]} className="h-4.5 px-2 text-2xs font-bold">
+            {kind}
+          </Pill>
+          {server ? <Tag tone="well">{server}</Tag> : null}
+          {level ? (
+            <Tag tone="term" className="font-sans">
+              {toolLevelLabel[level]}
+            </Tag>
+          ) : null}
+          <span className="min-w-0 flex-1 truncate text-xs text-muted">{hint}</span>
+          {link}
+          <Outcome status={status} />
+          {duration ? <span className="shrink-0 type-meta text-muted">{duration}</span> : null}
+          {onClick ? (
+            <button
+              type="button"
+              onClick={onClick}
+              aria-expanded={expanded}
+              aria-controls={showDetail ? bodyId : undefined}
+              aria-label={expanded ? `Close ${name}` : `Open ${name}`}
+              className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              <Icon
+                icon={ChevronDown}
+                size={14}
+                className={cn("transition-transform", !expanded && "-rotate-90")}
+              />
+            </button>
+          ) : null}
+        </span>
+        {error ? (
+          <span
+            className={cn("truncate text-xs text-plum-t", index !== undefined && "pl-7")}
+            title={error}
+          >
+            {error}
+          </span>
+        ) : null}
+      </div>
       {showDetail ? (
         <div id={bodyId} className="px-2.5 pt-2.5 pb-3">
           {detail}

@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { createLink } from "@tanstack/react-router";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  Button,
   CopyButton,
   Markdown,
   Banner,
-  CallBatch,
   GenerationHeader,
   StepRow,
-  mutatingKinds,
   ToolCall,
+  ToolCallLink,
+  cn,
+  mutatingKinds,
 } from "@guildsrun/ui";
 import type {
   GenerationStatus,
   GenerationFilter,
+  StepFact,
   StepOutcome,
   StepSegment,
   ToolCallStatus,
@@ -29,10 +33,18 @@ import {
   formatDuration,
   formatTokens,
   friendlyToolCall,
+  messageContentText,
+  parseToolArgs,
   previewText,
   toolOutcome,
 } from "../runs/toolFormat";
+import { kindBreakdown, levelFromDisplayPath } from "../runs/toolKinds";
 import { ToolCallDetail } from "./ToolCallDetail";
+
+const CallLink = createLink(ToolCallLink);
+
+/** Reasoning longer than this, or taller than six lines, starts clamped. */
+const REASONING_CLAMP = 480;
 
 function numberOf(value: unknown): number {
   const number = Number(value);
@@ -70,17 +82,134 @@ function plainLine(line: string): string {
   return line.replace(/^\s*#+\s+/, "").replace(/\*\*|__|`/g, "");
 }
 
-/** Title and detail for a step's row: the first line of what the model wrote or thought. */
-function stepSummary(step: FlowStep): { title: string; detail?: string } {
+/** Reasoning often opens on a fragment ("Hmm." or "Wait…"), so a title shorter than this takes the next sentence too. */
+const TITLE_MIN = 40;
+
+/** A step's lead: the opening sentence of what the model wrote or thought, else the tools it called. */
+function stepTitle(step: FlowStep): string {
   const text = step.turn ? turnText(step.turn).trim() || turnReasoning(step.turn).trim() : "";
-  if (!text)
-    return { title: `${step.calls.length} tool${step.calls.length === 1 ? "" : "s"} requested` };
-  const [first = "", ...rest] = text
-    .split("\n")
-    .map(plainLine)
-    .filter((line) => line.trim());
-  const detail = previewText(rest.join(" "), 160);
-  return detail ? { title: previewText(first, 90), detail } : { title: previewText(first, 90) };
+  if (!text) return step.calls.map((call) => call.info.name).join(", ");
+  const line = text.split("\n").map(plainLine).find((item) => item.trim()) ?? "";
+  let title = "";
+  for (const sentence of line.split(/(?<=[.!?])\s+/)) {
+    title = title ? `${title} ${sentence}` : sentence;
+    if (title.length >= TITLE_MIN) break;
+  }
+  return previewText(title, 120);
+}
+
+/** A step's figures: calls, model time, tokens and cost, each with its breakdown on hover. */
+function stepFacts(step: FlowStep, meta: Record<string, unknown>): StepFact[] {
+  const usage = (meta.usage as Record<string, unknown> | undefined) ?? {};
+  const count = (value: unknown) => numberOf(value).toLocaleString();
+  const calls = step.calls.length;
+  const modelMs = numberOf(meta.latency_ms);
+  const toolMs = step.calls.reduce((sum, call) => sum + callDuration(call), 0);
+  const tokens = numberOf(usage.input_tokens) + numberOf(usage.output_tokens);
+  const facts: StepFact[] = [];
+  if (calls) {
+    facts.push({
+      label: `${calls} call${calls === 1 ? "" : "s"}`,
+      title: kindBreakdown(step.calls.map((call) => call.info)),
+    });
+  }
+  if (modelMs) {
+    facts.push({
+      label: formatDuration(modelMs),
+      title: `${formatDuration(modelMs)} model · ${formatDuration(toolMs) || "0ms"} tools`,
+    });
+  }
+  if (tokens) {
+    facts.push({
+      label: `${formatTokens(tokens)} tok`,
+      title: [
+        `${count(usage.input_tokens)} in`,
+        `${count(usage.output_tokens)} out`,
+        usage.cache_read_tokens ? `${count(usage.cache_read_tokens)} cached` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    });
+  }
+  if (typeof meta.cost_usd === "number") {
+    facts.push({
+      label: formatCost(meta.cost_usd),
+      ...(typeof meta.cost_source === "string" ? { title: `Cost source: ${meta.cost_source}` } : {}),
+    });
+  }
+  return facts;
+}
+
+/** The tag a finish reason earns: the token budget, or any reason other than stopping or calling tools. */
+function stopTag(reason: unknown): string | undefined {
+  if (reason === "length") return "max tokens";
+  return typeof reason === "string" && reason && reason !== "tool_calls" && reason !== "stop"
+    ? `stopped: ${reason}`
+    : undefined;
+}
+
+/** The agent inspector that links to what a call touched open in. */
+export type Inspector = { guildId: string; agentId: string };
+
+function firstLine(text: string): string {
+  return text.split("\n")[0]?.trim() ?? "";
+}
+
+/** A chip leading to the note, memory or script a mutation wrote; null when the app has nowhere to show what it touched. */
+function callLink(call: FlowCall, inspector: Inspector): ReactNode {
+  if (!mutatingKinds.has(call.info.kind)) return null;
+  switch (call.info.name) {
+    case "memory_write":
+      return (
+        <CallLink to="/guilds/$guildId/agents/$agentId/state/memory" params={inspector}>
+          memory.md
+        </CallLink>
+      );
+    case "script_create": {
+      const name = parseToolArgs(call.call?.function?.arguments).name;
+      return name ? (
+        <CallLink to="/guilds/$guildId/agents/$agentId/state/scripts" params={inspector}>
+          {String(name)}
+        </CallLink>
+      ) : null;
+    }
+    case "note_write": {
+      const path = firstLine(messageContentText(call.result?.payload));
+      if (!levelFromDisplayPath(path)) return null;
+      return (
+        <CallLink
+          to="/guilds/$guildId/agents/$agentId/state/notes"
+          params={inspector}
+          search={{ path }}
+        >
+          {path.split("/").pop()}
+        </CallLink>
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+/** The model's reasoning before its calls, clamped when long, with a copy button. */
+function StepReasoning({ text }: { text: string }) {
+  const long = text.length > REASONING_CLAMP || text.split("\n").length > 6;
+  const [all, setAll] = useState(false);
+  return (
+    <div className="flex flex-col items-start gap-1 border-l-2 border-line py-0.5 pl-3">
+      <div className="relative w-full pr-9">
+        <p className={cn("text-sm whitespace-pre-wrap text-fg-2", long && !all && "line-clamp-6")}>
+          {text}
+        </p>
+        <CopyButton text={text} what="reasoning" size={24} className="absolute top-0 right-0" />
+      </div>
+      {long ? (
+        <Button variant="ghost" size="xs" onClick={() => setAll(!all)}>
+          {all ? "Show less" : "Show all"}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 /** A step to open and scroll to: a tool call by id, or the step that wrote a message sequence. */
@@ -121,29 +250,21 @@ type FlowViewProps = {
   defaultOpen: boolean;
   /** Opens this flow at that step's call and scrolls to it, when the flow holds it. */
   reveal?: RevealStep;
+  /** Where chips on mutations lead; without it, calls carry no links. */
+  inspector?: Inspector;
   /** Pins a call to a question for Studio's coach. */
   onAskCall?: ((call: FlowCall) => void) | undefined;
 };
 
-/** What the model reported for a step: which model, why it stopped, tokens, cost, response id. */
-function modelFacts(meta: Record<string, unknown>): string[] {
-  const usage = (meta.usage as Record<string, unknown> | undefined) ?? {};
-  const count = (value: unknown) => Number(value).toLocaleString();
-  return [
-    typeof meta.model === "string" ? meta.model : "",
-    typeof meta.finish_reason === "string" ? `stopped: ${meta.finish_reason}` : "",
-    usage.input_tokens !== undefined ? `${count(usage.input_tokens)} in` : "",
-    usage.output_tokens !== undefined ? `${count(usage.output_tokens)} out` : "",
-    usage.cache_read_tokens ? `${count(usage.cache_read_tokens)} cached` : "",
-    typeof meta.cost_usd === "number"
-      ? `${formatCost(meta.cost_usd)}${typeof meta.cost_source === "string" ? ` (${meta.cost_source})` : ""}`
-      : "",
-    typeof meta.response_id === "string" ? meta.response_id : "",
-  ].filter(Boolean);
-}
-
-/** One generation: its header and strip, then each step with the calls it requested. */
-export function FlowView({ flow, generating, defaultOpen, reveal, onAskCall }: FlowViewProps) {
+/** One generation: its header and strip, then each step with its reasoning and the calls it requested. */
+export function FlowView({
+  flow,
+  generating,
+  defaultOpen,
+  reveal,
+  inspector,
+  onAskCall,
+}: FlowViewProps) {
   const [revealed] = useState(() => revealedCall(flow, reveal));
   const [open, setOpen] = useState(defaultOpen || revealed !== null);
   const [filters, setFilters] = useState<GenerationFilter[]>([]);
@@ -156,6 +277,12 @@ export function FlowView({ flow, generating, defaultOpen, reveal, onAskCall }: F
     if (node) centerInScroller(node);
   }, [revealed]);
 
+  const calls = flow.steps.flatMap((step) => step.calls);
+  const failedCalls = calls.filter((call) => callError(call, generating)).length;
+  const mutations = calls.filter((call) => mutatingKinds.has(call.info.kind)).length;
+  const model = flow.steps
+    .map((step) => turnMeta(step).model)
+    .find((value): value is string => typeof value === "string");
   const unanswered = generating ? 0 : stats.running;
   const status: GenerationStatus =
     stats.errors + unanswered > 0
@@ -224,6 +351,7 @@ export function FlowView({ flow, generating, defaultOpen, reveal, onAskCall }: F
             <ToolCallDetail call={call} generating={generating} onAsk={onAskCall} />
           ) : undefined
         }
+        link={inspector ? callLink(call, inspector) : null}
         onClick={() => setOpenCall((current) => (current === callKey(call) ? null : callKey(call)))}
       />
     );
@@ -236,9 +364,15 @@ export function FlowView({ flow, generating, defaultOpen, reveal, onAskCall }: F
       aria-label={flow.generation ? `Generation ${flow.generation}` : "Tool trace"}
     >
       <GenerationHeader
-        title={flow.generation ? `Generation ${flow.generation}` : "Tool trace"}
+        title={
+          <span title={model ? `Model: ${model}` : undefined}>
+            {flow.generation ? `Generation ${flow.generation}` : "Tool trace"}
+          </span>
+        }
         stats={statLabels}
         status={status}
+        mutations={mutations}
+        failed={failedCalls}
         steps={strip}
         filters={filters}
         onFiltersChange={setFilters}
@@ -249,23 +383,21 @@ export function FlowView({ flow, generating, defaultOpen, reveal, onAskCall }: F
         <div className="flex flex-col gap-1.5">
           {flow.steps.map((step, stepIndex) => {
             const meta = turnMeta(step);
-            const usage = (meta.usage as Record<string, unknown> | undefined) ?? {};
-            const tokens = numberOf(usage.input_tokens) + numberOf(usage.output_tokens);
-            const summary = stepSummary(step);
             const reasoning = step.turn ? turnReasoning(step.turn) : "";
             const text = step.turn ? turnText(step.turn) : "";
             const failed = step.calls.filter((call) => callError(call, generating)).length;
+            const stop = stopTag(meta.finish_reason);
             return (
               <StepRow
                 key={`${step.index ?? "result"}:${stepIndex}`}
-                step={step.index}
                 outcome={stepOutcome(step, generating)}
-                title={summary.title}
-                {...(summary.detail ? { detail: summary.detail } : {})}
-                duration={formatDuration(numberOf(meta.latency_ms))}
-                {...(tokens ? { tokens: `${formatTokens(tokens)} tok` } : {})}
-                hitMaxTokens={meta.finish_reason === "length"}
+                failed={failed}
+                title={stepTitle(step)}
+                facts={stepFacts(step, meta)}
+                {...(stop ? { stop } : {})}
                 dimmed={step.calls.length > 0 && step.calls.every(dimCall)}
+                filters={filters}
+                onFiltersChange={setFilters}
                 defaultOpen={
                   stepIndex === flow.steps.length - 1 ||
                   failed > 0 ||
@@ -273,28 +405,7 @@ export function FlowView({ flow, generating, defaultOpen, reveal, onAskCall }: F
                 }
               >
                 <div className="flex flex-col gap-2">
-                  {step.calls.length > 1 ? (
-                    <CallBatch
-                      count={step.calls.length}
-                      duration={formatDuration(
-                        step.calls.reduce((sum, call) => sum + callDuration(call), 0),
-                      )}
-                      failed={failed}
-                    >
-                      {step.calls.map((call) => renderCall(call, call.position))}
-                    </CallBatch>
-                  ) : (
-                    step.calls.map((call) => renderCall(call))
-                  )}
-                  {reasoning ? (
-                    <details className="rounded-lg bg-paper px-3 py-2 text-sm">
-                      <summary className="flex cursor-pointer items-center font-semibold text-fg-2">
-                        <span className="flex-1">Reasoning</span>
-                        <CopyButton text={reasoning} what="reasoning" size={24} />
-                      </summary>
-                      <p className="mt-2 whitespace-pre-wrap text-fg-2">{reasoning}</p>
-                    </details>
-                  ) : null}
+                  {reasoning ? <StepReasoning text={reasoning} /> : null}
                   {text.trim() ? (
                     <div className="relative rounded-lg bg-paper px-3 py-2 pr-9">
                       <Markdown density="compact">{text}</Markdown>
@@ -306,10 +417,12 @@ export function FlowView({ flow, generating, defaultOpen, reveal, onAskCall }: F
                       />
                     </div>
                   ) : null}
-                  {modelFacts(meta).length ? (
-                    <p className="font-mono text-2xs text-muted wrap-anywhere">
-                      {modelFacts(meta).join(" · ")}
-                    </p>
+                  {step.calls.length ? (
+                    <div className="flex flex-col gap-1.5">
+                      {step.calls.map((call) =>
+                        renderCall(call, step.calls.length > 1 ? call.position : undefined),
+                      )}
+                    </div>
                   ) : null}
                 </div>
               </StepRow>

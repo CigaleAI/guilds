@@ -35,7 +35,14 @@ const stats = [
 const meta: Meta<typeof GenerationHeader> = {
   title: "Components/Runs/GenerationHeader",
   component: GenerationHeader,
-  args: { title: "Generation 1", stats, status: { kind: "errors", count: 21 }, steps },
+  args: {
+    title: "Generation 1",
+    stats,
+    status: { kind: "errors", count: 21 },
+    mutations: 4,
+    failed: 21,
+    steps,
+  },
 };
 export default meta;
 
@@ -45,9 +52,11 @@ function WithFilters() {
   const [filters, setFilters] = useState<GenerationFilter[]>(["errors"]);
   return (
     <GenerationHeader
-      title="Generation 1"
+      title={<span title="Model: deepseek/deepseek-v4.1-flash">Generation 1</span>}
       stats={stats}
       status={{ kind: "errors", count: 21 }}
+      mutations={4}
+      failed={21}
       steps={steps}
       filters={filters}
       onFiltersChange={setFilters}
@@ -55,6 +64,7 @@ function WithFilters() {
   );
 }
 
+/** The error and mutation chips are the filters: pressed, they dim the other calls. */
 export const Errors: Story = {
   render: () => (
     <div className="rounded-xl bg-surface p-6">
@@ -70,6 +80,7 @@ function Foldable() {
       title="Generation 4"
       stats={[{ label: "2 steps" }, { label: "4 calls" }, { label: "53k tok" }, { label: "$0.11" }]}
       status={{ kind: "completed" }}
+      mutations={2}
       size="sm"
       open={open}
       onOpenChange={setOpen}
@@ -77,6 +88,7 @@ function Foldable() {
   );
 }
 
+/** Without `onFiltersChange` the mutations count is a plain pill. */
 export const CompletedInCoach: Story = {
   render: () => (
     <div className="max-w-xl rounded-xl bg-surface p-5">
@@ -97,6 +109,7 @@ export const Running: Story = {
           { label: "18k tok" },
         ]}
         status={{ kind: "running" }}
+        mutations={1}
         steps={[
           { weight: 2, outcome: "ok" },
           { weight: 3, outcome: "wrote" },

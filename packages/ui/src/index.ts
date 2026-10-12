@@ -75,7 +75,6 @@ export * from "./components/conversation/AgentMessage";
 export * from "./components/conversation/OperatorMessage";
 export * from "./components/conversation/TypingIndicator";
 
-export * from "./components/runs/CallBatch";
 export * from "./components/runs/GenerationFilters";
 export * from "./components/runs/GenerationHeader";
 export * from "./components/runs/GenerationHero";
@@ -116,6 +115,7 @@ export * from "./components/data/TermList";
 export * from "./components/data/ToolRow";
 export * from "./components/data/VersionBar";
 
+export * from "./components/content/CodeBlock";
 export * from "./components/content/DiffView";
 export * from "./components/content/EmbedChip";
 export * from "./components/content/JsonTree";

@@ -1,11 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { CallBatch } from "./CallBatch";
 import type { GenerationFilter } from "./GenerationFilters";
 import { GenerationHero } from "./GenerationHero";
 import { StepRow } from "./StepRow";
 import type { StepOutcome, StepSegment } from "./stepOutcome";
-import { ToolCall } from "./ToolCall";
+import { ToolCall, ToolCallLink } from "./ToolCall";
 
 const pattern: StepOutcome[] = [
   "ok",
@@ -43,9 +42,18 @@ export default meta;
 
 type Story = StoryObj<typeof GenerationHero>;
 
+function Reasoning({ text }: { text: string }) {
+  return (
+    <div className="border-l-2 border-line py-0.5 pl-3">
+      <p className="text-sm whitespace-pre-wrap text-fg-2">{text}</p>
+    </div>
+  );
+}
+
 function Inspector() {
   const [filters, setFilters] = useState<GenerationFilter[]>([]);
   const dimReads = filters.includes("mutations");
+  const dimOk = filters.includes("errors");
   return (
     <GenerationHero
       eyebrow="Generation 1 · 24 steps"
@@ -53,80 +61,99 @@ function Inspector() {
       unit="errors"
       steps={steps}
       stats={stats}
+      mutations={4}
+      failed={21}
       filters={filters}
       onFiltersChange={setFilters}
     >
       <StepRow
-        step={1}
         outcome="ok"
         title="Creating a 24‑hour schedule."
-        detail="I need to create a new schedule every 24 hours. First, I should check the existing ones."
-        duration="4.2s"
-        tokens="14k tok"
+        facts={[
+          { label: "3 calls", title: "read × 3" },
+          { label: "4.2s", title: "4.2s model · 35ms tools" },
+          { label: "14k tok" },
+        ]}
+        filters={filters}
+        onFiltersChange={setFilters}
+        dimmed={dimReads || dimOk}
         defaultOpen
       >
-        <CallBatch count={3} duration="35ms">
-          <ToolCall
-            index={1}
-            name="schedule_list"
-            kind="read"
-            level="local"
-            hint="List schedules"
-            status="ok"
-            duration="6ms"
-            dimmed={dimReads}
-          />
-          <ToolCall
-            index={2}
-            name="note_find"
-            kind="read"
-            level="guild"
-            hint="Find notes…"
-            status="ok"
-            duration="14ms"
-            dimmed={dimReads}
-          />
-          <ToolCall
-            index={3}
-            name="note_find"
-            kind="read"
-            level="local"
-            hint="Find notes…"
-            status="ok"
-            duration="15ms"
-            dimmed={dimReads}
-          />
-        </CallBatch>
+        <div className="flex flex-col gap-2">
+          <Reasoning text="I need to create a new schedule every 24 hours. First, I should check the existing ones." />
+          <div className="flex flex-col gap-1.5">
+            <ToolCall
+              index={1}
+              name="schedule_list"
+              kind="read"
+              level="local"
+              hint="List schedules"
+              status="ok"
+              duration="6ms"
+              dimmed={dimReads || dimOk}
+            />
+            <ToolCall
+              index={2}
+              name="note_find"
+              kind="read"
+              level="guild"
+              hint="Find notes…"
+              status="ok"
+              duration="14ms"
+              dimmed={dimReads || dimOk}
+            />
+            <ToolCall
+              index={3}
+              name="note_find"
+              kind="read"
+              level="local"
+              hint="Find notes…"
+              status="ok"
+              duration="15ms"
+              dimmed={dimReads || dimOk}
+            />
+          </div>
+        </div>
       </StepRow>
       <StepRow
-        step={2}
         outcome="failed"
+        failed={1}
         title="Creating a schedule for updates."
-        detail="I need to set a recurring schedule for every 24 hours, considering the user’s retro request."
-        duration="4.4s"
-        tokens="15k tok"
+        facts={[
+          { label: "2 calls", title: "write × 2" },
+          { label: "4.4s", title: "4.4s model · 212ms tools" },
+          { label: "15k tok" },
+        ]}
+        filters={filters}
+        onFiltersChange={setFilters}
+        defaultOpen
       >
-        <CallBatch count={2} duration="212ms" failed={1}>
-          <ToolCall
-            index={1}
-            name="schedule_create_cron"
-            kind="write"
-            level="local"
-            hint="cron 0 0 * * *"
-            status="failed"
-            error="schedule already exists for this agent"
-            duration="190ms"
-          />
-          <ToolCall
-            index={2}
-            name="note_write"
-            kind="write"
-            level="guild"
-            hint="retro_template.md"
-            status="ok"
-            duration="22ms"
-          />
-        </CallBatch>
+        <div className="flex flex-col gap-2">
+          <Reasoning text="I need to set a recurring schedule for every 24 hours, considering the user’s retro request." />
+          <div className="flex flex-col gap-1.5">
+            <ToolCall
+              index={1}
+              name="schedule_create_cron"
+              kind="write"
+              level="local"
+              hint="cron 0 0 * * *"
+              status="failed"
+              error="schedule already exists for this agent"
+              duration="190ms"
+            />
+            <ToolCall
+              index={2}
+              name="note_write"
+              kind="write"
+              level="guild"
+              hint="Wrote retro_template.md"
+              status="ok"
+              duration="22ms"
+              link={<ToolCallLink href="#">retro_template.md</ToolCallLink>}
+              dimmed={dimOk}
+            />
+          </div>
+        </div>
       </StepRow>
     </GenerationHero>
   );
@@ -157,7 +184,7 @@ export const Completed: Story = {
           { value: "53k", label: "tokens" },
           { value: "$0.11", label: "cost" },
         ]}
-        availableFilters={["mutations"]}
+        mutations={1}
         onFiltersChange={() => {}}
       />
     </div>

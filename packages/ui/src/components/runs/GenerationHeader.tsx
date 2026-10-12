@@ -5,7 +5,7 @@ import { Icon } from "../../primitives/Icon";
 import { SegmentStrip } from "../../primitives/Mark";
 import { Pill } from "../../primitives/Pill";
 import { Tag } from "../../primitives/Tag";
-import { GenerationFilters, type GenerationFilter } from "./GenerationFilters";
+import { FilterChip, toggleFilter, type GenerationFilter } from "./GenerationFilters";
 import { stepSegments, stepToneOnPaper, type StepSegment } from "./stepOutcome";
 
 /** Where a generation stands: its error count, still running, or completed cleanly. */
@@ -24,10 +24,14 @@ export type GenerationHeaderProps = Omit<ComponentProps<"div">, "title"> & {
   title: ReactNode;
   stats: GenerationStat[];
   status: GenerationStatus;
+  /** Calls that changed state; shown as a chip that toggles the Mutations filter. */
+  mutations?: number;
+  /** Calls that failed; with any, the errors chip toggles the Errors filter. */
+  failed?: number;
   /** One segment per step, in order. */
   steps?: StepSegment[];
   filters?: GenerationFilter[];
-  /** Offers the Mutations filter, and Errors when there are errors. */
+  /** Makes the mutation and error chips toggles that dim the other calls. */
   onFiltersChange?: (filters: GenerationFilter[]) => void;
   /** With `onOpenChange`, a chevron folds the generation's steps. */
   open?: boolean;
@@ -36,11 +40,13 @@ export type GenerationHeaderProps = Omit<ComponentProps<"div">, "title"> & {
   size?: "md" | "sm";
 };
 
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
 function StatusPill({ status }: { status: GenerationStatus }) {
   if (status.kind === "errors") {
     return (
       <Pill fill="plum" size="xs" className="h-5 text-2xs font-bold">
-        {status.count === 1 ? "1 error" : `${status.count} errors`}
+        {plural(status.count, "error")}
       </Pill>
     );
   }
@@ -65,6 +71,8 @@ export function GenerationHeader({
   title,
   stats,
   status,
+  mutations = 0,
+  failed = 0,
   steps,
   filters = [],
   onFiltersChange,
@@ -74,8 +82,8 @@ export function GenerationHeader({
   className,
   ...props
 }: GenerationHeaderProps) {
-  const available: GenerationFilter[] =
-    status.kind === "errors" ? ["mutations", "errors"] : ["mutations"];
+  const toggle = (filter: GenerationFilter) => () =>
+    onFiltersChange?.(toggleFilter(filters, filter));
   return (
     <div
       className={cn(
@@ -98,13 +106,31 @@ export function GenerationHeader({
           </Tag>
         ))}
         <span className="ml-auto flex items-center gap-2">
-          <StatusPill status={status} />
-          {onFiltersChange ? (
-            <GenerationFilters
-              available={available}
-              value={filters}
-              onValueChange={onFiltersChange}
-            />
+          {status.kind === "errors" && failed > 0 && onFiltersChange ? (
+            <FilterChip
+              filter="errors"
+              pressed={filters.includes("errors")}
+              onPressedChange={toggle("errors")}
+            >
+              {plural(status.count, "error")}
+            </FilterChip>
+          ) : (
+            <StatusPill status={status} />
+          )}
+          {mutations > 0 ? (
+            onFiltersChange ? (
+              <FilterChip
+                filter="mutations"
+                pressed={filters.includes("mutations")}
+                onPressedChange={toggle("mutations")}
+              >
+                {plural(mutations, "mutation")}
+              </FilterChip>
+            ) : (
+              <Pill fill="tide-tint" size="xs" className="h-5 text-2xs font-bold">
+                {plural(mutations, "mutation")}
+              </Pill>
+            )
           ) : null}
           {onOpenChange ? (
             <button

@@ -1,23 +1,42 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { CallBatch } from "./CallBatch";
+import { useState } from "react";
+import { CopyButton } from "../actions/CopyButton";
+import type { GenerationFilter } from "./GenerationFilters";
 import { StepRow } from "./StepRow";
-import { ToolCall } from "./ToolCall";
+import { ToolCall, ToolCallLink, mutatingKinds } from "./ToolCall";
+
+const facts = [
+  { label: "2 calls", title: "read × 2" },
+  { label: "4.2s", title: "4.2s model · 20ms tools" },
+  { label: "14k tok", title: "13,620 in · 380 out" },
+  { label: "$0.0041", title: "Cost source: catalog" },
+];
+
+const reasoning =
+  "I need to create a new schedule every 24 hours. First, I should check the existing ones so I do not create a duplicate, and look for the retro template the guild keeps.";
 
 const meta: Meta<typeof StepRow> = {
   title: "Components/Runs/StepRow",
   component: StepRow,
   args: {
-    step: 1,
     outcome: "ok",
     title: "Creating a 24‑hour schedule.",
-    detail: "First, check the existing ones.",
-    duration: "4.2s",
-    tokens: "14k tok",
+    facts,
   },
 };
 export default meta;
 
 type Story = StoryObj<typeof StepRow>;
+
+/** How the app lays a step's reasoning out above its calls. */
+function Reasoning({ text }: { text: string }) {
+  return (
+    <div className="relative border-l-2 border-line py-0.5 pr-9 pl-3">
+      <p className="text-sm whitespace-pre-wrap text-fg-2">{text}</p>
+      <CopyButton text={text} what="reasoning" size={24} className="absolute top-0 right-0" />
+    </div>
+  );
+}
 
 export const Playground: Story = {
   render: (args) => (
@@ -27,54 +46,93 @@ export const Playground: Story = {
   ),
 };
 
-export const CollapsedAndOpen: Story = {
-  render: () => (
-    <div className="flex flex-col gap-3 rounded-xl bg-surface p-6">
+function Filtered() {
+  const [filters, setFilters] = useState<GenerationFilter[]>([]);
+  const dim = (kind: "read" | "write") =>
+    filters.includes("mutations") && !mutatingKinds.has(kind);
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl bg-surface p-6">
       <StepRow
-        step={1}
         outcome="ok"
         title="Creating a 24‑hour schedule."
-        detail="First, check the existing ones."
-        duration="4.2s"
-        tokens="14k tok"
+        facts={facts}
+        filters={filters}
+        onFiltersChange={setFilters}
+        dimmed={dim("read")}
         defaultOpen
       >
-        <CallBatch count={2} duration="20ms">
-          <ToolCall
-            index={1}
-            name="schedule_list"
-            kind="read"
-            level="local"
-            hint="List schedules"
-            status="ok"
-            duration="6ms"
-            onClick={() => {}}
-          />
-          <ToolCall
-            index={2}
-            name="note_find"
-            kind="read"
-            level="guild"
-            hint="Find notes…"
-            status="ok"
-            duration="14ms"
-            expanded
-            detail={
-              <div className="max-h-36 overflow-auto rounded-md bg-surface p-3">
-                <p className="font-mono text-xs text-fg">query: treasury notes</p>
-              </div>
-            }
-            onClick={() => {}}
-          />
-        </CallBatch>
+        <div className="flex flex-col gap-2">
+          <Reasoning text={reasoning} />
+          <div className="flex flex-col gap-1.5">
+            <ToolCall
+              index={1}
+              name="schedule_list"
+              kind="read"
+              level="local"
+              hint="List schedules"
+              status="ok"
+              duration="6ms"
+              dimmed={dim("read")}
+              onClick={() => {}}
+            />
+            <ToolCall
+              index={2}
+              name="note_find"
+              kind="read"
+              level="guild"
+              hint="Find notes retro"
+              status="ok"
+              duration="14ms"
+              dimmed={dim("read")}
+              onClick={() => {}}
+            />
+          </div>
+        </div>
       </StepRow>
       <StepRow
-        step={2}
+        outcome="wrote"
+        title="Recording the retro."
+        facts={[
+          { label: "1 call", title: "write" },
+          { label: "3.1s" },
+          { label: "12k tok" },
+          { label: "$0.0036" },
+        ]}
+        filters={filters}
+        onFiltersChange={setFilters}
+        defaultOpen
+      >
+        <div className="flex flex-col gap-2">
+          <Reasoning text="The retro is done; I will write the learnings into the fund thesis note." />
+          <ToolCall
+            name="note_write"
+            kind="write"
+            level="guild"
+            hint="Wrote fund_thesis.md"
+            status="ok"
+            duration="22ms"
+            link={<ToolCallLink href="#">fund_thesis.md</ToolCallLink>}
+            onClick={() => {}}
+          />
+        </div>
+      </StepRow>
+    </div>
+  );
+}
+
+/** Press **wrote** to keep only the calls that changed state. */
+export const ReasoningThenCalls: Story = {
+  render: () => <Filtered />,
+};
+
+export const States: Story = {
+  render: () => (
+    <div className="flex flex-col gap-1.5 rounded-xl bg-surface p-6">
+      <StepRow
         outcome="failed"
+        failed={1}
         title="Creating a schedule."
-        detail="Set a recurring 24h schedule."
-        duration="4.4s"
-        tokens="15k tok"
+        facts={[{ label: "1 call", title: "write" }, { label: "4.4s" }, { label: "15k tok" }]}
       >
         <ToolCall
           name="schedule_create_cron"
@@ -86,47 +144,22 @@ export const CollapsedAndOpen: Story = {
           duration="190ms"
         />
       </StepRow>
-    </div>
-  ),
-};
-
-export const States: Story = {
-  render: () => (
-    <div className="flex flex-col gap-3 rounded-xl bg-surface p-6">
       <StepRow
-        step={3}
-        outcome="wrote"
-        title="Recording the retro."
-        detail="Write the learnings into the fund thesis note and memory."
-        duration="3.1s"
-        tokens="12k tok"
-      >
-        <ToolCall
-          name="note_write"
-          kind="write"
-          level="guild"
-          hint="fund_thesis.md"
-          status="ok"
-          duration="22ms"
-        />
-      </StepRow>
+        outcome="failed"
+        failed={2}
+        title="Retrying both writes."
+        facts={[{ label: "2 calls", title: "write × 2" }, { label: "2.9s" }, { label: "9k tok" }]}
+        filters={["errors"]}
+        onFiltersChange={() => {}}
+      />
       <StepRow
-        step={4}
         outcome="ok"
         title="Summarising."
-        detail="The retrospective ran long; the answer was cut at the budget."
-        duration="9.8s"
-        tokens="32k tok"
-        hitMaxTokens
+        facts={[{ label: "9.8s" }, { label: "32k tok" }]}
+        stop="max tokens"
       />
-      <StepRow
-        step={5}
-        outcome="running"
-        title="Posting to the guild."
-        detail="Waiting for group_post."
-        duration="2.2s"
-      />
-      <StepRow step={null} outcome="ok" detail="Tool result with no requesting step" dimmed />
+      <StepRow outcome="running" title="Posting to the guild." facts={[{ label: "1 call" }]} />
+      <StepRow outcome="ok" title="group_post, memory_write" dimmed />
     </div>
   ),
 };

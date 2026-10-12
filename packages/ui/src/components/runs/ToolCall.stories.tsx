@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { JsonTree } from "../content/JsonTree";
 import { Segmented } from "../controls/Segmented";
-import { ToolCall, type ToolKind } from "./ToolCall";
+import { ToolCall, ToolCallLink, type ToolKind } from "./ToolCall";
 
 const meta: Meta<typeof ToolCall> = {
   title: "Components/Runs/ToolCall",
@@ -12,7 +12,7 @@ const meta: Meta<typeof ToolCall> = {
     kind: "write",
     level: "guild",
     index: 1,
-    hint: "retro_template.md",
+    hint: "Wrote retro_template.md",
     status: "ok",
     duration: "22ms",
   },
@@ -50,6 +50,7 @@ export const Playground: Story = {
   ),
 };
 
+/** A mutation that wrote a note, memory or script carries a chip leading to it. */
 export const OkAndFailed: Story = {
   render: () => (
     <div className="flex max-w-md flex-col gap-3 rounded-xl bg-surface p-6">
@@ -58,9 +59,11 @@ export const OkAndFailed: Story = {
         name="note_write"
         kind="write"
         level="guild"
-        hint="retro_template.md"
+        hint="Wrote retro_template.md"
         status="ok"
         duration="22ms"
+        link={<ToolCallLink href="#">retro_template.md</ToolCallLink>}
+        onClick={() => {}}
       />
       <ToolCall
         index={2}
@@ -129,6 +132,7 @@ function Selectable() {
       hint="Write memory"
       status="ok"
       duration="17ms"
+      link={<ToolCallLink href="#">memory.md</ToolCallLink>}
       expanded={open}
       detail={
         open ? (

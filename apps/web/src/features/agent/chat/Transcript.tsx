@@ -162,6 +162,7 @@ export function Transcript({ agent, run, messages, live, reveal, onAskCall }: Tr
                 generating={run.generating}
                 defaultOpen={index === lastFlow || run.generating}
                 {...(reveal ? { reveal } : {})}
+                inspector={{ guildId: agent.guild_id, agentId: agent.id }}
                 onAskCall={onAskCall}
               />
               {secretRequests(segment).map((item) => (

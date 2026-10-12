@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../../cn";
 import { SegmentStrip } from "../../primitives/Mark";
-import { GenerationFilters, type GenerationFilter } from "./GenerationFilters";
+import { FilterChip, toggleFilter, type GenerationFilter } from "./GenerationFilters";
 import { stepSegments, stepToneOnPlum, type StepSegment } from "./stepOutcome";
 
 export type GenerationHeroStat = {
@@ -20,8 +20,10 @@ export type GenerationHeroProps = Omit<ComponentProps<"section">, "title"> & {
   steps?: StepSegment[];
   /** Totals in the cyan band: tool calls, model and tool time, tokens, cost. */
   stats: GenerationHeroStat[];
-  /** Filters on offer, in order. */
-  availableFilters?: GenerationFilter[];
+  /** Calls that changed state; shown as a chip that toggles the Mutations filter. */
+  mutations?: number;
+  /** Calls that failed; shown as a chip that toggles the Errors filter. */
+  failed?: number;
   filters?: GenerationFilter[];
   onFiltersChange?: (filters: GenerationFilter[]) => void;
   /** The generation's steps, laid out on the card's surface below the band. */
@@ -36,6 +38,8 @@ const bandColumns: Record<number, string> = {
   5: "grid-cols-5",
 };
 
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
 /** The inspector's full generation card: plum headline, cyan totals band, then its steps. */
 export function GenerationHero({
   eyebrow,
@@ -43,13 +47,16 @@ export function GenerationHero({
   unit,
   steps,
   stats,
-  availableFilters = ["mutations", "errors"],
+  mutations = 0,
+  failed = 0,
   filters = [],
   onFiltersChange,
   children,
   className,
   ...props
 }: GenerationHeroProps) {
+  const toggle = (filter: GenerationFilter) => () =>
+    onFiltersChange?.(toggleFilter(filters, filter));
   return (
     <section
       className={cn(
@@ -68,12 +75,28 @@ export function GenerationHero({
             </div>
           </div>
           {onFiltersChange ? (
-            <GenerationFilters
-              surface="plum"
-              available={availableFilters}
-              value={filters}
-              onValueChange={onFiltersChange}
-            />
+            <span className="flex shrink-0 items-center gap-1.5">
+              {failed > 0 ? (
+                <FilterChip
+                  surface="plum"
+                  filter="errors"
+                  pressed={filters.includes("errors")}
+                  onPressedChange={toggle("errors")}
+                >
+                  {failed} failed
+                </FilterChip>
+              ) : null}
+              {mutations > 0 ? (
+                <FilterChip
+                  surface="plum"
+                  filter="mutations"
+                  pressed={filters.includes("mutations")}
+                  onPressedChange={toggle("mutations")}
+                >
+                  {plural(mutations, "mutation")}
+                </FilterChip>
+              ) : null}
+            </span>
           ) : null}
         </div>
         {steps && steps.length ? (
