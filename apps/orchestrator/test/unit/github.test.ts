@@ -102,6 +102,9 @@ test("the manifest registers the App on the box's address, adding the request's 
     "http://127.0.0.1:8080/api/mcp/oauth/callback",
   ]);
   assert.deepEqual(manifest.hook_attributes, { url: "https://guilds.example/api/github/webhook", active: false });
+  assert.equal(githubAppManifest({ baseUrl: "http://localhost:8080", requestOrigin: "http://localhost:8080" }).hook_attributes, undefined);
+  assert.equal(githubAppManifest({ baseUrl: "http://127.0.0.1:8080", requestOrigin: "http://127.0.0.1:8080" }).hook_attributes, undefined);
+  assert.equal(githubAppManifest({ baseUrl: "http://192.168.1.10:8080", requestOrigin: "http://192.168.1.10:8080" }).hook_attributes, undefined);
   assert.deepEqual(manifest.default_permissions, { contents: "write", pull_requests: "write", metadata: "read" });
   assert.equal(manifest.public, false);
   assert.equal(manifest.request_oauth_on_install, true);

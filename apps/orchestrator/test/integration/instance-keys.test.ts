@@ -228,7 +228,7 @@ test("the GitHub App registers from a manifest: the box posts it, GitHub calls b
     assert.equal(manifest.url, "http://127.0.0.1:8080");
     assert.equal(manifest.redirect_url, `http://127.0.0.1:8080${MANIFEST_CALLBACK_PATH}`);
     assert.deepEqual(manifest.callback_urls, ["http://127.0.0.1:8080/api/mcp/oauth/callback"]);
-    assert.deepEqual(manifest.hook_attributes, { url: "http://127.0.0.1:8080/api/github/webhook", active: false });
+    assert.equal(manifest.hook_attributes, undefined);
     assert.equal(started.body.includes("client-secret"), false);
 
     // The default name carries the host; the default action is the admin's own account.
