@@ -35,6 +35,8 @@
     "./instance/integrations.js": "./src/instance/integrations.ts",
     "./lib/ids.js": "./src/lib/ids.ts",
     "./lib/lock.js": "./src/lib/lock.ts",
+    "./lib/names.js": "./src/lib/names.ts",
+    "./machines/index.js": "./src/machines/index.ts",
     "./mcp/index.js": "./src/mcp/index.ts",
     "./net/http.js": "./src/net/http.ts",
     "./notes/store.js": "./src/notes/store.ts",

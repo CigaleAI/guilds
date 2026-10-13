@@ -517,8 +517,10 @@ the values it started with.
 
 ### Browser
 
-Each browser agent has its own Chrome. `agent-browser-start <agent id>
-<slot> <language>` starts, when they are not already answering:
+Each browser agent has its own Chrome. The orchestrator computes the
+slot's display and ports and passes them to
+`agent-browser-start <agent id> <display> <vnc port> <devtools port> <novnc port> <language>`,
+which starts, when they are not already answering:
 
 - an Xtigervnc display `:10+slot` at a locked 1280×720, its VNC
   server on loopback port `5910+slot`
@@ -550,7 +552,7 @@ attaches to the agent's Chrome over its CDP port.
 The CLI tab wakes the agent's machine. A machine on which an agent
 generates is used as is.
 
-It runs `agent-cli-start <agent id> <slot>` in it. The helper starts
+It runs `agent-cli-start <agent id> <terminal port> <first port> <last port>` in it. The helper starts
 ttyd on port `7700+slot` with bash in the agent's home, or finds it
 already answering, and prints the secret path segment it serves
 under, random per agent and kept under `/run/guilds/<agent id>/`.
