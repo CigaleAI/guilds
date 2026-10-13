@@ -18,7 +18,7 @@ export const APP_NAME_MAX = 34;
 export type GithubAppManifest = {
   name: string;
   url: string;
-  hook_attributes: { url: string; active: false };
+  hook_attributes?: { url: string; active: false };
   redirect_url: string;
   callback_urls: string[];
   description: string;
@@ -43,7 +43,9 @@ function hostOf(url: string): string {
 /**
  * The manifest for this box: the App installs with OAuth and redirects on update, asks for the
  * repository permissions coding agents need, and delivers no webhook. Its callbacks are the box's
- * public address and, when the admin reached the box another way, that address too.
+ * public address and, when the admin reached the box another way, that address too. An inactive
+ * webhook is named only when that address is on the public internet: GitHub refuses a hook URL
+ * it cannot reach, such as localhost.
  */
 export function githubAppManifest(options: { baseUrl: string; requestOrigin: string; name?: string }): GithubAppManifest {
   const base = trimBase(options.baseUrl);
@@ -53,10 +55,11 @@ export function githubAppManifest(options: { baseUrl: string; requestOrigin: str
     callbacks.push(`${origin}${OAUTH_CALLBACK_PATH}`);
   }
   const name = (options.name ?? "").trim();
+  const hook = publicHook(base);
   return {
     name: name || `Guilds (${hostOf(base)})`,
     url: base,
-    hook_attributes: { url: `${base}/api/github/webhook`, active: false },
+    ...(hook ? { hook_attributes: hook } : {}),
     redirect_url: `${base}${MANIFEST_CALLBACK_PATH}`,
     callback_urls: callbacks,
     description: "Lets this Guilds box's coding agents clone, push to, and open pull requests on the repositories each guild picks.",
@@ -65,6 +68,39 @@ export function githubAppManifest(options: { baseUrl: string; requestOrigin: str
     request_oauth_on_install: true,
     setup_on_update: true,
   };
+}
+
+/** An inactive hook GitHub will accept, or none when the host is loopback or on a private network. */
+function publicHook(base: string): { url: string; active: false } | undefined {
+  return reachableFromInternet(base) ? { url: `${base}/api/github/webhook`, active: false } : undefined;
+}
+
+function reachableFromInternet(base: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(base).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (hostname.startsWith("[") && hostname.endsWith("]")) hostname = hostname.slice(1, -1);
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")) return false;
+  if (hostname.includes(":")) return publicIpv6(hostname);
+  const octets = hostname.split(".");
+  if (octets.length !== 4 || octets.some((part) => !/^\d{1,3}$/.test(part))) return true;
+  const [a, b, c, d] = octets.map(Number);
+  if ([a, b, c, d].some((part) => part > 255)) return true;
+  if (a === 0 || a === 10 || a === 127) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && b === 168) return false;
+  return true;
+}
+
+function publicIpv6(hostname: string): boolean {
+  if (hostname === "::" || hostname === "::1") return false;
+  const head = hostname.split(":").find((part) => part.length > 0) ?? "";
+  if (/^fe[89ab]/.test(head) || /^f[cd]/.test(head)) return false;
+  return true;
 }
 
 /** Where the browser posts the manifest: the admin's own account, or an organisation they administer. */

@@ -41,7 +41,10 @@ settings above, `url` = the box's address, the manifest callback as
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback` plus, when the admin
 reached the box at another address (`http://localhost:8080` with
 `PUBLIC_BASE_URL` empty), that address's `/api/mcp/oauth/callback`
-too.
+too. When that address is on the public internet, the manifest also
+names an inactive webhook at `<address>/api/github/webhook`. A
+loopback or private address omits the hook: GitHub refuses a hook
+URL it cannot reach.
 
 The flow: `POST /api/admin/instance/keys/github-app/manifest` with
 `{ name?, owner?, return_to? }` answers `{ action, manifest, state }`
