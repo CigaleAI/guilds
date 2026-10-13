@@ -12,7 +12,7 @@ import {
 } from "../../src/generation/index.js";
 import type { Completion } from "../../src/llm/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { SandboxError } from "../../src/sandbox/index.js";
+import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbox/index.js";
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
@@ -103,9 +103,12 @@ function attachScripts<T extends object>(target: T, scripts: MemoryScriptDB): T 
 
 export class FakeCommands {
   commands: string[] = [];
+  /** The options of each command, in order: its working directory and environment. */
+  options: Array<Record<string, unknown>> = [];
 
-  async run(command: string, _opts?: unknown, _handlers?: unknown) {
+  async run(command: string, opts?: unknown, _handlers?: unknown) {
     this.commands.push(command);
+    this.options.push((opts ?? {}) as Record<string, unknown>);
     return {
       exit_code: 0,
       logs: { stdout: [{ text: `ok:${command}` }], stderr: [] },
@@ -113,50 +116,62 @@ export class FakeCommands {
   }
 }
 
+/** The machine fields of an agent row on its organisation's default machine. */
+export const AGENT_MACHINE = {
+  machine_id: "mach_1",
+  machine_slot: 0,
+  machine_name: "default",
+  machine_box: "standard",
+  machine_cpu: null,
+  machine_memory_mib: null,
+  machine_max_workspace_mib: 10240,
+  machine_workspace_mib: null,
+};
+
+/** A sandbox provider that records what generation asks of its machines, and runs nothing. */
 export class FakeSandboxes {
   commands: {
     commands?: string[];
     run: (command: string, opts?: unknown, handlers?: unknown) => Promise<unknown>;
     interrupt?: (executionId: string) => Promise<void>;
   } = new FakeCommands();
-  created: Array<[string, Record<string, string>]> = [];
+  /** Machines ensured, in order. */
+  created: MachineSpec[] = [];
+  /** Machines whose containers went. */
   destroyed: string[] = [];
-  secret_users: Record<string, Set<string>> = {};
   running = new Set<string>();
-  browser_flags: boolean[] = [];
-  coding_flags: boolean[] = [];
-  running_browser = false;
+  /** Agents whose Chrome started, in order. */
+  browser_starts: string[] = [];
+  /** Agents whose processes stopped, with what stopped. */
+  stopped: Array<{ agentId: string; what: "browser" | "all" | "purge" }> = [];
+  browser_failure: string | null = null;
 
-  async ensure(
-    agentId: string,
-    secrets: Record<string, string>,
-    _secretIds: string[],
-    options: { browser?: boolean; coding?: boolean } = {},
-  ) {
-    const browser = Boolean(options.browser);
-    this.created.push([agentId, secrets]);
-    this.browser_flags.push(browser);
-    this.coding_flags.push(Boolean(options.coding));
-    this.running.add(agentId);
-    this.running_browser = browser;
+  async ensure(machine: MachineSpec) {
+    this.created.push(machine);
+    this.running.add(machine.id);
     return { id: "sbx_fake", commands: this.commands };
   }
 
-  async connectRunning(agentId: string) {
-    if (!this.running.has(agentId)) {
-      return null;
+  async connectRunning(machineId: string) {
+    return this.running.has(machineId) ? { id: "sbx_fake", commands: this.commands } : null;
+  }
+
+  async startBrowser(_sandbox: unknown, seat: AgentSeat): Promise<void> {
+    if (this.browser_failure !== null) {
+      throw new SandboxError(this.browser_failure);
     }
-    const getInfo = async () => ({
-      metadata: { browser: this.running_browser ? "1" : "0" },
-    });
-    return { id: "sbx_fake", commands: this.commands, get_info: getInfo, getInfo };
+    this.browser_starts.push(seat.agentId);
   }
 
-  async waitForBrowser(_sandbox: unknown): Promise<void> {
-    return undefined;
+  async stopBrowser(_sandbox: unknown, seat: AgentSeat): Promise<void> {
+    this.stopped.push({ agentId: seat.agentId, what: "browser" });
   }
 
-  async novncTarget(_sandbox: unknown): Promise<[string, Record<string, string>]> {
+  async stopAgent(_sandbox: unknown, seat: AgentSeat, options: { purge?: boolean } = {}): Promise<void> {
+    this.stopped.push({ agentId: seat.agentId, what: options.purge ? "purge" : "all" });
+  }
+
+  async novncTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {
     return ["http://novnc.test", { "OPEN-SANDBOX-API-KEY": "k" }];
   }
 
@@ -164,7 +179,7 @@ export class FakeSandboxes {
   cli_token = "a".repeat(48);
   cli_failure: string | null = null;
 
-  async startCli(_sandbox: unknown): Promise<string> {
+  async startCli(_sandbox: unknown, _seat: AgentSeat): Promise<string> {
     this.cli_starts += 1;
     if (this.cli_failure !== null) {
       throw new SandboxError(this.cli_failure);
@@ -172,21 +187,17 @@ export class FakeSandboxes {
     return this.cli_token;
   }
 
-  async cliTarget(_sandbox: unknown, token: string): Promise<[string, Record<string, string>]> {
+  async cliTarget(_sandbox: unknown, _seat: AgentSeat, token: string): Promise<[string, Record<string, string>]> {
     return [`http://cli.test/t/${token}`, { "OPEN-SANDBOX-API-KEY": "k" }];
   }
 
-  async agentIdsUsingSecret(secretId: string): Promise<Set<string>> {
-    return this.secret_users[secretId] ?? new Set();
-  }
-
-  async listRunningAgentIds(): Promise<Set<string>> {
+  async listRunningMachineIds(): Promise<Set<string>> {
     return new Set(this.running);
   }
 
-  async destroy(agentId: string): Promise<void> {
-    this.destroyed.push(agentId);
-    this.running.delete(agentId);
+  async destroy(machineId: string): Promise<void> {
+    this.destroyed.push(machineId);
+    this.running.delete(machineId);
   }
 }
 
@@ -227,6 +238,7 @@ export class FakeDB {
       config: {},
       archived_at: null,
       guild_archived_at: null,
+      ...AGENT_MACHINE,
     };
     this.messages = [
       {
@@ -876,6 +888,7 @@ export async function seededLoop(
     config: { ...AGENT_CONFIG },
     archived_at: null,
     guild_archived_at: null,
+    ...AGENT_MACHINE,
   });
   const loop = makeLoop(db, notes, workspaceRoot, new FakeSandboxes());
   return { loop, db, notes, tmp };
@@ -968,6 +981,10 @@ export function guildDb(agentIds: string[]) {
     },
     async listAgents(_guildId: string) {
       return agentIds.map((id) => ({ id }));
+    },
+    async getAgent(agentId: string) {
+      const slot = agentIds.indexOf(agentId);
+      return slot < 0 ? null : { id: agentId, ...AGENT_MACHINE, machine_slot: slot };
     },
     async purgeGuild(guildId: string) {
       db.purged.push(guildId);

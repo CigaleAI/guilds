@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
+import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { NotesStore } from "../notes/store.js";
@@ -146,7 +147,13 @@ export type ToolContext = {
   tool_call_id: string;
   /** Fields a handler reports for the call's metadata row (exit code, path, line counts). */
   tool_metadata: Record<string, unknown> | null;
-  /** Where a coding run's working directory starts, relative to /home/agent; empty for its root. */
+  /** The agent's home in its machine, where its commands run: `/home/<agent id>`. */
+  agent_home: string;
+  /** Chrome's DevTools port for the agent's browser, from its slot; null without one. */
+  cdp_port: number | null;
+  /** Starts the agent's Chrome when it is not up and keeps it from its idle stop; null without a browser. */
+  ensure_browser: (() => Promise<void>) | null;
+  /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
   code_default_cwd: string;
   /** Runs before each `shell` command: replaces repository tokens close to expiry. */
   before_command: (() => Promise<void>) | null;
@@ -182,6 +189,9 @@ export function createToolContext(
     offered_tools: null,
     tool_call_id: "",
     tool_metadata: null,
+    agent_home: agentHome(partial.agent_id),
+    cdp_port: null,
+    ensure_browser: null,
     code_default_cwd: "",
     before_command: null,
     ...partial,

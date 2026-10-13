@@ -8,8 +8,8 @@ import { oauthSetupState } from "../oauth/index.js";
 import { persistGuild } from "../guilds/persist.js";
 import { GuildAgentLimitError, assertGuildAgentRoom, validateGuildName } from "../guilds/validation.js";
 import {
-  addMissingBox,
   addMissingBrowserLanguage,
+  addMissingFlags,
   addMissingCliScriptingAndMemory,
   addMissingRunLimits,
   addMissingTemperatureAndStepLimits,
@@ -30,6 +30,16 @@ import {
   type CollectionView,
 } from "../artifacts/index.js";
 import { newId } from "../lib/ids.js";
+import { hostsOnlyVisible, visibleGuildIds } from "../machines/access.js";
+import {
+  MAX_AGENTS_PER_MACHINE,
+  agentPlannedMib,
+  machineAllowsCoding,
+  machineSize,
+  plannedMib,
+  type MachineBox,
+  type MachineWithAgents,
+} from "../machines/index.js";
 import { jsonObj } from "../db/json.js";
 import type { Repositories } from "../db/repositories.js";
 import type { NotesStore } from "../notes/store.js";
@@ -39,6 +49,7 @@ import {
   OPEN_POLICY,
   assertCanCreateAgents,
   assertCanCreateGuild,
+  assertCanPlaceAgents,
   remaining,
   type OrgPolicy,
 } from "../policy/index.js";
@@ -106,7 +117,79 @@ export type ApplyChoices = {
   connections?: ConnectionDecision[];
   secrets?: SecretDecision[];
   activate_keys?: string[];
+  /** The machine every role goes on; the organisation's only one when absent. */
+  machine_id?: string;
 };
+
+/** A machine the preview offers, with the memory its agents plan to use and what the roles add. */
+export type MachineChoice = {
+  id: string;
+  name: string;
+  box: MachineBox;
+  memory_mib: number;
+  planned_mib: number;
+  agents: number;
+};
+
+function machineChoice(machine: MachineWithAgents): MachineChoice {
+  return {
+    id: machine.id,
+    name: machine.name,
+    box: machine.box,
+    memory_mib: machineSize(machine).memory_mib,
+    planned_mib: plannedMib(machine.agents),
+    agents: machine.agents.length,
+  };
+}
+
+/** The planned memory the recipe's roles add to their machine. */
+function rolesPlannedMib(recipe: RecipeDocument): number {
+  return recipe.roles.reduce(
+    (sum, role) =>
+      sum + agentPlannedMib({ browser: Boolean(role.browser.required || role.config.browser), coding: role.config.coding === true }),
+    0,
+  );
+}
+
+/**
+ * What blocks the roles on a machine: a coding role on a standard machine, more roles than the
+ * machine has room for under `maxAgents`, or agents of a guild the operator cannot see on it.
+ */
+export function machineFindings(
+  recipe: RecipeDocument,
+  machine: MachineWithAgents,
+  rules: { maxAgents: number; private: boolean },
+): RecipeFinding[] {
+  const findings: RecipeFinding[] = [];
+  if (!machineAllowsCoding(machine.box)) {
+    for (const role of recipe.roles.filter((item) => item.config.coding === true)) {
+      findings.push({
+        code: "machine.coding",
+        severity: "error",
+        path: `roles.${role.role}.config.coding`,
+        message: `${role.role} codes and needs a code or custom machine; ${machine.name} is standard. Create or resize one in Settings, Machines.`,
+      });
+    }
+  }
+  const room = Math.max(0, rules.maxAgents - machine.agents.length);
+  if (recipe.roles.length > room) {
+    findings.push({
+      code: "machine.full",
+      severity: "error",
+      path: "machine_id",
+      message: `${machine.name} has room for ${room} more agents`,
+    });
+  }
+  if (rules.private) {
+    findings.push({
+      code: "machine.private",
+      severity: "error",
+      path: "machine_id",
+      message: `${machine.name} hosts agents of a guild you cannot see; choose another machine`,
+    });
+  }
+  return findings;
+}
 
 function mapApply(row: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -311,6 +394,9 @@ export class RecipeApplyService {
         return offered ? [{ server: connection.server, from: "registry", ...offered }] : [];
       });
     const setups = await this.setupsNeeded(String(org.id), prepared);
+    const placement = await this.planMachine(String(org.id), prepared, choices.machine_id, user);
+    findings.push(...placement.findings);
+    errors.push(...applyBlockingErrors(placement.findings));
     return {
       recipe_id: recipeRow.id,
       recipe_name: prepared.meta.name,
@@ -318,6 +404,9 @@ export class RecipeApplyService {
       guild_id: destGuild ? destGuild.id : null,
       names: [...names.entries()].map(([role, name]) => ({ role, name })),
       models,
+      machines: placement.machines,
+      machine_id: placement.machineId,
+      adds_mib: placement.addsMib,
       collisions,
       connections,
       installs,
@@ -334,6 +423,42 @@ export class RecipeApplyService {
       },
       creates: inventoryFromRecipe(prepared, names, connections, secrets, collections, guildName),
     };
+  }
+
+  /**
+   * The machine the roles go on: the one chosen, else the organisation's only one. No machine
+   * chosen among several, or the findings of `machineFindings` on the one chosen, block the apply.
+   */
+  private async planMachine(
+    orgId: string,
+    recipe: RecipeDocument,
+    chosen: string | undefined,
+    user: Record<string, unknown> | undefined,
+  ): Promise<{ machines: MachineChoice[]; machineId: string | null; addsMib: number; findings: RecipeFinding[] }> {
+    const rows = await this.deps.repo.listMachines(orgId);
+    const machines = rows.map(machineChoice);
+    const addsMib = rolesPlannedMib(recipe);
+    const machineId = chosen ?? (rows.length === 1 ? rows[0]!.id : null);
+    if (machineId === null) {
+      const finding: RecipeFinding = {
+        code: "machine.required",
+        severity: "error",
+        path: "machine_id",
+        message: "choose the machine the roles go on",
+      };
+      return { machines, machineId, addsMib, findings: [finding] };
+    }
+    const machine = rows.find((item) => item.id === machineId);
+    if (!machine) {
+      throw new RecipeError("machine not found", 404);
+    }
+    const { limits } = await this.policy.standing(orgId);
+    const visible = user ? await visibleGuildIds(this.deps.repo, orgId, String(user.id)) : null;
+    const findings = machineFindings(recipe, machine, {
+      maxAgents: Math.min(limits.maxAgentsPerMachine ?? MAX_AGENTS_PER_MACHINE, MAX_AGENTS_PER_MACHINE),
+      private: visible !== null && !hostsOnlyVisible(machine, visible),
+    });
+    return { machines, machineId, addsMib, findings };
   }
 
   async createSkeleton(
@@ -364,6 +489,14 @@ export class RecipeApplyService {
     }
     const ctx = await this.validationContext(String(org.id));
     const recipe = prepareRecipeForApply(parseRecipe(recipeRow.body), ctx.publishedServers, roleModelMap(roleModels));
+    const machineId = String(preview.machine_id);
+    const maxAgentsPerMachine = await assertCanPlaceAgents(
+      this.policy,
+      this.deps.repo,
+      String(org.id),
+      machineId,
+      recipe.roles.length,
+    );
     if (!choices.guild_id) {
       await assertCanCreateGuild(this.policy, this.deps.repo, String(org.id));
     }
@@ -446,6 +579,8 @@ export class RecipeApplyService {
           avatarColor: role.avatar_color,
           artifacts: this.deps.artifacts,
           actor,
+          machineId,
+          maxAgentsPerMachine,
         });
         createdAgents.push(agentId);
         roleToAgent.set(role.role, agentId);
@@ -1420,18 +1555,14 @@ function roleModelMap(models: RoleModel[]): Map<string, string> {
 
 /**
  * The agent config a role applies as: the role's, with the model the operator chose (else the
- * recipe's recommendation), the browser and coding flags settled, and the box the flags call
- * for: code with coding on, standard with the browser alone, lite with neither. A recipe carries
- * no box or custom size of its own.
+ * recipe's recommendation), and the browser and coding flags settled. The machine the agent goes
+ * on is the apply's.
  */
 export function configFromRecipeRole(role: RecipeRole, model?: string): Record<string, unknown> {
   const roleConfig = { ...role.config };
-  delete roleConfig.box;
-  delete roleConfig.cpu;
-  delete roleConfig.memory_mib;
   const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
   const chosen = model ?? recommended;
-  return addMissingBox(
+  return addMissingFlags(
     addMissingCliScriptingAndMemory(
       addMissingThinkingLevel(
         addMissingBrowserLanguage(

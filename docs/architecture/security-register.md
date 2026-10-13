@@ -8,6 +8,9 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-26 | A member could place an agent beside a private guild's agents | Fixed 2026-10-13 |
+| SEC-25 | The machine list named the agents and guilds of private guilds | Fixed 2026-10-13 |
+| SEC-24 | Agents on one machine can read each other's homes, tokens, and sessions | Open, accepted |
 | SEC-23 | A runtime connector may declare an instance key of its own | Fixed 2026-10-10 |
 | SEC-22 | The GitHub App manifest callback takes a creation code from the browser | Fixed 2026-10-10 |
 | SEC-21 | Platform keys are written through the API | Fixed 2026-10-10 |
@@ -31,6 +34,108 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-26 — A member could place an agent beside a private guild's agents
+
+**Status:** fixed 2026-10-13, before machines shipped.
+
+**Found:** 2026-10-13, reviewing machines.
+
+**Where:** `PUT /api/agents/:id/machine`, agent create,
+`PUT /api/agents/:id/config` with `machine_id`, and a recipe apply
+(`apps/orchestrator/src/http/`, `apps/orchestrator/src/recipes/apply.ts`;
+the rule is in `apps/orchestrator/src/machines/access.ts`).
+
+**Exposure:** any member who sees a guild can place its agents. The
+target machine could host agents of a private guild that member
+cannot see. Agents on one machine reach each other (SEC-24). The
+member's agent then had same-user access to those agents':
+
+- homes
+- git tokens
+- Chrome cookies and logins
+- Chrome DevTools ports
+
+**Fix:** a placement is refused with 403 when the target machine
+hosts an agent of a guild the caller cannot see. The refusal covers
+agent create, a `machine_id` in the agent configuration, a move,
+and a recipe apply (the blocking finding `machine.private`).
+
+**Residual risk:** owners and admins see every guild, so they can
+still place agents of different guilds on one machine (SEC-24).
+
+## SEC-25 — The machine list named the agents and guilds of private guilds
+
+**Status:** fixed 2026-10-13, before machines shipped.
+
+**Found:** 2026-10-13, reviewing machines.
+
+**Where:** `GET /api/orgs/:id/machines`
+(`apps/orchestrator/src/http/machine-routes.ts`).
+
+**Exposure:** every member of the organisation could list its
+machines. Each machine listed its agents with their names and their
+guilds' names, private guilds included.
+
+**Fix:** the list leaves out every agent of a guild the caller
+cannot see and gives their number as `hidden_agents`. They still
+count toward the machine's slots and planned memory.
+
+**Residual risk:** a member learns that a machine holds agents they
+cannot see, and how many.
+
+## SEC-24 — Agents on one machine can read each other's homes, tokens, and sessions
+
+**Status:** open, by design since 2026-10-13; accepted. A machine
+is one trust boundary inside an organisation.
+
+**Found:** 2026-10-13, building machines.
+
+**Where:** one container per machine (`RunSandboxes.ensure`,
+`apps/orchestrator/src/sandbox/index.ts`), with every agent's home
+at `/home/<agent id>` and its runtime files, git tokens among them,
+at `/run/guilds/<agent id>/`
+([Machines](../concepts/guilds-and-agents.md#machines)).
+
+**Exposure:** every agent placed on a machine runs its commands as
+root (SEC-6) in that machine's one container. That covers `shell`,
+scripts, the code helper, the CLI tab, and whatever a package
+install starts (SEC-4). Any of these processes can:
+
+- read and change every other agent's home on the machine
+  (repositories, scripts, files, `.gitconfig`)
+- read every other agent's git tokens (SEC-10)
+- read every other agent's Chrome profile, with its cookies and
+  logins
+- attach to every other agent's Chrome DevTools port
+- end every other agent's processes
+- read the environment of a command another agent runs at the same
+  moment, which carries that agent's granted secrets
+- set `GUILDS_AGENT_HOME` to another agent's home.
+  `runtime/guilds-git-credential` and `runtime/guilds-code` then
+  pick that agent's git token. Reading the token file directly
+  allows the same.
+
+Agents of different guilds share a machine when the operator places
+them there. A guild is not a boundary on a machine. A steered agent
+(SEC-8) has the same reach.
+
+**Control in place:** a machine never spans organisations: its
+container and its host directory are its organisation's alone.
+Secrets are never in the container's environment. They reach a
+command only through that command's environment, so another agent
+sees them only while such a command runs. The CLI tab's shell
+carries no secret values. Owners and admins create the machines,
+and whoever places an agent picks its machine: an agent whose data
+must stay apart goes on a machine of its own. A placement onto a
+machine that hosts an agent of a guild the caller cannot see is
+refused (SEC-26). Where an agent is placed, the operator app says
+that agents on one machine can read each other's files and
+sessions.
+
+**Residual risk:** agents on one machine trust each other.
+Isolating them takes a container, or a separate user and process
+namespace, per agent.
 
 ## SEC-23 — A runtime connector may declare an instance key of its own
 
@@ -468,12 +573,16 @@ the attempt is dropped.
 
 **Found:** 2026-09-30, building the GitHub connection.
 
-**Where:** `/run/guilds/git-tokens.json`, `guilds-git-credential`,
-and `GH_TOKEN` in `shell` commands.
+**Where:** `/run/guilds/<agent id>/git-tokens.json`,
+`guilds-git-credential`, and `GH_TOKEN` in `shell` commands.
 
 **Exposure:** git and `gh` need the installation token inside the
 sandbox. Any process there can read it, including third-party
 code a package install runs (SEC-4) and a steered agent (SEC-8).
+Since 2026-10-13 agents share machines (SEC-24): the tokens of
+every coding agent on a machine are readable by any process on it,
+whichever agent started it, so one agent can push to the
+repositories of another agent's guild.
 
 **Control in place:** each token lives one hour. It reaches only
 the guild's repositories that use its connection, with contents
@@ -481,10 +590,12 @@ and pull requests write. It is kept off the workspace disk,
 replaced before it expires, and redacted from tool results.
 
 **Fix to make:** a control-plane git proxy that holds the
-credential and checks the branch. Until then a process can push
-to any unprotected branch of those repositories for that hour.
-Protecting the default branch is the operator's control on
-GitHub.
+credential and checks the branch and the agent. It has priority
+since machines are shared. Until then a process can push to any
+unprotected branch of the repositories of every coding agent on
+its machine for that token's hour. Protecting the default branch
+is the operator's control on GitHub. Placing coding agents of
+different guilds on separate machines keeps their tokens apart.
 
 ## SEC-9 — Graft's hosted features can send repository history to its vendor
 
@@ -493,7 +604,7 @@ GitHub.
 **Found:** 2026-09-30, building code search.
 
 **Where:** the Graft CLI in `agent-runtime` and the Graft-backed
-tools in `runtime/cigale-code`.
+tools in `runtime/guilds-code`.
 
 **Exposure:** Graft has model-written and hosted features
 (`build --deep`, `trail`, `viz`, `init`, `mcp`) that send code or
@@ -516,7 +627,7 @@ out of results.
 **Found:** 2026-09-30, building coding agents.
 
 **Where:** the `shell` tool
-(`apps/orchestrator/src/toolbox/code.ts`, `runtime/cigale-code`)
+(`apps/orchestrator/src/toolbox/code.ts`, `runtime/guilds-code`)
 and the `coding` block of `system.md`.
 
 **Exposure:** a coding agent reads repository files, issue text,
@@ -533,8 +644,9 @@ sets code conventions only. Secrets reach an agent only by grant.
 **Residual risk:** a steered agent can do anything its sandbox
 and its granted secrets allow, including pushing to its guild's
 repositories' unprotected branches and opening pull requests with
-its installation token (SEC-10); the token cannot reach other
-guilds' repositories.
+its installation token (SEC-10). Its own token cannot reach other
+guilds' repositories; the tokens of other agents on its machine
+can (SEC-24).
 
 ## SEC-7 — A coding agent's workspace can fill the shared disk
 
@@ -543,22 +655,28 @@ guilds' repositories.
 **Found:** 2026-09-30, building coding agents.
 
 **Where:** the workspace check in `GenerationLoop` and
-`workspace_size` in `runtime/cigale-code`.
+`workspace_size` in `runtime/guilds-code`.
 
 **Exposure:** a coding agent installs packages, builds, and
-clones into `/home/agent`. That folder is on the sandbox host's
-disk. Every agent on that host shares it.
+clones into its home, `/home/<agent id>`. That folder is in its
+machine's directory on the sandbox host's disk. Every agent on
+that host shares the disk. Since 2026-10-13 agents share machines
+(SEC-24): one agent can fill its machine's directory up to the
+machine's cap, and then every agent on the machine fails to start
+a generation until space is freed.
 
 **Control in place:** after each generation the orchestrator
-measures the workspace with `du` inside the sandbox and stores it
-on the agent. Above the agent's `max_workspace_mib` (default
-10240), and never above the host `WORKSPACE_MAX_MIB` (default
-10240), the next generation fails at start with `workspace.full`.
-The Usage tab shows used against the agent's max.
+measures the agent's home and its machine's directory with `du`
+inside the sandbox and stores both. Above the agent's
+`max_workspace_mib` (default 10240), and never above the host
+`WORKSPACE_MAX_MIB` (default 10240), or with the machine above its
+own `max_workspace_mib` (default 10240), the next generation fails
+at start with `workspace.full`. The Usage tab shows the agent's
+home against its cap and the machine against the machine's cap.
 
 **Residual risk:** one generation can write past the cap before
-the check, and a background command can keep writing until the
-idle stop.
+the check, and a background command can keep writing until its
+machine's idle stop.
 
 ## SEC-6 — Coding agents run commands as root in the container
 
@@ -569,7 +687,8 @@ idle stop.
 **Where:** the `shell` tool. Scripts and the CLI tab run as root
 too.
 
-**Exposure:** commands run as root inside the agent's container.
+**Exposure:** commands run as root inside the agent's machine's
+container, which other agents of the organisation share (SEC-24).
 A container escape would start from root.
 
 **Control in place:** OpenSandbox drops capabilities
@@ -588,14 +707,14 @@ A container escape would start from root.
 leaves running.
 
 **Exposure:** a background command keeps running between tool
-calls until the sandbox's idle stop. That is the process SEC-3
+calls until its machine's idle stop. That is the process SEC-3
 needs. It can swap a checked folder for a link while a tool that
 opens workspace paths in the orchestrator (Drive, Qonto,
 `secret_store`) runs.
 
 **Control in place:** the code tools never open a workspace path
 in the orchestrator. They run inside the container through
-`cigale-code`, where a link resolves inside the container.
+`guilds-code`, where a link resolves inside the container.
 Background commands end with the idle stop.
 
 **Fix to make:** SEC-3's fix closes this.
@@ -610,14 +729,20 @@ Background commands end with the idle stop.
 install`, `mise install`, build scripts, and test suites run
 third-party code.
 
-**Exposure:** that code runs in the agent's container with the
-agent's secrets in its environment. Egress is open.
+**Exposure:** that code runs in the agent's machine's container
+with the agent's secrets in its environment. Egress is open.
+Since 2026-10-13 agents share machines (SEC-24): the code runs
+beside every other agent's data on the machine. It can read their
+homes, Chrome sessions, and git tokens, and push to another
+guild's repositories for that token's hour (SEC-10). The
+control-plane git proxy SEC-10 calls for gains priority.
 
 **Control in place:** secrets reach an agent only by grant. A
 coding agent gets the ones its operator granted it.
 
-**Residual risk:** anything granted can be read and sent.
-Default-deny egress is not built.
+**Residual risk:** anything granted, to this agent or to another
+agent on its machine, can be read and sent. Default-deny egress is
+not built.
 
 ## SEC-3 — Check-then-open race on agent workspace paths
 

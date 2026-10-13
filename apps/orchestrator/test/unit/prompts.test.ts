@@ -346,7 +346,7 @@ test("state intro omits note and script lines when those capabilities are off", 
   assert.ok(off.includes("initial record_list"));
   assert.ok(!off.includes("note_find"));
   assert.ok(!off.includes("script_list"));
-  assert.ok(!off.includes("/home/agent/scripts"));
+  assert.ok(!off.includes("scripts/<name>.py"));
   const on = stateIntroForCapabilities({
     scripts: true,
     notes: true,

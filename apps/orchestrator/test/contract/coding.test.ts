@@ -2,70 +2,164 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { RunSandboxes } from "../../src/sandbox/index.js";
+import { agentHome } from "../../src/lib/agent-file.js";
+import { slotPorts } from "../../src/machines/index.js";
+import {
+  RunSandboxes,
+  agentSandbox,
+  applyRunScripts,
+  prepareWorkspace,
+  seatEnvironment,
+  type AgentSeat,
+  type MachineSpec,
+  type SandboxHandle,
+} from "../../src/sandbox/index.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { gated, run, startOpenSandboxServer, stdoutOf } from "../helpers/opensandbox-server.js";
 
-const IMAGE = process.env.CONTRACT_RUNTIME_IMAGE ?? "agent-runtime:0.3";
-const IMAGE_LITE = process.env.CONTRACT_RUNTIME_IMAGE_LITE ?? "agent-runtime-lite:0.1";
+const IMAGE = process.env.CONTRACT_RUNTIME_IMAGE ?? "agent-runtime:0.4";
 const imageMissing =
   gated || (run("docker", ["image", "inspect", IMAGE], false).status !== 0 ? `build ${IMAGE} first (make runtime-image)` : false);
-const liteImageMissing =
-  gated ||
-  (run("docker", ["image", "inspect", IMAGE_LITE], false).status !== 0
-    ? `build ${IMAGE_LITE} first (make runtime-lite-image)`
-    : false);
 
-test("a lite agent runs its scripts and its terminal in the lite image, which has no toolchain", { skip: liteImageMissing }, async () => {
+const MACHINE: MachineSpec = { id: "mach_contract", orgId: "org_contract", box: "code", cpu: 2, memoryMib: 4096 };
+
+function seat(agentId: string, slot: number): AgentSeat {
+  return { agentId, machineId: MACHINE.id, slot, browserLanguage: "en-US" };
+}
+
+/** The machine's sandbox as one agent's commands see it, with these secrets. */
+function view(sandbox: SandboxHandle, agent: AgentSeat, secrets: Record<string, string>): SandboxHandle {
+  return agentSandbox(sandbox, agentHome(agent.agentId), { ...secrets, ...seatEnvironment(agent) });
+}
+
+test("two agents share one machine: each runs in its own home, with its own secrets and terminal", { skip: imageMissing }, async () => {
   process.env.SECRETS_MASTER_KEY ??= HEX_MASTER_KEY;
   const server = await startOpenSandboxServer();
   const sandboxes = new RunSandboxes({
     url: server.url,
     apiKey: server.apiKey,
     image: IMAGE,
-    imageLite: IMAGE_LITE,
     workspaceRoot: server.workspaceRoot,
   });
   await sandboxes.start();
-  const agentId = "a_contract_lite";
+  const left = seat("a_contract_left", 0);
+  const right = seat("a_contract_right", 1);
   const script = {
     id: "scr_contract",
     name: "greet",
     description: "Greets whoever is named",
     parameters: null,
-    source: "import json, sys\nargs = json.load(sys.stdin)\nprint('hello ' + args.get('who', 'nobody'))\n",
+    source: "import json, os, sys\nargs = json.load(sys.stdin)\nprint('hello ' + args.get('who', 'nobody') + ' ' + os.getcwd())\n",
     source_hash: "contract",
   };
   try {
-    const sandbox = await sandboxes.ensure(agentId, { CONTRACT_TOKEN: "tok-contract-1234" }, [], { scripts: [script] });
-    const secrets = { CONTRACT_TOKEN: "tok-contract-1234" };
+    for (const agent of [left, right]) {
+      prepareWorkspace(server.workspaceRoot, MACHINE.id, agent.agentId);
+    }
+    const machine = await sandboxes.ensure(MACHINE);
+    const again = await sandboxes.ensure(MACHINE);
+    assert.equal(again.id, machine.id, "one container per machine");
+    const leftSecrets = { CONTRACT_TOKEN: "tok-left-1234" };
+    const leftView = view(machine, left, leftSecrets);
+    await applyRunScripts(leftView, agentHome(left.agentId), [script]);
     const ctx = createToolContext({
-      run_id: "r_contract_lite",
-      agent_id: agentId,
+      run_id: "r_contract_left",
+      agent_id: left.agentId,
       guild_id: "g_1",
-      sandbox,
-      secrets,
+      sandbox: leftView,
+      secrets: leftSecrets,
       run_scripts: [script],
     });
     const [payload] = await invokeTool(
       ctx,
-      { id: "call_1", function: { name: "script_run", arguments: JSON.stringify({ name: "greet", arguments: { who: "lite" } }) } },
-      secrets,
+      { id: "call_1", function: { name: "script_run", arguments: JSON.stringify({ name: "greet", arguments: { who: "left" } }) } },
+      leftSecrets,
       32768,
     );
-    assert.match(String(payload.content), /hello lite/);
+    assert.equal(String(payload.content).split("\n")[0], `hello left ${agentHome(left.agentId)}`);
+    const rightEnv = await view(machine, right, {}).commands.run("echo \"$HOME|$PORT|${CONTRACT_TOKEN:-none}\"", {
+      timeoutSeconds: 20,
+    });
+    assert.equal(stdoutOf(rightEnv).trim(), `${agentHome(right.agentId)}|${slotPorts(1).portsFrom}|none`);
 
-    const token = await sandboxes.startCli(sandbox);
-    assert.match(token, /^[0-9a-f]{48}$/);
-
-    const absent = await sandbox.commands.run(
-      "for tool in node chromium google-chrome gh mise graft guilds-code guilds-browser gcc; do command -v $tool >/dev/null 2>&1 && echo \"has $tool\"; done; echo done",
-      { timeoutSeconds: 20 },
-    );
-    assert.equal(stdoutOf(absent).trim(), "done");
+    const leftToken = await sandboxes.startCli(machine, left);
+    const rightToken = await sandboxes.startCli(machine, right);
+    assert.match(leftToken, /^[0-9a-f]{48}$/);
+    assert.notEqual(leftToken, rightToken, "each agent has its own terminal");
+    await sandboxes.stopAgent(machine, left, { purge: true });
+    const gone = await machine.commands.run(`test -e /run/guilds/${left.agentId} && echo there || echo gone`, {
+      timeoutSeconds: 10,
+    });
+    assert.equal(stdoutOf(gone).trim(), "gone");
   } finally {
-    await sandboxes.destroy(agentId).catch(() => undefined);
+    await sandboxes.destroy(MACHINE.id).catch(() => undefined);
+    await sandboxes.close();
+    await server.stop();
+  }
+});
+
+test("two agents on one machine each run their own Chrome, on their own ports and profile", { skip: imageMissing }, async () => {
+  process.env.SECRETS_MASTER_KEY ??= HEX_MASTER_KEY;
+  const server = await startOpenSandboxServer();
+  const sandboxes = new RunSandboxes({
+    url: server.url,
+    apiKey: server.apiKey,
+    image: IMAGE,
+    workspaceRoot: server.workspaceRoot,
+  });
+  await sandboxes.start();
+  const left = seat("a_contract_left", 0);
+  const right = { ...seat("a_contract_right", 1), browserLanguage: "fr-FR" };
+  try {
+    for (const agent of [left, right]) {
+      prepareWorkspace(server.workspaceRoot, MACHINE.id, agent.agentId, { browser: true });
+    }
+    const machine = await sandboxes.ensure(MACHINE);
+    await sandboxes.startBrowser(machine, left);
+    await sandboxes.startBrowser(machine, right);
+    for (const [agent, page] of [
+      [left, "data:text/html,<title>left</title>"],
+      [right, "data:text/html,<title>right</title>"],
+    ] as const) {
+      const ctx = createToolContext({
+        run_id: "r_contract_browser",
+        agent_id: agent.agentId,
+        guild_id: "g_1",
+        sandbox: view(machine, agent, {}),
+        secrets: {},
+        cdp_port: slotPorts(agent.slot).cdp,
+      });
+      const [payload] = await invokeTool(
+        ctx,
+        { id: "call_1", function: { name: "browser_navigate", arguments: JSON.stringify({ url: page }) } },
+        {},
+        32768,
+      );
+      assert.doesNotMatch(String(payload.content), /error/i, String(payload.content));
+    }
+    const titles = async (agent: AgentSeat) =>
+      stdoutOf(await machine.commands.run(`curl -sf http://127.0.0.1:${slotPorts(agent.slot).cdp}/json/list`, { timeoutSeconds: 10 }));
+    assert.match(await titles(left), /"title": "left"/);
+    assert.doesNotMatch(await titles(left), /"title": "right"/);
+    assert.match(await titles(right), /"title": "right"/);
+    const profiles = await machine.commands.run(`ls -d /home/${left.agentId}/.browser/Default /home/${right.agentId}/.browser/Default`, {
+      timeoutSeconds: 10,
+    });
+    assert.equal(stdoutOf(profiles).trim().split("\n").length, 2, "each agent keeps its own profile in its home");
+
+    // One agent's Chrome stops; the other's keeps answering.
+    await sandboxes.stopBrowser(machine, left);
+    const ports = await machine.commands.run(
+      `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${slotPorts(left.slot).cdp}/json/version; echo; ` +
+        `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${slotPorts(right.slot).cdp}/json/version`,
+      { timeoutSeconds: 10 },
+    );
+    assert.deepEqual(stdoutOf(ports).trim().split("\n"), ["000", "200"]);
+    // A second start on a live browser is a no-op that answers at once.
+    await sandboxes.startBrowser(machine, right);
+  } finally {
+    await sandboxes.destroy(MACHINE.id).catch(() => undefined);
     await sandboxes.close();
     await server.stop();
   }
@@ -82,9 +176,13 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
   });
   await sandboxes.start();
   const agentId = "a_contract_coder";
+  const coder = seat(agentId, 0);
+  const home = agentHome(agentId);
   try {
-    const sandbox = await sandboxes.ensure(agentId, { CONTRACT_TOKEN: "tok-contract-1234" }, [], { coding: true });
+    prepareWorkspace(server.workspaceRoot, MACHINE.id, agentId);
+    const machine = await sandboxes.ensure(MACHINE);
     const secrets = { CONTRACT_TOKEN: "tok-contract-1234" };
+    const sandbox = view(machine, coder, secrets);
     const ctx = createToolContext({ run_id: "r_contract", agent_id: agentId, guild_id: "g_1", sandbox, secrets });
     let count = 0;
     const call = async (name: string, args: Record<string, unknown>) => {
@@ -98,20 +196,21 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
       return { text: String(payload.content), metadata };
     };
 
-    const home = await call("shell", { command: "echo $HOME; node --version; echo $CONTRACT_TOKEN; mkdir -p repos/demo && cd repos/demo" });
-    assert.match(home.text, /^\/home\/agent\nv24\.\d+\.\d+\n\[REDACTED:CONTRACT_TOKEN\]$/);
-    assert.equal(home.metadata.cwd, "/home/agent/repos/demo");
+    const shellHome = await call("shell", { command: "echo $HOME; node --version; echo $CONTRACT_TOKEN; mkdir -p repos/demo && cd repos/demo" });
+    assert.equal(shellHome.text.split("\n")[0], home);
+    assert.match(shellHome.text, /\nv24\.\d+\.\d+\n\[REDACTED:CONTRACT_TOKEN\]$/);
+    assert.equal(shellHome.metadata.cwd, `${home}/repos/demo`);
 
     const long = await call("shell", { command: "seq 1 20000" });
     assert.ok(Buffer.byteLength(long.text) <= 8192);
     assert.match(long.text, /^1\n2\n/);
     assert.match(long.text, /\n20000$/);
-    assert.equal(long.metadata.log_path, "/home/agent/.runs/r_contract/call_2.log");
+    assert.equal(long.metadata.log_path, `${home}/.runs/r_contract/call_2.log`);
 
     const content = `${"x".repeat(150 * 1024)}\n`;
     const wrote = await call("file_write", { path: "big.txt", content });
     assert.equal(wrote.text, "wrote big.txt (1 lines)");
-    const onHost = path.join(server.workspaceRoot, agentId, "repos/demo/big.txt");
+    const onHost = path.join(server.workspaceRoot, MACHINE.id, agentId, "repos/demo/big.txt");
     assert.equal(readFileSync(onHost, "utf8"), content);
 
     await call("file_write", { path: "a.ts", content: "export const a = 1;\n" });
@@ -121,15 +220,15 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
     assert.equal(read.text, "a.ts · lines 1–1 of 1\n1  export const a = 2;");
 
     await call("file_write", {
-      path: "/home/agent/repos/shop/src/money.ts",
+      path: `${home}/repos/shop/src/money.ts`,
       content: "export function cents(amount: number): number {\n  return Math.round(amount * 100);\n}\n",
     });
     await call("file_write", {
-      path: "/home/agent/repos/shop/src/refund.ts",
+      path: `${home}/repos/shop/src/refund.ts`,
       content:
         "import { cents } from \"./money\";\n\n// validate the refund amount\nexport function validateRefund(amount: number): number {\n  if (amount <= 0) throw new Error(\"refund must be positive\");\n  return cents(amount);\n}\n",
     });
-    await call("shell", { command: "cd /home/agent/repos/shop && git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init" });
+    await call("shell", { command: `cd ${home}/repos/shop && git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init` });
 
     const map = await call("code_map", { repo: "shop" });
     assert.match(map.text, /^shop \(\.\): 2 files · 2 symbols · \d+ edges · typescript\n/);
@@ -163,7 +262,7 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
     // git asks the credential helper for the repository's own token; gh gets it as GH_TOKEN.
     await sandbox.files!.writeFiles([
       {
-        path: "/run/guilds/git-tokens.json",
+        path: `/run/guilds/${agentId}/git-tokens.json`,
         data: JSON.stringify({
           repositories: { shop: { token: "ghs_contract", expires_at: "2099-01-01T00:00:00Z", host: "github.com", path: "acme/shop" } },
         }),
@@ -194,7 +293,7 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
     const status = await call("shell_status", { id: "b1", stop: true });
     assert.match(status.text, /^b1 {2}stopped /);
   } finally {
-    await sandboxes.destroy(agentId).catch(() => undefined);
+    await sandboxes.destroy(MACHINE.id).catch(() => undefined);
     await sandboxes.close();
     await server.stop();
   }

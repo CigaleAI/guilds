@@ -11,7 +11,7 @@ import {
 } from "./folder.js";
 
 export const DRIVE_DOWNLOAD_FILE_DESCRIPTION =
-  "Download a file from the connected Drive folder into the agent workspace. Pass an optional file_path under /home/agent. The result is that path, not file bytes.";
+  "Download a file from the connected Drive folder into the agent workspace. Pass an optional file_path in your home. The result is that path, not file bytes.";
 
 export const DRIVE_DOWNLOAD_FILE_SCHEMA: Record<string, unknown> = {
   type: "object",
@@ -19,7 +19,7 @@ export const DRIVE_DOWNLOAD_FILE_SCHEMA: Record<string, unknown> = {
     fileId: { type: "string", description: "Drive file id." },
     file_path: {
       type: "string",
-      description: "Destination path under /home/agent. Defaults to the file's title in the workspace root.",
+      description: "Destination path in your home. Defaults to the file's title in the workspace root.",
     },
     exportMimeType: {
       type: "string",

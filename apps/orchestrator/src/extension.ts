@@ -16,6 +16,8 @@ import type { OrgPolicy } from "./policy/index.js";
 export type SandboxProvider = GenerationSandboxes & {
   start(): Promise<void>;
   close(): Promise<void>;
+  /** Destroys every sandbox that runs one agent alone, labelled with `agent_id`; returns how many. */
+  destroyAgentSandboxes?(): Promise<number>;
 };
 
 /** What an edition adds on top of core (docs/architecture/extension-points.md). Core runs with none. */

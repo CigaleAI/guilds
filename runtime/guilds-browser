@@ -11,10 +11,11 @@ from typing import Any
 
 from playwright.async_api import async_playwright
 
-CDP = "http://127.0.0.1:9222"
 VIEWPORT = {"width": 1280, "height": 720}
-SCREENSHOT = Path("/home/agent/screenshots/latest.jpg")
-LOCALE_CACHE = Path(os.environ.get("GUILDS_LOCALE_CACHE", "/tmp/guilds-locale.json"))
+# The agent's home and runtime files; each agent on a machine has its own Chrome on its own port.
+HOME = Path(os.environ["GUILDS_AGENT_HOME"]) if os.environ.get("GUILDS_AGENT_HOME") else Path.home()
+SCREENSHOT = HOME / "screenshots" / "latest.jpg"
+LOCALE_CACHE = Path(os.environ.get("GUILDS_LOCALE_CACHE") or f"/run/guilds/{HOME.name}/locale.json")
 TIMEOUT_MS = 15_000
 
 
@@ -226,9 +227,9 @@ async def _apply_locale(page) -> None:
         pass
 
 
-async def _page():
+async def _page(cdp_port: int):
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.connect_over_cdp(CDP)
+    browser = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
     if not browser.contexts:
         raise RuntimeError("Chromium has no browser context")
     context = browser.contexts[0]
@@ -241,9 +242,16 @@ async def _page():
     return playwright, page
 
 
+def _cdp_port(spec: dict[str, Any]) -> int:
+    port = spec.get("cdp_port")
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        raise RuntimeError("the request names no cdp_port")
+    return port
+
+
 async def _run(spec: dict[str, Any]) -> str:
     op = spec.get("op")
-    playwright, page = await _page()
+    playwright, page = await _page(_cdp_port(spec))
     try:
         if op == "navigate":
             url = spec["url"]

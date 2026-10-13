@@ -30,6 +30,7 @@ export type AgentDatabase = {
     task?: string,
     taskHash?: string,
     actor?: ArtifactActor,
+    placement?: { machineId?: string | null; maxAgentsPerMachine?: number | null },
   ): Promise<void>;
   deleteAgent(agentId: string): Promise<void>;
 };
@@ -53,6 +54,10 @@ export async function persistAgent(
     orgId?: string;
     artifacts?: ArtifactStore | null;
     actor?: ArtifactActor | null;
+    /** The machine the agent goes on; the organisation's only one when absent. */
+    machineId?: string | null;
+    /** The policy's cap on agents per machine; core's ceiling alone when absent. */
+    maxAgentsPerMachine?: number | null;
   },
 ): Promise<void> {
   const task = resolveTaskContent(args.task ?? args.focus ?? "", args.artifacts?.templatesRoot ?? "");
@@ -80,6 +85,7 @@ export async function persistAgent(
     task,
     taskHash,
     actor ?? undefined,
+    { machineId: args.machineId ?? null, maxAgentsPerMachine: args.maxAgentsPerMachine ?? null },
   );
   try {
     if (args.artifacts && actor) {

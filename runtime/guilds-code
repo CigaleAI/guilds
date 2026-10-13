@@ -28,12 +28,14 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-HOME = Path(os.environ.get("GUILDS_AGENT_HOME", "/home/agent"))
+HOME = Path(os.environ["GUILDS_AGENT_HOME"]) if os.environ.get("GUILDS_AGENT_HOME") else Path.home()
 RUN_DIR = Path(os.environ.get("GUILDS_RUN_DIR", "/run/guilds"))
+# The agent's runtime files on its machine, outside every home: tokens and background processes.
+AGENT_RUN = RUN_DIR / HOME.name
 RUNS = HOME / ".runs"
 REPOS = HOME / "repos"
 GRAPHS = HOME / ".cache" / "graft"
-BACKGROUND = RUN_DIR / "background"
+BACKGROUND = AGENT_RUN / "background"
 KEEP_RUNS = 20
 DEFAULT_MAX_BYTES = 8192
 SHELL_HEAD_BYTES = 2048
@@ -292,7 +294,6 @@ def _die_with_parent() -> None:
 
 def _child_env(spec: dict[str, Any], cwd: Path) -> dict[str, str]:
     env = dict(os.environ)
-    env.pop("GUILDS_AGENT_HOME", None)
     env.pop("GUILDS_RUN_DIR", None)
     env.update(CHILD_ENV)
     for key, name in (("run_id", "GUILD_RUN_ID"), ("agent_id", "GUILD_AGENT_ID")):
@@ -308,7 +309,7 @@ def _child_env(spec: dict[str, Any], cwd: Path) -> dict[str, str]:
 def _repository_token(cwd: Path) -> str:
     """The token of the guild repository that holds `cwd`, for `gh`."""
     try:
-        tokens = json.loads((RUN_DIR / "git-tokens.json").read_text(encoding="utf-8"))
+        tokens = json.loads((AGENT_RUN / "git-tokens.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return ""
     repos = tokens.get("repositories") if isinstance(tokens, dict) else None
@@ -979,7 +980,7 @@ def _repo_holding(path: Path) -> tuple[str, Path] | None:
 
 def _repository(spec: dict[str, Any], name: Any = None, path: Path | None = None) -> tuple[str, Path]:
     """The repository a graph call works on: named, holding `path`, holding the working
-    directory, or the only one under /home/agent/repos."""
+    directory, or the only one under the agent's repos/."""
     if isinstance(name, str) and name:
         root = REPOS / name
         if not re.fullmatch(r"[A-Za-z0-9._-]+", name) or not root.is_dir():
@@ -1006,7 +1007,6 @@ def _no_repository(lead: str) -> str:
 def _graft_env() -> dict[str, str]:
     env = dict(os.environ)
     env.update({"DO_NOT_TRACK": "1", "GRAFT_NO_GITIGNORE": "1", "GRAFT_NO_IGNORE": "1"})
-    env.pop("GUILDS_AGENT_HOME", None)
     env.pop("GUILDS_RUN_DIR", None)
     return env
 
@@ -1237,7 +1237,6 @@ CHECKPOINT_IDENTITY = {
 def _git_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env = dict(os.environ)
     env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_PAGER": "cat"})
-    env.pop("GUILDS_AGENT_HOME", None)
     env.pop("GUILDS_RUN_DIR", None)
     env.update(extra or {})
     return env
@@ -1273,7 +1272,7 @@ def _url_key(url: str) -> str:
 
 def op_git_setup(spec: dict[str, Any]) -> dict[str, Any]:
     """Writes the agent's git identity and clones each guild repository missing from
-    /home/agent/repos. A clone already there whose `origin` names another repository on the
+    the agent's repos/. A clone already there whose `origin` names another repository on the
     same host, as after a rename, is pointed at the URL the guild has now. The orchestrator
     never runs git itself."""
     identity = spec.get("identity") or {}
@@ -1371,7 +1370,7 @@ def _snapshot(root: Path, message: str) -> str:
 
 def op_checkpoint(spec: dict[str, Any]) -> dict[str, Any]:
     """Records refs/guild/runs/<run id>/start (once) or /end (each time) in every working
-    tree under /home/agent/repos, and at the end the change since the start."""
+    tree under the agent's repos/, and at the end the change since the start."""
     run_id = _safe_segment(spec.get("run_id"), "run_id")
     which = spec.get("which")
     if which not in ("start", "end"):
@@ -1442,9 +1441,9 @@ def op_diff(spec: dict[str, Any]) -> dict[str, Any]:
 # --- workspace --------------------------------------------------------------
 
 
-def op_workspace_size(_spec: dict[str, Any]) -> dict[str, Any]:
+def _size(path: Path) -> dict[str, Any]:
     completed = subprocess.run(
-        ["du", "-sk", str(HOME)], capture_output=True, text=True, check=False, timeout=120
+        ["du", "-sk", str(path)], capture_output=True, text=True, check=False, timeout=120
     )
     try:
         kib = int(completed.stdout.split()[0])
@@ -1452,6 +1451,16 @@ def op_workspace_size(_spec: dict[str, Any]) -> dict[str, Any]:
         raise ToolError(f"du failed: {completed.stderr.strip()}") from exc
     mib = (kib + 1023) // 1024
     return {"text": f"{mib} MiB", "meta": {"mib": mib}}
+
+
+def op_workspace_size(_spec: dict[str, Any]) -> dict[str, Any]:
+    """The agent's home."""
+    return _size(HOME)
+
+
+def op_machine_size(_spec: dict[str, Any]) -> dict[str, Any]:
+    """The machine's directory: every agent home on it."""
+    return _size(HOME.parent)
 
 
 OPS = {
@@ -1470,6 +1479,7 @@ OPS = {
     "checkpoint": op_checkpoint,
     "diff": op_diff,
     "workspace_size": op_workspace_size,
+    "machine_size": op_machine_size,
 }
 
 

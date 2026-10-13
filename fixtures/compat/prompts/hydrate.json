@@ -1,5 +1,5 @@
 {
-  "identity": "# Guidelines\n\nBe brief.\n\nYou are researcher. Your id is a_1.\n",
+  "identity": "# Guidelines\n\nBe brief.\n\nYou are researcher. Your id is a_1. Your home is /home/a_1.\n",
   "wikilink_system": "See [[orgs/acme/guilds/research/shared/hello-guild]] in guidelines.\n",
   "wikilink_task": "Write every sentence to [[orgs/acme/guilds/research/shared/hello-guild]].\n",
   "missing_system": "system.md not found",

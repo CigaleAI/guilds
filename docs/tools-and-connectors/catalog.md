@@ -62,9 +62,11 @@ its `coding` flag is false. The script tools are omitted when its
 The six schedule tools are further limited to direct and group-chat
 runs. `secret_request` is limited to direct runs.
 
-Each browser call runs `/usr/local/bin/guilds-browser` in the
-sandbox. It attaches Playwright to the existing Chrome at
-`http://127.0.0.1:9222` and leaves that process running.
+Each browser call starts the agent's Chrome on its machine when it
+is not running, then runs `/usr/local/bin/guilds-browser` there. It
+attaches Playwright to the agent's own Chrome at its DevTools port,
+`http://127.0.0.1:<9300 + slot>`, and leaves that process running
+([Runs](../concepts/runs.md#browser)).
 
 Status of a connector login at run start:
 

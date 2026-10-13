@@ -6,9 +6,12 @@ export type SweepArgs = {
   apply: boolean;
 };
 
+/** A folder no live machine or agent owns: a machine's directory, or an agent's home in one. */
 export type SweepEntry = {
   path: string;
-  agentId: string;
+  machineId: string;
+  /** The agent whose home this is; null for a whole machine directory. */
+  agentId: string | null;
   ageDays: number;
 };
 
@@ -26,7 +29,7 @@ export function parseSweepArgs(argv: string[]): SweepArgs {
     if (arg === "--age-days") {
       const raw = argv[index + 1];
       index += 1;
-      const parsed = Number(raw);
+      const parsed = raw ? Number(raw) : Number.NaN;
       if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
         throw new Error("usage: sweep-workspaces.ts --age-days N [--apply]");
       }
@@ -41,9 +44,16 @@ export function parseSweepArgs(argv: string[]): SweepArgs {
   return { ageDays, apply };
 }
 
+/**
+ * The folders under the workspace root, laid out `<machine id>/<agent id>`, that no live machine or
+ * agent owns and that nothing changed for `ageDays`: a directory whose machine is gone, and an
+ * agent's home in a live machine's directory that the agent no longer sits on. A folder at the
+ * root named for a live agent is its home before the boot step moves it into its machine, and
+ * stays.
+ */
 export function planWorkspaceSweep(
   workspaceRoot: string,
-  liveAgentIds: Set<string>,
+  machines: Map<string, Set<string>>,
   ageDays: number,
   now = new Date(),
 ): SweepEntry[] {
@@ -51,24 +61,41 @@ export function planWorkspaceSweep(
     return [];
   }
   const cutoff = now.getTime() - ageDays * MS_PER_DAY;
+  const liveAgents = new Set([...machines.values()].flatMap((agents) => [...agents]));
   const entries: SweepEntry[] = [];
-  for (const name of readdirSync(workspaceRoot)) {
-    if (liveAgentIds.has(name)) {
-      continue;
-    }
-    const full = path.join(workspaceRoot, name);
+  const stale = (full: string): number | null => {
     const stat = statSync(full);
-    if (!stat.isDirectory()) {
+    if (!stat.isDirectory() || stat.mtimeMs > cutoff) {
+      return null;
+    }
+    return Math.floor((now.getTime() - stat.mtimeMs) / MS_PER_DAY);
+  };
+  for (const machineId of readdirSync(workspaceRoot)) {
+    const machineDir = path.join(workspaceRoot, machineId);
+    const agents = machines.get(machineId);
+    if (agents === undefined) {
+      if (liveAgents.has(machineId)) {
+        continue;
+      }
+      const age = stale(machineDir);
+      if (age !== null) {
+        entries.push({ path: machineDir, machineId, agentId: null, ageDays: age });
+      }
       continue;
     }
-    if (stat.mtimeMs > cutoff) {
+    if (!statSync(machineDir).isDirectory()) {
       continue;
     }
-    entries.push({
-      path: full,
-      agentId: name,
-      ageDays: Math.floor((now.getTime() - stat.mtimeMs) / MS_PER_DAY),
-    });
+    for (const agentId of readdirSync(machineDir)) {
+      if (agents.has(agentId)) {
+        continue;
+      }
+      const home = path.join(machineDir, agentId);
+      const age = stale(home);
+      if (age !== null) {
+        entries.push({ path: home, machineId, agentId, ageDays: age });
+      }
+    }
   }
   return entries.sort((left, right) => (left.path < right.path ? -1 : 1));
 }

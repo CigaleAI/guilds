@@ -88,7 +88,7 @@ manifest's field names; settings as the login's stored settings.
 `ctx.remote` the pool's facade over the endpoint's session (its
 calls run inside the pool's auth retry and drop the session on
 error; on a connector with no endpoint it refuses), and
-`ctx.workspace_dir` the agent's workspace when the call comes from a
+`ctx.workspace_dir` the agent's home on the host when the call comes from a
 run. An adapter throws one `ConnectorError` with a status, which the
 pool answers as an `McpError`.
 
@@ -406,8 +406,8 @@ need an invoice:
 - default last 90 days, debit side
 
 `upload_invoice` attaches a PDF, JPEG, or PNG from the agent
-workspace (`/home/agent`, under the
-[workspace file rules](../concepts/secrets-and-access.md#agent-workspace-files)).
+home (`/home/<agent id>`, under the
+[home file rules](../concepts/secrets-and-access.md#agent-home-files)).
 Qonto processes the file in the background and the call waits up
 to 60 seconds.
 

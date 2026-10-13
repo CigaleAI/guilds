@@ -99,8 +99,8 @@ export function SecretRequestCard({
         <dd className="whitespace-pre-wrap text-fg-2">{request.reason}</dd>
       </dl>
       <p className="text-xs text-muted">
-        Written by the agent. The value becomes an environment variable in this agent's sandbox. Its
-        scripts can read and send it.
+        Written by the agent. The value reaches this agent's commands, and other agents on the same
+        machine can read it.
       </p>
 
       {state === null ? (

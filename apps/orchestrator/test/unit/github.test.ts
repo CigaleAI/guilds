@@ -409,8 +409,8 @@ test("repository tokens: one per connection, limited to its repositories, refres
     },
     moveFiles: async () => undefined,
     deleteFiles: async () => undefined,
-  });
-  assert.equal(files[0]?.path, "/run/guilds/git-tokens.json");
+  }, "a_1");
+  assert.equal(files[0]?.path, "/run/guilds/a_1/git-tokens.json");
   assert.equal((JSON.parse(files[0]!.data) as { repositories: Record<string, unknown> }).repositories.shop !== undefined, true);
   assert.deepEqual(saved, []);
 });

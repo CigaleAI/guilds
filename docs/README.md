@@ -72,7 +72,7 @@ is the one page that keeps history.
 - [Configure](getting-started/configure.md) — `.env`, platform keys,
   limits, the model catalog
 - [Remote access](getting-started/remote-access.md) — reach the box
-  from another machine
+  from another computer
 - [Operate](getting-started/operate.md) — update, back up, restore,
   logs, error messages
 
@@ -85,13 +85,13 @@ How the product works, for the operator.
 - [Model keys](concepts/model-keys.md) — providers, the welcome
   dialog, the Settings page, where keys live
 - [Guilds and agents](concepts/guilds-and-agents.md) — membership,
-  configuration, deletion
+  machines, configuration, deletion
 - [Prompts and memory](concepts/prompts-and-memory.md) — the system
   prompt, the Task, memory
 - [Notes and collections](concepts/notes-and-collections.md) — notes,
   tables, records, grants
 - [Runs](concepts/runs.md) — direct, group, and schedule runs;
-  sandboxes
+  the machine an agent runs on
 - [Group chat](concepts/group-chat.md) — tags, recipients, posting
 - [Secrets and access](concepts/secrets-and-access.md) — secrets,
   grants, what reaches a sandbox

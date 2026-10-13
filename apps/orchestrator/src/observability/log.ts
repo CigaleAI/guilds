@@ -16,6 +16,7 @@ export const LOG_KEYS = [
 ] as const;
 
 export const LOG_EXTRA_KEYS = [
+  "machine_id",
   "source",
   "request_id",
   "session_id",
@@ -32,6 +33,7 @@ export type LogFields = {
   run_id?: string | null;
   guild_id?: string | null;
   agent_id?: string | null;
+  machine_id?: string | null;
   operation?: string | null;
   error_type?: string | null;
   source?: LogSource | null;
@@ -178,6 +180,7 @@ export function writeLog(
     ordered[key] = payload[key];
   }
   const extras: Record<(typeof LOG_EXTRA_KEYS)[number], string | number | null | undefined> = {
+    machine_id: fields.machine_id,
     source: fields.source,
     request_id: fields.request_id,
     session_id: fields.session_id,

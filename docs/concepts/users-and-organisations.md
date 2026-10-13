@@ -108,6 +108,11 @@ Organisation is the ownership root. `org_members` carries an `owner`,
 A new user gets a personal organisation with themselves as owner. It
 stays visually implicit while it is the user's only membership.
 
+Every new organisation, whichever path creates it, starts with one
+`standard` machine named `default`. Its agents run on its machines;
+a machine is never shared with another organisation
+([Machines](guilds-and-agents.md#machines)).
+
 Guild names are unique within an organisation. Agent names are
 globally unique.
 
@@ -143,12 +148,17 @@ Organisation routes:
   owners, admins the rest
 - usage: `GET /api/usage` returns the current organisation's guilds
   the caller may see, by guild and agent
+- machines: `GET /api/orgs/:id/machines` for members; `POST`,
+  `PATCH`, and `DELETE` for owners and admins
+  ([Machines](guilds-and-agents.md#machines))
 - model providers: below
 
 An organisation's limits come from the organisation policy:
 
 - how many agents, browser agents, coding agents, and guilds it may
   hold
+- how many machines it may hold (`maxMachines`), and how many agents
+  one machine takes (`maxAgentsPerMachine`, never above 32)
 - how many generations run at once
 
 Core's policy sets none of them. The instance-wide ceiling on
@@ -231,7 +241,8 @@ row and the organisation it owns:
 | `user_operator` | `operator` | none, or `OPERATOR_EMAIL` when it is set | none |
 
 Organisation `org_home` (name `Home`, slug `home`) has `operator` as
-the owner. That user has no second personal organisation.
+the owner, and its `default` machine. That user has no second
+personal organisation.
 
 The seed user cannot be deleted.
 

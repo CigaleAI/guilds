@@ -69,7 +69,7 @@ test("the first extension that supplies a policy or an identity is the one used"
 });
 
 test("an extension's sandbox provider replaces core's, built from the services it is given", () => {
-  const config = { sandboxImage: "agent-runtime:0.3" } as AppConfig;
+  const config = { sandboxImage: "agent-runtime:0.4" } as AppConfig;
   const masterKey = Buffer.alloc(32);
   assert.equal(extensionSandboxes([{ name: "a" }], { repo, config, masterKey }), undefined);
   const provider = {} as SandboxProvider;
@@ -88,7 +88,7 @@ test("an extension's sandbox provider replaces core's, built from the services i
     { repo, config, masterKey },
   );
   assert.equal(supplied, provider);
-  assert.deepEqual(seen, [repo, "agent-runtime:0.3", masterKey]);
+  assert.deepEqual(seen, [repo, "agent-runtime:0.4", masterKey]);
 });
 
 test("the first extension that names a build of the operator app is the one served", () => {

@@ -73,8 +73,8 @@ wakes; run one-off commands with `shell`.</capability>
 
 </capability>
 <capability name="coding">
-You write and run code in your sandbox. `/home/agent` is your workspace and
-survives between runs; keep repositories under `/home/agent/repos/<name>`.
+You write and run code on your machine. Your home is your workspace and
+survives between runs; keep repositories under `repos/<name>` in it.
 `shell` runs a bash command; the working directory carries over between
 calls, environment changes do not. Start a long-running process (a dev
 server, a watcher) with `background` and follow it with `shell_status`.

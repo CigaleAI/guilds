@@ -74,12 +74,14 @@ type Disclosure = "history" | "parameters";
 
 function ScriptCard({
   script,
+  agentId,
   agentName,
   guildId,
   onEdit,
   onDelete,
 }: {
   script: Script;
+  agentId: string;
   agentName: string;
   guildId: string;
   onEdit: () => void;
@@ -123,7 +125,9 @@ function ScriptCard({
       <p className="px-4 pb-3.5 text-sm text-fg-2">{script.description}</p>
       <CodeBlock code={script.source} language="python" lineNumbers className="rounded-none" />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 font-mono text-2xs text-muted">
-        <span className="min-w-0 truncate">/home/agent/scripts/{script.name}.py</span>
+        <span className="min-w-0 truncate">
+          /home/{agentId}/scripts/{script.name}.py
+        </span>
         {script.display_path ? (
           <button
             type="button"
@@ -144,14 +148,10 @@ function ScriptCard({
             Parameters · also a tool named {script.name}
           </button>
         ) : null}
-        <span className="ml-auto">python · sandboxed in {agentName}'s workspace</span>
+        <span className="ml-auto">python · runs in {agentName}'s home</span>
       </div>
       {showing === "history" && script.display_path ? (
-        <ChangeHistory
-          displayPath={script.display_path}
-          guildId={guildId}
-          className="mx-4 mb-4"
-        />
+        <ChangeHistory displayPath={script.display_path} guildId={guildId} className="mx-4 mb-4" />
       ) : null}
       {showing === "parameters" && script.parameters ? (
         <CodeBlock
@@ -186,7 +186,7 @@ export function RemoveAllScriptsButton({ agentId, count }: { agentId: string; co
         open={confirming}
         onOpenChange={setConfirming}
         title="Remove all scripts?"
-        description="Every script leaves the agent's sandbox, including any that are also tools. This can't be undone."
+        description="Every script leaves the agent's home, including any that are also tools. This can't be undone."
         confirmLabel="Remove all scripts"
         onConfirm={() =>
           removeAll.mutateAsync().then(
@@ -210,8 +210,8 @@ export function RemoveAllScriptsButton({ agentId, count }: { agentId: string; co
 }
 
 /**
- * Python the agent keeps in its sandbox at /home/agent/scripts/ and runs with its script tools. A
- * script with parameters is also offered to the agent as a tool of its own.
+ * Python the agent keeps at scripts/ in its home, /home/<agent id>, and runs with its script tools.
+ * A script with parameters is also offered to the agent as a tool of its own.
  */
 export function AgentScripts() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -257,7 +257,7 @@ export function AgentScripts() {
       <div className="mx-auto flex max-w-240 flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <p className="min-w-60 flex-1 text-sm text-fg-2">
-            Reusable Python in the agent's sandbox, at /home/agent/scripts/. Only the agent runs
+            Reusable Python in the agent's home, at /home/{agentId}/scripts/. Only the agent runs
             them; secrets reach them as environment variables. {count} of {maxScripts} scripts.
           </p>
           {count ? (
@@ -292,6 +292,7 @@ export function AgentScripts() {
             <ScriptCard
               key={script.name}
               script={script}
+              agentId={agentId}
               agentName={agentName}
               guildId={guildId}
               onEdit={() => setEditing(script)}
@@ -321,7 +322,7 @@ export function AgentScripts() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={`Delete ${deleting?.name ?? ""}?`}
-        description="The script leaves the agent's sandbox, with its tool if it had parameters."
+        description="The script leaves the agent's home, with its tool if it had parameters."
         confirmLabel="Delete script"
         onConfirm={() =>
           deleting
@@ -427,8 +428,8 @@ function ScriptForm({
             title={script ? `Edit ${script.name}.py` : "Add a script"}
             description={
               script
-                ? "Saving records a new version in the agent's sandbox."
-                : "Python the agent runs in its sandbox."
+                ? "Saving records a new version in the agent's home."
+                : "Python the agent runs on its machine."
             }
           />
           <DialogBody>

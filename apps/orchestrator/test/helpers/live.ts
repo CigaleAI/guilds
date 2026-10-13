@@ -5,7 +5,9 @@ import path from "node:path";
 import WebSocket, { WebSocketServer } from "ws";
 import { AsyncEvent } from "../../src/lib/event.js";
 import type { Completion, ModelEvent } from "../../src/llm/index.js";
+import type { AgentSeat, MachineSpec } from "../../src/sandbox/index.js";
 
+/** A sandbox provider for HTTP tests: machines that run, agents' browsers and terminals, nothing real. */
 export class ExportSandboxes {
   novncBase = "http://127.0.0.1:9";
   novncHeaders: Record<string, string> = { "OPEN-SANDBOX-API-KEY": "compat-test" };
@@ -13,11 +15,13 @@ export class ExportSandboxes {
   cliHeaders: Record<string, string> = { "OPEN-SANDBOX-API-KEY": "compat-test" };
   cliToken = "f".repeat(48);
   cliStarts = 0;
-  running = new Set<string>();
-  browserFlags: Record<string, boolean> = {};
-  codingFlags: Record<string, boolean> = {};
-  boxes: Record<string, string> = {};
-  sizes: Record<string, { cpu: number; memory_mib: number } | null> = {};
+  /** Running machines, by id, with the size each was ensured with. */
+  running = new Map<string, MachineSpec>();
+  /** Agents whose Chrome started, in order. */
+  browserStarts: string[] = [];
+  /** Agents whose processes stopped, with what stopped. */
+  stopped: Array<{ agentId: string; what: "browser" | "all" | "purge" }> = [];
+  /** Machines whose containers went. */
   destroyed: string[] = [];
   workspaceRoot: string;
 
@@ -25,10 +29,9 @@ export class ExportSandboxes {
     this.workspaceRoot = workspaceRoot;
   }
 
-  private sandbox(agentId: string) {
-    const browser = this.browserFlags[agentId] ?? false;
+  private sandbox(machineId: string) {
     return {
-      id: "sbx_fake",
+      id: `sbx_${machineId}`,
       commands: {
         async run(command: string) {
           return {
@@ -40,70 +43,51 @@ export class ExportSandboxes {
           return undefined;
         },
       },
-      get_info: async () => ({ metadata: { browser: browser ? "1" : "0" } }),
-      getInfo: async () => ({ metadata: { browser: browser ? "1" : "0" } }),
     };
   }
 
-  async ensure(
-    agentId: string,
-    _secrets: Record<string, string>,
-    _secretIds: string[],
-    options: {
-      box?: string;
-      browser?: boolean;
-      coding?: boolean;
-      size?: { cpu: number; memory_mib: number } | null | undefined;
-    } = {},
-  ) {
-    this.running.add(agentId);
-    this.browserFlags[agentId] = Boolean(options.browser);
-    this.codingFlags[agentId] = Boolean(options.coding);
-    this.boxes[agentId] = options.box ?? "lite";
-    this.sizes[agentId] = options.size ?? null;
-    mkdirSync(path.join(this.workspaceRoot, agentId), { recursive: true });
-    return this.sandbox(agentId);
+  async ensure(machine: MachineSpec) {
+    this.running.set(machine.id, machine);
+    mkdirSync(path.join(this.workspaceRoot, machine.id), { recursive: true });
+    return this.sandbox(machine.id);
   }
 
-  async connectRunning(agentId: string) {
-    if (!this.running.has(agentId)) {
-      return null;
-    }
-    return this.sandbox(agentId);
+  async connectRunning(machineId: string) {
+    return this.running.has(machineId) ? this.sandbox(machineId) : null;
   }
 
-  async waitForBrowser(_sandbox: unknown): Promise<void> {
-    return undefined;
+  async startBrowser(_sandbox: unknown, seat: AgentSeat): Promise<void> {
+    this.browserStarts.push(seat.agentId);
   }
 
-  async novncTarget(_sandbox: unknown): Promise<[string, Record<string, string>]> {
+  async stopBrowser(_sandbox: unknown, seat: AgentSeat): Promise<void> {
+    this.stopped.push({ agentId: seat.agentId, what: "browser" });
+  }
+
+  async stopAgent(_sandbox: unknown, seat: AgentSeat, options: { purge?: boolean } = {}): Promise<void> {
+    this.stopped.push({ agentId: seat.agentId, what: options.purge ? "purge" : "all" });
+  }
+
+  async novncTarget(_sandbox: unknown, _seat: AgentSeat): Promise<[string, Record<string, string>]> {
     return [this.novncBase, { ...this.novncHeaders }];
   }
 
-  async startCli(_sandbox: unknown): Promise<string> {
+  async startCli(_sandbox: unknown, _seat: AgentSeat): Promise<string> {
     this.cliStarts += 1;
     return this.cliToken;
   }
 
-  async cliTarget(_sandbox: unknown, token: string): Promise<[string, Record<string, string>]> {
+  async cliTarget(_sandbox: unknown, _seat: AgentSeat, token: string): Promise<[string, Record<string, string>]> {
     return [`${this.cliBase}/t/${token}`, { ...this.cliHeaders }];
   }
 
-  async destroy(agentId: string): Promise<void> {
-    this.destroyed.push(agentId);
-    this.running.delete(agentId);
-    delete this.browserFlags[agentId];
-    delete this.codingFlags[agentId];
-    delete this.boxes[agentId];
-    delete this.sizes[agentId];
+  async destroy(machineId: string): Promise<void> {
+    this.destroyed.push(machineId);
+    this.running.delete(machineId);
   }
 
-  async listRunningAgentIds(): Promise<Set<string>> {
-    return new Set(this.running);
-  }
-
-  async agentIdsUsingSecret(_secretId: string): Promise<Set<string>> {
-    return new Set();
+  async listRunningMachineIds(): Promise<Set<string>> {
+    return new Set(this.running.keys());
   }
 }
 

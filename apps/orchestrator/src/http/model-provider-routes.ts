@@ -6,22 +6,7 @@ import { canManageSettings } from "../organisations/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return body as Record<string, unknown>;
-  }
-  return {};
-}
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Record<string, string>)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
-}
+import { bodyOf, param } from "./request.js";
 
 async function requireMembership(
   deps: AppDeps,

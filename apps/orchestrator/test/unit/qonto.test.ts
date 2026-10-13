@@ -17,6 +17,13 @@ import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 
+/** A temporary host directory named after agent a_1, as its home sits on its machine. */
+async function agentWorkspace(prefix: string): Promise<string> {
+  const workspace = path.join(await mkdtemp(path.join(os.tmpdir(), prefix)), "a_1");
+  await mkdir(workspace);
+  return workspace;
+}
+
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("qonto")!.manifest.tools!;
 const CREDS = { login: "org-login", secretKey: "org-secret" };
@@ -54,20 +61,20 @@ test("isMissingInvoice applies the three rules", () => {
 });
 
 test("readInvoiceFile reads an invoice under the workspace and nothing a link points out of it", async () => {
-  const base = await mkdtemp(path.join(os.tmpdir(), "qonto-"));
+  const base = await agentWorkspace("qonto-");
   const workspace = path.join(base, "a_1");
   await mkdir(path.join(workspace, "invoices"), { recursive: true });
   await writeFile(path.join(workspace, "invoices", "a.pdf"), "%PDF-1.4");
   const host = path.join(base, "host.pdf");
   await writeFile(host, "%PDF orchestrator file");
   await symlink(host, path.join(workspace, "planted.pdf"));
-  const read = await readInvoiceFile(workspace, "/home/agent/invoices/a.pdf");
+  const read = await readInvoiceFile(workspace, "/home/a_1/invoices/a.pdf");
   assert.equal(read.path, path.join(workspace, "invoices", "a.pdf"));
   assert.equal(read.mime, "application/pdf");
   assert.equal(read.content.toString(), "%PDF-1.4");
   await assert.rejects(() => readInvoiceFile(workspace, "planted.pdf"), /not a link out of it/);
-  await assert.rejects(() => readInvoiceFile(workspace, "/etc/passwd"), /under \/home\/agent/);
-  await assert.rejects(() => readInvoiceFile(workspace, "../host.pdf"), /under \/home\/agent/);
+  await assert.rejects(() => readInvoiceFile(workspace, "/etc/passwd"), /under \/home\/a_1/);
+  await assert.rejects(() => readInvoiceFile(workspace, "../host.pdf"), /under \/home\/a_1/);
   await assert.rejects(() => readInvoiceFile(workspace, "missing.pdf"), /file not found: missing.pdf/);
 });
 
@@ -191,13 +198,13 @@ test("get_transaction 404 is unknown transaction", async () => {
 });
 
 test("upload_invoice refuses a duplicate without force", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "qonto-"));
+  const workspace = await agentWorkspace("qonto-");
   const invoice = path.join(workspace, "receipt.pdf");
   await writeFile(invoice, "%PDF-1.4");
   let posted = false;
   const stored = await callTool(
     "upload_invoice",
-    { transaction_id: "tx-1", file_path: "/home/agent/receipt.pdf" },
+    { transaction_id: "tx-1", file_path: "/home/a_1/receipt.pdf" },
     {
       ...CREDS,
       workspaceDir: workspace,
@@ -214,7 +221,7 @@ test("upload_invoice refuses a duplicate without force", async () => {
 });
 
 test("upload_invoice rejects a non-pdf/jpeg/png", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "qonto-"));
+  const workspace = await agentWorkspace("qonto-");
   const notes = path.join(workspace, "notes.txt");
   await writeFile(notes, "hello");
   await assert.rejects(
@@ -229,7 +236,7 @@ test("upload_invoice rejects a non-pdf/jpeg/png", async () => {
 });
 
 test("upload_invoice posts, reuses the idempotency key, and polls", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "qonto-"));
+  const workspace = await agentWorkspace("qonto-");
   const invoice = path.join(workspace, "receipt.pdf");
   await writeFile(invoice, "%PDF-1.4");
   const keys: string[] = [];

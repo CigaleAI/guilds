@@ -1,4 +1,4 @@
-import { NAME_RE } from "../agents/validation.js";
+import { NAME_RE } from "../lib/names.js";
 import { jsonObj } from "../db/json.js";
 
 export const ABOUT_MAX = 200;

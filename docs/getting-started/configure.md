@@ -24,7 +24,7 @@ effect at once.
 
 | Variable | Value |
 |---|---|
-| `STATE_ROOT` | An absolute path on this machine. The stack keeps its state under it. A relative path is refused, because the sandbox server mounts each workspace by this path |
+| `STATE_ROOT` | An absolute path on this host. The stack keeps its state under it. A relative path is refused, because the sandbox server mounts each machine's directory by this path |
 | `SECRETS_MASTER_KEY` | 32 random bytes, as hex or base64. It encrypts every stored credential: connector logins, model keys, and secrets. `.env` holds its only copy. A lost key loses them all. The server refuses to start without it, and refuses the all-zero key |
 | `POSTGRES_PASSWORD` | The database password. Generated |
 | `OPENSANDBOX_API_KEY` | The key the server and the sandbox server share. Generated |
@@ -37,8 +37,7 @@ these. You do not set them:
 - `NOTES_ROOT`
 - `WORKSPACE_ROOT`
 - `ATTACHMENTS_ROOT`
-- `SANDBOX_IMAGE`
-- `SANDBOX_IMAGE_LITE`
+- `SANDBOX_IMAGE`, the image every machine runs (`agent-runtime:0.4`)
 
 ## Integrations
 
@@ -117,13 +116,18 @@ yourself ([Gmail and Drive](../tools-and-connectors/google.md),
 | `OPERATOR_EMAIL` | | Your own email. Boot gives it to the box's first user. Required by `trusted-header` |
 
 [Remote access](remote-access.md) covers the two ways to reach the box
-from another machine.
+from another computer.
 
 ## Limits
 
 | Variable | Default | Role |
 |---|---|---|
 | `MAX_CONCURRENT_GENERATIONS` | `0` | Generations running at once across the whole box. `0` is no ceiling. Each organisation's own cap applies under it |
+
+Agents' CPU, memory, and disk are bounded by their organisation's
+machines, not by `.env`. Owners and admins create and size them under
+**Settings**, **Machines**
+([Machines](../concepts/guilds-and-agents.md#machines)).
 
 ## Model catalog
 

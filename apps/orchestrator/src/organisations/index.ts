@@ -1,4 +1,4 @@
-import { NAME_RE } from "../agents/validation.js";
+import { NAME_RE } from "../lib/names.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 
 export const ORG_HEADER = "X-Guilds-Org";

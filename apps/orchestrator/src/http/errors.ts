@@ -1,4 +1,7 @@
 import { ArtifactError } from "../artifacts/errors.js";
+import { ModelNotConnectedError } from "../llm/credentials.js";
+import { MachineError } from "../machines/index.js";
+import { PolicyError } from "../policy/index.js";
 import { RecipeConflictError } from "../recipes/errors.js";
 
 export class HttpError extends Error {
@@ -64,4 +67,15 @@ export function recipeConflictHttp(error: RecipeConflictError): HttpError {
 export function notesReadHttp(error: Error): HttpError {
   const message = error.message;
   return new HttpError(message === "invalid path" ? 422 : 404, message);
+}
+
+/**
+ * The HTTP answer for a refusal a domain module raises with its own status: a machine request, a
+ * policy limit, or a model with no key. Any other error is null.
+ */
+export function domainHttp(error: unknown): HttpError | null {
+  if (error instanceof MachineError || error instanceof PolicyError || error instanceof ModelNotConnectedError) {
+    return new HttpError(error.status, error.message);
+  }
+  return null;
 }

@@ -10,6 +10,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  smallint,
   primaryKey,
   text,
   timestamp,
@@ -151,6 +152,37 @@ export const guildOperators = pgTable(
   ],
 );
 
+export const machines = pgTable(
+  "machines",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    name: text("name").notNull(),
+    box: text("box").notNull(),
+    cpu: numeric("cpu"),
+    memoryMib: integer("memory_mib"),
+    maxWorkspaceMib: integer("max_workspace_mib").notNull().default(10240),
+    workspaceMib: integer("workspace_mib"),
+    createdAt: timestamptz("created_at").notNull(),
+    updatedAt: timestamptz("updated_at").notNull(),
+  },
+  (table) => [
+    unique("machines_org_id_name_key").on(table.orgId, table.name),
+    unique("machines_org_id_id_unique").on(table.orgId, table.id),
+    check("machines_box_check", sql`${table.box} IN ('standard', 'code', 'custom')`),
+    check(
+      "machines_size_check",
+      sql`(${table.box} = 'custom' AND ${table.cpu} IS NOT NULL AND ${table.memoryMib} IS NOT NULL) OR (${table.box} <> 'custom' AND ${table.cpu} IS NULL AND ${table.memoryMib} IS NULL)`,
+    ),
+    check("machines_max_workspace_mib_positive", sql`${table.maxWorkspaceMib} > 0`),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [orgs.id],
+      name: "machines_org_id_fkey",
+    }).onDelete("cascade"),
+  ],
+);
+
 export const agents = pgTable(
   "agents",
   {
@@ -176,10 +208,20 @@ export const agents = pgTable(
     taskHash: text("task_hash").notNull(),
     taskUpdatedAt: timestamptz("task_updated_at").notNull(),
     workspaceMib: integer("workspace_mib"),
+    machineId: text("machine_id").notNull(),
+    machineSlot: smallint("machine_slot").notNull(),
   },
   (table) => [
     unique("agents_name_key").on(table.name),
     unique("agents_org_id_id_unique").on(table.orgId, table.id),
+    unique("agents_machine_slot_key").on(table.machineId, table.machineSlot),
+    check("agents_machine_slot_range", sql`${table.machineSlot} >= 0 AND ${table.machineSlot} < 32`),
+    foreignKey({
+      columns: [table.orgId, table.machineId],
+      foreignColumns: [machines.orgId, machines.id],
+      name: "agents_machine_fkey",
+    }).onDelete("restrict"),
+    index("agents_by_machine").on(table.machineId),
     foreignKey({
       columns: [table.guildId],
       foreignColumns: [guilds.id],

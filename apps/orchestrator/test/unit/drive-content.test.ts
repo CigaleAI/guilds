@@ -6,6 +6,13 @@ import { test } from "node:test";
 import { downloadDriveFileContent, getDriveFileMetadata } from "../../src/connectors/drive/content.js";
 import { mockFetch } from "../helpers/http.js";
 
+/** A temporary host directory named after agent a_1, as its home sits on its machine. */
+async function agentWorkspace(prefix: string): Promise<string> {
+  const workspace = path.join(await mkdtemp(path.join(os.tmpdir(), prefix)), "a_1");
+  await mkdir(workspace);
+  return workspace;
+}
+
 test("getDriveFileMetadata uses Shared drive flags", async () => {
   const text = await getDriveFileMetadata(
     "tok",
@@ -31,7 +38,7 @@ test("getDriveFileMetadata uses Shared drive flags", async () => {
 });
 
 test("downloadDriveFileContent writes the file under the workspace", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "drive-download-"));
+  const workspace = await agentWorkspace("drive-download-");
   const text = await downloadDriveFileContent(
     "tok",
     { fileId: "file_1" },
@@ -54,14 +61,14 @@ test("downloadDriveFileContent writes the file under the workspace", async () =>
     id: "file_1",
     title: "notes.txt",
     mimeType: "text/plain",
-    file_path: "/home/agent/notes.txt",
+    file_path: "/home/a_1/notes.txt",
     bytes: 5,
   });
   assert.equal(await readFile(path.join(workspace, "notes.txt"), "utf8"), "hello");
 });
 
 test("downloadDriveFileContent never writes through a link the agent planted", async () => {
-  const base = await mkdtemp(path.join(os.tmpdir(), "drive-download-"));
+  const base = await agentWorkspace("drive-download-");
   const workspace = path.join(base, "a_1");
   await mkdir(workspace);
   const host = path.join(base, "config.json");
@@ -91,7 +98,7 @@ test("downloadDriveFileContent never writes through a link the agent planted", a
 });
 
 test("downloadDriveFileContent exports a Google Doc to a workspace path", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "drive-download-"));
+  const workspace = await agentWorkspace("drive-download-");
   const text = await downloadDriveFileContent(
     "tok",
     { fileId: "doc_1" },
@@ -117,7 +124,7 @@ test("downloadDriveFileContent exports a Google Doc to a workspace path", async 
     },
   );
   const parsed = JSON.parse(text);
-  assert.equal(parsed.file_path, "/home/agent/Brief.txt");
+  assert.equal(parsed.file_path, "/home/a_1/Brief.txt");
   assert.equal(parsed.mimeType, "text/plain");
   assert.equal(parsed.content, undefined);
   assert.equal(await readFile(path.join(workspace, "Brief.txt"), "utf8"), "doc body");

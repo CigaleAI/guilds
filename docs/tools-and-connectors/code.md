@@ -25,14 +25,19 @@ helper reads and deletes it.
 
 The helper answers with a base64 JSON envelope holding the shaped
 text and the fields the call's metadata records. The orchestrator
-never opens a workspace file for these tools, so a link in the
-workspace resolves inside the container.
+never opens a file in the agent's home for these tools. A link in
+the home resolves inside the container.
 
+- Every call runs in the agent's home, `/home/<agent id>`, with
+  `HOME`, `GUILDS_AGENT_HOME`, `PORT`, `GUILDS_PORTS`, and the
+  agent's secrets in its environment
+  ([Runs](../concepts/runs.md#sandbox)). A server the agent starts
+  listens on a port of its block, from `PORT`.
 - A relative path resolves against the run's working directory, kept
-  in `/home/agent/.runs/<run id>/cwd`. It starts at `/home/agent`.
+  in `.runs/<run id>/cwd` in the home. It starts at the home.
   `shell` updates it when a command changes directory. Environment
   changes do not persist between calls. The file tools refuse a path
-  that resolves, links followed, outside `/home/agent`.
+  that resolves, links followed, outside the home.
 - `shell` runs `bash -c` with stdin closed and `PAGER=cat`,
   `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
   `DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and `GUILD_AGENT_ID`
@@ -41,8 +46,8 @@ workspace resolves inside the container.
   says so with `exit_code: 124`.
 - A background command's output goes to its log and it runs in its own
   session. `shell_status` names it `b1`, `b2`, … for the life of the
-  container. Background commands do not hold the sandbox awake. They
-  end with the idle stop.
+  container. Background commands do not keep the machine's container
+  running. They end with its idle stop.
 - `file_edit` replaces an exact string. A string that is missing, or
   that occurs more than once without `replace_all`, is an error and
   changes nothing. Edits and writes replace the file atomically and
@@ -55,11 +60,11 @@ Output shaping:
 
 | Tool | Shaping |
 | --- | --- |
-| `shell` | Output that fits is returned whole. Otherwise its first 2 KiB and its last 6 KiB, less room for the trailers, around a line giving the elided byte count and the log path, `/home/agent/.runs/<run id>/<call id>.log`; the end is kept because build and test errors are there. ANSI escapes are removed and a line redrawn with carriage returns keeps its last state |
+| `shell` | Output that fits is returned whole. Otherwise its first 2 KiB and its last 6 KiB, less room for the trailers, around a line giving the elided byte count and the log path, `.runs/<run id>/<call id>.log` in the agent's home; the end is kept because build and test errors are there. ANSI escapes are removed and a line redrawn with carriage returns keeps its last state |
 | `file_read` | A line longer than 400 characters is clipped with the count of what was cut; the range stops before the cap and says which offset continues it; a binary file is named with its size, not shown |
 
-A full `shell` log is stored unredacted in the workspace, inside the
-sandbox that already holds the values. Reading it back with
+A full `shell` log is stored unredacted in the agent's home, on the
+machine that already holds the values. Reading it back with
 `file_read` passes through redaction like any result. `.runs/` keeps
 the folders of the agent's 20 most recent runs.
 
@@ -104,7 +109,7 @@ characters is clipped. A result that would pass the cap stops at a
 line and says how many lines it left out.
 
 The Graft-backed tools address a repository as a folder under
-`/home/agent/repos/`. `code_map` takes its name. The others take the
+`repos/` in the agent's home. `code_map` takes its name. The others take the
 repository holding their `path` or `in`, else the one holding the
 working directory, else the only one there. `in` narrows to a folder
 or file of it.
@@ -112,7 +117,7 @@ or file of it.
 Graft runs in its structural tier only:
 
 - The graph is built by tree-sitter with no model, no key, and no
-  network. It lives at `/home/agent/.cache/graft/<name>` (`--dir`). It
+  network. It lives at `.cache/graft/<name>` in the home (`--dir`). It
   is built on the first Graft-backed call for a repository. Graft
   refreshes it against the working tree before every query,
   uncommitted edits included.

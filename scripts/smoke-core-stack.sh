@@ -13,7 +13,7 @@ set -euo pipefail
 
 # A new self-hoster's shell sets nothing the stack reads, and neither does this test's: the stack
 # takes its values from the .env setup writes, and its state from the copy's own directory.
-unset STATE_ROOT POSTGRES_PASSWORD OPENSANDBOX_API_KEY SECRETS_MASTER_KEY SANDBOX_IMAGE SANDBOX_IMAGE_LITE AUTH_MODE SENTRY_ENVIRONMENT
+unset STATE_ROOT POSTGRES_PASSWORD OPENSANDBOX_API_KEY SECRETS_MASTER_KEY SANDBOX_IMAGE AUTH_MODE SENTRY_ENVIRONMENT
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/guilds-smoke.XXXXXX")"

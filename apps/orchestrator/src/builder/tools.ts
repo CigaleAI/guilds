@@ -379,7 +379,7 @@ const recipeDocumentParameter = {
         properties: {
           name: {
             type: "string",
-            description: "Folder name under /home/agent/repos, matching ^[a-z][a-z0-9_-]{0,62}$.",
+            description: "Folder name under repos/ in each coding agent's home, matching ^[a-z][a-z0-9_-]{0,62}$.",
           },
           purpose: {
             type: "string",

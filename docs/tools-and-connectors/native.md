@@ -94,7 +94,7 @@ They keep separate tool families.
   `browser_scroll` moves one viewport up, down, left, or right in a
   visible overflow panel when the page has one, otherwise the
   window. An optional `target` locator picks the panel. Screenshot
-  writes `/home/agent/screenshots/latest.jpg`.
+  writes `screenshots/latest.jpg` in the agent's home.
 
   `browser_eval` runs JavaScript in the current page as an async
   function body and returns a JSON-serializable value. Reuse a
@@ -148,8 +148,8 @@ They keep separate tool families.
   `max_scripts` (default 10).
 
   A run snapshots source and hash, then materialises
-  `/home/agent/scripts/<name>.py`. `script_run` executes that file
-  in the sandbox (`/home/agent`, 120-second timeout) through
+  `/home/<agent id>/scripts/<name>.py`. `script_run` executes that
+  file on the agent's machine (in its home, 120-second timeout) through
   `guilds-script-run`. The launcher writes the optional `arguments`
   object to the script's stdin as JSON (`{}` without one). For an
   agent without `coding` it is the only tool that runs a command

@@ -2,34 +2,30 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { boxForFlags, DEFAULT_BROWSER_LANGUAGE, type Box, type CustomSize } from "../agents/validation.js";
-import { environmentFingerprint } from "../credentials/crypto.js";
-import { AGENT_HOME } from "../lib/agent-file.js";
+import { agentHome } from "../lib/agent-file.js";
 import { orchestratorRoot } from "../lib/paths.js";
+import { agentDirectory, machineDirectory, machineSize, slotPorts, type MachineBox, type SlotPorts } from "../machines/index.js";
 import { SCRIPTS_DIR } from "../scripts/validation.js";
 import { materialiseScripts } from "../scripts/materialise.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
 
 export const BROWSER_PROFILE = ".browser";
-export const BROWSER_ENTRYPOINT = ["/usr/local/bin/agent-browser-start"];
-export const BROWSER_NOVNC_PORT = 6080;
+export const BROWSER_START = "/usr/local/bin/agent-browser-start";
+export const AGENT_STOP = "/usr/local/bin/agent-stop";
 export const BROWSER_READY_SECONDS = 60;
-export const BROWSER_START_LOG = "/tmp/agent-browser.log";
-export const CLI_PORT = 7681;
 export const CLI_ENTRYPOINT = "/usr/local/bin/agent-cli-start";
 export const CLI_START_SECONDS = 20;
+/** Where the machine's directory is mounted: every agent's home is a folder in it. */
+export const MACHINE_MOUNT = "/home";
+/** The in-container directory of an agent's runtime files: git tokens, process ids, logs. */
+export const AGENT_RUN_ROOT = "/run/guilds";
 const CLI_TOKEN_RE = /^[0-9a-f]{48}$/;
-/** Size of a lite box: scripts, notes, MCP, and the CLI. */
-export const LITE_SANDBOX_MEMORY_MIB = 256;
-export const LITE_SANDBOX_CPU = "0.5";
-/** Size of a standard box: Chromium, and the browser tools. */
-export const STANDARD_SANDBOX_MEMORY_MIB = 2048;
-export const STANDARD_SANDBOX_CPU = "1";
-/** Size of a code box: Chromium and the coding toolchains. */
-export const CODE_SANDBOX_MEMORY_MIB = 4096;
-export const CODE_SANDBOX_CPU = "2";
 const HOST_HOME_RE = /guilds\.run|chrome-error:\/\//i;
-const BLANK_NAVIGATE = `python3 /usr/local/bin/guilds-browser ${Buffer.from(JSON.stringify({ op: "navigate", url: "about:blank" })).toString("base64")}`;
+
+function blankNavigate(cdpPort: number): string {
+  const spec = { op: "navigate", url: "about:blank", cdp_port: cdpPort };
+  return `python3 /usr/local/bin/guilds-browser ${Buffer.from(JSON.stringify(spec)).toString("base64")}`;
+}
 
 export function browserNeedsBlankReset(pagesJson: string): boolean {
   let pages: unknown;
@@ -88,7 +84,13 @@ type CommandResult = {
 type SandboxCommands = {
   run(
     command: string,
-    opts?: { timeoutSeconds?: number; timeout?: number; workingDirectory?: string; background?: boolean },
+    opts?: {
+      timeoutSeconds?: number;
+      timeout?: number;
+      workingDirectory?: string;
+      background?: boolean;
+      envs?: Record<string, string>;
+    },
     handlers?: unknown,
   ): Promise<CommandResult>;
   createSession?(workingDirectory?: string | { workingDirectory?: string; working_directory?: string }): Promise<string>;
@@ -149,10 +151,20 @@ type OpenSandboxModule = {
   };
 };
 
-/** The agent's workspace with its scripts directory, and the browser profile on every box but lite. */
-export function prepareWorkspace(workspaceRoot: string, agentId: string, box: Box = "standard"): string {
-  const workspace = path.join(workspaceRoot, agentId);
-  if (box !== "lite") {
+/** An agent's runtime files in its machine: `/run/guilds/<agent id>`. */
+export function agentRunDir(agentId: string): string {
+  return `${AGENT_RUN_ROOT}/${agentId}`;
+}
+
+/** The agent's home with its scripts directory, and the browser profile when it has a browser. */
+export function prepareWorkspace(
+  workspaceRoot: string,
+  machineId: string,
+  agentId: string,
+  options: { browser?: boolean } = {},
+): string {
+  const workspace = agentDirectory(workspaceRoot, machineId, agentId);
+  if (options.browser) {
     mkdirSync(path.join(workspace, BROWSER_PROFILE), { recursive: true });
   }
   mkdirSync(path.join(workspace, SCRIPTS_DIR), { recursive: true });
@@ -161,6 +173,7 @@ export function prepareWorkspace(workspaceRoot: string, agentId: string, box: Bo
 
 export async function applyRunScripts(
   sandbox: SandboxHandle,
+  home: string,
   snapshot: RunScriptSnapshot[] = [],
   liveExtra: Array<{ name: unknown; source: unknown } | Record<string, unknown>> = [],
 ): Promise<void> {
@@ -168,7 +181,87 @@ export async function applyRunScripts(
   if (!files) {
     return;
   }
-  await materialiseScripts(files, snapshot, liveExtra as Array<{ name: unknown; source: unknown }>);
+  await materialiseScripts(files, home, snapshot, liveExtra as Array<{ name: unknown; source: unknown }>);
+}
+
+/** The machine a container runs: its id, organisation, tier, and size. */
+export type MachineSpec = {
+  id: string;
+  orgId: string;
+  box: MachineBox;
+  cpu: number;
+  memoryMib: number;
+};
+
+/** A machine row as the container it runs. */
+export function machineSpec(machine: {
+  id: string;
+  org_id: string;
+  box: MachineBox;
+  cpu: number | null;
+  memory_mib: number | null;
+}): MachineSpec {
+  const size = machineSize(machine);
+  return { id: machine.id, orgId: machine.org_id, box: machine.box, cpu: size.cpu, memoryMib: size.memory_mib };
+}
+
+/** An agent's seat on its machine: its slot, which sets its display and ports, and Chrome's language. */
+export type AgentSeat = {
+  agentId: string;
+  machineId: string;
+  slot: number;
+  browserLanguage: string;
+};
+
+/** The ports a seat's slot sets. */
+export function seatPorts(seat: AgentSeat): SlotPorts {
+  return slotPorts(seat.slot);
+}
+
+/**
+ * The environment every command run for an agent carries, without its secrets: its home as
+ * `HOME`, and its port block.
+ */
+export function seatEnvironment(seat: AgentSeat): Record<string, string> {
+  const home = agentHome(seat.agentId);
+  const ports = slotPorts(seat.slot);
+  return {
+    HOME: home,
+    GUILDS_AGENT_HOME: home,
+    PORT: String(ports.portsFrom),
+    GUILDS_PORTS: `${ports.portsFrom}-${ports.portsTo}`,
+  };
+}
+
+/**
+ * The machine's sandbox as one agent sees it: every command runs in the agent's home, with the
+ * agent's environment under whatever the call adds. Files and interrupts are the machine's.
+ */
+export function agentSandbox(sandbox: SandboxHandle, home: string, envs: Record<string, string>): SandboxHandle {
+  const commands: SandboxCommands = {
+    run: async (command, opts, handlers) => {
+      const body = (opts ?? {}) as Record<string, unknown>;
+      const extra = (body.envs ?? body.env) as Record<string, string> | undefined;
+      const merged: Record<string, unknown> = { ...body, envs: { ...envs, ...(extra ?? {}) } };
+      delete merged.env;
+      if (merged.workingDirectory === undefined && merged.working_directory === undefined) {
+        merged.workingDirectory = home;
+        merged.working_directory = home;
+      }
+      return sandbox.commands.run(command, merged as never, handlers);
+    },
+  };
+  if (sandbox.commands.interrupt) {
+    commands.interrupt = sandbox.commands.interrupt.bind(sandbox.commands);
+  }
+  if (sandbox.commands.getCommandStatus) {
+    commands.getCommandStatus = sandbox.commands.getCommandStatus.bind(sandbox.commands);
+  }
+  const view: SandboxHandle = { id: sandbox.id, commands };
+  if (sandbox.files) {
+    view.files = sandbox.files;
+  }
+  return view;
 }
 
 export function connectionConfig(url: string, apiKey: string): ConnectionConfig {
@@ -214,165 +307,53 @@ export function splitRunning(infos: SandboxInfo[]): [SandboxInfo | null, Sandbox
   return [ordered[0] ?? null, ordered.slice(1)];
 }
 
-export function metadataSecretIds(metadata: unknown): Set<string> {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return new Set();
-  }
-  const ids = new Set<string>();
-  for (const [key, value] of Object.entries(metadata as Record<string, unknown>)) {
-    if (key.startsWith("sid.") && value === "1") {
-      ids.add(key.slice(4));
-    }
-  }
-  return ids;
-}
-
 /** An image reference as a label value: references are too long, and hold characters labels refuse. */
 export function imageFingerprint(image: string): string {
   return createHash("sha256").update(image).digest("hex").slice(0, 16);
 }
 
-export function sandboxMetadata(
-  agentId: string,
-  fingerprint: string,
-  secretIds: string[],
-  options: {
-    box?: Box;
-    browser?: boolean;
-    coding?: boolean;
-    browserLanguage?: string;
-    size?: CustomSize | null | undefined;
-    hostId?: string | undefined;
-    image?: string;
-  } = {},
+/** The labels a machine's container carries. */
+export function machineMetadata(
+  machine: MachineSpec,
+  options: { hostId?: string | undefined; image?: string } = {},
 ): Record<string, string> {
-  const flags = sandboxFlags(options);
-  const resource = sandboxResource(flags);
+  const resource = machineResource(machine);
   const metadata: Record<string, string> = {
-    agent_id: agentId,
-    environment_fingerprint: fingerprint,
-    browser: flags.browser ? "1" : "0",
-    coding: flags.coding ? "1" : "0",
-    kind: flags.box,
+    machine_id: machine.id,
+    kind: machine.box,
     cpu: resource.cpu,
     memory: resource.memory,
   };
-  if (flags.browser) {
-    metadata.browser_language = flags.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE;
-  }
   if (options.hostId) {
     metadata.host_id = options.hostId;
   }
   if (options.image) {
     metadata.image = imageFingerprint(options.image);
   }
-  for (const secretId of secretIds) {
-    metadata[`sid.${secretId}`] = "1";
-  }
   return metadata;
-}
-
-/**
- * What decides the sandbox an agent runs in: its box, the browser and coding flags, Chrome's
- * language, and on a custom box its size.
- */
-export type SandboxFlags = {
-  box: Box;
-  browser: boolean;
-  coding: boolean;
-  browserLanguage?: string;
-  size?: CustomSize | null | undefined;
-};
-
-/** The flags from an options bag; a missing box is the one the flags call for. */
-export function sandboxFlags(options: {
-  box?: Box;
-  browser?: boolean;
-  coding?: boolean;
-  browserLanguage?: string;
-  size?: CustomSize | null | undefined;
-}): SandboxFlags {
-  const browser = options.browser ?? false;
-  const coding = options.coding ?? false;
-  return {
-    box: options.box ?? boxForFlags({ browser, coding }),
-    browser,
-    coding,
-    browserLanguage: options.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE,
-    size: options.size ?? null,
-  };
 }
 
 /** What a sandbox is created with, as OpenSandbox takes it: CPUs and memory with a `Mi` suffix. */
 export type SandboxResource = { cpu: string; memory: string };
 
-const SANDBOX_RESOURCES: Record<Exclude<Box, "custom">, SandboxResource> = {
-  lite: { cpu: LITE_SANDBOX_CPU, memory: `${LITE_SANDBOX_MEMORY_MIB}Mi` },
-  standard: { cpu: STANDARD_SANDBOX_CPU, memory: `${STANDARD_SANDBOX_MEMORY_MIB}Mi` },
-  code: { cpu: CODE_SANDBOX_CPU, memory: `${CODE_SANDBOX_MEMORY_MIB}Mi` },
-};
-
-/** The CPU and memory the box gets: its tier's, or on a custom box the operator's size. */
-export function sandboxResource(flags: SandboxFlags): SandboxResource {
-  if (flags.box === "custom") {
-    if (!flags.size) {
-      throw new SandboxError("a custom box needs cpu and memory_mib");
-    }
-    return { cpu: String(flags.size.cpu), memory: `${flags.size.memory_mib}Mi` };
-  }
-  return { ...SANDBOX_RESOURCES[flags.box] };
+export function machineResource(machine: Pick<MachineSpec, "cpu" | "memoryMib">): SandboxResource {
+  return { cpu: String(machine.cpu), memory: `${machine.memoryMib}Mi` };
 }
 
 /**
- * Whether a running sandbox is the one this run would create: the same box and size, the same
- * flags and language. With `image`, a sandbox started from another image is not: the helpers the
- * tools call are part of the image.
+ * Whether a running container is the one this machine would create: the same tier and size, and
+ * with `image`, the same image, since the helpers the tools call are part of it.
  */
-export function sandboxMatches(
-  metadata: unknown,
-  fingerprint: string,
-  flags: SandboxFlags,
-  image?: string,
-): boolean {
+export function machineMatches(metadata: unknown, machine: MachineSpec, image?: string): boolean {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return false;
   }
   const body = metadata as Record<string, unknown>;
-  if (body.environment_fingerprint !== fingerprint) {
-    return false;
-  }
   if (image !== undefined && body.image !== imageFingerprint(image)) {
     return false;
   }
-  if (body.kind !== flags.box) {
-    return false;
-  }
-  const resource = sandboxResource(flags);
-  if (body.cpu !== resource.cpu || body.memory !== resource.memory) {
-    return false;
-  }
-  if ((body.browser === "1") !== flags.browser || (body.coding === "1") !== flags.coding) {
-    return false;
-  }
-  if (flags.browser) {
-    const expected = flags.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE;
-    if (body.browser_language !== expected) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * The container environment: the agent's secrets, plus `HOME` in the workspace on a coding
- * sandbox so package caches, toolchains, and git configuration persist across idle stops.
- */
-export function sandboxEnvironment(secrets: Record<string, string>, flags: SandboxFlags): Record<string, string> {
-  const env: Record<string, string> = flags.coding ? { ...secrets, HOME: AGENT_HOME } : { ...secrets };
-  if (flags.browser) {
-    env.GUILDS_BROWSER_LANGUAGE = flags.browserLanguage ?? DEFAULT_BROWSER_LANGUAGE;
-  }
-  return env;
+  const resource = machineResource(machine);
+  return body.kind === machine.box && body.cpu === resource.cpu && body.memory === resource.memory;
 }
 
 export function endpointUrl(endpoint: { endpoint: string }): string {
@@ -714,10 +695,8 @@ async function loadOpenSandbox(): Promise<OpenSandboxModule> {
 }
 
 export class RunSandboxes {
-  /** The image every box but lite runs: Chromium and the coding toolchains. */
+  /** The image every machine runs: Chromium and the coding toolchains. */
   image: string;
-  /** The image a lite box runs. */
-  imageLite: string;
   workspaceRoot: string;
   hostId: string | undefined;
   private config: ConnectionConfig;
@@ -730,7 +709,6 @@ export class RunSandboxes {
     url: string;
     apiKey: string;
     image: string;
-    imageLite?: string | undefined;
     workspaceRoot: string;
     hostId?: string | undefined;
     sdk?: OpenSandboxModule | undefined;
@@ -738,7 +716,6 @@ export class RunSandboxes {
     readySeconds?: number | undefined;
   }) {
     this.image = options.image;
-    this.imageLite = options.imageLite || options.image;
     this.workspaceRoot = options.workspaceRoot;
     this.hostId = options.hostId;
     this.config = connectionConfig(options.url, options.apiKey);
@@ -774,122 +751,125 @@ export class RunSandboxes {
     return this.manager;
   }
 
-  /** The image the box runs. */
-  imageFor(flags: SandboxFlags): string {
-    return flags.box === "lite" ? this.imageLite : this.image;
+  private async connect(id: string): Promise<SandboxHandle> {
+    const sdk = await this.module();
+    return sdk.Sandbox.connect(id, { connectionConfig: this.config, connection_config: this.config });
   }
 
-  async ensure(
-    agentId: string,
-    secrets: Record<string, string>,
-    secretIds: string[],
-    options: {
-      box?: Box;
-      browser?: boolean;
-      coding?: boolean;
-      browserLanguage?: string;
-      size?: CustomSize | null | undefined;
-      scripts?: RunScriptSnapshot[];
-      liveExtra?: Array<{ name: unknown; source: unknown } | Record<string, unknown>>;
-    } = {},
-  ): Promise<SandboxHandle> {
-    const flags = sandboxFlags(options);
-    const browser = flags.browser;
+  /**
+   * The machine's running container, created when there is none. A container of another tier,
+   * size, or image is replaced; the machine's directory, and every home in it, stays.
+   */
+  async ensure(machine: MachineSpec): Promise<SandboxHandle> {
     const manager = this.requireManager();
     const sdk = await this.module();
     const matches = await listInfos(manager, {
       states: ["Running"],
-      metadata: { agent_id: agentId },
+      metadata: { machine_id: machine.id },
       pageSize: 100,
     });
-    const running = splitRunning(matches);
-    let keeper = running[0];
-    const extras = running[1];
+    const [first, extras] = splitRunning(matches);
+    let keeper = first;
     for (const extra of extras) {
       await killSandbox(manager, extra.id);
     }
-    const image = this.imageFor(flags);
-    const fingerprint = environmentFingerprint(secrets);
-    const metadata = keeper?.metadata;
-    if (keeper !== null && !sandboxMatches(metadata, fingerprint, flags, image)) {
+    if (keeper !== null && !machineMatches(keeper.metadata, machine, this.image)) {
       await killSandbox(manager, keeper.id);
       keeper = null;
     }
-    let sandbox: SandboxHandle;
     if (keeper !== null) {
-      sandbox = await sdk.Sandbox.connect(keeper.id, { connectionConfig: this.config, connection_config: this.config });
-      if (browser) {
-        await this.waitForBrowser(sandbox);
-      }
-    } else {
-      const workspace = prepareWorkspace(this.workspaceRoot, agentId, flags.box);
-      const createOptions: Record<string, unknown> = {
-        timeout: null,
-        timeoutSeconds: null,
-        env: sandboxEnvironment(secrets, flags),
-        metadata: sandboxMetadata(agentId, fingerprint, secretIds, {
-          ...flags,
-          hostId: this.hostId,
-          image,
-        }),
-        resource: sandboxResource(flags),
-        volumes: [
-          {
-            name: "workspace",
-            host: { path: workspace },
-            mount_path: "/home/agent",
-            mountPath: "/home/agent",
-            read_only: false,
-            readOnly: false,
-          },
-        ],
-        connection_config: this.config,
-        connectionConfig: this.config,
-      };
-      if (browser) {
-        createOptions.entrypoint = [...BROWSER_ENTRYPOINT];
-      }
-      sandbox = await sdk.Sandbox.create(image, createOptions);
-      if (browser) {
-        await this.waitForBrowser(sandbox);
-      }
+      return this.connect(keeper.id);
     }
-    await applyRunScripts(sandbox, options.scripts ?? [], options.liveExtra ?? []);
-    return sandbox;
+    const directory = machineDirectory(this.workspaceRoot, machine.id);
+    mkdirSync(directory, { recursive: true });
+    return sdk.Sandbox.create(this.image, {
+      timeout: null,
+      timeoutSeconds: null,
+      metadata: machineMetadata(machine, { hostId: this.hostId, image: this.image }),
+      resource: machineResource(machine),
+      volumes: [
+        {
+          name: "machine",
+          host: { path: directory },
+          mount_path: MACHINE_MOUNT,
+          mountPath: MACHINE_MOUNT,
+          read_only: false,
+          readOnly: false,
+        },
+      ],
+      connection_config: this.config,
+      connectionConfig: this.config,
+    });
   }
 
-  async connectRunning(agentId: string): Promise<SandboxHandle | null> {
+  async connectRunning(machineId: string): Promise<SandboxHandle | null> {
     const manager = this.requireManager();
-    const sdk = await this.module();
     const matches = await listInfos(manager, {
       states: ["Running"],
-      metadata: { agent_id: agentId },
+      metadata: { machine_id: machineId },
       pageSize: 100,
     });
     const [keeper] = splitRunning(matches);
-    if (keeper === null) {
-      return null;
-    }
-    return sdk.Sandbox.connect(keeper.id, { connectionConfig: this.config, connection_config: this.config });
+    return keeper === null ? null : this.connect(keeper.id);
   }
 
-  async novncTarget(sandbox: SandboxHandle): Promise<[string, Record<string, string>]> {
+  /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
+  async startBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void> {
+    const ports = seatPorts(seat);
+    const command =
+      `${BROWSER_START} ${seat.agentId} ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.novnc} `
+      + seat.browserLanguage;
+    try {
+      await sandbox.commands.run(command, { timeoutSeconds: this.readySeconds + 5 });
+    } catch {
+      /* the wait below reports why the browser is not answering */
+    }
+    await this.waitForBrowser(sandbox, seat);
+  }
+
+  /** Stops the agent's Chrome, display, and noVNC. Its profile and logins stay in its home. */
+  async stopBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void> {
+    await this.runStop(sandbox, seat, "browser");
+  }
+
+  /**
+   * Stops every process the agent has on its machine: its browser, its terminal, and its
+   * background commands. With `purge`, its runtime files under /run/guilds go too. Throws when a
+   * process outlives the stop, since it would still hold the slot's ports.
+   */
+  async stopAgent(sandbox: SandboxHandle, seat: AgentSeat, options: { purge?: boolean } = {}): Promise<void> {
+    await this.runStop(sandbox, seat, options.purge ? "purge" : "all");
+  }
+
+  private async runStop(sandbox: SandboxHandle, seat: AgentSeat, mode: "browser" | "all" | "purge"): Promise<void> {
+    const result = await sandbox.commands.run(`${AGENT_STOP} ${seat.agentId} ${mode}`, { timeoutSeconds: 30 });
+    const code = exitCode(result);
+    if (code !== undefined && code !== 0) {
+      throw new SandboxError(`agent ${seat.agentId} processes did not stop (${mode}, exit ${code})`);
+    }
+  }
+
+  async novncTarget(sandbox: SandboxHandle, seat: AgentSeat): Promise<[string, Record<string, string>]> {
     if (!sandbox.getEndpoint) {
       throw new SandboxError("sandbox cannot resolve endpoints");
     }
-    const endpoint = await sandbox.getEndpoint(BROWSER_NOVNC_PORT);
+    const endpoint = await sandbox.getEndpoint(seatPorts(seat).novnc);
     return [endpointUrl(endpoint), requestHeaders(endpoint, this.config)];
   }
 
   /**
-   * Starts the terminal daemon in the sandbox when it is not already answering
-   * and returns the secret path segment it serves under. The helper is
-   * idempotent, so a second call on a live daemon returns the same secret.
+   * Starts the agent's terminal daemon when it is not already answering and returns the secret
+   * path segment it serves under. The helper is idempotent, so a second call on a live daemon
+   * returns the same secret.
    */
-  async startCli(sandbox: SandboxHandle): Promise<string> {
+  async startCli(sandbox: SandboxHandle, seat: AgentSeat): Promise<string> {
     let result: CommandResult;
     try {
-      result = await sandbox.commands.run(CLI_ENTRYPOINT, { timeoutSeconds: CLI_START_SECONDS });
+      const ports = seatPorts(seat);
+      const command = `${CLI_ENTRYPOINT} ${seat.agentId} ${ports.ttyd} ${ports.portsFrom} ${ports.portsTo}`;
+      result = await sandbox.commands.run(command, {
+        timeoutSeconds: CLI_START_SECONDS,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new SandboxError(`terminal failed to start: ${message}`);
@@ -903,22 +883,23 @@ export class RunSandboxes {
   }
 
   /**
-   * The terminal's upstream base, the port's endpoint plus the daemon's secret
-   * path, and the host's headers. The sandbox host's proxy drops
-   * `Authorization`, so the secret travels in the path instead.
+   * The terminal's upstream base, the port's endpoint plus the daemon's secret path, and the
+   * host's headers. The sandbox host's proxy drops `Authorization`, so the secret travels in the
+   * path instead.
    */
-  async cliTarget(sandbox: SandboxHandle, token: string): Promise<[string, Record<string, string>]> {
+  async cliTarget(sandbox: SandboxHandle, seat: AgentSeat, token: string): Promise<[string, Record<string, string>]> {
     if (!sandbox.getEndpoint) {
       throw new SandboxError("sandbox cannot resolve endpoints");
     }
-    const endpoint = await sandbox.getEndpoint(CLI_PORT);
+    const endpoint = await sandbox.getEndpoint(seatPorts(seat).ttyd);
     return [`${endpointUrl(endpoint)}/t/${token}`, requestHeaders(endpoint, this.config)];
   }
 
-  async waitForBrowser(sandbox: SandboxHandle): Promise<void> {
+  async waitForBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void> {
+    const ports = seatPorts(seat);
     const command =
-      "curl -sf -o /dev/null http://127.0.0.1:6080/vnc.html "
-      + "&& curl -sf -o /dev/null http://127.0.0.1:9222/json/version";
+      `curl -sf -o /dev/null http://127.0.0.1:${ports.novnc}/vnc.html `
+      + `&& curl -sf -o /dev/null http://127.0.0.1:${ports.cdp}/json/version`;
     for (let attempt = 0; attempt < this.readySeconds; attempt += 1) {
       let result: CommandResult | null;
       try {
@@ -927,12 +908,12 @@ export class RunSandboxes {
         result = null;
       }
       if (result !== null && exitCode(result) === 0) {
-        await this.resetHostHomePage(sandbox);
+        await this.resetHostHomePage(sandbox, ports.cdp);
         return;
       }
       await this.sleep(1000);
     }
-    const detail = await this.browserFailureDetail(sandbox);
+    const detail = await this.browserFailureDetail(sandbox, seat);
     let message = "browser session failed to start";
     if (detail) {
       message = `${message}\n${detail}`;
@@ -940,28 +921,29 @@ export class RunSandboxes {
     throw new SandboxError(message);
   }
 
-  private async resetHostHomePage(sandbox: SandboxHandle): Promise<void> {
-    const pages = await this.runText(sandbox, "curl -sf http://127.0.0.1:9222/json/list || true");
+  private async resetHostHomePage(sandbox: SandboxHandle, cdpPort: number): Promise<void> {
+    const pages = await this.runText(sandbox, `curl -sf http://127.0.0.1:${cdpPort}/json/list || true`);
     if (!browserNeedsBlankReset(pages)) {
       return;
     }
     try {
-      await sandbox.commands.run(BLANK_NAVIGATE, { timeoutSeconds: 20 });
+      await sandbox.commands.run(blankNavigate(cdpPort), { timeoutSeconds: 20 });
     } catch {
       /* error page is still visible in noVNC; do not fail pane open */
     }
   }
 
-  private async browserFailureDetail(sandbox: SandboxHandle): Promise<string> {
+  private async browserFailureDetail(sandbox: SandboxHandle, seat: AgentSeat): Promise<string> {
+    const ports = seatPorts(seat);
     const vnc = await this.runText(
       sandbox,
-      "curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:6080/vnc.html || echo down",
+      `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${ports.novnc}/vnc.html || echo down`,
     );
     const cdp = await this.runText(
       sandbox,
-      "curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:9222/json/version || echo down",
+      `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${ports.cdp}/json/version || echo down`,
     );
-    const log = await this.runText(sandbox, `tail -n 80 ${BROWSER_START_LOG} || true`);
+    const log = await this.runText(sandbox, `tail -n 80 ${agentRunDir(seat.agentId)}/browser.log || true`);
     const parts = [`vnc=${vnc || "down"}`, `cdp=${cdp || "down"}`];
     if (log) {
       parts.push(log);
@@ -978,54 +960,42 @@ export class RunSandboxes {
     }
   }
 
-  async agentIdsUsingSecret(secretId: string): Promise<Set<string>> {
+  async listRunningMachineIds(): Promise<Set<string>> {
     const manager = this.requireManager();
     const matches = await listInfos(manager, { states: ["Running"], pageSize: 100 });
-    const agentIds = new Set<string>();
+    const machineIds = new Set<string>();
     for (const info of matches) {
       const metadata = info.metadata;
       if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
         continue;
       }
-      const agentId = (metadata as { agent_id?: unknown }).agent_id;
-      if (metadataSecretIds(metadata).has(secretId) && typeof agentId === "string") {
-        agentIds.add(agentId);
+      const machineId = (metadata as { machine_id?: unknown }).machine_id;
+      if (typeof machineId === "string") {
+        machineIds.add(machineId);
       }
     }
-    return agentIds;
+    return machineIds;
   }
 
-  async listRunningAgentIds(): Promise<Set<string>> {
-    const agentIds = new Set<string>();
-    for (const item of await this.listRunning()) {
-      agentIds.add(item.agentId);
-    }
-    return agentIds;
-  }
-
-  async listRunning(): Promise<Array<{ agentId: string; browser: boolean; coding: boolean }>> {
+  async destroy(machineId: string): Promise<void> {
     const manager = this.requireManager();
-    const matches = await listInfos(manager, { states: ["Running"], pageSize: 100 });
-    const running: Array<{ agentId: string; browser: boolean; coding: boolean }> = [];
-    for (const info of matches) {
-      const metadata = info.metadata;
-      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-        continue;
-      }
-      const body = metadata as { agent_id?: unknown; browser?: unknown; coding?: unknown };
-      if (typeof body.agent_id !== "string") {
-        continue;
-      }
-      running.push({ agentId: body.agent_id, browser: body.browser === "1", coding: body.coding === "1" });
-    }
-    return running;
-  }
-
-  async destroy(agentId: string): Promise<void> {
-    const manager = this.requireManager();
-    const matches = await listInfos(manager, { metadata: { agent_id: agentId }, pageSize: 100 });
+    const matches = await listInfos(manager, { metadata: { machine_id: machineId }, pageSize: 100 });
     for (const info of matches) {
       await killSandbox(manager, info.id);
     }
+  }
+
+  /** Destroys every sandbox that runs one agent alone, labelled with `agent_id`. */
+  async destroyAgentSandboxes(): Promise<number> {
+    const manager = this.requireManager();
+    let count = 0;
+    for (const info of await listInfos(manager, { pageSize: 100 })) {
+      const metadata = info.metadata;
+      if (metadata && typeof metadata === "object" && !Array.isArray(metadata) && "agent_id" in metadata) {
+        await killSandbox(manager, info.id);
+        count += 1;
+      }
+    }
+    return count;
   }
 }

@@ -5,11 +5,11 @@ import { test } from "node:test";
 import { operatorActor, type ArtifactActor } from "../../src/artifacts/index.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import {
-  MANAGED_SCRIPTS_DIR,
   SCRIPT_ARGS_ENV,
   SCRIPT_LAUNCHER,
   launcherCommand,
   materialiseScripts,
+  scriptsDirectory,
   writeThroughLiveExtra,
 } from "../../src/scripts/materialise.js";
 import {
@@ -30,6 +30,9 @@ import {
   invokeTool,
 } from "../../src/toolbox/index.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
+
+const HOME = "/home/a_1";
+const SCRIPTS = scriptsDirectory(HOME);
 
 type ScriptFixture = {
   run_script_snapshot_fields: string[];
@@ -197,12 +200,11 @@ test("snapshot-pin-ignores-live-edit", async () => {
   assert.equal(pinned.source, "print('snap')\n");
   assert.equal(firstClassSnapshots(snapshot).length, 1);
   const files = new MemoryFiles();
-  await materialiseScripts(
-    files,
+  await materialiseScripts(files, HOME,
     snapshot,
     liveExtraRows(snapshot, db.rows).map((item) => ({ name: item.name, source: item.source })),
   );
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/send_usdc.py`), "print('snap')\n");
+  assert.equal(files.files.get(`${SCRIPTS}/send_usdc.py`), "print('snap')\n");
   const commands: string[] = [];
   const ctx = createToolContext({
     run_id: "r_1",
@@ -223,7 +225,7 @@ test("snapshot-pin-ignores-live-edit", async () => {
   });
   const ran = await invoke(ctx, "script_run", { name: "send_usdc" });
   assert.equal(ran.content, "snap");
-  assert.deepEqual(commands, [launcherCommand("send_usdc")]);
+  assert.deepEqual(commands, [launcherCommand(HOME, "send_usdc")]);
   assert.ok(ctx.dynamic_tools.send_usdc);
 });
 
@@ -258,7 +260,7 @@ test("deleted-live-row-still-executable", async () => {
   });
   const ran = await invoke(ctx, "script_run", { name: "send_usdc" });
   assert.equal(ran.content, "snap");
-  assert.deepEqual(commands, [launcherCommand("send_usdc")]);
+  assert.deepEqual(commands, [launcherCommand(HOME, "send_usdc")]);
   assert.equal(firstClassSnapshots(snapshot).length, 0);
   assert.deepEqual(dynamicScriptTools(snapshot), {});
 });
@@ -275,7 +277,7 @@ test("live-extra-same-generation", async () => {
     sandbox: {
       commands: {
         async run(command) {
-          assert.equal(command, launcherCommand("scratch"));
+          assert.equal(command, launcherCommand(HOME, "scratch"));
           return { exit_code: 0, logs: { stdout: [{ text: "extra" }], stderr: [] } };
         },
       },
@@ -292,7 +294,7 @@ test("live-extra-same-generation", async () => {
     source: "print('extra')\n",
   });
   assert.equal(created.content, "wrote scratch\nad hoc");
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/scratch.py`), "print('extra')\n");
+  assert.equal(files.files.get(`${SCRIPTS}/scratch.py`), "print('extra')\n");
   const ran = await invoke(ctx, "script_run", { name: "scratch" });
   assert.equal(ran.content, "extra");
   assert.equal(firstClassSnapshots(snapshot).length, 0);
@@ -368,7 +370,7 @@ test("first-class schema drops required names that are not properties", () => {
 
 test("materialise-temp-then-move", async () => {
   const files = new MemoryFiles();
-  files.files.set(`${MANAGED_SCRIPTS_DIR}/stale.py`, "print('old')\n");
+  files.files.set(`${SCRIPTS}/stale.py`, "print('old')\n");
   const snapshot: RunScriptSnapshot[] = [
     toRunScriptSnapshot({
       id: "script_1",
@@ -379,19 +381,19 @@ test("materialise-temp-then-move", async () => {
     }),
   ];
   const extra = [{ name: "scratch", source: "print('extra')\n" }];
-  await materialiseScripts(files, snapshot, extra);
+  await materialiseScripts(files, HOME, snapshot, extra);
   assert.equal(files.writes.length, 2);
   for (const write of files.writes) {
-    assert.match(write.path, new RegExp(`^${MANAGED_SCRIPTS_DIR}/\\.[a-z0-9_-]+\\.[0-9a-f]+\\.tmp$`));
-    assert.equal(write.path.includes(`${MANAGED_SCRIPTS_DIR}/send_usdc.py`), false);
+    assert.match(write.path, new RegExp(`^${SCRIPTS}/\\.[a-z0-9_-]+\\.[0-9a-f]+\\.tmp$`));
+    assert.equal(write.path.includes(`${SCRIPTS}/send_usdc.py`), false);
   }
   assert.deepEqual(
     files.moves.map((item) => item.dest).sort(),
-    [`${MANAGED_SCRIPTS_DIR}/scratch.py`, `${MANAGED_SCRIPTS_DIR}/send_usdc.py`],
+    [`${SCRIPTS}/scratch.py`, `${SCRIPTS}/send_usdc.py`],
   );
-  assert.deepEqual(files.deletes, [`${MANAGED_SCRIPTS_DIR}/stale.py`]);
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/send_usdc.py`), "print('snap')\n");
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/scratch.py`), "print('extra')\n");
+  assert.deepEqual(files.deletes, [`${SCRIPTS}/stale.py`]);
+  assert.equal(files.files.get(`${SCRIPTS}/send_usdc.py`), "print('snap')\n");
+  assert.equal(files.files.get(`${SCRIPTS}/scratch.py`), "print('extra')\n");
   const catalog = readFileSync(path.join(repoRoot(import.meta.url), "apps/orchestrator/src/scripts/catalog.ts"), "utf8");
   const tools = readFileSync(path.join(repoRoot(import.meta.url), "apps/orchestrator/src/toolbox/script.ts"), "utf8");
   assert.equal(catalog.includes("WORKSPACE_ROOT"), false);
@@ -401,7 +403,7 @@ test("materialise-temp-then-move", async () => {
 
 test("materialise replaces an existing managed script", async () => {
   const files = new MemoryFiles();
-  files.files.set(`${MANAGED_SCRIPTS_DIR}/utc_now.py`, "print('old')\n");
+  files.files.set(`${SCRIPTS}/utc_now.py`, "print('old')\n");
   const snapshot: RunScriptSnapshot[] = [
     toRunScriptSnapshot({
       id: "script_1",
@@ -411,9 +413,9 @@ test("materialise replaces an existing managed script", async () => {
       source: "print('new')\n",
     }),
   ];
-  await materialiseScripts(files, snapshot);
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/utc_now.py`), "print('new')\n");
-  assert.deepEqual(files.deletes, [`${MANAGED_SCRIPTS_DIR}/utc_now.py`]);
+  await materialiseScripts(files, HOME, snapshot);
+  assert.equal(files.files.get(`${SCRIPTS}/utc_now.py`), "print('new')\n");
+  assert.deepEqual(files.deletes, [`${SCRIPTS}/utc_now.py`]);
 });
 
 test("materialise retries after a files API failure", async () => {
@@ -436,9 +438,9 @@ test("materialise retries after a files API failure", async () => {
       source: "print('snap')\n",
     }),
   ];
-  await assert.rejects(() => materialiseScripts(files, snapshot), /files api/);
-  await materialiseScripts(files, snapshot);
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/send_usdc.py`), "print('snap')\n");
+  await assert.rejects(() => materialiseScripts(files, HOME, snapshot), /files api/);
+  await materialiseScripts(files, HOME, snapshot);
+  assert.equal(files.files.get(`${SCRIPTS}/send_usdc.py`), "print('snap')\n");
 });
 
 test("json-stdin-launcher", async () => {
@@ -470,7 +472,7 @@ test("json-stdin-launcher", async () => {
     sandbox: {
       commands: {
         async run(command, opts) {
-          assert.equal(command, launcherCommand("priced"));
+          assert.equal(command, launcherCommand(HOME, "priced"));
           envs = opts?.envs as Record<string, string>;
           return { exit_code: 0, logs: { stdout: [{ text: "say \"hello\"" }], stderr: [] } };
         },
@@ -485,7 +487,7 @@ test("json-stdin-launcher", async () => {
   assert.equal(ran.metadata.error, null);
   assert.ok(envs);
   assert.deepEqual(JSON.parse(envs[SCRIPT_ARGS_ENV] ?? ""), given.arguments);
-  assert.ok(launcherCommand("priced").includes(SCRIPT_LAUNCHER));
+  assert.ok(launcherCommand(HOME, "priced").includes(SCRIPT_LAUNCHER));
 });
 
 test("schema-collision-rejection", async () => {
@@ -516,16 +518,16 @@ test("write-through skips names pinned on the snapshot", async () => {
       source: "print('snap')\n",
     }),
   ];
-  const wrote = await writeThroughLiveExtra(files, "send_usdc", "print('live')\n", snapshot);
+  const wrote = await writeThroughLiveExtra(files, HOME, "send_usdc", "print('live')\n", snapshot);
   assert.equal(wrote, false);
   assert.equal(files.writes.length, 0);
 });
 
 test("reconcile-after-sandbox-recreate", async () => {
   const files = new MemoryFiles();
-  files.files.set(`${MANAGED_SCRIPTS_DIR}/send_usdc.py`, "gone");
-  files.files.set(`${MANAGED_SCRIPTS_DIR}/scratch.py`, "gone");
-  files.files.set(`${MANAGED_SCRIPTS_DIR}/unmanaged.py`, "keep out");
+  files.files.set(`${SCRIPTS}/send_usdc.py`, "gone");
+  files.files.set(`${SCRIPTS}/scratch.py`, "gone");
+  files.files.set(`${SCRIPTS}/unmanaged.py`, "keep out");
   const snapshot: RunScriptSnapshot[] = [
     toRunScriptSnapshot({
       id: "script_1",
@@ -536,11 +538,11 @@ test("reconcile-after-sandbox-recreate", async () => {
     }),
   ];
   const extra = [{ name: "scratch", source: "print('extra')\n" }];
-  await materialiseScripts(files, snapshot, extra);
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/send_usdc.py`), "print('snap')\n");
-  assert.equal(files.files.get(`${MANAGED_SCRIPTS_DIR}/scratch.py`), "print('extra')\n");
-  assert.equal(files.files.has(`${MANAGED_SCRIPTS_DIR}/unmanaged.py`), false);
-  assert.ok(files.deletes.includes(`${MANAGED_SCRIPTS_DIR}/unmanaged.py`));
+  await materialiseScripts(files, HOME, snapshot, extra);
+  assert.equal(files.files.get(`${SCRIPTS}/send_usdc.py`), "print('snap')\n");
+  assert.equal(files.files.get(`${SCRIPTS}/scratch.py`), "print('extra')\n");
+  assert.equal(files.files.has(`${SCRIPTS}/unmanaged.py`), false);
+  assert.ok(files.deletes.includes(`${SCRIPTS}/unmanaged.py`));
 });
 
 test("native registry excludes bash", () => {

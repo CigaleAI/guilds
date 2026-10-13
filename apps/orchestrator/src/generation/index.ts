@@ -1,15 +1,11 @@
-import { existsSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   AgentValidationError,
   DEFAULT_MAX_INPUT_TOKENS,
   DEFAULT_MAX_TOOL_CALLS,
   DEFAULT_MAX_WORKSPACE_MIB,
-  boxOf,
   browserLanguageOf,
-  customSizeOf,
-  type Box,
-  type CustomSize,
   keepToolResultGenerationsOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
@@ -60,6 +56,7 @@ import {
 } from "../llm/credentials.js";
 import { newId } from "../lib/ids.js";
 import { AsyncEvent, EventQueue, sleep } from "../lib/event.js";
+import { IdleTimers } from "./idle.js";
 import {
   LLMError,
   countInputTokens,
@@ -101,14 +98,33 @@ import {
   promptHash,
   standingForCapabilities,
 } from "../prompts/index.js";
-import { prepareWorkspace, SandboxError, type SandboxHandle } from "../sandbox/index.js";
+import {
+  agentRunDir,
+  agentSandbox,
+  applyRunScripts,
+  machineSpec,
+  prepareWorkspace,
+  SandboxError,
+  seatEnvironment,
+  type AgentSeat,
+  type MachineSpec,
+  type SandboxHandle,
+} from "../sandbox/index.js";
+import {
+  agentDirectory,
+  DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
+  machineDirectory,
+  machineFromRow,
+  slotPorts,
+} from "../machines/index.js";
+import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
 import { planAfterFire, rowTiming, type ScheduleTiming } from "../schedules/timing.js";
 import type { PlannedWake } from "../schedules/window.js";
 import { instructionHash, scheduleWakeUserMessage } from "../schedules/item.js";
 import { Schedules, type ScheduleDatabase } from "../schedules/service.js";
-import { MissingSecretError, redact } from "../secrets/index.js";
+import { redact } from "../secrets/index.js";
 import { readSecretFile, removeSecretFile, storeAgentSecret, type AgentSecretsDatabase } from "../secrets/agent.js";
 import { collectRunState } from "../state/index.js";
 import { instanceRedactions } from "../connectors/instance.js";
@@ -150,6 +166,7 @@ import { GITHUB_SERVER_ID } from "../github/index.js";
 import {
   CODING_TOOLS,
   explorationOf,
+  measureMachine,
   measureWorkspace,
   repeatedReadStep,
   repeatedReadText,
@@ -570,8 +587,6 @@ export function configSnapshot(
     browser: Boolean(config.browser),
     browser_language: browserLanguageOf(config),
     coding: Boolean(config.coding),
-    box: boxOf(config),
-    ...(customSizeOf(config) ?? {}),
     scripting: config.scripting !== false,
     memory: memoryOf(config),
     thinking_level: config.thinking_level ?? "none",
@@ -1009,6 +1024,12 @@ export type GenerationDb = AccessDatabase &
     ): Promise<number>;
     countOpenIssues?(guildId: string): Promise<number>;
     setAgentWorkspaceMib?(agentId: string, mib: number): Promise<void>;
+    setMachineWorkspaceMib?(machineId: string, mib: number): Promise<void>;
+    moveAgent?(
+      agentId: string,
+      machineId: string,
+      options?: { maxAgentsPerMachine?: number | null; coding?: boolean },
+    ): Promise<{ from: { machineId: string; slot: number }; to: { machineId: string; slot: number } } | null>;
     listGuildRepositories?(guildId: string): Promise<Array<Record<string, unknown>>>;
     getMcpConnectionForOwner?(
       serverId: string,
@@ -1054,51 +1075,55 @@ export type GenerationNotes = Partial<DirectoryNotes> &
     ): string | null;
   };
 
+/**
+ * The machines agents run on: one container per machine, every agent's commands in its own home
+ * there, and each agent's browser and terminal on the ports of its slot.
+ */
 export type GenerationSandboxes = {
-  ensure(
-    agentId: string,
-    secrets: Record<string, string>,
-    secretIds: string[],
-    options?: {
-      box?: Box;
-      browser?: boolean;
-      coding?: boolean;
-      browserLanguage?: string;
-      size?: CustomSize | null | undefined;
-      scripts?: RunScriptSnapshot[];
-      liveExtra?: Array<{ name: unknown; source: unknown } | Record<string, unknown>>;
-    },
-  ): Promise<
-    SandboxHandle & {
-      get_info?: () => Promise<{ metadata?: unknown }>;
-      getInfo?: () => Promise<{ metadata?: unknown }>;
-    }
-  >;
-  connectRunning(agentId: string): Promise<
-    | (SandboxHandle & {
-        get_info?: () => Promise<{ metadata?: unknown }>;
-        getInfo?: () => Promise<{ metadata?: unknown }>;
-      })
-    | null
-  >;
-  destroy(agentId: string): Promise<void>;
-  listRunningAgentIds(): Promise<Iterable<string>>;
-  agentIdsUsingSecret(secretId: string): Promise<Iterable<string>>;
-  waitForBrowser(sandbox: unknown): Promise<void>;
-  novncTarget(sandbox: unknown): Promise<[string, Record<string, string>]>;
-  startCli(sandbox: unknown): Promise<string>;
-  cliTarget(sandbox: unknown, token: string): Promise<[string, Record<string, string>]>;
-  placementFor?(agentId: string): Promise<{
+  /** The machine's running container, created when there is none or replaced when its size changed. */
+  ensure(machine: MachineSpec): Promise<SandboxHandle>;
+  connectRunning(machineId: string): Promise<SandboxHandle | null>;
+  destroy(machineId: string): Promise<void>;
+  listRunningMachineIds(): Promise<Iterable<string>>;
+  /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
+  startBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
+  stopBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
+  /** Stops the agent's browser and terminal; with `purge`, also removes its runtime files. */
+  stopAgent(sandbox: SandboxHandle, seat: AgentSeat, options?: { purge?: boolean }): Promise<void>;
+  novncTarget(sandbox: SandboxHandle, seat: AgentSeat): Promise<[string, Record<string, string>]>;
+  startCli(sandbox: SandboxHandle, seat: AgentSeat): Promise<string>;
+  cliTarget(sandbox: SandboxHandle, seat: AgentSeat, token: string): Promise<[string, Record<string, string>]>;
+  /** The host a machine runs on, and its workspace root there; core runs every machine on one. */
+  machineHost?(machineId: string): Promise<{
     hostId: string;
     workspaceRoot: string;
     proxyUrl: string;
   } | null>;
 };
 
-type IdleHandle = {
-  abort: AbortController;
-  promise: Promise<void>;
-};
+/** The machine an agent row sits on, as its container runs it. */
+export function agentMachine(agent: Record<string, unknown>): MachineSpec {
+  return machineSpec({
+    id: String(agent.machine_id),
+    org_id: String(agent.org_id),
+    box: machineFromRow({ box: agent.machine_box }).box,
+    cpu: agent.machine_cpu === null || agent.machine_cpu === undefined ? null : Number(agent.machine_cpu),
+    memory_mib:
+      agent.machine_memory_mib === null || agent.machine_memory_mib === undefined
+        ? null
+        : Number(agent.machine_memory_mib),
+  });
+}
+
+/** An agent row's seat on its machine. */
+export function agentSeat(agent: Record<string, unknown>): AgentSeat {
+  return {
+    agentId: String(agent.id),
+    machineId: String(agent.machine_id),
+    slot: Number(agent.machine_slot),
+    browserLanguage: browserLanguageOf(asObj(agent.config)),
+  };
+}
 
 export class GenerationLoop implements GroupRunner {
   db: GenerationDb;
@@ -1123,15 +1148,22 @@ export class GenerationLoop implements GroupRunner {
   _run_agent = new Map<string, string>();
   _begin_mutex: Promise<void> = Promise.resolve();
   _tasks = new Map<string, Promise<void>>();
-  _idle_tasks = new Map<string, IdleHandle>();
+  /** Each running machine's idle stop, by machine id. */
+  _idle_tasks: IdleTimers;
+  /** Each running Chrome's idle stop, by agent id. */
+  _browser_idle: IdleTimers;
+  /** The machine of each agent that generates. */
+  _agent_machine = new Map<string, string>();
+  /** The machine of each agent whose Browser or CLI view started or had input, until it moves or goes. */
+  _touched_machine = new Map<string, string>();
   _subs = new Map<string, Set<EventQueue<[string, Record<string, unknown>]>>>();
   _cancels = new Map<string, CancelEvent>();
   _cancel_tasks = new Map<string, Promise<void>>();
   _commands = new Map<string, [SandboxHandle, string]>();
-  _stale_sandboxes = new Set<string>();
+  /** Machines whose tier or size changed while an agent on them generated. */
+  _stale_machines = new Set<string>();
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
-  _idle_timeout_ms: number;
   _scheduler_tick_ms: number;
   _scheduler_abort: AbortController | null = null;
   _scheduler_task: Promise<void> | null = null;
@@ -1174,7 +1206,9 @@ export class GenerationLoop implements GroupRunner {
       (db.getOrgModelProvider
         ? coreModelCredentials({ getOrgModelProvider: (orgId, provider) => db.getOrgModelProvider!(orgId, provider) })
         : NO_CREDENTIALS);
-    this._idle_timeout_ms = options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS;
+    const idleTimeoutMs = options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS;
+    this._idle_tasks = new IdleTimers(idleTimeoutMs);
+    this._browser_idle = new IdleTimers(idleTimeoutMs);
     this._scheduler_tick_ms = options.schedulerTickMs ?? SCHEDULER_TICK_MS;
     if (options.cancelGraceMs !== undefined) {
       generationLive.cancelGraceMs = options.cancelGraceMs;
@@ -1478,8 +1512,11 @@ export class GenerationLoop implements GroupRunner {
     const abort = this._scheduler_abort;
     this._scheduler_abort = null;
     abort?.abort();
-    for (const agentId of [...this._idle_tasks.keys()]) {
-      this._cancel_idle(agentId);
+    for (const machineId of this._idle_tasks.keys()) {
+      this._cancel_idle(machineId);
+    }
+    for (const agentId of this._browser_idle.keys()) {
+      this._cancel_browser_idle(agentId);
     }
     if (this._scheduler_task) {
       const abortWait = new AbortController();
@@ -1559,74 +1596,88 @@ export class GenerationLoop implements GroupRunner {
     this._lock_event.set();
   }
 
-  _cancel_idle(agentId: string): void {
-    const handle = this._idle_tasks.get(agentId);
-    if (handle) {
-      handle.abort.abort();
-      this._idle_tasks.delete(agentId);
-    }
-  }
-
-  _schedule_idle(agentId: string): void {
-    this._cancel_idle(agentId);
-    if (this._idle_timeout_ms <= 0) {
-      return;
-    }
-    const abort = new AbortController();
-    const promise = (async () => {
-      try {
-        await sleep(this._idle_timeout_ms, abort.signal);
-        if (abort.signal.aborted) {
-          return;
-        }
-        await this._idle_stop(agentId);
-      } catch {
-        return;
+  /** Whether an agent on this machine generates, `except` aside. */
+  machineBusy(machineId: string, except?: string): boolean {
+    for (const [agentId, machine] of this._agent_machine) {
+      if (machine === machineId && agentId !== except && this._busy_agents.has(agentId)) {
+        return true;
       }
-    })();
-    this._idle_tasks.set(agentId, { abort, promise });
+    }
+    return false;
   }
 
-  async _idle_stop(agentId: string): Promise<void> {
+  _cancel_idle(machineId: string): void {
+    this._idle_tasks.cancel(machineId);
+  }
+
+  /** Arms a machine's idle stop: its container goes after the idle timeout without work or input. */
+  _schedule_idle(machineId: string): void {
+    this._idle_tasks.arm(machineId, () => this._idle_stop(machineId));
+  }
+
+  async _idle_stop(machineId: string): Promise<void> {
     try {
-      if (this._busy_agents.has(agentId)) {
+      if (this.machineBusy(machineId)) {
         return;
       }
-      await this.sandboxes.destroy(agentId);
+      await this.sandboxes.destroy(machineId);
+      this._stale_machines.delete(machineId);
     } catch (error) {
       writeLog(
         "error",
         "idle sandbox stop failed",
         {
-          agent_id: agentId,
+          machine_id: machineId,
           operation: "sandbox.idle.stop",
           error_type: errorName(error),
         },
         error,
       );
-    } finally {
-      this._idle_tasks.delete(agentId);
     }
   }
 
-  /** A secret's value, name, or description changed: agents using it get a fresh snapshot and sandbox. */
+  _cancel_browser_idle(agentId: string): void {
+    this._browser_idle.cancel(agentId);
+  }
+
+  /** Arms an agent's Chrome idle stop: it stops after the idle timeout without a browser call or input. */
+  _schedule_browser_idle(agentId: string): void {
+    this._browser_idle.arm(agentId, () => this.stopAgentBrowser(agentId));
+  }
+
+  /** Stops the agent's Chrome when its machine runs. Its profile and logins stay in its home. */
+  async stopAgentBrowser(agentId: string): Promise<void> {
+    this._cancel_browser_idle(agentId);
+    const agent = await this.db.getAgent(agentId);
+    if (agent === null) {
+      return;
+    }
+    try {
+      const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
+      if (sandbox !== null) {
+        await this.sandboxes.stopBrowser(sandbox, agentSeat(agent));
+      }
+    } catch (error) {
+      writeLog(
+        "error",
+        "browser stop failed",
+        { agent_id: agentId, operation: "browser.stop", error_type: errorName(error) },
+        error,
+      );
+    }
+  }
+
+  /** A secret's value, name, or description changed: the active runs it reaches get a fresh snapshot. */
   async secretChanged(secretId: string): Promise<void> {
-    const agentIds = new Set(await this.db.listActiveRunAgentIdsForSecret(secretId));
-    for (const agentId of await this.sandboxes.agentIdsUsingSecret(secretId)) {
-      agentIds.add(agentId);
-    }
-    await this.refreshEnvironments([...agentIds]);
+    await this.refreshEnvironments(await this.db.listActiveRunAgentIdsForSecret(secretId));
   }
 
-  /** These agents gained or lost a secret: live ones get a fresh snapshot and sandbox. */
+  /** These agents gained or lost a secret: their active runs get a fresh snapshot. */
   async secretAccessChanged(agentIds: string[]): Promise<void> {
     if (!agentIds.length) {
       return;
     }
     const live = new Set((await this.db.listActiveRuns()).map((row) => String(row.agent_id)));
-    for (const agentId of await this.sandboxes.listRunningAgentIds()) {
-      live.add(agentId);
-    }
     await this.refreshEnvironments(agentIds.filter((id) => live.has(id)));
   }
 
@@ -1636,7 +1687,6 @@ export class GenerationLoop implements GroupRunner {
       if (agent !== null) {
         await this.syncRunSecrets(agent);
       }
-      await this.refreshSandbox(agentId);
     }
   }
 
@@ -1662,117 +1712,90 @@ export class GenerationLoop implements GroupRunner {
     return refs;
   }
 
-  async refresh_sandbox(agentId: string): Promise<void> {
-    return this.refreshSandbox(agentId);
-  }
-
-  async refreshSandbox(agentId: string): Promise<void> {
-    this._stale_sandboxes.add(agentId);
-    if (this._busy_agents.has(agentId)) {
+  /**
+   * A machine's tier or size changed: an idle container goes now, a busy one once the last
+   * generation on it ends. The next work on the machine starts a container of the new size.
+   */
+  async machineChanged(machineId: string): Promise<void> {
+    this._stale_machines.add(machineId);
+    if (this.machineBusy(machineId)) {
       return;
     }
-    this._cancel_idle(agentId);
-    this._busy_agents.add(agentId);
+    this._cancel_idle(machineId);
     try {
-      await this.sandboxes.destroy(agentId);
-      this._stale_sandboxes.delete(agentId);
+      await this.sandboxes.destroy(machineId);
+      this._stale_machines.delete(machineId);
     } catch (error) {
       writeLog(
         "error",
         "sandbox refresh failed",
-        {
-          agent_id: agentId,
-          operation: "sandbox.refresh",
-          error_type: errorName(error),
-        },
+        { machine_id: machineId, operation: "sandbox.refresh", error_type: errorName(error) },
         error,
       );
-    } finally {
-      this._busy_agents.delete(agentId);
-      this._notify_lock_release();
     }
+  }
+
+  /**
+   * A deleted machine: its container goes, and its directory with it. A container that fails to
+   * go is retried by the machine's idle stop.
+   */
+  async deleteMachine(machineId: string): Promise<void> {
+    this._cancel_idle(machineId);
+    this._stale_machines.delete(machineId);
+    try {
+      await this.sandboxes.destroy(machineId);
+    } catch (error) {
+      writeLog(
+        "error",
+        "deleted machine sandbox stop failed",
+        { machine_id: machineId, operation: "machine.delete", error_type: errorName(error) },
+        error,
+      );
+      this._schedule_idle(machineId);
+    }
+    const directory = machineDirectory(await this.workspaceRootFor(machineId), machineId);
+    if (existsSync(directory)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+
+  /**
+   * The agent's browser settings changed: its Chrome stops, and the next browser call or Browser
+   * tab starts it again with them. Other agents on the machine keep theirs.
+   */
+  async agentBrowserChanged(agentId: string): Promise<void> {
+    await this.stopAgentBrowser(agentId);
   }
 
   async ensure_browser(agentId: string): Promise<unknown> {
     return this.ensureBrowser(agentId);
   }
 
+  /** The agent's Chrome for the Browser tab: its machine woken, its display and noVNC up. */
   async ensureBrowser(agentId: string): Promise<unknown> {
     const agent = await this._runnable_agent(agentId);
-    let config: AgentConfig;
-    try {
-      config = validateConfig(asObj(agent.config));
-    } catch (error) {
-      if (error instanceof AgentValidationError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
+    const config = this._valid_config(agent);
     if (!config.browser) {
       throw new RunRequestError(409, "browser is not enabled");
     }
-    if (this._busy_agents.has(agentId)) {
-      const sandbox = await this.sandboxes.connectRunning(agentId);
-      if (sandbox === null) {
-        throw new RunRequestError(503, "sandbox is not running");
-      }
-      const info = sandbox.get_info
-        ? await sandbox.get_info()
-        : sandbox.getInfo
-          ? await sandbox.getInfo()
-          : { metadata: undefined };
-      const metadata = info.metadata;
-      if (!(
-        metadata &&
-        typeof metadata === "object" &&
-        !Array.isArray(metadata) &&
-        (metadata as Record<string, unknown>).browser === "1"
-      )) {
-        throw new RunRequestError(409, "browser will start after the current generation");
-      }
-      try {
-        await this.sandboxes.waitForBrowser(sandbox);
-      } catch (error) {
-        if (error instanceof SandboxError) {
-          throw new RunRequestError(503, error.message);
-        }
-        throw error;
-      }
-      return sandbox;
-    }
-    let access;
-    let secrets: Record<string, string>;
+    const sandbox = await this.wakeSandbox(agentId);
+    this._touched_machine.set(agentId, String(agent.machine_id));
+    await this.startAgentBrowser(agent, sandbox);
+    return sandbox;
+  }
+
+  /** Starts the agent's Chrome on its machine and arms its idle stop. */
+  async startAgentBrowser(agent: Record<string, unknown>, sandbox: SandboxHandle): Promise<void> {
+    const agentId = String(agent.id);
     try {
-      access = await agentRuntime(this.db, agent, { mcpPool: this.mcp });
-      secrets = await snapshotEnvValues(this.db, access.secrets);
-    } catch (error) {
-      if (
-        error instanceof MissingSecretError ||
-        error instanceof McpDisconnectedError
-      ) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
-    const secretIds = access.secrets
-      .map((ref) => ref.id)
-      .filter((id): id is string => typeof id === "string");
-    try {
-      const sandbox = await this.sandboxes.ensure(agentId, secrets, secretIds, {
-        box: config.box,
-        browser: true,
-        coding: config.coding,
-        browserLanguage: config.browser_language,
-        size: customSizeOf(config),
-      });
-      this._schedule_idle(agentId);
-      return sandbox;
+      await this.sandboxes.startBrowser(sandbox, agentSeat(agent));
     } catch (error) {
       if (error instanceof SandboxError) {
         throw new RunRequestError(503, error.message);
       }
       throw error;
     }
+    this._schedule_browser_idle(agentId);
   }
 
   async browser_proxy_target(agentId: string): Promise<[string, Record<string, string>]> {
@@ -1780,12 +1803,13 @@ export class GenerationLoop implements GroupRunner {
   }
 
   async browserProxyTarget(agentId: string): Promise<[string, Record<string, string>]> {
-    const sandbox = await this.sandboxes.connectRunning(agentId);
+    const agent = await this._runnable_agent(agentId);
+    const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
     if (sandbox === null) {
       throw new RunRequestError(503, "sandbox is not running");
     }
     try {
-      return await this.sandboxes.novncTarget(sandbox);
+      return await this.sandboxes.novncTarget(sandbox, agentSeat(agent));
     } catch {
       throw new RunRequestError(503, "browser view is unavailable");
     }
@@ -1795,91 +1819,68 @@ export class GenerationLoop implements GroupRunner {
     return this.ensureCli(agentId);
   }
 
-  /**
-   * Brings the agent's sandbox up as its configuration says (with Chromium when
-   * `browser` is on) and starts the terminal daemon in it. A generating agent's
-   * running sandbox is used as is.
-   */
+  /** Wakes the agent's machine and starts the agent's terminal in its home. */
   async ensureCli(agentId: string): Promise<unknown> {
     const agent = await this._runnable_agent(agentId);
-    let config: AgentConfig;
-    try {
-      config = validateConfig(asObj(agent.config));
-    } catch (error) {
-      if (error instanceof AgentValidationError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
+    const config = this._valid_config(agent);
     if (!config.cli) {
       throw new RunRequestError(409, "cli is not enabled");
     }
     const sandbox = await this.wakeSandbox(agentId);
-    await this.startCliOn(sandbox);
+    this._touched_machine.set(agentId, String(agent.machine_id));
+    await this.startCliOn(sandbox, agent);
     return sandbox;
   }
 
-  /**
-   * The agent's sandbox, up as its configuration says: a generating agent's running
-   * sandbox as is, otherwise ensured with the current environment and an idle timer.
-   */
-  async wakeSandbox(agentId: string): Promise<SandboxHandle> {
-    const agent = await this._runnable_agent(agentId);
-    let config: AgentConfig;
+  /** The agent's config, refused with 422 when it does not validate. */
+  _valid_config(agent: Record<string, unknown>): AgentConfig {
     try {
-      config = validateConfig(asObj(agent.config));
+      return validateConfig(asObj(agent.config));
     } catch (error) {
       if (error instanceof AgentValidationError) {
         throw new RunRequestError(422, error.message);
       }
       throw error;
     }
-    if (this._busy_agents.has(agentId)) {
-      const sandbox = await this.sandboxes.connectRunning(agentId);
+  }
+
+  /**
+   * The agent's machine, running: the container as is while an agent on it generates, otherwise
+   * ensured, with the agent's home ready and the machine's idle timer armed.
+   */
+  async wakeSandbox(agentId: string): Promise<SandboxHandle> {
+    const agent = await this._runnable_agent(agentId);
+    const config = this._valid_config(agent);
+    const machine = agentMachine(agent);
+    try {
+      prepareWorkspace(await this.workspaceRootFor(machine.id), machine.id, agentId, { browser: config.browser });
+    } catch (error) {
+      throw new RunRequestError(503, errorMessage(error));
+    }
+    if (this.machineBusy(machine.id)) {
+      const sandbox = await this.sandboxes.connectRunning(machine.id);
       if (sandbox === null) {
         throw new RunRequestError(503, "sandbox is not running");
       }
       return sandbox;
     }
-    let access;
-    let secrets: Record<string, string>;
-    try {
-      access = await agentRuntime(this.db, agent, { mcpPool: this.mcp });
-      secrets = await snapshotEnvValues(this.db, access.secrets);
-    } catch (error) {
-      if (
-        error instanceof MissingSecretError ||
-        error instanceof McpDisconnectedError
-      ) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
-    const secretIds = access.secrets
-      .map((ref) => ref.id)
-      .filter((id): id is string => typeof id === "string");
     let sandbox: SandboxHandle;
     try {
-      sandbox = await this.sandboxes.ensure(agentId, secrets, secretIds, {
-        box: config.box,
-        browser: config.browser,
-        coding: config.coding,
-        browserLanguage: config.browser_language,
-        size: customSizeOf(config),
-      });
+      sandbox = await this.sandboxes.ensure(machine);
     } catch (error) {
       if (error instanceof SandboxError) {
         throw new RunRequestError(503, error.message);
       }
       throw error;
     }
-    this._schedule_idle(agentId);
+    this._stale_machines.delete(machine.id);
+    this._schedule_idle(machine.id);
     return sandbox;
   }
 
   /**
-   * The diff a run made in one repository, between its start and end checkpoints, from
-   * the agent's sandbox (woken as the CLI tab wakes it), at most 256 KiB and redacted.
+   * The diff a run made in one repository, between its start and end checkpoints, from the
+   * agent's machine (woken as the CLI tab wakes it), at most 256 KiB and redacted.
    */
   async runDiff(runId: string, repository: string): Promise<{ diff: string; truncated: boolean }> {
     const run = await this.db.getRun(runId);
@@ -1911,21 +1912,22 @@ export class GenerationLoop implements GroupRunner {
   }
 
   async cliProxyTarget(agentId: string): Promise<[string, Record<string, string>]> {
-    const sandbox = await this.sandboxes.connectRunning(agentId);
+    const agent = await this._runnable_agent(agentId);
+    const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
     if (sandbox === null) {
       throw new RunRequestError(503, "sandbox is not running");
     }
-    const token = await this.startCliOn(sandbox);
+    const token = await this.startCliOn(sandbox, agent);
     try {
-      return await this.sandboxes.cliTarget(sandbox, token);
+      return await this.sandboxes.cliTarget(sandbox, agentSeat(agent), token);
     } catch {
       throw new RunRequestError(503, "terminal is unavailable");
     }
   }
 
-  private async startCliOn(sandbox: unknown): Promise<string> {
+  private async startCliOn(sandbox: SandboxHandle, agent: Record<string, unknown>): Promise<string> {
     try {
-      return await this.sandboxes.startCli(sandbox);
+      return await this.sandboxes.startCli(sandbox, agentSeat(agent));
     } catch (error) {
       if (error instanceof SandboxError) {
         throw new RunRequestError(503, error.message);
@@ -1938,12 +1940,63 @@ export class GenerationLoop implements GroupRunner {
     this.touchSandbox(agentId);
   }
 
-  /** Operator input on a proxied Browser or CLI view counts as activity: an armed idle timer restarts. */
+  /**
+   * Operator input on a proxied Browser or CLI view counts as activity: the armed idle timers of
+   * the agent's machine and of its Chrome restart.
+   */
   touchSandbox(agentId: string): void {
-    if (this._busy_agents.has(agentId) || !this._idle_tasks.has(agentId)) {
+    if (this._browser_idle.has(agentId)) {
+      this._schedule_browser_idle(agentId);
+    }
+    const known = this._touched_machine.get(agentId);
+    if (known !== undefined) {
+      this.touchMachine(known);
       return;
     }
-    this._schedule_idle(agentId);
+    void this.db.getAgent(agentId).then(
+      (agent) => {
+        if (agent !== null) {
+          this._touched_machine.set(agentId, String(agent.machine_id));
+          this.touchMachine(String(agent.machine_id));
+        }
+      },
+      () => undefined,
+    );
+  }
+
+  /** Input on a running machine's views arms its idle stop again. */
+  private touchMachine(machineId: string): void {
+    if (!this.machineBusy(machineId) && this._idle_tasks.has(machineId)) {
+      this._schedule_idle(machineId);
+    }
+  }
+
+  /**
+   * Stops the agent's processes on its machine when it runs, and removes its runtime files and
+   * its home. The machine's container stays up for the other agents on it.
+   */
+  private async removeAgentFromMachine(agent: Record<string, unknown>): Promise<void> {
+    const agentId = String(agent.id);
+    const machineId = String(agent.machine_id);
+    this._cancel_browser_idle(agentId);
+    this._touched_machine.delete(agentId);
+    const sandbox = await this.sandboxes.connectRunning(machineId);
+    if (sandbox !== null) {
+      try {
+        await this.sandboxes.stopAgent(sandbox, agentSeat(agent), { purge: true });
+      } catch (error) {
+        writeLog(
+          "error",
+          "agent stop failed",
+          { agent_id: agentId, machine_id: machineId, operation: "agent.stop", error_type: errorName(error) },
+          error,
+        );
+      }
+    }
+    const workspace = agentDirectory(await this.workspaceRootFor(machineId), machineId, agentId);
+    if (existsSync(workspace)) {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   }
 
   async delete_agent(agentId: string): Promise<void> {
@@ -1958,14 +2011,9 @@ export class GenerationLoop implements GroupRunner {
     if (this._busy_agents.has(agentId)) {
       throw new RunRequestError(409, "agent is already generating");
     }
-    this._cancel_idle(agentId);
     this._busy_agents.add(agentId);
     try {
-      await this.sandboxes.destroy(agentId);
-      const workspace = path.join(await this.workspaceRootFor(agentId), agentId);
-      if (existsSync(workspace)) {
-        rmSync(workspace, { recursive: true, force: true });
-      }
+      await this.removeAgentFromMachine(agent);
       await this.notes.deleteAgent?.(
         String(agent.org_slug),
         String(agent.guild_name),
@@ -1973,7 +2021,6 @@ export class GenerationLoop implements GroupRunner {
       );
       await this.db.purgeAgent(agentId);
     } finally {
-      this._stale_sandboxes.delete(agentId);
       this._busy_agents.delete(agentId);
       this._notify_lock_release();
     }
@@ -2004,23 +2051,93 @@ export class GenerationLoop implements GroupRunner {
     }
     try {
       for (const agentId of agentIds) {
-        this._cancel_idle(agentId);
-        await this.sandboxes.destroy(agentId);
-        const workspace = path.join(await this.workspaceRootFor(agentId), agentId);
-        if (existsSync(workspace)) {
-          rmSync(workspace, { recursive: true, force: true });
+        const agent = await this.db.getAgent(agentId);
+        if (agent !== null) {
+          await this.removeAgentFromMachine(agent);
         }
       }
       await this.notes.deleteGuild?.(String(guild.org_slug), String(guild.name));
       await this.db.purgeGuild(guildId);
     } finally {
       for (const agentId of agentIds) {
-        this._stale_sandboxes.delete(agentId);
         this._busy_agents.delete(agentId);
       }
       this._deleting_guilds.delete(guildId);
       this._notify_lock_release();
     }
+  }
+
+  /**
+   * Moves an agent to another machine of its organisation: its processes stop on the one it
+   * leaves, its home moves with it, and it takes the lowest free slot on the other. Both machines
+   * must keep their directories under one workspace root. A home that moved is moved back when
+   * the database refuses the move.
+   */
+  async moveAgent(
+    agentId: string,
+    machineId: string,
+    options: { maxAgentsPerMachine?: number | null; coding?: boolean } = {},
+  ): Promise<void> {
+    const agent = await this.db.getAgent(agentId);
+    if (agent === null) {
+      throw new RunRequestError(404, "agent not found");
+    }
+    const from = String(agent.machine_id);
+    if (from === machineId) {
+      return;
+    }
+    const { source, target, move } = await this.assertMovable(agentId, from, machineId);
+    this._busy_agents.add(agentId);
+    this._touched_machine.delete(agentId);
+    try {
+      this._cancel_browser_idle(agentId);
+      const sandbox = await this.sandboxes.connectRunning(from);
+      if (sandbox !== null) {
+        await this.sandboxes.stopAgent(sandbox, agentSeat(agent), { purge: true });
+      }
+      const homeMoved = existsSync(source);
+      if (homeMoved) {
+        mkdirSync(path.dirname(target), { recursive: true });
+        renameSync(source, target);
+      }
+      try {
+        if ((await move(agentId, machineId, options)) === null) {
+          throw new RunRequestError(404, "agent not found");
+        }
+      } catch (error) {
+        if (homeMoved) {
+          renameSync(target, source);
+        }
+        throw error;
+      }
+    } finally {
+      this._busy_agents.delete(agentId);
+      this._notify_lock_release();
+    }
+  }
+
+  /** Refuses a move of a busy agent, where moves are unsupported, across hosts, or onto a home already there. */
+  private async assertMovable(
+    agentId: string,
+    from: string,
+    to: string,
+  ): Promise<{ source: string; target: string; move: NonNullable<GenerationDb["moveAgent"]> }> {
+    if (this._busy_agents.has(agentId)) {
+      throw new RunRequestError(409, "agent is already generating");
+    }
+    if (!this.db.moveAgent) {
+      throw new RunRequestError(501, "agents cannot move here");
+    }
+    const sourceRoot = await this.workspaceRootFor(from);
+    const targetRoot = await this.workspaceRootFor(to);
+    if (path.resolve(sourceRoot) !== path.resolve(targetRoot)) {
+      throw new RunRequestError(409, "the machines keep their homes on different hosts");
+    }
+    const target = agentDirectory(targetRoot, to, agentId);
+    if (existsSync(target)) {
+      throw new RunRequestError(409, "the target machine already holds a home for this agent");
+    }
+    return { source: agentDirectory(sourceRoot, from, agentId), target, move: this.db.moveAgent.bind(this.db) };
   }
 
   async add_message(
@@ -2200,9 +2317,9 @@ export class GenerationLoop implements GroupRunner {
       }
     }
     await this.group_chat.resume_all();
-    for (const agentId of await this.sandboxes.listRunningAgentIds()) {
-      if (!this._busy_agents.has(agentId)) {
-        this._schedule_idle(agentId);
+    for (const machineId of await this.sandboxes.listRunningMachineIds()) {
+      if (!this.machineBusy(machineId)) {
+        this._schedule_idle(machineId);
       }
     }
   }
@@ -2365,7 +2482,7 @@ export class GenerationLoop implements GroupRunner {
         access.grants,
         await this._connector_state(agent),
         caps.scripts ? await this.scripts.catalog(String(agent.id)) : [],
-        caps.coding ? stateRepositories(await this._guild_repositories(agent)) : null,
+        caps.coding ? stateRepositories(await this._guild_repositories(agent), String(agent.id)) : null,
       ),
       memory,
       caps,
@@ -2438,7 +2555,10 @@ export class GenerationLoop implements GroupRunner {
     scripts: unknown[] = [],
     repositories: Array<Record<string, string>> | null = null,
   ): Promise<Record<string, unknown>> {
-    prepareWorkspace(await this.workspaceRootFor(String(agent.id)), String(agent.id), boxOf(agent.config));
+    const machineId = String(agent.machine_id);
+    prepareWorkspace(await this.workspaceRootFor(machineId), machineId, String(agent.id), {
+      browser: Boolean(asObj(agent.config).browser),
+    });
     const levels = catalogLevels(grants);
     let collections: unknown[] = [];
     if (this.artifacts && typeof agent.org_id === "string" && agent.org_id) {
@@ -2505,6 +2625,7 @@ export class GenerationLoop implements GroupRunner {
       }
       const agent = this.db.getAgent ? await this.db.getAgent(agentId) : null;
       const orgId = String(agent?.org_id ?? "");
+      const machineId = agent?.machine_id === undefined || agent?.machine_id === null ? null : String(agent.machine_id);
       const max = orgId
         ? ((await this.policy.standing(orgId)).limits.maxConcurrentRuns ?? undefined)
         : undefined;
@@ -2516,7 +2637,10 @@ export class GenerationLoop implements GroupRunner {
         }
         throw error;
       }
-      this._cancel_idle(agentId);
+      if (machineId !== null) {
+        this._cancel_idle(machineId);
+        this._agent_machine.set(agentId, machineId);
+      }
       this._busy.add(runId);
       this._busy_agents.add(agentId);
       this._run_agent.set(runId, agentId);
@@ -2533,7 +2657,15 @@ export class GenerationLoop implements GroupRunner {
     if (agentId !== undefined) {
       this._busy_agents.delete(agentId);
       this.admission.release("agent", agentId);
-      this._schedule_idle(agentId);
+      const machineId = this._agent_machine.get(agentId);
+      this._agent_machine.delete(agentId);
+      if (machineId !== undefined && !this.machineBusy(machineId)) {
+        if (this._stale_machines.has(machineId)) {
+          void this.machineChanged(machineId);
+        } else {
+          this._schedule_idle(machineId);
+        }
+      }
     }
     this._tasks.delete(runId);
     this._cancels.delete(runId);
@@ -2600,29 +2732,6 @@ export class GenerationLoop implements GroupRunner {
       this._commands.set(runId, [sandbox, executionId]);
     } else {
       this._commands.delete(runId);
-    }
-  }
-
-  async _refresh_stale_sandbox(runId: string): Promise<void> {
-    const agentId = this._run_agent.get(runId);
-    if (agentId === undefined || !this._stale_sandboxes.has(agentId)) {
-      return;
-    }
-    try {
-      await this.sandboxes.destroy(agentId);
-      this._stale_sandboxes.delete(agentId);
-    } catch (error) {
-      writeLog(
-        "error",
-        "stale sandbox cleanup failed",
-        {
-          run_id: runId,
-          agent_id: agentId,
-          operation: "sandbox.credentials.refresh",
-          error_type: errorName(error),
-        },
-        error,
-      );
     }
   }
 
@@ -2949,7 +3058,6 @@ export class GenerationLoop implements GroupRunner {
           await this._settle_cancel(runId, generation, extra);
         }
         await this.publish(runId, "generation.finished", { generation });
-        await this._refresh_stale_sandbox(runId);
         const finished = await this.db.getRun(runId);
         if (finished !== null && !runWasResumed(finished)) {
           const kind = runKind(finished);
@@ -3015,21 +3123,23 @@ export class GenerationLoop implements GroupRunner {
     agent: Record<string, unknown>,
     extra: Record<string, string>,
   ): Promise<void> {
+    const machine = agentMachine(agent);
+    const seat = agentSeat(agent);
+    const snapshot = asObj(run.config_snapshot);
     try {
-      const workspaceRoot = await this.workspaceRootFor(String(agent.id));
-      if (this.sandboxes.placementFor) {
-        const placement = await this.sandboxes.placementFor(String(agent.id));
-        if (placement) {
-          extra.host_id = placement.hostId;
-          await this.db.mergeRunMetadata(runId, { host_id: placement.hostId }, new Date());
+      const workspaceRoot = await this.workspaceRootFor(machine.id);
+      if (this.sandboxes.machineHost) {
+        const host = await this.sandboxes.machineHost(machine.id);
+        if (host) {
+          extra.host_id = host.hostId;
+          await this.db.mergeRunMetadata(runId, { host_id: host.hostId }, new Date());
         }
       }
-      prepareWorkspace(workspaceRoot, String(agent.id), boxOf(asObj(run.config_snapshot)));
+      prepareWorkspace(workspaceRoot, machine.id, seat.agentId, { browser: Boolean(snapshot.browser) });
     } catch (error) {
       await this._fail(runId, generation, "workspace.create", error, extra);
       return;
     }
-    const snapshot = asObj(run.config_snapshot);
     let secretRefs: Array<Record<string, string>>;
     let env: Record<string, string>;
     let secrets: Record<string, string>;
@@ -3043,23 +3153,25 @@ export class GenerationLoop implements GroupRunner {
       return;
     }
     let sandbox: SandboxHandle;
+    let machineSandbox: SandboxHandle;
     try {
-      const secretIds = secretRefs
-        .map((ref) => ref.id)
-        .filter((id): id is string => typeof id === "string");
       const pinned = Array.isArray(snapshot.scripts)
         ? (snapshot.scripts as RunScriptSnapshot[])
         : await this.scripts.snapshot(String(agent.id));
       const liveRows = await this.scripts.listForAgent(String(agent.id));
-      sandbox = await this.sandboxes.ensure(String(agent.id), env, secretIds, {
-        box: boxOf(snapshot),
-        browser: Boolean(snapshot.browser),
-        coding: Boolean(snapshot.coding),
-        browserLanguage: browserLanguageOf(snapshot),
-        size: customSizeOf(snapshot),
-        scripts: pinned,
-        liveExtra: liveExtraForAgent(pinned, liveRows),
-      });
+      // While another agent on the machine generates, its container stays as it is, even when
+      // the machine was resized: the new size comes once the last generation on it ends.
+      const shared = this.machineBusy(machine.id, seat.agentId)
+        ? await this.sandboxes.connectRunning(machine.id)
+        : null;
+      if (shared !== null) {
+        machineSandbox = shared;
+      } else {
+        machineSandbox = await this.sandboxes.ensure(machine);
+        this._stale_machines.delete(machine.id);
+      }
+      sandbox = agentSandbox(machineSandbox, agentHome(seat.agentId), { ...env, ...seatEnvironment(seat) });
+      await applyRunScripts(sandbox, agentHome(seat.agentId), pinned, liveExtraForAgent(pinned, liveRows));
     } catch (error) {
       await this._fail(runId, generation, "sandbox.ensure", error, extra);
       return;
@@ -3133,6 +3245,17 @@ export class GenerationLoop implements GroupRunner {
       org_slug: String(agent.org_slug),
       cancel_event: this._cancels.get(runId) ?? null,
       track_command: (executionId) => this._track_command(runId, sandbox, executionId),
+      agent_home: agentHome(seat.agentId),
+      cdp_port: snapshot.browser ? slotPorts(seat.slot).cdp : null,
+      ensure_browser: snapshot.browser
+        ? async () => {
+            if (this._browser_idle.has(seat.agentId)) {
+              this._schedule_browser_idle(seat.agentId);
+              return;
+            }
+            await this.startAgentBrowser(agent, machineSandbox);
+          }
+        : null,
       group_chat: this.group_chat,
       issues: this.issues,
       schedules: this.schedules,
@@ -3151,10 +3274,11 @@ export class GenerationLoop implements GroupRunner {
       offered_tools: offered,
     });
     const coding = Boolean(snapshot.coding);
-    if (!(await this._workspace_has_room(runId, generation, agent, sandbox, extra))) {
+    // Platform work runs on the machine's own sandbox: the agent's home and ports, none of its secrets.
+    if (!(await this._workspace_has_room(runId, generation, agent, machineSandbox, extra))) {
       return;
     }
-    if (coding && !(await this._prepare_repositories(runId, generation, agent, sandbox, ctx, secrets, extra))) {
+    if (coding && !(await this._prepare_repositories(runId, generation, agent, machineSandbox, ctx, secrets, extra))) {
       return;
     }
     try {
@@ -3162,10 +3286,10 @@ export class GenerationLoop implements GroupRunner {
     } finally {
       if (coding) {
         await this._record_exploration(runId);
-        await this._record_checkpoints(runId, agent, sandbox);
+        await this._record_checkpoints(runId, agent, machineSandbox);
       }
       if (!this._cancelled(runId)) {
-        await this._record_workspace_size(runId, agent, sandbox);
+        await this._record_workspace_size(runId, agent, machineSandbox);
       }
     }
   }
@@ -3222,7 +3346,8 @@ export class GenerationLoop implements GroupRunner {
       await tokens.mint();
       redact();
       if (sandbox.files) {
-        await tokens.write(sandbox.files);
+        await sandbox.commands.run(`mkdir -p -m 700 ${agentRunDir(String(agent.id))}`, { timeoutSeconds: 10 });
+        await tokens.write(sandbox.files, String(agent.id));
       }
     } catch (error) {
       await this._fail(runId, generation, "repository.token", error, extra);
@@ -3273,7 +3398,7 @@ export class GenerationLoop implements GroupRunner {
         await tokens.mint();
         redact();
         if (sandbox.files) {
-          await tokens.write(sandbox.files);
+          await tokens.write(sandbox.files, String(agent.id));
         }
       };
     }
@@ -3631,7 +3756,7 @@ export class GenerationLoop implements GroupRunner {
           call,
           secrets,
           maxBytes,
-          path.join(await this.workspaceRootFor(ctx.agent_id), ctx.agent_id),
+          await this.agentWorkspace(owner),
           orgId,
         );
       } else {
@@ -3652,10 +3777,10 @@ export class GenerationLoop implements GroupRunner {
   }
 
   /**
-   * An agent's workspace must be under its `max_workspace_mib` (and the host
-   * `WORKSPACE_MAX_MIB`) for a generation to start. The size stored after the last
-   * generation decides; when it is over, the workspace is measured again, so space
-   * the operator freed from the CLI tab counts.
+   * A generation starts only while the agent's home is under its `max_workspace_mib` (and the
+   * host `WORKSPACE_MAX_MIB`) and its machine's directory under the machine's `max_workspace_mib`.
+   * The sizes stored after the last generation decide; one that is over is measured again, so
+   * space the operator freed from the CLI tab counts.
    */
   async _workspace_has_room(
     runId: string,
@@ -3664,36 +3789,57 @@ export class GenerationLoop implements GroupRunner {
     sandbox: SandboxHandle,
     extra: Record<string, string>,
   ): Promise<boolean> {
-    const limit = agentWorkspaceMaxMib(asObj(agent.config));
-    const stored = agent.workspace_mib;
-    if (stored === null || stored === undefined || Number(stored) <= limit) {
-      return true;
+    const ctx = this._maintenance_ctx(runId, agent, sandbox);
+    const checks = [
+      {
+        limit: agentWorkspaceMaxMib(asObj(agent.config)),
+        stored: agent.workspace_mib,
+        measure: () => measureWorkspace(ctx),
+        store: (mib: number) => this.db.setAgentWorkspaceMib?.(String(agent.id), mib),
+        what: "the agent's home",
+      },
+      {
+        limit: Number(agent.machine_max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB),
+        stored: agent.machine_workspace_mib,
+        measure: () => measureMachine(ctx),
+        store: (mib: number) => this.db.setMachineWorkspaceMib?.(String(agent.machine_id), mib),
+        what: `machine ${String(agent.machine_name ?? agent.machine_id)}`,
+      },
+    ];
+    for (const check of checks) {
+      if (check.stored === null || check.stored === undefined || Number(check.stored) <= check.limit) {
+        continue;
+      }
+      let mib: number;
+      try {
+        mib = await check.measure();
+        await check.store(mib);
+      } catch (error) {
+        await this._fail(runId, generation, "workspace.measure", error, extra);
+        return false;
+      }
+      if (mib > check.limit) {
+        await this._fail(
+          runId,
+          generation,
+          "workspace.full",
+          new Error(`${check.what} holds ${mib} MiB, above the ${check.limit} MiB limit; free space from the CLI tab`),
+          extra,
+        );
+        return false;
+      }
     }
-    let mib: number;
-    try {
-      mib = await measureWorkspace(this._maintenance_ctx(runId, agent, sandbox));
-      await this.db.setAgentWorkspaceMib?.(String(agent.id), mib);
-    } catch (error) {
-      await this._fail(runId, generation, "workspace.measure", error, extra);
-      return false;
-    }
-    if (mib <= limit) {
-      return true;
-    }
-    await this._fail(
-      runId,
-      generation,
-      "workspace.full",
-      new Error(`the workspace holds ${mib} MiB, above the ${limit} MiB limit; free space from the CLI tab`),
-      extra,
-    );
-    return false;
+    return true;
   }
 
+  /** Measures the agent's home and its machine's directory and stores both sizes. */
   async _record_workspace_size(runId: string, agent: Record<string, unknown>, sandbox: SandboxHandle): Promise<void> {
+    const ctx = this._maintenance_ctx(runId, agent, sandbox);
     try {
-      const mib = await measureWorkspace(this._maintenance_ctx(runId, agent, sandbox));
-      await this.db.setAgentWorkspaceMib?.(String(agent.id), mib);
+      const home = await measureWorkspace(ctx);
+      await this.db.setAgentWorkspaceMib?.(String(agent.id), home);
+      const machine = await measureMachine(ctx);
+      await this.db.setMachineWorkspaceMib?.(String(agent.machine_id), machine);
     } catch (error) {
       writeLog(
         "warn",
@@ -3709,11 +3855,12 @@ export class GenerationLoop implements GroupRunner {
     agent: Record<string, unknown>,
     sandbox: SandboxHandle,
   ): ReturnType<typeof createToolContext> {
+    const seat = agentSeat(agent);
     return createToolContext({
       run_id: runId,
       agent_id: String(agent.id),
       guild_id: String(agent.guild_id),
-      sandbox,
+      sandbox: agentSandbox(sandbox, agentHome(seat.agentId), seatEnvironment(seat)),
       secrets: {},
     });
   }
@@ -3889,8 +4036,7 @@ export class GenerationLoop implements GroupRunner {
     const agentId = String(agent.id);
     return {
       store: async (input) => {
-        const workspace = path.join(await this.workspaceRootFor(agentId), agentId);
-        const file = await readSecretFile(workspace, input.file);
+        const file = await readSecretFile(await this.agentWorkspace(agent), input.file);
         const stored = await storeAgentSecret(
           this.db,
           { id: agentId, orgId: String(agent.org_id) },
@@ -3907,14 +4053,24 @@ export class GenerationLoop implements GroupRunner {
     };
   }
 
-  private async workspaceRootFor(agentId: string): Promise<string> {
-    if (!this.sandboxes.placementFor) {
+  /** The agent's home on the host: its folder in its machine's directory. */
+  private async agentWorkspace(agent: Record<string, unknown> | null): Promise<string> {
+    if (agent === null) {
+      throw new Error("agent not found");
+    }
+    const machineId = String(agent.machine_id);
+    return agentDirectory(await this.workspaceRootFor(machineId), machineId, String(agent.id));
+  }
+
+  /** Where the machine's directory is kept: its host's workspace root, or core's one root. */
+  private async workspaceRootFor(machineId: string): Promise<string> {
+    if (!this.sandboxes.machineHost) {
       return this.workspace_root;
     }
-    const placement = await this.sandboxes.placementFor(agentId);
-    if (!placement) {
+    const host = await this.sandboxes.machineHost(machineId);
+    if (!host) {
       return this.workspace_root;
     }
-    return placement.workspaceRoot;
+    return host.workspaceRoot;
   }
 }

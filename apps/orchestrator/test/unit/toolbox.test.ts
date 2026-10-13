@@ -339,7 +339,7 @@ test("invoke_script_run stores payload and exit_code", async () => {
       commands: {
         async run(command, opts) {
           commands.push(command);
-          assert.equal(opts?.workingDirectory ?? opts?.working_directory, "/home/agent");
+          assert.equal(opts?.workingDirectory ?? opts?.working_directory, "/home/a_1");
           return {
             exit_code: 0,
             logs: { stdout: [{ text: "hi" }], stderr: [] },
@@ -363,7 +363,7 @@ test("invoke_script_run stores payload and exit_code", async () => {
   assert.equal(metadata.output_filter, "identity");
   assert.equal(metadata.truncated, false);
   assert.equal(metadata.error, null);
-  assert.deepEqual(commands, ["python3 /usr/local/bin/guilds-script-run /home/agent/scripts/hello.py"]);
+  assert.deepEqual(commands, ["python3 /usr/local/bin/guilds-script-run /home/a_1/scripts/hello.py"]);
 });
 
 test("invoke unknown tool is error message", async () => {
@@ -513,7 +513,7 @@ test("browser_navigate runs helper", async () => {
       commands: {
         async run(command, opts) {
           seen.push(command);
-          assert.equal(opts?.workingDirectory ?? opts?.working_directory, "/home/agent");
+          assert.equal(opts?.workingDirectory ?? opts?.working_directory, "/home/a_1");
           return {
             exit_code: 0,
             logs: { stdout: [{ text: "https://example.com\nExample" }], stderr: [] },

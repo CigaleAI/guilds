@@ -5,7 +5,7 @@ import { DRIVE_FOLDER_MIME, DriveFolderError, driveJson, type DriveClientOptions
 export const MAX_DRIVE_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export const DRIVE_CREATE_FILE_DESCRIPTION =
-  "Create a file or folder in the connected Drive folder. Pass file_path under /home/agent for file bytes; the orchestrator reads and encodes them. Do not pass base64. Small UTF-8 text may use textContent. To create a folder, set title and contentMimeType application/vnd.google-apps.folder.";
+  "Create a file or folder in the connected Drive folder. Pass file_path in your home (absolute, or relative to it) for file bytes; the orchestrator reads and encodes them. Do not pass base64. Small UTF-8 text may use textContent. To create a folder, set title and contentMimeType application/vnd.google-apps.folder.";
 
 export const DRIVE_CREATE_FILE_SCHEMA: Record<string, unknown> = {
   type: "object",
@@ -13,7 +13,7 @@ export const DRIVE_CREATE_FILE_SCHEMA: Record<string, unknown> = {
     title: { type: "string", description: "File or folder name." },
     file_path: {
       type: "string",
-      description: "Path under /home/agent. The orchestrator reads this file. Do not pass file bytes.",
+      description: "Path in your home. The orchestrator reads this file. Do not pass file bytes.",
     },
     textContent: {
       type: "string",

@@ -1,7 +1,7 @@
 # Secrets and access
 
 A secret is one encrypted value an organisation owns and hands to the
-agents it names, as an environment variable in their sandboxes. Access
+agents it names, as an environment variable on their commands. Access
 is who gets each secret, what else reaches a sandbox, and the
 per-scope view where an operator sets both secrets and tools. Which
 tools exist and how they are bound is
@@ -116,37 +116,40 @@ the agent's environment as `[{ id, name, description }]`.
 
 Each generation resolves the agent's environment, writes it onto the
 run snapshot as `[{ id, name, description }]`, decrypts the values,
-and injects them as sandbox environment variables, each named after
-its secret. A keyed fingerprint of the environment decides whether
-the sandbox is recreated. A missing or undecryptable secret is a
-generation-start error.
+and passes them as environment variables on every command it runs
+for the agent, each named after its secret. The machine's container
+environment holds no secret, so no secret change replaces a
+container. A missing or undecryptable secret is a generation-start
+error.
 
 State `environment` lists each name and description. The value is
 never in the prompt.
 
 A change of value, name, or description reaches the agents with an
-active run snapshot or a running sandbox that uses the secret. A
-create, delete, or access change reaches the agents that gain or
-lose it.
+active run snapshot that uses the secret. A create, delete, or access
+change reaches the agents that gain or lose it.
 
-Either re-syncs their active run snapshots and destroys their idle
-sandboxes. A generating agent's sandbox is marked stale and recycled
-after its generation.
+Either re-syncs their active run snapshots. A generating agent keeps
+the values it started with until its generation ends. The change
+reaches the next generation of an existing direct run. The sandbox
+lifecycle itself is in [Runs](runs.md#sandbox).
 
-The change reaches the next generation of an existing direct run.
-The sandbox lifecycle itself is in [Runs](runs.md#sandbox).
-
-Any process in the sandbox reads that environment:
+The agent's commands carry that environment:
 
 - user scripts
-- a coding agent's `shell` commands
-- the browser
-- the operator's CLI tab, a root shell on that machine
+- a coding agent's `shell` commands and what they start
+- the browser tools
+
+The operator's CLI tab, a root shell on the agent's machine, does not
+carry it. Any process on the machine can still read the environment
+of a command that is running, whichever agent it belongs to
+([Machines](guilds-and-agents.md#machines)).
 
 Only secrets enter it. Connection credentials (OAuth tokens, API
 keys, signing keys), the GitHub App's private key, and the instance
 keys stay in the orchestrator. A coding agent's GitHub installation
-tokens sit in `/run/guilds/`, outside the workspace, for their hour.
+tokens sit in `/run/guilds/<agent id>/`, outside every home, for
+their hour.
 
 ## Redaction
 
@@ -165,8 +168,8 @@ boundary. A value the model already saw stays in earlier history.
 `secret_store { name, description, file }` saves a value the agent
 produced as a secret granted to that agent, without the value
 passing through the model. The orchestrator reads `file` from the
-agent's workspace (`/home/agent`) under the
-[workspace file rules](#agent-workspace-files).
+agent's home (`/home/<agent id>`) under the
+[home file rules](#agent-home-files).
 
 It refuses:
 
@@ -191,9 +194,8 @@ Later tool results in that generation are redacted. A value the
 model already saw stays in earlier history.
 
 It returns `{"stored": NAME, "rotated": bool}` plus a line that the
-variable is in the environment from the next generation. The sandbox
-environment is fixed at container start. The sandbox is recycled
-after the generation.
+variable is in the environment from the next generation. A
+generation's environment is fixed at its start.
 
 It is offered on every run kind. An agent cannot read a value back,
 delete a secret, or change its access.
@@ -213,25 +215,27 @@ The operator answers from a card in the transcript
 ([Operator app](operator-app.md)). The value goes to the secrets
 API, never into the transcript.
 
-## Agent workspace files
+## Agent home files
 
-An agent's `/home/agent` is its folder on the orchestrator's machine
-(`WORKSPACE_ROOT/<agent id>`), mounted into its sandbox. Tools that
-take a path there (Drive `create_file` and `download_file_content`,
-Qonto `upload_invoice`, `secret_store`) have the orchestrator open
-that folder directly, where a link resolves against the
-orchestrator's own filesystem. `readAgentFile` and `writeAgentFile`
+An agent's home, `/home/<agent id>`, is its folder on the
+orchestrator's host (`WORKSPACE_ROOT/<machine id>/<agent id>`). It
+sits in the machine's directory, which the machine's container
+mounts at `/home`. Some tools take a path in the home: Drive
+`create_file` and `download_file_content`, Qonto `upload_invoice`,
+and `secret_store`. For those, the orchestrator opens the folder
+directly. A link there resolves against the orchestrator's own
+filesystem. `readAgentFile` and `writeAgentFile`
 in `apps/orchestrator/src/lib/agent-file.ts` are the only way in:
 
-- A path is `/home/agent/...` or relative to it, and must stay inside
-  the folder.
+- A path is `/home/<agent id>/...` or relative to it, and must stay
+  inside the folder.
 - A read follows every link, requires the result to stay in the
   folder and be a regular file (not a folder, FIFO, or device), then
   opens it without following a link and without blocking, and
   requires the opened file to be the one checked. A file over the
   tool's size limit is refused.
 - A write accepts no link anywhere on the path: each existing folder
-  must be a real folder in the workspace, missing folders are created
+  must be a real folder in the home, missing folders are created
   one at a time, and the file is created or replaced without
   following a link at its name.
 
@@ -273,10 +277,14 @@ state), every entry with its effective value and where it comes from.
 
 ## What an operator relies on
 
-- A secret reaches every agent its access names, and any process in
-  those sandboxes can read it and send it out. Grant narrowly.
+- A secret reaches every agent its access names.
+- While such an agent's command runs, any process on its machine can
+  read the secret and send it out.
+- Agents on one machine trust each other. Grant narrowly.
+- An agent whose secrets must stay apart goes on a machine of its
+  own.
 - Members read a secret's name, description, and access, never its
-  value. A value leaves the orchestrator only into the sandboxes of
+  value. A value leaves the orchestrator only into the commands of
   the agents it reaches.
 - Connection credentials never enter a sandbox: an agent calls a
   connected account through the orchestrator, and only for tools that
@@ -284,8 +292,12 @@ state), every entry with its effective value and where it comes from.
   agent acts as that account.
 - Redaction catches exact values only. What the model has already seen
   stays in its history.
-- The CLI tab is a root shell on the agent's machine for any operator of
-  the agent: files, processes, and environment, secret values included.
+- The CLI tab is a root shell in the agent's machine's container.
+  Any operator of the agent can open it.
+- The CLI tab reaches the files and processes of every agent on that
+  machine.
+- The CLI tab carries no secret values. It can read those of a
+  command running on the machine.
 - An agent writes a secret only through `secret_store`, granted to
   itself, and cannot read one back.
 

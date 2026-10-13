@@ -4,9 +4,10 @@ One Node process is the control plane. It serves the operator app.
 It owns every run. It is the only process that talks to the model
 client, OpenSandbox, and PostgreSQL.
 
-Agent code runs in OpenSandbox containers built from `runtime/`.
-Each container has a persistent workspace on the host. Durable
-application state is PostgreSQL.
+Agent code runs in OpenSandbox containers built from `runtime/`, one
+per machine of an organisation, each shared by the agents placed on
+it. Each machine has a persistent directory on the host, with one
+home per agent. Durable application state is PostgreSQL.
 
 ## Process model
 
@@ -45,11 +46,14 @@ Cross-organisation and non-member access returns 404.
 `STATE_ROOT` is one absolute host path (`.state` in the checkout
 unless `.env` says otherwise). It holds the host-side trees:
 
-- `workspaces/`: the **sandbox** tree: one directory per agent id,
-  bind-mounted at `/home/agent`. Packages and scratch, materialised
-  `scripts/` (canonical source is the agent-level `script` artifact
-  rows), and `.browser/` for the Chromium profile. OpenSandbox may
-  mount only this prefix (`allowed_host_paths`).
+- `workspaces/`: the **sandbox** tree: one directory per machine id,
+  bind-mounted at `/home` in that machine's container, with one home
+  per agent on it (`workspaces/<machine id>/<agent id>`, which the
+  agent sees as `/home/<agent id>`). A home holds packages and
+  scratch, materialised `scripts/` (canonical source is the
+  agent-level `script` artifact rows), and `.browser/` for the
+  Chromium profile. OpenSandbox may mount only this prefix
+  (`allowed_host_paths`).
 - `postgres/`: the Compose Postgres data directory.
 - `opensandbox/`: the OpenSandbox server's SQLite lifecycle store.
 - `notes/`: `NOTES_ROOT`. The file-backed `NotesStore`
@@ -60,8 +64,8 @@ unless `.env` says otherwise). It holds the host-side trees:
 - `attachments/`: `ATTACHMENTS_ROOT`. Chat images, one file per
   attachment under its organisation's directory.
 
-The path is absolute because OpenSandbox bind-mounts each workspace
-by that same path. `make state` creates the trees. `./setup.sh`
+The path is absolute because OpenSandbox bind-mounts each machine
+directory by that same path. `make state` creates the trees. `./setup.sh`
 writes the path into `.env`.
 
 Notes, collection records, `memory`, and scripts are artifact rows.
@@ -93,12 +97,12 @@ them.
 
 Shared standing identity is
 `apps/orchestrator/src/prompts/system.md` in the repository. The
-sandbox is the agent's machine. Deleting an agent destroys that
-machine, so durable findings have to be in the artifact store first.
+agent's home on its machine is its own. Deleting an agent removes
+that home, so durable findings have to be in the artifact store
+first.
 
-Sandbox paths are id-keyed so a reused name gets a fresh machine.
-Display paths use organisation, guild, and agent ids for the same
-reason.
+Homes are id-keyed so a reused name gets a fresh home. Display paths
+use organisation, guild, and agent ids for the same reason.
 
 ## Compose stacks and images
 
@@ -110,13 +114,11 @@ reason.
 The stack mounts the Docker socket. Sandboxes are containers it
 starts beside itself.
 
-`./setup.sh` builds the three images no registry publishes
+`./setup.sh` builds the two images no registry publishes
 (`scripts/images.sh`):
 
 - the OpenSandbox server from its pinned commit
-- `agent-runtime:0.3` for the standard, code and custom boxes, from
-  `runtime/`
-- `agent-runtime-lite:0.1` for a lite box, from `runtime/`
+- `agent-runtime:0.4`, which every machine runs, from `runtime/`
 
 The orchestrator service runs the core image
 (`apps/orchestrator/Dockerfile`, `guilds-orchestrator:local`).
@@ -137,16 +139,20 @@ The sandbox profile is the `opensandbox-config` in
 `docker-compose.yml`:
 
 - the Docker provider on `runc`
-- one sandbox and one persistent workspace per agent
+- one sandbox and one persistent directory per machine, one home per
+  agent in it
 - dropped capabilities (`AUDIT_WRITE`, `MKNOD`, `NET_ADMIN`,
   `NET_RAW`, `SYS_ADMIN`, `SYS_MODULE`, `SYS_PTRACE`, `SYS_TIME`,
   `SYS_TTY_CONFIG`)
 - `no_new_privileges`
 - `pids_limit` 4096
-- CPU and memory limits per sandbox
+- CPU and memory limits per sandbox, set by the machine's tier
 
 Sandboxes have Docker bridge egress to the public internet. Secrets
-reach them as environment variables.
+reach an agent's commands as environment variables on each command,
+never in the container's environment. Agents on one machine share
+its container and trust each other
+([Security register](security-register.md#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions)).
 
 ### Development overlay
 
@@ -190,7 +196,7 @@ orchestrator on 8080.
    - `agents.task`
    - the `memory` artifact
 
-   Agent workspaces contain no executable prompt code.
+   Agent homes contain no executable prompt code.
 
 3. The stack listens on loopback and does not authenticate. Whoever
    reaches the port is the operator. A box reached from elsewhere
@@ -210,22 +216,28 @@ orchestrator on 8080.
 6. Tool calls execute sequentially inside a generation. Schedule
    wake-ups are one-shot runs started by the in-process ticker.
 
-7. An agent has artifact rows in PostgreSQL and one persistent
-   sandbox directory.
+7. An agent has artifact rows in PostgreSQL and one persistent home
+   on its machine. Every agent on a machine shares its container and
+   runs commands there as root, so agents on one machine can read
+   each other's homes, git tokens, Chrome sessions, and the
+   environment of a command running at the same moment. A machine
+   never spans organisations
+   ([SEC-24](security-register.md#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions)).
 
-   The sandbox may stop after 5 idle minutes. It is recreated on the
-   next generation, or when an operator opens the Browser or CLI
-   tab.
+   The machine's container may stop after 5 idle minutes with no agent on it
+   generating. It is recreated on the next generation of one of its
+   agents, or when an operator opens the Browser or CLI tab.
 
    The CLI tab is a root shell on that machine for any operator of
-   the agent. It sees the files, the processes, and the environment,
-   secret values included. Its port answers only under a path
-   segment that is random per container and that only the
+   the agent. It sees the files and processes of every agent on the
+   machine. It carries no secret values, but can read those of a
+   command running there. Its port answers only under a path
+   segment that is random per agent and that only the
    orchestrator's proxy knows.
 
-   That directory is also a folder on the orchestrator's machine.
+   That home is also a folder on the orchestrator's host.
    Tools that take a path in it have the orchestrator open it
-   directly, only through the workspace file rules
+   directly, only through the home file rules
    ([Catalog](../tools-and-connectors/catalog.md)). A
    link the agent planted cannot point the orchestrator at its own
    files. The check-then-open race that remains is SEC-3 in the
@@ -233,12 +245,13 @@ orchestrator on 8080.
 
    A coding agent's `shell` runs any command there as root with open
    egress. Its code tools run inside the container and never open a
-   workspace path in the orchestrator.
+   path in its home from the orchestrator.
 
    A coding agent's GitHub installation tokens sit in
-   `/run/guilds/`, outside the workspace. They are readable by any
-   process in its sandbox for their hour. The App's private key and
-   the installation ids stay in the orchestrator.
+   `/run/guilds/<agent id>/`, outside every home. They are readable
+   by any process on its machine for their hour, whichever agent
+   started it. The App's private key and the installation ids stay
+   in the orchestrator.
 
 8. Artifact writes use PostgreSQL transactions. Authorization is:
 
@@ -262,15 +275,15 @@ orchestrator on 8080.
 
 10. A secret reaches every agent its access names.
     Organisation-wide is every agent in the organisation. A guild
-    grant is every agent in that guild. Any process in those
-    sandboxes can read and send it.
+    grant is every agent in that guild. Any process on those agents'
+    machines can read it while their commands run, and send it.
 
     Every organisation member reads each secret's name, description,
     and access, never its value. Grants inside guilds a member
     cannot see read as a private guild.
 
     An agent writes secrets only through `secret_store`. The value
-    comes from a regular file inside `/home/agent` reached without a
+    comes from a regular file inside its home reached without a
     link out of it. The secret is granted to itself. At most 20 per
     agent. The agent cannot read a value back, delete a secret, or
     change who gets it.
@@ -291,7 +304,7 @@ orchestrator on 8080.
     replaces that agent's `memory` row.
 
     Script tools read and write that agent's `script` artifacts.
-    They materialise `/home/agent/scripts/` for execution.
+    They materialise `scripts/` in the agent's home for execution.
 
     An instance key that serves a connector's platform login
     (Tavily web search) stays out of the sandbox, as do these login

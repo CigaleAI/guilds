@@ -1,10 +1,9 @@
 name: images
 
 # Publishes the images a self-hosted box runs when a version is tagged: guilds-orchestrator,
-# guilds-agent-runtime (every box but lite), guilds-agent-runtime-lite (the lite box), and
-# guilds-opensandbox-server, this project's build of the OpenSandbox server at its pinned commit,
-# under the organisation that owns the repository. The standard runtime is built with Chromium,
-# since Chrome may not be redistributed.
+# guilds-agent-runtime (every machine), and guilds-opensandbox-server, this project's build of the
+# OpenSandbox server at its pinned commit, under the organisation that owns the repository. The
+# runtime is built with Chromium, since Chrome may not be redistributed.
 on:
   push:
     tags: ["v*"]
@@ -30,10 +29,6 @@ jobs:
             context: runtime
             file: runtime/Dockerfile
             build-args: BROWSER=chromium
-          - image: agent-runtime-lite
-            context: runtime
-            file: runtime/Dockerfile.lite
-            build-args: ""
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3

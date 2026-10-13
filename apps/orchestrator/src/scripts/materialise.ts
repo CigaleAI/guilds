@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { RunScriptSnapshot } from "./snapshot.js";
 
-export const MANAGED_SCRIPTS_DIR = "/home/agent/scripts";
 export const SCRIPT_LAUNCHER = "/usr/local/bin/guilds-script-run";
 export const SCRIPT_ARGS_ENV = "GUILDS_SCRIPT_ARGS";
 
@@ -12,12 +11,17 @@ export type ScriptFiles = {
   deleteFiles(paths: string[]): Promise<void>;
 };
 
-export function managedScriptPath(name: string): string {
-  return `${MANAGED_SCRIPTS_DIR}/${name}.py`;
+/** The agent's scripts directory: `scripts/` in its home. */
+export function scriptsDirectory(home: string): string {
+  return `${home}/scripts`;
 }
 
-export function launcherCommand(name: string): string {
-  return `python3 ${SCRIPT_LAUNCHER} ${managedScriptPath(name)}`;
+export function managedScriptPath(home: string, name: string): string {
+  return `${scriptsDirectory(home)}/${name}.py`;
+}
+
+export function launcherCommand(home: string, name: string): string {
+  return `python3 ${SCRIPT_LAUNCHER} ${managedScriptPath(home, name)}`;
 }
 
 function basename(path: string): string {
@@ -35,6 +39,7 @@ function managedName(path: string): string | null {
 
 export async function materialiseScripts(
   files: ScriptFiles,
+  home: string,
   snapshot: RunScriptSnapshot[],
   liveExtra: Array<{ name: unknown; source: unknown }> = [],
 ): Promise<void> {
@@ -50,7 +55,7 @@ export async function materialiseScripts(
     }
   }
   const listed = files.listDirectory
-    ? await files.listDirectory({ path: MANAGED_SCRIPTS_DIR, depth: 1 })
+    ? await files.listDirectory({ path: scriptsDirectory(home), depth: 1 })
     : [];
   const existing = new Set<string>();
   for (const entry of listed) {
@@ -60,8 +65,8 @@ export async function materialiseScripts(
     }
   }
   for (const [name, source] of wanted) {
-    const dest = managedScriptPath(name);
-    const temp = `${MANAGED_SCRIPTS_DIR}/.${name}.${randomBytes(6).toString("hex")}.tmp`;
+    const dest = managedScriptPath(home, name);
+    const temp = `${scriptsDirectory(home)}/.${name}.${randomBytes(6).toString("hex")}.tmp`;
     await files.writeFiles([{ path: temp, data: source }]);
     if (existing.has(name)) {
       await files.deleteFiles([dest]);
@@ -76,7 +81,7 @@ export async function materialiseScripts(
       await files.moveFiles([{ src: temp, dest }]);
     }
   }
-  const stale = [...existing].filter((name) => !wanted.has(name)).map((name) => managedScriptPath(name));
+  const stale = [...existing].filter((name) => !wanted.has(name)).map((name) => managedScriptPath(home, name));
   if (stale.length) {
     await files.deleteFiles(stale);
   }
@@ -84,6 +89,7 @@ export async function materialiseScripts(
 
 export async function writeThroughLiveExtra(
   files: ScriptFiles,
+  home: string,
   name: string,
   source: string,
   snapshot: RunScriptSnapshot[],
@@ -91,14 +97,14 @@ export async function writeThroughLiveExtra(
   if (snapshotNamePinned(snapshot, name)) {
     return false;
   }
-  await materialiseScripts(files, snapshot, [{ name, source }]);
+  await materialiseScripts(files, home, snapshot, [{ name, source }]);
   return true;
 }
 
-/** Removes `/home/agent/scripts/<name>.py` from a running sandbox. Missing is fine. */
-export async function removeManagedScript(files: ScriptFiles, name: string): Promise<void> {
+/** Removes `<home>/scripts/<name>.py` from a running sandbox. Missing is fine. */
+export async function removeManagedScript(files: ScriptFiles, home: string, name: string): Promise<void> {
   try {
-    await files.deleteFiles([managedScriptPath(name)]);
+    await files.deleteFiles([managedScriptPath(home, name)]);
   } catch {
     // The catalog is already the source of truth; the next materialise drops leftovers.
   }

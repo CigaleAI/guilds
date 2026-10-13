@@ -8,7 +8,7 @@ export const SECRET_REASON_MAX = 400;
 const STORE_DESCRIPTION =
   "Save a value you produced in the sandbox (a generated key, a token you obtained) as a secret: " +
   "an environment variable of this organisation, granted to you. Have a script write the value to " +
-  "a file under /home/agent and never print it; pass that file. The tool reads the file, stores the " +
+  "a file in your home and never print it; pass that file. The tool reads the file, stores the " +
   "value encrypted, and deletes the file. name is the variable name; names are shared by the whole " +
   "organisation, so pick one specific to its purpose. description tells agents how to use it " +
   `(at most ${SECRET_DESCRIPTION_MAX} characters). Storing again under a name you stored rotates its value. ` +
@@ -49,7 +49,7 @@ export const secretStore: Tool = {
         type: "string",
         description: `how agents use this value, at most ${SECRET_DESCRIPTION_MAX} characters`,
       },
-      file: { type: "string", description: "path under /home/agent to a file holding the value" },
+      file: { type: "string", description: "path in your home to a file holding the value" },
     },
     ["name", "description", "file"],
   ),

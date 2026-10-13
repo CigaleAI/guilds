@@ -1,6 +1,6 @@
 # Remote access
 
-The box listens on this machine only. It does not ask anyone to sign
+The box listens on this host only. It does not ask anyone to sign
 in. Whoever reaches the port is the operator. That is right for one
 person on one machine.
 

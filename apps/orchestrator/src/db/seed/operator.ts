@@ -1,7 +1,8 @@
 import type pg from "pg";
 import { SEED_ORG_FOUNDERS, SEED_ORG_ID, SEED_ORG_NAME, SEED_ORG_SLUG } from "../../organisations/index.js";
 import { SEED_USERS } from "../../users/index.js";
-import { isUniqueViolation } from "../pg.js";
+import { insertDefaultMachine } from "../repositories.js";
+import { isUniqueViolation, withTransaction } from "../pg.js";
 
 /**
  * A fresh box's first user and the organisation they own. Seeded only while the box has no user
@@ -22,12 +23,17 @@ export async function seedOperator(pool: pg.Pool, now = new Date()): Promise<voi
       [user.id, user.name, user.email, user.image, timestamp],
     );
   }
-  await pool.query(
-    `INSERT INTO orgs (id, name, slug, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $4)
-     ON CONFLICT (id) DO NOTHING`,
-    [SEED_ORG_ID, SEED_ORG_NAME, SEED_ORG_SLUG, timestamp],
-  );
+  await withTransaction(pool, async (client) => {
+    const created = await client.query(
+      `INSERT INTO orgs (id, name, slug, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $4)
+       ON CONFLICT (id) DO NOTHING`,
+      [SEED_ORG_ID, SEED_ORG_NAME, SEED_ORG_SLUG, timestamp],
+    );
+    if (created.rowCount) {
+      await insertDefaultMachine(client, SEED_ORG_ID, now);
+    }
+  });
   for (const userId of SEED_ORG_FOUNDERS) {
     await pool.query(
       `INSERT INTO org_members (org_id, user_id, role, created_at)

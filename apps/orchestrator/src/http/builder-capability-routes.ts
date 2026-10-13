@@ -3,18 +3,11 @@ import { CapabilityService } from "../capabilities/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
+import { param } from "./request.js";
 
 function queryString(request: FastifyRequest, name: string): string {
   const value = (request.query as Record<string, unknown>)[name];
   return typeof value === "string" ? value : "";
-}
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Record<string, string>)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
 }
 
 export async function registerBuilderCapabilityRoutes(

@@ -34,8 +34,8 @@ export async function executeCommand(ctx: ToolContext, command: string, options:
   }
   const timeoutSeconds = options.timeoutSeconds ?? COMMAND_TIMEOUT_SECONDS;
   const opts: Record<string, unknown> = {
-    workingDirectory: "/home/agent",
-    working_directory: "/home/agent",
+    workingDirectory: ctx.agent_home,
+    working_directory: ctx.agent_home,
     timeout: timeoutSeconds,
     timeoutSeconds,
   };

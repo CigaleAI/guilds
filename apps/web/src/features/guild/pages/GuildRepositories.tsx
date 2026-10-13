@@ -74,7 +74,8 @@ export function GuildRepositories({ guild }: { guild: Guild }) {
       <h3 className="type-label text-muted">Repositories</h3>
       <p className="text-sm text-fg-2">
         Extra git URLs each coding agent of this guild clones into{" "}
-        <span className="font-mono text-xs">/home/agent/repos/&lt;name&gt;</span> at its next run.
+        <span className="font-mono text-xs">repos/&lt;name&gt;</span> in its home,{" "}
+        <span className="font-mono text-xs">/home/&lt;agent id&gt;</span>, at its next run.
         Pick GitHub repositories on the GitHub integration (Tools), at this guild or an agent, or
         add one here with a GitHub login. One without a login is cloned anonymously, which only a
         public repository allows.

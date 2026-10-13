@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { useCreateAgent, useOrgModels } from "../../api/queries";
+import { useCreateAgent, useOrgMachines, useOrgModels } from "../../api/queries";
 import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import {
@@ -15,13 +15,13 @@ import {
   DialogFooter,
   DialogHeader,
 } from "@guildsrun/ui";
+import { MachinePicker } from "../machines/MachinePicker";
+import { chosenMachine } from "../machines/machines";
 import { liveHandleError } from "../names";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { preselectedModel } from "../models/models";
 import { AvatarPicker } from "./settings/AvatarPicker";
 import {
-  BoxFields,
-  BoxPicker,
   CapabilitiesFields,
   configErrors,
   configFormOf,
@@ -48,14 +48,15 @@ type CreateAgentDialogProps = {
 };
 
 /**
- * A new agent in a guild: its name, look, focus, model, run limits, disk and script caps, and the
- * box it runs on. Its focus seeds its Task. Lite is the default; Standard adds the browser, Code
- * adds coding too, and Custom is sized by the operator.
+ * A new agent in a guild: its name, look, focus, model, run limits, disk and script caps, the
+ * machine it goes on (picked when the organisation has several), and its capabilities. Its focus
+ * seeds its Task.
  */
 export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
   const navigate = useNavigate();
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
+  const machines = useOrgMachines(org.id);
   const create = useCreateAgent(guild?.id ?? "");
   const [name, setName] = useState("");
   const [focus, setFocus] = useState("");
@@ -68,10 +69,12 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
       ...defaultAgentConfig,
       model: preselectedModel(models.data, { coding: false }),
     });
-  const errors = configErrors(form, { models: models.data });
+  const errors = configErrors(form, { models: models.data, machines: machines.data });
+  const machine = chosenMachine(machines.data, form.machine_id);
   const nameError = liveHandleError(name, nameStarted, "agent");
   const noProvider = hasConnectedProvider(models.data) === false;
-  const invalid = Boolean(nameError) || !name.trim() || Object.keys(errors).length > 0;
+  const invalid =
+    Boolean(nameError) || !name.trim() || Object.keys(errors).length > 0 || !machines.data;
 
   const close = () => {
     setName("");
@@ -93,6 +96,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
         avatar_shape: look.shape,
         avatar_color: look.color,
         config: configOf(form, models.data),
+        ...(machine ? { machine_id: machine.id } : {}),
       },
       {
         onSuccess: (agent) => {
@@ -177,17 +181,30 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
                 errors={errors}
               />
             </Group>
-            <Group title="Box">
-              <BoxPicker
+            <Group title="Machine">
+              {machines.isError ? (
+                <Banner
+                  tone="error"
+                  title="Couldn't load the machines"
+                  meta={machines.error.message}
+                />
+              ) : machines.data ? (
+                <MachinePicker
+                  machines={machines.data}
+                  value={form.machine_id}
+                  onChange={(machineId) => setConfig({ ...form, machine_id: machineId })}
+                  agent={{ browser: form.browser, coding: form.coding }}
+                  error={errors.machine}
+                />
+              ) : null}
+            </Group>
+            <Group title="Agent capabilities">
+              <CapabilitiesFields
                 form={form}
                 onChange={(next) => setConfig(next)}
                 models={models.data}
-                error={errors.box}
+                machine={machine}
               />
-              <BoxFields form={form} onChange={(next) => setConfig(next)} models={models.data} errors={errors} />
-            </Group>
-            <Group title="Agent capabilities">
-              <CapabilitiesFields form={form} onChange={(next) => setConfig(next)} />
             </Group>
             {create.isError ? (
               <Banner tone="error" title="Couldn't create the agent">
@@ -199,10 +216,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
             <DialogClose asChild>
               <Button variant="ghost">Cancel</Button>
             </DialogClose>
-            <Button
-              type="submit"
-              disabled={create.isPending || invalid || noProvider}
-            >
+            <Button type="submit" disabled={create.isPending || invalid || noProvider}>
               {create.isPending ? "Creating…" : "Create agent"}
             </Button>
           </DialogFooter>

@@ -1,26 +1,34 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { repoRoot } from "../../src/lib/paths.js";
+import { agentDirectory, slotPorts } from "../../src/machines/index.js";
 import {
   RunSandboxes,
   SandboxError,
+  agentSandbox,
+  applyRunScripts,
   connectionConfig,
   endpointUrl,
-  metadataSecretIds,
-  prepareWorkspace,
   imageFingerprint,
-  sandboxFlags,
-  sandboxMatches,
-  sandboxMetadata,
-  sandboxEnvironment,
-  sandboxResource,
+  machineMatches,
+  machineMetadata,
+  machineResource,
+  machineSpec,
+  prepareWorkspace,
+  seatEnvironment,
   splitRunning,
   wrapOpenSandbox,
   browserNeedsBlankReset,
+  type AgentSeat,
+  type MachineSpec,
 } from "../../src/sandbox/index.js";
+
+const STANDARD: MachineSpec = { id: "mach_1", orgId: "org_1", box: "standard", cpu: 1, memoryMib: 2048 };
+const SEAT: AgentSeat = { agentId: "a_1", machineId: "mach_1", slot: 2, browserLanguage: "fr-FR" };
 
 test("connectionConfig parses a compose URL", () => {
   const config = connectionConfig("http://opensandbox:8080", "guilds-dev");
@@ -46,212 +54,89 @@ test("splitRunning empty", () => {
   assert.deepEqual(extras, []);
 });
 
-test("sandbox metadata is label-safe", () => {
-  const metadata = sandboxMetadata("a_1", "a".repeat(63), ["sec_1", "sec_2"]);
+test("machine metadata is label-safe and names the machine, its tier, and its size", () => {
+  const metadata = machineMetadata(STANDARD, { hostId: "host_shared", image: "agent-runtime:0.4" });
   assert.deepEqual(metadata, {
-    agent_id: "a_1",
-    environment_fingerprint: "a".repeat(63),
-    browser: "0",
-    coding: "0",
-    kind: "lite",
-    cpu: "0.5",
-    memory: "256Mi",
-    "sid.sec_1": "1",
-    "sid.sec_2": "1",
+    machine_id: "mach_1",
+    kind: "standard",
+    cpu: "1",
+    memory: "2048Mi",
+    host_id: "host_shared",
+    image: imageFingerprint("agent-runtime:0.4"),
   });
   for (const value of Object.values(metadata)) {
     assert.ok(value.length <= 63);
-    assert.ok(/^[A-Za-z0-9]/.test(value));
-    assert.ok(/[A-Za-z0-9]$/.test(value));
     assert.ok(/^[A-Za-z0-9_.-]+$/.test(value));
   }
-  assert.deepEqual([...metadataSecretIds(metadata)].sort(), ["sec_1", "sec_2"]);
-  assert.deepEqual([...metadataSecretIds({ secret_ids: "invalid" })], []);
+  assert.equal(machineMetadata(STANDARD).host_id, undefined);
+  assert.equal("agent_id" in metadata, false, "no agent, secret, or flag labels");
 });
 
-test("prepareWorkspace creates the browser profile on every box but lite", () => {
-  const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
-  const workspace = prepareWorkspace(root, "a_1");
-  assert.equal(workspace, path.join(root, "a_1"));
-  assert.equal(mkdirSync(path.join(workspace, ".browser"), { recursive: true }), undefined);
-  writeFileSync(path.join(workspace, ".browser", "cookies"), "keep");
-  const again = prepareWorkspace(root, "a_1", "standard");
-  assert.equal(again, workspace);
-  assert.equal(readFileSync(path.join(workspace, ".browser", "cookies"), "utf8"), "keep");
-  assert.equal(existsSync(path.join(prepareWorkspace(root, "a_code", "code"), ".browser")), true);
-  assert.equal(existsSync(path.join(prepareWorkspace(root, "a_custom", "custom"), ".browser")), true);
-});
-
-test("prepareWorkspace skips the browser profile on a lite box", () => {
-  const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
-  const workspace = prepareWorkspace(root, "a_lite", "lite");
-  assert.equal(existsSync(path.join(workspace, "scripts")), true);
-  assert.equal(existsSync(path.join(workspace, ".browser")), false);
-});
-
-test("sandbox metadata records the box, its size, and the browser and coding flags", () => {
-  const code = sandboxMetadata("a_1", "fp", [], { box: "code", browser: true, coding: true });
-  assert.equal(code.browser, "1");
-  assert.equal(code.coding, "1");
-  assert.equal(code.kind, "code");
-  assert.equal(code.cpu, "2");
-  assert.equal(code.memory, "4096Mi");
-  assert.equal(code.browser_language, "en-US");
-  const lite = sandboxMetadata("a_1", "fp", []);
-  assert.equal(lite.coding, "0");
-  assert.equal(lite.kind, "lite");
-  assert.equal(lite.cpu, "0.5");
-  assert.equal(lite.memory, "256Mi");
-  assert.equal(lite.browser_language, undefined);
-  const standard = sandboxMetadata("a_1", "fp", [], { box: "standard", browser: true });
-  assert.equal(standard.kind, "standard");
-  assert.equal(standard.cpu, "1");
-  assert.equal(standard.memory, "2048Mi");
-  const custom = sandboxMetadata("a_1", "fp", [], { box: "custom", browser: true, size: { cpu: 1.5, memory_mib: 3072 } });
-  assert.equal(custom.kind, "custom");
-  assert.equal(custom.cpu, "1.5");
-  assert.equal(custom.memory, "3072Mi");
-  assert.equal(
-    sandboxMetadata("a_1", "fp", [], { box: "standard", browser: true, browserLanguage: "fr-FR" }).browser_language,
-    "fr-FR",
-  );
-  // A missing box is the one the flags call for.
-  assert.equal(sandboxMetadata("a_1", "fp", [], { coding: true }).kind, "code");
-  assert.equal(sandboxMetadata("a_1", "fp", [], { browser: true }).kind, "standard");
-});
-
-test("each box has its size; a custom box takes the operator's", () => {
-  assert.deepEqual(sandboxResource(sandboxFlags({ box: "lite" })), { cpu: "0.5", memory: "256Mi" });
-  assert.deepEqual(sandboxResource(sandboxFlags({ box: "standard", browser: true })), { cpu: "1", memory: "2048Mi" });
-  assert.deepEqual(sandboxResource(sandboxFlags({ box: "code", browser: true, coding: true })), { cpu: "2", memory: "4096Mi" });
-  assert.deepEqual(
-    sandboxResource(sandboxFlags({ box: "custom", browser: true, size: { cpu: 4, memory_mib: 8192 } })),
-    { cpu: "4", memory: "8192Mi" },
-  );
-  assert.throws(() => sandboxResource(sandboxFlags({ box: "custom" })), /a custom box needs cpu and memory_mib/);
-  // The flags alone: coding means code, the browser alone means standard, neither means lite.
-  assert.equal(sandboxFlags({ browser: false, coding: false }).box, "lite");
-  assert.equal(sandboxFlags({ browser: true, coding: false }).box, "standard");
-  assert.equal(sandboxFlags({ browser: false, coding: true }).box, "code");
-  assert.equal(sandboxFlags({ browser: true, coding: true }).box, "code");
-});
-
-test("the lite box runs the lite image and every other box the standard one; lite falls back to it", () => {
-  const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
-  const both = new RunSandboxes({
-    url: "http://opensandbox:8080",
-    apiKey: "test",
-    image: "agent-runtime:0.3",
-    imageLite: "agent-runtime-lite:0.1",
-    workspaceRoot: root,
+test("a machine row runs at its tier's size, a custom one at its own", () => {
+  assert.deepEqual(machineSpec({ id: "m", org_id: "o", box: "code", cpu: null, memory_mib: null }), {
+    id: "m",
+    orgId: "o",
+    box: "code",
+    cpu: 2,
+    memoryMib: 4096,
   });
-  assert.equal(both.imageFor(sandboxFlags({ box: "lite" })), "agent-runtime-lite:0.1");
-  assert.equal(both.imageFor(sandboxFlags({ box: "standard", browser: true })), "agent-runtime:0.3");
-  assert.equal(both.imageFor(sandboxFlags({ box: "code", browser: true, coding: true })), "agent-runtime:0.3");
-  assert.equal(both.imageFor(sandboxFlags({ box: "custom", size: { cpu: 1, memory_mib: 1024 } })), "agent-runtime:0.3");
-  const one = new RunSandboxes({
-    url: "http://opensandbox:8080",
-    apiKey: "test",
-    image: "agent-runtime:0.3",
-    workspaceRoot: root,
-  });
-  assert.equal(one.imageFor(sandboxFlags({ box: "lite" })), "agent-runtime:0.3");
-  assert.equal(
-    new RunSandboxes({ url: "http://opensandbox:8080", apiKey: "test", image: "agent-runtime:0.3", imageLite: "", workspaceRoot: root })
-      .imageLite,
-    "agent-runtime:0.3",
-  );
+  const custom = machineSpec({ id: "m", org_id: "o", box: "custom", cpu: 1.5, memory_mib: 3072 });
+  assert.deepEqual(machineResource(custom), { cpu: "1.5", memory: "3072Mi" });
+  assert.deepEqual(machineResource(STANDARD), { cpu: "1", memory: "2048Mi" });
 });
 
-test("a sandbox from another box, or another size, is not the run's sandbox", () => {
-  const lite = sandboxFlags({ box: "lite" });
-  const code = sandboxFlags({ box: "code", browser: true, coding: true });
-  const onLite = sandboxMetadata("a_1", "fp", [], { image: "agent-runtime-lite:0.1" });
-  assert.equal(sandboxMatches(onLite, "fp", lite, "agent-runtime-lite:0.1"), true);
-  assert.equal(sandboxMatches(onLite, "fp", lite, "agent-runtime:0.3"), false, "a lite agent still on the standard image");
-  assert.equal(sandboxMatches(onLite, "fp", code, "agent-runtime:0.3"), false);
-  const onCode = sandboxMetadata("a_1", "fp", [], { ...code, image: "agent-runtime:0.3" });
-  assert.equal(onCode.kind, "code");
-  assert.equal(sandboxMatches(onCode, "fp", code, "agent-runtime:0.3"), true);
-  assert.equal(sandboxMatches(onCode, "fp", lite, "agent-runtime-lite:0.1"), false);
-  // A standard box and a custom one of the same size are different boxes.
-  const standard = sandboxFlags({ box: "standard", browser: true });
-  const customAsStandard = sandboxFlags({ box: "custom", browser: true, size: { cpu: 1, memory_mib: 2048 } });
-  const onStandard = sandboxMetadata("a_1", "fp", [], standard);
-  assert.equal(sandboxMatches(onStandard, "fp", standard), true);
-  assert.equal(sandboxMatches(onStandard, "fp", customAsStandard), false);
-  // A custom box resized is replaced.
-  const small = sandboxFlags({ box: "custom", browser: true, size: { cpu: 1, memory_mib: 2048 } });
-  const large = sandboxFlags({ box: "custom", browser: true, size: { cpu: 2, memory_mib: 2048 } });
-  const onSmall = sandboxMetadata("a_1", "fp", [], small);
-  assert.equal(sandboxMatches(onSmall, "fp", small), true);
-  assert.equal(sandboxMatches(onSmall, "fp", large), false);
-  assert.equal(sandboxMatches(onSmall, "fp", { ...small, size: { cpu: 1, memory_mib: 4096 } }), false);
-});
-
-test("a coding sandbox keeps HOME in the workspace", () => {
-  assert.deepEqual(sandboxEnvironment({ API: "x" }, sandboxFlags({ box: "code", browser: false, coding: true })), {
-    API: "x",
-    HOME: "/home/agent",
-  });
-  assert.deepEqual(
-    sandboxEnvironment({ HOME: "/elsewhere" }, sandboxFlags({ box: "code", browser: false, coding: true })).HOME,
-    "/home/agent",
-  );
-  assert.deepEqual(sandboxEnvironment({ API: "x" }, sandboxFlags({ box: "standard", browser: true })), {
-    API: "x",
-    GUILDS_BROWSER_LANGUAGE: "en-US",
-  });
-  assert.deepEqual(
-    sandboxEnvironment({ API: "x" }, sandboxFlags({ box: "standard", browser: true, browserLanguage: "ja" })),
-    { API: "x", GUILDS_BROWSER_LANGUAGE: "ja" },
-  );
-});
-
-test("sandbox metadata records host_id when provided", () => {
-  const metadata = sandboxMetadata("a_1", "fp", [], { hostId: "host_shared" });
-  assert.equal(metadata.host_id, "host_shared");
-  const without = sandboxMetadata("a_1", "fp", []);
-  assert.equal(without.host_id, undefined);
-});
-
-test("sandboxMatches fingerprint, box, size, browser, coding, and language", () => {
-  const off = sandboxFlags({ box: "lite" });
-  const browser = sandboxFlags({ box: "standard", browser: true });
-  const coding = sandboxFlags({ box: "code", browser: false, coding: true });
-  const metadata = sandboxMetadata("a_1", "fp", ["sec_1"], browser);
-  assert.equal(sandboxMatches(metadata, "fp", browser), true);
-  assert.equal(sandboxMatches(metadata, "fp", { ...browser, browserLanguage: "fr-FR" }), false);
-  assert.equal(sandboxMatches(metadata, "fp", off), false);
-  assert.equal(sandboxMatches(metadata, "fp", { ...browser, browser: false }), false, "the browser switched off on the same box");
-  assert.equal(sandboxMatches(metadata, "fp", sandboxFlags({ box: "code", browser: true, coding: true })), false);
-  assert.equal(sandboxMatches(metadata, "other", browser), false);
-  assert.equal(sandboxMatches({ environment_fingerprint: "fp" }, "fp", browser), false);
-  assert.equal(sandboxMatches({ environment_fingerprint: "fp", browser: "1" }, "fp", browser), false);
-  assert.equal(
-    sandboxMatches({ environment_fingerprint: "fp", browser: "0" }, "fp", off),
-    false,
-    "a sandbox without its box and size labels is replaced",
-  );
-  const coder = sandboxMetadata("a_1", "fp", [], coding);
-  assert.equal(sandboxMatches(coder, "fp", coding), true);
-  assert.equal(sandboxMatches(coder, "fp", off), false);
-});
-
-test("a sandbox started from another image is not the run's sandbox", () => {
-  const off = sandboxFlags({ box: "lite" });
+test("a container of another tier, size, or image is not the machine's", () => {
   const pinned = "registry.example/project/agent-runtime@sha256:" + "ab".repeat(32);
-  const metadata = sandboxMetadata("a_1", "fp", [], { image: pinned });
-  assert.equal(metadata.image, imageFingerprint(pinned));
+  const metadata = machineMetadata(STANDARD, { image: pinned });
   assert.match(String(metadata.image), /^[0-9a-f]{16}$/, "a label value, whatever the reference holds");
-  assert.equal(sandboxMatches(metadata, "fp", off, pinned), true);
-  assert.equal(sandboxMatches(metadata, "fp", off, "agent-runtime:next"), false);
-  assert.equal(
-    sandboxMatches(sandboxMetadata("a_1", "fp", []), "fp", off, pinned),
-    false,
-    "a sandbox that records no image predates the check and is replaced",
-  );
-  assert.equal(sandboxMatches(metadata, "fp", off), true, "no image asked for, none compared");
+  assert.equal(machineMatches(metadata, STANDARD, pinned), true);
+  assert.equal(machineMatches(metadata, STANDARD), true, "no image asked for, none compared");
+  assert.equal(machineMatches(metadata, STANDARD, "agent-runtime:next"), false);
+  assert.equal(machineMatches(metadata, { ...STANDARD, box: "code", cpu: 2, memoryMib: 4096 }, pinned), false);
+  // A standard machine and a custom one of the same size are different tiers.
+  assert.equal(machineMatches(metadata, { ...STANDARD, box: "custom" }, pinned), false);
+  assert.equal(machineMatches(metadata, { ...STANDARD, memoryMib: 4096 }, pinned), false);
+  assert.equal(machineMatches({ kind: "standard" }, STANDARD), false);
+  assert.equal(machineMatches(null, STANDARD), false);
+});
+
+test("prepareWorkspace lays the agent's home out in its machine's directory", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-"));
+  const home = prepareWorkspace(root, "mach_1", "a_1", { browser: true });
+  assert.equal(home, path.join(root, "mach_1", "a_1"));
+  assert.equal(home, agentDirectory(root, "mach_1", "a_1"));
+  writeFileSync(path.join(home, ".browser", "cookies"), "keep");
+  assert.equal(prepareWorkspace(root, "mach_1", "a_1", { browser: true }), home);
+  assert.equal(readFileSync(path.join(home, ".browser", "cookies"), "utf8"), "keep");
+  const plain = prepareWorkspace(root, "mach_1", "a_2");
+  assert.equal(existsSync(path.join(plain, "scripts")), true);
+  assert.equal(existsSync(path.join(plain, ".browser")), false);
+});
+
+test("an agent's commands carry its home, its port block, and what the call adds", async () => {
+  assert.deepEqual(seatEnvironment(SEAT), {
+    HOME: "/home/a_1",
+    GUILDS_AGENT_HOME: "/home/a_1",
+    PORT: String(slotPorts(2).portsFrom),
+    GUILDS_PORTS: `${slotPorts(2).portsFrom}-${slotPorts(2).portsTo}`,
+  });
+  const calls: Array<[string, Record<string, unknown>]> = [];
+  const machine = {
+    id: "sbx_1",
+    commands: {
+      async run(command: string, opts?: Record<string, unknown>) {
+        calls.push([command, opts ?? {}]);
+        return { exit_code: 0 };
+      },
+    },
+  };
+  const view = agentSandbox(machine, "/home/a_1", { ...seatEnvironment(SEAT), API_KEY: "secret" });
+  await view.commands.run("ls", { timeoutSeconds: 5 });
+  await view.commands.run("pwd", { workingDirectory: "/home/a_1/repos/site", envs: { EXTRA: "1", API_KEY: "call" } });
+  assert.equal(calls[0]?.[1].workingDirectory, "/home/a_1");
+  assert.deepEqual(calls[0]?.[1].envs, { ...seatEnvironment(SEAT), API_KEY: "secret" });
+  assert.equal(calls[1]?.[1].workingDirectory, "/home/a_1/repos/site");
+  assert.deepEqual(calls[1]?.[1].envs, { ...seatEnvironment(SEAT), API_KEY: "call", EXTRA: "1" });
 });
 
 test("endpointUrl adds a scheme", () => {
@@ -275,7 +160,7 @@ test("waitForBrowser includes the start log", async () => {
   const sandboxes = new RunSandboxes({
     url: "http://opensandbox:8080",
     apiKey: "test",
-    image: "agent-runtime:0.3",
+    image: "agent-runtime:0.4",
     workspaceRoot: root,
     readySeconds: 1,
     sleep: async () => undefined,
@@ -284,16 +169,16 @@ test("waitForBrowser includes the start log", async () => {
     id: "sbx_fake",
     commands: {
       async run(command: string) {
-        if (command.includes("agent-browser.log")) {
+        if (command.includes("/run/guilds/a_1/browser.log")) {
           return {
             exit_code: 0,
             logs: { stdout: [{ text: "clearing stale chromium SingletonLock -> old-host-59" }] },
           };
         }
-        if (command.includes("-w") && command.includes("6080")) {
+        if (command.includes("-w") && command.includes(String(slotPorts(2).novnc))) {
           return { exit_code: 0, logs: { stdout: [{ text: "200" }] } };
         }
-        if (command.includes("-w") && command.includes("9222")) {
+        if (command.includes("-w") && command.includes(String(slotPorts(2).cdp))) {
           return { exit_code: 0, logs: { stdout: [{ text: "down" }] } };
         }
         return { exit_code: 1, logs: { stdout: [] } };
@@ -301,7 +186,7 @@ test("waitForBrowser includes the start log", async () => {
     },
   };
   await assert.rejects(
-    () => sandboxes.waitForBrowser(fake),
+    () => sandboxes.waitForBrowser(fake, SEAT),
     (error: unknown) => {
       assert.ok(error instanceof SandboxError);
       assert.match(error.message, /browser session failed to start/);
@@ -318,7 +203,7 @@ test("waitForBrowser navigates off guilds.run onto about:blank", async () => {
   const sandboxes = new RunSandboxes({
     url: "http://opensandbox:8080",
     apiKey: "test",
-    image: "agent-runtime:0.3",
+    image: "agent-runtime:0.4",
     workspaceRoot: root,
     readySeconds: 1,
     sleep: async () => undefined,
@@ -339,13 +224,20 @@ test("waitForBrowser navigates off guilds.run onto about:blank", async () => {
       },
     },
   };
-  await sandboxes.waitForBrowser(fake);
-  assert.ok(commands.some((command) => command.includes("6080/vnc.html") && command.includes("9222/json/version")));
-  assert.ok(commands.some((command) => command.includes("/json/list")));
+  await sandboxes.waitForBrowser(fake, SEAT);
+  const ports = slotPorts(2);
+  assert.ok(
+    commands.some((command) => command.includes(`${ports.novnc}/vnc.html`) && command.includes(`${ports.cdp}/json/version`)),
+  );
+  assert.ok(commands.some((command) => command.includes(`${ports.cdp}/json/list`)));
   const navigate = commands.find((command) => command.includes("guilds-browser"));
   assert.ok(navigate);
   const blob = navigate.split(" ").pop() ?? "";
-  assert.deepEqual(JSON.parse(Buffer.from(blob, "base64").toString("utf8")), { op: "navigate", url: "about:blank" });
+  assert.deepEqual(JSON.parse(Buffer.from(blob, "base64").toString("utf8")), {
+    op: "navigate",
+    url: "about:blank",
+    cdp_port: ports.cdp,
+  });
 });
 
 test("wrapOpenSandbox maps JS SDK signatures onto the Python-used surface", async () => {
@@ -467,80 +359,227 @@ test("runtime launches desktop Chrome with PC-like flags", () => {
   assert.doesNotMatch(text, /--test-type/);
 });
 
-test("the lite image carries the scripts launcher and the CLI, and none of the standard toolchains", () => {
-  // The instructions alone: the header names what the image leaves out.
-  const image = readFileSync(path.join(repoRoot(import.meta.url), "runtime/Dockerfile.lite"), "utf8")
-    .split("\n")
-    .filter((line) => !line.startsWith("#"))
-    .join("\n");
-  assert.match(image, /^FROM python:3\.12-slim$/m);
-  assert.match(image, /COPY guilds-script-run \/usr\/local\/bin\/guilds-script-run/);
-  assert.match(image, /COPY agent-cli-start \/usr\/local\/bin\/agent-cli-start/);
-  assert.match(image, /ttyd\.x86_64/);
-  assert.match(image, /WORKDIR \/home\/agent/);
-  for (const absent of ["chromium", "tigervnc", "novnc", "playwright", "nodejs.org", "cli/cli", "jdx/mise", "graft", "guilds-code", "guilds-browser", "build-essential"]) {
-    assert.doesNotMatch(image, new RegExp(absent, "i"), absent);
-  }
-});
-
-test("ensure creates each box from its image, at its size", async () => {
+test("ensure runs one container per machine, at its size, with its directory at /home", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-images-"));
-  const created: Array<{ image: string; resource: unknown; metadata: Record<string, string> }> = [];
+  const created: Array<Record<string, unknown>> = [];
+  const killed: string[] = [];
+  let listed: Array<Record<string, unknown>> = [];
   const wrapped = wrapOpenSandbox({
     SandboxManager: {
       create() {
         return {
           async listSandboxInfos() {
-            return { items: [] };
+            return { items: listed };
           },
-          async killSandbox() {
-            return undefined;
+          async killSandbox(id: string) {
+            killed.push(id);
           },
         };
       },
     },
     Sandbox: {
       async create(opts: unknown) {
-        const body = opts as { image: string; resource: unknown; metadata: Record<string, string> };
-        created.push({ image: body.image, resource: body.resource, metadata: body.metadata });
+        created.push(opts as Record<string, unknown>);
         return { id: `sbx_${created.length}`, commands: { async run() { return { exitCode: 0, logs: { stdout: [] } }; } } };
       },
-      async connect() {
-        throw new Error("nothing to connect to");
+      async connect(opts: unknown) {
+        return { id: String((opts as { sandboxId: string }).sandboxId), commands: { async run() { return { exitCode: 0 }; } } };
       },
     },
   });
   const sandboxes = new RunSandboxes({
     url: "http://opensandbox:8080",
     apiKey: "test",
-    image: "agent-runtime:0.3",
-    imageLite: "agent-runtime-lite:0.1",
+    image: "agent-runtime:0.4",
     workspaceRoot: root,
     sdk: wrapped,
   });
   await sandboxes.start();
-  await sandboxes.ensure("a_lite", {}, []);
-  await sandboxes.ensure("a_coder", {}, [], { box: "code", browser: false, coding: true });
-  await sandboxes.ensure("a_browser", {}, [], { box: "standard", browser: false });
-  await sandboxes.ensure("a_custom", {}, [], { box: "custom", browser: false, size: { cpu: 3, memory_mib: 6144 } });
-  assert.equal(created[0]?.image, "agent-runtime-lite:0.1");
-  assert.deepEqual(created[0]?.resource, { cpu: "0.5", memory: "256Mi" });
-  assert.equal(created[0]?.metadata.kind, "lite");
-  assert.equal(created[0]?.metadata.image, imageFingerprint("agent-runtime-lite:0.1"));
-  assert.equal(existsSync(path.join(root, "a_lite", ".browser")), false);
-  assert.equal(created[1]?.image, "agent-runtime:0.3");
-  assert.deepEqual(created[1]?.resource, { cpu: "2", memory: "4096Mi" });
-  assert.equal(created[1]?.metadata.kind, "code");
-  assert.equal(existsSync(path.join(root, "a_coder", ".browser")), true);
-  assert.equal(created[2]?.image, "agent-runtime:0.3");
-  assert.deepEqual(created[2]?.resource, { cpu: "1", memory: "2048Mi" });
-  assert.equal(created[2]?.metadata.kind, "standard");
-  assert.equal(created[3]?.image, "agent-runtime:0.3");
-  assert.deepEqual(created[3]?.resource, { cpu: "3", memory: "6144Mi" });
-  assert.equal(created[3]?.metadata.kind, "custom");
-  assert.equal(created[3]?.metadata.cpu, "3");
-  assert.equal(created[3]?.metadata.memory, "6144Mi");
+  const custom: MachineSpec = { id: "mach_2", orgId: "org_1", box: "custom", cpu: 3, memoryMib: 6144 };
+  await sandboxes.ensure(STANDARD);
+  await sandboxes.ensure(custom);
+  assert.equal(created[0]?.image, "agent-runtime:0.4");
+  assert.deepEqual(created[0]?.resource, { cpu: "1", memory: "2048Mi" });
+  assert.equal((created[0]?.metadata as Record<string, string>).machine_id, "mach_1");
+  assert.equal(created[0]?.env, undefined, "no secret reaches the container's environment");
+  assert.equal(created[0]?.entrypoint, undefined);
+  const volume = (created[0]?.volumes as Array<Record<string, unknown>>)[0];
+  assert.equal(volume?.mountPath, "/home");
+  assert.deepEqual(volume?.host, { path: path.join(root, "mach_1") });
+  assert.equal(existsSync(path.join(root, "mach_1")), true);
+  assert.deepEqual(created[1]?.resource, { cpu: "3", memory: "6144Mi" });
+  // A running container of the machine's size is kept; one of another size is replaced.
+  listed = [{ id: "sbx_live", metadata: machineMetadata(STANDARD, { image: "agent-runtime:0.4" }) }];
+  const kept = await sandboxes.ensure(STANDARD);
+  assert.equal(kept.id, "sbx_live");
+  assert.equal(created.length, 2);
+  await sandboxes.ensure({ ...STANDARD, box: "code", cpu: 2, memoryMib: 4096 });
+  assert.deepEqual(killed, ["sbx_live"]);
+  assert.equal(created.length, 3);
   await sandboxes.close();
+});
+
+test("destroyAgentSandboxes kills the sandboxes that ran one agent, and no machine", async () => {
+  const killed: string[] = [];
+  const wrapped = wrapOpenSandbox({
+    SandboxManager: {
+      create() {
+        return {
+          async listSandboxInfos() {
+            return {
+              items: [
+                { id: "sbx_agent", metadata: { agent_id: "a_1", kind: "lite" } },
+                { id: "sbx_machine", metadata: { machine_id: "mach_1" } },
+              ],
+            };
+          },
+          async killSandbox(id: string) {
+            killed.push(id);
+          },
+        };
+      },
+    },
+    Sandbox: {
+      async create() {
+        throw new Error("no create");
+      },
+      async connect() {
+        throw new Error("no connect");
+      },
+    },
+  });
+  const sandboxes = new RunSandboxes({
+    url: "http://opensandbox:8080",
+    apiKey: "test",
+    image: "agent-runtime:0.4",
+    workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
+    sdk: wrapped,
+  });
+  await sandboxes.start();
+  assert.equal(await sandboxes.destroyAgentSandboxes(), 1);
+  assert.deepEqual(killed, ["sbx_agent"]);
+  assert.deepEqual([...(await sandboxes.listRunningMachineIds())], ["mach_1"]);
+});
+
+test("each agent's browser starts and stops on its own slot", async () => {
+  const commands: string[] = [];
+  const sandboxes = new RunSandboxes({
+    url: "http://opensandbox:8080",
+    apiKey: "test",
+    image: "agent-runtime:0.4",
+    workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
+    readySeconds: 1,
+    sleep: async () => undefined,
+  });
+  const fake = {
+    id: "sbx_fake",
+    commands: {
+      async run(command: string) {
+        commands.push(command);
+        return { exit_code: 0, logs: { stdout: [{ text: "[]" }] } };
+      },
+    },
+  };
+  await sandboxes.startBrowser(fake, SEAT);
+  await sandboxes.stopBrowser(fake, SEAT);
+  await sandboxes.stopAgent(fake, SEAT, { purge: true });
+  const ports = slotPorts(2);
+  assert.equal(
+    commands[0],
+    `/usr/local/bin/agent-browser-start a_1 ${ports.display} ${ports.vnc} ${ports.cdp} ${ports.novnc} fr-FR`,
+  );
+  assert.ok(commands.includes("/usr/local/bin/agent-stop a_1 browser"));
+  assert.ok(commands.includes("/usr/local/bin/agent-stop a_1 purge"));
+  const [base] = await sandboxes.novncTarget(
+    { ...fake, getEndpoint: async (port: number) => ({ endpoint: `host/route/${port}` }) },
+    SEAT,
+  );
+  assert.equal(base, `http://host/route/${slotPorts(2).novnc}`);
+});
+
+test("stopping an agent whose processes outlive the stop fails", async () => {
+  const sandboxes = new RunSandboxes({
+    url: "http://opensandbox:8080",
+    apiKey: "test",
+    image: "agent-runtime:0.4",
+    workspaceRoot: mkdtempSync(path.join(tmpdir(), "guilds-sandbox-")),
+  });
+  const stuck = {
+    id: "sbx_stuck",
+    commands: {
+      async run() {
+        return { exit_code: 1, logs: { stdout: [] } };
+      },
+    },
+  };
+  await assert.rejects(() => sandboxes.stopAgent(stuck, SEAT, { purge: true }), SandboxError);
+  await assert.rejects(() => sandboxes.stopBrowser(stuck, SEAT), SandboxError);
+});
+
+/** The runtime's agent scripts laid out as in the image: helpers in bin, their library in lib/guilds. */
+function runtimeScripts(): string {
+  const root = mkdtempSync(path.join(tmpdir(), "guilds-runtime-"));
+  const runtime = path.join(repoRoot(import.meta.url), "runtime");
+  mkdirSync(path.join(root, "bin"));
+  mkdirSync(path.join(root, "lib", "guilds"), { recursive: true });
+  for (const name of ["agent-browser-start", "agent-cli-start", "agent-stop"]) {
+    copyFileSync(path.join(runtime, name), path.join(root, "bin", name));
+  }
+  copyFileSync(path.join(runtime, "agent-lib.sh"), path.join(root, "lib", "guilds", "agent-lib.sh"));
+  return root;
+}
+
+function bash(args: string[]): { status: number | null; stderr: string } {
+  const result = spawnSync("bash", args, { encoding: "utf8", timeout: 10_000 });
+  return { status: result.status, stderr: result.stderr };
+}
+
+test("the agent helpers refuse a malformed agent id, port, display, or mode before touching anything", () => {
+  const root = runtimeScripts();
+  const bin = (name: string) => path.join(root, "bin", name);
+  const ports = slotPorts(2);
+  const browser = [String(ports.display), String(ports.vnc), String(ports.cdp), String(ports.novnc)];
+  const refused = [
+    [bin("agent-browser-start"), "../a_1", ...browser, "fr-FR"],
+    [bin("agent-browser-start"), "a_1", "0", String(ports.vnc), String(ports.cdp), String(ports.novnc), "fr-FR"],
+    [bin("agent-browser-start"), "a_1", String(ports.display), "80", String(ports.cdp), String(ports.novnc), "fr-FR"],
+    [bin("agent-browser-start"), "a_1", ...browser, "fr FR"],
+    [bin("agent-browser-start"), "a_1", "2", "fr-FR"],
+    [bin("agent-cli-start"), "a 1", String(ports.ttyd), String(ports.portsFrom), String(ports.portsTo)],
+    [bin("agent-cli-start"), "a_1", "70000", String(ports.portsFrom), String(ports.portsTo)],
+    [bin("agent-cli-start"), "a_1", String(ports.ttyd), String(ports.portsTo), String(ports.portsFrom)],
+    [bin("agent-cli-start"), "a_1", "2"],
+    [bin("agent-stop"), "a/1", "all"],
+    [bin("agent-stop"), "a_1", "everything"],
+  ];
+  for (const args of refused) {
+    const result = bash(args);
+    assert.equal(result.status, 2, args.join(" "));
+    assert.match(result.stderr, /^usage: /, args.join(" "));
+  }
+});
+
+test("the agent library validates ports and displays and waits a bounded time", () => {
+  const library = path.join(runtimeScripts(), "lib", "guilds", "agent-lib.sh");
+  const check = (body: string) => bash(["-c", `source "$0"; ${body}`, library]).status;
+  assert.equal(check("valid_port 1024 && valid_port 65535 && valid_port 08080"), 0);
+  assert.equal(check("valid_port 1023"), 1);
+  assert.equal(check("valid_port 65536"), 1);
+  assert.equal(check("valid_port 70x"), 1);
+  assert.equal(check("valid_display 10 && valid_display 41"), 0);
+  assert.equal(check("valid_display 0"), 1);
+  assert.equal(check("valid_agent a_1-B && ! valid_agent ../a && ! valid_agent ''"), 0);
+  assert.equal(check("n=0; bump() { n=$((n + 1)); [ $n -ge 3 ]; }; wait_until 10 bump && [ $n = 3 ]"), 0);
+  assert.equal(check("wait_until 2 false"), 1);
+});
+
+test("the agent library ends a whole process group and reports one that is gone", { skip: process.platform !== "linux" }, () => {
+  const library = path.join(runtimeScripts(), "lib", "guilds", "agent-lib.sh");
+  const script =
+    'source "$0"; setsid bash -c "sleep 60 & sleep 60" & leader=$!; '
+    + "wait_until 20 group_alive $leader || exit 3; stop_group $leader || exit 4; "
+    + "group_alive $leader && exit 5; stop_group $leader";
+  assert.equal(bash(["-c", script, library]).status, 0);
 });
 
 test("runtime hides the --no-sandbox infobar and ships Chromium language packs", () => {
@@ -569,81 +608,48 @@ test("runtime opens Chrome on about:blank instead of restoring the last URL", ()
   assert.match(text, /^\s+about:blank$/m);
 });
 
-test("ensure materialises snapshotted scripts via write then move", async () => {
-  const root = mkdtempSync(path.join(tmpdir(), "guilds-sandbox-scripts-"));
+test("applyRunScripts materialises snapshotted scripts in the agent's home via write then move", async () => {
   const fileCalls: Array<[string, unknown]> = [];
-  const wrapped = wrapOpenSandbox({
-    SandboxManager: {
-      create() {
-        return {
-          async listSandboxInfos() {
-            return { items: [] };
-          },
-          async killSandbox() {
-            return undefined;
-          },
-        };
+  const sandbox = {
+    id: "sbx_scripts",
+    commands: {
+      async run() {
+        return { exitCode: 0, logs: { stdout: [] } };
       },
     },
-    Sandbox: {
-      async create() {
-        return {
-          id: "sbx_scripts",
-          commands: {
-            async run() {
-              return { exitCode: 0, logs: { stdout: [] } };
-            },
-          },
-          files: {
-            async writeFiles(entries: unknown) {
-              fileCalls.push(["write", entries]);
-            },
-            async moveFiles(entries: unknown) {
-              fileCalls.push(["move", entries]);
-            },
-            async listDirectory() {
-              return [];
-            },
-            async deleteFiles(paths: unknown) {
-              fileCalls.push(["delete", paths]);
-            },
-          },
-        };
+    files: {
+      async writeFiles(entries: Array<{ path: string; data?: string | Uint8Array | ArrayBuffer }>) {
+        fileCalls.push(["write", entries]);
       },
-      async connect() {
-        return { id: "sbx_scripts", commands: { async run() { return { exitCode: 0, logs: { stdout: [] } }; } } };
+      async moveFiles(entries: Array<{ src: string; dest: string }>) {
+        fileCalls.push(["move", entries]);
+      },
+      async listDirectory() {
+        return [];
+      },
+      async deleteFiles(paths: string[]) {
+        fileCalls.push(["delete", paths]);
       },
     },
-  });
-  const sandboxes = new RunSandboxes({
-    url: "http://opensandbox:8080",
-    apiKey: "test",
-    image: "agent-runtime:0.3",
-    workspaceRoot: root,
-    sdk: wrapped,
-  });
-  await sandboxes.start();
-  await sandboxes.ensure("a_1", {}, [], {
-    scripts: [
-      {
-        id: "scr_1",
-        name: "send_usdc",
-        description: "Sign and send USDC",
-        parameters: null,
-        source: "print('ok')\n",
-        source_hash: "abc",
-      },
-    ],
-  });
+  };
+  await applyRunScripts(sandbox, "/home/a_1", [
+    {
+      id: "scr_1",
+      name: "send_usdc",
+      description: "Sign and send USDC",
+      parameters: null,
+      source: "print('ok')\n",
+      source_hash: "abc",
+    },
+  ]);
   assert.equal(fileCalls[0]?.[0], "write");
   assert.equal(fileCalls[1]?.[0], "move");
   const writes = fileCalls[0]?.[1] as Array<{ path: string; data: string }>;
   const moves = fileCalls[1]?.[1] as Array<{ src: string; dest: string }>;
   assert.equal(writes.length, 1);
-  assert.match(writes[0]?.path ?? "", /^\/home\/agent\/scripts\/\.send_usdc\.[0-9a-f]+\.tmp$/);
+  assert.match(writes[0]?.path ?? "", /^\/home\/a_1\/scripts\/\.send_usdc\.[0-9a-f]+\.tmp$/);
   assert.equal(writes[0]?.data, "print('ok')\n");
   assert.equal(moves.length, 1);
   assert.equal(moves[0]?.src, writes[0]?.path);
-  assert.equal(moves[0]?.dest, "/home/agent/scripts/send_usdc.py");
-  await sandboxes.close();
+  assert.equal(moves[0]?.dest, "/home/a_1/scripts/send_usdc.py");
 });

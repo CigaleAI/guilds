@@ -1,6 +1,7 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { NAME_RE, WAKE_TRIGGERS_MAX } from "../agents/validation.js";
+import { WAKE_TRIGGERS_MAX } from "../agents/validation.js";
+import { NAME_RE } from "../lib/names.js";
 import { parseColumns, type CollectionColumn } from "../artifacts/columns.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";

@@ -1,4 +1,4 @@
-/** The server's rule for a guild repository's name, which is also its folder under /home/agent/repos. */
+/** The server's rule for a guild repository's name, which is also its folder under repos/ in each coding agent's home. */
 export const repositoryNamePattern = /^[a-z][a-z0-9_-]{0,62}$/;
 
 /** A repository name the server accepts, derived from a GitHub repository's name. */

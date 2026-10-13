@@ -74,7 +74,8 @@ A guild has git repositories in `guild_repositories`. Each row holds:
 - GitHub's `github_id` for one added through a login
 
 Each coding agent of the guild clones them into
-`/home/agent/repos/<name>` ([Runs](runs.md#repositories)).
+`repos/<name>` in its home, `/home/<agent id>/repos/<name>`
+([Runs](runs.md#repositories)).
 
 The guild's Settings tab adds and removes them. Any operator who sees
 the guild may.
@@ -223,9 +224,149 @@ The Settings tab can change a name after create. Database ids stay
 stable across a rename, and if a name is later reused after delete.
 Display paths use those ids.
 
+## Machines
+
+An organisation owns a pool of machines. A machine is one
+OpenSandbox container and one host directory, sized by a tier.
+Every agent sits on exactly one machine of its organisation, and
+many agents share one machine. A machine never spans
+organisations.
+
+| Tier | CPU | Memory | Coding agents |
+| --- | --- | --- | --- |
+| `standard` | 1 | 2 GiB | no |
+| `code` | 2 | 4 GiB | yes |
+| `custom` | 0.5 to 4, in steps of 0.25 | 512 to 8192 MiB | yes |
+
+Every machine runs the one runtime image (`SANDBOX_IMAGE`), with
+Chromium and the coding toolchains. A machine row in `machines`
+holds:
+
+- `name`, matching `^[a-z][a-z0-9-]{0,62}$` and unique in the
+  organisation
+- `box`, the tier
+- `cpu` and `memory_mib`, on a custom machine only
+- `max_workspace_mib`, the disk cap over every home on it, default
+  10240
+- `workspace_mib`, the size of its directory as last measured
+
+Every path that creates an organisation (user creation,
+`POST /api/orgs`, the boot seed) creates one `standard` machine
+named `default` with it. An organisation that needs more room
+resizes a machine or adds another one.
+
+| Route | Who | Body or result |
+| --- | --- | --- |
+| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `planned_mib`, `agents` (id, name, guild, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
+| `POST /api/orgs/:id/machines` | owners, admins | `name`, `box`, `cpu`?, `memory_mib`?, `max_workspace_mib`?; 201 with the machine |
+| `PATCH /api/orgs/:id/machines/:machine_id` | owners, admins | the same fields; the body fills in what it leaves out from the machine |
+| `DELETE /api/orgs/:id/machines/:machine_id` | owners, admins | 204 |
+| `PUT /api/agents/:id/machine` | anyone who sees the guild | `machine_id` |
+
+- Another organisation's id is 404.
+- A write by a member who is neither owner nor admin is 403.
+- A name the organisation already has is 409.
+- Deleting a machine that still has agents is 409.
+- Deleting the organisation's last machine is 409.
+- Deleting a machine removes its container and its directory.
+- Changing a machine to `standard` while it hosts a coding agent is
+  409.
+- The organisation policy's `maxMachines` caps the machines. Past
+  it, a create is refused with a limit error (409).
+- The policy's `maxAgentsPerMachine` caps the agents on one machine.
+  Past it, a placement is refused with a limit error (409).
+- Both caps are unset in core.
+
+Changing a machine's tier or size replaces its container. An idle
+container goes at once. A busy one goes when its last generation
+ends. The next work on the machine starts a container of the new
+size. The machine's directory and every home in it stay.
+
+### Placement
+
+Agent create takes `machine_id`. With one machine in the
+organisation the agent goes on it, and the field may be left out.
+With more, it is required (422 without it). `PUT
+/api/agents/:id/config` takes `machine_id` too, and moves the agent
+when it names another machine. Agent payloads carry `machine_id`
+and `machine` (`id`, `name`, `box`).
+
+A coding agent needs a `code` or `custom` machine. Creating one on
+a standard machine is 422. Turning `coding` on there is 422. Moving
+one there is 422.
+
+A caller cannot place an agent on a machine that hosts an agent of
+a guild the caller cannot see. Agent create, a `machine_id` in `PUT
+/api/agents/:id/config`, and a move are refused there with 403
+([SEC-26](../architecture/security-register.md#sec-26--a-member-could-place-an-agent-beside-a-private-guilds-agents)).
+
+Each agent holds a slot on its machine, the lowest free one from 0
+to 31. A machine holds at most 32 agents, whatever the policy says.
+A full machine is 409. The slot `s` sets everything the agent
+listens on inside the container:
+
+| What | Value |
+| --- | --- |
+| X display | `:10+s`, its VNC server on `5910+s`, on loopback |
+| Chrome DevTools | `9300+s` |
+| noVNC | `6100+s` |
+| ttyd | `7700+s` |
+| The agent's own servers | `20000+100·s` to `20000+100·s+99` |
+
+Each agent has its own home, `/home/<agent id>`, which is
+`WORKSPACE_ROOT/<machine id>/<agent id>` on the host. It holds the
+agent's `scripts/`, `.browser/` profile, a coding agent's `repos/`,
+`.runs/`, `.gitconfig`, caches, and toolchains. Its runtime files
+(git tokens, the terminal's token, logs) are under
+`/run/guilds/<agent id>/`. Two agents on one machine keep their own
+secrets, Chrome profile, logins, and tab, so they can hold two
+accounts on one site. They generate at the same time.
+
+`PUT /api/agents/:id/machine` moves an agent. The move:
+
+1. stops the agent's processes on the machine it leaves
+2. renames its home on the host
+3. gives it the lowest free slot on the other machine
+
+The move is refused in these cases:
+
+- The agent is generating (409).
+- The two machines keep their directories under different
+  workspace roots (409).
+- The target machine already holds a home for the agent (409).
+- The target machine hosts an agent of a guild the caller cannot
+  see (403).
+- The edition does not support moving agents (501, `agents cannot
+  move here`).
+
+Agents on one machine trust each other. Commands run as root in
+the shared container, so an agent can read every other agent's
+home, git tokens, Chrome profile and cookies, and the environment
+of a command running at the same moment
+([Security register](../architecture/security-register.md#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions)).
+An agent whose data must stay apart goes on a machine of its own.
+
+### Planned memory
+
+The Machines tab and the machine picker show a planned memory
+budget per machine: an estimate of every agent on it working at
+once, against the machine's memory.
+
+| Agent | Weight |
+| --- | --- |
+| Base (scripts, notes, MCP) | 100 MiB |
+| `browser` on | + 500 MiB |
+| `coding` on | + 1536 MiB |
+
+`GET /api/orgs/:id/machines` returns `planned_mib` and `memory_mib`
+for each machine. Agents of guilds the caller cannot see count
+toward `planned_mib` and toward the machine's 32 slots. A
+placement over 100% still saves. The app warns that agents on the
+machine may run out of memory when they all work at once.
+
 ## Configuration and appearance
 
-Agent configuration is seventeen required keys:
+Agent configuration is sixteen required keys:
 
 - `model`
 - `temperature`
@@ -243,9 +384,9 @@ Agent configuration is seventeen required keys:
 - `scripting`
 - `memory`
 - `thinking_level`
-- `box`
 
-Unknown keys are rejected. Missing ones take defaults:
+Unknown keys are rejected. The tier, CPU, and memory belong to the
+machine ([Machines](#machines)). Missing keys take defaults:
 
 - temperature 1
 - 8192 tokens
@@ -258,35 +399,19 @@ Unknown keys are rejected. Missing ones take defaults:
 - CLI, scripting, and Memory on
 - thinking `none`
 - browser language `en-US`
-
-A missing `box` follows the flags: `code` with `coding` on, `standard`
-with `browser` alone, `lite` with neither. Missing flags follow the
-box:
-
-- `lite` turns `browser` and `coding` off
-- `standard` turns `browser` on and `coding` off
-- `code` turns both on
-- `custom` turns `browser` on and `coding` off
-- a payload that names neither makes a lite agent
-
-The box alone is enough to create an agent, except `custom`, which
-also needs `cpu` and `memory_mib`.
+- `browser` and `coding` off
 
 An agent created with `coding` on and no step or tool-call limit
 starts with 200 steps and 200 tool calls instead.
 
-The create and Settings forms offer the box under **Box** as four
-buttons: Lite, Standard, Code or Custom. They offer Browser, CLI,
-scripting, and Memory under Agent capabilities as four buttons.
-Browser is off and unavailable on Lite.
-
-A new agent is Lite. Picking Standard turns the browser on. Picking
-Code turns browser and coding on together, with CLI, scripting, and
-the coding budgets. Picking Custom turns the browser on, keeps the
-coding switch where it is, and asks for the size.
+The create and Settings forms offer Browser, Coding, CLI, scripting,
+and Memory under Agent capabilities as five buttons. Coding is
+unavailable on a standard machine. When the organisation has more
+than one machine, they offer the **Machine** picker with its planned
+memory bar ([Machines](#machines)).
 
 CLI, scripting, and Memory start on. The operator can turn any of
-them off on any box.
+them off.
 
 - `max_scripts` is how many reusable Python scripts the agent may
   keep. Creating a new name past that count is refused. Replacing an
@@ -294,14 +419,17 @@ them off on any box.
   allowed and only blocks further creates. Applying a recipe that
   would pass the count is refused. The Settings tab edits it and can
   remove every script.
-- `max_workspace_mib` is how large this agent's workspace may grow,
-  in MiB. Stored default is 10240 (10 GiB). After each generation the
-  orchestrator measures the workspace and stores it as `workspace_mib`
-  on the agent. The Usage tab shows used against this cap. Above the
-  effective cap (the agent's max, and never above the host's
-  `WORKSPACE_MAX_MIB`, default 10240) the next generation fails at
-  start with `workspace.full` until the operator frees space from the
-  CLI tab or raises the agent's max.
+- `max_workspace_mib` is how large this agent's home may grow, in
+  MiB. Stored default is 10240 (10 GiB). After each generation the
+  orchestrator measures the home and stores it as `workspace_mib` on
+  the agent, and measures the machine's directory and stores it on
+  the machine. The Usage tab shows the home against this cap and the
+  machine against the machine's cap. Above the effective cap (the
+  agent's max, and never above the host's `WORKSPACE_MAX_MIB`,
+  default 10240), or with the machine above its own
+  `max_workspace_mib`, the next generation fails at start with
+  `workspace.full` until the operator frees space from the CLI tab
+  or raises the cap.
 - `max_tool_calls` is how many tool invocations a run may execute
   before it ends.
 - `max_input_tokens` is the largest prompt the run may send to the
@@ -316,40 +444,24 @@ them off on any box.
   machine. It selects the CLI tab and the CLI API. It is not a
   binding. The runtime image already includes ttyd. The flag only
   exposes it.
-- `box` is the machine the agent runs on: `lite`, `standard`, `code`,
-  or `custom`. Lite is the small guest (0.5 CPU, 256Mi, the lite
-  image: Python, the scripts launcher, ttyd) and never has `shell`,
-  the code tools, a package manager, or a browser; it has `browser`
-  and `coding` off. The other three run the standard image, with
-  Chromium and the toolchains. Standard is the browser agent's machine
-  (1 CPU, 2Gi) with `coding` off. Code is the coding agent's machine
-  (2 CPU, 4Gi) with `coding` on. Custom is sized by the operator,
-  `cpu` from 0.5 to 4 in steps of 0.25 and `memory_mib` from 512 to
-  8192, with `coding` their choice; the two size keys exist only on a
-  custom box. On every box but lite the operator chooses `browser`,
-  on by default. A payload whose box disagrees with its flags is
-  refused. A stored config without the key reads as the box its flags
-  call for. Changing the box, or a custom box's size, replaces the
-  sandbox. A toolchain the flags leave off stays in the image and is
-  not offered.
-- `browser` is whether this agent has Chromium. It selects the Browser
-  pane, a live 1280×720 Chromium/noVNC session on the agent's box,
-  and the eight Playwright tools on that agent's runs. It is not a
-  binding. The two runtime images are instance-wide.
+- `browser` is whether this agent has its own Chrome on its machine.
+  It selects the Browser pane, a live 1280×720 Chromium/noVNC session
+  on the agent's display, and the eight Playwright tools on that
+  agent's runs. It is not a binding. The runtime image is
+  instance-wide. A toolchain the flags leave off stays in the image
+  and is not offered.
 - `browser_language` is Chrome's UI and Accept-Language when
   `browser` is on: a tag from a fixed list, stored default `en-US`.
-  Changing it destroys an idle sandbox so the next ensure starts
-  Chrome in that language. Timezone still comes from the sandbox
-  egress IP.
-- `coding` makes the agent a coding agent: `HOME` at `/home/agent`,
-  so package caches, toolchains, and git configuration persist across
-  idle stops, the code tools
-  ([Code tools](../tools-and-connectors/code.md)), and
-  the `coding` section of the system prompt. It is on with the code
-  box, off with lite and standard, and the operator's with custom. It
-  is independent of `browser`. An agent that debugs a web front end
-  has both. It is not a binding. The organisation policy's `max_coding_agents` bounds how
-  many agents have it. Core sets no bound. Where an edition's policy
+  Changing it stops this agent's Chrome so its next start uses that
+  language. Timezone still comes from the sandbox egress IP.
+- `coding` makes the agent a coding agent: the code tools
+  ([Code tools](../tools-and-connectors/code.md)) and the `coding`
+  section of the system prompt. Package caches, toolchains, and git
+  configuration persist in its home across idle stops. It needs a
+  `code` or `custom` machine. It is independent of `browser`. An
+  agent that debugs a web front end has both. It is not a binding.
+  The organisation policy's `max_coding_agents` bounds how many
+  agents have it. Core sets no bound. Where an edition's policy
   does, creating a coding agent, or turning the flag on, is refused
   above it.
 - `scripting` is whether this agent may keep and run Python scripts.
@@ -384,13 +496,9 @@ repositories a GitHub login picks) live on that login in Tools.
 The browser, code, (when `scripting` is off) script, and (when
 `memory` is off) memory tools follow their flags, not only bindings.
 
-Toggling `browser` or `coding` destroys an idle sandbox so the next
-generation recreates it. Changing `browser_language` while `browser`
-is on does the same. A generating agent keeps its sandbox until the
-generation ends.
-
-Toggling `cli`, `scripting`, or `memory` does not replace the
-sandbox.
+Turning `browser` off, or changing `browser_language` while it is
+on, stops this agent's Chrome. Other agents on the machine keep
+theirs. No configuration change replaces the machine's container.
 
 `model` is `{provider}/{model}`: a provider core speaks to
 (`openai`, `openrouter`, `xai`, `deepinfra`, `local`, or `kimi`) and
@@ -500,7 +608,9 @@ Deleting an agent refuses if that agent is generating.
 
 It then:
 
-- destroys the sandbox
+- stops the agent's Chrome and terminal on its machine, and removes
+  its home and its `/run/guilds/<agent id>/` files; the machine's
+  container stays up for the other agents on it
 - deletes the agent's collection grants (`collection_access` rows
   with that agent as subject)
 - deletes every secret granted only to that agent
@@ -530,7 +640,7 @@ generating or the dispatcher is busy.
 
 It then:
 
-- destroys every member sandbox
+- does the same on each member's machine
 - deletes the collection grants held by the guild and by its members
 - deletes every secret whose grants all name the guild or its
   members

@@ -26,20 +26,13 @@ import type { InstanceKeys } from "../instance/keys.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { requireInstanceAdmin } from "./instance-admin.js";
+import { bodyOf } from "./request.js";
 
 /** How long a started manifest flow waits for GitHub's redirect. */
 const PENDING_MS = 20 * 60 * 1000;
 const OWNER_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
 
 type PendingManifest = { userId: string; returnTo: string | null; expiresAt: number };
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return body as Record<string, unknown>;
-  }
-  return {};
-}
 
 function queryOf(request: FastifyRequest): Record<string, unknown> {
   const query = request.query;

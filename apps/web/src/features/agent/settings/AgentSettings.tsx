@@ -1,14 +1,14 @@
 import { useParams } from "@tanstack/react-router";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { useAgent, useOrgModels, useSaveAgentSettings } from "../../../api/queries";
+import { useAgent, useOrgMachines, useOrgModels, useSaveAgentSettings } from "../../../api/queries";
 import type { AgentDetail } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Button, TextAreaField, TextField, Banner, SkeletonRows, toast } from "@guildsrun/ui";
+import { MachinePicker } from "../../machines/MachinePicker";
+import { chosenMachine } from "../../machines/machines";
 import { agentHandleError, handleHint } from "../../names";
 import { AvatarPicker } from "./AvatarPicker";
 import {
-  BoxFields,
-  BoxPicker,
   CapabilitiesFields,
   configErrors,
   configFormOf,
@@ -19,22 +19,23 @@ import {
   type ConfigForm,
 } from "./configForm";
 
-/** A workspace size in MiB, in GiB from 1 GiB up. */
-export function formatMib(mib: number): string {
-  return mib >= 1024 ? `${(mib / 1024).toFixed(1)} GiB` : `${mib} MiB`;
-}
-
 /** The server's cap on an agent's focus. */
 export const focusMax = 150;
 
 /** The server's cap on an agent's wake triggers. */
 const wakeTriggersMax = 500;
 
-type Form = ConfigForm & { name: string; focus: string; wakeTriggers: string; shape: string; color: string };
+type Form = ConfigForm & {
+  name: string;
+  focus: string;
+  wakeTriggers: string;
+  shape: string;
+  color: string;
+};
 
 function formOf(agent: AgentDetail): Form {
   return {
-    ...configFormOf(agent.config),
+    ...configFormOf(agent.config, agent.machine_id),
     name: agent.name,
     focus: agent.focus,
     wakeTriggers: agent.wake_triggers,
@@ -54,15 +55,17 @@ export function Group({ title, children }: { title: string; children: ReactNode 
 
 /**
  * How the agent looks and runs: its name, focus and mascot, what wakes it in group chat, its model
- * and reasoning, its run limits, its disk and script caps, its box (Lite, Standard, Code or Custom,
- * and on a custom one its size and the Coding switch), and its extras (Browser, CLI, scripting,
- * Memory; Browser is off on lite, and its language shows while it is on).
+ * and reasoning, its run limits, its disk and script caps, its machine (a picker when the
+ * organisation has several; a new one moves the agent there), and its capabilities (Browser,
+ * Coding, CLI, scripting, Memory; Coding is greyed out on a standard machine, and the browser's
+ * language shows while it is on).
  */
 export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
+  const machines = useOrgMachines(org.id);
   const save = useSaveAgentSettings(agentId, guildId);
   const [draft, setDraft] = useState<Form | null>(null);
 
@@ -79,7 +82,9 @@ export function AgentSettings() {
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved);
   const set = (patch: Partial<Form>) => setDraft({ ...form, ...patch });
-  const errors = configErrors(form, { models: models.data });
+  const errors = configErrors(form, { models: models.data, machines: machines.data });
+  const machine = chosenMachine(machines.data, form.machine_id);
+  const moveTo = machine && machine.id !== agent.data.machine_id ? machine.id : undefined;
   const nameError = form.name.trim() ? agentHandleError(form.name.trim()) : handleHint;
   const invalid = Boolean(nameError) || Object.keys(errors).length > 0;
 
@@ -90,6 +95,7 @@ export function AgentSettings() {
       {
         name: form.name.trim(),
         config: configOf(form, models.data),
+        ...(moveTo ? { machine_id: moveTo } : {}),
         focus: form.focus.trim(),
         wake_triggers: form.wakeTriggers.trim(),
         avatar_shape: form.shape,
@@ -163,12 +169,35 @@ export function AgentSettings() {
           <Group title="Disk">
             <DiskFields form={form} onChange={set} errors={errors} />
           </Group>
-          <Group title="Box">
-            <BoxPicker form={form} onChange={(next) => set(next)} models={models.data} error={errors.box} />
-            <BoxFields form={form} onChange={(next) => set(next)} models={models.data} errors={errors} />
+          <Group title="Machine">
+            {machines.isError ? (
+              <Banner
+                tone="error"
+                title="Couldn't load the machines"
+                meta={machines.error.message}
+              />
+            ) : machines.data ? (
+              <MachinePicker
+                machines={machines.data}
+                value={form.machine_id}
+                onChange={(machineId) => set({ machine_id: machineId })}
+                agent={{ id: agent.data.id, browser: form.browser, coding: form.coding }}
+                error={errors.machine}
+                hint={
+                  moveTo
+                    ? "Saving moves the agent and its home there. It can't move while it is generating."
+                    : undefined
+                }
+              />
+            ) : null}
           </Group>
           <Group title="Agent capabilities">
-            <CapabilitiesFields form={form} onChange={(next) => set(next)} />
+            <CapabilitiesFields
+              form={form}
+              onChange={(next) => set(next)}
+              models={models.data}
+              machine={machine}
+            />
           </Group>
           {save.isError ? (
             <Banner tone="error" title="Couldn't save the settings">

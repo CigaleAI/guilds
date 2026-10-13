@@ -141,7 +141,7 @@ work in, by `name` and a one-line `purpose`.
 
 `name` matches `^[a-z][a-z0-9_-]{0,62}$`.
 It is unique.
-It is the folder under `/home/agent/repos`.
+It is the folder under `repos/` in each coding agent's home.
 
 `purpose` is at most 400 characters.
 
@@ -472,6 +472,18 @@ keeps each agent's live model.
   each against the organisation's limit, `null` where nothing caps it
   The preview's `remaining` carries `agents`, `browser_agents`, and
   `coding_agents`
+- the machine every role goes on: the operator's choice
+  (`machine_id`), else the organisation's only machine. The
+  preview's `machines` lists each machine with its `box`,
+  `memory_mib`, `planned_mib`, and number of agents, `machine_id` the
+  one chosen, and `adds_mib` the planned memory the roles add
+  ([Machines](guilds-and-agents.md#machines)). It is a blocking
+  finding when no machine is chosen among several
+  (`machine.required`), when a coding role would go on a standard
+  machine (`machine.coding`, pointing to Settings, Machines), when
+  the roles would take the machine past 32 agents or the policy's
+  agents per machine (`machine.full`), and when the machine hosts an
+  agent of a guild the operator cannot see (`machine.private`)
 - catalog presence of each `connections.server`; the preview's
   `installs` lists each one the box lacks that can be added: from the
   registry (`server`, `from: "registry"`, `version`, `verified`), which
@@ -507,7 +519,8 @@ keeps each agent's live model.
 `POST /api/recipes/:id/apply` requires `status=ready` and no blocking
 validation errors. Ordered so no intermediate state is broken:
 
-1. assert the whole batch against the organisation's limits once
+1. assert the whole batch against the organisation's limits once,
+   the machine's `maxAgentsPerMachine` included
 2. create guild (or attach an empty one)
 3. create guild- and org-level seed notes
 4. create agents
@@ -570,7 +583,7 @@ account that owns any deploy project.
 Recipes do not store that email.
 
 Agents from roles with `config.coding: true` are created with coding
-on.
+on. Every agent of the apply goes on the machine the preview chose.
 
 | Step | Closes when |
 |---|---|

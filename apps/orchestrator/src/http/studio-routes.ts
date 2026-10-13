@@ -13,24 +13,8 @@ import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
 import { viewDraft } from "../studio/drafts.js";
 import type { StudioService } from "../studio/index.js";
+import { bodyOf, param } from "./request.js";
 
-type Params = Record<string, string>;
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return body as Record<string, unknown>;
-  }
-  return {};
-}
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Params)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
-}
 
 function studioOf(deps: AppDeps): StudioService {
   if (!deps.studio) {

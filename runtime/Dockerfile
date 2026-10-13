@@ -27,6 +27,7 @@ RUN apt-get update \
         patch \
         xz-utils \
         openssh-client \
+        procps \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && printf 'en_US.UTF-8 UTF-8\n' > /etc/locale.gen \
     && locale-gen \
@@ -115,6 +116,8 @@ RUN CXXFLAGS="-std=gnu++20" npm install --global --no-fund --no-audit "@nanonets
 
 COPY agent-browser-start /usr/local/bin/agent-browser-start
 COPY agent-cli-start /usr/local/bin/agent-cli-start
+COPY agent-stop /usr/local/bin/agent-stop
+COPY agent-lib.sh /usr/local/lib/guilds/agent-lib.sh
 COPY guilds-browser /usr/local/bin/guilds-browser
 COPY guilds-script-run /usr/local/bin/guilds-script-run
 COPY guilds-locale /usr/local/bin/guilds-locale
@@ -137,10 +140,11 @@ ENV GIT_CONFIG_COUNT=3 \
     GIT_CONFIG_VALUE_1=/usr/local/bin/guilds-git-credential \
     GIT_CONFIG_KEY_2=credential.https://github.com.useHttpPath \
     GIT_CONFIG_VALUE_2=true
-RUN chmod 755 /usr/local/bin/agent-browser-start /usr/local/bin/agent-cli-start \
+RUN chmod 755 /usr/local/bin/agent-browser-start /usr/local/bin/agent-cli-start /usr/local/bin/agent-stop \
         /usr/local/bin/guilds-browser /usr/local/bin/guilds-script-run /usr/local/bin/guilds-locale \
         /usr/local/bin/guilds-code /usr/local/bin/guilds-git-credential \
         /usr/local/share/guilds/git-template/hooks/prepare-commit-msg \
+    && chmod 644 /usr/local/lib/guilds/agent-lib.sh \
     && mkdir -p /tmp/.X11-unix /run/guilds/requests \
     && chmod 1777 /tmp/.X11-unix \
     && chmod 700 /run/guilds
@@ -151,4 +155,4 @@ ENV LANG=en_US.UTF-8 \
     GRAFT_NO_GITIGNORE=1 \
     GRAFT_NO_IGNORE=1 \
     NPM_CONFIG_UPDATE_NOTIFIER=false
-WORKDIR /home/agent
+WORKDIR /home

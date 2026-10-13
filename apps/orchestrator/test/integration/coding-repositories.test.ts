@@ -13,6 +13,7 @@ import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { codeDefaultMachine } from "../helpers/machines.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_HEADERS = { ...OWNER, "content-type": "application/json" };
@@ -440,6 +441,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       { name: "site", url: "https://github.com/acme/site", default_branch: "main", github_id: 102 },
     ]);
 
+    await codeDefaultMachine(app, OWNER);
     const agent = await app.inject({
       method: "POST",
       url: `/api/guilds/${backendId}/agents`,

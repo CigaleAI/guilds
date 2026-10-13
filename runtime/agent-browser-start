@@ -1,21 +1,39 @@
 #!/bin/bash
+# Usage: agent-browser-start <agent id> <display> <vnc port> <devtools port> <novnc port> <language>
+#
+# Starts one agent's browser on its machine when it is not already answering: an Xtigervnc
+# display, Chrome with the agent's profile and DevTools port, and websockify serving noVNC. The
+# orchestrator passes the display and ports its slot sets, so every agent on the machine has its
+# own. Prints the noVNC and DevTools ports once both answer. Idempotent: a second call on a live
+# browser prints the same; two calls at once take turns.
 set -euo pipefail
+source "${BASH_SOURCE[0]%/*}/../lib/guilds/agent-lib.sh"
 
-PROFILE=/home/agent/.browser
-DISPLAY_NUM=1
-export DISPLAY=":${DISPLAY_NUM}"
+AGENT="${1:-}"
+DISPLAY_NUM="${2:-}"
+VNC_PORT="${3:-}"
+CDP_PORT="${4:-}"
+NOVNC_PORT="${5:-}"
+LANGUAGE="${6:-en-US}"
+if ! valid_agent "$AGENT" || ! valid_display "$DISPLAY_NUM" || ! valid_port "$VNC_PORT" \
+  || ! valid_port "$CDP_PORT" || ! valid_port "$NOVNC_PORT" || [[ ! "$LANGUAGE" =~ ^[A-Za-z0-9-]{2,16}$ ]]; then
+  echo "usage: agent-browser-start <agent id> <display> <vnc port> <devtools port> <novnc port> <language>" >&2
+  exit 2
+fi
+
+HOME_DIR="/home/${AGENT}"
+RUN_DIR="/run/guilds/${AGENT}"
+PROFILE="${HOME_DIR}/.browser"
 GEOMETRY="${BROWSER_GEOMETRY:-1280x720}"
 NOVNC_ROOT=/usr/share/novnc
-LOG=/tmp/agent-browser.log
+LOG="${RUN_DIR}/browser.log"
+PID_FILE="${RUN_DIR}/browser.pid"
+READY_TENTHS=600
 
-mkdir -p "$PROFILE" /tmp/.X11-unix
-chmod 1777 /tmp/.X11-unix
-exec >>"$LOG" 2>&1
-
-cleanup() {
-  jobs -p | xargs -r kill 2>/dev/null || true
+ready() {
+  curl -sf -o /dev/null "http://127.0.0.1:${NOVNC_PORT}/vnc.html" \
+    && curl -sf -o /dev/null "http://127.0.0.1:${CDP_PORT}/json/version"
 }
-trap cleanup EXIT
 
 resolve_chrome() {
   if command -v google-chrome >/dev/null 2>&1; then
@@ -30,64 +48,9 @@ resolve_chrome() {
   fi
 }
 
-CHROME_BIN="$(resolve_chrome)"
-
-if [ ! -S "/tmp/.X11-unix/X${DISPLAY_NUM}" ]; then
-  Xtigervnc ":${DISPLAY_NUM}" \
-    -geometry "$GEOMETRY" \
-    -depth 24 \
-    -SecurityTypes None \
-    -localhost \
-    -AlwaysShared \
-    -AcceptSetDesktopSize=0 &
-fi
-
-for _ in $(seq 1 100); do
-  if xdpyinfo -display ":${DISPLAY_NUM}" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.1
-done
-xdpyinfo -display ":${DISPLAY_NUM}" >/dev/null
-
-matchbox-window-manager -use_titlebar no >/dev/null 2>&1 &
-
-if ! curl -sf "http://127.0.0.1:6080/vnc.html" >/dev/null 2>&1; then
-  websockify --web "$NOVNC_ROOT" 6080 127.0.0.1:5901 &
-fi
-
-for _ in $(seq 1 100); do
-  if curl -sf "http://127.0.0.1:6080/vnc.html" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 0.1
-done
-curl -sf "http://127.0.0.1:6080/vnc.html" >/dev/null
-
-eval "$(python3 /usr/local/bin/guilds-locale --write-profile "$PROFILE")"
-export TZ LANG LANGUAGE CHROME_LANG CHROME_ACCEPT_LANG
-echo "chrome locale tz=${TZ:-UTC} lang=${CHROME_LANG:-en-US} accept=${CHROME_ACCEPT_LANG:-en-US,en}"
-
-if [ -n "${LANG:-}" ]; then
-  locale_name="${LANG%%.*}"
-  localedef -c -i "$locale_name" -f UTF-8 "$LANG" >/dev/null 2>&1 || true
-fi
-
-clear_stale_chromium_locks() {
-  echo "chromium host=$(hostname) profile=$PROFILE"
-  for name in SingletonLock SingletonCookie SingletonSocket; do
-    path="$PROFILE/$name"
-    if [ -e "$path" ] || [ -L "$path" ]; then
-      target=$(readlink "$path" 2>/dev/null || true)
-      echo "clearing stale chromium $name${target:+ -> $target}"
-      rm -f "$path"
-    fi
-  done
-}
-
 # Keep cookies and logins; drop last-session tabs so Chrome does not reopen guilds.run.
 clear_restored_tabs() {
-  default="$PROFILE/Default"
+  local default="${PROFILE}/Default"
   rm -f \
     "$default/Current Session" \
     "$default/Current Tabs" \
@@ -96,34 +59,124 @@ clear_restored_tabs() {
   rm -rf "$default/Sessions"
 }
 
-while true; do
-  clear_stale_chromium_locks
-  clear_restored_tabs
-  if ! "$CHROME_BIN" \
-    --no-sandbox \
-    --disable-dev-shm-usage \
-    --use-gl=angle \
-    --disable-gpu-compositing \
-    --use-angle=swiftshader \
-    --enable-unsafe-swiftshader \
-    --no-first-run \
-    --no-default-browser-check \
-    --disable-field-trial-config \
-    --password-store=basic \
-    --disable-session-crashed-bubble \
-    --hide-crash-restore-bubble \
-    --disable-blink-features=AutomationControlled \
-    --start-maximized \
-    --window-size=1280,720 \
-    --remote-debugging-port=9222 \
-    --remote-debugging-address=127.0.0.1 \
-    --user-data-dir="$PROFILE" \
-    --homepage=about:blank \
-    --lang="${CHROME_LANG:-en-US}" \
-    --accept-lang="${CHROME_ACCEPT_LANG:-en-US,en}" \
-    about:blank
-  then
-    echo "chromium exited $?"
+clear_stale_chromium_locks() {
+  local name path target
+  for name in SingletonLock SingletonCookie SingletonSocket; do
+    path="${PROFILE}/${name}"
+    if [ -e "$path" ] || [ -L "$path" ]; then
+      target=$(readlink "$path" 2>/dev/null || true)
+      echo "clearing stale chromium $name${target:+ -> $target}"
+      rm -f "$path"
+    fi
+  done
+}
+
+# A display lock whose server is gone; a live server's lock stays, and Xtigervnc then fails.
+clear_stale_display_lock() {
+  local lock="/tmp/.X${DISPLAY_NUM}-lock" owner
+  [ -e "$lock" ] || return 0
+  owner="$(tr -d ' \n' < "$lock" 2>/dev/null || true)"
+  if [[ "$owner" =~ ^[0-9]+$ ]] && kill -0 "$owner" 2>/dev/null; then
+    return 0
   fi
-  sleep 1
-done
+  rm -f "$lock" "/tmp/.X11-unix/X${DISPLAY_NUM}"
+}
+
+# The supervisor: the display, the window manager, noVNC, and Chrome, restarted when it exits.
+# It leads its own process group, which agent-stop ends as one.
+supervise() {
+  export DISPLAY=":${DISPLAY_NUM}"
+  export HOME="$HOME_DIR"
+  export GUILDS_AGENT_HOME="$HOME_DIR"
+  export GUILDS_BROWSER_LANGUAGE="$LANGUAGE"
+  export GUILDS_LOCALE_CACHE="${RUN_DIR}/locale.json"
+  trap 'jobs -p | xargs -r kill 2>/dev/null || true' EXIT
+
+  clear_stale_display_lock
+  Xtigervnc ":${DISPLAY_NUM}" \
+    -geometry "$GEOMETRY" \
+    -depth 24 \
+    -rfbport "$VNC_PORT" \
+    -SecurityTypes None \
+    -localhost \
+    -nolisten tcp \
+    -AlwaysShared \
+    -AcceptSetDesktopSize=0 &
+  wait_until 100 xdpyinfo -display ":${DISPLAY_NUM}" >/dev/null 2>&1 || true
+  xdpyinfo -display ":${DISPLAY_NUM}" >/dev/null
+
+  matchbox-window-manager -use_titlebar no >/dev/null 2>&1 &
+  websockify --web "$NOVNC_ROOT" "$NOVNC_PORT" "127.0.0.1:${VNC_PORT}" &
+
+  eval "$(python3 /usr/local/bin/guilds-locale --write-profile "$PROFILE")"
+  export TZ LANG LANGUAGE CHROME_LANG CHROME_ACCEPT_LANG
+  echo "chrome locale tz=${TZ:-UTC} lang=${CHROME_LANG:-en-US} accept=${CHROME_ACCEPT_LANG:-en-US,en}"
+  if [ -n "${LANG:-}" ]; then
+    localedef -c -i "${LANG%%.*}" -f UTF-8 "$LANG" >/dev/null 2>&1 || true
+  fi
+
+  local chrome
+  chrome="$(resolve_chrome)"
+  while true; do
+    clear_stale_chromium_locks
+    clear_restored_tabs
+    if ! "$chrome" \
+      --no-sandbox \
+      --disable-dev-shm-usage \
+      --use-gl=angle \
+      --disable-gpu-compositing \
+      --use-angle=swiftshader \
+      --enable-unsafe-swiftshader \
+      --no-first-run \
+      --no-default-browser-check \
+      --disable-field-trial-config \
+      --password-store=basic \
+      --disable-session-crashed-bubble \
+      --hide-crash-restore-bubble \
+      --disable-blink-features=AutomationControlled \
+      --start-maximized \
+      --window-size=1280,720 \
+      --remote-debugging-port="$CDP_PORT" \
+      --remote-debugging-address=127.0.0.1 \
+      --user-data-dir="$PROFILE" \
+      --homepage=about:blank \
+      --lang="${CHROME_LANG:-en-US}" \
+      --accept-lang="${CHROME_ACCEPT_LANG:-en-US,en}" \
+      about:blank
+    then
+      echo "chromium exited $?"
+    fi
+    sleep 1
+  done
+}
+
+if [ "${GUILDS_BROWSER_SUPERVISE:-}" = "1" ]; then
+  supervise
+  exit 0
+fi
+
+mkdir -p "$PROFILE" "$RUN_DIR" /tmp/.X11-unix
+chmod 700 "$RUN_DIR"
+chmod 1777 /tmp/.X11-unix
+exec 9>"${RUN_DIR}/browser.lock"
+flock -w 60 9
+
+if ready; then
+  echo "novnc=${NOVNC_PORT} cdp=${CDP_PORT}"
+  exit 0
+fi
+
+# A supervisor from an earlier start that no longer answers goes before a new one starts.
+stop_group_file "$PID_FILE"
+
+GUILDS_BROWSER_SUPERVISE=1 setsid nohup "$0" "$@" >>"$LOG" 2>&1 </dev/null 9>&- &
+echo $! > "$PID_FILE"
+
+if wait_until "$READY_TENTHS" ready; then
+  echo "novnc=${NOVNC_PORT} cdp=${CDP_PORT}"
+  exit 0
+fi
+
+echo "browser failed to start" >&2
+tail -n 20 "$LOG" >&2 || true
+exit 1

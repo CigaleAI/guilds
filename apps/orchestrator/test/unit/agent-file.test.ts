@@ -34,7 +34,7 @@ test("readAgentFile reads a regular file, and a link that stays in the workspace
   mkdirSync(path.join(workspace, "reports"));
   writeFileSync(path.join(workspace, "reports", "q3.txt"), "numbers");
   symlinkSync(path.join(workspace, "reports", "q3.txt"), path.join(workspace, "latest.txt"));
-  const read = await readAgentFile(workspace, "/home/agent/reports/q3.txt", { maxBytes: 100 });
+  const read = await readAgentFile(workspace, "/home/a_1/reports/q3.txt", { maxBytes: 100 });
   assert.equal(read.bytes.toString(), "numbers");
   assert.equal(read.path, path.join(workspace, "reports", "q3.txt"));
   assert.equal((await readAgentFile(workspace, "latest.txt", { maxBytes: 100 })).bytes.toString(), "numbers");
@@ -67,7 +67,7 @@ test("readAgentFile refuses a FIFO without waiting for a writer", async () => {
 
 test("writeAgentFile creates folders and replaces a regular file", async () => {
   const { workspace } = workspaceWithHostFile();
-  const written = await writeAgentFile(workspace, "/home/agent/downloads/2026/brief.txt", Buffer.from("one"));
+  const written = await writeAgentFile(workspace, "/home/a_1/downloads/2026/brief.txt", Buffer.from("one"));
   assert.equal(written, path.join(workspace, "downloads", "2026", "brief.txt"));
   await writeAgentFile(workspace, "downloads/2026/brief.txt", Buffer.from("two"));
   assert.equal(readFileSync(written, "utf8"), "two");

@@ -28,6 +28,7 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import {
   abortableHang,
   AGENT_CONFIG,
+  AGENT_MACHINE,
   completionReply,
   deferred,
   FakeCommands,
@@ -44,6 +45,8 @@ import {
   seededLoop,
 } from "../helpers/generation.js";
 import { limitedPolicy } from "../helpers/policy.js";
+
+const HOME = "/home/a_1";
 
 const live = generationMod.generationLive;
 const originalStream = live.streamCompletion;
@@ -132,15 +135,15 @@ describe("generation", { concurrency: 1 }, () => {
     ];
     live.streamCompletion = fakeStream(db, calls);
     await loop._generate("r_1", 1);
-    assert.deepEqual(sandboxes.created, [["a_1", {}]]);
-    assert.deepEqual(sandboxes.browser_flags, [false]);
-    assert.ok(existsSync(path.join(tmp, "a_1", "scripts")));
-    assert.equal(existsSync(path.join(tmp, "a_1", ".browser")), false, "a lite run has no browser profile");
+    assert.deepEqual(sandboxes.created, [{ id: "mach_1", orgId: "org_1", box: "standard", cpu: 1, memoryMib: 2048 }]);
+    assert.deepEqual(sandboxes.browser_starts, []);
+    assert.ok(existsSync(path.join(tmp, "mach_1", "a_1", "scripts")));
+    assert.equal(existsSync(path.join(tmp, "mach_1", "a_1", ".browser")), false, "a run without a browser has no profile");
     assert.deepEqual(withoutWorkspaceMeasure(sandboxes.commands.commands), [
-      launcherCommand("one"),
-      launcherCommand("two"),
+      launcherCommand(HOME, "one"),
+      launcherCommand(HOME, "two"),
     ]);
-    assert.equal(workspaceMeasureCount(sandboxes.commands.commands), 1);
+    assert.equal(workspaceMeasureCount(sandboxes.commands.commands), 1, "the helper's answer is no size, so the machine is not measured");
     const toolRows = db.messages.filter(
       (row) => (row.payload as Record<string, unknown>).role === "tool",
     );
@@ -148,8 +151,8 @@ describe("generation", { concurrency: 1 }, () => {
     assert.deepEqual(
       toolPayloads.map((item) => item.content),
       [
-        withRemainingToolCalls(`ok:${launcherCommand("one")}`, 49),
-        withRemainingToolCalls(`ok:${launcherCommand("two")}`, 48),
+        withRemainingToolCalls(`ok:${launcherCommand(HOME, "one")}`, 49),
+        withRemainingToolCalls(`ok:${launcherCommand(HOME, "two")}`, 48),
       ],
     );
     assert.deepEqual(
@@ -508,7 +511,7 @@ describe("generation", { concurrency: 1 }, () => {
       { id: "call_1", function: { name: "notion_search", arguments: "{}" } },
     ]);
     await loop._generate("r_1", 1);
-    assert.deepEqual(sandboxes.created, [["a_1", {}]]);
+    assert.equal(sandboxes.created.length, 1);
     const tool = db.messages
       .filter((row) => (row.payload as Record<string, unknown>).role === "tool")
       .map((row) => row.payload as Record<string, unknown>);
@@ -535,41 +538,66 @@ describe("generation", { concurrency: 1 }, () => {
     await loop._begin("r_2", "a_1");
   });
 
-  test("secret_change_restarts_idle_agent_sandbox", async () => {
-    const db = new FakeDB({});
-    const sandboxes = new FakeSandboxes();
-    sandboxes.secret_users.sec_1 = new Set(["a_1"]);
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop.secretChanged("sec_1");
-    assert.deepEqual(sandboxes.destroyed, ["a_1"]);
-    assert.ok(!loop._stale_sandboxes.has("a_1"));
-    assert.ok(!loop._busy_agents.has("a_1"));
-  });
-
-  test("secret_change_restarts_sandbox_after_active_generation", async () => {
+  test("secret_change_resyncs_active_runs_and_replaces_no_container", async () => {
     const db = new FakeDB({});
     db.active_secret_agent_ids = ["a_1"];
+    const synced: string[] = [];
+    db.listRuns = async (agentId: string) => {
+      synced.push(agentId);
+      return [];
+    };
     const sandboxes = new FakeSandboxes();
+    sandboxes.running.add("mach_1");
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop._begin("r_1", "a_1");
     await loop.secretChanged("sec_1");
+    assert.deepEqual(synced, ["a_1"]);
     assert.deepEqual(sandboxes.destroyed, []);
-    assert.ok(loop._stale_sandboxes.has("a_1"));
-    await loop._refresh_stale_sandbox("r_1");
-    loop._end("r_1");
-    assert.deepEqual(sandboxes.destroyed, ["a_1"]);
-    assert.ok(!loop._stale_sandboxes.has("a_1"));
   });
 
-  test("idle_timeout_stops_sandbox", async () => {
+  test("machine_change_destroys_an_idle_container_and_waits_for_a_busy_one", async () => {
+    const db = new FakeDB({});
+    const sandboxes = new FakeSandboxes();
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
+    await loop.machineChanged("mach_2");
+    assert.deepEqual(sandboxes.destroyed, ["mach_2"]);
+    assert.ok(!loop._stale_machines.has("mach_2"));
+    await loop._begin("r_1", "a_1");
+    await loop.machineChanged("mach_1");
+    assert.deepEqual(sandboxes.destroyed, ["mach_2"], "a busy machine keeps its container");
+    assert.ok(loop._stale_machines.has("mach_1"));
+    loop._end("r_1");
+    await sleep(10);
+    assert.deepEqual(sandboxes.destroyed, ["mach_2", "mach_1"], "the last generation on it ends");
+    assert.ok(!loop._stale_machines.has("mach_1"));
+  });
+
+  test("idle_timeout_stops_the_machine", async () => {
     const db = new FakeDB({});
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 20 });
     await loop._begin("r_1", "a_1");
     loop._end("r_1");
-    await sleep(80);
-    assert.deepEqual(sandboxes.destroyed, ["a_1"]);
-    assert.ok(!loop._idle_tasks.has("a_1"));
+    assert.ok(loop._idle_tasks.has("mach_1"));
+    await loop._idle_tasks.get("mach_1")?.promise;
+    assert.deepEqual(sandboxes.destroyed, ["mach_1"]);
+    assert.ok(!loop._idle_tasks.has("mach_1"));
+  });
+
+  test("a_machine_stays_up_while_another_agent_on_it_generates", async () => {
+    const db = new FakeDB({});
+    const other = { ...db.agent, id: "a_2", machine_slot: 1 };
+    const getAgent = db.getAgent.bind(db);
+    db.getAgent = async (agentId: string) => (agentId === "a_2" ? other : getAgent(agentId));
+    const sandboxes = new FakeSandboxes();
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 20 });
+    await loop._begin("r_1", "a_1");
+    await loop._begin("r_2", "a_2");
+    loop._end("r_1");
+    assert.ok(!loop._idle_tasks.has("mach_1"), "a_2 still generates on mach_1");
+    assert.ok(loop.machineBusy("mach_1"));
+    loop._end("r_2");
+    await loop._idle_tasks.get("mach_1")?.promise;
+    assert.deepEqual(sandboxes.destroyed, ["mach_1"]);
   });
 
   test("idle_timeout_is_cancelled_by_next_generation", async () => {
@@ -578,28 +606,35 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 50 });
     await loop._begin("r_1", "a_1");
     loop._end("r_1");
+    const armed = loop._idle_tasks.get("mach_1");
+    assert.ok(armed);
     await loop._begin("r_2", "a_1");
-    await sleep(80);
+    assert.ok(armed.abort.signal.aborted);
+    assert.ok(!loop._idle_tasks.has("mach_1"));
+    await armed.promise;
     assert.deepEqual(sandboxes.destroyed, []);
     loop._end("r_2");
+    loop._cancel_idle("mach_1");
   });
 
-  test("reconcile_starts_idle_timer_for_running_sandboxes", async () => {
+  test("reconcile_starts_idle_timer_for_running_machines", async () => {
     const db = new FakeDB({});
     db.listActiveRuns = async () => [];
     const sandboxes = new FakeSandboxes();
-    sandboxes.running.add("a_1");
+    sandboxes.running.add("mach_1");
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 20 });
     await loop.reconcile();
-    await sleep(80);
-    assert.deepEqual(sandboxes.destroyed, ["a_1"]);
+    assert.ok(loop._idle_tasks.has("mach_1"));
+    await loop._idle_tasks.get("mach_1")?.promise;
+    assert.deepEqual(sandboxes.destroyed, ["mach_1"]);
   });
 
-  test("delete_agent_purges_workspace_and_rows", async () => {
+  test("delete_agent_purges_its_home_and_rows_and_leaves_the_machine_up", async () => {
     const tmp = tempDir("guilds-gen-");
-    const workspace = path.join(tmp, "a_1");
-    mkdirSync(workspace);
+    const workspace = path.join(tmp, "mach_1", "a_1");
+    mkdirSync(workspace, { recursive: true });
     writeFileSync(path.join(workspace, "scratch.txt"), "keep-me-not");
+    mkdirSync(path.join(tmp, "mach_1", "a_2"));
     const deleted: Array<[string, string, string]> = [];
     const notes = {
       async deleteAgent(orgSlug: string, guildName: string, name: string) {
@@ -610,7 +645,7 @@ describe("generation", { concurrency: 1 }, () => {
     const db = {
       async getAgent(agentId: string) {
         return agentId === "a_1"
-          ? { id: "a_1", name: "researcher", guild_name: "research", org_slug: "acme" }
+          ? { id: "a_1", name: "researcher", guild_name: "research", org_slug: "acme", ...AGENT_MACHINE }
           : null;
       },
       async purgeAgent(agentId: string) {
@@ -618,12 +653,15 @@ describe("generation", { concurrency: 1 }, () => {
       },
     };
     const sandboxes = new FakeSandboxes();
+    sandboxes.running.add("mach_1");
     const loop = makeLoop(db, notes, tmp, sandboxes);
     await loop.delete_agent("a_1");
-    assert.deepEqual(sandboxes.destroyed, ["a_1"]);
+    assert.deepEqual(sandboxes.destroyed, []);
+    assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "purge" }]);
     assert.deepEqual(deleted, [["acme", "research", "researcher"]]);
     assert.deepEqual(purged, ["a_1"]);
     assert.ok(!existsSync(workspace));
+    assert.ok(existsSync(path.join(tmp, "mach_1", "a_2")), "another agent's home stays");
   });
 
   test("delete_agent_conflicts_while_generating", async () => {
@@ -645,20 +683,25 @@ describe("generation", { concurrency: 1 }, () => {
   test("delete_guild_purges_members_and_rows", async () => {
     const tmp = tempDir("guilds-gen-");
     for (const agentId of ["a_1", "a_2"]) {
-      const workspace = path.join(tmp, agentId);
-      mkdirSync(workspace);
+      const workspace = path.join(tmp, "mach_1", agentId);
+      mkdirSync(workspace, { recursive: true });
       writeFileSync(path.join(workspace, "scratch.txt"), "keep-me-not");
     }
     const db = guildDb(["a_1", "a_2"]);
     const notes = guildNotes();
     const sandboxes = new FakeSandboxes();
+    sandboxes.running.add("mach_1");
     const loop = makeLoop(db, notes, tmp, sandboxes);
     await loop.delete_guild("guild_1");
-    assert.deepEqual(sandboxes.destroyed, ["a_1", "a_2"]);
+    assert.deepEqual(sandboxes.destroyed, []);
+    assert.deepEqual(
+      sandboxes.stopped.map((item) => item.agentId),
+      ["a_1", "a_2"],
+    );
     assert.deepEqual(notes.deleted, [["acme", "research"]]);
     assert.deepEqual(db.purged, ["guild_1"]);
-    assert.ok(!existsSync(path.join(tmp, "a_1")));
-    assert.ok(!existsSync(path.join(tmp, "a_2")));
+    assert.ok(!existsSync(path.join(tmp, "mach_1", "a_1")));
+    assert.ok(!existsSync(path.join(tmp, "mach_1", "a_2")));
     assert.ok(!loop.deleting_guild("guild_1"));
   });
 
@@ -1599,7 +1642,8 @@ describe("generation", { concurrency: 1 }, () => {
       yield ["done", completionReply("done")];
     };
     await loop._generate("r_1", 1);
-    assert.deepEqual(sandboxes.browser_flags, [true]);
+    assert.deepEqual(sandboxes.browser_starts, [], "Chrome starts on the first browser call, not with the run");
+    assert.ok(existsSync(path.join(loop.workspace_root, "mach_1", "a_1", ".browser")));
     restoreBindings();
   });
 
@@ -1624,11 +1668,12 @@ describe("generation", { concurrency: 1 }, () => {
     });
     const sandbox = await loop.ensure_browser("a_1");
     assert.ok(sandbox);
-    assert.deepEqual(sandboxes.browser_flags, [true]);
-    loop._cancel_idle("a_1");
+    assert.deepEqual(sandboxes.browser_starts, ["a_1"]);
+    loop._cancel_idle("mach_1");
+    loop._cancel_browser_idle("a_1");
   });
 
-  test("ensure_browser_wakes_idle_sandbox", async () => {
+  test("ensure_browser_wakes_the_machine_and_starts_the_agents_chrome", async () => {
     const db = new FakeDB({});
     db.agent.config = { ...AGENT_CONFIG, browser: true };
     const sandboxes = new FakeSandboxes();
@@ -1637,23 +1682,52 @@ describe("generation", { concurrency: 1 }, () => {
     });
     const sandbox = await loop.ensure_browser("a_1");
     assert.ok(sandbox);
-    assert.deepEqual(sandboxes.created, [["a_1", {}]]);
-    assert.deepEqual(sandboxes.browser_flags, [true]);
-    assert.ok(loop._idle_tasks.has("a_1"));
-    loop._cancel_idle("a_1");
+    assert.deepEqual(sandboxes.created.map((machine) => machine.id), ["mach_1"]);
+    assert.deepEqual(sandboxes.browser_starts, ["a_1"]);
+    assert.ok(loop._idle_tasks.has("mach_1"));
+    assert.ok(loop._browser_idle.has("a_1"));
+    loop._cancel_idle("mach_1");
+    loop._cancel_browser_idle("a_1");
   });
 
-  test("ensure_browser_during_generation_keeps_running_sandbox", async () => {
+  test("ensure_browser_during_generation_keeps_running_machine", async () => {
     const db = new FakeDB({});
     db.agent.config = { ...AGENT_CONFIG, browser: true };
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await sandboxes.ensure("a_1", {}, [], { browser: true });
+    sandboxes.running.add("mach_1");
     await loop._begin("r_1", "a_1");
     const sandbox = await loop.ensure_browser("a_1");
     assert.ok(sandbox);
-    assert.deepEqual(sandboxes.created, [["a_1", {}]]);
-    assert.ok(!loop._idle_tasks.has("a_1"));
+    assert.deepEqual(sandboxes.created, []);
+    assert.deepEqual(sandboxes.browser_starts, ["a_1"]);
+    assert.ok(!loop._idle_tasks.has("mach_1"));
+    loop._cancel_browser_idle("a_1");
+  });
+
+  test("the_agents_chrome_stops_after_its_idle_timeout_and_the_machine_stays", async () => {
+    const db = new FakeDB({});
+    db.agent.config = { ...AGENT_CONFIG, browser: true };
+    const sandboxes = new FakeSandboxes();
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 30 });
+    sandboxes.running.add("mach_1");
+    await loop._begin("r_1", "a_1");
+    await loop.ensure_browser("a_1");
+    await sleep(90);
+    assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "browser" }]);
+    assert.deepEqual(sandboxes.destroyed, [], "the machine stays while the agent generates");
+    loop._end("r_1");
+    loop._cancel_idle("mach_1");
+  });
+
+  test("a_browser_language_change_restarts_only_that_agents_chrome", async () => {
+    const db = new FakeDB({});
+    const sandboxes = new FakeSandboxes();
+    sandboxes.running.add("mach_1");
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
+    await loop.agentBrowserChanged("a_1");
+    assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "browser" }]);
+    assert.deepEqual(sandboxes.destroyed, []);
   });
 
   test("ensure_cli_requires_flag", async () => {
@@ -1789,8 +1863,8 @@ describe("generation", { concurrency: 1 }, () => {
     });
     assert.ok(names.includes("priced"));
     assert.ok(names.includes("script_run"));
-    assert.deepEqual(withoutWorkspaceMeasure(commands.commands), [launcherCommand("priced")]);
-    assert.equal(workspaceMeasureCount(commands.commands), 1);
+    assert.deepEqual(withoutWorkspaceMeasure(commands.commands), [launcherCommand(HOME, "priced")]);
+    assert.equal(workspaceMeasureCount(commands.commands), 1, "the helper's answer is no size, so the machine is not measured");
     assert.deepEqual(commands.envs[0]?.[SCRIPT_ARGS_ENV], JSON.stringify({ symbol: "ETH" }));
     restoreBindings();
   });
@@ -1844,52 +1918,38 @@ describe("generation", { concurrency: 1 }, () => {
     });
     const sandbox = await loop.ensure_cli("a_1");
     assert.ok(sandbox);
-    assert.deepEqual(sandboxes.created, [["a_1", {}]]);
-    assert.deepEqual(sandboxes.browser_flags, [false]);
+    assert.deepEqual(sandboxes.created.map((machine) => machine.id), ["mach_1"]);
+    assert.deepEqual(sandboxes.browser_starts, []);
     assert.equal(sandboxes.cli_starts, 1);
-    assert.ok(loop._idle_tasks.has("a_1"));
-    loop._cancel_idle("a_1");
+    assert.ok(loop._idle_tasks.has("mach_1"));
+    loop._cancel_idle("mach_1");
   });
 
-  test("ensure_cli_keeps_browser_agent_on_its_browser_sandbox", async () => {
-    const db = new FakeDB({});
-    db.agent.config = { ...AGENT_CONFIG, browser: true };
-    const sandboxes = new FakeSandboxes();
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, {
-      idleTimeoutMs: 5 * 60 * 1000,
-    });
-    await loop.ensure_cli("a_1");
-    assert.deepEqual(sandboxes.browser_flags, [true]);
-    assert.equal(sandboxes.cli_starts, 1);
-    loop._cancel_idle("a_1");
-  });
-
-  test("ensure_cli_and_ensure_browser_keep_a_coding_agent_on_its_coding_sandbox", async () => {
+  test("ensure_cli_runs_on_the_machine_of_its_tier", async () => {
     const db = new FakeDB({});
     db.agent.config = { ...AGENT_CONFIG, browser: true, coding: true };
+    Object.assign(db.agent, { machine_box: "custom", machine_cpu: "1.5", machine_memory_mib: 3072 });
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, {
       idleTimeoutMs: 5 * 60 * 1000,
     });
     await loop.ensure_cli("a_1");
-    await loop.ensure_browser("a_1");
-    assert.deepEqual(sandboxes.browser_flags, [true, true]);
-    assert.deepEqual(sandboxes.coding_flags, [true, true]);
-    loop._cancel_idle("a_1");
+    assert.deepEqual(sandboxes.created, [{ id: "mach_1", orgId: "org_1", box: "custom", cpu: 1.5, memoryMib: 3072 }]);
+    loop._cancel_idle("mach_1");
   });
 
-  test("ensure_cli_during_generation_uses_running_sandbox", async () => {
+  test("ensure_cli_during_generation_uses_running_machine", async () => {
     const db = new FakeDB({});
     db.agent.config = { ...AGENT_CONFIG, browser: false };
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await sandboxes.ensure("a_1", {}, [], { browser: false });
+    sandboxes.running.add("mach_1");
     await loop._begin("r_1", "a_1");
     const sandbox = await loop.ensure_cli("a_1");
     assert.ok(sandbox);
-    assert.deepEqual(sandboxes.created, [["a_1", {}]]);
+    assert.deepEqual(sandboxes.created, []);
     assert.equal(sandboxes.cli_starts, 1);
-    assert.ok(!loop._idle_tasks.has("a_1"));
+    assert.ok(!loop._idle_tasks.has("mach_1"));
   });
 
   test("ensure_cli_reports_terminal_start_failure", async () => {
@@ -1906,7 +1966,7 @@ describe("generation", { concurrency: 1 }, () => {
       assert.match(error.detail, /terminal failed to start/);
       return true;
     });
-    loop._cancel_idle("a_1");
+    loop._cancel_idle("mach_1");
   });
 
   test("cli_proxy_target_needs_a_running_sandbox_and_carries_the_secret_path", async () => {
@@ -1919,7 +1979,7 @@ describe("generation", { concurrency: 1 }, () => {
       assert.match(error.detail, /sandbox is not running/);
       return true;
     });
-    sandboxes.running.add("a_1");
+    sandboxes.running.add("mach_1");
     const [base, headers] = await loop.cli_proxy_target("a_1");
     assert.equal(base, `http://cli.test/t/${sandboxes.cli_token}`);
     assert.deepEqual(headers, { "OPEN-SANDBOX-API-KEY": "k" });
@@ -1931,39 +1991,26 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 60_000 });
     loop.touch_sandbox("a_1");
-    assert.ok(!loop._idle_tasks.has("a_1"));
-    loop._schedule_idle("a_1");
-    const armed = loop._idle_tasks.get("a_1");
+    await sleep(5);
+    assert.ok(!loop._idle_tasks.has("mach_1"));
+    loop._schedule_idle("mach_1");
+    loop._schedule_browser_idle("a_1");
+    const armed = loop._idle_tasks.get("mach_1");
+    const chrome = loop._browser_idle.get("a_1");
     loop.touch_sandbox("a_1");
-    const restarted = loop._idle_tasks.get("a_1");
+    await sleep(5);
+    const restarted = loop._idle_tasks.get("mach_1");
     assert.ok(restarted);
     assert.notEqual(restarted, armed);
+    assert.notEqual(loop._browser_idle.get("a_1"), chrome, "pane input keeps the agent's Chrome up");
     await loop._begin("r_1", "a_1");
-    loop._schedule_idle("a_1");
-    const duringRun = loop._idle_tasks.get("a_1");
+    loop._schedule_idle("mach_1");
+    const duringRun = loop._idle_tasks.get("mach_1");
     loop.touch_sandbox("a_1");
-    assert.equal(loop._idle_tasks.get("a_1"), duringRun);
-    loop._cancel_idle("a_1");
-  });
-
-  test("refresh_sandbox_destroys_idle", async () => {
-    const db = new FakeDB({});
-    const sandboxes = new FakeSandboxes();
-    sandboxes.running.add("a_1");
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop.refresh_sandbox("a_1");
-    assert.deepEqual(sandboxes.destroyed, ["a_1"]);
-    assert.ok(!loop._stale_sandboxes.has("a_1"));
-  });
-
-  test("refresh_sandbox_waits_until_generation_ends", async () => {
-    const db = new FakeDB({});
-    const sandboxes = new FakeSandboxes();
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop._begin("r_1", "a_1");
-    await loop.refresh_sandbox("a_1");
-    assert.deepEqual(sandboxes.destroyed, []);
-    assert.ok(loop._stale_sandboxes.has("a_1"));
+    await sleep(5);
+    assert.equal(loop._idle_tasks.get("mach_1"), duringRun);
+    loop._cancel_idle("mach_1");
+    loop._cancel_browser_idle("a_1");
   });
 
   test("generation_injects_secret_granted_after_run_start", async () => {
@@ -1977,33 +2024,43 @@ describe("generation", { concurrency: 1 }, () => {
       tools: [],
       secrets: [],
     };
-    const db = new FakeDB(snapshot);
+    const db = new FakeDB({ ...snapshot, tools: [{ type: "function", function: { name: "script_run" } }] });
     db.agent.org_id = "org_1";
     db.secrets = [liveSecret()];
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    live.streamCompletion = fakeStream(db, []);
+    await loop.scripts.create(scriptOperator, "a_1", "sign", "signs", "print(1)");
+    live.streamCompletion = fakeStream(db, [
+      { id: "call_1", function: { name: "script_run", arguments: '{"name":"sign"}' } },
+    ]);
     await loop._generate("r_1", 1);
-    assert.deepEqual(sandboxes.created, [["a_1", { WALLET_PRIVATE_KEY: "wallet-secret" }]]);
+    const commands = sandboxes.commands as FakeCommands;
+    const run = commands.commands.indexOf(launcherCommand(HOME, "sign"));
+    const envs = commands.options[run]?.envs as Record<string, string>;
+    assert.equal(envs.WALLET_PRIVATE_KEY, "wallet-secret", "the secret reaches the command, not the container");
+    assert.equal(envs.HOME, HOME);
+    assert.equal(commands.options[run]?.workingDirectory, HOME);
+    const measure = commands.commands.findIndex((command) => command.includes("guilds-code"));
+    assert.equal((commands.options[measure]?.envs as Record<string, string>).WALLET_PRIVATE_KEY, undefined);
     assert.deepEqual((db.run.config_snapshot as Record<string, unknown>).secrets, [
       { id: "sec_1", name: "WALLET_PRIVATE_KEY", description: "signs sends" },
     ]);
     restoreBindings();
   });
 
-  test("secret_access_changed_syncs_snapshot_and_refreshes", async () => {
+  test("secret_access_changed_syncs_snapshot_and_replaces_no_container", async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
     const db = new FakeDB({ secrets: [] });
     db.agent.org_id = "org_1";
     db.secrets = [liveSecret()];
     const sandboxes = new FakeSandboxes();
-    sandboxes.running.add("a_1");
+    sandboxes.running.add("mach_1");
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
     await loop.secretAccessChanged(["a_1"]);
     assert.deepEqual((db.run.config_snapshot as Record<string, unknown>).secrets, [
       { id: "sec_1", name: "WALLET_PRIVATE_KEY", description: "signs sends" },
     ]);
-    assert.deepEqual(sandboxes.destroyed, ["a_1"]);
+    assert.deepEqual(sandboxes.destroyed, []);
   });
 
   test("later_turn_lists_secret_granted_after_run_start", async () => {

@@ -72,7 +72,7 @@ export function ScriptsTab({ agent }: { agent: StudioAgent }) {
           <ScriptDetail agent={agent} script={selected} />
         ) : (
           <Empty>
-            This agent has no scripts. Scripts are the only way it runs code in its sandbox.
+            This agent has no scripts. Scripts are the only way it runs code on its machine.
           </Empty>
         )
       }

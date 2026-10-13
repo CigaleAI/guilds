@@ -99,8 +99,7 @@ services:
       WORKSPACE_ROOT: ${STATE_ROOT}/workspaces
       ATTACHMENTS_ROOT: ${STATE_ROOT}/attachments
       CONNECTORS_ROOT: ${STATE_ROOT}/connectors
-      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-agent-runtime:0.3}
-      SANDBOX_IMAGE_LITE: ${SANDBOX_IMAGE_LITE:-agent-runtime-lite:0.1}
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-agent-runtime:0.4}
       TOOL_RESULT_MAX_BYTES: 65536
       SECRETS_MASTER_KEY: "${SECRETS_MASTER_KEY:?run ./setup.sh first, which writes it into .env}"
       AUTH_MODE: ${AUTH_MODE:-compat-cookie}

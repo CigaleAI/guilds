@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "ca184dcfb296215749c08668953057db9d61aca5c810328c01f42e926cb9b70a"
+      "sha256": "fe5fa17c79d9176cbac8ac331dbdd5431123c6e2285b6ee69d3cc5066ea79d1d"
     },
     {
       "path": "ids/shape.json",
@@ -71,19 +71,19 @@
       "path": "prompts/compose.txt",
       "source": "src/prompts composeSystemPrompt",
       "generator_version": "1",
-      "sha256": "492491c6c1f012ec5657a209df8dfd331382632d1968a9aa7eb60079e43af25e"
+      "sha256": "fcbc087b6b1494793971b80c0f8ff45399bdc3d0c1ed1b29deace42ce3d07a89"
     },
     {
       "path": "prompts/hashes.json",
       "source": "src/prompts promptHash",
       "generator_version": "1",
-      "sha256": "7a1fa87ead77121ab9b20614901a264e8049e83c7b0caa35ca17d08edc7410ba"
+      "sha256": "e20fc0e9ab17090da78d51c42e38012572c4fe55180bd957ffc5284d1a9a85c8"
     },
     {
       "path": "prompts/hydrate.json",
       "source": "src/prompts hydratePrompts",
       "generator_version": "1",
-      "sha256": "68445252d4a8cf58f2eab2e55e9e8e050059fb09f89ab81831c876add2defb33"
+      "sha256": "4bcacd96ccf8415a57d96825ff59d21743a96587a2d0821787bf07eec911d144"
     },
     {
       "path": "schedules/cron.json",
@@ -95,7 +95,7 @@
       "path": "scripts/cases.json",
       "source": "src/scripts snapshot, materialise, launcher",
       "generator_version": "1",
-      "sha256": "12bb32dea97cdb64de1b316b43987a57c14d36ee65010b79cb0556a7c6324903"
+      "sha256": "2a8025cf474eb3565344b2166b51724c8ba69fec5d94e3627268de612ecca1a7"
     },
     {
       "path": "seed/manifest.json",

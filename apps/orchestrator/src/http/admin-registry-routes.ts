@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { catalogServerItem } from "../mcp/catalog.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { compareVersions, RegistryError } from "../registry/index.js";
@@ -9,19 +9,7 @@ import { HttpError } from "./errors.js";
 import { syncInstanceLogins } from "../connectors/instance.js";
 import { refreshConnectorIntegrations } from "../instance/connectors.js";
 import { requireInstanceAdmin } from "./instance-admin.js";
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
-}
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Record<string, string>)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
-}
+import { bodyOf, param } from "./request.js";
 
 /** The box's registry client: the one the deps carry, else `REGISTRY_URL`'s; null while offline. */
 export function registryOf(deps: AppDeps): RegistryClient | null {

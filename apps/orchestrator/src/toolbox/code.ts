@@ -194,7 +194,7 @@ export const fileRead = tool(
     "is the first line (default 1); limit is how many lines (default 200, at most 500). " +
     "Lines over 400 characters are clipped. A range you already read, unchanged since, " +
     "returns a pointer to that earlier result instead of the text. Relative paths start " +
-    "at the working directory; paths must stay under /home/agent.",
+    "at the working directory; paths must stay under your home.",
   {
     path: { type: "string" },
     offset: { type: "integer", minimum: 1 },
@@ -320,10 +320,10 @@ export const codeMatch = tool(
 
 export const codeMap = tool(
   "code_map",
-  "Orient in a repository under /home/agent/repos before reading it: its directory " +
+  "Orient in a repository under repos/ in your home before reading it: its directory " +
     "clusters with file and symbol counts, each cluster's most referenced symbols, and " +
     "the most referenced symbols overall, with path:line. repo is the folder name under " +
-    "/home/agent/repos; by default the repository holding the working directory.",
+    "repos/ in your home; by default the repository holding the working directory.",
   { repo: { type: "string" } },
   [],
   async (ctx, args) => {
@@ -398,8 +398,17 @@ export const codeCallers = tool(
 );
 
 /** The workspace size in MiB, measured with `du` inside the sandbox. */
+/** The size of the agent's home in MiB. */
 export async function measureWorkspace(ctx: ToolContext): Promise<number> {
-  const result = await runCodeHelper(ctx, "workspace_size", {});
+  return measured(await runCodeHelper(ctx, "workspace_size", {}));
+}
+
+/** The size of the agent's machine's directory in MiB: every home on it. */
+export async function measureMachine(ctx: ToolContext): Promise<number> {
+  return measured(await runCodeHelper(ctx, "machine_size", {}));
+}
+
+function measured(result: CodeResult): number {
   const mib = Number(result.meta.mib);
   if (!Number.isFinite(mib)) {
     throw new Error("workspace size is unavailable");

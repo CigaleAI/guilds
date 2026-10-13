@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { HttpError } from "../http/errors.js";
+import { HttpError, domainHttp } from "../http/errors.js";
 import { writeLog, type LogLevel } from "./log.js";
 
 export const REQUEST_ID_HEADER = "x-request-id";
@@ -30,7 +30,7 @@ function unwrapHttpError(error: unknown): HttpError | null {
   if (error && typeof error === "object" && "cause" in error && error.cause instanceof HttpError) {
     return error.cause;
   }
-  return null;
+  return domainHttp(error);
 }
 
 function statusOf(error: unknown, http: HttpError | null): number {

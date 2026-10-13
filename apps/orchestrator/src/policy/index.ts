@@ -42,6 +42,10 @@ export type OrgLimits = {
   maxAgents: number | null;
   maxBrowserAgents: number | null;
   maxCodingAgents: number | null;
+  /** Machines the organisation runs its agents on. */
+  maxMachines: number | null;
+  /** Agents on one machine; core's own ceiling of 32 still holds above it. */
+  maxAgentsPerMachine: number | null;
   maxGuilds: number | null;
   maxConcurrentRuns: number | null;
   /** Studio and Builder generations a month, counted together. */
@@ -89,6 +93,8 @@ export const UNLIMITED: OrgLimits = {
   maxAgents: null,
   maxBrowserAgents: null,
   maxCodingAgents: null,
+  maxMachines: null,
+  maxAgentsPerMachine: null,
   maxGuilds: null,
   maxConcurrentRuns: null,
   monthlyCoachRuns: null,
@@ -110,6 +116,11 @@ export type OrgCounts = {
   countOrgBrowserAgents(orgId: string): Promise<number>;
   countOrgCodingAgents(orgId: string): Promise<number>;
   countOrgGuilds(orgId: string): Promise<number>;
+};
+
+/** The live counts the machine caps are checked against. */
+export type MachineCounts = {
+  countMachineAgents(machineId: string): Promise<number>;
 };
 
 /** How many more of a capped thing fit; null when it is uncapped. */
@@ -157,6 +168,42 @@ export async function assertCanCreateAgent(
     browserAgents: flags.browser ? 1 : 0,
     codingAgents: flags.coding ? 1 : 0,
   });
+}
+
+/** A cap a repository write holds to inside its transaction, and the error it refuses with. */
+export type HeldCap = { max: number; refuse: () => Error };
+
+/**
+ * `maxMachines` caps the organisation's machines. The insert counts them under the
+ * organisation's lock, so concurrent creates cannot pass it; null leaves them uncapped.
+ */
+export async function machineCap(policy: OrgPolicy, orgId: string): Promise<HeldCap | null> {
+  const { limits } = await policy.standing(orgId);
+  if (limits.maxMachines === null) {
+    return null;
+  }
+  return { max: limits.maxMachines, refuse: () => new LimitError(limits.source, "machines") };
+}
+
+/**
+ * `maxAgentsPerMachine` caps the agents one machine takes. Returns the cap, which placement holds
+ * to inside its transaction; null leaves core's ceiling alone.
+ */
+export async function assertCanPlaceAgents(
+  policy: OrgPolicy,
+  counts: MachineCounts,
+  orgId: string,
+  machineId: string,
+  adding: number,
+): Promise<number | null> {
+  const { limits } = await policy.standing(orgId);
+  if (
+    limits.maxAgentsPerMachine !== null
+    && (await counts.countMachineAgents(machineId)) + adding > limits.maxAgentsPerMachine
+  ) {
+    throw new LimitError(limits.source, "agents per machine");
+  }
+  return limits.maxAgentsPerMachine;
 }
 
 /** `maxGuilds` caps the organisation's live guilds. */

@@ -1,20 +1,38 @@
 #!/bin/bash
-# Starts the operator terminal (ttyd, bash in /home/agent) when it is not
-# already answering, and prints the secret path segment it serves under,
-# which the orchestrator's proxy prepends to every upstream request.
-# Idempotent: a second call finds the running daemon and prints the same
-# secret.
+# Usage: agent-cli-start <agent id> <terminal port> <first port> <last port>
+#
+# Starts one agent's operator terminal (ttyd, bash in the agent's home) on the given port,
+# when it is not already answering, and prints the secret path segment it serves under, which the
+# orchestrator's proxy prepends to every upstream request. The shell has the agent's home and port
+# block, and none of its secrets. Idempotent: a second call finds the running daemon and prints
+# the same secret; two calls at once take turns.
 set -euo pipefail
+source "${BASH_SOURCE[0]%/*}/../lib/guilds/agent-lib.sh"
 
-PORT=7681
-TOKEN_FILE=/tmp/agent-cli-token
-PID_FILE=/tmp/agent-cli.pid
-LOG=/tmp/agent-cli.log
-AGENT_HOME=/home/agent
+AGENT="${1:-}"
+PORT="${2:-}"
+PORTS_FROM="${3:-}"
+PORTS_TO="${4:-}"
+if ! valid_agent "$AGENT" || ! valid_port "$PORT" || ! valid_port "$PORTS_FROM" || ! valid_port "$PORTS_TO" \
+  || (( 10#$PORTS_FROM > 10#$PORTS_TO )); then
+  echo "usage: agent-cli-start <agent id> <terminal port> <first port> <last port>" >&2
+  exit 2
+fi
+
+AGENT_HOME="/home/${AGENT}"
+RUN_DIR="/run/guilds/${AGENT}"
+TOKEN_FILE="${RUN_DIR}/cli-token"
+PID_FILE="${RUN_DIR}/cli.pid"
+LOG="${RUN_DIR}/cli.log"
 
 ready() {
   curl -sf -o /dev/null "http://127.0.0.1:${PORT}/t/$1/token"
 }
+
+mkdir -p "$AGENT_HOME" "$RUN_DIR"
+chmod 700 "$RUN_DIR"
+exec 9>"${RUN_DIR}/cli.lock"
+flock -w 10 9
 
 if [ -s "$TOKEN_FILE" ]; then
   token="$(cat "$TOKEN_FILE")"
@@ -24,10 +42,7 @@ if [ -s "$TOKEN_FILE" ]; then
   fi
 fi
 
-if [ -s "$PID_FILE" ]; then
-  kill "$(cat "$PID_FILE")" 2>/dev/null || true
-  rm -f "$PID_FILE"
-fi
+stop_group_file "$PID_FILE"
 
 token="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
 umask 077
@@ -40,17 +55,16 @@ setsid nohup ttyd \
   --base-path "/t/${token}" \
   --client-option disableLeaveAlert=true \
   --client-option 'theme={"background":"#111018"}' \
-  env "HISTFILE=${AGENT_HOME}/.bash_history" bash \
-  >>"$LOG" 2>&1 </dev/null &
+  env "HOME=${AGENT_HOME}" "GUILDS_AGENT_HOME=${AGENT_HOME}" \
+    "PORT=${PORTS_FROM}" "GUILDS_PORTS=${PORTS_FROM}-${PORTS_TO}" \
+    "HISTFILE=${AGENT_HOME}/.bash_history" bash \
+  >>"$LOG" 2>&1 </dev/null 9>&- &
 echo $! > "$PID_FILE"
 
-for _ in $(seq 1 100); do
-  if ready "$token"; then
-    echo "$token"
-    exit 0
-  fi
-  sleep 0.1
-done
+if wait_until 100 ready "$token"; then
+  echo "$token"
+  exit 0
+fi
 
 echo "terminal failed to start" >&2
 tail -n 20 "$LOG" >&2 || true

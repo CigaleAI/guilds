@@ -4,6 +4,7 @@ import path from "node:path";
 import { renderMemorySection } from "../memory/index.js";
 import { STATE_PREFIX } from "../state/index.js";
 import { installedConnectors } from "../connectors/index.js";
+import { agentHome } from "../lib/agent-file.js";
 
 export class PromptError extends Error {
   constructor(message: string) {
@@ -76,7 +77,7 @@ export const STATE_INTRO =
   "path, and `columns` (name, type, description, and when set required, " +
   "unique, or the values a text column accepts). Notes are not listed here; " +
   "search them with note_find. `scripts` are reusable Python files at " +
-  "`/home/agent/scripts/<name>.py` that read their arguments as JSON from " +
+  "`scripts/<name>.py` in your home that read their arguments as JSON from " +
   "stdin; pass them in the `arguments` of script_run, or call a script " +
   "listed with `parameters` as a tool under its name. " +
   "`environment` is the secrets this agent " +
@@ -105,7 +106,7 @@ export function stateIntroForCapabilities(caps: StandingCaps): string {
   }
   if (!caps.scripts) {
     text = text.replace(
-      "`scripts` are reusable Python files at `/home/agent/scripts/<name>.py` that read their arguments as JSON from stdin; pass them in the `arguments` of script_run, or call a script listed with `parameters` as a tool under its name. ",
+      "`scripts` are reusable Python files at `scripts/<name>.py` in your home that read their arguments as JSON from stdin; pass them in the `arguments` of script_run, or call a script listed with `parameters` as a tool under its name. ",
       "",
     );
     text = text.replace(
@@ -233,7 +234,7 @@ function attachIdentity(system: string, agentName: string, agentId: string): str
   if (!(agentName && agentId)) {
     return system;
   }
-  return `${system.replace(/\s+$/, "")}\n\nYou are ${agentName}. Your id is ${agentId}.\n`;
+  return `${system.replace(/\s+$/, "")}\n\nYou are ${agentName}. Your id is ${agentId}. Your home is ${agentHome(agentId)}.\n`;
 }
 
 export function hydrateStanding(options: {
