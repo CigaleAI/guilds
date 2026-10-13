@@ -5,7 +5,7 @@ from one Compose file.
 
 An **edition** is a layer built on top of core. It adds what core
 does not have: a way to sign people in, a way to charge them, more
-than one machine to run sandboxes on. Core does not know an edition
+than one host to run sandboxes on. Core does not know an edition
 exists.
 
 One edition exists today: the hosted service Cigale AI runs with
@@ -31,8 +31,11 @@ its own repository.
    elsewhere sits behind the operator's own proxy, and that proxy
    decides who gets through ([Remote
    access](../getting-started/remote-access.md)).
-5. **Core runs every guild on one machine.** The control plane and
-   every agent sandbox run on the Docker host of the Compose stack.
+5. **Core runs every guild on one host.** The control plane and
+   every organisation's machines run on the Docker host of the
+   Compose stack. Core never assumes every machine shares one host:
+   where a machine runs and where its directory lives come from the
+   sandbox provider.
 6. **An edition attaches through extension points.** When an
    edition needs something core lacks, core gains an extension
    point with a default of its own. It does not gain a branch for
@@ -61,10 +64,10 @@ and `trusted-header`. Paths below are under
 | Extension point | Interface | Core's default |
 |---|---|---|
 | Identity | `IdentityProvider` (`http/identity.ts`): `currentUser(request)`, an optional `onSend` for a provider that renews a credential, and `describe()` for what its sign-in page needs; supplied by `ServerExtension.identity` | The request's user from the `X-Guilds-User` header or `guilds_user` cookie (`compat-cookie`), or from the proxy's email header (`trusted-header`). A mode core does not implement, with no provider for it, signs no one in. `GET /api/auth/config` and `GET /api/auth/me` are core's (`http/me-routes.ts`); a provider's `describe()` adds to the first |
-| Organisation policy | `OrgPolicy` (`policy/index.ts`): `standing(orgId)` returns the organisation's `OrgLimits` (agent, browser-agent, coding-agent, guild, and concurrent-run caps, the monthly Studio and Builder quota, and their generation budgets, the organisation's own MCP servers, and monthly calls on a connector's platform login by slug) and whether it is blocked; supplied by `ServerExtension.policy` | `OPEN_POLICY`: no cap, and every organisation may run, under the instance's own ceiling (`MAX_CONCURRENT_GENERATIONS`). Core checks every cap against the policy it is given, and a refusal names the limits' `source` (`<source> limit reached: agents`) |
+| Organisation policy | `OrgPolicy` (`policy/index.ts`): `standing(orgId)` returns the organisation's `OrgLimits` (agent, browser-agent, coding-agent, guild, machine (`maxMachines`), agents-per-machine (`maxAgentsPerMachine`, never above core's 32), and concurrent-run caps, the monthly Studio and Builder quota, and their generation budgets, the organisation's own MCP servers, and monthly calls on a connector's platform login by slug) and whether it is blocked; supplied by `ServerExtension.policy` | `OPEN_POLICY`: no cap, and every organisation may run, under the instance's own ceiling (`MAX_CONCURRENT_GENERATIONS`). Core checks every cap against the policy it is given, and a refusal names the limits' `source` (`<source> limit reached: agents`) |
 | Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`): `modelCredentials(orgId, provider)` returns the `apiKey`, an optional `baseURL`, and an optional `onUsage` callback core calls once per completion with the run id, model, token usage, and cost; null while the provider is not connected; may throw a `PolicyError`, which core shows and does not start the run on; supplied by `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys, decrypted, with no callback. Who pays, whether a budget exists, and what the callback does are the implementation's; core keeps no spend gate ([Orchestrator](orchestrator.md#credentials)) |
 | Organisation created | `OrgCreatedHook` (`db/repositories.ts`), run inside the transaction that creates an organisation; supplied by `ServerExtension.orgCreated` | Nothing. Hooks from several extensions run in order, and a hook passed for one creation replaces them |
-| Sandbox provider | `SandboxProvider` (`extension.ts`): the sandboxes generation drives, with `start` and `close`; supplied by `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) on `OPENSANDBOX_URL` and `WORKSPACE_ROOT` |
+| Sandbox provider | `SandboxProvider` (`extension.ts`): `GenerationSandboxes` (`generation/index.ts`), keyed by machine: `ensure(machine)`, `connectRunning`, `destroy`, and `listRunningMachineIds` by machine id; `startBrowser`, `stopBrowser`, `stopAgent`, `novncTarget`, `startCli`, and `cliTarget` on an agent's seat (agent id, machine id, slot, browser language); an optional `machineHost(machineId)` giving the host, workspace root, and proxy URL a machine runs with; plus `start`, `close`, and an optional `destroyAgentSandboxes` the boot layout step calls; supplied by `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) on `OPENSANDBOX_URL` and `WORKSPACE_ROOT`, every machine on this host. Moving an agent between machines whose workspace roots differ is refused |
 | Blob store | `BlobStore` (`attachments/`); supplied by `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT`, which is `STATE_ROOT/attachments` on the Compose stack; `MemoryBlobStore` without one, which the tests use |
 | Instance admin | `InstanceAdmin` (`http/instance-admin.ts`): who administers the instance; supplied by `ServerExtension.instanceAdmin` | An owner of the seed organisation `org_home` |
 | Instance integrations | `Integration[]` (`instance/integrations.ts`), each declaring its `source` (`store` or `env`) and its `fields`; `ServerExtension.integrations` | The registry below; an edition's are listed with core's in `GET /api/instance`, and its store integrations are written through the same admin routes |

@@ -7,19 +7,7 @@ import { LimitError, OPEN_POLICY } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
-}
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Record<string, string>)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
-}
+import { bodyOf, param } from "./request.js";
 
 function catalogHttp(error: unknown): never {
   if (isUniqueViolation(error)) {

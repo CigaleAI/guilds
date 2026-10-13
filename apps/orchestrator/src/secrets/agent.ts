@@ -1,6 +1,6 @@
 import { unlink } from "node:fs/promises";
 import { SecretNameTaken } from "../db/errors.js";
-import { AGENT_HOME, AgentFileError, readAgentFile } from "../lib/agent-file.js";
+import { AgentFileError, homeOfDirectory, readAgentFile } from "../lib/agent-file.js";
 import { CredentialError, secretPayload, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
@@ -48,7 +48,7 @@ export type StoredSecret = {
 };
 
 /**
- * Reads a value file from the agent's workspace: a regular file under /home/agent (see
+ * Reads a value file from the agent's workspace: a regular file under its home (see
  * `readAgentFile`), at most 16 KiB of UTF-8 with no NUL byte. One trailing newline is stripped;
  * an empty value is refused.
  */
@@ -61,7 +61,7 @@ export async function readSecretFile(workspaceDir: string, file: string): Promis
       throw error;
     }
     const message = {
-      outside: `file must be a path under ${AGENT_HOME}, not a link out of it`,
+      outside: `file must be a path under ${homeOfDirectory(workspaceDir)}, not a link out of it`,
       missing: `file not found: ${file}`,
       not_file: "file must be a regular file",
       too_large: `file is larger than ${SECRET_FILE_MAX_BYTES / 1024} KiB`,

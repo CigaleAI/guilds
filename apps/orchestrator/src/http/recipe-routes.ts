@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { newId } from "../lib/ids.js";
 import { captureGuild } from "../recipes/capture.js";
 import {
@@ -21,22 +21,7 @@ import { latestEntries, registryHttp, registryOf } from "./admin-registry-routes
 import { HttpError, recipeConflictHttp } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { ownedGuild } from "./items.js";
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return body as Record<string, unknown>;
-  }
-  return {};
-}
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Record<string, string>)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
-}
+import { bodyOf, param } from "./request.js";
 
 function mapError(error: unknown): never {
   if (error instanceof RecipeConflictError) {

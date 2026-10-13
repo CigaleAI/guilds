@@ -8,6 +8,13 @@ import { attachDriveCreateFile, createDriveFile } from "../../src/connectors/dri
 import { mockFetch } from "../helpers/http.js";
 import { rewriteDescriptions } from "../../src/connectors/drive/adapter.js";
 
+/** A temporary host directory named after agent a_1, as its home sits on its machine. */
+async function agentWorkspace(prefix: string): Promise<string> {
+  const workspace = path.join(await mkdtemp(path.join(os.tmpdir(), prefix)), "a_1");
+  await mkdir(workspace);
+  return workspace;
+}
+
 test("Drive's listing hides create_file and download bytes fields", () => {
   const listed = rewriteDescriptions([
     {
@@ -38,10 +45,10 @@ test("Drive's listing hides create_file and download bytes fields", () => {
 });
 
 test("attachDriveCreateFile reads a workspace file and encodes it", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "drive-upload-"));
+  const workspace = await agentWorkspace("drive-upload-");
   await writeFile(path.join(workspace, "notes.txt"), "hello drive");
   const attached = await attachDriveCreateFile(
-    { file_path: "/home/agent/notes.txt", parentId: "folder_1" },
+    { file_path: "/home/a_1/notes.txt", parentId: "folder_1" },
     workspace,
   );
   assert.equal(attached.title, "notes.txt");
@@ -52,7 +59,7 @@ test("attachDriveCreateFile reads a workspace file and encodes it", async () => 
 });
 
 test("attachDriveCreateFile rejects a path outside the workspace", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "drive-upload-"));
+  const workspace = await agentWorkspace("drive-upload-");
   await assert.rejects(
     () => attachDriveCreateFile({ file_path: "../secret.bin" }, workspace),
     DriveFolderError,
@@ -68,20 +75,20 @@ test("attachDriveCreateFile rejects a path outside the workspace", async () => {
 });
 
 test("attachDriveCreateFile refuses a link out of the workspace", async () => {
-  const base = await mkdtemp(path.join(os.tmpdir(), "drive-upload-"));
+  const base = await agentWorkspace("drive-upload-");
   const workspace = path.join(base, "a_1");
   await mkdir(workspace);
   const host = path.join(base, "environ");
   await writeFile(host, "SECRETS_MASTER_KEY=deadbeef");
   await symlink(host, path.join(workspace, "report.pdf"));
   await assert.rejects(
-    () => attachDriveCreateFile({ file_path: "/home/agent/report.pdf" }, workspace),
+    () => attachDriveCreateFile({ file_path: "/home/a_1/report.pdf" }, workspace),
     /not a link out of it/,
   );
 });
 
 test("createDriveFile uploads with Shared drive flags", async () => {
-  const workspace = await mkdtemp(path.join(os.tmpdir(), "drive-upload-"));
+  const workspace = await agentWorkspace("drive-upload-");
   await writeFile(path.join(workspace, "notes.txt"), "hello drive");
   let uploaded: RequestInit | undefined;
   const text = await createDriveFile(

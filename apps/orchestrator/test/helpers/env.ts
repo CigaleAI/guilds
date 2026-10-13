@@ -34,7 +34,7 @@ export function testEnv(
     WORKSPACE_ROOT: workspaceRoot,
     OPENSANDBOX_URL: extra.OPENSANDBOX_URL ?? "http://127.0.0.1:18080",
     OPENSANDBOX_API_KEY: extra.OPENSANDBOX_API_KEY ?? "guilds-dev",
-    SANDBOX_IMAGE: extra.SANDBOX_IMAGE ?? "agent-runtime:0.3",
+    SANDBOX_IMAGE: extra.SANDBOX_IMAGE ?? "agent-runtime:0.4",
     SECRETS_MASTER_KEY: extra.SECRETS_MASTER_KEY ?? HEX_MASTER_KEY,
     ALLOW_ZERO_MASTER_KEY: "1",
     AUTH_MODE: extra.AUTH_MODE ?? "compat-cookie",

@@ -2,7 +2,13 @@ import type pg from "pg";
 import { ownerRefs } from "../credentials/validate.js";
 import { newId } from "../lib/ids.js";
 import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, messageCostUsd, usageDelta, utcMonth } from "../usage.js";
-import { AgentMessageLimitReached, GuildInactive, GuildNameTaken, LastGuildAdmin, SecretNameTaken } from "./errors.js";
+import {
+  AgentMessageLimitReached,
+  GuildInactive,
+  GuildNameTaken,
+  LastGuildAdmin,
+  SecretNameTaken,
+} from "./errors.js";
 import { jsonObj } from "./json.js";
 import { SEED_USERS } from "../users/index.js";
 import { firstRow, isUniqueViolation, stamp, withTransaction } from "./pg.js";
@@ -20,10 +26,115 @@ import {
   taskDisplayPath,
   type AgentTaskRow,
 } from "../agents/task.js";
+import {
+  DEFAULT_MACHINE_BOX,
+  DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
+  DEFAULT_MACHINE_NAME,
+  lowestFreeSlot,
+  MachineError,
+  machineAllowsCoding,
+  machineFromRow,
+  type MachineAgent,
+  type MachineInput,
+  type MachineRow,
+  type MachineWithAgents,
+} from "../machines/index.js";
+import type { HeldCap } from "../policy/index.js";
 import type { ScheduleTiming } from "../schedules/timing.js";
 import type { PlannedWake } from "../schedules/window.js";
 
 type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
+
+const MACHINE_COLUMNS = "id, org_id, name, box, cpu, memory_mib, max_workspace_mib, workspace_mib, created_at, updated_at";
+
+/** The machine every organisation starts with, created in the transaction that creates it. */
+export async function insertDefaultMachine(client: Queryable, orgId: string, now: Date): Promise<string> {
+  const machineId = newId("mach");
+  await client.query(
+    `INSERT INTO machines (id, org_id, name, box, max_workspace_mib, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $6)`,
+    [machineId, orgId, DEFAULT_MACHINE_NAME, DEFAULT_MACHINE_BOX, DEFAULT_MACHINE_MAX_WORKSPACE_MIB, stamp(now)],
+  );
+  return machineId;
+}
+
+/**
+ * The machine an agent goes on, locked with the organisation's other machines: the one named, or
+ * the organisation's only machine when none is. Refuses a coding agent on a standard machine.
+ */
+async function placementMachine(
+  client: Queryable,
+  orgId: string,
+  machineId: string | null | undefined,
+  coding: boolean,
+): Promise<MachineRow> {
+  const rows = (
+    await client.query(
+      `SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 ORDER BY created_at, name FOR UPDATE`,
+      [orgId],
+    )
+  ).rows as Array<Record<string, unknown>>;
+  let row: Record<string, unknown> | undefined;
+  if (machineId) {
+    row = rows.find((item) => item.id === machineId);
+    if (!row) {
+      throw new MachineError(422, "machine_id names no machine of this organisation");
+    }
+  } else if (rows.length === 1) {
+    row = rows[0];
+  } else {
+    throw new MachineError(
+      422,
+      rows.length ? "machine_id is required: the organisation has more than one machine" : "the organisation has no machine",
+    );
+  }
+  const machine = machineFromRow(row!);
+  if (coding && !machineAllowsCoding(machine.box)) {
+    throw new MachineError(422, `coding needs a code or custom machine; ${machine.name} is standard`);
+  }
+  return machine;
+}
+
+/** The lowest slot free on a machine, under `ceiling` agents; a full machine is refused. */
+async function freeSlot(client: Queryable, machine: MachineRow, ceiling: number | undefined): Promise<number> {
+  const taken = (
+    await client.query(`SELECT machine_slot FROM agents WHERE machine_id = $1`, [machine.id])
+  ).rows.map((row) => Number((row as { machine_slot: unknown }).machine_slot));
+  const slot = lowestFreeSlot(taken, ceiling);
+  if (slot === null) {
+    throw new MachineError(409, `machine ${machine.name} is full`);
+  }
+  return slot;
+}
+
+/** One machine of the organisation, locked for the rest of the transaction; null when it has none such. */
+async function lockMachine(client: Queryable, orgId: string, machineId: string): Promise<MachineRow | null> {
+  const row = firstRow(
+    await client.query(`SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 AND id = $2 FOR UPDATE`, [
+      orgId,
+      machineId,
+    ]),
+  );
+  return row ? machineFromRow(row) : null;
+}
+
+const MACHINES_WITH_AGENTS = `
+  SELECT m.id, m.org_id, m.name, m.box, m.cpu, m.memory_mib, m.max_workspace_mib, m.workspace_mib,
+         (SELECT COALESCE(
+                   jsonb_agg(jsonb_build_object(
+                               'id', a.id, 'name', a.name, 'guild_id', a.guild_id, 'guild_name', g.name,
+                               'slot', a.machine_slot,
+                               'browser', COALESCE((a.config->>'browser')::boolean, FALSE),
+                               'coding', COALESCE((a.config->>'coding')::boolean, FALSE))
+                             ORDER BY a.machine_slot),
+                   '[]'::jsonb)
+            FROM agents a JOIN guilds g ON g.id = a.guild_id
+           WHERE a.machine_id = m.id) AS agents
+    FROM machines m`;
+
+function machineWithAgents(row: Record<string, unknown>): MachineWithAgents {
+  return { ...machineFromRow(row), agents: (row.agents ?? []) as MachineAgent[] };
+}
 
 const SCRIPT_RETURNING = `
   id, org_id, agent_id, key AS name, title AS description, content_json AS parameters,
@@ -265,6 +376,7 @@ export class Repositories {
         `INSERT INTO orgs (id, name, slug, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)`,
         [orgId, name, name, stamp(now)],
       );
+      await insertDefaultMachine(client, orgId, now);
       await client.query(
         `INSERT INTO org_members (org_id, user_id, role, created_at) VALUES ($1, $2, 'owner', $3)`,
         [orgId, userId, stamp(now)],
@@ -354,6 +466,7 @@ export class Repositories {
       if (!row) {
         throw new Error("org insert failed");
       }
+      await insertDefaultMachine(client, orgId, now);
       await client.query(
         `INSERT INTO org_members (org_id, user_id, role, created_at) VALUES ($1, $2, 'owner', $3)`,
         [orgId, userId, stamp(now)],
@@ -643,9 +756,11 @@ export class Repositories {
 
   async listAgents(guildId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
-      `SELECT id, guild_id, name, focus, wake_triggers, avatar_shape, avatar_color, config, created_at, updated_at,
-              archived_at, task, task_version, task_hash, task_updated_at
-       FROM agents WHERE guild_id = $1 ORDER BY created_at`,
+      `SELECT a.id, a.guild_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
+              a.created_at, a.updated_at, a.archived_at, a.task, a.task_version, a.task_hash, a.task_updated_at,
+              a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box
+       FROM agents a JOIN machines m ON m.id = a.machine_id
+       WHERE a.guild_id = $1 ORDER BY a.created_at`,
       [guildId],
     );
     return result.rows as Array<Record<string, unknown>>;
@@ -664,6 +779,7 @@ export class Repositories {
     task = FALLBACK_TASK,
     taskHash = FALLBACK_TASK_HASH,
     actor?: ArtifactActor,
+    placement: { machineId?: string | null; maxAgentsPerMachine?: number | null } = {},
   ): Promise<void> {
     await withTransaction(this.pool, async (client) => {
       const clash = await client.query(
@@ -674,14 +790,20 @@ export class Repositories {
       if (clash.rowCount) {
         throw new GuildNameTaken(name, "operator");
       }
+      const guild = firstRow(await client.query(`SELECT org_id FROM guilds WHERE id = $1`, [guildId]));
+      if (!guild) {
+        throw new Error("agent insert failed: guild not found");
+      }
+      const machine = await placementMachine(client, String(guild.org_id), placement.machineId, config.coding === true);
+      const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
       const result = await client.query(
         `INSERT INTO agents (
            id, guild_id, name, config, focus, avatar_shape, avatar_color, org_id,
            created_at, updated_at, group_chat_delivered_through,
-           task, task_version, task_hash, task_updated_at, wake_triggers
+           task, task_version, task_hash, task_updated_at, wake_triggers, machine_id, machine_slot
          )
          SELECT $1, $2, $3, $4::jsonb, $6, $7, $8, p.org_id, $5, $5, p.group_chat_seq,
-                $9, 1, $10, $5, $11
+                $9, 1, $10, $5, $11, $12, $13
          FROM guilds p WHERE p.id = $2
          RETURNING org_id, task_version`,
         [
@@ -696,6 +818,8 @@ export class Repositories {
           task,
           taskHash,
           wakeTriggers,
+          machine.id,
+          slot,
         ],
       );
       const inserted = firstRow(result);
@@ -738,12 +862,16 @@ export class Repositories {
          a.id, a.guild_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
          a.created_at, a.updated_at, a.archived_at,
          a.task, a.task_version, a.task_hash, a.task_updated_at, a.workspace_mib,
+         a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box,
+         m.cpu AS machine_cpu, m.memory_mib AS machine_memory_mib,
+         m.max_workspace_mib AS machine_max_workspace_mib, m.workspace_mib AS machine_workspace_mib,
          p.name AS guild_name, p.about AS guild_about, p.description AS guild_description,
          p.archived_at AS guild_archived_at, p.org_id AS org_id, o.slug AS org_slug,
          ${guildOperatorsColumn("guild_operators")}
        FROM agents a
        JOIN guilds p ON p.id = a.guild_id
        JOIN orgs o ON o.id = p.org_id
+       JOIN machines m ON m.id = a.machine_id
        WHERE a.id = $1`,
       [agentId],
     );
@@ -798,6 +926,194 @@ export class Repositories {
       [guildId, repositoryId],
     );
     return firstRow(result);
+  }
+
+  /** The organisation's machines, oldest first, each with the agents on it. */
+  async listMachines(orgId: string): Promise<MachineWithAgents[]> {
+    const result = await this.pool.query(`${MACHINES_WITH_AGENTS} WHERE m.org_id = $1 ORDER BY m.created_at, m.name`, [
+      orgId,
+    ]);
+    return (result.rows as Array<Record<string, unknown>>).map(machineWithAgents);
+  }
+
+  /** One machine of the organisation with the agents on it. */
+  async getMachineWithAgents(orgId: string, machineId: string): Promise<MachineWithAgents | null> {
+    const row = firstRow(
+      await this.pool.query(`${MACHINES_WITH_AGENTS} WHERE m.org_id = $1 AND m.id = $2`, [orgId, machineId]),
+    );
+    return row ? machineWithAgents(row) : null;
+  }
+
+  /**
+   * The machine an agent goes on: the one named, or the organisation's only machine when none is.
+   * Refuses a coding agent on a standard machine.
+   */
+  async placementMachine(orgId: string, machineId: string | null | undefined, coding: boolean): Promise<MachineRow> {
+    return placementMachine(this.pool, orgId, machineId, coding);
+  }
+
+  async getMachine(orgId: string, machineId: string): Promise<MachineRow | null> {
+    const row = firstRow(
+      await this.pool.query(`SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 AND id = $2`, [orgId, machineId]),
+    );
+    return row ? machineFromRow(row) : null;
+  }
+
+  async countMachineAgents(machineId: string): Promise<number> {
+    const result = await this.pool.query(`SELECT COUNT(*)::int AS count FROM agents WHERE machine_id = $1`, [machineId]);
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  /**
+   * Adds a machine to the organisation. With a `cap`, the machines are counted under the
+   * organisation's lock and a full organisation is refused with the cap's error.
+   */
+  async insertMachine(orgId: string, input: MachineInput, now: Date, cap: HeldCap | null = null): Promise<MachineRow> {
+    try {
+      return await withTransaction(this.pool, async (client) => {
+        await client.query(`SELECT 1 FROM orgs WHERE id = $1 FOR UPDATE`, [orgId]);
+        if (cap !== null) {
+          const count = await client.query(`SELECT COUNT(*)::int AS count FROM machines WHERE org_id = $1`, [orgId]);
+          if (Number(count.rows[0]?.count ?? 0) >= cap.max) {
+            throw cap.refuse();
+          }
+        }
+        const row = firstRow(
+          await client.query(
+            `INSERT INTO machines (id, org_id, name, box, cpu, memory_mib, max_workspace_mib, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+             RETURNING ${MACHINE_COLUMNS}`,
+            [newId("mach"), orgId, input.name, input.box, input.cpu, input.memory_mib, input.max_workspace_mib, stamp(now)],
+          ),
+        );
+        return machineFromRow(row!);
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new MachineError(409, `${input.name} is already a machine of this organisation`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Changes a machine's name, tier, size, or disk cap. A standard tier is refused while a coding
+   * agent sits on the machine. Returns the machine before and after the change.
+   */
+  async updateMachine(
+    orgId: string,
+    machineId: string,
+    input: MachineInput,
+    now: Date,
+  ): Promise<{ before: MachineRow; after: MachineRow } | null> {
+    try {
+      return await withTransaction(this.pool, async (client) => {
+        const current = await lockMachine(client, orgId, machineId);
+        if (current === null) {
+          return null;
+        }
+        if (!machineAllowsCoding(input.box)) {
+          const coding = await client.query(
+            `SELECT 1 FROM agents WHERE machine_id = $1 AND COALESCE((config->>'coding')::boolean, FALSE) LIMIT 1`,
+            [machineId],
+          );
+          if (coding.rowCount) {
+            throw new MachineError(409, "a coding agent is on this machine; move it or turn coding off first");
+          }
+        }
+        const row = firstRow(
+          await client.query(
+            `UPDATE machines
+                SET name = $3, box = $4, cpu = $5, memory_mib = $6, max_workspace_mib = $7, updated_at = $8
+              WHERE org_id = $1 AND id = $2
+              RETURNING ${MACHINE_COLUMNS}`,
+            [orgId, machineId, input.name, input.box, input.cpu, input.memory_mib, input.max_workspace_mib, stamp(now)],
+          ),
+        );
+        return { before: current, after: machineFromRow(row!) };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new MachineError(409, `${input.name} is already a machine of this organisation`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Deletes a machine no agent sits on. One that still hosts agents is refused, and so is the
+   * organisation's last machine.
+   */
+  async deleteMachine(orgId: string, machineId: string): Promise<MachineRow | null> {
+    return withTransaction(this.pool, async (client) => {
+      await client.query(`SELECT 1 FROM orgs WHERE id = $1 FOR UPDATE`, [orgId]);
+      const current = await lockMachine(client, orgId, machineId);
+      if (current === null) {
+        return null;
+      }
+      const hosted = await client.query(`SELECT 1 FROM agents WHERE machine_id = $1 LIMIT 1`, [machineId]);
+      if (hosted.rowCount) {
+        throw new MachineError(409, "agents are on this machine; move or delete them first");
+      }
+      const others = await client.query(`SELECT 1 FROM machines WHERE org_id = $1 AND id <> $2 LIMIT 1`, [
+        orgId,
+        machineId,
+      ]);
+      if (!others.rowCount) {
+        throw new MachineError(409, "an organisation keeps at least one machine");
+      }
+      await client.query(`DELETE FROM machines WHERE id = $1`, [machineId]);
+      return current;
+    });
+  }
+
+  /**
+   * Moves an agent to another machine of its organisation, in the lowest free slot there.
+   * Returns where it was and where it is.
+   */
+  async moveAgent(
+    agentId: string,
+    machineId: string,
+    options: { maxAgentsPerMachine?: number | null; coding?: boolean } = {},
+  ): Promise<{ from: { machineId: string; slot: number }; to: { machineId: string; slot: number } } | null> {
+    return withTransaction(this.pool, async (client) => {
+      const agent = firstRow(
+        await client.query(`SELECT org_id, config, machine_id, machine_slot FROM agents WHERE id = $1 FOR UPDATE`, [
+          agentId,
+        ]),
+      );
+      if (!agent) {
+        return null;
+      }
+      const from = { machineId: String(agent.machine_id), slot: Number(agent.machine_slot) };
+      if (from.machineId === machineId) {
+        return { from, to: from };
+      }
+      const config = jsonObj(agent.config) as Record<string, unknown>;
+      const coding = options.coding ?? config.coding === true;
+      const machine = await placementMachine(client, String(agent.org_id), machineId, coding);
+      const slot = await freeSlot(client, machine, options.maxAgentsPerMachine ?? undefined);
+      await client.query(`UPDATE agents SET machine_id = $2, machine_slot = $3 WHERE id = $1`, [agentId, machine.id, slot]);
+      return { from, to: { machineId: machine.id, slot } };
+    });
+  }
+
+  async setMachineWorkspaceMib(machineId: string, mib: number): Promise<void> {
+    await this.pool.query(`UPDATE machines SET workspace_mib = $2 WHERE id = $1`, [machineId, mib]);
+  }
+
+  async listMachineIds(): Promise<string[]> {
+    const result = await this.pool.query(`SELECT id FROM machines ORDER BY id`);
+    return (result.rows as Array<{ id: string }>).map((row) => row.id);
+  }
+
+  /** Every agent with the machine it sits on, for laying out and sweeping their directories. */
+  async listMachinePlacements(): Promise<Array<{ machineId: string; agentId: string }>> {
+    const result = await this.pool.query(`SELECT machine_id, id FROM agents ORDER BY machine_id, machine_slot`);
+    return (result.rows as Array<{ machine_id: string; id: string }>).map((row) => ({
+      machineId: row.machine_id,
+      agentId: row.id,
+    }));
   }
 
   async setAgentWorkspaceMib(agentId: string, mib: number): Promise<void> {
@@ -3130,11 +3446,6 @@ export class Repositories {
       [JSON.stringify([{ id: secretId }])],
     );
     return result.rows.map((row) => String(row.agent_id));
-  }
-
-  async listAgentIds(): Promise<string[]> {
-    const result = await this.pool.query(`SELECT id FROM agents`);
-    return result.rows.map((row) => String(row.id));
   }
 
   async getUserByEmail(email: string): Promise<Record<string, unknown> | null> {

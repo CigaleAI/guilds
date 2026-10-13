@@ -1,6 +1,6 @@
 import {
-  addMissingBox,
   addMissingBrowserLanguage,
+  addMissingFlags,
   addMissingCliScriptingAndMemory,
   DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
   DEFAULT_MAX_SCRIPTS,
@@ -27,7 +27,7 @@ function iso(value: unknown): string | null {
 function agentConfig(row: Record<string, unknown>): Record<string, unknown> {
   const value = jsonObj(row.config);
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    const config = addMissingBox(
+    const config = addMissingFlags(
       addMissingBrowserLanguage(addMissingCliScriptingAndMemory(value as Record<string, unknown>)),
     );
     return {
@@ -69,7 +69,8 @@ export function agentItem(row: Record<string, unknown>, generating = false): Rec
     avatar_color: row.avatar_color || "#7c5cff",
     browser: Boolean(config.browser),
     coding: Boolean(config.coding),
-    box: config.box,
+    machine_id: row.machine_id,
+    machine: { id: row.machine_id, name: row.machine_name, box: row.machine_box },
     archived_at: iso(row.archived_at),
     generating,
   };

@@ -114,10 +114,11 @@ export type Agent = {
   /** `#rrggbb`. */
   avatar_color: string;
   browser: boolean;
-  /** Code tools, with Node.js, build tools and git in the sandbox. */
+  /** Code tools, with Node.js, build tools and git on its machine. */
   coding: boolean;
-  /** The machine it runs on. */
-  box: Box;
+  /** The organisation's machine it runs on. */
+  machine_id: string;
+  machine: MachineRef;
   archived_at: string | null;
   /** A run is generating for this agent right now. */
   generating: boolean;
@@ -126,21 +127,48 @@ export type Agent = {
 export type ThinkingLevel = "none" | "low" | "medium" | "high";
 
 /**
- * The boxes an agent runs on. `lite` is the small guest for scripts, notes, MCP and the CLI, with
- * no browser and no code tools. The others carry Chromium and the toolchains: `standard` is the
- * browser agent's machine, `code` the coding agent's larger one, and `custom` is sized by the
- * operator.
+ * A machine's tier: `standard` hosts agents without coding, `code` is the larger machine coding
+ * agents need, and `custom` is sized by an owner or admin and hosts any agent.
  */
-export type Box = "lite" | "standard" | "code" | "custom";
+export type MachineBox = "standard" | "code" | "custom";
 
-/** A custom box's size: CPUs in quarter steps and memory in MiB, within these bounds. */
-export const customBoxBounds = {
-  minCpu: 0.5,
-  maxCpu: 4,
-  cpuStep: 0.25,
-  minMemoryMib: 512,
-  maxMemoryMib: 8192,
-} as const;
+/** A machine as an agent payload names it. */
+export type MachineRef = { id: string; name: string; box: MachineBox };
+
+/** An agent on a machine, with what it runs there. */
+export type MachineAgent = {
+  id: string;
+  name: string;
+  guild_id: string;
+  guild_name: string;
+  browser: boolean;
+  coding: boolean;
+};
+
+/** `GET /api/orgs/:id/machines`: one of the organisation's machines, its agents, and what they use. */
+export type Machine = MachineRef & {
+  cpu: number;
+  memory_mib: number;
+  /** The disk cap in MiB, over every agent home on the machine. */
+  max_workspace_mib: number;
+  /** Every agent home on it, measured after a generation; null before one. */
+  workspace_mib: number | null;
+  /** The memory its agents plan to use when they all work at once. */
+  planned_mib: number;
+  /** Its agents in guilds the viewer can see. */
+  agents: MachineAgent[];
+  /** How many of its agents sit in guilds the viewer cannot see; `planned_mib` counts them too. */
+  hidden_agents: number;
+};
+
+/** A machine to create, or the fields to change; `cpu` and `memory_mib` only on custom. */
+export type MachineInput = {
+  name: string;
+  box: MachineBox;
+  cpu?: number;
+  memory_mib?: number;
+  max_workspace_mib?: number;
+};
 
 export type AgentConfig = {
   model: string;
@@ -152,7 +180,7 @@ export type AgentConfig = {
   /** User turns, including the current one, whose tool results stay in the model prompt. */
   keep_tool_result_generations: number;
   max_scripts: number;
-  /** Workspace cap in MiB. A generation will not start if the workspace is already over this. */
+  /** The agent home's cap in MiB. A generation will not start while the home is over this. */
   max_workspace_mib: number;
   cli: boolean;
   browser: boolean;
@@ -162,14 +190,6 @@ export type AgentConfig = {
   scripting: boolean;
   memory: boolean;
   thinking_level: ThinkingLevel;
-  /**
-   * The machine: lite has browser and coding off; standard has coding off; code has it on; custom
-   * leaves it to the operator. The browser is the operator's on every box but lite.
-   */
-  box: Box;
-  /** A custom box's size; absent on every other box. */
-  cpu?: number;
-  memory_mib?: number;
 };
 
 /** One agent with its model settings; `access` is its resolved tools, secrets and grants. */
@@ -177,7 +197,7 @@ export type AgentDetail = Agent & {
   /** The untagged group-chat messages it wakes for; empty means its focus stands in. */
   wake_triggers: string;
   config: AgentConfig;
-  /** The workspace size measured after its last generation; null before one. */
+  /** The agent's home, measured after its last generation; null before one. */
   workspace_mib: number | null;
   access: Record<string, unknown>;
 };
@@ -654,8 +674,8 @@ export type AgentAccess = {
 export type SecretGrant = { kind: "guild" | "agent"; id: string | null; name: string | null };
 
 /**
- * An organisation's secret: its name is the sandbox environment variable, its description tells
- * agents how to use it. The value is never returned.
+ * An organisation's secret: its name is the environment variable agents' commands get, its
+ * description tells agents how to use it. The value is never returned.
  */
 export type Secret = {
   id: string;
@@ -711,10 +731,12 @@ export type AgentUsage = {
   cost_usd: number;
   calls: number;
   updated_at: string | null;
-  /** The workspace size measured after the last generation; null before one. */
+  /** The agent's home, measured after the last generation; null before one. */
   workspace_mib: number | null;
-  /** The agent's workspace cap in MiB. */
+  /** The agent's home cap in MiB. */
   max_workspace_mib: number;
+  /** The agent's machine: every agent home on it against the machine's disk cap. */
+  machine: { id: string; name: string; workspace_mib: number | null; max_workspace_mib: number };
 };
 
 /** A model the organisation offers, with what it takes and costs as the catalog says. */
@@ -791,10 +813,12 @@ export function hasConnectedProvider(models?: OrgModels): boolean | null {
   return models.providers.some((item) => item.connected);
 }
 
-/** A settings save: the whole model config, and the name, focus, wake triggers and look when they change. */
+/** A settings save: the whole model config, and the name, machine, focus, wake triggers and look when they change. */
 export type AgentSettingsInput = {
   name?: string;
   config: AgentConfig;
+  /** The machine to move the agent to; absent keeps it where it is. */
+  machine_id?: string;
   focus?: string;
   wake_triggers?: string;
   avatar_shape?: string;
@@ -856,7 +880,7 @@ export type FileItem = {
 
 export type FileContent = { path: string; content: string; display_path: string; version?: number };
 
-/** A Python script in the agent's sandbox. One with parameters is also a tool named after it. */
+/** A Python script in the agent's home. One with parameters is also a tool named after it. */
 export type Script = {
   name: string;
   description: string;
@@ -1694,6 +1718,9 @@ export type ApplyInstall =
  */
 export type ApplySetup = { server: string; integration: string | null; label: string };
 
+/** A machine the apply preview offers: its size, the memory its agents plan to use, and how many it holds. */
+export type ApplyMachine = MachineRef & { memory_mib: number; planned_mib: number; agents: number };
+
 /** `POST /api/recipes/:id/preview`: the apply plan, its findings, and what it creates (recipes/apply.ts). */
 export type ApplyPreview = {
   recipe_id: string;
@@ -1703,6 +1730,12 @@ export type ApplyPreview = {
   names: Array<{ role: string; name: string }>;
   /** Each role's recommended model, and the one apply creates it with unless the operator picks another. */
   models: RoleModel[];
+  /** The organisation's machines the roles may go on. */
+  machines: ApplyMachine[];
+  /** The machine the roles go on: the one chosen, or the only one; null while several wait for a choice. */
+  machine_id: string | null;
+  /** The memory the recipe's roles plan to use on it. */
+  adds_mib: number;
   collisions: string[];
   connections: PlannedConnection[];
   /** Connectors the recipe names that the box lacks; each blocks apply until it is installed. */
@@ -1784,6 +1817,8 @@ export type ApplyChoices = {
   names: Array<{ role: string; name: string }>;
   models: Array<{ role: string; model: string }>;
   connections: ApplyConnectionChoice[];
+  /** The machine every role goes on; the organisation's only one when absent. */
+  machine_id?: string;
 };
 
 /** `GET /api/guilds/:id/apply`: the open checklist, and agents that still need a post-apply browser login. */

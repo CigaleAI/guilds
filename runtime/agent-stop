@@ -1,0 +1,41 @@
+#!/bin/bash
+# Usage: agent-stop <agent id> browser|all|purge
+#
+# Stops one agent's processes on its machine. `browser` stops its display, Chrome, and noVNC;
+# `all` its terminal and background commands too; `purge` also removes its runtime files under
+# /run/guilds once all of them have stopped. The agent's home, with its Chrome profile and
+# logins, stays. Other agents on the machine are untouched. Exits 1 when a process group it
+# stopped is still alive.
+set -uo pipefail
+source "${BASH_SOURCE[0]%/*}/../lib/guilds/agent-lib.sh"
+
+AGENT="${1:-}"
+MODE="${2:-all}"
+if ! valid_agent "$AGENT" || [[ ! "$MODE" =~ ^(browser|all|purge)$ ]]; then
+  echo "usage: agent-stop <agent id> browser|all|purge" >&2
+  exit 2
+fi
+
+RUN_DIR="/run/guilds/${AGENT}"
+failed=0
+
+stop_group_file "${RUN_DIR}/browser.pid" || failed=1
+pkill -f -- "--user-data-dir=/home/${AGENT}/.browser" 2>/dev/null || true
+if [ "$MODE" != "browser" ]; then
+  stop_group_file "${RUN_DIR}/cli.pid" || failed=1
+  # guilds-code starts each background command as the leader of its own session.
+  for record in "${RUN_DIR}"/background/b*.json; do
+    [ -e "$record" ] || continue
+    pid="$(jq -r '.pid // empty' "$record" 2>/dev/null || true)"
+    [ -n "$pid" ] && group_alive "$pid" || continue
+    touch "${record%.json}.stopped"
+    if ! stop_group "$pid"; then
+      echo "still running: $record" >&2
+      failed=1
+    fi
+  done
+fi
+if [ "$MODE" = "purge" ] && [ "$failed" = 0 ]; then
+  rm -rf "$RUN_DIR"
+fi
+exit "$failed"

@@ -227,7 +227,7 @@ export function AccessTools({
       {pane === "connections" ? (
         <Pane
           title="Integrations"
-          description="Remote tools the orchestrator calls with a login it holds; keys never reach an agent's sandbox. Logins inherited from wider scopes appear here: turn a server off, or sign in with a login of its own."
+          description="Remote tools the orchestrator calls with a login it holds; keys never reach an agent's machine. Logins inherited from wider scopes appear here: turn a server off, or sign in with a login of its own."
         >
           <div className="flex flex-col gap-3">
             {serverManager && owner.scope === "org" ? (

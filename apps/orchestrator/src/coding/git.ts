@@ -14,7 +14,10 @@ import { githubIdOf } from "./repositories.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
 
-export const GIT_TOKENS_PATH = "/run/guilds/git-tokens.json";
+/** Where an agent's repository tokens are kept in its machine, outside every home. */
+export function gitTokensPath(agentId: string): string {
+  return `/run/guilds/${agentId}/git-tokens.json`;
+}
 /** A token closer than this to expiry is replaced before a shell command. */
 export const TOKEN_REFRESH_MS = 10 * 60 * 1000;
 
@@ -210,9 +213,9 @@ export class RepositoryTokens {
     this.expiries = expiries;
   }
 
-  /** Writes the tokens under /run/guilds through the sandbox file API, outside the workspace. */
-  async write(files: SandboxFiles): Promise<void> {
-    await files.writeFiles([{ path: GIT_TOKENS_PATH, data: JSON.stringify({ repositories: this.entries }) }]);
+  /** Writes the agent's tokens under /run/guilds/<agent id> through the sandbox file API, outside every home. */
+  async write(files: SandboxFiles, agentId: string): Promise<void> {
+    await files.writeFiles([{ path: gitTokensPath(agentId), data: JSON.stringify({ repositories: this.entries }) }]);
   }
 }
 

@@ -40,7 +40,7 @@ $(error EDITION=$(EDITION) names no development stack: an edition sets COMPOSE_D
 endif
 COMPOSE_ALL := $(COMPOSE) -f $(CORE)/docker-compose.yml $(EDITION_COMPOSE_FILES)
 
-.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image runtime-lite-image core-image build up up-dev dev down reset verify check soak compat-verify
+.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image core-image build up up-dev dev down reset verify check soak compat-verify
 
 contract: contract-opensandbox contract-model
 
@@ -63,13 +63,10 @@ opensandbox-image:
 runtime-image:
 	$(CORE)/scripts/images.sh runtime
 
-runtime-lite-image:
-	$(CORE)/scripts/images.sh runtime-lite
-
 core-image:
 	docker build --tag guilds-orchestrator:local --file $(CORE)/apps/orchestrator/Dockerfile $(CORE)
 
-build: state opensandbox-image runtime-image runtime-lite-image $(DEV_BASE_IMAGE)
+build: state opensandbox-image runtime-image $(DEV_BASE_IMAGE)
 	$(COMPOSE_DEV) build
 
 up: up-dev
@@ -79,7 +76,7 @@ up: up-dev
 dev: up-dev
 	pnpm --filter $(WEB_PACKAGE) dev
 
-up-dev: state opensandbox-image runtime-image runtime-lite-image $(DEV_BASE_IMAGE)
+up-dev: state opensandbox-image runtime-image $(DEV_BASE_IMAGE)
 	$(COMPOSE_DEV) up --build --detach --wait --remove-orphans
 
 down:

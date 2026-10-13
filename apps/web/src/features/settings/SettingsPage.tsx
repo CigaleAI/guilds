@@ -27,12 +27,14 @@ import { AccessTools } from "../access/AccessTools";
 import { formatCost } from "../agent/runs/toolFormat";
 import { ModelProviders } from "../models/ModelProviders";
 import { handlePattern } from "../names";
+import { MachinesTab } from "../machines/MachinesTab";
 import { MembersTab } from "./MembersTab";
 import { canManageMembers } from "./members";
 
 const coreTabs = [
   { value: "general", label: "General" },
   { value: "members", label: "Members" },
+  { value: "machines", label: "Machines" },
   { value: "keys", label: "Model keys" },
   { value: "secrets", label: "Secrets" },
   { value: "tools", label: "Tools" },
@@ -61,8 +63,8 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 
 /**
  * The organisation's settings: the operator's own profile and the organisation's name, its
- * members, its model keys, the secrets and tools every guild inherits, its usage, and the tabs an
- * edition adds.
+ * members, its machines, its model keys, the secrets and tools every guild inherits, its usage, and
+ * the tabs an edition adds.
  */
 export function SettingsPage() {
   const { org } = useIdentity();
@@ -96,6 +98,8 @@ export function SettingsPage() {
         <General />
       ) : tab === "members" ? (
         <MembersTab />
+      ) : tab === "machines" ? (
+        <MachinesTab />
       ) : tab === "keys" ? (
         <ModelKeys />
       ) : tab === "secrets" ? (

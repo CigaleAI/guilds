@@ -382,7 +382,7 @@ function idempotencyKey(transactionId: string, filePath: string): string {
 }
 
 /**
- * The invoice an agent named in its workspace: a regular PDF, JPEG, or PNG file under /home/agent,
+ * The invoice an agent named in its workspace: a regular PDF, JPEG, or PNG file in its home,
  * not empty and within Qonto's size limit.
  */
 export async function readInvoiceFile(

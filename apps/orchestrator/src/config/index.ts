@@ -16,10 +16,8 @@ export type AppConfig = {
   templatesRoot: string;
   opensandboxUrl: string;
   opensandboxApiKey: string;
-  /** The image every box but lite runs: coding tools and Chromium. */
+  /** The image every machine runs: coding tools and Chromium. */
   sandboxImage: string;
-  /** The image a lite box runs; the standard image when `SANDBOX_IMAGE_LITE` is unset. */
-  sandboxImageLite: string;
   secretsMasterKey: string;
   authMode: AuthMode;
   host: string;
@@ -151,7 +149,6 @@ export function loadConfig(
   const publicBaseUrl = (env.PUBLIC_BASE_URL ?? "").trim();
   const trustedProxySecret = (env.TRUSTED_PROXY_SECRET ?? "").trim();
   const sandboxImage = readRequired(env, "SANDBOX_IMAGE");
-  const sandboxImageLite = (env.SANDBOX_IMAGE_LITE ?? "").trim() || sandboxImage;
   const operatorEmail = normalizeEmail(env.OPERATOR_EMAIL ?? "");
   if ((env.OPERATOR_EMAIL ?? "").trim() && operatorEmail === null) {
     throw new Error("OPERATOR_EMAIL must be an email address");
@@ -177,7 +174,6 @@ export function loadConfig(
     opensandboxUrl: readRequired(env, "OPENSANDBOX_URL"),
     opensandboxApiKey: readRequired(env, "OPENSANDBOX_API_KEY"),
     sandboxImage,
-    sandboxImageLite,
     secretsMasterKey,
     authMode,
     host: env.HOST ?? "0.0.0.0",

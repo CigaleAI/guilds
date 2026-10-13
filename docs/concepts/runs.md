@@ -267,23 +267,26 @@ only.
 
 ## Generation
 
-One generation at a time per agent. The agent has one machine.
+One generation at a time per agent. The agent sits on one machine.
 Concurrent requests to the same agent return a conflict.
 
-Different agents generate together. They keep separate:
+Different agents generate together, on one machine or on several.
+They keep separate:
 
 - histories
 - artifacts
-- sandbox directories
+- homes
 - locks
 
-The loop ensures the agent sandbox exists. When its stored
-`workspace_mib` is above the agent's `max_workspace_mib`, or the host
-`WORKSPACE_MAX_MIB` if that is lower, it measures the workspace again.
-It fails the generation at start with `workspace.full` if it is still
-over.
+The loop ensures the agent's machine is up. When the agent's stored
+`workspace_mib` is above its `max_workspace_mib`, or the host
+`WORKSPACE_MAX_MIB` if that is lower, it measures the agent's home
+again. When the machine's stored `workspace_mib` is above the
+machine's `max_workspace_mib`, it measures the machine's directory
+again. It fails the generation at start with `workspace.full` if
+either is still over.
 
-After the generation it measures and stores the size.
+After the generation it measures and stores both sizes.
 
 It loads every payload in order and repeats up to `max_steps`:
 
@@ -453,153 +456,165 @@ results.
 
 ## Sandbox
 
-The sandbox is created:
+An agent runs on its machine: one OpenSandbox container that every
+agent placed on the machine shares
+([Machines](guilds-and-agents.md#machines)). The container is
+created:
 
-- on the agent's first generation
+- on the first generation of any agent on the machine
 - when the operator opens the Browser tab on a `browser: true` agent
 - when the operator starts the CLI tab
 
-It is the agent's box:
+Every machine runs the runtime image (`SANDBOX_IMAGE`) at its tier's
+size: 1 CPU and 2Gi for `standard`, 2 CPU and 4Gi for `code`, and the
+machine's `cpu` and `memory_mib` for `custom`.
 
-- a lite sandbox runs the lite image (`SANDBOX_IMAGE_LITE`) with
-  0.5 CPU and 256Mi memory
-- a standard sandbox runs the standard image (`SANDBOX_IMAGE`) with
-  1 CPU and 2Gi
-- a code sandbox runs the standard image with 2 CPU and 4Gi
-- a custom sandbox runs the standard image at the agent's `cpu` and
-  `memory_mib`
+The container carries these labels:
 
-The sandbox carries its box, CPU, and memory as labels. A run whose
-agent moved to another box, or resized a custom one, replaces it.
+- `machine_id`
+- `kind`, the tier
+- `cpu` and `memory`
+- `image`, a fingerprint of the image reference
+- `host_id`, when the provider places machines on hosts
 
-The sandbox directory is mounted at `/home/agent`. Every secret that
-reaches the agent is injected as an environment variable named after
-the secret
-([Secrets and access](secrets-and-access.md#what-reaches-a-sandbox)).
+If several running containers carry one machine id, the orchestrator
+keeps the earliest and destroys the others. A running container of
+another tier, size, or image is replaced. The helpers the tools call
+are part of that image. Nothing else replaces it: not a secret
+change, not an agent's configuration.
 
-A coding sandbox also gets `HOME=/home/agent`. On every box but lite
-that tree includes `/home/agent/.browser` for Chromium profile state.
-A lite box's tree has no browser profile.
+The machine's directory, `WORKSPACE_ROOT/<machine id>`, is mounted at
+`/home`. Each agent's home is `/home/<agent id>`. It holds the
+agent's `scripts/`, `.browser/` profile, a coding agent's `repos/`,
+`.runs/`, `.gitconfig`, caches, and toolchains. Runtime files that
+must stay out of every home (git tokens, the terminal's token, logs)
+are under `/run/guilds/<agent id>/`, which goes with the container.
+
+Every command the orchestrator runs for an agent (`shell`, the code
+helper, `script_run`, the browser tools, maintenance) runs in the
+agent's home and carries in its own environment:
+
+- `HOME` and `GUILDS_AGENT_HOME`, the agent's home
+- `PORT`, the first port of the agent's block, and `GUILDS_PORTS`,
+  the whole block (`20000+100·slot` to `20000+100·slot+99`)
+- every secret that reaches the agent, as a variable named after the
+  secret
+  ([Secrets and access](secrets-and-access.md#what-reaches-a-sandbox))
+
+The container's own environment carries no secret. Commands run as
+root in the container, for every agent. Agents on one machine can
+read each other's files and sessions
+([Security register](../architecture/security-register.md#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions)).
 
 A new run is a new conversation on the same machine. The container may
-already have been stopped. Commands run as root in the container, for
-every agent.
+already have been stopped.
 
-At generation start the orchestrator compares:
+At generation start the orchestrator ensures the agent's machine,
+then the agent's home. It resolves the run snapshot's secrets into
+the environment of that generation's commands. A secret change
+reaches the agent's next generation; a generation in progress keeps
+the values it started with.
 
-- a keyed fingerprint of the resolved environment with sandbox
-  metadata
-- whether the running sandbox was created with the run snapshot's
-  browser and coding flags (its `box` follows them)
-- whether it was created from the image its box calls for
-  (`SANDBOX_IMAGE` or `SANDBOX_IMAGE_LITE`)
+### Browser
 
-The helpers its tools call are part of that image. A missing or
-mismatched sandbox is recreated over the same sandbox directory with
-current values. An agent whose box changed, or whose image changed
-under it, gets the other box's guest at its next ensure.
+Each browser agent has its own Chrome. `agent-browser-start <agent id>
+<slot> <language>` starts, when they are not already answering:
 
-Browser sandboxes start Google Chrome under TigerVNC at a locked
-1280×720 with:
+- an Xtigervnc display `:10+slot` at a locked 1280×720, its VNC
+  server on loopback port `5910+slot`
+- Google Chrome, or Chromium in an image built with
+  `BROWSER=chromium`, with `--no-sandbox`,
+  `--user-data-dir=/home/<agent id>/.browser`, and CDP on
+  `127.0.0.1:<9300+slot>`
+- websockify serving noVNC on port `6100+slot`
 
-- `--no-sandbox`
-- `--user-data-dir=/home/agent/.browser`
-- CDP on `127.0.0.1:9222`
-- a noVNC view on port 6080
+It prints the two ports once both answer. Chrome starts on the
+agent's first browser call in a generation, or when the operator
+opens its Browser tab. It stops 5 minutes after the agent's last
+browser call or pane input. Its profile and logins stay in its home.
 
 Chrome language is the agent's `browser_language` (default `en-US`).
-Timezone is inferred from the sandbox's public IP and cached for the
-container lifetime.
+Timezone is inferred from the sandbox's public IP. Changing the
+language, or turning `browser` off, stops that agent's Chrome only.
 
-The orchestrator proxies that view into the agent's Browser tab. The
-tab embeds noVNC, scales the framebuffer to the pane, and keeps the
-remote desktop size.
+The orchestrator proxies the agent's noVNC view into its Browser tab.
+The tab embeds noVNC, scales the framebuffer to the pane, and keeps
+the remote desktop size.
 
 A clipboard strip pastes host clipboard into the sandbox page and
 copies the remote selection back to the host. Playwright in the image
-attaches to that Chrome over CDP.
+attaches to the agent's Chrome over its CDP port.
 
-The orchestrator records:
+### CLI
 
-- the agent id
-- a 63-character environment fingerprint
-- a browser flag
-- a coding flag
-- the box those flags call for (`kind`)
-- the browser language when browser is on
-- a fingerprint of the image reference
-- one label-safe key per snapshotted secret id
+The CLI tab wakes the agent's machine. A machine on which an agent
+generates is used as is.
 
-If several running sandboxes carry one agent id, it keeps the earliest
-matching instance and destroys the others.
-
-Toggling browser access or coding (and so the box), or changing the
-browser language while browser is on, destroys an idle sandbox. The
-next ensure recreates it with the new image, resources, environment,
-and entrypoint.
-
-The CLI tab brings the sandbox up as the agent's configuration says.
-
-- A browser or coding agent wakes its larger sandbox.
-- A generating agent's running sandbox is used as is.
-
-It runs `agent-cli-start` in it. The helper starts ttyd on port 7681
-with bash in `/home/agent`, or finds it already answering, and prints
-the secret path segment it serves under, random per container.
+It runs `agent-cli-start <agent id> <slot>` in it. The helper starts
+ttyd on port `7700+slot` with bash in the agent's home, or finds it
+already answering, and prints the secret path segment it serves
+under, random per agent and kept under `/run/guilds/<agent id>/`.
 
 ttyd answers only under `/t/<secret>` and returns 404 elsewhere, for
 the WebSocket too.
 
 The orchestrator proxies ttyd's page and WebSocket at
 `/api/agents/:id/cli/tty/*` and prepends that segment to every
-upstream path. The sandbox host's proxy drops `Authorization`, so a
-header cannot carry it. The port refuses anything that did not come
-through the proxy.
+upstream path. The agent id finds the agent's machine, and its slot
+the port. The sandbox host's proxy drops `Authorization`, so a header
+cannot carry it. The port refuses anything that did not come through
+the proxy.
 
-The shell runs as root and inherits the container environment, secret
-values included.
+The shell runs as root with `HOME`, `GUILDS_AGENT_HOME`, `PORT`, and
+`GUILDS_PORTS` set for the agent, and no secret values.
+
+### Secrets and lifecycle
 
 Changing a secret's value, name, or description, creating or deleting
-a secret, or changing who gets it:
-
-- re-syncs the active run snapshots of the agents it reaches or
-  reached
-- destroys their idle sandboxes
-
-A currently generating agent finishes with its existing environment.
-Its sandbox is destroyed before the agent lock is released. Its next
-generation recreates the sandbox with the current secrets and values.
+a secret, or changing who gets it re-syncs the active run snapshots of
+the agents it reaches or reached. No container is replaced. A
+generating agent finishes with its existing values. Its next
+generation runs with the current ones.
 
 A `secret_store` call takes the same path. The stored variable is in
 the agent's environment from its next generation.
 
-After a generation ends, or after the Browser or CLI tab brings the
-sandbox up, an idle timer of 5 minutes starts.
+After a generation ends, or after the Browser or CLI tab starts the
+machine's container, an idle timer of 5 minutes starts for the machine.
 
-A new generation cancels that timer. Operator input on a proxied
-Browser or CLI view restarts it, at most once every 30 seconds.
+A generation of any agent on the machine cancels that timer.
+Operator input on a proxied Browser or CLI view restarts it, at most
+once every 30 seconds.
 
-When the timer fires, the orchestrator destroys the sandbox and leaves
-the sandbox directory in place. On orchestrator startup, every running
-agent sandbox that is not generating gets the same timer. The next
-generation recreates the sandbox through the path above.
+When the timer fires with no agent on the machine generating, the
+orchestrator destroys the container and leaves the machine's
+directory in place. On orchestrator startup, every running machine
+container on which no agent generates gets the same timer. The next
+work on the machine recreates the container.
+
+A change of the machine's tier or size destroys an idle container at
+once, and a busy one when the last generation on it ends.
 
 Consequences:
 
-- two runs of the same agent share the sandbox directory and, while a
-  sandbox is up, its processes
-- agents in one guild do not
-- only one generation runs at a time for an agent
-- files under `/home/agent`, including `.browser`, survive recreation
+- runs of every agent on a machine share its container and, while it
+  is up, its processes; agents on other machines do not
+- each agent keeps its own home, and two runs of one agent share it
+- only one generation runs at a time for an agent; agents on one
+  machine generate at the same time
+- files under the agent's home, including `.browser`, survive
+  recreation
 - container-local packages and live process state end when the
-  sandbox stops
+  container stops
+
+### Code execution
 
 A coding agent runs commands with the `shell` tool
 ([Code tools](../tools-and-connectors/code.md)).
 
 For every other agent, reusable Python is the one way to execute code:
 an agent-level `script` artifact. A run snapshots source and
-materialises `/home/agent/scripts/<name>.py`.
+materialises `/home/<agent id>/scripts/<name>.py`.
 
 `script_create` / `script_run` are the tools. For an agent without
 `coding`, `script_run` is the one path that executes in the sandbox.
@@ -610,7 +625,7 @@ A coding agent keeps its scripts for reusable code. Turning
 required description.
 
 The agent's secrets appear in the State snapshot as name plus
-description. The value stays in the sandbox environment.
+description. The value stays in its commands' environment.
 
 MCP token payloads never enter that environment. They only join run
 redaction.
@@ -626,16 +641,17 @@ repositories:
    with contents and pull requests write
    ([GitHub](../tools-and-connectors/github.md)). It writes
    every token through the sandbox file API to
-   `/run/guilds/git-tokens.json`, outside the workspace, and adds each
+   `/run/guilds/<agent id>/git-tokens.json`, outside every home, and
+   adds each
    to the generation's redaction set. A disconnected connection, GitHub
    refusing the installation, or an installation that no longer reaches
    a repository (named in the error) is the generation-start error
    `repository.token`.
 2. **Identity and clone.** `guilds-code` writes the agent's git identity
-   into its global git configuration (the name is the agent's name, the
+   into the `.gitconfig` in its home (the name is the agent's name, the
    email the guild's `git_author_email` when set, otherwise
    `<agent id>@agents.guilds.run`) and runs `git clone` for each guild
-   repository missing from `/home/agent/repos/`, waiting up to 600
+   repository missing from `repos/` in its home, waiting up to 600
    seconds for each. A clone already there whose `origin` names another
    URL on the same host, as after a rename, is pointed at the
    repository's current URL. A failed clone is the generation-start
@@ -656,7 +672,7 @@ coding agent's runs. Live git state is not in State.
 
 **Checkpoints.** At a run's first generation, and again at the end of
 every generation, `guilds-code` snapshots every working tree under
-`/home/agent/repos/`. Uncommitted and untracked (not ignored) changes
+`repos/` in the agent's home. Uncommitted and untracked (not ignored) changes
 are included. Each snapshot is a commit built through a temporary
 index and recorded at `refs/guild/runs/<run id>/start` (once) or
 `…/end` (each time), without touching the index or the current branch.
@@ -674,7 +690,7 @@ GET /api/runs/:id/changes                     diffstat per repository
 GET /api/runs/:id/changes/:repository/diff    start..end, at most 256 KiB
 ```
 
-The diff runs `git diff` in the agent's sandbox, waking it as the CLI
+The diff runs `git diff` on the agent's machine, waking it as the CLI
 tab does. It is redacted with the agent's secret values. A repository
 the run did not record is 404.
 
@@ -715,12 +731,13 @@ At run creation the snapshot records every catalog row as
 tool schemas in that snapshot come from rows whose `parameters` are
 set. Later generations of the same run keep that list.
 
-`RunSandboxes.ensure` materialises `/home/agent/scripts` from the **run
+At generation start, once the machine is up, the orchestrator
+materialises `/home/<agent id>/scripts` from the **run
 snapshot**, not from the live catalog
 (`apps/orchestrator/src/scripts/materialise.ts`):
 
 1. write each snapshotted source to a sibling temp file through the
-   sandbox file API, delete an existing `/home/agent/scripts/<name>.py`
+   sandbox file API, delete an existing `scripts/<name>.py`
    if present, then move the temp file onto that path (OpenSandbox
    `move_files` refuses to overwrite, and a direct upload truncates in
    place);
@@ -731,7 +748,8 @@ snapshot**, not from the live catalog
 
 A snapshotted name always executes the snapshotted source, even when
 the live row has since changed. `script_delete` during this run drops
-that name from the snapshot and removes `/home/agent/scripts/<name>.py`.
+that name from the snapshot and removes `scripts/<name>.py` from the
+agent's home.
 `script_run` and its first-class tool then stop.
 
 A name created after run creation has no frozen schema. It is invoked

@@ -14,15 +14,20 @@ type Execution = {
 
 /**
  * A sandbox whose commands run on this machine: `guilds-code` from `runtime/`, a
- * temporary folder as `/home/agent`, another as `/run/guilds`. Commands that do not
- * name the helper are recorded and answered with empty output.
+ * temporary folder named after the agent as its home, another as `/run/guilds`.
+ * Commands that do not name the helper are recorded and answered with empty output.
  */
 export class HostCodeSandbox {
   id = "sbx_host";
-  home = tempDir("guilds-code-home-");
+  home: string;
   runDir = tempDir("guilds-code-run-");
   commandsRun: string[] = [];
   written: string[] = [];
+
+  constructor(agentId = "a_1") {
+    this.home = path.join(tempDir("guilds-code-home-"), agentId);
+    mkdirSync(this.home, { recursive: true });
+  }
 
   commands = {
     run: (command: string, opts?: Record<string, unknown>) => this.run(command, opts),
@@ -56,7 +61,7 @@ export class HostCodeSandbox {
     const timeout = Number(opts?.timeoutSeconds ?? opts?.timeout ?? 120) * 1000;
     return new Promise((resolve, reject) => {
       const child = spawn("bash", ["-c", local], {
-        // HOME is the workspace, as in a coding sandbox: git's global config lands there.
+        // HOME is the agent's home, as on its machine: git's global config lands there.
         env: {
           ...process.env,
           HOME: this.home,

@@ -56,7 +56,7 @@ Three kinds of key reach the box. Only the first is a model key.
 | Secret | The organisation, handed to the agents it names as an environment variable | **Secrets** ([Secrets and access](secrets-and-access.md)) |
 | Platform key | The box, for everyone on it: web search, group routing, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](../getting-started/configure.md#platform-keys)). Sentry and the registry are `.env` settings |
 
-An agent never sees a model key. Its sandbox gets secrets only.
+An agent never sees a model key. Its commands get secrets only.
 
 ## The welcome dialog
 

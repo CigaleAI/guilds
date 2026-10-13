@@ -48,8 +48,8 @@ type KeyDialogProps = {
 
 /**
  * Gives the scope being edited its own login to a key-based server: the inputs its connector
- * declares, and the settings its schema asks for. The keys stay with the orchestrator, never in
- * an agent's sandbox.
+ * declares, and the settings its schema asks for. The keys stay with the orchestrator, never on
+ * an agent's machine.
  */
 export function KeyConnectDialog({ owner, server, onClose, onConnected }: KeyDialogProps) {
   const connect = useConnectServer(owner);

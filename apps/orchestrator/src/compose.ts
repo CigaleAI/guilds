@@ -22,6 +22,7 @@ import { AdmissionCoordinator } from "./generation/admission.js";
 import { GenerationLoop } from "./generation/index.js";
 import { coreModelCredentials } from "./llm/credentials.js";
 import { ModelsService } from "./llm/models.js";
+import { layOutAgentHomes } from "./machines/layout.js";
 import { McpPool, TOOLS_TTL_MS } from "./mcp/index.js";
 import { NotesStore } from "./notes/store.js";
 import { OPEN_POLICY } from "./policy/index.js";
@@ -82,10 +83,15 @@ export async function createServer(
       url: config.opensandboxUrl,
       apiKey: config.opensandboxApiKey,
       image: config.sandboxImage,
-      imageLite: config.sandboxImageLite,
       workspaceRoot: config.workspaceRoot,
     });
   await sandboxes.start();
+  await layOutAgentHomes({
+    placements: () => repo.listMachinePlacements(),
+    workspaceRootFor: async (machineId) =>
+      (await sandboxes.machineHost?.(machineId))?.workspaceRoot ?? config.workspaceRoot,
+    destroyAgentSandboxes: sandboxes.destroyAgentSandboxes?.bind(sandboxes),
+  });
   const attachments = new AttachmentService(
     repo,
     extensionBlobStore(extensions, { config }) ??

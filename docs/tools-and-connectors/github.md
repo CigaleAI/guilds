@@ -156,8 +156,10 @@ changed gets its current URL, on the guild repository and in the
 login's selection. When GitHub refuses the token because the
 installation no longer reaches a repository, the error names it.
 
-The tokens go to `/run/guilds/git-tokens.json` through the sandbox
-file API. `guilds-git-credential` is the credential helper for
+The tokens go to `/run/guilds/<agent id>/git-tokens.json` through
+the sandbox file API, outside every home. `guilds-git-credential`
+reads the file of the agent `GUILDS_AGENT_HOME` names. It is the
+credential helper for
 `https://github.com` with `useHttpPath`, set in the image's system
 git configuration and again through the environment
 (`GIT_CONFIG_COUNT`), which git reads after every configuration

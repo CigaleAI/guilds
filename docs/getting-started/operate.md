@@ -12,43 +12,40 @@ The stack is three containers.
 |---|---|---|
 | `orchestrator` | The server and the operator app | `127.0.0.1:8080` (`ORCHESTRATOR_PORT`) |
 | `postgres` | The database | No |
-| `opensandbox` | Starts and stops agent sandboxes through the Docker socket | No |
+| `opensandbox` | Starts and stops machines' containers through the Docker socket | No |
 
 Only the orchestrator is reachable from outside Docker, and only on
-this machine. Each agent runs in a sandbox container of its own.
-Sandboxes can reach the public internet.
+this host. Agents run on their organisation's machines: one
+sandbox container per machine, shared by every agent placed on it
+([Machines](../concepts/guilds-and-agents.md#machines)). Sandboxes
+can reach the public internet.
 
-Agents run in one of two images:
-
-- `agent-runtime:0.3` is the standard, code, and custom box. It has a
-  browser and the coding toolchains.
-- `agent-runtime-lite:0.1` is the lite box. It has scripts and a
-  terminal.
-
-The standard image installs Google Chrome on amd64 and Debian's
-Chromium on arm64. To use Chromium on every platform, build the image
-with:
+Every machine runs `agent-runtime:0.4`. It has a browser and the
+coding toolchains. The image installs Google Chrome on amd64 and
+Debian's Chromium on arm64. To use Chromium on every platform, build
+the image with:
 
 ```text
-docker build --build-arg BROWSER=chromium --tag agent-runtime:0.3 runtime/
+docker build --build-arg BROWSER=chromium --tag agent-runtime:0.4 runtime/
 ```
 
 ## Where the state lives
 
-`STATE_ROOT` in `.env` is an absolute path on this machine. The
+`STATE_ROOT` in `.env` is an absolute path on this host. The
 stack keeps everything under it. Each directory is mounted into the
 container that uses it. The stack creates no named Docker volume.
 
 - `postgres/` is the database
-- `workspaces/` holds one directory per agent, mounted at
-  `/home/agent` in its sandbox
+- `workspaces/` holds each machine's directory, mounted at `/home`
+  in the machine's container, with one home per agent on it
+  (`workspaces/<machine id>/<agent id>`, `/home/<agent id>` inside)
 - `attachments/` holds images uploaded in chat
 - `notes/` is the notes vault
 - `opensandbox/` is the sandbox server's store
 - `connectors/` holds connector packages installed from a registry
 
 The path must be absolute because the sandbox server mounts each
-agent's workspace by that same path.
+machine's directory by that same path.
 
 Everything the box knows is this tree plus `.env`.
 
@@ -61,12 +58,56 @@ docker compose up --detach --wait --build
 ```
 
 `./setup.sh` keeps every value already in `.env`. It rebuilds the
-agent images, so a change under `runtime/` reaches the next sandbox.
+agent image, so a change under `runtime/` reaches the next machine
+container.
 
 `--build` rebuilds the orchestrator image from the checkout.
 
 The server applies new database migrations at boot, before it
 listens ([Orchestrator](../architecture/orchestrator.md)).
+
+### Upgrade a box whose agents run in sandboxes of their own
+
+Upgrading such a box places its agents on machines. The upgrade is
+not backward compatible. [Back up](#back-up) first, then:
+
+1. Pull and run `./setup.sh`. It builds `agent-runtime:0.4`. A
+   `.env` that sets `SANDBOX_IMAGE` must name `agent-runtime:0.4`
+   or an image built from this `runtime/`. Nothing reads
+   `SANDBOX_IMAGE_LITE`; remove it from `.env`.
+2. Start the stack with `--build`. Migration 0004 places every
+   agent on a machine:
+   - Each organisation gets a `standard` machine named `default`.
+     It holds every agent with neither browser nor coding, 32 at
+     most per machine (`default-2`, `default-3`… for the rest).
+   - Every other agent gets a machine of its own, named after it,
+     with the tier and size its configuration held.
+   - A machine's disk cap is 10240 MiB, or its agents' measured
+     use plus 1024 MiB when that is larger.
+   - It removes the tier and size from agent configurations and
+     active run snapshots.
+3. Before generation starts, the server destroys every sandbox
+   labelled with an `agent_id`. It moves each
+   `WORKSPACE_ROOT/<agent id>` into
+   `WORKSPACE_ROOT/<machine id>/<agent id>`. Repositories, scripts,
+   and the `.browser` profile with its logins move with it.
+4. Reinstall the tools an agent installed in its home with
+   `/home/agent` written into them: Python virtualenvs, mise
+   installs, and npm installs. The home is `/home/<agent id>`. Run
+   the install again from the agent's CLI tab, or let the agent run
+   it.
+5. Update API clients and editions to the machine API. Agent create
+   takes `machine_id`, required when the organisation has more than
+   one machine. Agent payloads carry `machine_id` and `machine`. A
+   machine holds the tier and size
+   ([Machines](../concepts/guilds-and-agents.md#machines)). An
+   edition's `SandboxProvider`, `GenerationSandboxes`, and
+   `machineHost` are keyed by machine
+   ([Extension points](../architecture/extension-points.md)).
+
+To share machines, move agents onto one under each agent's
+**Settings**, **Machine**, and delete the machines left empty under
+**Settings**, **Machines**.
 
 ## Back up
 
@@ -113,7 +154,7 @@ docker compose start orchestrator
 ## Run setup.sh again
 
 `./setup.sh` is safe to run again. It keeps every value `.env`
-already has, and it rebuilds the agent images.
+already has, and it rebuilds the agent image.
 
 It refuses to generate a new secret when `STATE_ROOT/postgres`
 already holds a database. That database was created with values only
@@ -203,7 +244,7 @@ monitor outside the box can poll it.
 | Message | Cause |
 |---|---|
 | `run ./setup.sh first, which writes it into .env` | `docker compose` found no `.env`, or one without `STATE_ROOT`, `SECRETS_MASTER_KEY`, `POSTGRES_PASSWORD`, or `OPENSANDBOX_API_KEY` |
-| `STATE_ROOT must be an absolute path` | `.env` names a relative path. The sandbox server mounts workspaces by the absolute one |
+| `STATE_ROOT must be an absolute path` | `.env` names a relative path. The sandbox server mounts machine directories by the absolute one |
 | `… already holds a database, and .env has no …` | `./setup.sh` would generate a secret over a database created with another one. Put that database's values into `.env`, or point `STATE_ROOT` at an empty directory |
 | `SECRETS_MASTER_KEY is the all-zero development key: set 32 random bytes` | The server refuses the development key outside the development stack ([Security register](../architecture/security-register.md), SEC-14) |
 | `SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)` | The key is not 32 bytes |
@@ -215,6 +256,10 @@ monitor outside the box can poll it.
 | Model keys answers `<Provider> rejected the key` or `did not accept the key` | The provider refused `GET /models` with that key. Nothing was saved ([Model keys](../concepts/model-keys.md#the-key-check)) |
 | The picker lists a model under `Not offered` | The agent's stored model is no longer among the organisation's chosen models. It still runs while the provider's key is connected ([Model keys](../concepts/model-keys.md#choose-models)) |
 | Model keys cannot browse a provider's catalog, or lists stale models | The box could not fetch models.dev. It serves its last catalog or the snapshot it ships with ([Configure](configure.md#model-catalog)) |
+| A run fails at start with `workspace.full` | The agent's home is over its `max_workspace_mib` (or `WORKSPACE_MAX_MIB`), or its machine's directory is over the machine's cap. The message names which. Free space from the CLI tab, or raise the cap in the agent's Settings or under **Settings**, **Machines** |
+| `coding needs a code or custom machine` | Coding is on for an agent placed on a `standard` machine. Resize the machine under **Settings**, **Machines**, or move the agent |
+| `machine_id is required: the organisation has more than one machine` | An agent create named no machine while the organisation has several |
+| `machine … is full` | The machine already holds 32 agents, or the policy's agents-per-machine cap |
 | Stored credentials fail to decrypt after a restore | The restore runs under a different `SECRETS_MASTER_KEY` than the one the data was written with |
 
 The orchestrator container restarts on its own

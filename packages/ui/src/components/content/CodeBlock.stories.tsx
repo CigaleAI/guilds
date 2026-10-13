@@ -51,7 +51,7 @@ export const PythonFile: Story = {
       </div>
       <CodeBlock code={script} language="python" lineNumbers className="rounded-none" />
       <div className="flex justify-between px-4 py-2.5 font-mono text-2xs text-muted">
-        <span>/home/agent/scripts/score_posts.py</span>
+        <span>/home/a_01JZ7K3M4N5P6Q7R8S9T0V1W2X/scripts/score_posts.py</span>
         <span>python · sandboxed in scout's workspace</span>
       </div>
     </div>

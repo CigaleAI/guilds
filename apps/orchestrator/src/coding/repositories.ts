@@ -1,6 +1,7 @@
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
+import { agentHome } from "../lib/agent-file.js";
 
 export const REPOSITORY_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 /** The branch a repository without a GitHub connection is recorded with when none is given. */
@@ -174,11 +175,14 @@ export function githubLoginItem(row: Record<string, unknown>): Record<string, un
   };
 }
 
-/** State's `repositories`: where each guild repository sits in the workspace. */
-export function stateRepositories(rows: Array<Record<string, unknown>>): Array<Record<string, string>> {
+/** State's `repositories`: where each guild repository sits in the agent's home. */
+export function stateRepositories(
+  rows: Array<Record<string, unknown>>,
+  agentId: string,
+): Array<Record<string, string>> {
   return rows.map((row) => ({
     name: String(row.name),
-    path: `/home/agent/repos/${String(row.name)}`,
+    path: `${agentHome(agentId)}/repos/${String(row.name)}`,
     default_branch: String(row.default_branch),
   }));
 }

@@ -63,7 +63,7 @@ function defaultAccess(owner: AccessOwner, manager: boolean): SecretAccessChoice
 }
 
 /**
- * Values set as environment variables in agents' sandboxes. Each secret belongs to the
+ * Values that reach agents' commands as environment variables. Each secret belongs to the
  * organisation under one name; its access says which agents get it.
  */
 export function AccessSecrets({ owner }: { owner: AccessOwner }) {
@@ -150,7 +150,8 @@ export function AccessSecrets({ owner }: { owner: AccessOwner }) {
       <div className="mx-auto flex max-w-240 flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <p className="min-w-60 flex-1 text-sm text-fg-2">
-            {copy.lead} Agents see names and descriptions; values stay with the orchestrator.
+            {copy.lead} Values reach the agents' commands; other agents on the same machine can read
+            them.
           </p>
           {secrets.data?.length ? addButton : null}
         </div>

@@ -65,10 +65,10 @@ function workspace(): string {
   return dir;
 }
 
-test("readSecretFile reads one value under /home/agent and strips one trailing newline", async () => {
+test("readSecretFile reads one value in the agent's home and strips one trailing newline", async () => {
   const dir = workspace();
   writeFileSync(path.join(dir, "key.txt"), "sk-live-123\n\n");
-  const read = await readSecretFile(dir, "/home/agent/key.txt");
+  const read = await readSecretFile(dir, "/home/a_1/key.txt");
   assert.equal(read.value, "sk-live-123\n");
   assert.equal(read.path, path.join(dir, "key.txt"));
   writeFileSync(path.join(dir, "crlf.txt"), "abc\r\n");
@@ -87,8 +87,9 @@ test("readSecretFile refuses paths out of the workspace, links out of it, and ba
   writeFileSync(path.join(dir, "nul.txt"), "a\0b");
   writeFileSync(path.join(dir, "empty.txt"), "\n");
   const cases: Array<[string, RegExp]> = [
-    ["/etc/passwd", /under \/home\/agent/],
-    ["../host.env", /under \/home\/agent/],
+    ["/etc/passwd", /under \/home\/a_1/],
+    ["/home/a_2/key.txt", /under \/home\/a_1/],
+    ["../host.env", /under \/home\/a_1/],
     ["link.txt", /not a link out of it/],
     ["sub/up/host.env", /not a link out of it/],
     ["missing.txt", /file not found/],
@@ -229,7 +230,7 @@ test("secret_request is offered on direct runs only; secret_store on every run",
   assert.deepEqual(offeredToolNames(names, {}), ["secret_store", "group_post", "report_issue"]);
 });
 
-test("the generation's secret store removes the value file and refreshes the agent's sandbox", async () => {
+test("the generation's secret store removes the value file and resyncs the agent's active runs", async () => {
   const secrets = new SecretsDb();
   const db = Object.assign(new FakeDB({ secrets: [] }), {
     getSecretByName: secrets.getSecretByName.bind(secrets),
@@ -238,18 +239,18 @@ test("the generation's secret store removes the value file and refreshes the age
     updateSecret: secrets.updateSecret.bind(secrets),
   });
   const root = tempDir("guilds-secret-loop-");
-  mkdirSync(path.join(root, "a_1"), { recursive: true });
-  const file = path.join(root, "a_1", "key.txt");
+  mkdirSync(path.join(root, "mach_1", "a_1"), { recursive: true });
+  const file = path.join(root, "mach_1", "a_1", "key.txt");
   writeFileSync(file, "sk-live-777\n");
   const sandboxes = new FakeSandboxes();
-  sandboxes.running.add("a_1");
+  sandboxes.running.add("mach_1");
   const loop = makeLoop(db, {}, root, sandboxes);
   const store = (loop as unknown as { agentSecretStore(agent: Record<string, unknown>): AgentSecretStore }).agentSecretStore(
     db.agent,
   );
-  const stored = await store.store({ name: "ACME_KEY", description: "Calls Acme", file: "/home/agent/key.txt" });
+  const stored = await store.store({ name: "ACME_KEY", description: "Calls Acme", file: "/home/a_1/key.txt" });
   assert.deepEqual(stored, { name: "ACME_KEY", rotated: false, value: "sk-live-777" });
   assert.equal(existsSync(file), false);
   assert.equal(secrets.rows[0]?.name, "ACME_KEY");
-  assert.deepEqual(sandboxes.destroyed, ["a_1"]);
+  assert.deepEqual(sandboxes.destroyed, [], "a secret reaches commands, never the container");
 });

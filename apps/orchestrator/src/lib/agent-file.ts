@@ -2,7 +2,15 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 
-export const AGENT_HOME = "/home/agent";
+/** An agent's home inside its machine, where its host directory is mounted. */
+export function agentHome(agentId: string): string {
+  return `/home/${agentId}`;
+}
+
+/** The home of the agent whose host directory this is: the directory is named after the agent. */
+export function homeOfDirectory(workspaceDir: string): string {
+  return agentHome(path.basename(path.resolve(workspaceDir)));
+}
 
 /**
  * Why a path an agent named cannot be used: it leaves the workspace (lexically or through a
@@ -23,32 +31,39 @@ export class AgentFileError extends Error {
   }
 }
 
+/**
+ * A path an agent named, on the host: absolute under its home, or relative to it. `workspaceDir`
+ * is the agent's host directory.
+ */
 export function resolveAgentFilePath(workspaceDir: string, filePath: string): string {
+  const home = homeOfDirectory(workspaceDir);
   let relative = filePath.trim();
   if (!relative) {
     throw new AgentFileError("file_path is required");
   }
-  if (relative === AGENT_HOME || relative.startsWith(`${AGENT_HOME}/`)) {
-    relative = relative.slice(AGENT_HOME.length).replace(/^\/+/, "");
+  if (relative === home || relative.startsWith(`${home}/`)) {
+    relative = relative.slice(home.length).replace(/^\/+/, "");
   }
   if (path.isAbsolute(relative)) {
-    throw new AgentFileError("file_path must be under /home/agent");
+    throw new AgentFileError(`file_path must be under ${home}`);
   }
   const root = path.resolve(workspaceDir);
   const resolved = path.resolve(root, relative);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new AgentFileError("file_path must be under /home/agent");
+    throw new AgentFileError(`file_path must be under ${home}`);
   }
   return resolved;
 }
 
+/** A host path in the agent's directory as the agent sees it, under its home. */
 export function agentDisplayPath(workspaceDir: string, resolved: string): string {
+  const home = homeOfDirectory(workspaceDir);
   const root = path.resolve(workspaceDir);
   const rel = path.relative(root, resolved);
   if (!rel || rel === ".") {
-    return AGENT_HOME;
+    return home;
   }
-  return `${AGENT_HOME}/${rel.split(path.sep).join("/")}`;
+  return `${home}/${rel.split(path.sep).join("/")}`;
 }
 
 function inside(root: string, candidate: string): boolean {
@@ -59,11 +74,17 @@ function sameFile(left: { dev: number; ino: number }, right: { dev: number; ino:
   return left.dev === right.dev && left.ino === right.ino;
 }
 
-const LINK_OUT = "file_path must be under /home/agent, not a link out of it";
+function linkOut(workspaceDir: string): string {
+  return `file_path must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`;
+}
+
+function throughFolders(workspaceDir: string): string {
+  return `file_path must be under ${homeOfDirectory(workspaceDir)} through folders, not links`;
+}
 
 /**
  * Reads a file an agent named in its workspace. The workspace is the agent's folder on this
- * machine, which its sandbox mounts at /home/agent, so a link the agent planted there resolves
+ * host, which its machine mounts at /home/<agent id>, so a link the agent planted there resolves
  * against the orchestrator's filesystem when the orchestrator opens it. The path therefore has to
  * stay in the workspace once every link is followed, and name a regular file; it is opened without
  * following a link and without blocking, and must still be the file that was checked.
@@ -81,7 +102,7 @@ export async function readAgentFile(
     throw new AgentFileError("file_path was not found in the agent workspace", "missing");
   }
   if (!inside(await realpath(workspaceDir), real)) {
-    throw new AgentFileError(LINK_OUT);
+    throw new AgentFileError(linkOut(workspaceDir));
   }
   const checked = await lstat(real);
   if (!checked.isFile()) {
@@ -91,12 +112,12 @@ export async function readAgentFile(
   try {
     handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch {
-    throw new AgentFileError(LINK_OUT);
+    throw new AgentFileError(linkOut(workspaceDir));
   }
   try {
     const info = await handle.stat();
     if (!info.isFile() || !sameFile(info, checked)) {
-      throw new AgentFileError(LINK_OUT);
+      throw new AgentFileError(linkOut(workspaceDir));
     }
     if (info.size > options.maxBytes) {
       throw new AgentFileError(`file_path is larger than ${options.maxBytes} bytes`, "too_large", info.size);
@@ -148,10 +169,10 @@ export async function writeAgentFile(workspaceDir: string, filePath: string, byt
       });
       const made = await lstat(current);
       if (!made.isDirectory()) {
-        throw new AgentFileError("file_path must be under /home/agent through folders, not links");
+        throw new AgentFileError(throughFolders(workspaceDir));
       }
     } else if (!found.isDirectory()) {
-      throw new AgentFileError("file_path must be under /home/agent through folders, not links");
+      throw new AgentFileError(throughFolders(workspaceDir));
     }
   }
   const target = path.join(current, name);

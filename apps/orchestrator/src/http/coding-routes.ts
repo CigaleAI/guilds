@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { installationIdOf, RepositoryAccessError } from "../coding/git.js";
 import {
   DEFAULT_BRANCH,
@@ -29,19 +29,7 @@ import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
 import { ownedGuild, ownedRun } from "./items.js";
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Record<string, string>)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
-}
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
-}
+import { bodyOf, param } from "./request.js";
 
 function proxyUrl(): string {
   return process.env.ADAPTER_PROXY_URL ?? "";

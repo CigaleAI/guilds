@@ -12,7 +12,9 @@ import {
 import type {
   ApplyConnectionChoice,
   ApplyInstall,
+  ApplyPreview,
   ApplySetup,
+  OrgModels,
   PlannedConnection,
 } from "../../api/types";
 import { hasConnectedProvider } from "../../api/types";
@@ -32,6 +34,7 @@ import {
   Icon,
   Tag,
 } from "@guildsrun/ui";
+import { ApplyMachinePicker } from "./ApplyMachinePicker";
 import { isRecipeApproved, planFromRecipe } from "./plan/planModel";
 import { PlanView } from "./plan/PlanView";
 
@@ -44,6 +47,21 @@ function defaultLogin(connection: PlannedConnection): string {
     : connectLater;
 }
 
+/** What keeps the guild from being created, first thing first; null when nothing does. */
+function blockingReason(checks: {
+  approved: boolean;
+  noProvider: boolean;
+  missingModel: boolean;
+  preview: ApplyPreview;
+}): string | null {
+  const reasons: Array<[boolean, string]> = [
+    [!checks.approved, "Approve this recipe before applying it."],
+    [checks.noProvider, "Connect a model provider on Model keys before applying."],
+    [checks.missingModel, "Choose a model for each agent."],
+  ];
+  return reasons.find(([applies]) => applies)?.[1] ?? checks.preview.errors[0]?.message ?? null;
+}
+
 function choiceOf(connection: PlannedConnection, login: string): ApplyConnectionChoice {
   return {
     server: connection.server,
@@ -54,16 +72,17 @@ function choiceOf(connection: PlannedConnection, login: string): ApplyConnection
 }
 
 /**
- * What applying an approved recipe creates, before anything is written: the new guild's name, each
- * agent's name and model, and for each connector a live login to reuse or one to connect
- * afterwards.
+ * What applying an approved recipe creates, before anything is written: the new guild's name, the
+ * machine every agent goes on, each agent's name and model, and for each connector a live login to
+ * reuse or one to connect afterwards.
  */
 export function ApplyPreviewPage() {
   const { recipeId } = useParams({ from: "/recipes/$recipeId/apply" });
   const navigate = useNavigate();
   const { org } = useIdentity();
   const recipe = useRecipe(recipeId);
-  const preview = useRecipePreview(recipeId, recipe.data?.body_version);
+  const [machineId, setMachineId] = useState<string | undefined>(undefined);
+  const preview = useRecipePreview(recipeId, recipe.data?.body_version, machineId);
   const orgModels = useOrgModels(org.id);
   const applyRecipe = useApplyRecipe(recipeId);
   const [guildName, setGuildName] = useState<string | null>(null);
@@ -95,13 +114,7 @@ export function ApplyPreviewPage() {
     models[role] ?? data.models.find((item) => item.role === role)?.model ?? "";
   const noProvider = hasConnectedProvider(orgModels.data) === false;
   const missingModel = creates.agents.some((agent) => !modelOf(agent.role));
-  const blockedBy = !approved
-    ? "Approve this recipe before applying it."
-    : noProvider
-      ? "Connect a model provider on Model keys before applying."
-      : missingModel
-        ? "Choose a model for each agent."
-        : (data.errors[0]?.message ?? null);
+  const blockedBy = blockingReason({ approved, noProvider, missingModel, preview: data });
   const plan = planFromRecipe(recipe.data.body, {
     creates,
     connections: planned,
@@ -121,6 +134,7 @@ export function ApplyPreviewPage() {
         })),
         models: creates.agents.map((agent) => ({ role: agent.role, model: modelOf(agent.role) })),
         connections: planned.map((connection) => choiceOf(connection, loginOf(connection))),
+        ...(data.machine_id ? { machine_id: data.machine_id } : {}),
       },
       {
         onSuccess: (row) => {
@@ -153,7 +167,7 @@ export function ApplyPreviewPage() {
             </div>
             <Button
               size="md"
-              disabled={blockedBy !== null || applyRecipe.isPending}
+              disabled={blockedBy !== null || applyRecipe.isPending || preview.isPlaceholderData}
               onClick={create}
             >
               <Icon icon={Rocket} size={14} />
@@ -162,19 +176,7 @@ export function ApplyPreviewPage() {
           </div>
         </header>
 
-        {blockedBy ? (
-          <Banner tone="error" title="Not ready to apply">
-            {blockedBy}
-          </Banner>
-        ) : (
-          <div className="flex items-center gap-3 rounded-xl bg-t-tide px-4 py-3 text-t-tide-fg">
-            <Icon icon={CircleCheck} size={18} />
-            <span className="text-sm">
-              The recipe is approved and checks out. Create the guild, then connect any remaining
-              logins.
-            </span>
-          </div>
-        )}
+        <Readiness blockedBy={blockedBy} />
 
         {data.installs.length ? (
           <Installs installs={data.installs} onInstalled={() => void preview.refetch()} />
@@ -192,71 +194,135 @@ export function ApplyPreviewPage() {
           onChange={(event) => setGuildName(event.currentTarget.value)}
         />
 
+        <ApplyMachinePicker preview={data} onChange={setMachineId} />
+
         <PlanView
           plan={plan}
           findings={data.findings}
           hideEmpty
-          agentExtras={(agent) => {
-            const name = nameOf(agent.role, agent.name);
-            const recommended = data.models.find((item) => item.role === agent.role)?.recommended;
-            return (
-              <div className="grid gap-3 md:grid-cols-2">
-                <TextField
-                  tone="paper"
-                  label="Agent name"
-                  value={name}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    setNames((current) => ({ ...current, [agent.role]: value }));
-                  }}
-                  {...(data.collisions.includes(name.trim())
-                    ? { error: "An agent already has this name. Rename it before creating." }
-                    : {})}
-                />
-                {noProvider ? null : (
-                  <Select
-                    tone="paper"
-                    label="Model"
-                    placeholder="Choose a model"
-                    value={modelOf(agent.role)}
-                    onValueChange={(value) =>
-                      setModels((current) => ({ ...current, [agent.role]: value }))
-                    }
-                    options={modelOptions(orgModels.data, {
-                      current: modelOf(agent.role),
-                      coding: agent.coding,
-                    })}
-                    hint={recommended ? `The recipe recommends ${recommended}.` : undefined}
-                    {...(modelOf(agent.role) ? {} : { error: "Choose a model." })}
-                  />
-                )}
-              </div>
-            );
-          }}
+          agentExtras={(agent) => (
+            <AgentChoices
+              name={nameOf(agent.role, agent.name)}
+              onName={(value) => setNames((current) => ({ ...current, [agent.role]: value }))}
+              collides={data.collisions.includes(nameOf(agent.role, agent.name).trim())}
+              model={noProvider ? null : modelOf(agent.role)}
+              onModel={(value) => setModels((current) => ({ ...current, [agent.role]: value }))}
+              recommended={
+                data.models.find((item) => item.role === agent.role)?.recommended ?? null
+              }
+              coding={agent.coding}
+              orgModels={orgModels.data}
+            />
+          )}
           connectionExtras={(server) => {
             const connection = planned.find((item) => item.server === server);
-            if (!connection) return null;
-            return (
-              <Select
-                tone="paper"
-                label="Login"
+            return connection ? (
+              <LoginSelect
+                connection={connection}
                 value={loginOf(connection)}
-                onValueChange={(value) =>
+                onChange={(value) =>
                   setLogins((current) => ({ ...current, [connection.server]: value }))
                 }
-                options={[
-                  ...connection.reusable.map((login) => ({
-                    value: login.id,
-                    label: `Reuse the ${login.owner_scope} login`,
-                  })),
-                  { value: connectLater, label: "Connect after the guild exists" },
-                ]}
               />
-            );
+            ) : null;
           }}
         />
       </div>
     </div>
+  );
+}
+
+/** What keeps the guild from being created, or that it is ready. */
+function Readiness({ blockedBy }: { blockedBy: string | null }) {
+  if (blockedBy) {
+    return (
+      <Banner tone="error" title="Not ready to apply">
+        {blockedBy}
+      </Banner>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-t-tide px-4 py-3 text-t-tide-fg">
+      <Icon icon={CircleCheck} size={18} />
+      <span className="text-sm">
+        The recipe is approved and checks out. Create the guild, then connect any remaining logins.
+      </span>
+    </div>
+  );
+}
+
+/** An agent's name and model before apply; no model picker while no provider is connected. */
+function AgentChoices({
+  name,
+  onName,
+  collides,
+  model,
+  onModel,
+  recommended,
+  coding,
+  orgModels,
+}: {
+  name: string;
+  onName: (name: string) => void;
+  collides: boolean;
+  /** Null hides the model picker. */
+  model: string | null;
+  onModel: (model: string) => void;
+  recommended: string | null;
+  coding: boolean;
+  orgModels: OrgModels | undefined;
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <TextField
+        tone="paper"
+        label="Agent name"
+        value={name}
+        onChange={(event) => onName(event.currentTarget.value)}
+        {...(collides
+          ? { error: "An agent already has this name. Rename it before creating." }
+          : {})}
+      />
+      {model === null ? null : (
+        <Select
+          tone="paper"
+          label="Model"
+          placeholder="Choose a model"
+          value={model}
+          onValueChange={onModel}
+          options={modelOptions(orgModels, { current: model, coding })}
+          hint={recommended ? `The recipe recommends ${recommended}.` : undefined}
+          {...(model ? {} : { error: "Choose a model." })}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The login apply gives a connector: a live one to reuse, or one to connect afterwards. */
+function LoginSelect({
+  connection,
+  value,
+  onChange,
+}: {
+  connection: PlannedConnection;
+  value: string;
+  onChange: (login: string) => void;
+}) {
+  return (
+    <Select
+      tone="paper"
+      label="Login"
+      value={value}
+      onValueChange={onChange}
+      options={[
+        ...connection.reusable.map((login) => ({
+          value: login.id,
+          label: `Reuse the ${login.owner_scope} login`,
+        })),
+        { value: connectLater, label: "Connect after the guild exists" },
+      ]}
+    />
   );
 }
 
@@ -321,51 +387,23 @@ function Installs({
         {installs.map((item) => (
           <li key={item.server} className="flex flex-wrap items-center gap-2 text-sm">
             {item.from === "registry" ? (
-              <>
-                <span className="min-w-0 flex-1 text-fg-2">
-                  Install <span className="font-mono">{item.server}</span> v{item.version} from the
-                  registry{" "}
-                  {!item.verified ? (
-                    <Tag tone="ochre" font="sans">
-                      unverified
-                    </Tag>
-                  ) : null}
-                </span>
-                {user.platform_admin ? (
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      item.verified
-                        ? void fromRegistry(item.server, true).catch(() => undefined)
-                        : setConfirming(item.server)
-                    }
-                  >
-                    Install
-                  </Button>
-                ) : (
-                  <span className="text-xs text-muted">
-                    An instance admin installs it under Admin → Connector catalog.
-                  </span>
-                )}
-              </>
+              <RegistryInstall
+                item={item}
+                canInstall={user.platform_admin}
+                busy={busy}
+                onInstall={() =>
+                  item.verified
+                    ? void fromRegistry(item.server, true).catch(() => undefined)
+                    : setConfirming(item.server)
+                }
+              />
             ) : (
-              <>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-fg-2">
-                    Add {item.display_name} (<span className="font-mono">{item.server}</span>) as
-                    this organisation's server
-                  </span>
-                  <span className="truncate font-mono text-xs text-muted">{item.url}</span>
-                </span>
-                {canAdd ? (
-                  <Button size="sm" disabled={busy} onClick={() => fromRecipe(item)}>
-                    Add server
-                  </Button>
-                ) : (
-                  <span className="text-xs text-muted">An owner or admin adds it.</span>
-                )}
-              </>
+              <RecipeInstall
+                item={item}
+                canAdd={canAdd}
+                busy={busy}
+                onAdd={() => fromRecipe(item)}
+              />
             )}
           </li>
         ))}
@@ -379,6 +417,73 @@ function Installs({
         onConfirm={() => (confirming ? fromRegistry(confirming, false) : undefined)}
       />
     </section>
+  );
+}
+
+/** A registry connector to install; an instance admin installs it. */
+function RegistryInstall({
+  item,
+  canInstall,
+  busy,
+  onInstall,
+}: {
+  item: Extract<ApplyInstall, { from: "registry" }>;
+  canInstall: boolean;
+  busy: boolean;
+  onInstall: () => void;
+}) {
+  return (
+    <>
+      <span className="min-w-0 flex-1 text-fg-2">
+        Install <span className="font-mono">{item.server}</span> v{item.version} from the registry{" "}
+        {!item.verified ? (
+          <Tag tone="ochre" font="sans">
+            unverified
+          </Tag>
+        ) : null}
+      </span>
+      {canInstall ? (
+        <Button size="sm" disabled={busy} onClick={onInstall}>
+          Install
+        </Button>
+      ) : (
+        <span className="text-xs text-muted">
+          An instance admin installs it under Admin → Connector catalog.
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The recipe's own remote server, to add as the organisation's; an owner or admin adds it. */
+function RecipeInstall({
+  item,
+  canAdd,
+  busy,
+  onAdd,
+}: {
+  item: Extract<ApplyInstall, { from: "recipe" }>;
+  canAdd: boolean;
+  busy: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-fg-2">
+          Add {item.display_name} (<span className="font-mono">{item.server}</span>) as this
+          organisation's server
+        </span>
+        <span className="truncate font-mono text-xs text-muted">{item.url}</span>
+      </span>
+      {canAdd ? (
+        <Button size="sm" disabled={busy} onClick={onAdd}>
+          Add server
+        </Button>
+      ) : (
+        <span className="text-xs text-muted">An owner or admin adds it.</span>
+      )}
+    </>
   );
 }
 

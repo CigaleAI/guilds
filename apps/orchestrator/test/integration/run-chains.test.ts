@@ -17,6 +17,7 @@ import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { FakeSandboxes } from "../helpers/generation.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { codeDefaultMachine } from "../helpers/machines.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -104,6 +105,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     coding: true,
     thinking_level: "none",
   };
+  await codeDefaultMachine(app, headers);
   const agent = await app.inject({
     method: "POST",
     url: `/api/guilds/${String(guild.json().id)}/agents`,

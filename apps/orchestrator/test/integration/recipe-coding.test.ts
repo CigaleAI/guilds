@@ -14,6 +14,7 @@ import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { codeDefaultMachine } from "../helpers/machines.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const dbName = uniqueDbName("agent_platform_recipe_coding");
@@ -47,6 +48,7 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
     const source = await call("POST", "/api/guilds", { name: "code-source" });
     assert.equal(source.statusCode, 201, source.body);
     const sourceId = String(source.json().id);
+    await codeDefaultMachine(app, AUTH);
     const agent = await call("POST", `/api/guilds/${sourceId}/agents`, {
       name: "coder",
       config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true },

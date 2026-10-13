@@ -58,12 +58,13 @@ API:
 - copy
 - create
 
-`create_file` takes `file_path` under `/home/agent`. The
+`create_file` takes `file_path` under the agent's home,
+`/home/<agent id>`. The
 orchestrator reads the file.
 
 `download_file_content` writes that path and returns it. It does not
 return file bytes. Both follow the
-[workspace file rules](../concepts/secrets-and-access.md#agent-workspace-files).
+[home file rules](../concepts/secrets-and-access.md#agent-home-files).
 
 Small UTF-8 text may use `textContent`. Create and copy stay off
 until the operator enables them. Official Drive MCP has no delete.

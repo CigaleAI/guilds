@@ -78,6 +78,7 @@ test(
       });
       assert.equal(created.statusCode, 201, created.body);
       const agentId = String(created.json().id);
+      const machineId = String(created.json().machine_id);
 
       const asleep = await app.inject({
         method: "GET",
@@ -94,10 +95,10 @@ test(
       });
       assert.equal(started.statusCode, 200, started.body);
       assert.deepEqual(started.json(), { status: "ready" });
-      assert.ok(sandboxes.running.has(agentId));
-      assert.equal(sandboxes.browserFlags[agentId], false);
+      assert.ok(sandboxes.running.has(machineId));
+      assert.deepEqual(sandboxes.browserStarts, []);
       assert.equal(sandboxes.cliStarts, 1);
-      assert.ok(generation._idle_tasks.has(agentId));
+      assert.ok(generation._idle_tasks.has(machineId));
 
       const page = await app.inject({
         method: "GET",
@@ -120,7 +121,7 @@ test(
       await app.listen({ host: "127.0.0.1", port: 0 });
       const address = app.server.address();
       const port = typeof address === "object" && address ? address.port : 0;
-      const armed = generation._idle_tasks.get(agentId);
+      const armed = generation._idle_tasks.get(machineId);
       const socket = await openWs(
         `ws://127.0.0.1:${port}/api/agents/${agentId}/cli/tty/ws`,
         AUTH,
@@ -131,7 +132,8 @@ test(
         socket.send('{"AuthToken":"x","columns":80,"rows":24}');
         const echoed = await wsRecv(socket);
         assert.equal(echoed.text, 'echo-text:{"AuthToken":"x","columns":80,"rows":24}');
-        const restarted = generation._idle_tasks.get(agentId);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const restarted = generation._idle_tasks.get(machineId);
         assert.ok(restarted);
         assert.notEqual(restarted, armed, "operator input restarts the idle timer");
       } finally {
@@ -152,14 +154,11 @@ test(
         headers: AUTH,
       });
       assert.equal(startedBrowser.statusCode, 200, startedBrowser.body);
-      assert.equal(
-        sandboxes.browserFlags[browserId],
-        true,
-        "a browser agent wakes its browser sandbox",
-      );
+      assert.deepEqual(sandboxes.browserStarts, [], "the CLI tab starts no Chrome");
+      assert.equal(browserAgent.json().machine_id, machineId, "both agents share the organisation's machine");
     } finally {
-      for (const agentId of [...generation._idle_tasks.keys()]) {
-        generation._cancel_idle(agentId);
+      for (const id of [...generation._idle_tasks.keys()]) {
+        generation._cancel_idle(id);
       }
       try {
         app.server.closeAllConnections();

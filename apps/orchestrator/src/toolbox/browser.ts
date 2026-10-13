@@ -22,8 +22,13 @@ export function encodeSpec(spec: Record<string, unknown>): string {
   return `python3 ${HELPER} ${blob}`;
 }
 
+/** Runs one helper op against the agent's own Chrome, which starts first when it is not up. */
 async function run(ctx: ToolContext, spec: Record<string, unknown>): Promise<string> {
-  return runCommand(ctx, encodeSpec(spec), { timeoutSeconds: BROWSER_TIMEOUT_SECONDS });
+  if (ctx.ensure_browser) {
+    await ctx.ensure_browser();
+  }
+  const request = ctx.cdp_port === null ? spec : { ...spec, cdp_port: ctx.cdp_port };
+  return runCommand(ctx, encodeSpec(request), { timeoutSeconds: BROWSER_TIMEOUT_SECONDS });
 }
 
 function tool(
@@ -45,7 +50,7 @@ function tool(
 
 export const browserNavigate = tool(
   "browser_navigate",
-  "Navigate the sandbox Chromium tab to a URL. Call browser_snapshot " +
+  "Navigate your Chromium tab to a URL. Call browser_snapshot " +
     "afterward to read the page and pick locators.",
   { url: { type: "string" } },
   ["url"],
@@ -112,7 +117,7 @@ export const browserScroll = tool(
 
 export const browserScreenshot = tool(
   "browser_screenshot",
-  "Save a JPEG of the current page to /home/agent/screenshots/latest.jpg " +
+  "Save a JPEG of the current page to screenshots/latest.jpg in your home " +
     "and return that path.",
   {},
   [],

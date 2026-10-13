@@ -1,18 +1,11 @@
-import {
-  Bookmark,
-  Code2,
-  Feather,
-  FileCode,
-  Globe,
-  SlidersHorizontal,
-  SquareTerminal,
-  type LucideIcon,
-} from "lucide-react";
+import { Bookmark, Code2, FileCode, Globe, SquareTerminal, type LucideIcon } from "lucide-react";
 import { useOrgModels } from "../../../api/queries";
-import type { AgentConfig, Box, OrgModels, ThinkingLevel } from "../../../api/types";
-import { customBoxBounds, isCodingOnlyModel } from "../../../api/types";
+import type { AgentConfig, Machine, MachineRef, OrgModels, ThinkingLevel } from "../../../api/types";
+import { isCodingOnlyModel } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
-import { cn, FormField, Icon, Select, Slider, TextField } from "@guildsrun/ui";
+import { cn, Icon, Select, Slider, TextField } from "@guildsrun/ui";
+import { chosenMachine, machineAllowsCoding } from "../../machines/machines";
+import { StandardMachineNote } from "../../machines/MachineNotes";
 import { modelLimits, modelOptions, modelProviderConnected, providerLabel } from "../../models/models";
 import { ModelKeysLink } from "../../settings/ModelKeysLink";
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
@@ -33,7 +26,6 @@ export const defaultAgentConfig: AgentConfig = {
   scripting: true,
   memory: true,
   thinking_level: "none",
-  box: "lite",
 };
 
 /** The step and tool-call budgets a new coding agent starts with, as the server defaults them. */
@@ -113,15 +105,13 @@ function languageOptions(current: string) {
   return [{ value: current, label: current }, ...browserLanguageOptions];
 }
 
-/** A model config as a form edits it: numbers stay text while typed. */
+/** A model config and the agent's machine as a form edits them: numbers stay text while typed. */
 export type ConfigForm = {
   model: string;
   thinking: ThinkingLevel;
   temperature: string;
-  box: Box;
-  /** A custom box's size, as typed; empty on the other boxes. */
-  cpu: string;
-  memory_mib: string;
+  /** The machine the agent goes on; empty until one is picked among several. */
+  machine_id: string;
   cli: boolean;
   browser: boolean;
   browser_language: string;
@@ -134,23 +124,24 @@ export type ConfigForm = {
 
 export type ConfigErrors = Partial<
   Record<
-    LimitKey | "temperature" | "max_scripts" | "max_workspace_mib" | "model" | "box" | "cpu" | "memory_mib",
+    LimitKey | "temperature" | "max_scripts" | "max_workspace_mib" | "model" | "machine",
     string
   >
 >;
 
 export type ConfigErrorContext = {
   models?: OrgModels | undefined;
+  /** The organisation's machines; machine checks wait until they load. */
+  machines?: Machine[] | undefined;
 };
 
-export function configFormOf(config: AgentConfig): ConfigForm {
+/** A stored config in the form, on the machine named; empty leaves the machine to pick. */
+export function configFormOf(config: AgentConfig, machineId = ""): ConfigForm {
   return {
     model: config.model,
     thinking: config.thinking_level,
     temperature: String(config.temperature),
-    box: config.box ?? boxForFlags(config),
-    cpu: config.cpu === undefined ? "" : String(config.cpu),
-    memory_mib: config.memory_mib === undefined ? "" : String(config.memory_mib),
+    machine_id: machineId,
     cli: config.cli !== false,
     browser: config.browser,
     browser_language: config.browser_language ?? "en-US",
@@ -167,42 +158,8 @@ export function configFormOf(config: AgentConfig): ConfigForm {
   };
 }
 
-/** The box the flags call for: code with coding on, standard with the browser alone, lite with neither. */
-function boxForFlags(flags: { browser?: boolean; coding?: boolean }): Box {
-  if (flags.coding) return "code";
-  return flags.browser ? "standard" : "lite";
-}
-
 function positiveInteger(text: string): boolean {
   return /^\d+$/.test(text.trim()) && Number(text) >= 1;
-}
-
-function customCpu(text: string): boolean {
-  const value = Number(text);
-  return (
-    text.trim() !== "" &&
-    Number.isFinite(value) &&
-    value >= customBoxBounds.minCpu &&
-    value <= customBoxBounds.maxCpu &&
-    Number.isInteger(value / customBoxBounds.cpuStep)
-  );
-}
-
-function customMemory(text: string): boolean {
-  return (
-    positiveInteger(text) &&
-    Number(text) >= customBoxBounds.minMemoryMib &&
-    Number(text) <= customBoxBounds.maxMemoryMib
-  );
-}
-
-/** What the box refuses, as the server does: the flags it settles, and a size only on custom. */
-function boxError(form: ConfigForm): string | undefined {
-  if (form.box === "lite" && (form.browser || form.coding))
-    return "A lite box has no browser and no code tools.";
-  if (form.box === "standard" && form.coding) return "A standard box has no code tools. Pick Code or Custom.";
-  if (form.box === "code" && !form.coding) return "A code box has coding on.";
-  return undefined;
 }
 
 export function configErrors(form: ConfigForm, context: ConfigErrorContext = {}): ConfigErrors {
@@ -215,13 +172,9 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
     errors.max_workspace_mib = "A whole number, 1 or more.";
   if (!form.temperature.trim() || !Number.isFinite(Number(form.temperature)))
     errors.temperature = "A number.";
-  const box = boxError(form);
-  if (box) errors.box = box;
-  if (form.box === "custom") {
-    if (!customCpu(form.cpu))
-      errors.cpu = `${customBoxBounds.minCpu} to ${customBoxBounds.maxCpu} CPUs, in steps of ${customBoxBounds.cpuStep}.`;
-    if (!customMemory(form.memory_mib))
-      errors.memory_mib = `A whole number of MiB, ${customBoxBounds.minMemoryMib} to ${customBoxBounds.maxMemoryMib}.`;
+  if (context.machines) {
+    const machine = chosenMachine(context.machines, form.machine_id);
+    if (!machine) errors.machine = "Choose a machine.";
   }
   if (!form.model) {
     errors.model = "Choose a model.";
@@ -233,14 +186,12 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
   return errors;
 }
 
-/** The config to send; a model that does not reason gets thinking off. */
+/** The config to send, without the machine; a model that does not reason gets thinking off. */
 export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
   return {
     model: form.model,
     temperature: Number(form.temperature),
     thinking_level: modelLimits(models, form.model).thinkingOff ? "none" : form.thinking,
-    box: form.box,
-    ...(form.box === "custom" ? { cpu: Number(form.cpu), memory_mib: Number(form.memory_mib) } : {}),
     cli: form.cli,
     browser: form.browser,
     browser_language: form.browser_language,
@@ -357,7 +308,7 @@ export function LimitFields({ form, onChange, errors }: FieldsProps) {
   );
 }
 
-/** Workspace disk cap, in MiB, beside how many scripts the agent may keep. */
+/** The agent home's disk cap, in MiB, beside how many scripts the agent may keep. */
 export function DiskFields({ form, onChange, errors }: FieldsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -367,7 +318,7 @@ export function DiskFields({ form, onChange, errors }: FieldsProps) {
         type="number"
         min={1}
         step={1}
-        hint="MiB the agent's workspace may hold. A generation will not start if the workspace is already over this. 10240 is 10 GiB."
+        hint="MiB the agent's home may hold. A generation will not start while the home is over this, or while its machine is over the machine's cap. 10240 is 10 GiB."
         value={form.max_workspace_mib}
         onChange={(event) => onChange({ max_workspace_mib: event.currentTarget.value })}
         {...(errors.max_workspace_mib ? { error: errors.max_workspace_mib } : {})}
@@ -397,48 +348,7 @@ export function capabilityOn(
   return Boolean(config?.[key]);
 }
 
-function ChoiceButton({
-  title,
-  hint,
-  selected,
-  onClick,
-  disabled,
-  icon,
-  radio,
-}: {
-  title: string;
-  hint: string;
-  selected: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-  icon?: LucideIcon;
-  /** Exclusive choice in a radiogroup; omit for an on/off capability. */
-  radio?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      {...(radio
-        ? { role: "radio", "aria-checked": selected, "data-selected": selected ? "true" : undefined }
-        : { "aria-pressed": selected })}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "flex h-full min-w-0 cursor-pointer flex-col items-start gap-1 rounded-xl bg-surface px-3.5 py-3 text-left transition-colors",
-        "hover:bg-paper-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
-        "selected:bg-ink-fill selected:text-on-ink selected:hover:bg-ink-fill",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-      )}
-    >
-      <span className="flex items-center gap-1.5 text-sm font-semibold">
-        {icon ? <Icon icon={icon} size={16} /> : null}
-        {title}
-      </span>
-      <span className={cn("text-xs text-pretty", selected ? "opacity-80" : "text-muted")}>{hint}</span>
-    </button>
-  );
-}
-
+/** An on/off capability as a pressed button. */
 function CapabilityField({
   label,
   hint,
@@ -455,14 +365,24 @@ function CapabilityField({
   icon?: LucideIcon;
 }) {
   return (
-    <ChoiceButton
-      title={label}
-      hint={hint}
-      selected={checked}
+    <button
+      type="button"
+      aria-pressed={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      {...(disabled !== undefined ? { disabled } : {})}
-      {...(icon ? { icon } : {})}
-    />
+      className={cn(
+        "flex h-full min-w-0 cursor-pointer flex-col items-start gap-1 rounded-xl bg-surface px-3.5 py-3 text-left transition-colors",
+        "hover:bg-paper-hi focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+        "selected:bg-ink-fill selected:text-on-ink selected:hover:bg-ink-fill",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+      )}
+    >
+      <span className="flex items-center gap-1.5 text-sm font-semibold">
+        {icon ? <Icon icon={icon} size={16} /> : null}
+        {label}
+      </span>
+      <span className={cn("text-xs text-pretty", checked ? "opacity-80" : "text-muted")}>{hint}</span>
+    </button>
   );
 }
 
@@ -493,95 +413,7 @@ export function withCoding(
   };
 }
 
-/**
- * The form moved onto a box. Lite turns the browser and coding off and takes the default budgets
- * back. Standard turns the browser on and coding off. Code turns both on, with the coding budgets,
- * CLI and scripting. Custom turns the browser on, keeps the coding switch where it is, and starts
- * its size from the tier the form leaves: the code size with coding on, else the standard one.
- */
-export function withBox(form: ConfigForm, box: Box, models?: OrgModels | undefined): ConfigForm {
-  switch (box) {
-    case "lite":
-      return { ...withCoding(form, false, models), box, browser: false, cpu: "", memory_mib: "" };
-    case "standard":
-      return { ...withCoding(form, false, models), box, browser: true, cpu: "", memory_mib: "" };
-    case "code":
-      return { ...withCoding(form, true, models), box, browser: true, cpu: "", memory_mib: "" };
-    case "custom":
-      return {
-        ...form,
-        box,
-        browser: true,
-        cpu: form.cpu || (form.coding ? "2" : "1"),
-        memory_mib: form.memory_mib || (form.coding ? "4096" : "2048"),
-      };
-  }
-}
-
-const boxOptions: Array<{ value: Box; title: string; summary: string; hint: string; icon: LucideIcon }> = [
-  {
-    value: "lite",
-    title: "Lite",
-    summary: "0.5 CPU · 256 MiB",
-    hint: "Scripts, notes, connectors and a terminal on the smallest machine: 0.5 CPU, 256 MiB. No browser, no code tools.",
-    icon: Feather,
-  },
-  {
-    value: "standard",
-    title: "Standard",
-    summary: "1 CPU · 2 GiB",
-    hint: "A browser on a medium machine: 1 CPU, 2 GiB, with Chromium. No code tools. Takes one browser slot from the plan.",
-    icon: Globe,
-  },
-  {
-    value: "code",
-    title: "Code",
-    summary: "2 CPU · 4 GiB",
-    hint: "Coding and a browser on the large machine: 2 CPU, 4 GiB, with Node.js, build tools, git and Chromium. Takes one browser slot and one coding slot from the plan.",
-    icon: Code2,
-  },
-  {
-    value: "custom",
-    title: "Custom",
-    summary: "Size you choose",
-    hint: `The browser machine at a size you choose, ${customBoxBounds.minCpu} to ${customBoxBounds.maxCpu} CPUs and ${customBoxBounds.minMemoryMib} to ${customBoxBounds.maxMemoryMib} MiB, with coding on or off.`,
-    icon: SlidersHorizontal,
-  },
-];
-
-/** Lite, Standard, Code or Custom. Changing an existing agent's box replaces its sandbox. */
-export function BoxPicker({
-  form,
-  onChange,
-  models,
-  error,
-}: {
-  form: ConfigForm;
-  onChange: (next: ConfigForm) => void;
-  models?: OrgModels | undefined;
-  error?: string | undefined;
-}) {
-  const chosen = boxOptions.find((option) => option.value === form.box);
-  return (
-    <FormField controlId="agent-box" labelFor={false} error={error} hint={chosen?.hint}>
-      <div role="radiogroup" id="agent-box" aria-label="Box" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {boxOptions.map((option) => (
-          <ChoiceButton
-            key={option.value}
-            radio
-            title={option.title}
-            hint={option.summary}
-            icon={option.icon}
-            selected={form.box === option.value}
-            onClick={() => onChange(withBox(form, option.value, models))}
-          />
-        ))}
-      </div>
-    </FormField>
-  );
-}
-
-/** Chrome's language on a box with a browser. */
+/** Chrome's language while the browser is on. */
 function BrowserLanguageField({ form, onChange }: { form: ConfigForm; onChange: (next: ConfigForm) => void }) {
   return (
     <Select
@@ -595,101 +427,41 @@ function BrowserLanguageField({ form, onChange }: { form: ConfigForm; onChange: 
   );
 }
 
-/** A custom box's CPUs and memory. */
-function CustomSizeFields({
-  form,
-  onChange,
-  errors,
-}: {
-  form: ConfigForm;
-  onChange: (next: ConfigForm) => void;
-  errors: ConfigErrors;
-}) {
-  return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <TextField
-        tone="surface"
-        label="CPUs"
-        type="number"
-        min={customBoxBounds.minCpu}
-        max={customBoxBounds.maxCpu}
-        step={customBoxBounds.cpuStep}
-        hint={`${customBoxBounds.minCpu} to ${customBoxBounds.maxCpu}, in steps of ${customBoxBounds.cpuStep}.`}
-        value={form.cpu}
-        onChange={(event) => onChange({ ...form, cpu: event.currentTarget.value })}
-        {...(errors.cpu ? { error: errors.cpu } : {})}
-      />
-      <TextField
-        tone="surface"
-        label="Memory"
-        type="number"
-        min={customBoxBounds.minMemoryMib}
-        max={customBoxBounds.maxMemoryMib}
-        step={1}
-        hint={`MiB, ${customBoxBounds.minMemoryMib} to ${customBoxBounds.maxMemoryMib}. 2048 is 2 GiB.`}
-        value={form.memory_mib}
-        onChange={(event) => onChange({ ...form, memory_mib: event.currentTarget.value })}
-        {...(errors.memory_mib ? { error: errors.memory_mib } : {})}
-      />
-    </div>
-  );
-}
-
 /**
- * What the chosen box leaves to the operator: nothing on lite, standard and code; on custom, the
- * size and the Coding button. Switching coding, or resizing, replaces the sandbox.
+ * Browser, Coding, CLI, scripting, and Memory. Coding is greyed out on a standard machine, with a
+ * line that points to Settings → Machines; an agent that already codes there can still switch it
+ * off.
  */
-export function BoxFields({
+export function CapabilitiesFields({
   form,
   onChange,
   models,
-  errors,
+  machine,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
   models?: OrgModels | undefined;
-  errors: ConfigErrors;
+  /** The machine the agent goes on; undefined while none is chosen. */
+  machine?: MachineRef | undefined;
 }) {
-  if (form.box !== "custom") return null;
+  const standard = machine !== undefined && !machineAllowsCoding(machine.box);
   return (
     <>
-      <CustomSizeFields form={form} onChange={onChange} errors={errors} />
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <CapabilityField
-          label="Coding"
-          hint="Shell and code tools. Turns on CLI and scripting. Uses a coding slot; replaces the sandbox."
-          icon={Code2}
-          checked={form.coding}
-          onChange={(coding) => onChange(withCoding(form, coding, models))}
-        />
-      </div>
-    </>
-  );
-}
-
-/** Browser, CLI, scripting, and Memory. Browser is off and unavailable on lite. */
-export function CapabilitiesFields({
-  form,
-  onChange,
-}: {
-  form: ConfigForm;
-  onChange: (next: ConfigForm) => void;
-}) {
-  const lite = form.box === "lite";
-  return (
-    <>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <CapabilityField
           label="Browser"
-          hint={
-            lite
-              ? "A lite box has no browser."
-              : "Browser tab and tools. Uses a browser slot; replaces the sandbox."
-          }
+          hint="Browser tab and tools. Uses a browser slot."
           icon={Globe}
           checked={form.browser}
-          disabled={lite}
           onChange={(browser) => onChange({ ...form, browser })}
+        />
+        <CapabilityField
+          label="Coding"
+          hint="Shell and code tools. Turns on CLI and scripting. Uses a coding slot."
+          icon={Code2}
+          checked={form.coding}
+          disabled={standard && !form.coding}
+          onChange={(coding) => onChange(withCoding(form, coding, models))}
         />
         <CapabilityField
           label="CLI"
@@ -713,6 +485,7 @@ export function CapabilitiesFields({
           onChange={(memory) => onChange({ ...form, memory })}
         />
       </div>
+      {standard ? <StandardMachineNote machine={machine} /> : null}
       {form.browser ? <BrowserLanguageField form={form} onChange={onChange} /> : null}
     </>
   );

@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { ScheduleError } from "../schedules/cron.js";
 import { validateTimezone } from "../schedules/window.js";
 import { UserValidationError, userItem, validateUserColor, validateUserName } from "../users/index.js";
@@ -6,14 +6,7 @@ import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return body as Record<string, unknown>;
-  }
-  return {};
-}
+import { bodyOf } from "./request.js";
 
 /** How this server identifies a request, and the request's own user. */
 export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {

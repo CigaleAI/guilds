@@ -5,9 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { persistAgent } from "../agents/persist.js";
 import {
   AgentValidationError,
-  boxOf,
   browserLanguageOf,
-  customSizeOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
   validateAvatarColor,
@@ -133,6 +131,8 @@ import { messageItem } from "../db/views.js";
 import { memoryHistory } from "../memory/history.js";
 import { isUniqueViolation } from "../db/pg.js";
 import { GuildNameTaken, LastGuildAdmin, SecretNameTaken } from "../db/errors.js";
+import { assertCanPlaceOn } from "../machines/access.js";
+import type { MachineRow } from "../machines/index.js";
 import {
   SecretAccessError,
   accessOf,
@@ -154,6 +154,7 @@ import {
   assertCanCreateGuild,
   assertCanEnableBrowser,
   assertCanEnableCoding,
+  assertCanPlaceAgents,
 } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
 import { httpAccess } from "./access.js";
@@ -204,6 +205,7 @@ import {
 import { registerAdminMcpRoutes } from "./admin-mcp-routes.js";
 import { registerAdminRegistryRoutes } from "./admin-registry-routes.js";
 import { registerOrgConnectorRoutes } from "./org-connector-routes.js";
+import { machineIdOf, registerMachineRoutes } from "./machine-routes.js";
 import { registerBuilderCapabilityRoutes } from "./builder-capability-routes.js";
 import { registerBuilderSessionRoutes } from "./builder-routes.js";
 import { registerRecipeRoutes } from "./recipe-routes.js";
@@ -221,6 +223,7 @@ import {
   guildItem,
 } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
+import { bodyOf, param } from "./request.js";
 
 type Params = Record<string, string>;
 
@@ -239,14 +242,6 @@ function failure(error: unknown, server: Record<string, unknown>): never {
 /** Whether an organisation sees a server: the platform's, or one of its own. */
 function serverVisible(server: Record<string, unknown>, orgId: string | null): boolean {
   return !server.owner_org_id || server.owner_org_id === orgId;
-}
-
-function bodyOf(request: FastifyRequest): Record<string, unknown> {
-  const body = request.body;
-  if (body && typeof body === "object" && !Array.isArray(body)) {
-    return body as Record<string, unknown>;
-  }
-  return {};
 }
 
 function attachmentIdsOf(body: Record<string, unknown>): string[] {
@@ -316,14 +311,6 @@ function expectedVersionOf(body: Record<string, unknown>): number | undefined {
 
 /** How often operator input on a proxied sandbox view restarts its idle timer. */
 const SANDBOX_TOUCH_INTERVAL_MS = 30_000;
-
-function param(request: FastifyRequest, name: string): string {
-  const value = (request.params as Params)[name];
-  if (typeof value !== "string") {
-    throw new HttpError(404, "Not Found");
-  }
-  return value;
-}
 
 function filePathParam(request: FastifyRequest): string {
   const raw = (request.raw.url ?? request.url).split("?")[0] ?? "";
@@ -502,14 +489,32 @@ async function refuseSoleGuildAdmin(
   }
 }
 
-
-
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { repo, notes, scripts, schedules, artifacts } = deps;
   const policy = deps.policy ?? OPEN_POLICY;
   const modelCredentials = deps.modelCredentials ?? coreModelCredentials(repo, deps.masterKey);
   const issues = new Issues(repo);
   const notifications = new Notifications(repo);
+
+  /**
+   * The machine an agent goes on, with the policy's per-machine cap: the one named, else the
+   * agent's current one, else the organisation's only one. A machine other than the current one
+   * must take one more agent and host no agent of a guild the user cannot see.
+   */
+  async function placement(
+    orgId: string,
+    user: Record<string, unknown>,
+    requested: unknown,
+    agent: { coding: boolean; machineId?: string },
+  ): Promise<{ machine: MachineRow; maxAgentsPerMachine: number | null; moves: boolean }> {
+    const machine = await repo.placementMachine(orgId, machineIdOf(requested) ?? agent.machineId, agent.coding);
+    if (machine.id === agent.machineId) {
+      return { machine, maxAgentsPerMachine: null, moves: false };
+    }
+    await assertCanPlaceOn(repo, orgId, machine.id, String(user.id));
+    const maxAgentsPerMachine = await assertCanPlaceAgents(policy, repo, orgId, machine.id, 1);
+    return { machine, maxAgentsPerMachine, moves: true };
+  }
   deps.generation?.group_chat.observe((guildId, event, data) => notifications.observe(guildId, event, data));
   await registerMeRoutes(app, deps);
   await registerCodingRoutes(app, deps);
@@ -519,6 +524,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerAdminRegistryRoutes(app, deps);
   await registerAdminInstanceRoutes(app, deps);
   await registerOrgConnectorRoutes(app, deps);
+  await registerMachineRoutes(app, deps);
   await registerBuilderCapabilityRoutes(app, deps);
   await registerBuilderSessionRoutes(app, deps);
   await registerRecipeRoutes(app, deps);
@@ -1301,6 +1307,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         coding: config.coding,
       });
       await assertGuildAgentRoom(repo, String(guild.id), 1);
+      const { machine, maxAgentsPerMachine } = await placement(String(guild.org_id), user, body.machine_id, {
+        coding: config.coding,
+      });
       const agentId = newId("a");
       await persistAgent(repo, notes, {
         agentId,
@@ -1320,6 +1329,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           guildId: String(guild.id),
           agentId,
         }),
+        machineId: machine.id,
+        maxAgentsPerMachine,
       });
       const created = await repo.getAgent(agentId);
       if (created === null) {
@@ -1956,6 +1967,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       const config = validateConfig((body.config ?? {}) as Record<string, unknown>);
       await assertModelConnected(modelCredentials, String(existing.org_id), config.model);
       const previous = agentConfigObject(existing);
+      const { machine, maxAgentsPerMachine, moves } = await placement(String(existing.org_id), user, body.machine_id, {
+        coding: config.coding,
+        machineId: String(existing.machine_id),
+      });
       if (config.browser && !previous.browser) {
         await assertCanEnableBrowser(policy, repo, String(existing.org_id), false);
       }
@@ -1979,13 +1994,24 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           throw new HttpError(409, "agent is already generating");
         }
       }
-      const row = await repo.updateAgentConfig(agentId, config, new Date(), {
-        name,
-        avatarShape,
-        avatarColor,
-        focus,
-        wakeTriggers,
-      });
+      if (moves) {
+        await generationOf(deps).moveAgent(agentId, machine.id, { maxAgentsPerMachine, coding: config.coding });
+      }
+      let row: Record<string, unknown> | null;
+      try {
+        row = await repo.updateAgentConfig(agentId, config, new Date(), {
+          name,
+          avatarShape,
+          avatarColor,
+          focus,
+          wakeTriggers,
+        });
+      } catch (error) {
+        if (moves) {
+          await generationOf(deps).moveAgent(agentId, String(existing.machine_id), { coding: Boolean(previous.coding) });
+        }
+        throw error;
+      }
       if (row === null) {
         throw new HttpError(404, "agent not found");
       }
@@ -2002,17 +2028,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           throw error;
         }
       }
-      const previousSize = customSizeOf(previous);
-      const size = customSizeOf(config);
-      const sandboxChanged =
-        boxOf(previous) !== config.box ||
-        previousSize?.cpu !== size?.cpu ||
-        previousSize?.memory_mib !== size?.memory_mib ||
-        Boolean(previous.browser) !== config.browser ||
-        Boolean(previous.coding) !== config.coding ||
+      const browserChanged =
+        (Boolean(previous.browser) && !config.browser) ||
         (config.browser && browserLanguageOf(previous) !== config.browser_language);
-      if (sandboxChanged && deps.generation) {
-        await deps.generation.refresh_sandbox(agentId);
+      if (browserChanged && deps.generation) {
+        await deps.generation.agentBrowserChanged(agentId);
       }
       const detail = await repo.getAgent(agentId);
       if (detail === null) {
@@ -2026,6 +2046,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       if (error instanceof GuildNameTaken) {
         throw new HttpError(409, error.message);
       }
+      if (error instanceof RunRequestError) {
+        throw new HttpError(error.status, error.detail);
+      }
       if (isUniqueViolation(error)) {
         throw new HttpError(409, "agent name already exists");
       }
@@ -2037,6 +2060,35 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
+  });
+
+  app.put("/api/agents/:agent_id/machine", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const agentId = param(request, "agent_id");
+    const existing = await ownedAgent(repo, agentId, user);
+    const body = bodyOf(request);
+    if (machineIdOf(body.machine_id) === null) {
+      throw new HttpError(422, "machine_id is required");
+    }
+    try {
+      const { machine, maxAgentsPerMachine, moves } = await placement(String(existing.org_id), user, body.machine_id, {
+        coding: agentConfigObject(existing).coding === true,
+        machineId: String(existing.machine_id),
+      });
+      if (moves) {
+        await generationOf(deps).moveAgent(agentId, machine.id, { maxAgentsPerMachine });
+      }
+    } catch (error) {
+      if (error instanceof RunRequestError) {
+        throw new HttpError(error.status, error.detail);
+      }
+      throw error;
+    }
+    const detail = await repo.getAgent(agentId);
+    if (detail === null) {
+      throw new HttpError(404, "agent not found");
+    }
+    return agentPayload(deps, detail);
   });
 
   app.get("/api/agents/:agent_id/schedules", async (request) => {
@@ -2738,6 +2790,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           ? null
           : Number(agent.workspace_mib),
       max_workspace_mib: maxWorkspaceMibOf(agentConfigObject(agent)),
+      machine: {
+        id: agent.machine_id,
+        name: agent.machine_name,
+        workspace_mib:
+          agent.machine_workspace_mib === null || agent.machine_workspace_mib === undefined
+            ? null
+            : Number(agent.machine_workspace_mib),
+        max_workspace_mib: Number(agent.machine_max_workspace_mib),
+      },
       ...usageFields(await repo.getUsage("agent", String(agent.id))),
     };
   });

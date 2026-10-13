@@ -10,7 +10,9 @@ import {
   assertCanCreateGuild,
   assertCanEnableBrowser,
   assertCanEnableCoding,
+  assertCanPlaceAgents,
   claimCoachRun,
+  machineCap,
   remaining,
   type OrgCounts,
   type OrgLimits,
@@ -129,4 +131,38 @@ test("remaining is null without a cap and never negative", () => {
   assert.equal(remaining(null, 12), null);
   assert.equal(remaining(5, 2), 3);
   assert.equal(remaining(5, 9), 0);
+});
+
+test("the per-machine cap counts the agents on the machine plus those being placed, and is returned", async () => {
+  const seen: string[] = [];
+  const countsOn = (count: number) => ({
+    countMachineAgents: async (machineId: string) => {
+      seen.push(machineId);
+      return count;
+    },
+  });
+  assert.equal(await assertCanPlaceAgents(policyOf({}), countsOn(1_000), "org_1", "mach_1", 50), null);
+  const policy = policyOf({ maxAgentsPerMachine: 4 });
+  assert.equal(await assertCanPlaceAgents(policy, countsOn(2), "org_1", "mach_1", 1), 4);
+  assert.equal(await assertCanPlaceAgents(policy, countsOn(2), "org_1", "mach_1", 2), 4);
+  await assert.rejects(
+    () => assertCanPlaceAgents(policy, countsOn(3), "org_1", "mach_2", 2),
+    limitOn("agents per machine"),
+  );
+  await assert.rejects(
+    () => assertCanPlaceAgents(policy, countsOn(4), "org_1", "mach_2", 1),
+    limitOn("agents per machine"),
+  );
+  assert.deepEqual(seen, ["mach_1", "mach_1", "mach_2", "mach_2"]);
+});
+
+test("the machine cap is null when uncapped, else the cap and the refusal a create holds to", async () => {
+  assert.equal(await machineCap(policyOf({}), "org_1"), null);
+  assert.equal(await machineCap(OPEN_POLICY, "org_1"), null);
+  const held = await machineCap(policyOf({ maxMachines: 2 }), "org_1");
+  assert.ok(held);
+  assert.equal(held.max, 2);
+  const refusal = held.refuse();
+  assert.ok(limitOn("machines")(refusal));
+  assert.notEqual(held.refuse(), refusal, "each refusal is a fresh error");
 });

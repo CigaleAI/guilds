@@ -278,7 +278,7 @@ login_failure_policy }`. That is what creates the apply take-control login
   `config.coding: true`. The shell, file, and code search tools come with the
   flag — do not list them under `native_tools`. List the repositories the
   guild works in at the top level as `repositories: [{ name, purpose }]`:
-  `name` is the folder under `/home/agent/repos` (`^[a-z][a-z0-9_-]{0,62}$`),
+  `name` is the folder under `repos/` in each coding agent's home (`^[a-z][a-z0-9_-]{0,62}$`),
   `purpose` one line on what the repository holds. Never a URL, an owner, or
   a credential; apply asks the operator to connect GitHub and add each one.
   Each coding role's Task names the repositories it works in, the checks it

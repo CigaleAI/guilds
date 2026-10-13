@@ -53,7 +53,7 @@ export const scriptCreate: Tool = {
     "Create or replace a reusable Python script for this agent. name " +
     "matches ^[a-z][a-z0-9_-]{0,62}$. description is a short why so " +
     "later wakes know when to run it. source is the Python file, which " +
-    "is stored at /home/agent/scripts/<name>.py. Optional parameters is a " +
+    "is stored at scripts/<name>.py in your home. Optional parameters is a " +
     "JSON Schema object that also offers the script as a tool under its " +
     "name from the next run on. A script reads its arguments as a JSON " +
     "object from stdin (json.load(sys.stdin)): script_run arguments, or " +
@@ -69,7 +69,7 @@ export const scriptCreate: Tool = {
     "Create or replace a reusable Python script for this agent. name " +
       "matches ^[a-z][a-z0-9_-]{0,62}$. description is a short why so " +
       "later wakes know when to run it. source is the Python file, which " +
-      "is stored at /home/agent/scripts/<name>.py. Optional parameters is a " +
+      "is stored at scripts/<name>.py in your home. Optional parameters is a " +
       "JSON Schema object that also offers the script as a tool under its " +
       "name from the next run on. A script reads its arguments as a JSON " +
       "object from stdin (json.load(sys.stdin)): script_run arguments, or " +
@@ -99,6 +99,7 @@ export const scriptCreate: Tool = {
     if (ctx.sandbox?.files) {
       await writeThroughLiveExtra(
         ctx.sandbox.files,
+        ctx.agent_home,
         String(row.name),
         String(row.source),
         ctx.run_scripts,
@@ -152,7 +153,7 @@ export const scriptRun: Tool = {
   name: "script_run",
   description:
     "Run one of this agent's Python scripts by name. The file executes " +
-    "in the sandbox as /home/agent/scripts/<name>.py with the bound " +
+    "in your home as scripts/<name>.py with the bound " +
     "environment variables available. Optional arguments is a JSON " +
     "object the script reads from stdin (json.load(sys.stdin)); without " +
     "it the script reads {}.",
@@ -161,7 +162,7 @@ export const scriptRun: Tool = {
   schema: functionSchema(
     "script_run",
     "Run one of this agent's Python scripts by name. The file executes " +
-      "in the sandbox as /home/agent/scripts/<name>.py with the bound " +
+      "in your home as scripts/<name>.py with the bound " +
       "environment variables available. Optional arguments is a JSON " +
       "object the script reads from stdin (json.load(sys.stdin)); without " +
       "it the script reads {}.",
@@ -181,13 +182,13 @@ export const scriptDelete: Tool = {
   name: "script_delete",
   description:
     "Delete one of this agent's scripts by name from script_list. " +
-    "The file leaves /home/agent/scripts/ and cannot be run again this run.",
+    "The file leaves scripts/ in your home and cannot be run again this run.",
   output_filter: identityOutput,
   filter_name: "identity",
   schema: functionSchema(
     "script_delete",
     "Delete one of this agent's scripts by name from script_list. " +
-      "The file leaves /home/agent/scripts/ and cannot be run again this run.",
+      "The file leaves scripts/ in your home and cannot be run again this run.",
     {
       name: { type: "string" },
     },
@@ -206,7 +207,7 @@ export const scriptDelete: Tool = {
       await ctx.persist_run_scripts(ctx.run_scripts);
     }
     if (ctx.sandbox?.files) {
-      await removeManagedScript(ctx.sandbox.files, name);
+      await removeManagedScript(ctx.sandbox.files, ctx.agent_home, name);
     }
     await publish(ctx, "delete", name);
     return `deleted ${name}`;
@@ -215,7 +216,7 @@ export const scriptDelete: Tool = {
 
 /** Runs a managed script through the launcher, which writes `args` as JSON to its stdin. */
 function runScript(ctx: ToolContext, name: string, args: Record<string, unknown>): Promise<string> {
-  return runCommand(ctx, launcherCommand(name), {
+  return runCommand(ctx, launcherCommand(ctx.agent_home, name), {
     envs: { [SCRIPT_ARGS_ENV]: JSON.stringify(args) },
   });
 }

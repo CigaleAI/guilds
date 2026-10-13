@@ -21,9 +21,9 @@ Where each module lives is the [Code map](code-map.md).
   [`@dicebear/*`](https://www.dicebear.com/) for avatars, `@sentry/node`
 - Tests: `node:test` through `tsx`
 - OpenSandbox server commit `473ff611d93670a149ce6600f27ed194b18cce89`,
-  `opensandbox/execd:v1.1.0`, runtimes `agent-runtime:0.3` (every box
-  but lite) and `agent-runtime-lite:0.1` (the lite box), TypeScript SDK
-  from that same commit (`sdks/sandbox/javascript`)
+  `opensandbox/execd:v1.1.0`, runtime `agent-runtime:0.4` (every
+  machine), TypeScript SDK from that same commit
+  (`sdks/sandbox/javascript`)
 - Token counting: `js-tiktoken` with one encoding, `o200k_base`, for
   every model
 - Cost: provider-reported `cost_usd` first, then the catalog's rate for
@@ -42,10 +42,7 @@ Where each module lives is the [Code map](code-map.md).
 - `TEMPLATES_ROOT` (the prompt templates, `src/prompts` by default)
 - `OPENSANDBOX_URL`
 - `OPENSANDBOX_API_KEY`
-- `SANDBOX_IMAGE` (the image every box but lite runs)
-- `SANDBOX_IMAGE_LITE` (the standard image when unset, so a lite box
-  boots before the lite image is configured, without the memory
-  saving)
+- `SANDBOX_IMAGE` (the image every machine runs)
 - `SECRETS_MASTER_KEY`
 - `AUTH_MODE` with the `trusted-header` settings (`PUBLIC_BASE_URL`,
   `TRUSTED_HEADER_EMAIL`, `TRUSTED_PROXY_SECRET`, `OPERATOR_EMAIL`)
@@ -67,8 +64,9 @@ admin enters takes effect without a restart
 A few modules read their own optional variables:
 
 - `CODE_RESULT_MAX_BYTES` (the code tools' result cap, default 8192)
-- `WORKSPACE_MAX_MIB` (host-wide workspace cap, default 10240; each
-  agent also has `max_workspace_mib`, default the same)
+- `WORKSPACE_MAX_MIB` (host-wide cap on one agent's home, default
+  10240; each agent also has `max_workspace_mib`, default the same,
+  and each machine a `max_workspace_mib` over every home on it)
 - `SENTRY_ENVIRONMENT` / `SENTRY_TRACES_SAMPLE_RATE`
 - `ADAPTER_PROXY_URL` (forward proxy for adapter and MCP HTTP)
 - `OPENSANDBOX_SDK_MODULE` (test substitution)
@@ -77,7 +75,8 @@ A few modules read their own optional variables:
 
 Configurable only in tests:
 
-- `SANDBOX_IDLE_TIMEOUT` = 5 minutes
+- `SANDBOX_IDLE_TIMEOUT` = 5 minutes, for a machine and for an
+  agent's Chrome
 - `SCHEDULER_TICK` = 30 seconds
 - `CANCEL_GRACE` = 2 seconds
 - `SHUTDOWN_TIMEOUT` = 15 seconds
@@ -99,10 +98,12 @@ Configurable only in tests:
 - adapter HTTP timeout = 30 seconds
 - TypeSafe call timeout = 8 seconds, 2 retries with backoff
 - `TOOL_RESULT_MAX_BYTES` default = 65536
-- sandbox resources = 0.5 CPU and 256Mi on a lite box, 1 CPU and 2Gi
-  on a standard box, 2 CPU and 4Gi on a code box, and the agent's
-  `cpu` and `memory_mib` on a custom box (0.5 to 4 CPUs in steps of
-  0.25, 512 to 8192 MiB)
+- sandbox resources = 1 CPU and 2Gi on a standard machine, 2 CPU and
+  4Gi on a code machine, and the machine's `cpu` and `memory_mib` on
+  a custom one (0.5 to 4 CPUs in steps of 0.25, 512 to 8192 MiB)
+- agents per machine = 32 (slots 0 to 31)
+- planned memory per agent = 100 MiB, plus 500 with `browser`, plus
+  1536 with `coding`
 - browser desktop = 1280×720
 - event queue per subscriber = 4096
 
@@ -131,15 +132,23 @@ Docker does not SIGKILL during `SHUTDOWN_TIMEOUT`.
 - Guild deletion sets a deleting-guild guard, refuses new runs and
   group actions with 409, and releases the guard in `finally`.
 - Secret changes re-resolve the active-run secret snapshots of the
-  agents they reach, mark those sandboxes stale, destroy immediately
-  when idle, and defer destroy until the current generation ends
-  when busy. `secretChanged(secretId)` covers a new value, name, or
-  description (the agents with an active run snapshot or a running
-  sandbox using it). `secretAccessChanged(agentIds)` covers a
-  create, a delete, an access change, and a new `secret_store`
-  secret (the agents that gain or lose it).
-- Browser ensure during an active generation returns 409 when the
-  running sandbox lacks browser metadata.
+  agents they reach and replace no container: secrets travel on
+  each command, and a generation resolves them at its start.
+  `secretChanged(secretId)` covers a new value, name, or description
+  (the agents with an active run snapshot using it).
+  `secretAccessChanged(agentIds)` covers a create, a delete, an
+  access change, and a new `secret_store` secret (the agents that
+  gain or lose it).
+- Agents on one machine generate at the same time. A machine is busy
+  while any of its agents generates. Its idle timer starts when the
+  last generation on it ends, and a machine whose tier or size
+  changed while busy is destroyed then instead.
+- Each browser agent's Chrome has its own idle timer, restarted by
+  the agent's browser calls and Browser pane input.
+- Agent deletion, guild deletion, and a move between machines stop
+  the agent's processes on its machine through `agent-stop`; a
+  deletion removes its home, a move renames it on the host. They are
+  refused while the agent generates.
 
 Admission is per organisation. Ordinary runs, Studio, and Builder
 share one slot count under the organisation policy's
@@ -203,7 +212,11 @@ its configuration loaded beside core's.
 3. construct `NotesStore` (verifies `system.md` exists),
    `ArtifactStore`, `Scripts`, `Schedules`, `McpPool`
 4. start the sandbox provider: one `RunSandboxes` manager on
-   `OPENSANDBOX_URL`, or the one an extension supplies
+   `OPENSANDBOX_URL`, or the one an extension supplies; then lay out
+   agent homes by machine (`machines/layout.ts`): destroy every
+   sandbox labelled with an `agent_id`, and move each
+   `WORKSPACE_ROOT/<agent id>` that exists to
+   `WORKSPACE_ROOT/<machine id>/<agent id>` when the target does not
 5. construct `GenerationLoop`; reconcile active runs; start the
    scheduler
 6. construct Studio, recipes, capabilities, apply, and Builder;
@@ -221,8 +234,8 @@ On startup reconciliation:
 5. complete group delivery through the run's snapshotted sequence
    or complete the schedule run
 6. resume pending group dispatch
-7. schedule idle teardown for running sandboxes not owned by a
-   generation
+7. schedule idle teardown for running machines on which no agent
+   generates
 
 Graceful shutdown (SIGTERM / SIGINT): close HTTP, stop the
 scheduler and dispatchers, cooperative-cancel in-flight generations
@@ -473,12 +486,20 @@ configuration. An edition may supply a sandbox provider of its own
 
 A manager's work:
 
-- ensure one matching sandbox per agent
+- ensure one matching container per machine, labelled with its
+  `machine_id`, tier, size, and image fingerprint, with the
+  machine's directory mounted at `/home`
 - execute and interrupt commands
-- start the terminal daemon
-- resolve the noVNC and terminal endpoints
-- destroy idle or stale sandboxes
-- clear a workspace on agent deletion
+- start and stop an agent's browser (`agent-browser-start`,
+  `agent-stop`) and terminal (`agent-cli-start`) on its slot's ports
+- resolve the agent's noVNC and terminal endpoints
+- destroy the containers of idle or stale machines
+
+The generation loop hands every tool an agent's view of the
+machine's container: each command runs in the agent's home with
+`HOME`, `GUILDS_AGENT_HOME`, `PORT`, `GUILDS_PORTS`, and the agent's
+secrets in its own environment. Files and interrupts are the
+machine's.
 
 OpenSandbox SDK objects do not escape the sandbox module.
 
@@ -548,14 +569,16 @@ loopback origin to a loopback host
 ([SEC-15](security-register.md)).
 
 The sandbox proxies (`/api/agents/:id/browser/vnc/*` to noVNC,
-`/api/agents/:id/cli/tty/*` to ttyd) preserve HTTP streaming,
+`/api/agents/:id/cli/tty/*` to ttyd) find the agent's machine from
+the agent id and the port from its slot. They preserve HTTP streaming,
 WebSocket binary/text forwarding, and the `binary` and `tty`
 subprotocols. The terminal proxy prepends the daemon's secret path
 segment upstream. They decode and strip `content-encoding` before
 streaming to the browser.
 
-Client frames on either socket count as sandbox activity and
-restart the idle timer, at most once every 30 seconds.
+Client frames on either socket count as activity and restart the
+machine's idle timer, and the agent's Chrome timer, at most once
+every 30 seconds.
 
 ## Observability
 
@@ -601,10 +624,8 @@ Compose json-file rotation is `max-size: 10m`, `max-file: 5`.
 
 The OpenSandbox contract starts its own server at the pinned
 commit. Its coding case runs the code tools through execd in
-`agent-runtime:0.3` (or `CONTRACT_RUNTIME_IMAGE`). Its lite case
-runs a script and the terminal in `agent-runtime-lite:0.1` (or
-`CONTRACT_RUNTIME_IMAGE_LITE`) and checks the toolchains are
-absent. Each is skipped until its image is built.
+`agent-runtime:0.4` (or `CONTRACT_RUNTIME_IMAGE`). It is skipped
+until the image is built.
 
 The web app's tests (`pnpm test:web`, `node:test` over
 `apps/web/src/**/*.test.ts`) and the design-system tests

@@ -17,7 +17,7 @@
     ]
   },
   "description": "List Qonto bank accounts and completed transactions that are missing an invoice or receipt, then attach a PDF, JPEG, or PNG from the agent workspace.",
-  "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from /home/agent. Production API only.",
+  "limitations": "Read-only except uploading an attachment to a transaction. No transfers, no deletes, no edits. Upload reads a file from the agent's home. Production API only.",
   "setup_hint": "Connect with the organization's Qonto login and secret key from Integrations → API key.",
   "tools": [
     {
@@ -87,7 +87,7 @@
     },
     {
       "name": "upload_invoice",
-      "description": "Attach a PDF, JPEG, or PNG from the agent workspace as the invoice for a Qonto transaction. file_path is under /home/agent. Refuses if the transaction already has attachments unless force is true. Qonto processes the file in the background; this waits until attachment_ids is populated or 60 seconds elapse.",
+      "description": "Attach a PDF, JPEG, or PNG from the agent workspace as the invoice for a Qonto transaction. file_path is in the agent's home. Refuses if the transaction already has attachments unless force is true. Qonto processes the file in the background; this waits until attachment_ids is populated or 60 seconds elapse.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -97,7 +97,7 @@
           },
           "file_path": {
             "type": "string",
-            "description": "Path under /home/agent to a PDF, JPEG, or PNG."
+            "description": "Path in the agent's home to a PDF, JPEG, or PNG."
           },
           "force": {
             "type": "boolean",

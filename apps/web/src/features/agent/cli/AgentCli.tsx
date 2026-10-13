@@ -16,8 +16,9 @@ function terminalUrl(agentId: string, nonce: number): string {
 }
 
 /**
- * A bash session on the agent's machine. Nothing starts until the operator asks: opening the
- * terminal wakes the sandbox, which then stays up for five minutes after the last input.
+ * A bash session in the agent's home, on the machine it shares with other agents. Nothing starts
+ * until the operator asks: opening the terminal wakes the machine, which then stays up for five
+ * minutes after the last input. The shell has the agent's home and port block, and no secrets.
  */
 export function AgentCli() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -68,7 +69,7 @@ export function AgentCli() {
         <EmptyState
           icon={SquareTerminal}
           title="Open a terminal on this agent's machine"
-          description="Starting it wakes the sandbox, which stays up for five minutes after the last input. The shell runs as root in /home/agent and sees the agent's environment, secret values included."
+          description={`Starting it wakes the machine, which stays up for five minutes after the last input. The machine is shared with the other agents on it. The shell runs in /home/${agentId} with the agent's port block; no secret values reach it.`}
           action={
             <Button size="sm" onClick={start}>
               Start the terminal
@@ -83,8 +84,8 @@ export function AgentCli() {
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-7 py-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-fg-2">
-          Bash on the agent's machine, in /home/agent. It stays up for five minutes after the last
-          input.
+          Bash in /home/{agentId}, on the machine the agent shares with the other agents there. It
+          stays up for five minutes after the last input. No secret values reach it.
         </span>
         <span className="flex-1" />
         <StatusBadge
@@ -122,7 +123,7 @@ export function AgentCli() {
         <div className="grid flex-1 place-items-center">
           <div role="status" className="flex flex-col items-center gap-2 text-sm text-muted">
             <StatusBadge status="running">Starting the terminal</StatusBadge>
-            It can take up to a minute when the sandbox is asleep.
+            It can take up to a minute when the machine is asleep.
           </div>
         </div>
       )}

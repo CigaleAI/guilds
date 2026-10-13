@@ -2,12 +2,15 @@ import { useParams } from "@tanstack/react-router";
 import { useAgentUsage } from "../../../api/queries";
 import { messageTime } from "../../../app/format";
 import { Button, StatBand, Banner, SkeletonRows } from "@guildsrun/ui";
+import { DiskMeter } from "../../machines/MachineMeters";
 import { formatCost } from "../runs/toolFormat";
-import { formatMib } from "./AgentSettings";
 
 const count = new Intl.NumberFormat();
 
-/** What the agent's model calls and workspace have used since it was made. */
+/**
+ * What the agent's model calls have used since it was made, and its disk: its home against its own
+ * cap, and every home on its machine against the machine's cap.
+ */
 export function AgentUsage() {
   const { agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const usage = useAgentUsage(agentId);
@@ -49,24 +52,31 @@ export function AgentUsage() {
                 ? `Last counted ${messageTime(usage.data.updated_at)}. Total tokens are input plus output; cache reads are counted apart.`
                 : "No model calls yet."}
             </p>
-            <section aria-label="Disk" className="flex flex-col gap-1.5">
+            <section aria-label="Disk" className="flex flex-col gap-3">
               <h3 className="type-label text-muted">Disk</h3>
-              <StatBand
-                stats={[
-                  {
-                    label: "Used",
-                    value:
-                      usage.data.workspace_mib === null
-                        ? "—"
-                        : formatMib(usage.data.workspace_mib),
-                  },
-                  { label: "Max", value: formatMib(usage.data.max_workspace_mib) },
-                ]}
-              />
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-semibold">
+                  Its home, <span className="font-mono">/home/{usage.data.id}</span>
+                </span>
+                <DiskMeter
+                  usedMib={usage.data.workspace_mib}
+                  maxMib={usage.data.max_workspace_mib}
+                  label="The agent's home against its cap"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-semibold">
+                  Its machine, <span className="font-mono">{usage.data.machine.name}</span>
+                </span>
+                <DiskMeter
+                  usedMib={usage.data.machine.workspace_mib}
+                  maxMib={usage.data.machine.max_workspace_mib}
+                  label="Every home on the machine against the machine's cap"
+                />
+              </div>
               <p className="text-xs text-muted">
-                {usage.data.workspace_mib === null
-                  ? "Not measured yet. Disk is measured after a generation. Free space from the CLI tab."
-                  : `The workspace holds ${formatMib(usage.data.workspace_mib)} of ${formatMib(usage.data.max_workspace_mib)}. Measured after the last generation. Free space from the CLI tab.`}
+                A generation will not start while the home or the machine is over its cap. Free space
+                from the CLI tab.
               </p>
             </section>
           </>

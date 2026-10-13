@@ -41,3 +41,15 @@ export class SecretNameTaken extends Error {
     this.secretName = name;
   }
 }
+
+// A machine change or an agent placement the organisation's machines refuse: a full machine, a
+// coding agent on a standard machine, a name already taken, a machine that still hosts agents.
+export class MachineConflict extends Error {
+  status: number;
+
+  constructor(status: 409 | 422 | 404, message: string) {
+    super(message);
+    this.name = "MachineConflict";
+    this.status = status;
+  }
+}

@@ -150,35 +150,29 @@ Folded guilds and the retracted state are remembered in
 - max output tokens / max steps / max tool calls / max input tokens
 - **Max disk** (`max_workspace_mib`, default 10240 MiB) beside
   **Max scripts** (`max_scripts`, default 10)
-- under **Box**, four buttons: **Lite**, **Standard**, **Code** or
-  **Custom**, and what the chosen box leaves to the operator
-- under **Agent capabilities**, four buttons: Browser, CLI,
+- under **Machine**, shown when the organisation has more than one
+  machine, a picker of its machines
+- under **Agent capabilities**, five buttons: Browser, Coding, CLI,
   scripting, and Memory (CLI, scripting, and Memory on by default;
-  Browser off and unavailable on Lite)
+  Browser and Coding off)
 
-**Lite** is the default.
-It has scripts, notes, connectors and a terminal on the smallest
-machine.
-It has no browser and no code tools.
+With one machine the agent goes on it and no picker shows. The
+picker shows each machine's tier and size, and the planned memory
+bar of the chosen one: what the agents already on it plan to use,
+and what this agent adds ([Machines](guilds-and-agents.md#machines)).
+Past 100% the form still saves and warns that agents on this machine
+may run out of memory when they all work at once; resize it or pick
+another machine. One line says that agents on one machine can read
+each other's files and sessions.
 
-**Standard** has a browser on the medium machine, 1 CPU / 2 GiB, and
-no code tools.
-It counts against the browser-agent capacity.
+**Browser** gives the agent its own Chrome on its machine. It
+counts against the browser-agent capacity. The browser language
+shows while it is on.
 
-**Code** has coding and a browser on the large machine, 2 CPU /
-4 GiB.
-It counts against the browser-agent and coding-agent capacity.
-It turns browser, coding, CLI and scripting on.
-It moves step and tool-call limits still at their defaults to 200.
-
-**Custom** is the browser machine at a size the operator types: CPUs
-from 0.5 to 4 in steps of 0.25, memory from 512 to 8192 MiB. It
-starts from the size of the box the form leaves. It shows a Coding
-button, off unless the form already had it on.
-
-**Browser** is an agent capability: off and unavailable on Lite, on
-by default on the other boxes. The browser language shows while it
-is on.
+**Coding** gives the agent the code tools. It counts against the
+coding-agent capacity. It is greyed out on a standard machine, with
+a link to Settings, Machines. It turns CLI and scripting on and
+moves step and tool-call limits still at their defaults to 200.
 
 A new agent opens on its Prompt tab.
 
@@ -467,10 +461,9 @@ The strip scrolls sideways when they do not fit.
 
   Each `secret_request` call whose result asked the operator
   renders a card after its run flow.
-  The card shows the agent, the variable name, the use and the
-  reason marked as written by the agent, and "The value becomes an
-  environment variable in this agent's sandbox. Its scripts can
-  read and send it."
+  The card shows the agent, the variable name, the use, the reason,
+  and "Written by the agent. The value reaches this agent's
+  commands, and other agents on the same machine can read it."
 
   The card keeps no state.
   It looks the name up in the organisation and in the agent's
@@ -586,8 +579,9 @@ The strip scrolls sideways when they do not fit.
   While the guild's routines are off, wake-ups that are not
   individually paused show as held and do not fire.
 - **Browser**: only when `config.browser` is true.
-  Opening it starts the sandbox if needed and embeds the live
-  1280×720 Chromium view, scaled to the pane.
+  Opening it wakes the agent's machine and starts the agent's
+  Chrome if needed, and embeds the live 1280×720 Chromium view,
+  scaled to the pane.
   Keyboard and mouse go to the remote desktop.
   A clipboard strip moves text in and out.
   Sidebar agents with browser access show a marker.
@@ -595,29 +589,29 @@ The strip scrolls sideways when they do not fit.
 - **CLI**: only when `config.cli` is true.
   A terminal on the agent's machine.
   Nothing starts until **Start the terminal** is clicked.
-  That wakes the sandbox (with Chromium when the agent has browser
-  access, in the larger sandbox for a coding agent) and embeds a
-  bash session in `/home/agent`, as root, with the agent's
-  environment and secret values visible.
-  The sandbox stays up for 5 minutes after the last input.
+  That wakes the agent's machine and embeds a bash session in the
+  agent's home, `/home/<agent id>`, as root, with `HOME` and the
+  agent's port block set and no secret values.
+  The shell reaches the files of every agent on the machine.
+  The machine stays up for 5 minutes after the last input on it.
 - **Tools**, **Secrets**: the agent-scope access view (Tools:
   integrations and native tools).
-- **Usage**: lifetime tokens, cost, and call count, and disk used
-  against the agent's max (`workspace_mib` after the last
-  generation, `max_workspace_mib`).
+- **Usage**: lifetime tokens, cost, and call count, the disk the
+  agent's home uses against its cap (`workspace_mib` after the last
+  generation, `max_workspace_mib`), and the disk its machine uses
+  against the machine's cap.
 - **Settings**: name, focus, the avatar picker, wake triggers
   ("Wake me when", showing the focus while empty), model, thinking,
   temperature, the four run limits, **Max disk** (MiB, default
   10240) beside **Max scripts** (default 10).
-  Under **Box**: four buttons for Lite, Standard, Code or Custom
-  (moving to Lite turns browser and coding off; to Standard turns
-  the browser on and coding off; to Code turns both on; to Custom
-  turns the browser on and asks for the size; any move replaces the
-  sandbox). On Custom, the CPUs and memory, and Coding. A box whose
-  settled flag is switched the other way cannot be saved.
-  Under **Agent capabilities**: four buttons for Browser, CLI,
-  scripting, and Memory. Browser is off and unavailable on Lite;
-  its language shows while it is on.
+  Under **Machine**, shown when the organisation has more than one
+  machine: the picker with its planned memory bar, as on Create
+  agent. Saving another machine moves the agent: its processes
+  stop, and its home moves with it. A move is refused while the
+  agent generates.
+  Under **Agent capabilities**: five buttons for Browser, Coding,
+  CLI, scripting, and Memory. Coding is greyed out on a standard
+  machine; the browser language shows while Browser is on.
 
 ## Access view (Tools and Secrets)
 
@@ -891,6 +885,15 @@ them:
   **Remove** drops the key and its chosen models, and the default
   when it was among them.
 - **Secrets**, **Tools**: the organisation-scope access view.
+- **Machines** (`machines`): every machine of the organisation with
+  its tier, CPUs, and memory, the agents on it (each with its guild
+  and its Browser and Coding flags), the planned memory bar against
+  its memory, and the disk it uses against its cap. Owners and
+  admins create one (name, tier, and on Custom the CPUs and memory,
+  and the disk cap), resize it, and delete one that holds no agents.
+  A machine that hosts a coding agent cannot become Standard.
+  Members see the tab read-only
+  ([Machines](guilds-and-agents.md#machines)).
 - **Usage**: the organisation's totals, then each guild and agent,
   with the Studio coach and deleted guilds and agents as rows of
   their own.

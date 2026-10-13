@@ -46,7 +46,7 @@ user.
 | Target | Does |
 | --- | --- |
 | `make state` | Creates the `STATE_ROOT` trees (`.state/` in the checkout) |
-| `make build` | Builds the OpenSandbox server, `agent-runtime:0.3`, `agent-runtime-lite:0.1`, and the development stack's images |
+| `make build` | Builds the OpenSandbox server, `agent-runtime:0.4`, and the development stack's images |
 | `make up` | The development stack, detached, after the images |
 | `make dev` | `make up`, then the Vite server |
 | `make down` | Stops every service of the stack |
@@ -77,7 +77,7 @@ named Docker volume, so `docker volume ls` shows nothing of it and
 | --- | --- |
 | `postgres/` | The PostgreSQL data directory: every table |
 | `opensandbox/` | The OpenSandbox server's SQLite lifecycle store |
-| `workspaces/` | One directory per agent: scripts, the browser profile, a coding agent's home |
+| `workspaces/` | One directory per machine, with one home per agent on it: scripts, the browser profile, a coding agent's repositories |
 | `notes/` | The Obsidian vault: system prompt, guild and agent notes |
 | `attachments/` | Chat images, one file per attachment |
 | `connectors/` | Connector packages installed from a registry |
@@ -144,8 +144,8 @@ request, one job installs with the frozen lockfile and runs
 `scripts/check.sh`.
 
 `.github/workflows/images.yml` publishes the orchestrator,
-`agent-runtime`, `agent-runtime-lite`, and OpenSandbox server
-images to `ghcr.io` when a version tag is pushed.
+`agent-runtime`, and OpenSandbox server images to `ghcr.io` when a
+version tag is pushed.
 
 An edition built on core runs the same script from its own root
 with `EDITION_ROOT` set. It adds its steps through a

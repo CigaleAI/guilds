@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../../../api/client";
 import { useAgent } from "../../../api/queries";
 import { Button, IconButton, TextField, EmptyState, StatusBadge } from "@guildsrun/ui";
-/** The sandbox desktop is fixed at 1280 × 720 and scales to the pane. */
+/** The browser desktop is fixed at 1280 × 720 and scales to the pane. */
 const desktopRatio = 16 / 9;
 
 const XK_CONTROL_L = 0xffe3;
@@ -60,7 +60,7 @@ type Session =
   { kind: "starting" } | { kind: "live"; nonce: number } | { kind: "failed"; detail: string };
 
 /**
- * The agent's Chromium, live: starting its sandbox can take up to a minute. Keyboard and mouse go
+ * The agent's Chromium, live: starting its machine can take up to a minute. Keyboard and mouse go
  * straight to the desktop; the clipboard strip moves text in and out.
  */
 export function AgentBrowser() {
@@ -112,7 +112,7 @@ export function AgentBrowser() {
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-7 py-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-fg-2">
-          Chromium in the agent's sandbox. Its signed-in profile stays in /home/agent/.browser.
+          Chromium on the agent's machine. Its signed-in profile stays in /home/{agentId}/.browser.
         </span>
         <span className="flex-1" />
         <StatusBadge
@@ -150,7 +150,7 @@ export function AgentBrowser() {
         <div className="grid flex-1 place-items-center">
           <div role="status" className="flex flex-col items-center gap-2 text-sm text-muted">
             <StatusBadge status="running">Starting the browser</StatusBadge>
-            It can take up to a minute when the sandbox is asleep.
+            It can take up to a minute when the machine is asleep.
           </div>
         </div>
       )}

@@ -194,7 +194,7 @@ export function AgentInspector() {
         open={deleting}
         onOpenChange={setDeleting}
         title={`Delete ${agent.data?.name ?? "this agent"}?`}
-        description="Its sessions, routines, notes, sandbox and usage row are removed; its posts stay in the group chat. This can't be undone."
+        description="Its sessions, routines, notes, home and usage row are removed; its posts stay in the group chat. This can't be undone."
         confirmLabel="Delete agent"
         {...(agent.data ? { confirmText: agent.data.name } : {})}
         onConfirm={() =>

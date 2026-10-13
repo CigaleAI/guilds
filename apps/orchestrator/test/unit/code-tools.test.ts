@@ -22,6 +22,7 @@ import {
   SEARCH_TOOLS,
 } from "../../src/toolbox/code.js";
 import { REGISTRY } from "../../src/toolbox/index.js";
+import type { MachineSpec } from "../../src/sandbox/index.js";
 import { HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
@@ -226,27 +227,27 @@ test("call ids become safe file names", () => {
 test("a read of a range already held, unchanged, points at the earlier step", () => {
   const earlier = {
     seq: 7,
-    metadata: { tool_name: "file_read", path: "/home/agent/a.ts", range: [1, 200], content_hash: "h1", error: null },
+    metadata: { tool_name: "file_read", path: "/home/a_1/a.ts", range: [1, 200], content_hash: "h1", error: null },
   };
-  const again = { tool_name: "file_read", path: "/home/agent/a.ts", range: [10, 50], content_hash: "h1", error: null };
+  const again = { tool_name: "file_read", path: "/home/a_1/a.ts", range: [10, 50], content_hash: "h1", error: null };
   assert.equal(repeatedReadStep([earlier], again), 7);
   assert.equal(repeatedReadStep([earlier], { ...again, content_hash: "h2" }), null);
   assert.equal(repeatedReadStep([earlier], { ...again, range: [150, 250] }), null);
-  assert.equal(repeatedReadStep([earlier], { ...again, path: "/home/agent/b.ts" }), null);
+  assert.equal(repeatedReadStep([earlier], { ...again, path: "/home/a_1/b.ts" }), null);
   const pointer = { seq: 9, metadata: { ...again, repeat_of: 7 } };
   assert.equal(repeatedReadStep([pointer], again), null);
-  assert.equal(repeatedReadText(again, 7), "/home/agent/a.ts lines 10–50: unchanged since step 7; read that result.");
+  assert.equal(repeatedReadText(again, 7), "/home/a_1/a.ts lines 10–50: unchanged since step 7; read that result.");
 });
 
 test("exploration counts calls before the first edit and bytes read from files never edited", () => {
   const row = (metadata: Record<string, unknown>) => ({ metadata });
   const rows = [
     row({ tool_name: "code_find", stored_bytes: 900 }),
-    row({ tool_name: "file_read", path: "/home/agent/repos/a/x.ts", stored_bytes: 1200, error: null }),
-    row({ tool_name: "file_read", path: "/home/agent/repos/a/y.ts", stored_bytes: 800, error: null }),
-    row({ tool_name: "file_edit", path: "/home/agent/repos/a/z.ts", error: "old_string not found" }),
-    row({ tool_name: "file_edit", path: "/home/agent/repos/a/x.ts", error: null }),
-    row({ tool_name: "file_read", path: "/home/agent/repos/a/y.ts", stored_bytes: 40, error: null }),
+    row({ tool_name: "file_read", path: "/home/a_1/repos/a/x.ts", stored_bytes: 1200, error: null }),
+    row({ tool_name: "file_read", path: "/home/a_1/repos/a/y.ts", stored_bytes: 800, error: null }),
+    row({ tool_name: "file_edit", path: "/home/a_1/repos/a/z.ts", error: "old_string not found" }),
+    row({ tool_name: "file_edit", path: "/home/a_1/repos/a/x.ts", error: null }),
+    row({ tool_name: "file_read", path: "/home/a_1/repos/a/y.ts", stored_bytes: 40, error: null }),
   ];
   assert.deepEqual(explorationOf(rows), { calls_before_first_edit: 4, read_bytes_unedited: 840 });
   assert.deepEqual(explorationOf(rows.slice(0, 3)), { calls_before_first_edit: null, read_bytes_unedited: 2000 });
@@ -306,10 +307,6 @@ test("coding defaults to off, and a new coding agent gets the coding budgets", (
   assert.equal(coder.max_steps, 200);
   assert.equal(coder.max_tool_calls, 200);
   assert.equal(coder.max_input_tokens, 100000);
-  const code = validateConfig(withCodingLimits({ model: AGENT_CONFIG.model, box: "code" }));
-  assert.equal(code.coding, true, "a code box alone turns coding on");
-  assert.equal(code.max_steps, 200);
-  assert.equal(code.max_tool_calls, 200);
   const explicit = validateConfig(withCodingLimits({ ...AGENT_CONFIG, coding: true, max_steps: 12 }));
   assert.equal(explicit.max_steps, 12);
   assert.equal(explicit.max_tool_calls, AGENT_CONFIG.max_tool_calls);
@@ -348,13 +345,13 @@ describe("coding runs in the generation loop", () => {
 
   function codingSandboxes(sandbox: HostCodeSandbox) {
     const sandboxes = new FakeSandboxes();
-    const flags: Array<Record<string, unknown>> = [];
-    sandboxes.ensure = (async (agentId: string, _secrets: Record<string, string>, _ids: string[], options: Record<string, unknown> = {}) => {
-      flags.push(options);
-      sandboxes.running.add(agentId);
+    const machines: MachineSpec[] = [];
+    sandboxes.ensure = (async (machine: MachineSpec) => {
+      machines.push(machine);
+      sandboxes.running.add(machine.id);
       return sandbox;
     }) as unknown as FakeSandboxes["ensure"];
-    return { sandboxes, flags };
+    return { sandboxes, machines };
   }
 
   test("a repeated read of an unchanged range becomes a pointer; an edit brings content back", async () => {
@@ -369,10 +366,10 @@ describe("coding runs in the generation loop", () => {
       [{ id: "c3", function: { name: "file_edit", arguments: '{"path":"repo/a.txt","old_string":"two","new_string":"2"}' } }],
       [read("c4")],
     ]) as typeof live.streamCompletion;
-    const { sandboxes, flags } = codingSandboxes(sandbox);
+    const { sandboxes, machines } = codingSandboxes(sandbox);
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
     await loop._generate("r_1", 1);
-    assert.equal(flags[0]?.coding, true);
+    assert.equal(machines[0]?.id, "mach_1");
     const tools = db.messages.filter((row) => (row.payload as Record<string, unknown>).role === "tool");
     const contents = tools.map((row) => String((row.payload as Record<string, unknown>).content).split("\n\nremaining_tool_calls")[0]);
     assert.match(String(contents[0]), /^repo\/a\.txt · lines 1–3 of 3\n1 {2}one\n2 {2}two\n3 {2}three$/);
@@ -519,8 +516,8 @@ describe("repositories in a coding generation", () => {
       { id: "repo_1", guild_id: "guild_1", name: "shop", url, default_branch: "main", connection_id: null },
     ];
     const sandboxes = new FakeSandboxes();
-    sandboxes.ensure = (async (agentId: string) => {
-      sandboxes.running.add(agentId);
+    sandboxes.ensure = (async (machine: MachineSpec) => {
+      sandboxes.running.add(machine.id);
       return sandbox;
     }) as unknown as FakeSandboxes["ensure"];
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);

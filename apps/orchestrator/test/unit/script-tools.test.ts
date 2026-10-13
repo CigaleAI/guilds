@@ -187,14 +187,14 @@ test("script tools create list read run delete", async () => {
   assert.equal(read.content, "send_usdc\nSign and send USDC from the treasury\n\nprint('sent')\n");
   const ran = await invoke(ctx, "script_run", { name: "send_usdc" });
   assert.equal(ran.content, "ok");
-  assert.deepEqual(commands, [launcherCommand("send_usdc")]);
-  assert.equal(files.files.get("/home/agent/scripts/send_usdc.py"), "print('sent')\n");
+  assert.deepEqual(commands, [launcherCommand("/home/a_1", "send_usdc")]);
+  assert.equal(files.files.get("/home/a_1/scripts/send_usdc.py"), "print('sent')\n");
   const hostPath = path.join(workspace, "a_1", "scripts", "send_usdc.py");
   assert.equal(existsSync(hostPath), false);
   assert.equal(existsSync(path.join(workspace, "a_1", "scripts", "manifest.json")), false);
   const deleted = await invoke(ctx, "script_delete", { name: "send_usdc" });
   assert.equal(deleted.content, "deleted send_usdc");
-  assert.equal(files.files.has("/home/agent/scripts/send_usdc.py"), false);
+  assert.equal(files.files.has("/home/a_1/scripts/send_usdc.py"), false);
   const empty = await invoke(ctx, "script_list", {});
   assert.equal(empty.content, "no scripts");
   assert.equal(published.at(-1)?.[1], "agent.scripts.changed");
@@ -217,7 +217,7 @@ test("script_run passes arguments to the script as JSON on stdin", async () => {
   assert.equal(bare.metadata.error, null);
   const stringified = await invoke(ctx, "script_run", { name: "greet", arguments: '{"text":"d"}' });
   assert.equal(stringified.metadata.error, null);
-  assert.deepEqual(commands, [launcherCommand("greet"), launcherCommand("greet"), launcherCommand("greet")]);
+  assert.deepEqual(commands, [launcherCommand("/home/a_1", "greet"), launcherCommand("/home/a_1", "greet"), launcherCommand("/home/a_1", "greet")]);
   assert.deepEqual(
     envs.map((env) => JSON.parse(env?.[SCRIPT_ARGS_ENV] ?? "")),
     [{ text: "a \"b\"\nc" }, {}, { text: "d" }],
@@ -244,7 +244,7 @@ test("script create on a name this run started with says the new version waits",
     replaced.content,
     "wrote ping\nnew why\nThis run keeps running the version it started with; the new version runs from the next run.",
   );
-  assert.equal(files.files.get("/home/agent/scripts/ping.py"), "print(1)\n");
+  assert.equal(files.files.get("/home/a_1/scripts/ping.py"), "print(1)\n");
 });
 
 test("script delete drops the name from this run so script_run stops", async () => {
@@ -267,7 +267,7 @@ test("script delete drops the name from this run so script_run stops", async () 
   assert.ok(ctx.dynamic_tools.send_usdc);
   const deleted = await invoke(ctx, "script_delete", { name: "send_usdc" });
   assert.equal(deleted.content, "deleted send_usdc");
-  assert.equal(files.files.has("/home/agent/scripts/send_usdc.py"), false);
+  assert.equal(files.files.has("/home/a_1/scripts/send_usdc.py"), false);
   assert.equal(ctx.run_scripts.length, 0);
   assert.equal(ctx.dynamic_tools.send_usdc, undefined);
   assert.deepEqual(persisted, []);

@@ -43,7 +43,7 @@ a model provider. That is the next page.
 
 You are already signed in. The box has one user, named `operator`,
 and one organisation, named `Home`. Anyone who reaches this address
-on this machine is that operator. To let other people in, read
+on this host is that operator. To let other people in, read
 [Remote access](remote-access.md) later.
 
 If the page does not load, run `docker compose ps`. It shows which

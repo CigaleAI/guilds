@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  type QueryClient,
   useMutation,
   useQueries,
   useQuery,
@@ -48,6 +49,8 @@ import type {
   McpCredentials,
   McpToolCallResult,
   CatalogModel,
+  Machine,
+  MachineInput,
   NewSecret,
   Secret,
   SecretAccessChoice,
@@ -110,6 +113,9 @@ export const keys = {
   guildSchedules: (guildId: string) => ["guild", guildId, "schedules"] as const,
   guildUsage: (guildId: string) => ["guild", guildId, "usage"] as const,
   orgMembers: (orgId: string) => ["org", orgId, "members"] as const,
+  /** Machines and the agents on them; any agent placement, move or deletion refreshes it. */
+  machinesAll: ["machines"] as const,
+  orgMachines: (orgId: string) => ["machines", orgId] as const,
   notifications: ["notifications"] as const,
   agent: (agentId: string) => ["agent", agentId] as const,
   agentRuns: (agentId: string) => ["agent", agentId, "runs"] as const,
@@ -901,8 +907,8 @@ export function useStartGithubAppManifest() {
 }
 
 /**
- * Saves the agent's name, model settings, focus and look. Switching the browser on or off replaces
- * the agent's sandbox, and switching it on counts against the plan's browser-agent limit.
+ * Saves the agent's name, model settings, machine, focus and look. Switching the browser on counts
+ * against the plan's browser-agent limit; a new machine moves the agent and its home there.
  */
 export function useSaveAgentSettings(agentId: string, guildId: string) {
   const client = useQueryClient();
@@ -915,17 +921,22 @@ export function useSaveAgentSettings(agentId: string, guildId: string) {
     onSuccess: (agent) => {
       client.setQueryData(keys.agent(agentId), agent);
       void client.invalidateQueries({ queryKey: keys.agents(guildId) });
+      void client.invalidateQueries({ queryKey: keys.agentUsage(agentId) });
+      refreshMachines(client);
     },
   });
 }
 
-/** Deletes the agent with its runs, routines, notes, sandbox and usage row. */
+/** Deletes the agent with its runs, routines, notes, home and usage row. */
 export function useDeleteAgent(guildId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (agentId: string) =>
       api<undefined>(`/api/agents/${encodeURIComponent(agentId)}`, { method: "DELETE" }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.agents(guildId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.agents(guildId) });
+      refreshMachines(client);
+    },
   });
 }
 
@@ -1040,6 +1051,71 @@ export function useOrgMembers(orgId: string) {
   });
 }
 
+const machinesPath = (orgId: string) => `/api/orgs/${encodeURIComponent(orgId)}/machines`;
+
+/**
+ * Refreshes every read that shows machines or the memory their agents plan to use: the machine
+ * lists and the recipe apply previews.
+ */
+function refreshMachines(client: QueryClient) {
+  void client.invalidateQueries({ queryKey: keys.machinesAll });
+  void client.invalidateQueries({
+    predicate: (query) => query.queryKey[0] === "recipes" && query.queryKey[2] === "preview",
+  });
+}
+
+/** The organisation's machines, each with its agents, their planned memory, and its disk. */
+export function useOrgMachines(orgId: string) {
+  return useQuery({
+    queryKey: keys.orgMachines(orgId),
+    queryFn: () => api<Machine[]>(machinesPath(orgId)),
+  });
+}
+
+/** A new machine; owners and admins only. */
+export function useCreateMachine(orgId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: MachineInput) =>
+      api<Machine>(machinesPath(orgId), { method: "POST", body: input }),
+    onSuccess: () => refreshMachines(client),
+  });
+}
+
+/**
+ * Renames, resizes, or changes the disk cap of a machine; owners and admins only. A new tier or size
+ * restarts the machine once none of its agents is generating.
+ */
+export function useUpdateMachine(orgId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ machineId, input }: { machineId: string; input: Partial<MachineInput> }) =>
+      api<Machine>(`${machinesPath(orgId)}/${encodeURIComponent(machineId)}`, {
+        method: "PATCH",
+        body: input,
+      }),
+    onSuccess: (machine) => {
+      refreshMachines(client);
+      for (const agent of machine.agents) {
+        void client.invalidateQueries({ queryKey: keys.agent(agent.id) });
+        void client.invalidateQueries({ queryKey: keys.agents(agent.guild_id) });
+      }
+    },
+  });
+}
+
+/** Deletes a machine with no agents on it; owners and admins only. */
+export function useDeleteMachine(orgId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (machineId: string) =>
+      api<undefined>(`${machinesPath(orgId)}/${encodeURIComponent(machineId)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => refreshMachines(client),
+  });
+}
+
 /** Adds an operator or changes their role; a guild keeps at least one admin. Admins only. */
 export function useGuildRepositories(guildId: string) {
   return useQuery({
@@ -1111,7 +1187,7 @@ export function useGithubRepositories(connectionId: string | null) {
   });
 }
 
-/** The diff a run made in one repository, fetched from the agent's sandbox on demand. */
+/** The diff a run made in one repository, fetched from the agent's home on demand. */
 export function useRunDiff(runId: string, repository: string | null) {
   return useQuery({
     queryKey: keys.runDiff(runId, repository ?? ""),
@@ -1153,12 +1229,15 @@ export function useRemoveOperator(guildId: string) {
   });
 }
 
-/** Deletes the guild with its chat, agents, notes and sandboxes. Admins only. */
+/** Deletes the guild with its chat, agents, notes and agent homes. Admins only. */
 export function useDeleteGuild() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (guildId: string) => api<undefined>(guildPath(guildId), { method: "DELETE" }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.guilds }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.guilds });
+      refreshMachines(client);
+    },
   });
 }
 
@@ -1254,7 +1333,7 @@ export function useCreateGuild() {
   });
 }
 
-/** A new agent in the guild; its focus seeds its Task. */
+/** A new agent in the guild, on the machine named, or the organisation's only one; its focus seeds its Task. */
 export function useCreateAgent(guildId: string) {
   const client = useQueryClient();
   return useMutation({
@@ -1264,8 +1343,12 @@ export function useCreateAgent(guildId: string) {
       avatar_shape: string;
       avatar_color: string;
       config: AgentConfig;
+      machine_id?: string;
     }) => api<AgentDetail>(`${guildPath(guildId)}/agents`, { method: "POST", body: input }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.agents(guildId) }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.agents(guildId) });
+      refreshMachines(client);
+    },
   });
 }
 
@@ -2182,17 +2265,24 @@ export function useSaveSettings(connectionId: string) {
 
 /**
  * What applying the recipe would create now, with its findings: live logins to reuse, name
- * collisions, and tables that already exist. Nothing is written.
+ * collisions, tables that already exist, and the machine the roles go on (the one named, or the
+ * organisation's only one). Nothing is written.
  */
-export function useRecipePreview(id: string, version: number | undefined) {
+export function useRecipePreview(id: string, version: number | undefined, machineId?: string) {
   return useQuery({
-    queryKey: keys.recipePreview(id, version ?? -1),
+    queryKey: [...keys.recipePreview(id, version ?? -1), machineId ?? ""],
     queryFn: () =>
       api<ApplyPreview>(`${recipePath(id)}/preview`, {
         method: "POST",
-        body: { connections: [], names: [], models: [] },
+        body: {
+          connections: [],
+          names: [],
+          models: [],
+          ...(machineId ? { machine_id: machineId } : {}),
+        },
       }),
     enabled: version !== undefined,
+    placeholderData: keepPreviousData,
     retry: false,
   });
 }
@@ -2203,7 +2293,10 @@ export function useApplyRecipe(id: string) {
   return useMutation({
     mutationFn: (choices: ApplyChoices) =>
       api<ApplyRow>(`${recipePath(id)}/apply`, { method: "POST", body: choices }),
-    onSuccess: () => void client.invalidateQueries({ queryKey: keys.guilds }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.guilds });
+      refreshMachines(client);
+    },
   });
 }
 
