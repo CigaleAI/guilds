@@ -136,6 +136,9 @@ The document has none of:
 
 `config.coding` (boolean) makes a role a coding agent.
 
+`config.harness` names a coding role's harness: `claude-code`,
+`codex`, or `cursor`. It is optional; apply asks for it.
+
 `repositories` lists the git repositories the guild's coding roles
 work in, by `name` and a one-line `purpose`.
 
@@ -158,6 +161,17 @@ boolean.
 
 It warns with `repositories.unused` when repositories are listed and
 no role sets `config.coding`.
+
+Harness findings are warnings, never refusals:
+
+- `harness.unknown` when `config.harness` is not one of the three;
+  apply asks for one
+- `harness.coding` when a role without `coding` names a harness;
+  apply leaves it out
+- `harness.credential` on every coding role: the harness runs on a
+  subscription credential that cannot be known before apply. It names
+  the fix after apply: the secret to grant, or the login to run in
+  the agent's CLI tab
 
 Optional `connections[].resources` names confirmed long-lived external
 tables (`kind`, `id`, `title`, `url?`, `use?`).
@@ -234,6 +248,8 @@ Apply inserts them paused.
 Chromium profiles do not.
 
 `config.coding` travels.
+`config.harness` travels as it is; an agent without one leaves the key
+out.
 The guild's repositories are captured by name with an empty
 `purpose`.
 Their URLs, branches, and GitHub connections stay with the guild.
@@ -456,6 +472,13 @@ and nothing is created while a role has none. The Builder writes the
 coach's model into the roles it drafts without one; capturing a guild
 keeps each agent's live model.
 
+A coding role's `config.harness` works the same way, with no default.
+The preview shows a harness picker per coding role, preselected with
+the role's harness. The apply request carries `harnesses`
+(`[{ role, harness }]`), and apply refuses with `choose a harness for
+…` while a coding role has none. A harness for a role without
+`coding` is refused. Only a coding role keeps a harness.
+
 #### Preview
 
 `POST /api/recipes/:id/preview` resolves, without writing:
@@ -467,6 +490,9 @@ keeps each agent's live model.
   recommendation when the organisation has its provider, else the
   organisation's default, else none; the preview's `models` lists
   each role's `recommended` and resolved `model`
+- each coding role's harness: the operator's choice, else the role's;
+  the preview's `harnesses` lists each coding role's `recommended`
+  and resolved `harness`
 - the organisation's remaining capacity for the whole batch: agents,
   browser agents, and coding agents (roles with `config.coding: true`),
   each against the organisation's limit, `null` where nothing caps it
@@ -663,6 +689,7 @@ It shows:
 
 - the new guild's name
 - each agent's name
+- each agent's model, and each coding agent's harness
 - for each connector, a live login to reuse or one to connect
   afterwards
 

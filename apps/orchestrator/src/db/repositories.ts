@@ -861,7 +861,7 @@ export class Repositories {
       `SELECT
          a.id, a.guild_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
          a.created_at, a.updated_at, a.archived_at,
-         a.task, a.task_version, a.task_hash, a.task_updated_at, a.workspace_mib,
+         a.task, a.task_version, a.task_hash, a.task_updated_at, a.workspace_mib, a.harness_logins,
          a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box,
          m.cpu AS machine_cpu, m.memory_mib AS machine_memory_mib,
          m.max_workspace_mib AS machine_max_workspace_mib, m.workspace_mib AS machine_workspace_mib,
@@ -1114,6 +1114,14 @@ export class Repositories {
       machineId: row.machine_id,
       agentId: row.id,
     }));
+  }
+
+  /** Records when the agent's harness last found a login in its home. */
+  async markHarnessLogin(agentId: string, harness: string, now: Date): Promise<void> {
+    await this.pool.query(
+      `UPDATE agents SET harness_logins = harness_logins || jsonb_build_object($2::text, $3::text) WHERE id = $1`,
+      [agentId, harness, now.toISOString()],
+    );
   }
 
   async setAgentWorkspaceMib(agentId: string, mib: number): Promise<void> {

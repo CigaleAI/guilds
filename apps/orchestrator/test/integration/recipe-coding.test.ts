@@ -51,7 +51,7 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
     await codeDefaultMachine(app, AUTH);
     const agent = await call("POST", `/api/guilds/${sourceId}/agents`, {
       name: "coder",
-      config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true },
+      config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code" },
     });
     assert.equal(agent.statusCode, 201, agent.body);
     const added = await call("POST", `/api/guilds/${sourceId}/repositories`, {

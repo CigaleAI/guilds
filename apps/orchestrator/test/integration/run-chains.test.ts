@@ -103,6 +103,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     max_input_tokens: 1000,
     browser: false,
     coding: true,
+    harness: "claude-code",
     thinking_level: "none",
   };
   await codeDefaultMachine(app, headers);
@@ -245,7 +246,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     assert.equal(Number(cursor.rows[0]?.group_chat_delivered_through), Number(root.group_chat_through_seq));
 
     // A run without coding keeps the terminal cap.
-    await repo.updateAgentConfig(agentId, { ...config, coding: false }, new Date(), {});
+    await repo.updateAgentConfig(agentId, { ...config, coding: false, harness: null }, new Date(), {});
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
     const plain = String((await loop.createRun(agentId, "plain")).id);
     await loop._tasks.get(plain);

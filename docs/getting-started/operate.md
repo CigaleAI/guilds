@@ -29,6 +29,18 @@ the image with:
 docker build --build-arg BROWSER=chromium --tag agent-runtime:0.4 runtime/
 ```
 
+The image installs Claude Code, the coding harness behind
+`code_task`, when the `HARNESSES` build argument names `claude-code`,
+its default. Claude Code is proprietary: the published image is built
+with `HARNESSES` empty, and coding agents on it need an image built
+with it
+([Code tools](../tools-and-connectors/code.md#credentials-and-errors)).
+To build without it:
+
+```text
+docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
+```
+
 ## Where the state lives
 
 `STATE_ROOT` in `.env` is an absolute path on this host. The

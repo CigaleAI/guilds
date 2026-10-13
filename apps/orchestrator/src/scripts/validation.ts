@@ -47,6 +47,7 @@ export const NATIVE_TOOL_NAMES = new Set([
   "code_find",
   "code_outline",
   "code_callers",
+  "code_task",
   "secret_store",
   "secret_request",
 ]);

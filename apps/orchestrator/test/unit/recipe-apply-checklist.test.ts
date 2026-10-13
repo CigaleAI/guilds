@@ -144,6 +144,36 @@ test("apply carries the coding flag and turns a missing one off", () => {
   assert.equal(configFromRecipeRole(recipe.roles[0]!).coding, false);
 });
 
+test("apply gives a coding role the harness chosen, else the recipe's, and no other role one", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  role.config = { coding: true, harness: "codex" };
+  assert.equal(configFromRecipeRole(role).harness, "codex");
+  assert.equal(configFromRecipeRole(role, undefined, "cursor").harness, "cursor");
+  role.config = { coding: true };
+  assert.equal(configFromRecipeRole(role).harness, null);
+  role.config = { coding: false, harness: "codex" };
+  assert.equal(configFromRecipeRole(role, undefined, "cursor").harness, null);
+  const ctx = {
+    publishedServers: new Set<string>(),
+    remainingAgents: 20,
+    remainingBrowserAgents: 5,
+    remainingCodingAgents: 5,
+    groupLimit: 20,
+  };
+  const findings = (config: Record<string, unknown>) => {
+    role.config = config;
+    return validateRecipe(recipe, ctx).filter((item) => item.code.startsWith("harness."));
+  };
+  const credential = findings({ coding: true, harness: "claude-code" });
+  assert.deepEqual(credential.map((item) => [item.code, item.severity]), [["harness.credential", "warning"]]);
+  assert.match(credential[0]!.message, /grant the secret CLAUDE_CODE_OAUTH_TOKEN/);
+  assert.match(findings({ coding: true })[0]!.message, /apply asks for its harness/);
+  assert.deepEqual(findings({ coding: true, harness: "pi" }).map((item) => item.code), ["harness.unknown", "harness.credential"]);
+  assert.deepEqual(findings({ coding: false, harness: "codex" }).map((item) => item.code), ["harness.coding"]);
+  assert.ok(findings({ coding: true, harness: "codex" }).every((item) => item.severity === "warning"));
+});
+
 test("a connector the box lacks is installable from the registry or the recipe, else unknown", () => {
   const ctx = {
     publishedServers: new Set<string>(),

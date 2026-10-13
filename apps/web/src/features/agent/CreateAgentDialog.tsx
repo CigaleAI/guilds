@@ -202,6 +202,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
               <CapabilitiesFields
                 form={form}
                 onChange={(next) => setConfig(next)}
+                errors={errors}
                 models={models.data}
                 machine={machine}
               />

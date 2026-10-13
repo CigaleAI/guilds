@@ -39,9 +39,13 @@ import {
   toolOutcome,
 } from "../runs/toolFormat";
 import { kindBreakdown, levelFromDisplayPath } from "../runs/toolKinds";
-import { ToolCallDetail } from "./ToolCallDetail";
+import type { ToolProgress } from "../../../api/toolProgress";
+import { ProgressLines, ToolCallDetail } from "./ToolCallDetail";
 
 const CallLink = createLink(ToolCallLink);
+
+/** How many of a running call's latest progress lines show under it while it is closed. */
+const PROGRESS_TAIL = 6;
 
 /** Reasoning longer than this, or taller than six lines, starts clamped. */
 const REASONING_CLAMP = 480;
@@ -244,6 +248,8 @@ function revealedCall(flow: FlowSegment, reveal: RevealStep | undefined): FlowCa
 
 type FlowViewProps = {
   flow: FlowSegment;
+  /** The run the flow belongs to; without it, calls offer nothing fetched from the run. */
+  runId?: string;
   /** The run is generating, so calls without a result are still waiting on it. */
   generating: boolean;
   /** Unfolded when it is running or the latest generation. */
@@ -254,16 +260,20 @@ type FlowViewProps = {
   inspector?: Inspector;
   /** Pins a call to a question for Studio's coach. */
   onAskCall?: ((call: FlowCall) => void) | undefined;
+  /** What running calls have reported so far, by call id. */
+  progress?: ToolProgress;
 };
 
 /** One generation: its header and strip, then each step with its reasoning and the calls it requested. */
 export function FlowView({
   flow,
+  runId,
   generating,
   defaultOpen,
   reveal,
   inspector,
   onAskCall,
+  progress,
 }: FlowViewProps) {
   const [revealed] = useState(() => revealedCall(flow, reveal));
   const [open, setOpen] = useState(defaultOpen || revealed !== null);
@@ -323,7 +333,9 @@ export function FlowView({
   const renderCall = (call: FlowCall, index?: number) => {
     const error = callError(call, generating);
     const expanded = openCall === callKey(call);
-    return (
+    const status = callStatus(call, generating);
+    const reported = status === "running" ? progress?.[call.id] : undefined;
+    const card = (
       <ToolCall
         key={callKey(call)}
         {...(revealed && callKey(revealed) === callKey(call)
@@ -341,19 +353,32 @@ export function FlowView({
         hint={[friendlyToolCall(call.call), toolOutcome(call.result?.metadata)]
           .filter(Boolean)
           .join(" · ")}
-        status={callStatus(call, generating)}
+        status={status}
         {...(error ? { error: previewText(error, 160) } : {})}
         duration={formatDuration(callDuration(call))}
         dimmed={dimCall(call)}
         expanded={expanded}
         detail={
           expanded ? (
-            <ToolCallDetail call={call} generating={generating} onAsk={onAskCall} />
+            <ToolCallDetail
+              call={call}
+              generating={generating}
+              onAsk={onAskCall}
+              {...(runId ? { runId } : {})}
+              {...(reported ? { progress: reported } : {})}
+            />
           ) : undefined
         }
         link={inspector ? callLink(call, inspector) : null}
         onClick={() => setOpenCall((current) => (current === callKey(call) ? null : callKey(call)))}
       />
+    );
+    if (expanded || !reported?.lines.length) return card;
+    return (
+      <div key={callKey(call)} className="flex flex-col gap-1">
+        {card}
+        <ProgressLines lines={reported.lines.slice(-PROGRESS_TAIL)} className="bg-paper" />
+      </div>
     );
   };
 

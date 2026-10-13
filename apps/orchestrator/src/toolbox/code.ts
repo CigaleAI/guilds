@@ -22,6 +22,7 @@ export const SEARCH_TOOLS = [
 export const CODING_TOOLS = [...SHELL_TOOLS, ...FILE_TOOLS, ...SEARCH_TOOLS] as const;
 
 export const CODE_HELPER = "/usr/local/bin/guilds-code";
+export const HARNESS_HELPER = "/usr/local/bin/guilds-harness";
 export const CODE_REQUEST_DIR = "/run/guilds/requests";
 /** Longest base64 request passed on the command line; a larger one goes through the file API. */
 export const INLINE_REQUEST_MAX = 64 * 1024;
@@ -64,16 +65,18 @@ function stderrOf(execution: { logs?: { stderr?: Array<{ text?: string }> } }): 
 }
 
 /**
- * Runs one helper op. The request travels base64 on the command line, or through the
- * sandbox file API when it is too large for one argument. Throws with the helper's
- * error text; otherwise records the helper's metadata on the call.
+ * Runs one op of a sandbox helper (`guilds-code` unless `helper` names another). The request
+ * travels base64 on the command line, or through the sandbox file API when it is too large
+ * for one argument. Throws with the helper's error text; otherwise records the helper's
+ * metadata on the call.
  */
 export async function runCodeHelper(
   ctx: ToolContext,
   op: string,
   args: Record<string, unknown>,
-  options: { timeoutSeconds?: number; maxBytes?: number } = {},
+  options: { timeoutSeconds?: number; maxBytes?: number; helper?: string } = {},
 ): Promise<CodeResult> {
+  const helper = options.helper ?? CODE_HELPER;
   const callId = callSegment(ctx.tool_call_id || `${op}_${Date.now()}`);
   const request = {
     ...args,
@@ -88,7 +91,7 @@ export async function runCodeHelper(
   const encoded = Buffer.from(json, "utf8").toString("base64");
   let command: string;
   if (encoded.length <= INLINE_REQUEST_MAX) {
-    command = `python3 ${CODE_HELPER} ${encoded}`;
+    command = `python3 ${helper} ${encoded}`;
   } else {
     const files = ctx.sandbox?.files;
     if (!files) {
@@ -96,7 +99,7 @@ export async function runCodeHelper(
     }
     const requestPath = `${CODE_REQUEST_DIR}/${ctx.run_id}-${callId}.json`;
     await files.writeFiles([{ path: requestPath, data: json }]);
-    command = `python3 ${CODE_HELPER} @${requestPath}`;
+    command = `python3 ${helper} @${requestPath}`;
   }
   const execution = await executeCommand(ctx, command, {
     timeoutSeconds: options.timeoutSeconds ?? CODE_HELPER_TIMEOUT_SECONDS,

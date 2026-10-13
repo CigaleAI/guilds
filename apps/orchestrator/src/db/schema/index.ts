@@ -210,6 +210,7 @@ export const agents = pgTable(
     workspaceMib: integer("workspace_mib"),
     machineId: text("machine_id").notNull(),
     machineSlot: smallint("machine_slot").notNull(),
+    harnessLogins: jsonb("harness_logins").notNull().default(sql`'{}'::jsonb`),
   },
   (table) => [
     unique("agents_name_key").on(table.name),

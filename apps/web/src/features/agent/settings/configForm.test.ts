@@ -129,3 +129,24 @@ test("an organisation without machines leaves nothing to pick", () => {
   const form = { ...configFormOf(defaultAgentConfig), model: "openai/gpt-5" };
   assert.equal(configErrors(form, { machines: [] }).machine, "Choose a machine.");
 });
+
+test("a coding agent needs a harness, and turning coding off clears it", () => {
+  const form = withCoding(configFormOf(defaultAgentConfig), true);
+  assert.equal(form.harness, "");
+  assert.equal(configErrors(form).harness, "Pick a harness.");
+  const picked = { ...form, harness: "codex" as const };
+  assert.equal(configErrors(picked).harness, undefined);
+  assert.equal(configOf(picked, undefined).harness, "codex");
+  const off = withCoding(picked, false);
+  assert.equal(off.harness, "");
+  assert.equal(configErrors(off).harness, undefined);
+  assert.equal(configOf(off, undefined).harness, null);
+  assert.equal(configOf({ ...off, harness: "cursor" }, undefined).harness, null);
+});
+
+test("a stored harness reaches the form and back", () => {
+  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "claude-code" });
+  assert.equal(form.harness, "claude-code");
+  assert.equal(configOf(form, undefined).harness, "claude-code");
+  assert.equal(configFormOf({ ...defaultAgentConfig, coding: true, harness: null }).harness, "");
+});

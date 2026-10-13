@@ -1,4 +1,5 @@
 import { isCodingOnlyModel, parseModelId } from "../llm/providers.js";
+import { HARNESSES, isHarness, type Harness } from "../coding/harnesses.js";
 import { NAME_RE } from "../lib/names.js";
 
 export const CONFIG_KEYS = new Set([
@@ -15,6 +16,7 @@ export const CONFIG_KEYS = new Set([
   "browser",
   "browser_language",
   "coding",
+  "harness",
   "scripting",
   "memory",
   "thinking_level",
@@ -117,6 +119,7 @@ export type AgentConfig = {
   browser: boolean;
   browser_language: string;
   coding: boolean;
+  harness: Harness | null;
   scripting: boolean;
   memory: boolean;
   thinking_level: ThinkingLevel;
@@ -185,9 +188,9 @@ export function addMissingBrowser(config: Record<string, unknown>): Record<strin
   return fillMissingKeys(config, { browser: false });
 }
 
-/** The flags a payload leaves out: no browser and no coding. */
+/** The flags a payload leaves out: no browser, no coding, and no harness. */
 export function addMissingFlags(config: Record<string, unknown>): Record<string, unknown> {
-  return fillMissingKeys(config, { browser: false, coding: false });
+  return fillMissingKeys(config, { browser: false, coding: false, harness: null });
 }
 
 export function addMissingCliScriptingAndMemory(
@@ -385,6 +388,35 @@ function requireBooleanField(value: unknown, field: string): boolean {
   return value;
 }
 
+function requireHarness(value: unknown, coding: boolean): Harness | null {
+  if (value === null) {
+    return null;
+  }
+  if (!isHarness(value)) {
+    throw new AgentValidationError(`harness must be one of: ${HARNESSES.join(", ")}`);
+  }
+  if (!coding) {
+    throw new AgentValidationError("harness is only for coding agents");
+  }
+  return value;
+}
+
+/**
+ * A coding agent needs a harness on create, and on every update that changes `coding` or
+ * `harness`. A stored coding agent without one still validates, so its other settings can
+ * be saved.
+ */
+export function assertHarnessChosen(config: AgentConfig, previous: Record<string, unknown> | null): void {
+  if (!config.coding || config.harness !== null) {
+    return;
+  }
+  const touched =
+    previous === null || previous.coding !== true || (previous.harness ?? null) !== config.harness;
+  if (touched) {
+    throw new AgentValidationError(`coding agents need a harness: ${HARNESSES.join(", ")}`);
+  }
+}
+
 function rejectCodingOnlyModelWithoutCoding(model: string, coding: boolean): void {
   if (isCodingOnlyModel(model) && !coding) {
     throw new AgentValidationError("coding API models are only for coding agents");
@@ -415,6 +447,7 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
     browser,
     browser_language: validateBrowserLanguage(filled.browser_language),
     coding,
+    harness: requireHarness(filled.harness, coding),
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),
     thinking_level: validateThinkingLevel(filled.thinking_level),

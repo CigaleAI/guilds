@@ -1,15 +1,21 @@
 import { Pin } from "lucide-react";
-import { useState } from "react";
-import { Button, CopyButton, JsonTree, Segmented, Banner, Icon } from "@guildsrun/ui";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useTaskDiff } from "../../../api/queries";
+import type { CallProgress } from "../../../api/toolProgress";
+import { Button, CopyButton, JsonTree, Segmented, Banner, Icon, cn } from "@guildsrun/ui";
+import { harnessLabel } from "../harness";
 import type { FlowCall } from "../runs/runFlowModel";
 import {
+  codeTaskChanges,
+  codeTaskStatus,
   formatDuration,
   formatReturnedData,
   formatToolArgs,
   stripRemainingToolCalls,
 } from "../runs/toolFormat";
+import { DiffView } from "./ChangesPanel";
 
-type View = "arguments" | "result" | "metadata";
+type View = "arguments" | "result" | "metadata" | "diff";
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -23,6 +29,41 @@ function Code({ children }: { children: string }) {
       {children}
     </pre>
   );
+}
+
+/** The lines a running call has reported, latest last, kept scrolled to the latest. */
+export function ProgressLines({
+  lines,
+  className,
+}: {
+  lines: readonly string[];
+  className?: string;
+}) {
+  const box = useRef<HTMLPreElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+  return (
+    <pre
+      ref={box}
+      aria-label="Progress"
+      className={cn(
+        "max-h-96 overflow-auto rounded-md bg-surface p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg-2",
+        className,
+      )}
+    >
+      {lines.join("\n")}
+    </pre>
+  );
+}
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function shortSha(value: unknown): string {
+  return typeof value === "string" ? value.slice(0, 7) : "";
 }
 
 /** A call's arguments or result: JSON as a tree, or as raw text; anything else as text. */
@@ -57,33 +98,58 @@ function Payload({ text, json, what }: { text: string; json: unknown; what: stri
   );
 }
 
-/** One tool call opened up: what the agent asked for, what came back, and how it ran. */
+/**
+ * One tool call opened up: what the agent asked for, what came back (or, while it runs, what it
+ * has reported), how it ran, and for a code task the diff it made.
+ */
 export function ToolCallDetail({
   call,
   generating,
   onAsk,
+  runId,
+  progress,
 }: {
   call: FlowCall;
   generating: boolean;
   /** Pins this call to a question for Studio's coach. */
   onAsk?: ((call: FlowCall) => void) | undefined;
+  /** The run the call belongs to, where its task diff is fetched from. */
+  runId?: string;
+  /** What the call has reported while it runs. */
+  progress?: CallProgress;
 }) {
-  const [view, setView] = useState<View>(call.error ? "result" : "arguments");
+  const [view, setView] = useState<View>(
+    call.error ? "result" : progress?.lines.length ? "result" : "arguments",
+  );
   const fn = record(record(call.call).function);
   const args = formatToolArgs(fn.arguments);
   const meta = record(call.result?.metadata);
   const content = call.result ? stripRemainingToolCalls(record(call.result.payload).content) : null;
   const returned = formatReturnedData(content);
+  const task = call.info.name === "code_task";
+  const hasDiff = task && Boolean(runId) && typeof meta.end_sha === "string" && meta.end_sha !== "";
+  const diff = useTaskDiff(runId ?? "", hasDiff && view === "diff" ? call.id : null);
   const facts: [string, string][] = [
     ["Call", call.id || "—"],
     ["Tool", call.info.name],
+    ["Status", task ? codeTaskStatus(meta.status) : ""],
+    ["Harness", task && meta.harness ? harnessLabel(meta.harness) : ""],
+    ["Repository", task ? text(meta.repository) : ""],
+    ["Session", task ? text(meta.session_id) || (progress?.session_id ?? "") : ""],
+    ["Changes", task ? codeTaskChanges(meta) : ""],
+    [
+      "Checkpoints",
+      task && meta.start_sha && meta.end_sha
+        ? `${shortSha(meta.start_sha)} → ${shortSha(meta.end_sha)}`
+        : "",
+    ],
     ["Duration", formatDuration(Number(meta.duration_ms))],
     ["Output filter", String(meta.output_filter ?? "")],
     [
       "Exit code",
       meta.exit_code === undefined || meta.exit_code === null ? "" : String(meta.exit_code),
     ],
-    ["Full output", typeof meta.log_path === "string" ? meta.log_path : ""],
+    [task ? "Harness log" : "Full output", text(meta.log_path)],
     ["Working directory", typeof meta.cwd === "string" ? meta.cwd : ""],
     ["File", typeof meta.path === "string" ? meta.path : ""],
     [
@@ -120,6 +186,7 @@ export function ToolCallDetail({
             { value: "arguments", label: "Arguments" },
             { value: "result", label: "Result" },
             { value: "metadata", label: "Metadata" },
+            ...(hasDiff ? [{ value: "diff" as const, label: "Diff" }] : []),
           ]}
         />
         {onAsk ? (
@@ -150,6 +217,8 @@ export function ToolCallDetail({
               json={returned.isJson ? returned.raw : null}
               what="result"
             />
+          ) : generating && progress?.lines.length ? (
+            <ProgressLines lines={progress.lines} />
           ) : (
             <p className="text-sm text-muted">
               {generating
@@ -158,6 +227,8 @@ export function ToolCallDetail({
             </p>
           )}
         </div>
+      ) : view === "diff" ? (
+        <DiffView diff={diff} className="bg-surface" />
       ) : (
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
           {facts

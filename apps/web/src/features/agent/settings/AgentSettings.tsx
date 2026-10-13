@@ -57,8 +57,8 @@ export function Group({ title, children }: { title: string; children: ReactNode 
  * How the agent looks and runs: its name, focus and mascot, what wakes it in group chat, its model
  * and reasoning, its run limits, its disk and script caps, its machine (a picker when the
  * organisation has several; a new one moves the agent there), and its capabilities (Browser,
- * Coding, CLI, scripting, Memory; Coding is greyed out on a standard machine, and the browser's
- * language shows while it is on).
+ * Coding, CLI, scripting, Memory; Coding is greyed out on a standard machine, the browser's
+ * language shows while it is on, and the harness with its credentials while Coding is).
  */
 export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -195,8 +195,10 @@ export function AgentSettings() {
             <CapabilitiesFields
               form={form}
               onChange={(next) => set(next)}
+              errors={errors}
               models={models.data}
               machine={machine}
+              agent={{ guildId, agentId }}
             />
           </Group>
           {save.isError ? (

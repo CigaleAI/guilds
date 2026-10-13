@@ -138,6 +138,12 @@ The agent's commands carry that environment:
 
 - user scripts
 - a coding agent's `shell` commands and what they start
+- a coding agent's harness, started by `code_task`, and the commands
+  it runs, less the variables its driver removes: for Claude Code
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and
+  `ANTHROPIC_BASE_URL`, which would move it from the subscription to
+  metered API billing, and `GH_TOKEN` and `GITHUB_TOKEN` for every
+  harness ([Code tools](../tools-and-connectors/code.md#environment))
 - the browser tools
 
 The operator's CLI tab, a root shell on the agent's machine, does not

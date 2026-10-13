@@ -105,6 +105,23 @@ RUN set -eu; \
     echo "${sum}  /usr/local/bin/mise" | sha256sum -c -; \
     chmod 755 /usr/local/bin/mise
 
+# Coding harnesses, each run headless by guilds-harness on the user's own subscription. Claude
+# Code is proprietary: it is installed when HARNESSES names it, as Chrome is under BROWSER, and an
+# image that is published is built with HARNESSES empty.
+ARG HARNESSES="claude-code"
+ARG CLAUDE_CODE_VERSION=2.1.296
+RUN set -eu; \
+    for harness in $HARNESSES; do \
+        case "$harness" in claude-code) ;; *) echo "unknown harness $harness" >&2; exit 1 ;; esac; \
+    done; \
+    case " $HARNESSES " in *" claude-code "*) \
+        npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
+        claude --version ;; \
+    esac; \
+    npm cache clean --force
+# Claude Code reads its managed settings here; no user or project file overrides them.
+COPY claude-code-managed-settings.json /etc/claude-code/managed-settings.json
+
 # Graft builds the code graph behind the code_map, code_find, code_outline, and
 # code_callers tools, in its structural tier only: tree-sitter, no model, no key.
 # Its native tree-sitter bindings predate Node 24's headers, which need C++20.
@@ -122,6 +139,7 @@ COPY guilds-browser /usr/local/bin/guilds-browser
 COPY guilds-script-run /usr/local/bin/guilds-script-run
 COPY guilds-locale /usr/local/bin/guilds-locale
 COPY guilds-code /usr/local/bin/guilds-code
+COPY guilds-harness /usr/local/bin/guilds-harness
 COPY guilds-git-credential /usr/local/bin/guilds-git-credential
 COPY git-template /usr/local/share/guilds/git-template
 # git asks the credential helper for github.com with the repository path, so each
@@ -142,9 +160,9 @@ ENV GIT_CONFIG_COUNT=3 \
     GIT_CONFIG_VALUE_2=true
 RUN chmod 755 /usr/local/bin/agent-browser-start /usr/local/bin/agent-cli-start /usr/local/bin/agent-stop \
         /usr/local/bin/guilds-browser /usr/local/bin/guilds-script-run /usr/local/bin/guilds-locale \
-        /usr/local/bin/guilds-code /usr/local/bin/guilds-git-credential \
+        /usr/local/bin/guilds-code /usr/local/bin/guilds-harness /usr/local/bin/guilds-git-credential \
         /usr/local/share/guilds/git-template/hooks/prepare-commit-msg \
-    && chmod 644 /usr/local/lib/guilds/agent-lib.sh \
+    && chmod 644 /usr/local/lib/guilds/agent-lib.sh /etc/claude-code/managed-settings.json \
     && mkdir -p /tmp/.X11-unix /run/guilds/requests \
     && chmod 1777 /tmp/.X11-unix \
     && chmod 700 /run/guilds

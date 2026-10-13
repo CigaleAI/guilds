@@ -58,7 +58,7 @@ of core is a repository of its own that holds this one as a submodule
 | `src/extension.ts` | `ServerExtension`: what an edition adds to core. Its own migrations, boot seeds, routes, instance keys, the hook for a new organisation, and its own organisation policy, identity provider, and sandbox provider, and the build of the operator app it serves |
 | `src/app.ts` | Fastify app: the React app's build at the site root, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
 | `src/` | Domain modules (table below) |
-| `drizzle/` | Core's migrations: `0001_baseline`, the snapshot of core's schema (`0001.notes.md` says how it is regenerated), then the numbered migrations after it: `0002_model_providers` (an organisation's model keys), `0003_instance_keys` (the encrypted platform keys), `0004_machines` (an organisation's machines, and every agent placed on one with its slot) |
+| `drizzle/` | Core's migrations: `0001_baseline`, the snapshot of core's schema (`0001.notes.md` says how it is regenerated), then the numbered migrations after it: `0002_model_providers` (an organisation's model keys), `0003_instance_keys` (the encrypted platform keys), `0004_machines` (an organisation's machines, and every agent placed on one with its slot), `0005_harness_logins` (`agents.harness_logins`: when each harness last found a login in the agent's home) |
 | `test/` | `unit/`, `integration/`, `contract/`, `helpers/` |
 | `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog` (rewrites the HTTP fixture when catalog shapes change), `build-connector` (bundles a connector folder into a registry package), `sweep-workspaces` (lists, or with `--apply` removes, machine directories and agent homes no live machine or agent owns), `typesafe-replay` |
 | `Dockerfile` | The core image. Pinned Node image; a `web` stage builds `apps/web` and Storybook, the final stage copies `src`, `scripts`, `drizzle` and the web build |
@@ -291,12 +291,22 @@ helper that acts for one agent takes its id, or reads its home from
 
 - `Dockerfile`: `python:3.12-slim` plus Chromium/Chrome, TigerVNC,
   noVNC, ttyd, Playwright 1.52.0, Node.js 24, build tools, GitHub CLI,
-  mise, ast-grep, Graft, and the helpers below
+  mise, ast-grep, Graft, Claude Code (pinned by `CLAUDE_CODE_VERSION`,
+  installed when the `HARNESSES` build argument names `claude-code`,
+  its default), and the helpers below
 - `guilds-code`: the code tools: `shell` and background commands, the
   file tools, ripgrep and ast-grep search, Graft queries, output
   shaping, the size of the agent's home and of its machine, and git
-  setup, clones, checkpoints, and diffs; it reads the agent's tokens
-  from `/run/guilds/<agent id>/git-tokens.json`
+  setup, clones, checkpoints, and diffs (a run's, or with `task` one
+  `code_task` call's); it reads the agent's tokens from
+  `/run/guilds/<agent id>/git-tokens.json`
+- `guilds-harness`: the coding harnesses behind `code_task`: `check`,
+  `start` (a detached supervisor running the CLI in its own process
+  group), `poll`, `result`, and `stop`, one driver per harness
+  (Claude Code), call state under `/run/guilds/<agent id>/harness/`
+- `claude-code-managed-settings.json`: Claude Code's managed settings,
+  copied to `/etc/claude-code/managed-settings.json`: hooks off, no
+  project MCP servers
 - `guilds-git-credential`: git credential helper: the installation
   token of the guild repository git is talking to, from the token
   file of the agent `GUILDS_AGENT_HOME` names; the image sets it for
@@ -367,15 +377,15 @@ agent runs. Studio and Builder share `conversation/`.
 
 | Directory | Goal |
 | --- | --- |
-| `http/` | `routes.ts` (guilds, agents and their placement on a machine, runs, attachments, group chat, files, collections and records, collection access, schedules, scripts, secrets, MCP, bindings, usage, the instance descriptor at `GET /api/instance`: each integration's state and fields, never a value), `machine-routes.ts` (an organisation's machines: list, create, resize, delete), `request.ts` (a request's body and route parameters), `coding-routes.ts` (guild repositories, a GitHub login's reachable and selected repositories, a run's changes and diff), `model-provider-routes.ts` (an organisation's own model keys), `me-routes.ts` (`/api/auth/config` and the request's own user at `/api/auth/me`), `instance-admin.ts` (who administers the instance), `admin-instance-routes.ts` (a store integration's values, entered and removed by the instance admin, and the GitHub App manifest flow), `studio-routes.ts`, `builder-routes.ts`, `builder-capability-routes.ts`, `recipe-routes.ts`, `admin-mcp-routes.ts`, `admin-registry-routes.ts` (the registry's connectors beside the box's, install, update, remove), `org-connector-routes.ts` (an organisation's own remote servers); `identity.ts` (the `AUTH_MODE` seam: core's two modes, or the `IdentityProvider` an extension supplies), `cookies.ts`, `origin.ts` (the host and origin a request may come from), `usage-view.ts`, `access.ts`, `artifact-files.ts` (Host Finder, collections, records, export, clear records, and grants over the artifact store), `items.ts`, `sse.ts`, `sandbox-proxy.ts` (noVNC and terminal, HTTP and WebSocket), `web-app.ts` (serves `apps/web/dist` at the site root: hashed assets immutable, browser page requests the server does not own fall back to `index.html`) |
+| `http/` | `routes.ts` (guilds, agents and their placement on a machine, runs, attachments, group chat, files, collections and records, collection access, schedules, scripts, secrets, MCP, bindings, usage, the instance descriptor at `GET /api/instance`: each integration's state and fields, never a value), `machine-routes.ts` (an organisation's machines: list, create, resize, delete), `request.ts` (a request's body and route parameters), `coding-routes.ts` (guild repositories, a GitHub login's reachable and selected repositories, an agent's harness credential status, a run's changes and diff, a `code_task` call's diff), `model-provider-routes.ts` (an organisation's own model keys), `me-routes.ts` (`/api/auth/config` and the request's own user at `/api/auth/me`), `instance-admin.ts` (who administers the instance), `admin-instance-routes.ts` (a store integration's values, entered and removed by the instance admin, and the GitHub App manifest flow), `studio-routes.ts`, `builder-routes.ts`, `builder-capability-routes.ts`, `recipe-routes.ts`, `admin-mcp-routes.ts`, `admin-registry-routes.ts` (the registry's connectors beside the box's, install, update, remove), `org-connector-routes.ts` (an organisation's own remote servers); `identity.ts` (the `AUTH_MODE` seam: core's two modes, or the `IdentityProvider` an extension supplies), `cookies.ts`, `origin.ts` (the host and origin a request may come from), `usage-view.ts`, `access.ts`, `artifact-files.ts` (Host Finder, collections, records, export, clear records, and grants over the artifact store), `items.ts`, `sse.ts`, `sandbox-proxy.ts` (noVNC and terminal, HTTP and WebSocket), `web-app.ts` (serves `apps/web/dist` at the site root: hashed assets immutable, browser page requests the server does not own fall back to `index.html`) |
 | `generation/` | `GenerationLoop`: create runs, stream the model, invoke tools, publish SSE, cron ticker; `chain.ts` for run chains (the hand-off request, the continuation message, chain positions); `admission.ts` for organisation concurrency; `idle.ts` for the idle stops of machines and of each agent's Chrome. Each model call projects tool results through `conversation/projection.ts` |
-| `toolbox/` | Native tool registry: `artifacts.ts` (note and record tools), `memory.ts`, `script.ts`, `schedule.ts`, `browser.ts`, `code.ts` (the code tools over `guilds-code`, repeated-read pointers, exploration), `group.ts`, `report.ts`, `secret.ts` (`secret_store`, `secret_request`); `shell.ts` runs sandbox commands; `output.ts` is the result pipeline |
+| `toolbox/` | Native tool registry: `artifacts.ts` (note and record tools), `memory.ts`, `script.ts`, `schedule.ts`, `browser.ts`, `code.ts` (the code tools over `guilds-code`, repeated-read pointers, exploration), `harness.ts` (`code_task` over `guilds-harness`: the brief, polling and progress, the result text), `group.ts`, `report.ts`, `secret.ts` (`secret_store`, `secret_request`); `shell.ts` runs sandbox commands; `output.ts` is the result pipeline |
 | `registry/` | `index.ts` (the registry index schema, versions), `tar.ts` (reads a gzipped package), `client.ts` (`REGISTRY_URL`, the index, packages checked against their hashes, and what a runtime manifest may claim), `install.ts` (install, update, remove, and list registry connectors), `code.ts` (the code tier: a version's folder under `CONNECTORS_ROOT`, and serving each row's version in the running process) |
 | `connectors/` | One folder per connector (`<slug>/connector.json`, `adapter.ts`, its client code, `logo.svg`); `manifest.ts` (the TypeBox manifest schema and loader, and the box-wiring, endpoint-only, and recipe checks on a manifest), `types.ts` (the adapter contract), `registry.ts` (entries by slug and server id), `index.ts` (core's list and the installed set an extension adds to), `connect.ts` (the token Connect operation), `view.ts` (what the API says beside a server row), `builder.ts` (searchable workspaces and systems of record), `instance.ts` (the instance key a platform login calls with, its redaction, and the platform logins synced at boot and after a key write), `format.ts` (compact TSV) |
 | `mcp/` | `McpPool`: the remote MCP client and sessions, adapter dispatch through the registry, `mcp_tools` listing, connector State hooks; `catalog.ts` admin validation; `policy.ts` default-off overlays from the manifests, Studio readability, and reserved slugs; `verbs.ts` the writing verbs a tool name may carry; `names.ts` namespacing |
 | `oauth/` | Dynamic-client (PKCE), configured-client, and GitHub App Connect from each manifest's `auth.oauth`, provider discovery for a connector with no endpoint, callback HTML |
 | `github/` | The GitHub App: App token, install and user-authorize URLs, user code exchange, the installation the authorizing user can reach (or a picker when they have several), installation tokens and repositories; `manifest.ts` (the App manifest for this box, the state cookie, and trading a manifest code for the App) |
-| `coding/` | Guild repositories and a GitHub login's selected set (`repositories.ts`: validation, payloads, State entries) and a coding run's git side (`git.ts`: identity, installation tokens per connection, the agent's token file under `/run/guilds/<agent id>/`) |
+| `coding/` | Guild repositories and a GitHub login's selected set (`repositories.ts`: validation, payloads, State entries), a coding run's git side (`git.ts`: identity, installation tokens per connection, the agent's token file under `/run/guilds/<agent id>/`), and the coding harnesses (`harnesses.ts`: ids, labels, the secret and login of each, how a credential problem names its fix) |
 | `machines/` | An organisation's machines (`index.ts`: tiers and sizes, the custom bounds, the default machine, the 32-agent ceiling, slots and the ports each sets, the planned memory weights, validation, a machine's directory and an agent's home on the host), who may place an agent on a machine (`access.ts`), and the boot step that lays agent homes out by machine (`layout.ts`) |
 | `access/` | Binding resolution platform → org → guild → agent; `runtime.ts` resolves a run's tools, MCP, and secrets |
 | `credentials/` | AES-GCM encrypt/decrypt, environment fingerprint, connection and binding metadata views, secret name and description validation, connection owner-scope visibility |
@@ -493,7 +503,7 @@ Each model call projects tool results from those rows.
 Tools:
 
 - **Native** (`toolbox/`): artifacts, memory, scripts, schedules,
-  browser, code tools, group post, report issue
+  browser, code tools, `code_task`, group post, report issue
 - **Connectors** (`connectors/`, dispatched by `mcp/`): a remote MCP
   endpoint (Notion, Sentry, Cigale, Etherscan), adapter code
   (CoinGecko, Alchemy, X, TwitterAPI.io, Qonto, DexPaprika, Gmail,

@@ -366,7 +366,7 @@ machine may run out of memory when they all work at once.
 
 ## Configuration and appearance
 
-Agent configuration is sixteen required keys:
+Agent configuration is seventeen required keys:
 
 - `model`
 - `temperature`
@@ -381,6 +381,7 @@ Agent configuration is sixteen required keys:
 - `browser`
 - `browser_language`
 - `coding`
+- `harness`
 - `scripting`
 - `memory`
 - `thinking_level`
@@ -399,7 +400,7 @@ machine ([Machines](#machines)). Missing keys take defaults:
 - CLI, scripting, and Memory on
 - thinking `none`
 - browser language `en-US`
-- `browser` and `coding` off
+- `browser` and `coding` off, no `harness`
 
 An agent created with `coding` on and no step or tool-call limit
 starts with 200 steps and 200 tool calls instead.
@@ -409,6 +410,13 @@ and Memory under Agent capabilities as five buttons. Coding is
 unavailable on a standard machine. When the organisation has more
 than one machine, they offer the **Machine** picker with its planned
 memory bar ([Machines](#machines)).
+
+With Coding on, they require a **Harness** select. Settings shows a
+credential status line for it from `GET /api/agents/:id/harness`: per
+harness, its `label`, the `secret` it reads and whether that secret
+is granted (`secret_granted`), the `login` to run in the CLI tab (null
+with `cli` off), and `login_seen_at`, when a `code_task` last found a
+login in the agent's home (`agents.harness_logins`).
 
 CLI, scripting, and Memory start on. The operator can turn any of
 them off.
@@ -464,6 +472,18 @@ them off.
   agents have it. Core sets no bound. Where an edition's policy
   does, creating a coding agent, or turning the flag on, is refused
   above it.
+- `harness` is the coding harness a coding agent delegates code work
+  to: `claude-code`, `codex`, or `cursor`, or null. It is only for an
+  agent with `coding` on (422 otherwise). Creating a coding agent
+  needs one, and so does every update that turns `coding` on or
+  changes `harness`. A stored coding agent without one still saves
+  its other settings. With a harness, a coding agent's runs also
+  offer `code_task`, and the `coding` section of its system prompt
+  tells it to delegate code changes and check them
+  ([Code tools](../tools-and-connectors/code.md#code-task)). Claude
+  Code is the driver the runtime carries. The harness runs on the
+  operator's own subscription: a token granted to the agent as a
+  secret, or a login in the agent's CLI tab, stored in its home.
 - `scripting` is whether this agent may keep and run Python scripts.
   It selects the State's Scripts view and the five script tools. Those
   tools remain bindings when the flag is on. When it is off they are

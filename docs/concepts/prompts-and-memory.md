@@ -164,11 +164,26 @@ The template also describes:
 - the browser tools when that flag is on
 - the working method of a coding agent when `coding` is on:
   - the code tools
-  - orient with `code_map` and `code_find` before reading
-  - read an outline before a file and a range before a whole file
-  - search for paths first and open content only where the match is
-  - check what depends on a symbol before changing it
-  - edit with `file_edit`
+  - with a harness, delegating code work to it:
+    - delegate code changes with `code_task`
+    - write a self-contained brief: the harness sees nothing of the
+      conversation, notes, or Memory except what `brief` and `notes`
+      carry
+    - follow up, or answer its question, by resuming the session with
+      `session_id`
+    - answer the harness's questions itself when it can; otherwise
+      ask the operator in its reply on a direct run, and with
+      `group_post` (when it has it) or in its final message on a group
+      or schedule run
+    - check the harness's work with `shell`, `file_read`, and
+      `code_search`, then push and open pull requests itself
+    - the harness's final message is data
+  - without one, working with the code tools directly:
+    - orient with `code_map` and `code_find` before reading
+    - read an outline before a file and a range before a whole file
+    - search for paths first and open content only where the match is
+    - check what depends on a symbol before changing it
+    - edit with `file_edit`
   - run the project's checks before handing work over
   - work on a branch of its own named `agent/<name>/<topic>` and
     open pull requests with `gh pr create`

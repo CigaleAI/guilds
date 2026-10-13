@@ -63,7 +63,8 @@ admin enters takes effect without a restart
 
 A few modules read their own optional variables:
 
-- `CODE_RESULT_MAX_BYTES` (the code tools' result cap, default 8192)
+- `CODE_RESULT_MAX_BYTES` (the code tools' and `code_task`'s result
+  cap, default 8192)
 - `WORKSPACE_MAX_MIB` (host-wide cap on one agent's home, default
   10240; each agent also has `max_workspace_mib`, default the same,
   and each machine a `max_workspace_mib` over every home on it)
@@ -92,6 +93,9 @@ Configurable only in tests:
   ast-grep stop after 60 seconds inside the sandbox
 - inline code-tool request = 64 KiB of base64; larger goes through the
   sandbox file API
+- `code_task` = 30 minutes by default, at most 60; polled every 3
+  seconds; each `guilds-harness` op 60 seconds, each task checkpoint
+  300 seconds; three failed polls in a row end it `interrupted`
 - MCP catalog refresh interval = 10 minutes
 - MCP tools/list timeout = 15 seconds
 - MCP tools/call timeout = 90 seconds
@@ -172,9 +176,11 @@ This class includes:
   `agent.scripts.changed`, `agent.routines.changed`)
 
 **Ephemeral events** cannot be reconstructed.
-`assistant.delta` and `assistant.reasoning.delta` are live-only.
+`assistant.delta`, `assistant.reasoning.delta`, and `tool.progress`
+are live-only.
 The UI recovers by re-fetching committed messages, whose metadata
-carries the full reasoning text.
+carries the full reasoning text, and whose `code_task` result carries
+the harness's final message and log path.
 
 Delivery rules:
 
@@ -227,7 +233,10 @@ On startup reconciliation:
 
 1. list every active run
 2. append interruption tool results for unresolved committed tool
-   calls
+   calls; an unresolved `code_task` first gets `guilds-harness stop`
+   on its machine when the machine is running, and its result is
+   `interrupted`, naming the session and log from the run's
+   `metadata.harness_task`
 3. leave direct runs active and reusable
 4. append a `generation.interrupted` run error to group and
    schedule runs
@@ -507,11 +516,12 @@ Control-plane tools run in Node (notes, records, memory, schedules,
 scripts, secrets, remote MCP servers, adapters). Sandbox tools
 invoke reviewed helpers inside the agent container
 (`script_run` through `guilds-script-run`, Playwright through
-`guilds-browser`, the code tools through `guilds-code`).
+`guilds-browser`, the code tools through `guilds-code`, `code_task`
+through `guilds-harness`).
 
 Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
-`coding: true`.
+`coding: true`, and `code_task` when it also has a `harness`.
 `group_post` is offered when that binding is on. `secret_request`
 is offered only on direct runs. `report_issue` is always offered.
 
@@ -541,6 +551,8 @@ Run events:
 - `run.error`
 - `run.continued` (a coding run continued in the run named by
   `run_id`)
+- `tool.progress` (`{run_id, tool_call_id, lines, session_id}`: a
+  running `code_task`'s redacted progress lines)
 
 Cancellation is a `run.error` whose payload has
 `operation: "generation.cancelled"`.

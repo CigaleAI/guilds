@@ -146,6 +146,12 @@ test("fixed-level tools ignore arguments", () => {
   assert.equal(classifyToolCall(call("browser_eval")).kind, "act");
   assert.equal(classifyToolCall(call("browser_scroll")).kind, "act");
   assert.equal(classifyToolCall(call("browser_snapshot")).kind, "read");
+  assert.deepEqual(classifyToolCall(call("code_task", { brief: "Fix greet", repo: "app" })), {
+    name: "code_task",
+    kind: "execute",
+    level: "local",
+    server: null,
+  });
 });
 
 test("connected tools resolve from the run snapshot with their server slug", () => {

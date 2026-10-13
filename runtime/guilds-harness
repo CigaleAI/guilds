@@ -1,0 +1,688 @@
+#!/usr/bin/env python3
+"""Coding harnesses inside an agent sandbox.
+
+Usage: guilds-harness <base64 JSON request> | guilds-harness @<request file>
+
+The orchestrator runs this once per op, each a short exec. A request names an `op`:
+
+- `check`: whether the harness's CLI is installed, its version, and the credential it would
+  run on.
+- `start`: forks a supervisor in its own session and returns at once. The supervisor starts
+  the CLI in its own process group in the repository directory, writes the CLI's raw events
+  to the log, waits for it, and records its exit code.
+- `poll`: the normalised progress lines after a byte offset into the log, the new offset,
+  the session id once the harness has reported one, and whether the CLI has exited.
+- `result`: the final message, the session id, and how the turn ended, read from the log.
+- `stop`: SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the
+  supervisor to record the exit.
+
+A large request arrives as a file under /run/guilds/requests, which this helper reads and
+deletes. The helper prints one base64 JSON envelope: {"ok": true, "text": ..., "meta":
+{...}} or {"ok": false, "error": ...}.
+
+A call's state lives in /run/guilds/<agent id>/harness/: `<call id>.json` (what was started),
+`<call id>.pid` (the CLI's pid, its process group), `<call id>.exit` (its exit code),
+`<call id>.session` (the session id once seen), `<call id>.stderr`. The raw event log is
+`.runs/<run id>/<call id>.harness.jsonl` in the agent's home.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any, Iterator
+
+HOME = Path(os.environ["GUILDS_AGENT_HOME"]) if os.environ.get("GUILDS_AGENT_HOME") else Path.home()
+RUN_DIR = Path(os.environ.get("GUILDS_RUN_DIR", "/run/guilds"))
+AGENT_RUN = RUN_DIR / HOME.name
+STATE = AGENT_RUN / "harness"
+RUNS = HOME / ".runs"
+REPOS = HOME / "repos"
+KEEP_RUNS = 20
+VERSION_TIMEOUT = 20
+START_WAIT = 5.0
+STOP_GRACE = 10.0
+EXIT_WAIT = 5.0
+POLL_MAX_BYTES = 256 * 1024
+POLL_MAX_LINES = 60
+STDERR_TAIL_BYTES = 2000
+CHILD_ENV = {
+    "PAGER": "cat",
+    "GIT_PAGER": "cat",
+    "GIT_TERMINAL_PROMPT": "0",
+    "NO_COLOR": "1",
+    "TERM": "dumb",
+    "DEBIAN_FRONTEND": "noninteractive",
+}
+# Never in a harness's environment: the harness does not open pull requests.
+DROPPED_ENV = ("GUILDS_RUN_DIR", "GH_TOKEN", "GITHUB_TOKEN")
+
+
+class ToolError(Exception):
+    pass
+
+
+# --- request and envelope -------------------------------------------------
+
+
+def _request() -> dict[str, Any]:
+    if len(sys.argv) != 2:
+        raise ToolError("usage: guilds-harness <base64-json> | guilds-harness @<file>")
+    arg = sys.argv[1]
+    if arg.startswith("@"):
+        path = Path(arg[1:])
+        try:
+            raw = path.read_bytes()
+        finally:
+            path.unlink(missing_ok=True)
+        loaded = json.loads(raw)
+    else:
+        loaded = json.loads(base64.b64decode(arg))
+    if not isinstance(loaded, dict):
+        raise ToolError("request must be an object")
+    return loaded
+
+
+def _emit(envelope: dict[str, Any]) -> None:
+    body = json.dumps(envelope, ensure_ascii=False).encode("utf-8")
+    sys.stdout.write(base64.b64encode(body).decode("ascii"))
+    sys.stdout.flush()
+
+
+def _safe_segment(value: Any, name: str) -> str:
+    text = str(value or "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", text) or text in {".", ".."}:
+        raise ToolError(f"{name} is invalid")
+    return text
+
+
+def _first_line(text: str) -> str:
+    for line in str(text).splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+# --- drivers ----------------------------------------------------------------
+
+
+class Driver:
+    """Turns a task into a command line, and an event log into progress lines and a result."""
+
+    name = ""
+    binary = ""
+    # Variables that would move the harness from the subscription to metered API billing.
+    removed_env: tuple[str, ...] = ()
+    added_env: dict[str, str] = {}
+    prompt_on_stdin = True
+
+    def command(self, session_id: str, prompt_path: Path) -> list[str]:
+        raise NotImplementedError
+
+    def credential(self, env: dict[str, str]) -> str | None:
+        """`secret` or `login` when the harness has a credential to run on, else None."""
+        raise NotImplementedError
+
+    def session(self, event: dict[str, Any]) -> str:
+        raise NotImplementedError
+
+    def progress(self, event: dict[str, Any]) -> list[str]:
+        raise NotImplementedError
+
+    def outcome(self, events: Iterator[dict[str, Any]]) -> dict[str, Any]:
+        """The turn's final message, whether it ended in error, and the error text."""
+        raise NotImplementedError
+
+    def environment(self, base: dict[str, str]) -> dict[str, str]:
+        env = {key: value for key, value in base.items() if key not in self.removed_env}
+        env.update(self.added_env)
+        return env
+
+
+def _tool_summary(name: str, arguments: Any) -> str:
+    if not isinstance(arguments, dict):
+        return name
+    for key in ("command", "file_path", "path", "pattern", "url", "description", "query"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value:
+            return f"{name}: {_first_line(value)}"
+    return name
+
+
+class ClaudeCode(Driver):
+    name = "claude-code"
+    binary = "claude"
+    removed_env = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
+    # Commands run as root (SEC-6): Claude Code bypasses permissions as root only in a sandbox.
+    added_env = {
+        "IS_SANDBOX": "1",
+        "DISABLE_AUTOUPDATER": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    }
+    # Beside /etc/claude-code/managed-settings.json, on every call.
+    settings = {"disableAllHooks": True, "enableAllProjectMcpServers": False}
+
+    def command(self, session_id: str, prompt_path: Path) -> list[str]:
+        argv = [
+            self.binary,
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--dangerously-skip-permissions",
+            "--setting-sources",
+            "user",
+            "--strict-mcp-config",
+            "--settings",
+            json.dumps(self.settings),
+        ]
+        if session_id:
+            argv += ["--resume", session_id]
+        return argv
+
+    def credential(self, env: dict[str, str]) -> str | None:
+        if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            return "secret"
+        if (HOME / ".claude" / ".credentials.json").is_file():
+            return "login"
+        return None
+
+    def session(self, event: dict[str, Any]) -> str:
+        value = event.get("session_id")
+        return value if isinstance(value, str) else ""
+
+    def progress(self, event: dict[str, Any]) -> list[str]:
+        kind = event.get("type")
+        if kind == "system" and event.get("subtype") == "init":
+            model = event.get("model")
+            return [f"started{f' on {model}' if isinstance(model, str) and model else ''}"]
+        if kind != "assistant":
+            return []
+        lines = []
+        for part in (event.get("message") or {}).get("content") or []:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") == "text" and _first_line(part.get("text", "")):
+                lines.append(_first_line(part["text"]))
+            elif part.get("type") == "tool_use":
+                lines.append(_tool_summary(str(part.get("name") or "tool"), part.get("input")))
+        return lines
+
+    def outcome(self, events: Iterator[dict[str, Any]]) -> dict[str, Any]:
+        last_text = ""
+        for event in events:
+            if event.get("type") == "result":
+                message = event.get("result")
+                is_error = event.get("is_error") is True or event.get("subtype") not in (None, "success")
+                text = message if isinstance(message, str) else ""
+                return {
+                    "message": text or last_text,
+                    "is_error": is_error,
+                    "error": (text or str(event.get("subtype") or "")) if is_error else "",
+                }
+            if event.get("type") == "assistant":
+                texts = [
+                    part.get("text", "")
+                    for part in (event.get("message") or {}).get("content") or []
+                    if isinstance(part, dict) and part.get("type") == "text"
+                ]
+                if any(text.strip() for text in texts):
+                    last_text = "\n".join(text for text in texts if text.strip())
+        return {"message": last_text, "is_error": True, "error": "the harness ended without a result"}
+
+
+DRIVERS: dict[str, Driver] = {driver.name: driver for driver in (ClaudeCode(),)}
+
+
+def _driver(spec: dict[str, Any]) -> Driver:
+    driver = DRIVERS.get(str(spec.get("harness") or ""))
+    if driver is None:
+        raise ToolError(f"unknown harness {spec.get('harness')!r}")
+    return driver
+
+
+# --- state ------------------------------------------------------------------
+
+
+def _paths(call_id: str) -> dict[str, Path]:
+    base = STATE / call_id
+    return {
+        "state": base.with_suffix(".json"),
+        "pid": base.with_suffix(".pid"),
+        "exit": base.with_suffix(".exit"),
+        "session": base.with_suffix(".session"),
+        "stderr": base.with_suffix(".stderr"),
+        "stopped": base.with_suffix(".stopped"),
+    }
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _write(path: Path, text: str) -> None:
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_text(text, encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _load_state(call_id: str) -> dict[str, Any] | None:
+    raw = _read(_paths(call_id)["state"])
+    if not raw:
+        return None
+    try:
+        state = json.loads(raw)
+    except ValueError:
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def _int_file(path: Path) -> int | None:
+    text = _read(path)
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
+def _pid_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        return fields[0] != "Z"
+    except (OSError, IndexError):
+        return True
+
+
+def _exit_code(call_id: str, state: dict[str, Any]) -> tuple[bool, int | None]:
+    """Whether the CLI has exited, and its exit code when the supervisor recorded one."""
+    paths = _paths(call_id)
+    code = _int_file(paths["exit"])
+    if code is not None:
+        return True, code
+    supervisor = state.get("supervisor_pid")
+    if isinstance(supervisor, int) and not _pid_running(supervisor):
+        code = _int_file(paths["exit"])
+        return True, code
+    return False, None
+
+
+def _run_dir(run_id: str) -> Path:
+    folder = RUNS / run_id
+    if not folder.is_dir():
+        folder.mkdir(parents=True, exist_ok=True)
+        entries = []
+        for entry in RUNS.iterdir():
+            if entry.is_symlink() or not entry.is_dir():
+                continue
+            entries.append((entry.stat().st_mtime, entry))
+        entries.sort(key=lambda item: item[0], reverse=True)
+        for _, entry in entries[KEEP_RUNS:]:
+            if entry != folder:
+                shutil.rmtree(entry, ignore_errors=True)
+    return folder
+
+
+def _child_env(spec: dict[str, Any], driver: Driver) -> dict[str, str]:
+    env = {key: value for key, value in os.environ.items() if key not in DROPPED_ENV}
+    env.update(CHILD_ENV)
+    for key, name in (("run_id", "GUILD_RUN_ID"), ("agent_id", "GUILD_AGENT_ID")):
+        value = spec.get(key)
+        if isinstance(value, str) and value:
+            env[name] = value
+    return driver.environment(env)
+
+
+# --- ops --------------------------------------------------------------------
+
+
+def op_check(spec: dict[str, Any]) -> dict[str, Any]:
+    driver = _driver(spec)
+    binary = shutil.which(driver.binary)
+    if binary is None:
+        return {
+            "text": f"{driver.binary} is not installed in this image",
+            "meta": {"installed": False, "version": None, "credential": None},
+        }
+    try:
+        done = subprocess.run(
+            [binary, "--version"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=VERSION_TIMEOUT,
+            env=_child_env(spec, driver),
+            check=False,
+        )
+        version = _first_line(done.stdout or done.stderr) or None
+    except (OSError, subprocess.TimeoutExpired):
+        version = None
+    credential = driver.credential(_child_env(spec, driver))
+    text = f"{driver.binary} {version or '(unknown version)'}; credential: {credential or 'none'}"
+    return {"text": text, "meta": {"installed": True, "version": version, "credential": credential}}
+
+
+def op_start(spec: dict[str, Any]) -> dict[str, Any]:
+    driver = _driver(spec)
+    call_id = _safe_segment(spec.get("call_id"), "call_id")
+    run_id = _safe_segment(spec.get("run_id"), "run_id")
+    repository = _safe_segment(spec.get("repository"), "repository")
+    cwd = REPOS / repository
+    if not cwd.is_dir():
+        raise ToolError(f"no repository {repository} under {REPOS}")
+    prompt = spec.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ToolError("prompt is required")
+    session_id = spec.get("session_id") or ""
+    if not isinstance(session_id, str) or (session_id and not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", session_id)):
+        raise ToolError("session_id is invalid")
+    if shutil.which(driver.binary) is None:
+        raise ToolError(f"{driver.binary} is not installed in this image")
+    STATE.mkdir(parents=True, exist_ok=True)
+    os.chmod(STATE, 0o700)
+    paths = _paths(call_id)
+    existing = _load_state(call_id)
+    if existing is not None and not _exit_code(call_id, existing)[0]:
+        raise ToolError(f"call {call_id} is already running")
+    for key in ("pid", "exit", "session", "stderr", "stopped"):
+        paths[key].unlink(missing_ok=True)
+    run_dir = _run_dir(run_id)
+    log = run_dir / f"{call_id}.harness.jsonl"
+    prompt_path = run_dir / f"{call_id}.prompt.md"
+    fd = os.open(prompt_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(prompt)
+    state = {
+        "call_id": call_id,
+        "run_id": run_id,
+        "harness": driver.name,
+        "repository": repository,
+        "cwd": str(cwd),
+        "argv": driver.command(session_id, prompt_path),
+        "stdin": str(prompt_path) if driver.prompt_on_stdin else None,
+        "prompt_path": str(prompt_path),
+        "log_path": str(log),
+        "started_at": time.time(),
+        "supervisor_pid": None,
+    }
+    _write(paths["state"], json.dumps(state))
+    supervisor_env = _child_env(spec, driver)
+    if "GUILDS_RUN_DIR" in os.environ:
+        supervisor_env["GUILDS_RUN_DIR"] = os.environ["GUILDS_RUN_DIR"]
+    supervisor = subprocess.Popen(
+        [sys.executable, os.path.abspath(__file__), "--supervise", call_id],
+        env=supervisor_env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+    state["supervisor_pid"] = supervisor.pid
+    _write(paths["state"], json.dumps(state))
+    deadline = time.monotonic() + START_WAIT
+    while time.monotonic() < deadline and not paths["pid"].exists() and not paths["exit"].exists():
+        time.sleep(0.05)
+    pid = _int_file(paths["pid"])
+    exited, code = _exit_code(call_id, state)
+    text = f"started {driver.name} in {repository}" + (f" (pid {pid})" if pid else "")
+    return {
+        "text": text,
+        "meta": {"pid": pid, "log_path": str(log), "exited": exited and pid is None, "exit_code": code},
+    }
+
+
+def supervise(call_id: str) -> None:
+    """The supervisor: runs the CLI in its own process group and records how it exits."""
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    paths = _paths(call_id)
+    state = _load_state(call_id)
+    if state is None:
+        return
+    log = Path(state["log_path"])
+    code = 127
+    try:
+        stdin_path = state.get("stdin")
+        stdin = open(stdin_path, "rb") if stdin_path else subprocess.DEVNULL
+        with log.open("ab") as out, paths["stderr"].open("wb") as err:
+            try:
+                child = subprocess.Popen(
+                    state["argv"],
+                    cwd=state["cwd"],
+                    env={key: value for key, value in os.environ.items() if key not in DROPPED_ENV},
+                    stdin=stdin,
+                    stdout=out,
+                    stderr=err,
+                    start_new_session=True,
+                    close_fds=True,
+                )
+            except OSError as exc:
+                err.write(f"{state['argv'][0]}: {exc.strerror or exc}\n".encode("utf-8"))
+                return
+            finally:
+                if stdin is not subprocess.DEVNULL:
+                    stdin.close()
+            _write(paths["pid"], str(child.pid))
+            code = child.wait()
+    finally:
+        _write(paths["exit"], str(code))
+
+
+def _events(
+    path: Path, start: int = 0, limit: int | None = None, complete: bool = False
+) -> tuple[list[dict[str, Any]], int, int]:
+    """The JSON events in the log from `start`, through its last complete line (or its end,
+    once the CLI has exited and no more is written); the new offset, and how many lines
+    were not JSON."""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(start)
+            data = handle.read(limit) if limit is not None else handle.read()
+            at_end = handle.read(1) == b""
+    except OSError:
+        return [], start, 0
+    if not (complete and at_end):
+        end = data.rfind(b"\n")
+        if end == -1:
+            return [], start, 0
+        data = data[: end + 1]
+    events: list[dict[str, Any]] = []
+    unparsed = 0
+    for raw in data.splitlines():
+        if not raw.strip():
+            continue
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            unparsed += 1
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+        else:
+            unparsed += 1
+    return events, start + len(data), unparsed
+
+
+def _remember_session(call_id: str, driver: Driver, events: list[dict[str, Any]]) -> str:
+    path = _paths(call_id)["session"]
+    known = _read(path)
+    if known:
+        return known
+    for event in events:
+        found = driver.session(event)
+        if found:
+            _write(path, found)
+            return found
+    return ""
+
+
+def op_poll(spec: dict[str, Any]) -> dict[str, Any]:
+    driver = _driver(spec)
+    call_id = _safe_segment(spec.get("call_id"), "call_id")
+    state = _load_state(call_id)
+    if state is None:
+        return {"text": f"no harness call {call_id}", "meta": {"missing": True}}
+    offset = spec.get("offset")
+    offset = offset if isinstance(offset, int) and offset >= 0 else 0
+    exited, code = _exit_code(call_id, state)
+    log = Path(state["log_path"])
+    events, new_offset, _ = _events(log, offset, POLL_MAX_BYTES, complete=exited)
+    lines: list[str] = []
+    # Whole lines: the orchestrator redacts them, then clips them.
+    for event in events:
+        lines.extend(" ".join(line.split()) for line in driver.progress(event) if line.strip())
+    dropped = max(0, len(lines) - POLL_MAX_LINES)
+    if dropped:
+        lines = [f"… {dropped} more steps"] + lines[-POLL_MAX_LINES:]
+    session_id = _remember_session(call_id, driver, events)
+    # The CLI exited but its log holds more than one poll reads: not done until it is read.
+    size = log.stat().st_size if log.exists() else 0
+    more = exited and new_offset < size
+    meta = {
+        "missing": False,
+        "offset": new_offset,
+        "lines": lines,
+        "session_id": session_id or None,
+        "exited": exited and not more,
+        "exit_code": code,
+    }
+    return {"text": "\n".join(lines), "meta": meta}
+
+
+def op_result(spec: dict[str, Any]) -> dict[str, Any]:
+    driver = _driver(spec)
+    call_id = _safe_segment(spec.get("call_id"), "call_id")
+    state = _load_state(call_id)
+    if state is None:
+        return {"text": f"no harness call {call_id}", "meta": {"missing": True}}
+    paths = _paths(call_id)
+    log = Path(state["log_path"])
+    exited, code = _exit_code(call_id, state)
+    events, _, unparsed = _events(log, complete=exited)
+    session_id = _remember_session(call_id, driver, events)
+    outcome = driver.outcome(iter(events))
+    stderr = ""
+    try:
+        with paths["stderr"].open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - STDERR_TAIL_BYTES))
+            stderr = handle.read().decode("utf-8", errors="replace").strip()
+    except OSError:
+        pass
+    meta = {
+        "missing": False,
+        "exited": exited,
+        "exit_code": code,
+        "session_id": session_id or None,
+        "message": outcome.get("message") or "",
+        "is_error": bool(outcome.get("is_error")),
+        "error": outcome.get("error") or "",
+        "events": len(events),
+        "unparsed": unparsed,
+        "stderr": stderr,
+        "stopped": paths["stopped"].exists(),
+        "log_path": str(log),
+        "duration_ms": int((time.time() - float(state.get("started_at") or time.time())) * 1000),
+    }
+    if exited:
+        Path(state["prompt_path"]).unlink(missing_ok=True)
+        for key in ("state", "pid", "exit", "session", "stderr", "stopped"):
+            paths[key].unlink(missing_ok=True)
+    return {"text": meta["message"], "meta": meta}
+
+
+def op_stop(spec: dict[str, Any]) -> dict[str, Any]:
+    call_id = _safe_segment(spec.get("call_id"), "call_id")
+    state = _load_state(call_id)
+    if state is None:
+        return {"text": f"no harness call {call_id}", "meta": {"missing": True}}
+    paths = _paths(call_id)
+    exited, code = _exit_code(call_id, state)
+    if not exited:
+        paths["stopped"].touch()
+        pgid = _int_file(paths["pid"])
+        if pgid is not None:
+            for sig, wait in ((signal.SIGTERM, STOP_GRACE), (signal.SIGKILL, 1.0)):
+                try:
+                    os.killpg(pgid, sig)
+                except (ProcessLookupError, PermissionError):
+                    break
+                deadline = time.monotonic() + wait
+                while time.monotonic() < deadline and _group_alive(pgid):
+                    time.sleep(0.1)
+                if not _group_alive(pgid):
+                    break
+        deadline = time.monotonic() + EXIT_WAIT
+        while time.monotonic() < deadline and not _exit_code(call_id, state)[0]:
+            time.sleep(0.05)
+        exited, code = _exit_code(call_id, state)
+    session_id = _read(paths["session"])
+    return {
+        "text": f"stopped {call_id}" if exited else f"{call_id} did not stop",
+        "meta": {
+            "missing": False,
+            "exited": exited,
+            "exit_code": code,
+            "session_id": session_id or None,
+            "log_path": state.get("log_path"),
+        },
+    }
+
+
+OPS = {
+    "check": op_check,
+    "start": op_start,
+    "poll": op_poll,
+    "result": op_result,
+    "stop": op_stop,
+}
+
+
+def main() -> None:
+    if len(sys.argv) == 3 and sys.argv[1] == "--supervise":
+        supervise(_safe_segment(sys.argv[2], "call_id"))
+        return
+    try:
+        spec = _request()
+        handler = OPS.get(str(spec.get("op")))
+        if handler is None:
+            raise ToolError(f"unknown op {spec.get('op')}")
+        result = handler(spec)
+        _emit({"ok": True, "text": result["text"], "meta": result.get("meta", {})})
+    except ToolError as exc:
+        _emit({"ok": False, "error": str(exc)})
+    except subprocess.TimeoutExpired as exc:
+        _emit({"ok": False, "error": f"timed out after {exc.timeout}s"})
+    except OSError as exc:
+        _emit({"ok": False, "error": f"{exc.strerror or exc}: {exc.filename or ''}".rstrip(": ")})
+    except Exception as exc:  # noqa: BLE001 - every failure answers as an envelope
+        _emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
+if __name__ == "__main__":
+    main()

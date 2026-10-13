@@ -1,4 +1,5 @@
 import { parseModelId, providerLabel } from "../llm/providers.js";
+import { credentialFix, HARNESS_INFO, HARNESSES, isHarness } from "../coding/harnesses.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../db/seed/catalog.js";
@@ -136,6 +137,39 @@ export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContex
           "warning",
           `roles.${role.role}.config.model`,
           `${model} needs a ${providerLabel(parsed.provider.id)} key on Model keys; apply asks for another`,
+        ),
+      );
+    }
+    const harness = role.config.harness;
+    if (harness !== undefined && harness !== null && !isHarness(harness)) {
+      findings.push(
+        finding(
+          "harness.unknown",
+          "warning",
+          `roles.${role.role}.config.harness`,
+          `unknown harness ${String(harness)}; apply asks for one of ${HARNESSES.join(", ")}`,
+        ),
+      );
+    } else if (isHarness(harness) && role.config.coding !== true) {
+      findings.push(
+        finding(
+          "harness.coding",
+          "warning",
+          `roles.${role.role}.config.harness`,
+          "config.harness is only for a coding role; apply leaves it out",
+        ),
+      );
+    }
+    if (role.config.coding === true) {
+      const fix = isHarness(harness)
+        ? `after apply, ${credentialFix(harness, { cli: role.config.cli !== false })}`
+        : "apply asks for its harness";
+      findings.push(
+        finding(
+          "harness.credential",
+          "warning",
+          `roles.${role.role}.config.harness`,
+          `${isHarness(harness) ? HARNESS_INFO[harness].label : "the harness"} runs on a subscription credential that is not known before apply; ${fix}`,
         ),
       );
     }

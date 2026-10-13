@@ -80,6 +80,10 @@ export function portableRoleConfig(
     if (key === "box" || key === "cpu" || key === "memory_mib") {
       continue;
     }
+    // A role without a harness leaves the key out; apply settles it.
+    if (key === "harness" && filled.harness == null) {
+      continue;
+    }
     if (key in filled) {
       out[key] = filled[key];
     }

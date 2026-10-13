@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  codeTaskStatus,
   formatCost,
   formatDuration,
   formatReturnedData,
@@ -120,4 +121,32 @@ test("toolOutcome names a failing exit, an edit's line counts, and a repeated re
   assert.equal(toolOutcome({ tool_name: "file_edit", lines_added: 3, lines_removed: 1 }), "+3 −1");
   assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
   assert.equal(toolOutcome(null), "");
+});
+
+test("a code task reads by its repository and session, and ends with its status and diffstat", () => {
+  const call = (args: Record<string, unknown>) => ({
+    id: "c1",
+    function: { name: "code_task", arguments: JSON.stringify(args) },
+  });
+  assert.equal(friendlyToolCall(call({ brief: "Fix greet", repo: "app" })), "Code task in app");
+  assert.equal(
+    friendlyToolCall(call({ brief: "Go on", repo: "app", session_id: "s1" })),
+    "Resume code task in app",
+  );
+  assert.equal(friendlyToolCall(call({ brief: "Fix greet" })), "Code task");
+  const done = {
+    tool_name: "code_task",
+    status: "completed",
+    files_changed: 2,
+    insertions: 14,
+    deletions: 3,
+  };
+  assert.equal(toolOutcome(done), "2 files · +14 −3");
+  assert.equal(
+    toolOutcome({ ...done, status: "timed_out", files_changed: 0 }),
+    "timed out · no changes",
+  );
+  assert.equal(toolOutcome({ tool_name: "code_task", status: "failed" }), "failed");
+  assert.equal(codeTaskStatus("interrupted"), "interrupted");
+  assert.equal(codeTaskStatus("other"), "");
 });

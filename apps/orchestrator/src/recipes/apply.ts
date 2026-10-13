@@ -20,6 +20,7 @@ import {
 import { coreModelCredentials } from "../llm/credentials.js";
 import { ModelsService } from "../llm/models.js";
 import { parseModelId } from "../llm/providers.js";
+import { HARNESSES, isHarness, type Harness } from "../coding/harnesses.js";
 import { operatorActor } from "../artifacts/grants.js";
 import {
   ArtifactError,
@@ -98,6 +99,10 @@ type ModelDecision = { role: string; model: string };
 
 /** A role's model on the preview: what the recipe recommends, and what apply will create it with. */
 export type RoleModel = { role: string; recommended: string | null; model: string | null };
+/** The harness the operator picked for a coding role on the apply preview. */
+type HarnessDecision = { role: string; harness: string };
+/** A coding role's harness on the preview: what the recipe names, and what apply will create it with. */
+export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null };
 
 /**
  * What apply will do with one recipe collection: create it, reuse the live
@@ -114,6 +119,8 @@ export type ApplyChoices = {
   guild_id?: string;
   names?: NameDecision[];
   models?: ModelDecision[];
+  /** The harness of each coding role. */
+  harnesses?: HarnessDecision[];
   connections?: ConnectionDecision[];
   secrets?: SecretDecision[];
   activate_keys?: string[];
@@ -254,6 +261,27 @@ export class RecipeApplyService {
     });
   }
 
+  /** The harness each coding role is created with: the operator's choice, else the recipe's. */
+  private resolveHarnesses(recipe: RecipeDocument, decisions: HarnessDecision[]): RoleHarness[] {
+    const chosen = new Map(decisions.map((item) => [item.role, String(item.harness ?? "").trim()]));
+    for (const role of chosen.keys()) {
+      const found = recipe.roles.find((item) => item.role === role);
+      if (!found || found.config.coding !== true) {
+        throw new RecipeError(`harnesses.${role}: only a coding role takes a harness`);
+      }
+    }
+    return recipe.roles
+      .filter((role) => role.config.coding === true)
+      .map((role) => {
+        const recommended = isHarness(role.config.harness) ? role.config.harness : null;
+        const choice = chosen.get(role.role) || null;
+        if (choice !== null && !isHarness(choice)) {
+          throw new RecipeError(`harnesses.${role.role}: harness must be one of ${HARNESSES.join(", ")}`);
+        }
+        return { role: role.role, recommended, harness: choice ?? recommended };
+      });
+  }
+
   /**
    * What the registry offers among the connectors `recipe` names that the box lacks and the
    * recipe does not carry; empty while offline or when the index cannot be read.
@@ -349,7 +377,8 @@ export class RecipeApplyService {
       ctx.connectedProviders ?? new Set(),
       await this.models.defaultModel(String(org.id)),
     );
-    const prepared = prepareRecipeForApply(recipe, ctx.publishedServers, roleModelMap(models));
+    const harnesses = this.resolveHarnesses(recipe, choices.harnesses ?? []);
+    const prepared = prepareRecipeForApply(recipe, ctx.publishedServers, roleModelMap(models), roleHarnessMap(harnesses));
     const collections = await this.planCollections(org, prepared, user);
     findings.push(...collectionConflicts(collections));
     const errors = applyBlockingErrors(findings);
@@ -404,6 +433,7 @@ export class RecipeApplyService {
       guild_id: destGuild ? destGuild.id : null,
       names: [...names.entries()].map(([role, name]) => ({ role, name })),
       models,
+      harnesses,
       machines: placement.machines,
       machine_id: placement.machineId,
       adds_mib: placement.addsMib,
@@ -487,8 +517,18 @@ export class RecipeApplyService {
     if (unchosen.length) {
       throw new RecipeError(`choose a model for ${unchosen.join(", ")}`);
     }
+    const roleHarnesses = preview.harnesses as RoleHarness[];
+    const withoutHarness = roleHarnesses.filter((item) => !item.harness).map((item) => item.role);
+    if (withoutHarness.length) {
+      throw new RecipeError(`choose a harness for ${withoutHarness.join(", ")}`);
+    }
     const ctx = await this.validationContext(String(org.id));
-    const recipe = prepareRecipeForApply(parseRecipe(recipeRow.body), ctx.publishedServers, roleModelMap(roleModels));
+    const recipe = prepareRecipeForApply(
+      parseRecipe(recipeRow.body),
+      ctx.publishedServers,
+      roleModelMap(roleModels),
+      roleHarnessMap(roleHarnesses),
+    );
     const machineId = String(preview.machine_id);
     const maxAgentsPerMachine = await assertCanPlaceAgents(
       this.policy,
@@ -1549,19 +1589,31 @@ function schedulesForRole(role: RecipeRole, recipe: RecipeDocument): RecipeSched
 }
 
 /** The models the preview resolved, by role. */
+function roleHarnessMap(harnesses: RoleHarness[]): Map<string, Harness> {
+  const map = new Map<string, Harness>();
+  for (const item of harnesses) {
+    if (item.harness) {
+      map.set(item.role, item.harness);
+    }
+  }
+  return map;
+}
+
 function roleModelMap(models: RoleModel[]): Map<string, string> {
   return new Map(models.flatMap((item) => (item.model ? [[item.role, item.model] as const] : [])));
 }
 
 /**
- * The agent config a role applies as: the role's, with the model the operator chose (else the
- * recipe's recommendation), and the browser and coding flags settled. The machine the agent goes
- * on is the apply's.
+ * The agent config a role applies as: the role's, with the model and harness the operator chose
+ * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
+ * harness. The machine the agent goes on is the apply's.
  */
-export function configFromRecipeRole(role: RecipeRole, model?: string): Record<string, unknown> {
+export function configFromRecipeRole(role: RecipeRole, model?: string, harness?: Harness): Record<string, unknown> {
   const roleConfig = { ...role.config };
   const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
   const chosen = model ?? recommended;
+  const coding = roleConfig.coding === true;
+  const recipeHarness = isHarness(roleConfig.harness) ? roleConfig.harness : null;
   return addMissingFlags(
     addMissingCliScriptingAndMemory(
       addMissingThinkingLevel(
@@ -1571,7 +1623,8 @@ export function configFromRecipeRole(role: RecipeRole, model?: string): Record<s
               ...roleConfig,
               model: chosen,
               browser: Boolean(role.browser.required || roleConfig.browser),
-              coding: roleConfig.coding === true,
+              coding,
+              harness: coding ? (harness ?? recipeHarness) : null,
             }),
           ),
         ),
@@ -1584,10 +1637,11 @@ export function prepareRecipeForApply(
   recipe: RecipeDocument,
   publishedServers?: Set<string>,
   models?: Map<string, string>,
+  harnesses?: Map<string, Harness>,
 ): RecipeDocument {
   void publishedServers;
   for (const role of recipe.roles) {
-    role.config = configFromRecipeRole(role, models?.get(role.role));
+    role.config = configFromRecipeRole(role, models?.get(role.role), harnesses?.get(role.role));
     if (!role.task.body.trim()) {
       role.task.body = roleTaskText(role, recipe);
     }

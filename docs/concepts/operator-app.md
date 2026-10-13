@@ -173,6 +173,10 @@ shows while it is on.
 coding-agent capacity. It is greyed out on a standard machine, with
 a link to Settings, Machines. It turns CLI and scripting on and
 moves step and tool-call limits still at their defaults to 200.
+While it is on, a **Harness** select (Claude Code, Codex, or Cursor)
+is required. A note under it says the harness does the code work on
+the operator's own subscription, and that a personal subscription in
+a shared organisation may fall outside the vendor's terms.
 
 A new agent opens on its Prompt tab.
 
@@ -455,6 +459,11 @@ The strip scrolls sideways when they do not fit.
   A `secret_store` call reads **Stored NAME**.
   A `secret_request` call reads **Asked for NAME**.
 
+  A `code_task` call renders as a card: the harness, the repository,
+  and its live progress lines from `tool.progress` while it runs;
+  then its status, session, final message, diffstat with a link to
+  the task's diff, and log path.
+
   A run with repository changes ends with a **Changes** panel: each
   repository with its branch and diffstat, and **Show diff**, which
   fetches the run's diff from the agent's machine.
@@ -611,7 +620,12 @@ The strip scrolls sideways when they do not fit.
   agent generates.
   Under **Agent capabilities**: five buttons for Browser, Coding,
   CLI, scripting, and Memory. Coding is greyed out on a standard
-  machine; the browser language shows while Browser is on.
+  machine; the browser language shows while Browser is on. With
+  Coding on, the required **Harness** select carries the same note
+  as on Create agent, and a credential status line: whether the
+  secret the harness reads is granted, when a login was last found in
+  the agent's home, and the login to run in the CLI tab when CLI is
+  on ([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)).
 
 ## Access view (Tools and Secrets)
 
@@ -967,7 +981,9 @@ links from Tools and a recipe's preview land there
   preselected with the recipe's recommendation when the organisation
   has it, else the default; **Create guild** waits until every agent
   has one, and a guide to Model keys stands in for the pickers while
-  no provider is connected.
+  no provider is connected. A coding role's card also takes a
+  harness, preselected with the recipe's; **Create guild** waits for
+  it too.
 
 ## State and events
 

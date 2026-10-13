@@ -6,6 +6,7 @@ import {
   DEFAULT_MAX_TOOL_CALLS,
   DEFAULT_MAX_WORKSPACE_MIB,
   browserLanguageOf,
+  cliOf,
   keepToolResultGenerationsOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
@@ -162,6 +163,7 @@ import {
 import { BROWSER_TOOLS } from "../toolbox/browser.js";
 import { agentGitIdentity, cloneFailures, RepositoryAccessError, RepositoryTokens } from "../coding/git.js";
 import { codingRepositories, stateRepositories } from "../coding/repositories.js";
+import { harnessOf, type Harness } from "../coding/harnesses.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import {
   CODING_TOOLS,
@@ -170,8 +172,11 @@ import {
   measureWorkspace,
   repeatedReadStep,
   repeatedReadText,
+  callSegment,
+  HARNESS_HELPER,
   runCodeHelper,
 } from "../toolbox/code.js";
+import { clipProgressLine, HARNESS_TOOLS, interruptedText } from "../toolbox/harness.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
 import { Issues, type IssuesDatabase } from "../issues/index.js";
 import { SCHEDULE_TOOLS } from "../toolbox/schedule.js";
@@ -352,7 +357,8 @@ function errorMessage(error: unknown): string {
 function isBrowserOrCodingToolName(name: string): boolean {
   return (
     (BROWSER_TOOLS as readonly string[]).includes(name) ||
-    (CODING_TOOLS as readonly string[]).includes(name)
+    (CODING_TOOLS as readonly string[]).includes(name) ||
+    (HARNESS_TOOLS as readonly string[]).includes(name)
   );
 }
 
@@ -395,16 +401,21 @@ function offeredNativeNames(
   });
 }
 
-function capabilityToolNames(options: { coding?: boolean; browser?: boolean }): string[] {
-  return [...(options.coding ? CODING_TOOLS : []), ...(options.browser ? BROWSER_TOOLS : [])];
+function capabilityToolNames(options: { coding?: boolean; harness?: boolean; browser?: boolean }): string[] {
+  return [
+    ...(options.coding ? CODING_TOOLS : []),
+    ...(options.coding && options.harness ? HARNESS_TOOLS : []),
+    ...(options.browser ? BROWSER_TOOLS : []),
+  ];
 }
 
-// The browser and code tools follow the agent's flags, not bindings.
+// The browser and code tools follow the agent's flags, not bindings; `code_task` its harness.
 export function offeredToolNames(
   names: string[],
   options: {
     browser?: boolean;
     coding?: boolean;
+    harness?: boolean;
     scripting?: boolean;
     memory?: boolean;
     schedules?: boolean;
@@ -487,6 +498,7 @@ function liveOfferedNames(
     agentId?: string | null;
     browser: boolean;
     coding: boolean;
+    harness: boolean;
     scripting: boolean;
     memory: boolean;
     schedules: boolean;
@@ -501,6 +513,7 @@ function liveOfferedNames(
     offeredToolNames(enabledToolNames(resolvedTools(rows, options)), {
       browser: options.browser,
       coding: options.coding,
+      harness: options.harness,
       scripting: options.scripting,
       memory: options.memory,
       schedules: options.schedules,
@@ -568,6 +581,7 @@ export function configSnapshot(
     offeredToolNames(options.tools, {
       browser: Boolean(config.browser),
       coding: Boolean(config.coding),
+      harness: harnessOf(config) !== null,
       scripting: config.scripting !== false,
       memory: memoryOf(config),
       schedules: Boolean(options.schedules),
@@ -587,6 +601,7 @@ export function configSnapshot(
     browser: Boolean(config.browser),
     browser_language: browserLanguageOf(config),
     coding: Boolean(config.coding),
+    harness: harnessOf(config),
     scripting: config.scripting !== false,
     memory: memoryOf(config),
     thinking_level: config.thinking_level ?? "none",
@@ -929,6 +944,8 @@ export type GenerationDb = AccessDatabase &
     nextGeneration(runId: string): Promise<number>;
     appendRunError(runId: string, entry: Record<string, unknown>, now: Date): Promise<unknown[]>;
     mergeRunMetadata(runId: string, extra: Record<string, unknown>, now: Date): Promise<void>;
+    /** Records when the agent's harness last found a login in its home. */
+    markHarnessLogin?(agentId: string, harness: Harness, now: Date): Promise<void>;
     completeRun(runId: string, now: Date): Promise<void>;
     reopenRun(runId: string, now: Date): Promise<void>;
     completeGroupDelivery(
@@ -1879,10 +1896,15 @@ export class GenerationLoop implements GroupRunner {
   }
 
   /**
-   * The diff a run made in one repository, between its start and end checkpoints, from the
-   * agent's machine (woken as the CLI tab wakes it), at most 256 KiB and redacted.
+   * The diff a run made in one repository, between its start and end checkpoints, or with
+   * `task` between one `code_task` call's, from the agent's machine (woken as the CLI tab
+   * wakes it), at most 256 KiB and redacted.
    */
-  async runDiff(runId: string, repository: string): Promise<{ diff: string; truncated: boolean }> {
+  async runDiff(
+    runId: string,
+    repository: string,
+    task: string | null = null,
+  ): Promise<{ diff: string; truncated: boolean }> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
@@ -1892,7 +1914,8 @@ export class GenerationLoop implements GroupRunner {
     const sandbox = await this.wakeSandbox(agentId);
     let result;
     try {
-      result = await runCodeHelper(this._maintenance_ctx(runId, agent, sandbox), "diff", { repository }, {
+      const args = task === null ? { repository } : { repository, task: callSegment(task) };
+      result = await runCodeHelper(this._maintenance_ctx(runId, agent, sandbox), "diff", args, {
         maxBytes: RUN_DIFF_MAX_BYTES,
       });
     } catch (error) {
@@ -2451,6 +2474,7 @@ export class GenerationLoop implements GroupRunner {
       notes: hasNoteTools(access.tools),
       browser: Boolean(config.browser),
       coding: Boolean(config.coding),
+      harness: config.harness !== null,
       memory: memoryOf(config),
       memoryWrite: memoryOf(config) && hasMemoryTool(access.tools),
     };
@@ -2812,12 +2836,81 @@ export class GenerationLoop implements GroupRunner {
     let executed = executedToolCalls(rows);
     for (const [call, callGeneration] of pending) {
       let [payload, metadata] = interruptionRecord(call, generation ?? callGeneration);
+      if (metadata.tool_name === "code_task" && run) {
+        [payload, metadata] = await this._interrupted_code_task(run, call, payload, metadata);
+      }
       executed += 1;
       const remaining = remainingAfter(maxToolCalls, executed);
       [payload, metadata] = stampToolResult(payload, metadata, remaining);
       await this._commit_message(runId, payload, metadata);
     }
     return pending.length;
+  }
+
+  /**
+   * A `code_task` the orchestrator never saw finish: the harness gets `stop` on its machine,
+   * so it never keeps running with nobody polling it, and the result names its session and log.
+   */
+  async _interrupted_code_task(
+    run: Record<string, unknown>,
+    call: Record<string, unknown>,
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+  ): Promise<[Record<string, unknown>, Record<string, unknown>]> {
+    const harness = harnessOf(asObj(run.config_snapshot));
+    if (harness === null) {
+      return [payload, metadata];
+    }
+    const runId = String(run.id);
+    const callId = callSegment(String(call.id ?? ""));
+    const remembered = asObj(asObj(run.metadata).harness_task);
+    const known = remembered.call_id === callId ? remembered : {};
+    let stopped: Record<string, unknown> = {};
+    try {
+      const agent = await this.db.getAgent(String(run.agent_id));
+      const sandbox = agent?.machine_id ? await this.sandboxes.connectRunning(String(agent.machine_id)) : null;
+      if (agent && sandbox) {
+        const ctx = this._maintenance_ctx(runId, agent, sandbox);
+        ctx.tool_call_id = callId;
+        stopped = (await runCodeHelper(ctx, "stop", { harness }, { helper: HARNESS_HELPER, timeoutSeconds: 60 })).meta;
+      }
+    } catch (error) {
+      writeLog("warn", errorMessage(error), {
+        run_id: runId,
+        agent_id: String(run.agent_id),
+        operation: "code_task.stop",
+        error_type: errorName(error),
+      });
+    }
+    let args: Record<string, unknown>;
+    try {
+      args = parseArguments(call);
+    } catch {
+      args = {};
+    }
+    const text = (value: unknown) => (typeof value === "string" && value ? value : null);
+    const task = {
+      harness,
+      repository: text(known.repository) ?? text(args.repo) ?? "unknown",
+      session_id: text(stopped.session_id) ?? text(known.session_id) ?? text(args.session_id),
+      log_path: text(known.log_path),
+      run_id: runId,
+      call_id: callId,
+    };
+    const content = interruptedText(task);
+    return [
+      { ...payload, content },
+      {
+        ...metadata,
+        harness,
+        status: "interrupted",
+        session_id: task.session_id,
+        repository: task.repository,
+        log_path: task.log_path,
+        original_bytes: Buffer.byteLength(content, "utf8"),
+        stored_bytes: Buffer.byteLength(content, "utf8"),
+      },
+    ];
   }
 
   async _commit_message(
@@ -3207,6 +3300,7 @@ export class GenerationLoop implements GroupRunner {
       agentId: scope.agentId,
       browser: liveBrowser,
       coding: liveCoding,
+      harness: harnessOf(snapshot) !== null,
       scripting: liveScripting,
       memory: liveMemory,
       schedules: runKind(run) !== "schedule",
@@ -3272,6 +3366,23 @@ export class GenerationLoop implements GroupRunner {
       dynamic_tools: offered.has("script_run") ? dynamicScriptTools(runScripts) : {},
       connection_tool_names: Object.keys(mcpTools),
       offered_tools: offered,
+      harness: harnessOf(snapshot),
+      cli: cliOf(liveConfig),
+      // `secrets` holds the run's values and, once minted, its GitHub tokens.
+      publish_progress: async (toolCallId, update) => {
+        await this.publish(runId, "tool.progress", {
+          run_id: runId,
+          tool_call_id: toolCallId,
+          lines: update.lines.map((line) => clipProgressLine(redact(line, secrets))),
+          session_id: update.session_id,
+        });
+      },
+      remember_harness_task: async (task) => {
+        await this.db.mergeRunMetadata(runId, { harness_task: task }, new Date());
+      },
+      harness_login_seen: async (harness) => {
+        await this.db.markHarnessLogin?.(String(agent.id), harness, new Date());
+      },
     });
     const coding = Boolean(snapshot.coding);
     // Platform work runs on the machine's own sandbox: the agent's home and ports, none of its secrets.
@@ -3387,6 +3498,7 @@ export class GenerationLoop implements GroupRunner {
         error_type: errorName(error),
       });
     }
+    ctx.code_repositories = repositories.map((row) => String(row.name));
     if (repositories.length === 1) {
       ctx.code_default_cwd = `repos/${String(repositories[0]!.name)}`;
     }

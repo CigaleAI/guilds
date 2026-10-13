@@ -95,7 +95,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const boxed = await createAgent("boxed", { box: "code" });
     assert.equal(boxed.statusCode, 422, boxed.body);
     assert.match(boxed.json().detail, /unknown keys: box/);
-    const coder = await createAgent("coder", { coding: true });
+    const coder = await createAgent("coder", { coding: true, harness: "claude-code" });
     assert.equal(coder.statusCode, 422, coder.body);
     assert.match(coder.json().detail, /coding needs a code or custom machine/);
 
@@ -128,7 +128,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const unplaced = await createAgent("unplaced", {});
     assert.equal(unplaced.statusCode, 422, unplaced.body);
     assert.match(unplaced.json().detail, /machine_id is required/);
-    const placed = await createAgent("coder", { coding: true }, { machine_id: codeId });
+    const placed = await createAgent("coder", { coding: true, harness: "claude-code" }, { machine_id: codeId });
     assert.equal(placed.statusCode, 201, placed.body);
     assert.equal(placed.json().machine.name, "builder");
     assert.equal(placed.json().config.max_steps, 200, "a new coding agent takes the coding budgets");
@@ -202,7 +202,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       method: "PUT",
       url: `/api/agents/${scripterId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...detail.json().config, coding: true }, machine_id: defaultId },
+      payload: { config: { ...detail.json().config, coding: true, harness: "claude-code" }, machine_id: defaultId },
     });
     assert.equal(codingThere.statusCode, 422, codingThere.body);
     const back = await app.inject({

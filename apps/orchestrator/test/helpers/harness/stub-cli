@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""A harness CLI for tests: replays a recorded event stream.
+
+Installed under each harness's binary name on PATH. It writes its argv, working directory,
+stdin, and the variables named in HARNESS_STUB_SHOW to HARNESS_STUB_RECORD, then prints the
+events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
+`{"stub": "edit", "path": ..., "text": ...}` writes that file instead of printing;
+`{"stub": "hang"}` sleeps until the process is stopped. It exits with HARNESS_STUB_EXIT.
+"""
+import json
+import os
+import sys
+import time
+
+if len(sys.argv) > 1 and sys.argv[1] == "--version":
+    print(os.environ.get("HARNESS_STUB_VERSION", "9.9.9 (stub)"))
+    sys.exit(0)
+stdin = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+record = os.environ.get("HARNESS_STUB_RECORD")
+if record:
+    shown = {name: os.environ.get(name) for name in os.environ.get("HARNESS_STUB_SHOW", "").split(",") if name}
+    with open(record, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"argv": sys.argv, "cwd": os.getcwd(), "stdin": stdin, "env": shown}) + "\n")
+delay = float(os.environ.get("HARNESS_STUB_DELAY", "0"))
+with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
+    for line in events:
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            event = {}
+        if not isinstance(event, dict):
+            event = {}
+        if event.get("stub") == "edit":
+            with open(event["path"], "w", encoding="utf-8") as target:
+                target.write(event["text"])
+            continue
+        if event.get("stub") == "hang":
+            while True:
+                time.sleep(1)
+        sys.stdout.write(line if line.endswith("\n") else line + "\n")
+        sys.stdout.flush()
+        time.sleep(delay)
+sys.exit(int(os.environ.get("HARNESS_STUB_EXIT", "0")))

@@ -88,6 +88,7 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   browser_eval: { kind: "act" },
   shell: { kind: "execute", level: "local" },
   shell_status: { kind: "read", level: "local" },
+  code_task: { kind: "execute", level: "local" },
   file_read: { kind: "read", level: "local" },
   file_edit: { kind: "write", level: "local" },
   file_write: { kind: "write", level: "local" },

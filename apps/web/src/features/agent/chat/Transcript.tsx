@@ -2,6 +2,7 @@ import { Clock, MessageSquare } from "lucide-react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { attachmentBlobUrl } from "../../../api/attachments";
 import { liveTurnActive, type LiveTurn } from "../../../api/liveTurn";
+import type { ToolProgress } from "../../../api/toolProgress";
 import type { AgentDetail, MessageAttachment, Run, RunMessage } from "../../../api/types";
 import { agentLook } from "../../../app/agents";
 import { isoTime, messageTime } from "../../../app/format";
@@ -35,6 +36,8 @@ type TranscriptProps = {
   run: Run;
   messages: RunMessage[];
   live: LiveTurn | null;
+  /** What running tool calls have reported so far, by call id. */
+  progress?: ToolProgress;
   /** A step to open and scroll to. */
   reveal?: RevealStep;
   /** Pins a call to a question for Studio's coach. */
@@ -128,7 +131,15 @@ function secretRequests(flow: FlowSegment): Array<{ id: string; request: SecretR
 }
 
 /** A run from its prompt to its latest turn: messages, and each generation's steps and calls. */
-export function Transcript({ agent, run, messages, live, reveal, onAskCall }: TranscriptProps) {
+export function Transcript({
+  agent,
+  run,
+  messages,
+  live,
+  progress,
+  reveal,
+  onAskCall,
+}: TranscriptProps) {
   const { user } = useIdentity();
   const { segments, unattachedErrors } = useMemo(
     () => buildFlowSegments(messages, run),
@@ -159,7 +170,9 @@ export function Transcript({ agent, run, messages, live, reveal, onAskCall }: Tr
             <Fragment key={segment.key}>
               <FlowView
                 flow={segment}
+                runId={run.id}
                 generating={run.generating}
+                {...(progress ? { progress } : {})}
                 defaultOpen={index === lastFlow || run.generating}
                 {...(reveal ? { reveal } : {})}
                 inspector={{ guildId: agent.guild_id, agentId: agent.id }}

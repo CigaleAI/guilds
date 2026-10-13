@@ -26,6 +26,7 @@ import {
   shellStatus,
 } from "./code.js";
 import { groupPost } from "./group.js";
+import { codeTask } from "./harness.js";
 import { memoryWrite } from "./memory.js";
 import { reportIssue } from "./report.js";
 import { scheduleCreateCron, scheduleCreateWindow, scheduleDelete, scheduleList, schedulePause, scheduleResume } from "./schedule.js";
@@ -81,6 +82,7 @@ register(codeMap);
 register(codeFind);
 register(codeOutline);
 register(codeCallers);
+register(codeTask);
 register(secretStore);
 register(secretRequest);
 

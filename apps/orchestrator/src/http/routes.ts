@@ -10,6 +10,7 @@ import {
   maxWorkspaceMibOf,
   validateAvatarColor,
   validateAvatarShape,
+  assertHarnessChosen,
   validateConfig,
   withCodingLimits,
   validateFocus,
@@ -1301,6 +1302,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         body.avatar_color === undefined ? undefined : String(body.avatar_color),
       );
       const config = validateConfig(withCodingLimits((body.config ?? {}) as Record<string, unknown>));
+      assertHarnessChosen(config, null);
       await assertModelConnected(modelCredentials, String(guild.org_id), config.model);
       await assertCanCreateAgent(policy, repo, String(guild.org_id), {
         browser: config.browser,
@@ -1965,8 +1967,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const config = validateConfig((body.config ?? {}) as Record<string, unknown>);
-      await assertModelConnected(modelCredentials, String(existing.org_id), config.model);
       const previous = agentConfigObject(existing);
+      assertHarnessChosen(config, previous);
+      await assertModelConnected(modelCredentials, String(existing.org_id), config.model);
       const { machine, maxAgentsPerMachine, moves } = await placement(String(existing.org_id), user, body.machine_id, {
         coding: config.coding,
         machineId: String(existing.machine_id),

@@ -8,6 +8,10 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-30 | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
+| SEC-29 | A repository can carry configuration its coding harness loads | Open |
+| SEC-28 | A coding harness runs with its permission prompts off | Open |
+| SEC-27 | Harness subscription tokens and logins are readable on the agent's machine | Open |
 | SEC-26 | A member could place an agent beside a private guild's agents | Fixed 2026-10-13 |
 | SEC-25 | The machine list named the agents and guilds of private guilds | Fixed 2026-10-13 |
 | SEC-24 | Agents on one machine can read each other's homes, tokens, and sessions | Open, accepted |
@@ -34,6 +38,135 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-30 — Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** a coding agent's harness credential: the secret
+`CLAUDE_CODE_OAUTH_TOKEN` granted to it, or a login stored in its
+home (`runtime/guilds-harness`), and the **Harness** select on
+Create agent and agent Settings
+(`apps/web/src/features/agent/settings/configForm.tsx`).
+
+**Exposure:** a harness runs on a subscription, often an operator's
+personal one. In an organisation, everyone who can start the agent's
+runs uses it: direct runs, group and schedule wakes, and other
+agents on its machine that read the credential (SEC-27). A vendor's
+terms may restrict a personal subscription to its holder or to
+interactive use. The vendor may then suspend the account.
+
+**Control in place:** the note under the **Harness** select says
+that the harness does the code work on the operator's own
+subscription, and that a personal subscription in a shared
+organisation may fall outside the vendor's terms. A harness runs only
+on a credential someone granted to the agent or logged in with.
+Organisation model keys never reach the sandbox.
+
+**Residual risk:** whether a use complies with the vendor's terms is
+the operator's call. The platform does not check it.
+
+## SEC-29 — A repository can carry configuration its coding harness loads
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** the Claude Code driver's command line in
+`runtime/guilds-harness` and `runtime/claude-code-managed-settings.json`,
+copied to `/etc/claude-code/managed-settings.json` by
+`runtime/Dockerfile`.
+
+**Exposure:** a coding CLI reads configuration from the repository it
+works in. For Claude Code that is `.claude/` (settings, hooks,
+commands, agents) and `.mcp.json`. A hook or an MCP server is code
+that runs on load, without the model deciding to run it. Whoever can
+push to a guild repository could then run commands in the agent's
+sandbox, with its secrets.
+
+**Control in place:** every call runs Claude Code with
+`--setting-sources user`, so project and local settings are not
+loaded; `--strict-mcp-config`, so no MCP server loads that the call
+does not pass, and it passes none; and `--settings` with
+`disableAllHooks`. The managed settings, which no user or project
+file overrides, turn hooks off and project MCP servers off.
+
+**Residual risk:** user-level settings in the agent's home
+(`~/.claude/`) still load, including plugins enabled there. The
+agent, the harness, and every agent on the machine (SEC-24) can write
+them, so a steered agent or harness can change what a later call
+loads. Instruction files in the repository (`CLAUDE.md`, and
+`AGENTS.md` where the harness reads it) are read and can steer the
+harness (SEC-28).
+
+## SEC-28 — A coding harness runs with its permission prompts off
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** `code_task` (`apps/orchestrator/src/toolbox/harness.ts`)
+and the Claude Code driver in `runtime/guilds-harness`
+(`--dangerously-skip-permissions`, with `IS_SANDBOX=1` because
+commands run as root, SEC-6).
+
+**Exposure:** the harness runs every command and edit it decides on,
+with nobody to approve. It reads repository files, issue text,
+command output, and the notes the agent appends to its brief.
+Instructions planted in that content can steer it, as they can steer
+the agent (SEC-8). Its environment carries the agent's granted
+secrets, and git reaches the installation token through the
+credential helper (SEC-10). Its final message returns to the agent,
+which can be steered by it in turn.
+
+**Control in place:** the container is the boundary. The harness has
+no guild tools, no MCP servers, and no hooks (SEC-29). `GH_TOKEN` and
+`GITHUB_TOKEN` are never in its environment, nor the variables that
+would move it to metered API billing. The brief's preamble tells it
+never to push or open pull requests. The `coding` prompt block tells
+the agent that the harness's final message is data, and to check its
+work before pushing it.
+
+**Residual risk:** a steered harness can do anything the sandbox and
+the agent's secrets allow: read and send them out, change the
+working tree, and push to the guild repositories' unprotected
+branches through git (SEC-10). It reaches the other agents on its
+machine (SEC-24). Nothing enforces the preamble.
+
+## SEC-27 — Harness subscription tokens and logins are readable on the agent's machine
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** the harness credentials in `apps/orchestrator/src/coding/harnesses.ts`
+and `runtime/guilds-harness`: the secret `CLAUDE_CODE_OAUTH_TOKEN`
+in the environment of the agent's commands, and a login stored in
+the agent's home (`~/.claude/.credentials.json`). `CURSOR_API_KEY`
+is the Cursor harness's secret.
+
+**Exposure:** a subscription token granted as a secret is in the
+environment of every command the agent runs, its harness included.
+A login is a file in its home. Every agent on the machine runs as
+root in the same container (SEC-24): any of their processes can read
+the login file at any time, and the token while a command of this
+agent runs. So can whatever a package install or a steered harness
+starts (SEC-4, SEC-28). With the token or the login, the
+operator's subscription can be used from anywhere.
+
+**Control in place:** the token reaches a command only by grant,
+through that command's environment, never the container's, and its
+value joins run redaction like every secret. The driver never writes
+the login or account files. The operator picks the machine an agent
+goes on, and the operator app says that agents on one machine can
+read each other's files and sessions.
+
+**Residual risk:** a token or login read on the machine works until
+the operator revokes it with the vendor. A login file's values are
+not in the redaction set, so reading the file back shows them in the
+run's transcript.
 
 ## SEC-26 — A member could place an agent beside a private guild's agents
 
@@ -105,6 +238,8 @@ install starts (SEC-4). Any of these processes can:
 - read and change every other agent's home on the machine
   (repositories, scripts, files, `.gitconfig`)
 - read every other agent's git tokens (SEC-10)
+- read every other agent's harness logins and subscription tokens
+  (SEC-27)
 - read every other agent's Chrome profile, with its cookies and
   logins
 - attach to every other agent's Chrome DevTools port
@@ -627,7 +762,9 @@ out of results.
 **Found:** 2026-09-30, building coding agents.
 
 **Where:** the `shell` tool
-(`apps/orchestrator/src/toolbox/code.ts`, `runtime/guilds-code`)
+(`apps/orchestrator/src/toolbox/code.ts`, `runtime/guilds-code`),
+`code_task` and the coding harness it runs
+(`apps/orchestrator/src/toolbox/harness.ts`, `runtime/guilds-harness`),
 and the `coding` block of `system.md`.
 
 **Exposure:** a coding agent reads repository files, issue text,

@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { installationIdOf, RepositoryAccessError } from "../coding/git.js";
+import { HARNESSES, HARNESS_INFO, harnessOf } from "../coding/harnesses.js";
+import { cliOf } from "../agents/validation.js";
+import { agentSecrets } from "../access/runtime.js";
 import {
   DEFAULT_BRANCH,
   githubLoginItem,
@@ -28,7 +31,7 @@ import { markDisconnected } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { ownedGuild, ownedRun } from "./items.js";
+import { agentConfigObject, ownedAgent, ownedGuild, ownedRun } from "./items.js";
 import { bodyOf, param } from "./request.js";
 
 function proxyUrl(): string {
@@ -313,12 +316,64 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     return { repositories: selected };
   });
 
+  app.get("/api/agents/:agent_id/harness", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const agent = await ownedAgent(repo, param(request, "agent_id"), user);
+    const config = agentConfigObject(agent);
+    const cli = cliOf(config);
+    const granted = new Set((await agentSecrets(repo, agent)).map((secret) => secret.name));
+    const logins = (jsonObj(agent.harness_logins) as Record<string, unknown> | null) ?? {};
+    return {
+      harness: harnessOf(config),
+      cli,
+      harnesses: HARNESSES.map((harness) => {
+        const info = HARNESS_INFO[harness];
+        const seen = logins[harness];
+        return {
+          harness,
+          label: info.label,
+          secret: info.secret,
+          secret_granted: info.secret !== null && granted.has(info.secret),
+          login: cli ? info.login : null,
+          login_seen_at: typeof seen === "string" ? seen : null,
+        };
+      }),
+    };
+  });
+
   app.get("/api/runs/:run_id/changes", async (request) => {
     const user = await currentUser(repo, request, deps);
     const run = await ownedRun(repo, param(request, "run_id"), user);
     const metadata = jsonObj(run.metadata) as Record<string, unknown> | null;
     const repos = metadata && Array.isArray(metadata.repos) ? metadata.repos : [];
     return { repositories: repos };
+  });
+
+  app.get("/api/runs/:run_id/tasks/:call_id/diff", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const run = await ownedRun(repo, param(request, "run_id"), user);
+    const callId = param(request, "call_id");
+    const row = (await repo.listMessages(String(run.id))).find((message) => {
+      const metadata = (jsonObj(message.metadata) as Record<string, unknown> | null) ?? {};
+      return metadata.tool_name === "code_task" && metadata.tool_call_id === callId;
+    });
+    const metadata = row ? ((jsonObj(row.metadata) as Record<string, unknown> | null) ?? {}) : {};
+    const repository = typeof metadata.repository === "string" ? metadata.repository : "";
+    if (!repository || typeof metadata.end_sha !== "string") {
+      throw new HttpError(404, "that call has no task diff");
+    }
+    if (!deps.generation) {
+      throw new HttpError(503, "generation is unavailable");
+    }
+    try {
+      const result = await deps.generation.runDiff(String(run.id), repository, callId);
+      return { repository, ...result };
+    } catch (error) {
+      if (error instanceof RunRequestError) {
+        throw new HttpError(error.status, error.detail);
+      }
+      throw error;
+    }
   });
 
   app.get("/api/runs/:run_id/changes/:repository/diff", async (request) => {

@@ -1511,6 +1511,47 @@ describe("generation", { concurrency: 1 }, () => {
     assert.equal((tool?.metadata as Record<string, unknown>).remaining_tool_calls, 49);
   });
 
+  test("reconcile stops a code_task left running and names its session and log", async () => {
+    const { loop, db } = await seededLoop();
+    loop._spawn = () => undefined;
+    await loop.create_run("a_1", null);
+    const run = db.run!;
+    run.config_snapshot = { ...(run.config_snapshot as Record<string, unknown>), harness: "claude-code" };
+    run.metadata = {
+      harness_task: {
+        call_id: "call_task",
+        harness: "claude-code",
+        repository: "app",
+        session_id: "s_9",
+        log_path: ".runs/r/call_task.harness.jsonl",
+      },
+    };
+    const sandboxes = loop.sandboxes as unknown as FakeSandboxes;
+    sandboxes.running.add("mach_1");
+    db.messages.push({
+      seq: 3,
+      payload: {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id: "call_task", function: { name: "code_task", arguments: JSON.stringify({ brief: "x" }) } }],
+      },
+      metadata: { generation: 1 },
+      created_at: new Date(),
+    });
+    await loop.reconcile();
+    const tool = db.messages[db.messages.length - 1];
+    const content = String((tool?.payload as Record<string, unknown>).content);
+    assert.match(content, /^interrupted · claude-code · app · session s_9\n/);
+    assert.ok(content.includes("refs/guild/runs/"));
+    assert.ok(content.includes("log: .runs/r/call_task.harness.jsonl"));
+    const metadata = tool?.metadata as Record<string, unknown>;
+    assert.equal(metadata.status, "interrupted");
+    assert.equal(metadata.session_id, "s_9");
+    assert.equal(metadata.error, "execution interrupted");
+    const commands = (sandboxes.commands as FakeCommands).commands;
+    assert.ok(commands.some((command) => command.includes("/usr/local/bin/guilds-harness")), "the harness gets stop");
+  });
+
   test("hard_cancel_during_settlement_resolves_each_call_once", async () => {
     restoreBindings();
     const snapshot = {

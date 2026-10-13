@@ -446,7 +446,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       method: "POST",
       url: `/api/guilds/${backendId}/agents`,
       headers: JSON_HEADERS,
-      payload: { name: "coder", config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true } },
+      payload: { name: "coder", config: { model: "openrouter/openai/gpt-5.6-luna", browser: false, coding: true, harness: "claude-code" } },
     });
     assert.equal(agent.statusCode, 201, agent.body);
     const agentConnect = await app.inject({

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  assertHarnessChosen,
   AgentValidationError,
   addMissingFlags,
   CONFIG_KEYS,
@@ -240,12 +241,33 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 16);
+  assert.equal(CONFIG_KEYS.size, 17);
   assert.throws(() => validateConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateConfig({ model }), false);
-  assert.deepEqual(addMissingFlags({}), { browser: false, coding: false });
-  assert.deepEqual(addMissingFlags({ coding: true }), { coding: true, browser: false });
+  assert.deepEqual(addMissingFlags({}), { browser: false, coding: false, harness: null });
+  assert.deepEqual(addMissingFlags({ coding: true }), { coding: true, browser: false, harness: null });
+});
+
+test("harness is one of the coding harnesses, and only a coding agent has one", () => {
+  const model = VALID_CONFIG.model;
+  assert.equal(validateConfig({ model }).harness, null);
+  assert.equal(validateConfig({ model, coding: true, harness: "codex" }).harness, "codex");
+  assert.throws(() => validateConfig({ model, coding: true, harness: "opencode" }), /harness must be one of/);
+  assert.throws(() => validateConfig({ model, coding: false, harness: "cursor" }), /only for coding agents/);
+});
+
+test("a coding agent needs a harness on create and when coding or harness changes", () => {
+  const model = VALID_CONFIG.model;
+  const unharnessed = validateConfig({ model, coding: true });
+  assert.throws(() => assertHarnessChosen(unharnessed, null), /coding agents need a harness/);
+  assert.throws(() => assertHarnessChosen(unharnessed, { coding: false, harness: null }), /need a harness/);
+  assert.throws(() => assertHarnessChosen(unharnessed, { coding: true, harness: "codex" }), /need a harness/);
+  // A stored coding agent without a harness can still save its other settings.
+  assert.doesNotThrow(() => assertHarnessChosen(unharnessed, { coding: true, harness: null }));
+  assert.doesNotThrow(() => assertHarnessChosen(unharnessed, { coding: true }));
+  assert.doesNotThrow(() => assertHarnessChosen(validateConfig({ model, coding: true, harness: "cursor" }), null));
+  assert.doesNotThrow(() => assertHarnessChosen(validateConfig({ model }), null));
 });
 
 test("config defaults missing run limits", () => {

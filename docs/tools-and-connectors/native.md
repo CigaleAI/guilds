@@ -107,6 +107,10 @@ They keep separate tool families.
   `guilds-code`, offered when the run snapshot has `coding: true`
   ([Code tools](code.md)).
 
+- `code_task`: sandbox through `guilds-harness`, offered when the run
+  snapshot has `coding: true` and a `harness`. It delegates code work
+  to the agent's coding harness ([Code tools](code.md#code-task)).
+
 - `group_post`: orchestrator, offered when the binding is on
   ([Group chat](../concepts/group-chat.md)).
 
