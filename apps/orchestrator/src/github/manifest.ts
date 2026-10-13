@@ -87,7 +87,10 @@ function reachableFromInternet(base: string): boolean {
   if (hostname.includes(":")) return publicIpv6(hostname);
   const octets = hostname.split(".");
   if (octets.length !== 4 || octets.some((part) => !/^\d{1,3}$/.test(part))) return true;
-  const [a, b, c, d] = octets.map(Number);
+  const a = Number(octets[0]);
+  const b = Number(octets[1]);
+  const c = Number(octets[2]);
+  const d = Number(octets[3]);
   if ([a, b, c, d].some((part) => part > 255)) return true;
   if (a === 0 || a === 10 || a === 127) return false;
   if (a === 169 && b === 254) return false;
