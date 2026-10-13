@@ -1154,7 +1154,7 @@ export class GenerationLoop implements GroupRunner {
   _browser_idle: IdleTimers;
   /** The machine of each agent that generates. */
   _agent_machine = new Map<string, string>();
-  /** The machine of each agent whose Browser or CLI view had input, until it moves or goes. */
+  /** The machine of each agent whose Browser or CLI view started or had input, until it moves or goes. */
   _touched_machine = new Map<string, string>();
   _subs = new Map<string, Set<EventQueue<[string, Record<string, unknown>]>>>();
   _cancels = new Map<string, CancelEvent>();
@@ -1779,6 +1779,7 @@ export class GenerationLoop implements GroupRunner {
       throw new RunRequestError(409, "browser is not enabled");
     }
     const sandbox = await this.wakeSandbox(agentId);
+    this._touched_machine.set(agentId, String(agent.machine_id));
     await this.startAgentBrowser(agent, sandbox);
     return sandbox;
   }
@@ -1826,6 +1827,7 @@ export class GenerationLoop implements GroupRunner {
       throw new RunRequestError(409, "cli is not enabled");
     }
     const sandbox = await this.wakeSandbox(agentId);
+    this._touched_machine.set(agentId, String(agent.machine_id));
     await this.startCliOn(sandbox, agent);
     return sandbox;
   }

@@ -132,7 +132,9 @@ test(
         socket.send('{"AuthToken":"x","columns":80,"rows":24}');
         const echoed = await wsRecv(socket);
         assert.equal(echoed.text, 'echo-text:{"AuthToken":"x","columns":80,"rows":24}');
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        for (let tries = 0; tries < 100 && generation._idle_tasks.get(machineId) === armed; tries += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
         const restarted = generation._idle_tasks.get(machineId);
         assert.ok(restarted);
         assert.notEqual(restarted, armed, "operator input restarts the idle timer");
