@@ -46,7 +46,7 @@ enabled for that agent.
 A later turn also drops a native tool that is now off, including:
 
 - the eight browser tools when `config.browser` is false
-- the code tools and `code_task` when `config.coding` is false
+- the five code tools when `config.coding` is false
 - the five script tools when `config.scripting` is false
 - `memory_write` when `config.memory` is false
 
@@ -55,8 +55,7 @@ it. `report_issue` is always offered.
 
 The eight browser tools are omitted from `offered_tools` when the
 snapshot's `browser` flag is false. The code tools are omitted when
-its `coding` flag is false, and `code_task` also when it has no
-`harness`. The script tools are omitted when its
+its `coding` flag is false. The script tools are omitted when its
 `scripting` flag is false. `memory_write` is omitted when its
 `memory` flag is false.
 

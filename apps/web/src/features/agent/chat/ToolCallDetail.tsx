@@ -152,14 +152,7 @@ export function ToolCallDetail({
     [task ? "Harness log" : "Full output", text(meta.log_path)],
     ["Working directory", typeof meta.cwd === "string" ? meta.cwd : ""],
     ["File", typeof meta.path === "string" ? meta.path : ""],
-    [
-      "Lines",
-      typeof meta.lines_added === "number" && typeof meta.lines_removed === "number"
-        ? `+${meta.lines_added} −${meta.lines_removed}`
-        : Array.isArray(meta.range)
-          ? `${String(meta.range[0])}–${String(meta.range[1])}`
-          : "",
-    ],
+    ["Lines", Array.isArray(meta.range) ? `${String(meta.range[0])}–${String(meta.range[1])}` : ""],
     ["Same as step", typeof meta.repeat_of === "number" ? String(meta.repeat_of) : ""],
     [
       "Bytes",

@@ -249,6 +249,11 @@ holds:
 - `max_workspace_mib`, the disk cap over every home on it, default
   10240
 - `workspace_mib`, the size of its directory as last measured
+- `harnesses`, the coding harness CLIs its image carries, as the
+  image lists them in `/usr/local/share/guilds/harnesses`. The
+  orchestrator reads the list when it creates the machine's
+  container and stores it when it changes. It is null until the
+  container first started
 
 Every path that creates an organisation (user creation,
 `POST /api/orgs`, the boot seed) creates one `standard` machine
@@ -257,7 +262,7 @@ resizes a machine or adds another one.
 
 | Route | Who | Body or result |
 | --- | --- | --- |
-| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `planned_mib`, `agents` (id, name, guild, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
+| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `harnesses`, `planned_mib`, `agents` (id, name, guild, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
 | `POST /api/orgs/:id/machines` | owners, admins | `name`, `box`, `cpu`?, `memory_mib`?, `max_workspace_mib`?; 201 with the machine |
 | `PATCH /api/orgs/:id/machines/:machine_id` | owners, admins | the same fields; the body fills in what it leaves out from the machine |
 | `DELETE /api/orgs/:id/machines/:machine_id` | owners, admins | 204 |
@@ -412,10 +417,12 @@ than one machine, they offer the **Machine** picker with its planned
 memory bar ([Machines](#machines)).
 
 With Coding on, they require a **Harness** select. Settings shows a
-credential status line for it from `GET /api/agents/:id/harness`: per
-harness, its `label`, the `secret` it reads and whether that secret
-is granted (`secret_granted`), the `login` to run in the CLI tab (null
-with `cli` off), and `login_seen_at`, when a `code_task` last found a
+credential status line for it from `GET /api/agents/:id/harness`:
+`machine_harnesses`, the harness CLIs the agent's machine carries
+(null until its container first started), and per harness its
+`label`, the `secret` it reads and whether that secret is granted
+(`secret_granted`), the `login` to run in the CLI tab (null with
+`cli` off), and `login_seen_at`, when a `code_task` last found a
 login in the agent's home (`agents.harness_logins`).
 
 CLI, scripting, and Memory start on. The operator can turn any of
@@ -476,14 +483,25 @@ them off.
   to: `claude-code`, `codex`, or `cursor`, or null. It is only for an
   agent with `coding` on (422 otherwise). Creating a coding agent
   needs one, and so does every update that turns `coding` on or
-  changes `harness`. A stored coding agent without one still saves
-  its other settings. With a harness, a coding agent's runs also
-  offer `code_task`, and the `coding` section of its system prompt
-  tells it to delegate code changes and check them
-  ([Code tools](../tools-and-connectors/code.md#code-task)). Claude
-  Code is the driver the runtime carries. The harness runs on the
-  operator's own subscription: a token granted to the agent as a
-  secret, or a login in the agent's CLI tab, stored in its home.
+  changes `harness`. A coding agent's runs offer `code_task`, and the
+  `coding` section of its system prompt tells it to delegate code
+  changes and check them
+  ([Code tools](../tools-and-connectors/code.md#code-task)). The
+  harness runs on the operator's own subscription: a token granted to
+  the agent as a secret, or a login in the agent's CLI tab, stored in
+  its home.
+
+A coding agent without a harness is deprecated. Its config still
+saves its other settings, and no migration writes a harness:
+
+- agent payloads carry `deprecated: "coding.harness_missing"`; every
+  other agent carries `deprecated: null`
+- a coding run of it fails at start, before its machine is woken,
+  with the run error `coding.harness_missing` ("native coding is no
+  longer available: pick a harness (Claude Code, Codex, or Cursor) in
+  the agent's Settings, then start a new session"). The check reads
+  the run snapshot. A run with `coding` off is unaffected
+- picking a harness clears it
 - `scripting` is whether this agent may keep and run Python scripts.
   It selects the State's Scripts view and the five script tools. Those
   tools remain bindings when the flag is on. When it is off they are

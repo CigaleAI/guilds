@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { credentialFix, HARNESS_INFO, type Harness } from "../coding/harnesses.js";
+import { credentialFix, HARNESS_INFO, HARNESS_MISSING_MESSAGE, type Harness } from "../coding/harnesses.js";
 import { writeLog } from "../observability/log.js";
 import { readArtifactText } from "./artifacts.js";
 import { callSegment, codeResultMaxBytes, HARNESS_HELPER, runCodeHelper, type CodeResult } from "./code.js";
@@ -224,6 +224,10 @@ function failureDetail(harness: Harness, result: Record<string, unknown>, versio
     return `error: the ${harness} driver does not parse this CLI's output (${version ?? "unknown version"})`;
   }
   const stderr = typeof result.stderr === "string" ? result.stderr.trim().split("\n").slice(-5).join("\n") : "";
+  // A CLI that printed no event, such as one refusing to start without a login, says why on stderr.
+  if (events === 0 && stderr) {
+    return `error: ${stderr}`;
+  }
   if (typeof result.error === "string" && result.error) {
     return `error: ${result.error.split("\n")[0]}`;
   }
@@ -290,7 +294,7 @@ export const codeTask: Tool = {
   async handler(ctx, args) {
     const harness = ctx.harness;
     if (harness === null) {
-      throw new Error("this agent has no harness: pick one in its Settings");
+      throw new Error(HARNESS_MISSING_MESSAGE);
     }
     const info = HARNESS_INFO[harness];
     const brief = typeof args.brief === "string" ? args.brief : "";

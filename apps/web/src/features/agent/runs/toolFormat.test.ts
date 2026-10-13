@@ -104,21 +104,14 @@ test("code tools read as the command, the file, or the background job they touch
   assert.equal(call("shell_status", {}), "List background commands");
   assert.equal(call("shell_status", { id: "b2", stop: true }), "Stop b2");
   assert.equal(call("file_read", { path: "src/app.ts", offset: 120 }), "Read src/app.ts from line 120");
-  assert.equal(call("file_edit", { path: "src/app.ts" }), "Edit src/app.ts");
-  assert.equal(call("file_write", { path: "README.md" }), "Write README.md");
   assert.equal(call("code_search", { pattern: "refund", mode: "content", path: "src" }), 'Search lines "refund" in src');
   assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
-  assert.equal(call("code_find", { question: "where are refunds validated" }), "Find: where are refunds validated");
-  assert.equal(call("code_callers", { symbol: "cents" }), "Callers of cents");
-  assert.equal(call("code_callers", { symbol: "cents", direction: "out" }), "What cents calls");
-  assert.equal(call("code_outline", { path: "src/refund.ts" }), "Outline src/refund.ts");
 });
 
-test("toolOutcome names a failing exit, an edit's line counts, and a repeated read", () => {
+test("toolOutcome names a failing exit and a repeated read", () => {
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 0 }), "");
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 2 }), "exit 2");
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 124, timed_out: true }), "timed out");
-  assert.equal(toolOutcome({ tool_name: "file_edit", lines_added: 3, lines_removed: 1 }), "+3 −1");
   assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
   assert.equal(toolOutcome(null), "");
 });

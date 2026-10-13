@@ -12,19 +12,7 @@ import {
 import { writeLog } from "../observability/log.js";
 import { identityOutput, processOutput } from "./output.js";
 import { browserClick, browserEval, browserFill, browserNavigate, browserScreenshot, browserScroll, browserSnapshot, browserType } from "./browser.js";
-import {
-  codeCallers,
-  codeFind,
-  codeMap,
-  codeMatch,
-  codeOutline,
-  codeSearch,
-  fileEdit,
-  fileRead,
-  fileWrite,
-  shell,
-  shellStatus,
-} from "./code.js";
+import { codeSearch, fileRead, shell, shellStatus } from "./code.js";
 import { groupPost } from "./group.js";
 import { codeTask } from "./harness.js";
 import { memoryWrite } from "./memory.js";
@@ -74,14 +62,7 @@ register(browserEval);
 register(shell);
 register(shellStatus);
 register(fileRead);
-register(fileEdit);
-register(fileWrite);
 register(codeSearch);
-register(codeMatch);
-register(codeMap);
-register(codeFind);
-register(codeOutline);
-register(codeCallers);
 register(codeTask);
 register(secretStore);
 register(secretRequest);

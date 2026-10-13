@@ -38,6 +38,9 @@ export const HARNESS_INFO: Record<Harness, HarnessInfo> = {
 
 const HARNESS_SET = new Set<string>(HARNESSES);
 
+/** Where the runtime image lists the harness CLIs it carries, one per line. */
+export const HARNESS_LIST = "/usr/local/share/guilds/harnesses";
+
 export function isHarness(value: unknown): value is Harness {
   return typeof value === "string" && HARNESS_SET.has(value);
 }
@@ -45,6 +48,17 @@ export function isHarness(value: unknown): value is Harness {
 /** The agent's harness from its config; null when none is set. */
 export function harnessOf(config: Record<string, unknown> | null | undefined): Harness | null {
   return isHarness(config?.harness) ? config.harness : null;
+}
+
+/** What a coding agent without a harness carries, and what its coding runs fail with. */
+export const HARNESS_MISSING = "coding.harness_missing";
+
+export const HARNESS_MISSING_MESSAGE =
+  "native coding is no longer available: pick a harness (Claude Code, Codex, or Cursor) in the agent's Settings, then start a new session";
+
+/** Whether this config is a coding agent without a harness. */
+export function harnessMissing(config: Record<string, unknown> | null | undefined): boolean {
+  return config?.coding === true && harnessOf(config) === null;
 }
 
 /** How a credential problem names its fix: the secret to grant, or the login to run. */

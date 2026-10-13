@@ -12,6 +12,7 @@ import {
   Settings,
   SquareTerminal,
   Trash2,
+  TriangleAlert,
   Unlink,
   Wrench,
   X,
@@ -120,6 +121,21 @@ export function AgentInspector() {
                       onClick={() =>
                         void navigate({
                           to: "/guilds/$guildId/agents/$agentId/prompt",
+                          params: { guildId, agentId },
+                        })
+                      }
+                    />
+                  ) : null}
+                  {agent.data.deprecated === "coding.harness_missing" ? (
+                    <IconButton
+                      icon={TriangleAlert}
+                      label="Native coding is no longer available: pick a harness in Settings"
+                      title="Native coding is no longer available: pick a harness in Settings"
+                      variant="surface"
+                      className="text-t-ochre-fg"
+                      onClick={() =>
+                        void navigate({
+                          to: "/guilds/$guildId/agents/$agentId/settings",
                           params: { guildId, agentId },
                         })
                       }

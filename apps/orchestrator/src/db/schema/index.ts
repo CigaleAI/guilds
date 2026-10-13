@@ -163,6 +163,7 @@ export const machines = pgTable(
     memoryMib: integer("memory_mib"),
     maxWorkspaceMib: integer("max_workspace_mib").notNull().default(10240),
     workspaceMib: integer("workspace_mib"),
+    harnesses: text("harnesses").array(),
     createdAt: timestamptz("created_at").notNull(),
     updatedAt: timestamptz("updated_at").notNull(),
   },

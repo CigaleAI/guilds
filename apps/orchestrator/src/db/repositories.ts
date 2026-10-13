@@ -45,7 +45,8 @@ import type { PlannedWake } from "../schedules/window.js";
 
 type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
-const MACHINE_COLUMNS = "id, org_id, name, box, cpu, memory_mib, max_workspace_mib, workspace_mib, created_at, updated_at";
+const MACHINE_COLUMNS =
+  "id, org_id, name, box, cpu, memory_mib, max_workspace_mib, workspace_mib, harnesses, created_at, updated_at";
 
 /** The machine every organisation starts with, created in the transaction that creates it. */
 export async function insertDefaultMachine(client: Queryable, orgId: string, now: Date): Promise<string> {
@@ -119,7 +120,7 @@ async function lockMachine(client: Queryable, orgId: string, machineId: string):
 }
 
 const MACHINES_WITH_AGENTS = `
-  SELECT m.id, m.org_id, m.name, m.box, m.cpu, m.memory_mib, m.max_workspace_mib, m.workspace_mib,
+  SELECT m.id, m.org_id, m.name, m.box, m.cpu, m.memory_mib, m.max_workspace_mib, m.workspace_mib, m.harnesses,
          (SELECT COALESCE(
                    jsonb_agg(jsonb_build_object(
                                'id', a.id, 'name', a.name, 'guild_id', a.guild_id, 'guild_name', g.name,
@@ -865,6 +866,7 @@ export class Repositories {
          a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box,
          m.cpu AS machine_cpu, m.memory_mib AS machine_memory_mib,
          m.max_workspace_mib AS machine_max_workspace_mib, m.workspace_mib AS machine_workspace_mib,
+         m.harnesses AS machine_harnesses,
          p.name AS guild_name, p.about AS guild_about, p.description AS guild_description,
          p.archived_at AS guild_archived_at, p.org_id AS org_id, o.slug AS org_slug,
          ${guildOperatorsColumn("guild_operators")}
@@ -1096,6 +1098,11 @@ export class Repositories {
       await client.query(`UPDATE agents SET machine_id = $2, machine_slot = $3 WHERE id = $1`, [agentId, machine.id, slot]);
       return { from, to: { machineId: machine.id, slot } };
     });
+  }
+
+  /** The coding harness CLIs the machine's image carries, as its container reported them. */
+  async setMachineHarnesses(machineId: string, harnesses: string[]): Promise<void> {
+    await this.pool.query(`UPDATE machines SET harnesses = $2 WHERE id = $1`, [machineId, harnesses]);
   }
 
   async setMachineWorkspaceMib(machineId: string, mib: number): Promise<void> {

@@ -29,6 +29,7 @@ function machine(patch: Partial<Machine> = {}): Machine {
     planned_mib: 0,
     agents: [],
     hidden_agents: 0,
+    harnesses: null,
     ...patch,
   };
 }

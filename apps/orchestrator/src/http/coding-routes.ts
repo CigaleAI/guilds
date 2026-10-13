@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { installationIdOf, RepositoryAccessError } from "../coding/git.js";
-import { HARNESSES, HARNESS_INFO, harnessOf } from "../coding/harnesses.js";
+import { HARNESSES, HARNESS_INFO, harnessOf, isHarness } from "../coding/harnesses.js";
 import { cliOf } from "../agents/validation.js";
 import { agentSecrets } from "../access/runtime.js";
 import {
@@ -323,9 +323,11 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     const cli = cliOf(config);
     const granted = new Set((await agentSecrets(repo, agent)).map((secret) => secret.name));
     const logins = (jsonObj(agent.harness_logins) as Record<string, unknown> | null) ?? {};
+    const carried = Array.isArray(agent.machine_harnesses) ? agent.machine_harnesses.filter(isHarness) : null;
     return {
       harness: harnessOf(config),
       cli,
+      machine_harnesses: carried,
       harnesses: HARNESSES.map((harness) => {
         const info = HARNESS_INFO[harness];
         const seen = logins[harness];

@@ -15,11 +15,9 @@ import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import {
   callSegment,
   CODING_TOOLS,
-  explorationOf,
   INLINE_REQUEST_MAX,
   repeatedReadStep,
   repeatedReadText,
-  SEARCH_TOOLS,
 } from "../../src/toolbox/code.js";
 import { REGISTRY } from "../../src/toolbox/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
@@ -28,6 +26,8 @@ import { tempDir } from "../helpers/env.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 
 const live = generationLive;
+/** A coding agent's config: coding on, with a harness. */
+const CODER = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
 const originalStream = live.streamCompletion;
 
 function ctxFor(sandbox: HostCodeSandbox, runId = "r_code") {
@@ -116,55 +116,26 @@ describe("code tools against the helper", () => {
     assert.equal(missing.split("\n\n")[0], "ERROR: no background command b9");
   });
 
-  test("file tools write, read with a header, and edit an exact string", async () => {
+  test("file_read reads a range under a header", async () => {
     const sandbox = new HostCodeSandbox();
-    const [wrote, writeMeta] = await call(sandbox, "file_write", {
-      path: "src/app.py",
-      content: "def f():\n    return 1\n\nprint(f())\n",
-    });
-    assert.equal(wrote, "wrote src/app.py (4 lines)");
-    assert.equal(writeMeta.lines_added, 4);
-    assert.equal(writeMeta.lines_removed, 0);
+    mkdirSync(path.join(sandbox.home, "src"));
+    writeFileSync(path.join(sandbox.home, "src/app.py"), "def f():\n    return 1\n\nprint(f())\n");
     const [read, readMeta] = await call(sandbox, "file_read", { path: "src/app.py", offset: 2, limit: 2 });
     assert.equal(read, "src/app.py · lines 2–3 of 4\n2      return 1\n3  ");
     assert.deepEqual(readMeta.range, [2, 3]);
     assert.equal(typeof readMeta.content_hash, "string");
     assert.equal(readMeta.path, path.join(realHome(sandbox), "src/app.py"));
-    const [edited, editMeta] = await call(sandbox, "file_edit", {
-      path: "src/app.py",
-      old_string: "    return 1",
-      new_string: "    value = 2\n    return value",
-    });
-    assert.equal(edited, "edited src/app.py (+2 −1)");
-    assert.equal(editMeta.lines_added, 2);
-    assert.equal(editMeta.lines_removed, 1);
-    assert.match(readFileSync(path.join(sandbox.home, "src/app.py"), "utf8"), /value = 2\n {4}return value/);
   });
 
-  test("file_edit refuses a missing or ambiguous string and changes nothing", async () => {
-    const sandbox = new HostCodeSandbox();
-    const file = path.join(sandbox.home, "notes.txt");
-    writeFileSync(file, "a\nb\na\n");
-    const [missing, missingMeta] = await call(sandbox, "file_edit", { path: "notes.txt", old_string: "zz", new_string: "y" });
-    assert.match(missing, /^ERROR: old_string not found in notes\.txt; nothing changed/);
-    assert.equal(missingMeta.error, "old_string not found in notes.txt; nothing changed");
-    const [twice] = await call(sandbox, "file_edit", { path: "notes.txt", old_string: "a", new_string: "c" });
-    assert.match(twice, /^ERROR: old_string occurs 2 times in notes\.txt/);
-    assert.equal(readFileSync(file, "utf8"), "a\nb\na\n");
-    const [all] = await call(sandbox, "file_edit", { path: "notes.txt", old_string: "a", new_string: "c", replace_all: true });
-    assert.equal(all, "edited notes.txt (+2 −2, 2 places)");
-    assert.equal(readFileSync(file, "utf8"), "c\nb\nc\n");
-  });
-
-  test("file tools refuse paths outside the workspace, links included", async () => {
+  test("file_read refuses paths outside the workspace, links included", async () => {
     const sandbox = new HostCodeSandbox();
     const outside = tempDir("guilds-outside-");
     writeFileSync(path.join(outside, "secret.txt"), "no");
     symlinkSync(outside, path.join(sandbox.home, "escape"));
     const [read] = await call(sandbox, "file_read", { path: "escape/secret.txt" });
     assert.match(read, /^ERROR: escape\/secret\.txt is outside /);
-    const [write] = await call(sandbox, "file_write", { path: "/etc/guilds-test", content: "x" });
-    assert.match(write, /^ERROR: \/etc\/guilds-test is outside /);
+    const [absolute] = await call(sandbox, "file_read", { path: "/etc/hosts" });
+    assert.match(absolute, /^ERROR: \/etc\/hosts is outside /);
   });
 
   test("file_read clips long lines, stops under the byte cap, and names binary files", async () => {
@@ -186,14 +157,13 @@ describe("code tools against the helper", () => {
 
   test("a request too large for one argument travels through the sandbox file API", async () => {
     const sandbox = new HostCodeSandbox();
-    const content = `${"z".repeat(120 * 1024)}\n`;
-    const [wrote] = await call(sandbox, "file_write", { path: "big.txt", content });
-    assert.equal(wrote, "wrote big.txt (1 lines)");
+    const command = `printf ok # ${"z".repeat(120 * 1024)}`;
+    const [ran] = await call(sandbox, "shell", { command });
+    assert.equal(ran, "ok");
     assert.equal(sandbox.written.length, 1);
     assert.match(String(sandbox.written[0]), /^\/run\/guilds\/requests\/r_code-call_\d+\.json$/);
-    assert.equal(readFileSync(path.join(sandbox.home, "big.txt"), "utf8"), content);
     assert.deepEqual(readdirSync(path.join(sandbox.runDir, "requests")), []);
-    assert.ok(Buffer.from(JSON.stringify({ content })).toString("base64").length > INLINE_REQUEST_MAX);
+    assert.ok(Buffer.from(JSON.stringify({ command })).toString("base64").length > INLINE_REQUEST_MAX);
   });
 
   test("a run keeps the logs of its 20 most recent runs", async () => {
@@ -239,60 +209,43 @@ test("a read of a range already held, unchanged, points at the earlier step", ()
   assert.equal(repeatedReadText(again, 7), "/home/a_1/a.ts lines 10–50: unchanged since step 7; read that result.");
 });
 
-test("exploration counts calls before the first edit and bytes read from files never edited", () => {
-  const row = (metadata: Record<string, unknown>) => ({ metadata });
-  const rows = [
-    row({ tool_name: "code_find", stored_bytes: 900 }),
-    row({ tool_name: "file_read", path: "/home/a_1/repos/a/x.ts", stored_bytes: 1200, error: null }),
-    row({ tool_name: "file_read", path: "/home/a_1/repos/a/y.ts", stored_bytes: 800, error: null }),
-    row({ tool_name: "file_edit", path: "/home/a_1/repos/a/z.ts", error: "old_string not found" }),
-    row({ tool_name: "file_edit", path: "/home/a_1/repos/a/x.ts", error: null }),
-    row({ tool_name: "file_read", path: "/home/a_1/repos/a/y.ts", stored_bytes: 40, error: null }),
-  ];
-  assert.deepEqual(explorationOf(rows), { calls_before_first_edit: 4, read_bytes_unedited: 840 });
-  assert.deepEqual(explorationOf(rows.slice(0, 3)), { calls_before_first_edit: null, read_bytes_unedited: 2000 });
-});
-
 test("every code tool is registered with an object schema and its required arguments", () => {
   const required: Record<string, string[]> = {
     shell: ["command"],
     shell_status: [],
     file_read: ["path"],
-    file_edit: ["path", "old_string", "new_string"],
-    file_write: ["path", "content"],
     code_search: ["pattern"],
-    code_match: ["pattern"],
-    code_map: [],
-    code_find: ["question"],
-    code_outline: ["path"],
-    code_callers: ["symbol"],
+    code_task: ["brief"],
   };
-  for (const name of CODING_TOOLS) {
+  for (const name of [...CODING_TOOLS, "code_task"]) {
     const tool = REGISTRY[name];
     assert.ok(tool, name);
     const parameters = (tool.schema.function as { parameters: { type: string; required: string[] } }).parameters;
     assert.equal(parameters.type, "object");
     assert.deepEqual(parameters.required, required[name], name);
   }
-  assert.equal(SEARCH_TOOLS.length, 6);
+  for (const removed of ["file_edit", "file_write", "code_match", "code_map", "code_find", "code_outline", "code_callers"]) {
+    assert.equal(REGISTRY[removed], undefined, removed);
+  }
 });
 
-test("coding offers the code tools; without it they are refused names", () => {
+test("coding offers code_task and the code tools; without it they are refused names", () => {
   const coding = offeredToolNames(["note_find", "shell"], { coding: true });
-  for (const name of CODING_TOOLS) {
+  for (const name of [...CODING_TOOLS, "code_task"]) {
     assert.ok(coding.includes(name), name);
   }
-  const plain = offeredToolNames(["note_find", "shell", "file_read"], {});
+  const plain = offeredToolNames(["note_find", "shell", "file_read", "code_task"], {});
   assert.deepEqual(plain, ["note_find", "report_issue"]);
   const noScripts = offeredToolNames(["note_find", "script_list", "script_run"], {
     scripting: false,
   });
   assert.deepEqual(noScripts, ["note_find", "report_issue"]);
-  const snapshot = configSnapshot({ ...AGENT_CONFIG, coding: true }, { tools: [], secrets: [] });
+  const snapshot = configSnapshot({ ...AGENT_CONFIG, coding: true, harness: "codex" }, { tools: [], secrets: [] });
   assert.equal(snapshot.coding, true);
+  assert.equal(snapshot.harness, "codex");
   const names = (snapshot.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
   assert.ok(names.includes("shell"));
-  assert.ok(names.includes("file_edit"));
+  assert.ok(names.includes("code_task"));
 });
 
 test("agent workspace max is the agent's cap, never above the host cap", () => {
@@ -319,7 +272,7 @@ describe("coding runs in the generation loop", () => {
   });
 
   function codingSnapshot(): Record<string, unknown> {
-    return configSnapshot({ ...AGENT_CONFIG, coding: true }, { tools: [], secrets: [] });
+    return configSnapshot(CODER, { tools: [], secrets: [] });
   }
 
   function scripted(db: FakeDB, turns: Array<Array<Record<string, unknown>>>) {
@@ -354,16 +307,16 @@ describe("coding runs in the generation loop", () => {
     return { sandboxes, machines };
   }
 
-  test("a repeated read of an unchanged range becomes a pointer; an edit brings content back", async () => {
+  test("a repeated read of an unchanged range becomes a pointer; a change brings content back", async () => {
     const sandbox = new HostCodeSandbox();
     mkdirSync(path.join(sandbox.home, "repo"));
     writeFileSync(path.join(sandbox.home, "repo/a.txt"), "one\ntwo\nthree\n");
     const db = new FakeDB(codingSnapshot());
-    db.agent.config = { ...AGENT_CONFIG, coding: true };
+    db.agent.config = { ...CODER };
     const read = (id: string) => ({ id, function: { name: "file_read", arguments: '{"path":"repo/a.txt"}' } });
     live.streamCompletion = scripted(db, [
       [read("c1"), read("c2")],
-      [{ id: "c3", function: { name: "file_edit", arguments: '{"path":"repo/a.txt","old_string":"two","new_string":"2"}' } }],
+      [{ id: "c3", function: { name: "shell", arguments: '{"command":"printf \'one\\\\n2\\\\nthree\\\\n\' > repo/a.txt"}' } }],
       [read("c4")],
     ]) as typeof live.streamCompletion;
     const { sandboxes, machines } = codingSandboxes(sandbox);
@@ -376,12 +329,9 @@ describe("coding runs in the generation loop", () => {
     const firstSeq = Number(tools[0]?.seq);
     assert.match(String(contents[1]), new RegExp(`a\\.txt lines 1–3: unchanged since step ${firstSeq}; read that result\\.$`));
     assert.equal((tools[1]?.metadata as Record<string, unknown>).repeat_of, firstSeq);
-    assert.equal(contents[2], "edited repo/a.txt (+1 −1)");
+    assert.equal(contents[2], "(no output)");
     assert.match(String(contents[3]), /^repo\/a\.txt · lines 1–3 of 3\n1 {2}one\n2 {2}2\n3 {2}three$/);
     assert.equal((tools[3]?.metadata as Record<string, unknown>).repeat_of, undefined);
-    const exploration = (db.run.metadata as Record<string, unknown>).exploration as Record<string, unknown>;
-    assert.equal(exploration.calls_before_first_edit, 2);
-    assert.equal(exploration.read_bytes_unedited, 0);
   });
 
   test("a coding generation records the workspace size and stops at start when it is over the limit", async () => {
@@ -391,7 +341,7 @@ describe("coding runs in the generation loop", () => {
     db.setAgentWorkspaceMib = async (_id, mib) => {
       sizes.push(mib);
     };
-    db.agent.config = { ...AGENT_CONFIG, coding: true };
+    db.agent.config = { ...CODER };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes } = codingSandboxes(sandbox);
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
@@ -423,7 +373,7 @@ describe("coding runs in the generation loop", () => {
     writeFileSync(path.join(sandbox.home, "blob"), Buffer.alloc(3 * 1024 * 1024));
     const db = new FakeDB(codingSnapshot()) as FakeDB & { setAgentWorkspaceMib(id: string, mib: number): Promise<void> };
     db.setAgentWorkspaceMib = async () => {};
-    db.agent.config = { ...AGENT_CONFIG, coding: true, max_workspace_mib: 2 };
+    db.agent.config = { ...CODER, max_workspace_mib: 2 };
     db.agent.workspace_mib = 50;
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes } = codingSandboxes(sandbox);
@@ -433,6 +383,51 @@ describe("coding runs in the generation loop", () => {
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "workspace.full");
     assert.match(String(errors.at(-1)?.message), /above the 2 MiB limit; free space from the CLI tab/);
+  });
+
+  test("a coding run without a harness fails at start, naming the fix; a run with coding off is unaffected", async () => {
+    const sandbox = new HostCodeSandbox();
+    const legacy = { ...AGENT_CONFIG, coding: true };
+    const db = new FakeDB(configSnapshot(legacy, { tools: [], secrets: [] }));
+    db.agent.config = { ...legacy };
+    live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
+    const { sandboxes, machines } = codingSandboxes(sandbox);
+    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes)._generate("r_1", 1);
+    assert.equal(db.llm_histories.length, 0);
+    assert.equal(machines.length, 0, "the machine is not woken");
+    const errors = db.run.errors as Array<Record<string, unknown>>;
+    assert.equal(errors.at(-1)?.operation, "coding.harness_missing");
+    assert.match(String(errors.at(-1)?.message), /pick a harness \(Claude Code, Codex, or Cursor\) in the agent's Settings/);
+
+    const plain = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [] }));
+    live.streamCompletion = scripted(plain, []) as typeof live.streamCompletion;
+    await makeLoop(plain, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    assert.equal(plain.llm_histories.length, 1);
+  });
+
+  test("a machine's row keeps the harness CLIs its container carries, written when they change", async () => {
+    const written: Array<[string, string[]]> = [];
+    const db = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [] })) as FakeDB & {
+      setMachineHarnesses(id: string, harnesses: string[]): Promise<void>;
+    };
+    db.setMachineHarnesses = async (id, harnesses) => {
+      written.push([id, harnesses]);
+    };
+    const sandboxes = new FakeSandboxes() as FakeSandboxes & { harnessesOf(id: string): string[] | null };
+    let carried: string[] | null = null;
+    sandboxes.harnessesOf = () => carried;
+    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
+    loop._report_harnesses("mach_1");
+    carried = ["codex", "claude-code"];
+    loop._report_harnesses("mach_1");
+    loop._report_harnesses("mach_1");
+    carried = ["codex"];
+    loop._report_harnesses("mach_1");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(written, [
+      ["mach_1", ["codex", "claude-code"]],
+      ["mach_1", ["codex"]],
+    ]);
   });
 
   test("a non-coding generation records the workspace size and stops when it is over the agent's max", async () => {
@@ -508,10 +503,10 @@ describe("repositories in a coding generation", () => {
 
   function setup(url: string) {
     const sandbox = new HostCodeSandbox();
-    const db = new FakeDB(configSnapshot({ ...AGENT_CONFIG, coding: true }, { tools: [], secrets: [] })) as FakeDB & {
+    const db = new FakeDB(configSnapshot(CODER, { tools: [], secrets: [] })) as FakeDB & {
       listGuildRepositories(guildId: string): Promise<Array<Record<string, unknown>>>;
     };
-    db.agent.config = { ...AGENT_CONFIG, coding: true };
+    db.agent.config = { ...CODER };
     db.listGuildRepositories = async () => [
       { id: "repo_1", guild_id: "guild_1", name: "shop", url, default_branch: "main", connection_id: null },
     ];

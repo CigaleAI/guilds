@@ -163,11 +163,10 @@ import {
 import { BROWSER_TOOLS } from "../toolbox/browser.js";
 import { agentGitIdentity, cloneFailures, RepositoryAccessError, RepositoryTokens } from "../coding/git.js";
 import { codingRepositories, stateRepositories } from "../coding/repositories.js";
-import { harnessOf, type Harness } from "../coding/harnesses.js";
+import { HARNESS_MISSING, HARNESS_MISSING_MESSAGE, harnessOf, type Harness } from "../coding/harnesses.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import {
   CODING_TOOLS,
-  explorationOf,
   measureMachine,
   measureWorkspace,
   repeatedReadStep,
@@ -401,21 +400,19 @@ function offeredNativeNames(
   });
 }
 
-function capabilityToolNames(options: { coding?: boolean; harness?: boolean; browser?: boolean }): string[] {
+function capabilityToolNames(options: { coding?: boolean; browser?: boolean }): string[] {
   return [
-    ...(options.coding ? CODING_TOOLS : []),
-    ...(options.coding && options.harness ? HARNESS_TOOLS : []),
+    ...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []),
     ...(options.browser ? BROWSER_TOOLS : []),
   ];
 }
 
-// The browser and code tools follow the agent's flags, not bindings; `code_task` its harness.
+// The browser and code tools follow the agent's flags, not bindings.
 export function offeredToolNames(
   names: string[],
   options: {
     browser?: boolean;
     coding?: boolean;
-    harness?: boolean;
     scripting?: boolean;
     memory?: boolean;
     schedules?: boolean;
@@ -498,7 +495,6 @@ function liveOfferedNames(
     agentId?: string | null;
     browser: boolean;
     coding: boolean;
-    harness: boolean;
     scripting: boolean;
     memory: boolean;
     schedules: boolean;
@@ -513,7 +509,6 @@ function liveOfferedNames(
     offeredToolNames(enabledToolNames(resolvedTools(rows, options)), {
       browser: options.browser,
       coding: options.coding,
-      harness: options.harness,
       scripting: options.scripting,
       memory: options.memory,
       schedules: options.schedules,
@@ -581,7 +576,6 @@ export function configSnapshot(
     offeredToolNames(options.tools, {
       browser: Boolean(config.browser),
       coding: Boolean(config.coding),
-      harness: harnessOf(config) !== null,
       scripting: config.scripting !== false,
       memory: memoryOf(config),
       schedules: Boolean(options.schedules),
@@ -946,6 +940,8 @@ export type GenerationDb = AccessDatabase &
     mergeRunMetadata(runId: string, extra: Record<string, unknown>, now: Date): Promise<void>;
     /** Records when the agent's harness last found a login in its home. */
     markHarnessLogin?(agentId: string, harness: Harness, now: Date): Promise<void>;
+    /** Keeps the harness CLIs a machine's image carries. */
+    setMachineHarnesses?(machineId: string, harnesses: string[]): Promise<void>;
     completeRun(runId: string, now: Date): Promise<void>;
     reopenRun(runId: string, now: Date): Promise<void>;
     completeGroupDelivery(
@@ -1100,6 +1096,8 @@ export type GenerationSandboxes = {
   /** The machine's running container, created when there is none or replaced when its size changed. */
   ensure(machine: MachineSpec): Promise<SandboxHandle>;
   connectRunning(machineId: string): Promise<SandboxHandle | null>;
+  /** The harness CLIs the machine's container carries, read when the provider created it. */
+  harnessesOf?(machineId: string): string[] | null;
   destroy(machineId: string): Promise<void>;
   listRunningMachineIds(): Promise<Iterable<string>>;
   /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
@@ -1179,6 +1177,8 @@ export class GenerationLoop implements GroupRunner {
   _commands = new Map<string, [SandboxHandle, string]>();
   /** Machines whose tier or size changed while an agent on them generated. */
   _stale_machines = new Set<string>();
+  /** The harness list each machine's row was last given. */
+  _harness_reports = new Map<string, string>();
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
   _scheduler_tick_ms: number;
@@ -1892,7 +1892,23 @@ export class GenerationLoop implements GroupRunner {
     }
     this._stale_machines.delete(machine.id);
     this._schedule_idle(machine.id);
+    this._report_harnesses(machine.id);
     return sandbox;
+  }
+
+  /**
+   * Keeps on the machine's row the harness CLIs its container carries, as the provider read
+   * them when it created the container.
+   */
+  _report_harnesses(machineId: string): void {
+    const listed = this.sandboxes.harnessesOf?.(machineId) ?? null;
+    if (listed === null || this._harness_reports.get(machineId) === listed.join(" ")) {
+      return;
+    }
+    this._harness_reports.set(machineId, listed.join(" "));
+    void Promise.resolve(this.db.setMachineHarnesses?.(machineId, listed)).catch((error: unknown) => {
+      writeLog("warn", errorMessage(error), { operation: "machine.harnesses", error_type: errorName(error) });
+    });
   }
 
   /**
@@ -2474,7 +2490,6 @@ export class GenerationLoop implements GroupRunner {
       notes: hasNoteTools(access.tools),
       browser: Boolean(config.browser),
       coding: Boolean(config.coding),
-      harness: config.harness !== null,
       memory: memoryOf(config),
       memoryWrite: memoryOf(config) && hasMemoryTool(access.tools),
     };
@@ -3219,6 +3234,10 @@ export class GenerationLoop implements GroupRunner {
     const machine = agentMachine(agent);
     const seat = agentSeat(agent);
     const snapshot = asObj(run.config_snapshot);
+    if (snapshot.coding === true && harnessOf(snapshot) === null) {
+      await this._fail(runId, generation, HARNESS_MISSING, new Error(HARNESS_MISSING_MESSAGE), extra);
+      return;
+    }
     try {
       const workspaceRoot = await this.workspaceRootFor(machine.id);
       if (this.sandboxes.machineHost) {
@@ -3263,6 +3282,7 @@ export class GenerationLoop implements GroupRunner {
         machineSandbox = await this.sandboxes.ensure(machine);
         this._stale_machines.delete(machine.id);
       }
+      this._report_harnesses(machine.id);
       sandbox = agentSandbox(machineSandbox, agentHome(seat.agentId), { ...env, ...seatEnvironment(seat) });
       await applyRunScripts(sandbox, agentHome(seat.agentId), pinned, liveExtraForAgent(pinned, liveRows));
     } catch (error) {
@@ -3300,7 +3320,6 @@ export class GenerationLoop implements GroupRunner {
       agentId: scope.agentId,
       browser: liveBrowser,
       coding: liveCoding,
-      harness: harnessOf(snapshot) !== null,
       scripting: liveScripting,
       memory: liveMemory,
       schedules: runKind(run) !== "schedule",
@@ -3396,7 +3415,6 @@ export class GenerationLoop implements GroupRunner {
       await this._run_steps(runId, generation, run, snapshot, ctx, tools as unknown[], secrets, mcpTools, extra);
     } finally {
       if (coding) {
-        await this._record_exploration(runId);
         await this._record_checkpoints(runId, agent, machineSandbox);
       }
       if (!this._cancelled(runId)) {
@@ -3538,13 +3556,6 @@ export class GenerationLoop implements GroupRunner {
         error_type: errorName(error),
       });
     }
-  }
-
-  async _record_exploration(runId: string): Promise<void> {
-    const rows = (await this.db.listMessages(runId))
-      .filter((row) => asObj(row.payload).role === "tool")
-      .map((row) => ({ metadata: asObj(row.metadata) }));
-    await this.db.mergeRunMetadata(runId, { exploration: explorationOf(rows) }, new Date());
   }
 
   async _run_steps(

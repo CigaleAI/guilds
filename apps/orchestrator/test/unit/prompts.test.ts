@@ -239,7 +239,8 @@ test("the coding block replaces the scripts-only line for coding agents", () => 
     coding: true,
   });
   assert.ok(coding.includes("shell_status"));
-  assert.ok(coding.includes("file_edit"));
+  assert.ok(coding.includes("code_task"));
+  assert.ok(!coding.includes("file_edit"));
   assert.ok(coding.includes("run one-off commands with `shell`"));
   assert.ok(!coding.includes("A script is the only way to execute code"));
   assert.ok(!coding.includes("<capability"));

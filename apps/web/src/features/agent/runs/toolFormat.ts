@@ -275,27 +275,11 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
       ? `Read ${args.path} from line ${from}`
       : `Read ${args.path}`;
   }
-  if (name === "file_edit") return args.path ? `Edit ${args.path}` : "Edit file";
   if (name === "code_search") {
     const where = args.path ? ` in ${args.path}` : "";
-    const how =
-      args.mode === "content"
-        ? "Search lines"
-        : args.mode === "symbols"
-          ? "Search symbols"
-          : "Search files";
+    const how = args.mode === "content" ? "Search lines" : "Search files";
     return args.pattern ? `${how} "${args.pattern}"${where}` : how;
   }
-  if (name === "code_match") return args.pattern ? `Match ${args.pattern}` : "Match syntax";
-  if (name === "code_map") return args.repo ? `Map ${args.repo}` : "Map repository";
-  if (name === "code_find") return args.question ? `Find: ${args.question}` : "Find code";
-  if (name === "code_outline") return args.path ? `Outline ${args.path}` : "Outline file";
-  if (name === "code_callers") {
-    const verb = args.direction === "out" ? "What" : "Callers of";
-    const tail = args.direction === "out" ? " calls" : "";
-    return args.symbol ? `${verb} ${args.symbol}${tail}` : "Trace references";
-  }
-  if (name === "file_write") return args.path ? `Write ${args.path}` : "Write file";
   if (name === "script_run") {
     return args.name ? `Run ${args.name}` : "Run script";
   }
@@ -377,9 +361,8 @@ export function codeTaskChanges(metadata: Record<string, unknown>): string {
 }
 
 /**
- * What a code tool's result metadata says at a glance: a command's non-zero exit code, the
- * lines an edit added and removed, the step a repeated read points back to, or how a code task
- * ended and what it changed; empty otherwise.
+ * What a code tool's result metadata says at a glance: a command's non-zero exit code, the step
+ * a repeated read points back to, or how a code task ended and what it changed; empty otherwise.
  */
 export function toolOutcome(metadata: Record<string, unknown> | null | undefined): string {
   if (!metadata) return "";
@@ -390,9 +373,6 @@ export function toolOutcome(metadata: Record<string, unknown> | null | undefined
       .join(" · ");
   }
   if (typeof metadata.repeat_of === "number") return `unchanged since step ${metadata.repeat_of}`;
-  const added = metadata.lines_added;
-  const removed = metadata.lines_removed;
-  if (typeof added === "number" && typeof removed === "number") return `+${added} −${removed}`;
   if (metadata.tool_name === "shell") {
     if (metadata.timed_out === true) return "timed out";
     const code = metadata.exit_code;

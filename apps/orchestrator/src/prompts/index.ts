@@ -38,8 +38,6 @@ export type StandingCaps = {
   notes: boolean;
   browser: boolean;
   coding: boolean;
-  /** Whether a coding run delegates to a harness through `code_task`. Missing means off. */
-  harness?: boolean;
   /** Missing means on, matching agent config. */
   memory?: boolean;
   /** Whether `memory_write` is offered. Missing follows `memory`. */
@@ -162,8 +160,6 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
   text = applyCapability(text, "scripts", caps.scripts);
   text = applyCapability(text, "notes", caps.notes);
   text = applyCapability(text, "browser", caps.browser);
-  text = applyCapability(text, "harness", caps.coding && caps.harness === true);
-  text = applyCapability(text, "no_harness", !(caps.coding && caps.harness === true));
   text = applyCapability(text, "coding", caps.coding);
   text = applyCapability(text, "no_coding", !caps.coding);
   text = applyCapability(text, "memory_write", memoryWrite);
@@ -177,7 +173,6 @@ const PREVIEW_CAPS = {
   notes: true,
   browser: true,
   coding: true,
-  harness: true,
 } as const;
 
 /** Compose a run prompt, resolving only the Memory capability from the agent's flag. */

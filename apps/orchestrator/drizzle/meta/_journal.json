@@ -36,6 +36,13 @@
       "when": 1791892800000,
       "tag": "0005_harness_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791896400000,
+      "tag": "0006_machine_harnesses",
+      "breakpoints": true
     }
   ]
 }

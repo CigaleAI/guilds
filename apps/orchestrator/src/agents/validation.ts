@@ -404,7 +404,7 @@ function requireHarness(value: unknown, coding: boolean): Harness | null {
 /**
  * A coding agent needs a harness on create, and on every update that changes `coding` or
  * `harness`. A stored coding agent without one still validates, so its other settings can
- * be saved.
+ * be saved; its coding runs fail at start until a harness is picked.
  */
 export function assertHarnessChosen(config: AgentConfig, previous: Record<string, unknown> | null): void {
   if (!config.coding || config.harness !== null) {

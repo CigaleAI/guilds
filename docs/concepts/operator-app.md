@@ -169,14 +169,21 @@ each other's files and sessions.
 counts against the browser-agent capacity. The browser language
 shows while it is on.
 
-**Coding** gives the agent the code tools. It counts against the
+**Coding** gives the agent the code tools, with a harness for code
+work. It counts against the
 coding-agent capacity. It is greyed out on a standard machine, with
 a link to Settings, Machines. It turns CLI and scripting on and
 moves step and tool-call limits still at their defaults to 200.
 While it is on, a **Harness** select (Claude Code, Codex, or Cursor)
 is required. A note under it says the harness does the code work on
 the operator's own subscription, and that a personal subscription in
-a shared organisation may fall outside the vendor's terms.
+a shared organisation may fall outside the vendor's terms. A harness
+whose CLI the machine's image lacks is unavailable, marked "Not on
+this machine's image", and a second note says that a published image
+carries Codex only, and that Claude Code and Cursor need an image
+built with them. Before the machine's container first started, every
+harness is available and that note shows
+([Machines](guilds-and-agents.md#machines)).
 
 A new agent opens on its Prompt tab.
 
@@ -311,7 +318,9 @@ Selecting an agent opens its inspector at
 The expand control fills the window instead and is remembered.
 
 The header shows the avatar, the name, whether it is running, and
-the focus.
+the focus. A coding agent without a harness shows a warning flag,
+"Native coding is no longer available: pick a harness in Settings",
+that opens Settings.
 When the Task embeds notes or tables that no longer exist, an unlink
 button names them and opens the Prompt tab.
 
@@ -621,11 +630,18 @@ The strip scrolls sideways when they do not fit.
   Under **Agent capabilities**: five buttons for Browser, Coding,
   CLI, scripting, and Memory. Coding is greyed out on a standard
   machine; the browser language shows while Browser is on. With
-  Coding on, the required **Harness** select carries the same note
-  as on Create agent, and a credential status line: whether the
-  secret the harness reads is granted, when a login was last found in
-  the agent's home, and the login to run in the CLI tab when CLI is
-  on ([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)).
+  Coding on, the required **Harness** select carries the same notes
+  and unavailable harnesses as on Create agent, and a credential
+  status line: whether the secret the harness reads is granted, when
+  a login was last found in the agent's home, and the login to run in
+  the CLI tab when CLI is on
+  ([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)).
+  When the stored harness is one the machine's image lacks, a warning
+  under the select says its code tasks fail, and to pick another
+  harness or move the agent.
+  A coding agent without a harness opens Settings on a warning
+  banner, **Native coding is no longer available**, whose **Pick a
+  harness** button focuses the Harness select.
 
 ## Access view (Tools and Secrets)
 
@@ -659,7 +675,8 @@ Bindable items are an on/off switch captioned with where its state
 comes from: inherited from a wider scope, or set at this one.
 
 Browser and coding tools follow the agent's capabilities and have
-no per-tool switch.
+no per-tool switch. The coding tools listed are `code_task`, `shell`,
+`shell_status`, `file_read`, and `code_search`.
 `report_issue` is always offered.
 
 A switch writes this scope's binding.

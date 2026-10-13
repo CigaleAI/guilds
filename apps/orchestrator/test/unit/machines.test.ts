@@ -31,6 +31,7 @@ const CUSTOM: MachineRow = {
   memory_mib: 3072,
   max_workspace_mib: 10240,
   workspace_mib: null,
+  harnesses: null,
 };
 
 test("each tier has its size, a custom machine its own, and coding needs code or custom", () => {
@@ -176,14 +177,15 @@ test("a machine's container is replaced only when its tier, CPUs, or memory chan
 
 test("a machine row maps numeric columns to numbers and nulls, and refuses an unknown tier", () => {
   assert.deepEqual(
-    machineFromRow({ id: "mach_1", org_id: "org_1", name: "big", box: "custom", cpu: "1.5", memory_mib: "2048", max_workspace_mib: "4096", workspace_mib: "12" }),
-    { id: "mach_1", org_id: "org_1", name: "big", box: "custom", cpu: 1.5, memory_mib: 2048, max_workspace_mib: 4096, workspace_mib: 12 },
+    machineFromRow({ id: "mach_1", org_id: "org_1", name: "big", box: "custom", cpu: "1.5", memory_mib: "2048", max_workspace_mib: "4096", workspace_mib: "12", harnesses: ["codex", "pi"] }),
+    { id: "mach_1", org_id: "org_1", name: "big", box: "custom", cpu: 1.5, memory_mib: 2048, max_workspace_mib: 4096, workspace_mib: 12, harnesses: ["codex"] },
   );
   const plain = machineFromRow({ id: "mach_2", org_id: "org_1", name: "default", box: "standard", cpu: null, memory_mib: null, max_workspace_mib: null });
   assert.equal(plain.cpu, null);
   assert.equal(plain.memory_mib, null);
   assert.equal(plain.workspace_mib, null);
   assert.equal(plain.max_workspace_mib, 10240);
+  assert.equal(plain.harnesses, null, "before its container first started");
   assert.throws(() => machineFromRow({ id: "mach_3", box: "lite" }), /machine mach_3 has an unknown box: lite/);
   assert.throws(() => machineFromRow({ id: "mach_4" }), /unknown box: undefined/);
 });

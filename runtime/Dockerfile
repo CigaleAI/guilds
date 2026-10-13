@@ -40,7 +40,7 @@ RUN apt-get update \
         | tee /etc/chromium-browser/policies/managed/guilds.json \
         > /etc/opt/chrome/policies/managed/guilds.json \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir playwright==1.52.0 ast-grep-cli==0.45.3
+    && pip install --no-cache-dir playwright==1.52.0
 
 # Google Chrome on amd64 by default. Chrome may not be redistributed, so an image that is
 # published is built with --build-arg BROWSER=chromium and runs Debian's Chromium everywhere.
@@ -61,8 +61,8 @@ RUN set -eu; \
     echo "${sum}  /usr/local/bin/ttyd" | sha256sum -c -; \
     chmod 755 /usr/local/bin/ttyd
 
-# Node.js for JavaScript and TypeScript projects and for Graft. Release tarball,
-# pinned and checksum-verified per architecture.
+# Node.js for JavaScript and TypeScript projects and for the coding harnesses. Release
+# tarball, pinned and checksum-verified per architecture.
 ARG NODE_VERSION=24.21.0
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
@@ -146,15 +146,6 @@ RUN set -eu; \
 # Claude Code reads its managed settings here; no user or project file overrides them.
 COPY claude-code-managed-settings.json /etc/claude-code/managed-settings.json
 
-# Graft builds the code graph behind the code_map, code_find, code_outline, and
-# code_callers tools, in its structural tier only: tree-sitter, no model, no key.
-# Its native tree-sitter bindings predate Node 24's headers, which need C++20.
-ARG GRAFT_VERSION=0.21.1
-RUN CXXFLAGS="-std=gnu++20" npm install --global --no-fund --no-audit "@nanonets/graft@${GRAFT_VERSION}" \
-    && npm cache clean --force \
-    && rm -rf /root/.cache/node-gyp \
-    && graft --version
-
 COPY agent-browser-start /usr/local/bin/agent-browser-start
 COPY agent-cli-start /usr/local/bin/agent-cli-start
 COPY agent-stop /usr/local/bin/agent-stop
@@ -191,10 +182,6 @@ RUN chmod 755 /usr/local/bin/agent-browser-start /usr/local/bin/agent-cli-start 
     && chmod 1777 /tmp/.X11-unix \
     && chmod 700 /run/guilds
 
-# Graft: no usage telemetry, and a build writes nothing into the repository.
 ENV LANG=en_US.UTF-8 \
-    DO_NOT_TRACK=1 \
-    GRAFT_NO_GITIGNORE=1 \
-    GRAFT_NO_IGNORE=1 \
     NPM_CONFIG_UPDATE_NOTIFIER=false
 WORKDIR /home

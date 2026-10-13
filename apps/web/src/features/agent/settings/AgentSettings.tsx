@@ -1,6 +1,12 @@
 import { useParams } from "@tanstack/react-router";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { useAgent, useOrgMachines, useOrgModels, useSaveAgentSettings } from "../../../api/queries";
+import {
+  useAgent,
+  useAgentHarness,
+  useOrgMachines,
+  useOrgModels,
+  useSaveAgentSettings,
+} from "../../../api/queries";
 import type { AgentDetail } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Button, TextAreaField, TextField, Banner, SkeletonRows, toast } from "@guildsrun/ui";
@@ -14,6 +20,7 @@ import {
   configFormOf,
   configOf,
   DiskFields,
+  harnessFieldId,
   LimitFields,
   ModelFields,
   type ConfigForm,
@@ -53,12 +60,40 @@ export function Group({ title, children }: { title: string; children: ReactNode 
   );
 }
 
+/** Brings the Harness select into view and focuses it. */
+function focusHarnessField() {
+  const field = document.getElementById(harnessFieldId);
+  field?.scrollIntoView({ block: "center", behavior: "smooth" });
+  field?.focus({ preventScroll: true });
+}
+
+/** A coding agent without a harness: native coding is gone, and its coding runs fail until one is picked. */
+function HarnessMissingNotice({ coding }: { coding: boolean }) {
+  return (
+    <Banner
+      tone="warning"
+      title="Native coding is no longer available"
+      action={
+        coding ? (
+          <Button variant="outline" size="sm" onClick={focusHarnessField}>
+            Pick a harness
+          </Button>
+        ) : undefined
+      }
+    >
+      This agent needs a harness to run with Coding on: pick Claude Code, Codex or Cursor under
+      Agent capabilities and save, or turn Coding off.
+    </Banner>
+  );
+}
+
 /**
  * How the agent looks and runs: its name, focus and mascot, what wakes it in group chat, its model
  * and reasoning, its run limits, its disk and script caps, its machine (a picker when the
  * organisation has several; a new one moves the agent there), and its capabilities (Browser,
  * Coding, CLI, scripting, Memory; Coding is greyed out on a standard machine, the browser's
- * language shows while it is on, and the harness with its credentials while Coding is).
+ * language shows while it is on, and the harness with its credentials while Coding is). A coding
+ * agent without a harness opens on a notice that leads to the Harness select.
  */
 export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -67,6 +102,7 @@ export function AgentSettings() {
   const models = useOrgModels(org.id);
   const machines = useOrgMachines(org.id);
   const save = useSaveAgentSettings(agentId, guildId);
+  const harness = useAgentHarness(agentId);
   const [draft, setDraft] = useState<Form | null>(null);
 
   const saved = useMemo(() => (agent.data ? formOf(agent.data) : null), [agent.data]);
@@ -85,6 +121,9 @@ export function AgentSettings() {
   const errors = configErrors(form, { models: models.data, machines: machines.data });
   const machine = chosenMachine(machines.data, form.machine_id);
   const moveTo = machine && machine.id !== agent.data.machine_id ? machine.id : undefined;
+  const carried = moveTo
+    ? machine?.harnesses
+    : (harness.data?.machine_harnesses ?? machine?.harnesses);
   const nameError = form.name.trim() ? agentHandleError(form.name.trim()) : handleHint;
   const invalid = Boolean(nameError) || Object.keys(errors).length > 0;
 
@@ -114,6 +153,9 @@ export function AgentSettings() {
     <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
         <div className="mx-auto flex max-w-240 flex-col gap-7">
+          {agent.data.deprecated === "coding.harness_missing" ? (
+            <HarnessMissingNotice coding={form.coding} />
+          ) : null}
           <Group title="Identity">
             <TextField
               tone="surface"
@@ -199,6 +241,7 @@ export function AgentSettings() {
               models={models.data}
               machine={machine}
               agent={{ guildId, agentId }}
+              carried={carried}
             />
           </Group>
           {save.isError ? (

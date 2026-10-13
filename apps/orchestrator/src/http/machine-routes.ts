@@ -30,6 +30,7 @@ export function machineItem(machine: MachineWithAgents, visibleGuildIds: Readonl
     memory_mib: size.memory_mib,
     max_workspace_mib: machine.max_workspace_mib,
     workspace_mib: machine.workspace_mib,
+    harnesses: machine.harnesses,
     planned_mib: plannedMib(machine.agents),
     agents: visible.map((agent) => ({
       id: agent.id,

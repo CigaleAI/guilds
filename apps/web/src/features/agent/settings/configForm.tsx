@@ -15,7 +15,14 @@ import { chosenMachine, machineAllowsCoding } from "../../machines/machines";
 import { StandardMachineNote } from "../../machines/MachineNotes";
 import { modelLimits, modelOptions, modelProviderConnected, providerLabel } from "../../models/models";
 import { ModelKeysLink } from "../../settings/ModelKeysLink";
-import { harnessOptions, isHarness } from "../harness";
+import {
+  harnessCarried,
+  harnessChoices,
+  harnessImageNote,
+  harnessLabel,
+  isHarness,
+  showsHarnessImageNote,
+} from "../harness";
 import { HarnessCredentials } from "./HarnessCredentials";
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
 export const defaultAgentConfig: AgentConfig = {
@@ -454,34 +461,50 @@ function BrowserLanguageField({ form, onChange }: { form: ConfigForm; onChange: 
 /** The agent an existing agent's settings edit, for the links and credentials they show. */
 export type SettingsAgent = { guildId: string; agentId: string };
 
+/** The Harness select's id, for notices that lead to it. */
+export const harnessFieldId = "agent-harness";
+
 /**
  * The coding agent's harness, with a note that it runs on the operator's own subscription; for
- * an existing agent, the harness's credential status under it.
+ * an existing agent, the harness's credential status under it. A harness the machine's image
+ * lacks is unavailable, with why.
  */
 function HarnessField({
   form,
   onChange,
   error,
   agent,
+  carried,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
   error?: string | undefined;
   agent?: SettingsAgent | undefined;
+  carried?: readonly Harness[] | null | undefined;
 }) {
+  const missing = form.harness ? harnessCarried(carried, form.harness) === false : false;
   return (
     <div className="flex flex-col gap-2">
       <Select
+        id={harnessFieldId}
         tone="surface"
         label="Harness"
         placeholder="Choose a harness"
         value={form.harness}
         onValueChange={(value) => onChange({ ...form, harness: value as Harness })}
-        options={harnessOptions}
+        options={harnessChoices(carried)}
         {...(error ? { error } : {})}
       />
-      {agent && form.harness ? (
+      {missing ? (
+        <p className="text-sm text-t-ochre-fg">
+          This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness)}, so its code
+          tasks fail. Pick another harness, or move the agent to a machine that has it.
+        </p>
+      ) : agent && form.harness ? (
         <HarnessCredentials {...agent} harness={form.harness} cli={form.cli} />
+      ) : null}
+      {showsHarnessImageNote(carried) ? (
+        <p className="text-sm text-muted">{harnessImageNote}</p>
       ) : null}
       <p className="text-sm text-muted">
         The harness does the code work on your own subscription. Using a personal subscription in a
@@ -503,6 +526,7 @@ export function CapabilitiesFields({
   models,
   machine,
   agent,
+  carried,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
@@ -512,6 +536,8 @@ export function CapabilitiesFields({
   machine?: MachineRef | undefined;
   /** The agent being edited; undefined while one is created. */
   agent?: SettingsAgent | undefined;
+  /** The harness CLIs the machine's image carries; null or undefined while unknown. */
+  carried?: readonly Harness[] | null | undefined;
 }) {
   const standard = machine !== undefined && !machineAllowsCoding(machine.box);
   return (
@@ -556,7 +582,13 @@ export function CapabilitiesFields({
       </div>
       {standard ? <StandardMachineNote machine={machine} /> : null}
       {form.coding ? (
-        <HarnessField form={form} onChange={onChange} error={errors.harness} agent={agent} />
+        <HarnessField
+          form={form}
+          onChange={onChange}
+          error={errors.harness}
+          agent={agent}
+          carried={carried}
+        />
       ) : null}
       {form.browser ? <BrowserLanguageField form={form} onChange={onChange} /> : null}
     </>

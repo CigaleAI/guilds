@@ -12,12 +12,10 @@ is already shaped to `max_bytes`; `meta` becomes tool-call metadata.
 from __future__ import annotations
 
 import base64
-import difflib
 import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import signal
 import subprocess
@@ -34,7 +32,6 @@ RUN_DIR = Path(os.environ.get("GUILDS_RUN_DIR", "/run/guilds"))
 AGENT_RUN = RUN_DIR / HOME.name
 RUNS = HOME / ".runs"
 REPOS = HOME / "repos"
-GRAPHS = HOME / ".cache" / "graft"
 BACKGROUND = AGENT_RUN / "background"
 KEEP_RUNS = 20
 DEFAULT_MAX_BYTES = 8192
@@ -46,24 +43,11 @@ READ_MAX_LINES = 500
 READ_LINE_CHARS = 400
 STATUS_TAIL_LINES = 40
 BINARY_PROBE = 8000
-DIFF_MAX_CELLS = 50_000_000
 SEARCH_TIMEOUT = 60
 SEARCH_LINE_CHARS = 300
 SEARCH_FILES_LIMIT = 30
 SEARCH_CONTENT_LIMIT = 40
 SEARCH_PER_FILE = 10
-SYMBOLS_LIMIT = 20
-SYMBOLS_HITS = 5
-MATCH_LIMIT = 30
-MATCH_MAX = 100
-GRAFT_TIMEOUT = 300
-GRAFT_BUILD_TIMEOUT = 600
-MAP_DIRS = 16
-MAP_HOTSPOTS = 10
-FIND_LIMIT = 8
-FIND_MAX = 20
-FIND_EXCERPT_LINES = 8
-CALLERS_MAX_DEPTH = 3
 GIT_TIMEOUT = 60
 CHECKPOINT_TIMEOUT = 120
 CHECKPOINT_FILES = 30
@@ -250,33 +234,6 @@ def _cap(text: str, max_bytes: int) -> str:
         return text
     marker = "\n[truncated]"
     return _cut_head(data, max_bytes - len(marker.encode("utf-8"))) + marker
-
-
-def _sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def _lines(text: str) -> list[str]:
-    if not text:
-        return []
-    lines = text.split("\n")
-    if lines[-1] == "":
-        lines.pop()
-    return lines
-
-
-def _line_delta(before: str, after: str) -> tuple[int, int]:
-    old, new = _lines(before), _lines(after)
-    if len(old) * len(new) > DIFF_MAX_CELLS:
-        return len(new), len(old)
-    added = removed = 0
-    matcher = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag in ("replace", "delete"):
-            removed += i2 - i1
-        if tag in ("replace", "insert"):
-            added += j2 - j1
-    return added, removed
 
 
 # --- shell ------------------------------------------------------------------
@@ -583,37 +540,6 @@ def _read_check(path: Path) -> None:
         raise ToolError(f"{path} is not a regular file")
 
 
-def _read_bytes(path: Path) -> bytes:
-    _read_check(path)
-    return path.read_bytes()
-
-
-def _text_of(path: Path, data: bytes) -> str:
-    if b"\x00" in data[:BINARY_PROBE]:
-        raise ToolError(f"{path} is a binary file ({len(data)} bytes)")
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ToolError(f"{path} is not UTF-8 text") from exc
-
-
-def _write_atomic(path: Path, text: str) -> None:
-    mode = None
-    if path.exists():
-        mode = path.stat().st_mode & 0o7777
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write(text)
-        if mode is not None:
-            os.chmod(temp, mode)
-        os.replace(temp, path)
-    except BaseException:
-        Path(temp).unlink(missing_ok=True)
-        raise
-
-
 def _numbered(number: int, width: int, raw: bytes) -> str:
     line = raw.rstrip(b"\n").rstrip(b"\r").decode("utf-8", errors="replace")
     if len(line) > READ_LINE_CHARS:
@@ -678,71 +604,6 @@ def op_file_read(spec: dict[str, Any]) -> dict[str, Any]:
     return {"text": header + "\n" + "\n".join(body) + footer, "meta": meta}
 
 
-def op_file_edit(spec: dict[str, Any]) -> dict[str, Any]:
-    raw = _text_arg(spec, "path")
-    old = _text_arg(spec, "old_string")
-    new = spec.get("new_string", "")
-    if not isinstance(new, str):
-        raise ToolError("new_string must be a string")
-    if old == new:
-        raise ToolError("old_string and new_string are the same")
-    path = _resolve(spec, raw)
-    text = _text_of(path, _read_bytes(path))
-    count = text.count(old)
-    shown = _shown(spec, path)
-    if count == 0:
-        raise ToolError(f"old_string not found in {shown}; nothing changed")
-    replace_all = spec.get("replace_all") is True
-    if count > 1 and not replace_all:
-        raise ToolError(
-            f"old_string occurs {count} times in {shown}; add surrounding lines to make it "
-            "unique or set replace_all; nothing changed"
-        )
-    updated = text.replace(old, new) if replace_all else text.replace(old, new, 1)
-    _write_atomic(path, updated)
-    added, removed = _line_delta(old, new)
-    added *= count if replace_all else 1
-    removed *= count if replace_all else 1
-    suffix = f", {count} places" if replace_all and count > 1 else ""
-    return {
-        "text": f"edited {shown} (+{added} −{removed}{suffix})",
-        "meta": {
-            "path": str(path),
-            "lines_added": added,
-            "lines_removed": removed,
-            "content_hash": _sha256(updated.encode("utf-8")),
-        },
-    }
-
-
-def op_file_write(spec: dict[str, Any]) -> dict[str, Any]:
-    raw = _text_arg(spec, "path")
-    content = spec.get("content", "")
-    if not isinstance(content, str):
-        raise ToolError("content must be a string")
-    path = _resolve(spec, raw)
-    if path.is_dir():
-        raise ToolError(f"{path} is a directory")
-    before = ""
-    if path.exists():
-        if not path.is_file():
-            raise ToolError(f"{path} is not a regular file")
-        data = path.read_bytes()
-        before = "" if b"\x00" in data[:BINARY_PROBE] else data.decode("utf-8", errors="replace")
-    _write_atomic(path, content)
-    added, removed = _line_delta(before, content)
-    count = len(_lines(content))
-    return {
-        "text": f"wrote {_shown(spec, path)} ({count} lines)",
-        "meta": {
-            "path": str(path),
-            "lines_added": added,
-            "lines_removed": removed,
-            "content_hash": _sha256(content.encode("utf-8")),
-        },
-    }
-
-
 # --- code search --------------------------------------------------------------
 
 
@@ -777,12 +638,11 @@ def _clip(line: str, width: int = SEARCH_LINE_CHARS) -> str:
     return line
 
 
-def _run_tool(argv: list[str], cwd: Path, timeout: int, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_tool(argv: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             argv,
             cwd=str(cwd),
-            env=env,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
@@ -918,311 +778,16 @@ def op_code_search(spec: dict[str, Any]) -> dict[str, Any]:
         return _search_files(spec, pattern, target)
     if mode == "content":
         return _search_content(spec, pattern, target)
-    if mode == "symbols":
-        return _search_symbols(spec, pattern, target)
-    raise ToolError("mode must be files, content, or symbols")
+    raise ToolError("mode must be files or content")
 
 
-def op_code_match(spec: dict[str, Any]) -> dict[str, Any]:
-    pattern = _text_arg(spec, "pattern")
-    target = _target(spec)
-    if not target.exists():
-        raise ToolError(f"{_rel(spec, target)} does not exist")
-    cwd = Path(os.path.realpath(_cwd(spec)))
-    limit = _int(spec, "limit", MATCH_LIMIT, 1, MATCH_MAX)
-    argv = ["ast-grep", "run", "--pattern", pattern, "--json=stream"]
-    lang = spec.get("lang")
-    if isinstance(lang, str) and lang:
-        argv += ["--lang", lang]
-    argv += _args_for(spec, target)
-    done = _run_tool(argv, cwd, SEARCH_TIMEOUT)
-    matches = []
-    for raw in done.stdout.splitlines():
-        try:
-            item = json.loads(raw)
-        except ValueError:
-            continue
-        start = (item.get("range") or {}).get("start") or {}
-        first = str(item.get("lines") or item.get("text") or "").split("\n")[0]
-        matches.append(f"{item.get('file')}:{int(start.get('line') or 0) + 1}: {_clip(first.strip())}")
-    if not matches:
-        detail = done.stderr.strip()
-        if done.returncode not in (0, 1) and detail:
-            raise ToolError(detail.splitlines()[-1])
-        return {"text": f"no structural matches for {pattern!r} in {_rel(spec, target)}", "meta": {"matches": 0}}
-    footer = []
-    if len(matches) > limit:
-        footer.append(f"… {len(matches) - limit} more matches")
-    footer.append(f"{len(matches)} matches")
-    return {"text": _fit(matches[:limit], footer, _max_bytes(spec)), "meta": {"matches": len(matches)}}
-
-
-# --- code graph (Graft) --------------------------------------------------------
+# --- repositories ---------------------------------------------------------------
 
 
 def _repositories() -> list[str]:
     if not REPOS.is_dir():
         return []
     return sorted(entry.name for entry in REPOS.iterdir() if entry.is_dir() and not entry.name.startswith("."))
-
-
-def _repo_holding(path: Path) -> tuple[str, Path] | None:
-    repos = Path(os.path.realpath(REPOS))
-    real = Path(os.path.realpath(path))
-    try:
-        relative = real.relative_to(repos)
-    except ValueError:
-        return None
-    if not relative.parts:
-        return None
-    name = relative.parts[0]
-    return name, repos / name
-
-
-def _repository(spec: dict[str, Any], name: Any = None, path: Path | None = None) -> tuple[str, Path]:
-    """The repository a graph call works on: named, holding `path`, holding the working
-    directory, or the only one under the agent's repos/."""
-    if isinstance(name, str) and name:
-        root = REPOS / name
-        if not re.fullmatch(r"[A-Za-z0-9._-]+", name) or not root.is_dir():
-            raise ToolError(_no_repository(f"no repository {name!r}"))
-        return name, Path(os.path.realpath(root))
-    for candidate in (path, _cwd(spec)):
-        if candidate is not None:
-            found = _repo_holding(candidate)
-            if found:
-                return found
-    names = _repositories()
-    if len(names) == 1:
-        return names[0], Path(os.path.realpath(REPOS / names[0]))
-    raise ToolError(_no_repository("name the repository"))
-
-
-def _no_repository(lead: str) -> str:
-    names = _repositories()
-    if not names:
-        return f"{lead}: there is no repository under {REPOS}; clone one there first"
-    return f"{lead}: repositories under {REPOS} are {', '.join(names)}"
-
-
-def _graft_env() -> dict[str, str]:
-    env = dict(os.environ)
-    env.update({"DO_NOT_TRACK": "1", "GRAFT_NO_GITIGNORE": "1", "GRAFT_NO_IGNORE": "1"})
-    env.pop("GUILDS_RUN_DIR", None)
-    return env
-
-
-def _graft(name: str, root: Path, args: list[str]) -> Any:
-    """Runs one Graft query as JSON, building the graph on the first call for a repository.
-    Graft refreshes the graph against the working tree before it answers."""
-    graph = GRAPHS / name
-    env = _graft_env()
-    if not (graph / ".graph").is_dir():
-        graph.parent.mkdir(parents=True, exist_ok=True)
-        built = _run_tool(["graft", "--dir", str(graph), "build", str(root)], root, GRAFT_BUILD_TIMEOUT, env)
-        if built.returncode != 0:
-            tail = (built.stderr or built.stdout).strip().splitlines()[-3:]
-            raise ToolError("building the code graph failed: " + " ".join(tail))
-    done = _run_tool(["graft", "--dir", str(graph), *args, "--json"], root, GRAFT_TIMEOUT, env)
-    if done.returncode != 0:
-        tail = (done.stderr or done.stdout).strip().splitlines()[-2:]
-        raise ToolError(" ".join(tail) or f"graft failed with exit code {done.returncode}")
-    try:
-        return json.loads(done.stdout)
-    except ValueError as exc:
-        raise ToolError("graft returned unreadable output") from exc
-
-
-def _graph_path(spec: dict[str, Any], root: Path, relative: str) -> str:
-    return _rel(spec, root / relative)
-
-
-def _span(value: Any) -> str:
-    match = re.fullmatch(r"L(\d+)-L(\d+)", str(value or ""))
-    if not match:
-        return ""
-    start, end = match.groups()
-    return start if start == end else f"{start}-{end}"
-
-
-def _scope(spec: dict[str, Any], name: str, root: Path, raw: Any) -> list[str]:
-    """`--in` for a path inside the repository; empty for the whole repository."""
-    if not isinstance(raw, str) or not raw:
-        return []
-    path = _resolve(spec, raw)
-    try:
-        relative = path.relative_to(root)
-    except ValueError as exc:
-        raise ToolError(f"{raw} is not inside repository {name}") from exc
-    text = str(relative)
-    if text in ("", "."):
-        return []
-    return ["--in", text + ("/" if path.is_dir() else "")]
-
-
-def op_code_map(spec: dict[str, Any]) -> dict[str, Any]:
-    name, root = _repository(spec, spec.get("repo"))
-    data = _graft(name, root, ["map", str(root), "--max-dirs", str(MAP_DIRS)])
-    totals = data.get("totals") or {}
-    languages = ", ".join(totals.get("languages") or []) or "no parsed languages"
-    lines = [
-        f"{name} ({_rel(spec, root)}): {totals.get('files', 0)} files · {totals.get('symbols', 0)} symbols"
-        f" · {totals.get('edges', 0)} edges · {languages}"
-    ]
-    for item in data.get("dirs") or []:
-        hubs = ", ".join(
-            f"{hub.get('name')} ({_graph_path(spec, root, str(hub.get('path')))}:{_span(hub.get('span')).split('-')[0]}, {hub.get('inDegree', 0)} refs)"
-            for hub in (item.get("hubs") or [])[:3]
-        )
-        label = str(item.get("path")) + ("" if item.get("isFile") else "/")
-        files = item.get("files", 0)
-        line = f"{label}  {files} file{'s' if files != 1 else ''} · {item.get('symbols', 0)} symbols"
-        lines.append(line + (f" · hubs: {hubs}" if hubs else ""))
-    if data.get("dropped"):
-        lines.append(f"… {data['dropped']} more directories")
-    hotspots = data.get("hotspots") or []
-    if hotspots:
-        lines.append("hotspots (most referenced):")
-        for spot in hotspots[:MAP_HOTSPOTS]:
-            where = f"{_graph_path(spec, root, str(spot.get('path')))}:{_span(spot.get('span'))}"
-            lines.append(f"  {spot.get('name')} · {spot.get('kind')} · {where} · {spot.get('inDegree', 0)} refs")
-    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"repository": name}}
-
-
-def _pointer(spec: dict[str, Any], root: Path, pointer: str) -> str:
-    path, _, span = pointer.rpartition(":")
-    if not path:
-        return _graph_path(spec, root, pointer)
-    return f"{_graph_path(spec, root, path)}:{_span(span) or span}"
-
-
-def op_code_find(spec: dict[str, Any]) -> dict[str, Any]:
-    question = _text_arg(spec, "question")
-    scope_raw = spec.get("in")
-    scope_path = _resolve(spec, scope_raw) if isinstance(scope_raw, str) and scope_raw else None
-    name, root = _repository(spec, None, scope_path)
-    limit = _int(spec, "limit", FIND_LIMIT, 1, FIND_MAX)
-    args = ["ask", question, str(root), "--limit", str(limit), *_scope(spec, name, root, scope_raw)]
-    source = spec.get("source") is True
-    if source:
-        args.append("--source")
-    data = _graft(name, root, args)
-    hits = data.get("hits") or []
-    if not hits:
-        return {"text": f"nothing in {name} matches {question!r}", "meta": {"repository": name, "hits": 0}}
-    lines = []
-    for index, hit in enumerate(hits[:limit], start=1):
-        title = str(hit.get("title") or "")
-        lines.append(f"{index}. {title} · {_pointer(spec, root, str(hit.get('pointer') or ''))}")
-        if source and hit.get("code"):
-            excerpt = str(hit["code"]).split("\n")
-            shown = [f"     {_clip(line)}" for line in excerpt[:FIND_EXCERPT_LINES]]
-            if len(excerpt) > FIND_EXCERPT_LINES:
-                shown.append(f"     … {len(excerpt) - FIND_EXCERPT_LINES} more lines")
-            lines.extend(shown)
-        elif hit.get("snippet"):
-            lines.append(f"   {_clip(str(hit['snippet']).strip())}")
-    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"repository": name, "hits": len(hits)}}
-
-
-def op_code_outline(spec: dict[str, Any]) -> dict[str, Any]:
-    raw = _text_arg(spec, "path")
-    path = _resolve(spec, raw)
-    _read_check(path)
-    found = _repo_holding(path)
-    if found is None:
-        raise ToolError(f"{raw} is not inside a repository under {REPOS}")
-    name, root = found
-    relative = str(path.relative_to(Path(os.path.realpath(root))))
-    try:
-        data = _graft(name, root, ["skeleton", relative, str(root)])
-    except ToolError as exc:
-        raise ToolError(f"{raw} has no outline in the code graph ({exc}); read a range with file_read") from exc
-    entries = data.get("entries") or []
-    if not entries:
-        return {
-            "text": f"{_rel(spec, path)} · no symbols in the code graph (a language it does not parse, or "
-            "no definitions); read a range with file_read",
-            "meta": {"path": str(path), "symbols": 0},
-        }
-    lines = [f"{_rel(spec, path)} · {len(entries)} symbols"]
-    for entry in entries:
-        signature = " ".join(str(entry.get("signature") or entry.get("name") or "").split())
-        lines.append(f"{_span(entry.get('span')):>9}  {_clip(signature)}")
-    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"path": str(path), "symbols": len(entries)}}
-
-
-def op_code_callers(spec: dict[str, Any]) -> dict[str, Any]:
-    symbol = _text_arg(spec, "symbol")
-    direction = spec.get("direction") or "in"
-    if direction not in ("in", "out"):
-        raise ToolError("direction must be in or out")
-    depth = _int(spec, "depth", 1, 1, CALLERS_MAX_DEPTH)
-    scope_raw = spec.get("in")
-    scope_path = _resolve(spec, scope_raw) if isinstance(scope_raw, str) and scope_raw else None
-    name, root = _repository(spec, None, scope_path)
-    args = ["callers", symbol, str(root), "--direction", direction, "--depth", str(depth)]
-    args += _scope(spec, name, root, scope_raw)
-    data = _graft(name, root, args)
-    matches = data.get("matches") or []
-    if not matches:
-        return {"text": f"no symbol {symbol!r} in {name}", "meta": {"repository": name, "hits": 0}}
-    arrow = "←" if direction == "in" else "→"
-    lines: list[str] = []
-    total = 0
-    for match in matches:
-        head = match.get("symbol") or {}
-        where = f"{_graph_path(spec, root, str(head.get('path')))}:{_span(head.get('span'))}"
-        lines.append(f"{head.get('name')} · {head.get('kind')} · {where}")
-        hits = match.get("hits") or []
-        total += len(hits)
-        if not hits:
-            lines.append(f"  {arrow} nothing")
-        for hit in hits:
-            indent = "  " * int(hit.get("depth") or 1)
-            relation = hit.get("relation")
-            label = f" ({relation})" if relation and relation != "calls" else ""
-            place = f"{_graph_path(spec, root, str(hit.get('path')))}:{_span(hit.get('span'))}"
-            lines.append(f"{indent}{arrow} {hit.get('name')} · {hit.get('kind')} · {place}{label}")
-    return {"text": _fit(lines, [], _max_bytes(spec)), "meta": {"repository": name, "hits": total}}
-
-
-def _search_symbols(spec: dict[str, Any], pattern: str, target: Path) -> dict[str, Any]:
-    found = _repo_holding(target)
-    name, root = found if found is not None else _repository(spec)
-    args = ["grep", pattern, str(root)]
-    if spec.get("ignore_case") is True:
-        args.append("--ignore-case")
-    if spec.get("fixed") is True:
-        args.append("--fixed")
-    if found is not None:
-        args += _scope(spec, name, root, str(target))
-    data = _graft(name, root, args)
-    groups = data.get("groups") or []
-    if not groups:
-        return {"text": f"no matches for {pattern!r} in the code graph of {name}", "meta": {"matches": 0}}
-    limit = _int(spec, "limit", SYMBOLS_LIMIT, 1, SYMBOLS_LIMIT)
-    lines: list[str] = []
-    for group in groups[:limit]:
-        symbol = group.get("symbol")
-        path = _graph_path(spec, root, str(group.get("path")))
-        if symbol:
-            lines.append(
-                f"{symbol.get('name')} · {symbol.get('kind')} · {path}:{_span(symbol.get('span'))}"
-                f" · {group.get('inDegree', 0)} refs"
-            )
-        else:
-            lines.append(f"{path} (top level)")
-        hits = group.get("hits") or []
-        for hit in hits[:SYMBOLS_HITS]:
-            lines.append(f"  {hit.get('line')}: {_clip(str(hit.get('text') or '').strip())}")
-        if len(hits) > SYMBOLS_HITS:
-            lines.append(f"  … {len(hits) - SYMBOLS_HITS} more")
-    footer = []
-    if len(groups) > limit:
-        footer.append(f"… {len(groups) - limit} more symbols")
-    footer.append(f"{data.get('totalHits', 0)} matches in {len(groups)} symbols ({data.get('filesSearched', 0)} files searched)")
-    return {"text": _fit(lines, footer, _max_bytes(spec)), "meta": {"matches": data.get("totalHits", 0)}}
 
 
 # --- git: setup, checkpoints, diffs ---------------------------------------------
@@ -1501,14 +1066,7 @@ OPS = {
     "shell": op_shell,
     "shell_status": op_shell_status,
     "file_read": op_file_read,
-    "file_edit": op_file_edit,
-    "file_write": op_file_write,
     "code_search": op_code_search,
-    "code_match": op_code_match,
-    "code_map": op_code_map,
-    "code_find": op_code_find,
-    "code_outline": op_code_outline,
-    "code_callers": op_code_callers,
     "git_setup": op_git_setup,
     "checkpoint": op_checkpoint,
     "diff": op_diff,

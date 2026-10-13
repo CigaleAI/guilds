@@ -71,10 +71,9 @@ export function runItem(
   };
 }
 
-// A coding run carries what it explored before its first edit, what it changed in each
-// repository, and its place in a run chain. Other runs omit the keys.
+// A coding run carries what it changed in each repository, and its place in a run chain.
+// Other runs omit the keys.
 function codingFields(metadata: unknown): {
-  exploration?: unknown;
   repos?: unknown;
   chain?: unknown;
   continued_by_run_id?: string;
@@ -82,14 +81,12 @@ function codingFields(metadata: unknown): {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return {};
   }
-  const { exploration, repos, chain, continued_by_run_id: continuedBy } = metadata as {
-    exploration?: unknown;
+  const { repos, chain, continued_by_run_id: continuedBy } = metadata as {
     repos?: unknown;
     chain?: unknown;
     continued_by_run_id?: unknown;
   };
   return {
-    ...(exploration && typeof exploration === "object" ? { exploration } : {}),
     ...(Array.isArray(repos) ? { repos } : {}),
     ...(chain && typeof chain === "object" ? { chain } : {}),
     ...(typeof continuedBy === "string" ? { continued_by_run_id: continuedBy } : {}),

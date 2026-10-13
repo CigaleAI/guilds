@@ -132,7 +132,43 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal(placed.statusCode, 201, placed.body);
     assert.equal(placed.json().machine.name, "builder");
     assert.equal(placed.json().config.max_steps, 200, "a new coding agent takes the coding budgets");
+    assert.equal(placed.json().deprecated, null);
     const coderId = String(placed.json().id);
+    assert.equal((await machines()).find((item) => item.id === codeId)?.harnesses, null, "before its container first started");
+
+    // A coding agent stored without a harness is deprecated until one is picked; its other settings still save.
+    await repo.pool.query(`UPDATE agents SET config = config - 'harness' WHERE id = $1`, [coderId]);
+    const legacy = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: AUTH });
+    assert.equal(legacy.json().deprecated, "coding.harness_missing");
+    const kept = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...legacy.json().config, temperature: 0.5 } },
+    });
+    assert.equal(kept.statusCode, 200, kept.body);
+    const picked = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...kept.json().config, harness: "codex" } },
+    });
+    assert.equal(picked.statusCode, 200, picked.body);
+    assert.equal(picked.json().deprecated, null);
+    const status = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
+    assert.equal(status.statusCode, 200, status.body);
+    assert.equal(status.json().harness, "codex");
+    assert.equal(status.json().machine_harnesses, null);
+    assert.deepEqual(
+      (status.json().harnesses as Array<{ harness: string; secret: string | null; secret_granted: boolean }>).map(
+        (item) => [item.harness, item.secret, item.secret_granted],
+      ),
+      [
+        ["claude-code", "CLAUDE_CODE_OAUTH_TOKEN", false],
+        ["codex", null, false],
+        ["cursor", "CURSOR_API_KEY", false],
+      ],
+    );
 
     // The list carries each machine's agents and its planned memory.
     const listed = await machines();

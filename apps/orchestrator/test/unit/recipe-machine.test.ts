@@ -15,6 +15,7 @@ function machineWith(box: MachineBox, agents: number): MachineWithAgents {
     memory_mib: box === "custom" ? 3072 : null,
     max_workspace_mib: 10240,
     workspace_mib: null,
+    harnesses: null,
     agents: Array.from(
       { length: agents },
       (_, slot): MachineAgent => ({

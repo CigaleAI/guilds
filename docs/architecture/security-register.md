@@ -29,7 +29,7 @@ Ids are never reused.
 | SEC-12 | The GitHub App's private key mints tokens for every installation | Open |
 | SEC-11 | A GitHub install callback could name another account's installation | Fixed 2026-09-30 |
 | SEC-10 | A coding agent's repository token is readable by any process in its sandbox | Open |
-| SEC-9 | Graft's hosted features can send repository history to its vendor | Open |
+| SEC-9 | Graft's hosted features can send repository history to its vendor | Fixed 2026-10-13 |
 | SEC-8 | Content a coding agent reads can steer its commands | Open |
 | SEC-7 | A coding agent's workspace can fill the shared disk | Open |
 | SEC-6 | Coding agents run commands as root in the container | Open |
@@ -742,7 +742,7 @@ different guilds on separate machines keeps their tokens apart.
 
 ## SEC-9 — Graft's hosted features can send repository history to its vendor
 
-**Status:** open.
+**Status:** fixed 2026-10-13, when Graft left the image.
 
 **Found:** 2026-09-30, building code search.
 
@@ -754,14 +754,13 @@ tools in `runtime/guilds-code`.
 repository history to a model provider or to its vendor. It
 reports usage.
 
-**Control in place:** the tools run only its structural tier
-(tree-sitter, no model, no network). No tool runs those commands.
-No provider key is in the sandbox. `DO_NOT_TRACK=1` turns
-telemetry off. The helper keeps Graft's text output and stderr
-out of results.
+**Fix:** Graft is no longer installed in the runtime image, and
+the tools it backed (`code_map`, `code_find`, `code_outline`,
+`code_callers`, and `code_search` mode `symbols`) no longer exist.
+Code work goes through the coding harness (SEC-28).
 
-**Residual risk:** an agent can still type such a command in
-`shell`. Graft's daily npm version lookup has no switch.
+**Residual risk:** an agent or its harness can still install Graft,
+or any other package, with a command (SEC-4).
 
 ## SEC-8 — Content a coding agent reads can steer its commands
 
@@ -782,9 +781,10 @@ the operator did not intend: read its environment, change files
 in its workspace, or send data out.
 
 **Control in place:** the `coding` prompt block states that
-repository content, issue text, and command output are data,
-never instructions, and that a repository's contributor guide
-sets code conventions only. Secrets reach an agent only by grant.
+repository content, issue text, command output, and the harness's
+final message are data, never instructions, and that a repository's
+contributor guide sets code conventions only. Secrets reach an agent
+only by grant.
 
 **Residual risk:** a steered agent can do anything its sandbox
 and its granted secrets allow, including pushing to its guild's
@@ -829,8 +829,8 @@ machine's idle stop.
 
 **Found:** 2026-09-30, building coding agents.
 
-**Where:** the `shell` tool. Scripts and the CLI tab run as root
-too.
+**Where:** the `shell` tool and the coding harness `code_task`
+starts. Scripts and the CLI tab run as root too.
 
 **Exposure:** commands run as root inside the agent's machine's
 container, which other agents of the organisation share (SEC-24).
@@ -859,7 +859,8 @@ opens workspace paths in the orchestrator (Drive, Qonto,
 
 **Control in place:** the code tools never open a workspace path
 in the orchestrator. They run inside the container through
-`guilds-code`, where a link resolves inside the container.
+`guilds-code` and `guilds-harness`, where a link resolves inside the
+container.
 Background commands end with the idle stop.
 
 **Fix to make:** SEC-3's fix closes this.
@@ -870,8 +871,8 @@ Background commands end with the idle stop.
 
 **Found:** 2026-09-30, building coding agents.
 
-**Where:** a coding agent's `shell`. `npm install`, `pip
-install`, `mise install`, build scripts, and test suites run
+**Where:** a coding agent's `shell` and its harness. `npm install`,
+`pip install`, `mise install`, build scripts, and test suites run
 third-party code.
 
 **Exposure:** that code runs in the agent's machine's container

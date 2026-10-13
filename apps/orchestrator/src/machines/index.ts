@@ -1,6 +1,7 @@
 import path from "node:path";
 import { NAME_RE } from "../lib/names.js";
 import { numberOrNull } from "../lib/numbers.js";
+import { isHarness, type Harness } from "../coding/harnesses.js";
 
 /**
  * An organisation's machines (docs/concepts/guilds-and-agents.md#machines): one sandbox container
@@ -62,6 +63,8 @@ export type MachineRow = {
   memory_mib: number | null;
   max_workspace_mib: number;
   workspace_mib: number | null;
+  /** The coding harness CLIs its image carries; null until its container first started. */
+  harnesses: Harness[] | null;
 };
 
 /** An agent on a machine, as the machine listing carries it. */
@@ -292,6 +295,7 @@ export function machineFromRow(row: Record<string, unknown>): MachineRow {
     memory_mib: numberOrNull(row.memory_mib),
     max_workspace_mib: Number(row.max_workspace_mib ?? DEFAULT_MACHINE_MAX_WORKSPACE_MIB),
     workspace_mib: numberOrNull(row.workspace_mib),
+    harnesses: Array.isArray(row.harnesses) ? row.harnesses.filter(isHarness) : null,
   };
 }
 

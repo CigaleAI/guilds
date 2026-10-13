@@ -450,6 +450,23 @@ describe("code_task with the Cursor driver", () => {
     assert.ok(calls()[0]!.argv.includes(`--resume=${CHAT}`));
   });
 
+  test("a CLI that refuses to start fails with what it wrote on stderr", async () => {
+    const { sandbox } = harnessSandbox("agent", () => [], {
+      CURSOR_API_KEY: "expired",
+      HARNESS_STUB_EXIT: "1",
+    });
+    const stub = sandbox.env.PATH!.split(":")[0]!;
+    writeFileSync(
+      path.join(stub, "agent"),
+      "#!/bin/sh\necho \"Error: Authentication required. Please run 'agent login' first.\" >&2\nexit 1\n",
+    );
+    const { text, metadata } = await codeTask(context(sandbox, { harness: "cursor", secrets: { CURSOR_API_KEY: "expired" } }).ctx, {
+      brief: "x",
+    });
+    assert.equal(metadata.status, "failed");
+    assert.match(text, /\nerror: Error: Authentication required\. Please run 'agent login' first\./);
+  });
+
   test("a login in the home is a credential", async () => {
     const { sandbox } = harnessSandbox("agent", () => recorded("cursor"));
     mkdirSync(path.join(sandbox.home, ".config", "cursor"), { recursive: true });

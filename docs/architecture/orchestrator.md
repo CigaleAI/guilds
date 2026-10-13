@@ -89,8 +89,7 @@ Configurable only in tests:
 - browser tool timeout = 60 seconds
 - browser ready wait = 60 seconds
 - code tool timeout = 120 seconds; `shell` gets its own timeout plus 30;
-  Graft-backed calls 660 seconds (a first graph build); ripgrep and
-  ast-grep stop after 60 seconds inside the sandbox
+  ripgrep stops after 60 seconds inside the sandbox
 - inline code-tool request = 64 KiB of base64; larger goes through the
   sandbox file API
 - `code_task` = 30 minutes by default, at most 60; polled every 3
@@ -521,7 +520,8 @@ through `guilds-harness`).
 
 Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
-`coding: true`, and `code_task` when it also has a `harness`.
+`coding: true`. A coding run whose snapshot has no `harness` fails at
+start with `coding.harness_missing`, before the machine is woken.
 `group_post` is offered when that binding is on. `secret_request`
 is offered only on direct runs. `report_issue` is always offered.
 

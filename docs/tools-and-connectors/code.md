@@ -1,29 +1,25 @@
 # Code tools
 
-A coding agent's run offers eleven native tools. Like the browser
-tools they follow the `coding` flag and are not bindings. A coding
-agent with a `harness` is also offered [`code_task`](#code-task),
-which delegates code work to a coding CLI in its sandbox.
+A coding agent's run offers five native tools. Like the browser
+tools they follow the `coding` flag and are not bindings. Code changes
+are the harness's work: [`code_task`](#code-task) delegates them to a
+coding CLI in the agent's sandbox. The other four check that work,
+run the project's checks, and push it.
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
+| `code_task` | `brief`, `repo`, `session_id`, `notes`, `timeout_minutes` | The harness's status, diffstat, final message, and log path ([`code_task`](#code-task)) |
 | `shell` | `command`, `timeout_seconds` (default 120, at most 600), `background` | Combined stdout and stderr, shaped; `exit_code: N` when not 0 |
 | `shell_status` | `id`, `stop` | Without `id`, the background commands with their state; with it, that command's state, exit code, and the last 40 lines of its log; `stop` ends it |
 | `file_read` | `path`, `offset` (first line, default 1), `limit` (default 200 lines, at most 500) | Numbered lines under a `path · lines a–b of n` header |
-| `file_edit` | `path`, `old_string`, `new_string`, `replace_all` | `edited <path> (+a −b)` |
-| `file_write` | `path`, `content` | `wrote <path> (n lines)`; missing folders are created |
 | `code_search` | `pattern`, `path`, `glob`, `mode`, `fixed`, `ignore_case`, `context`, `limit` | Text search ([Code search](#code-search)) |
-| `code_match` | `pattern`, `lang`, `path`, `limit` (default 30, at most 100) | Structural matches as `path:line: first matched line` |
-| `code_map` | `repo` | Directory clusters with file and symbol counts and their most referenced symbols, then the most referenced symbols overall |
-| `code_find` | `question`, `in`, `source`, `limit` (default 8, at most 20) | Ranked symbols and files with `path:line` and their signature; with `source`, up to 8 lines of each |
-| `code_outline` | `path` | Every signature in the file with its line span, without bodies |
-| `code_callers` | `symbol`, `direction` (`in` or `out`), `depth` (1 to 3), `in` | What references the symbol, or what it references, indented by depth, with `path:line` |
 
-Every call runs `/usr/local/bin/guilds-code` in the sandbox, the way
-the browser tools run `guilds-browser`. The request is base64 JSON on
-the command line. A request whose encoding passes 64 KiB is written
-through the sandbox file API to `/run/guilds/requests/` instead. The
-helper reads and deletes it.
+`shell`, `shell_status`, `file_read`, and `code_search` run
+`/usr/local/bin/guilds-code` in the sandbox, the way the browser tools
+run `guilds-browser`. `code_task` runs `guilds-harness` the same way.
+The request is base64 JSON on the command line. A request whose
+encoding passes 64 KiB is written through the sandbox file API to
+`/run/guilds/requests/` instead. The helper reads and deletes it.
 
 The helper answers with a base64 JSON envelope holding the shaped
 text and the fields the call's metadata records. The orchestrator
@@ -36,10 +32,11 @@ the home resolves inside the container.
   ([Runs](../concepts/runs.md#sandbox)). A server the agent starts
   listens on a port of its block, from `PORT`.
 - A relative path resolves against the run's working directory, kept
-  in `.runs/<run id>/cwd` in the home. It starts at the home.
-  `shell` updates it when a command changes directory. Environment
-  changes do not persist between calls. The file tools refuse a path
-  that resolves, links followed, outside the home.
+  in `.runs/<run id>/cwd` in the home. It starts at the home, or in
+  the repository when the guild has exactly one. `shell` updates it
+  when a command changes directory. Environment changes do not
+  persist between calls. `file_read` refuses a path that resolves,
+  links followed, outside the home.
 - `shell` runs `bash -c` with stdin closed and `PAGER=cat`,
   `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
   `DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and `GUILD_AGENT_ID`
@@ -50,10 +47,6 @@ the home resolves inside the container.
   session. `shell_status` names it `b1`, `b2`, … for the life of the
   container. Background commands do not keep the machine's container
   running. They end with its idle stop.
-- `file_edit` replaces an exact string. A string that is missing, or
-  that occurs more than once without `replace_all`, is an error and
-  changes nothing. Edits and writes replace the file atomically and
-  keep its mode.
 - The helper caps each result at `CODE_RESULT_MAX_BYTES` (default
   8192). The platform pipeline then runs unchanged: redaction, the
   64 KiB cap, and the `remaining_tool_calls` trailer.
@@ -75,80 +68,31 @@ lines it returned (`range`), and the SHA-256 of the whole file
 (`content_hash`). A later read in the same run whose lines an earlier
 read already returned, with the same hash, returns one line instead:
 `<path> lines a–b: unchanged since step N; read that result.`, where N
-is the earlier result's message `seq`, and records `repeat_of: N`. An
-edit changes the hash, so the next read returns content.
+is the earlier result's message `seq`, and records `repeat_of: N`. A
+change to the file, by the harness or a command, changes the hash, so
+the next read returns content.
 
 A coding run's repositories and GitHub tokens are in
 [Runs](../concepts/runs.md#repositories) and [GitHub](github.md).
 
 ## Code search
 
-Three engines sit behind tool names that do not name them. An engine
-can be replaced without changing a prompt or a run view.
-
-| Engine | Tools | Answers |
-| --- | --- | --- |
-| ripgrep | `code_search` modes `files` and `content` | Text in every file, whatever its language, respecting `.gitignore` |
-| ast-grep | `code_match` | Syntax patterns (a call shape, a declaration form) free of hits in comments and strings; the language comes from `lang` or each file's extension |
-| Graft | `code_map`, `code_find`, `code_outline`, `code_callers`, `code_search` mode `symbols` | Where things are and how they connect |
-
-`code_search` modes, each searching `path` (default the working
-directory) with an optional `glob`, `fixed` for a literal pattern, and
-`ignore_case`:
+`code_search` runs ripgrep over text in every file, whatever its
+language, respecting `.gitignore`. It searches `path` (default the
+working directory) with an optional `glob`, `fixed` for a literal
+pattern, and `ignore_case`, in one of two modes:
 
 - `files` (default): matching paths with their match counts, highest
   first, at most 30, then the totals.
 - `content`: `path:line: text` for matches and `path-line- text` for
   context lines (`context` 0 to 5), at most 40 lines and at most 10
   matches per file, then the totals.
-- `symbols`: hits grouped under their enclosing function or class, with
-  that symbol's span and how many places reference it, at most 20
-  groups of 5 lines.
 
 Paths in every result are relative to the working directory, so they
 can be passed back to `file_read`. A matched line longer than 300
 characters is clipped. A result that would pass the cap stops at a
-line and says how many lines it left out.
-
-The Graft-backed tools address a repository as a folder under
-`repos/` in the agent's home. `code_map` takes its name. The others take the
-repository holding their `path` or `in`, else the one holding the
-working directory, else the only one there. `in` narrows to a folder
-or file of it.
-
-Graft runs in its structural tier only:
-
-- The graph is built by tree-sitter with no model, no key, and no
-  network. It lives at `.cache/graft/<name>` in the home (`--dir`). It
-  is built on the first Graft-backed call for a repository. Graft
-  refreshes it against the working tree before every query,
-  uncommitted edits included.
-- With `GRAFT_NO_GITIGNORE=1` and `GRAFT_NO_IGNORE=1` a build writes
-  nothing into the repository.
-- `DO_NOT_TRACK=1` turns its usage telemetry off, the install event
-  included. Its once-a-day npm version lookup has no switch. It is
-  one background request from the sandbox.
-- Every call reads Graft's `--json` output and builds its own compact
-  lines. Graft's text output and its diagnostics on stderr never
-  reach the model.
-- A file in a language Graft does not parse is not in the graph.
-  `code_outline` says so. `code_search` in `files` or `content` mode
-  still finds it.
-- No tool runs `graft build --deep`, `init`, `trail`, `viz`,
-  `upgrade`, or `mcp`. No provider key is present, so the
-  model-written tier cannot run.
-
-A first graph build can take minutes on a large repository.
-Graft-backed calls wait up to 11 minutes. A text or syntax search
-waits up to 60 seconds.
-
-**Exploration.** After each generation of a coding run, the run's
-`metadata.exploration` records `calls_before_first_edit` (tool calls
-before its first successful `file_edit` or `file_write`, null until
-there is one) and `read_bytes_unedited` (bytes `file_read` returned
-from files the run never edited). They measure whether the search
-tools pay for themselves. The run payload carries them as
-`exploration`.
+line and says how many lines it left out. A search waits up to 60
+seconds.
 
 **Metadata.** Beside the fields every tool call records:
 
@@ -156,10 +100,8 @@ tools pay for themselves. The run payload carries them as
   `timed_out` on `shell`
 - `background_id`, `state`, and `exit_code` on `shell_status`
 - `path`, `range`, `content_hash`, and `lines` on `file_read`
-- `path`, `lines_added`, `lines_removed`, and `content_hash` on
-  `file_edit` and `file_write`
-- `matches` (and `files`) on `code_search` and `code_match`
-- `repository` and `hits` on the Graft-backed tools
+- `matches` (and `files`) on `code_search`
+- the fields under [`code_task`](#code-task) on `code_task`
 
 ## `code_task`
 
@@ -167,7 +109,8 @@ tools pay for themselves. The run payload carries them as
 coding CLI that runs headless in the agent's sandbox, against one of
 the guild's repositories, on the operator's own subscription. One
 call is one harness turn. It is offered when the run snapshot has
-`coding: true` and a `harness`
+`coding: true`. A coding run whose snapshot has no `harness` fails at
+start with `coding.harness_missing`
 ([Guilds and agents](../concepts/guilds-and-agents.md#configuration-and-appearance)).
 
 `harness` takes `claude-code`, `codex`, or `cursor`. Each has a
@@ -239,7 +182,7 @@ and the `remaining_tool_calls` trailer.
 | Status | When | Detail |
 | --- | --- | --- |
 | `completed` | The CLI exited 0 and its turn did not end in error | none |
-| `failed` | The CLI exited otherwise, or its turn ended in error | The harness's error, else the last 5 lines of its stderr, else its exit code; a driver that parses none of the CLI's output says so with the CLI's version |
+| `failed` | The CLI exited otherwise, or its turn ended in error | A driver that parses none of the CLI's output says so with the CLI's version. A CLI that printed no event (one refusing to start without a login) gives the last 5 lines of its stderr. Otherwise the harness's error, else its stderr, else its exit code |
 | `timed_out` | `timeout_minutes` passed; the harness got `stop` | `Stopped after N minutes. Resume the session to continue.` |
 | `cancelled` | The generation was cancelled; the harness got `stop` | `Stopped: the generation was cancelled.` |
 | `interrupted` | The call's state is gone, or three polls in a row failed | The machine restarted or its container was recreated |

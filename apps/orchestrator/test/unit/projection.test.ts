@@ -106,7 +106,7 @@ test("keep 2 leaves the previous generation live", () => {
 test("results under the size floor stay as stored", () => {
   const messages = projectToolResults({
     history: [
-      row(1, 1, { role: "tool", tool_call_id: "small", content: "ok" }, { tool_name: "file_edit" }),
+      row(1, 1, { role: "tool", tool_call_id: "small", content: "ok" }, { tool_name: "shell" }),
     ],
     currentGeneration: 2,
     keepGenerations: 1,

@@ -205,6 +205,7 @@ export function CreateAgentDialog({ guild, onClose }: CreateAgentDialogProps) {
                 errors={errors}
                 models={models.data}
                 machine={machine}
+                carried={machine?.harnesses}
               />
             </Group>
             {create.isError ? (

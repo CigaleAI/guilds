@@ -114,8 +114,10 @@ export type Agent = {
   /** `#rrggbb`. */
   avatar_color: string;
   browser: boolean;
-  /** Code tools, with Node.js, build tools and git on its machine. */
+  /** Code work through a harness, with Node.js, build tools and git on its machine. */
   coding: boolean;
+  /** Set for a coding agent without a harness: its coding runs fail until one is picked. */
+  deprecated: "coding.harness_missing" | null;
   /** The organisation's machine it runs on. */
   machine_id: string;
   machine: MachineRef;
@@ -159,6 +161,8 @@ export type Machine = MachineRef & {
   agents: MachineAgent[];
   /** How many of its agents sit in guilds the viewer cannot see; `planned_mib` counts them too. */
   hidden_agents: number;
+  /** The harness CLIs its image carries; null before it first started. */
+  harnesses: Harness[] | null;
 };
 
 /** A machine to create, or the fields to change; `cpu` and `memory_mib` only on custom. */
@@ -215,6 +219,8 @@ export type AgentHarness = {
   harness: Harness | null;
   cli: boolean;
   harnesses: HarnessCredential[];
+  /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
+  machine_harnesses: Harness[] | null;
 };
 
 /** One agent with its model settings; `access` is its resolved tools, secrets and grants. */
@@ -358,19 +364,12 @@ export type Run = {
   archived_at: string | null;
   group_chat_through_seq: number | null;
   schedule_id?: string;
-  /** A coding run's exploration before its first edit. */
-  exploration?: RunExploration;
   /** What a coding run changed in each repository, between its checkpoints. */
   repos?: RunRepositoryChange[];
   /** A coding run's place in a run chain, when it continues an earlier run. */
   chain?: { root_run_id: string; index: number; previous_run_id: string };
   /** The run that continued this one after its hand-off. */
   continued_by_run_id?: string;
-};
-
-export type RunExploration = {
-  calls_before_first_edit: number | null;
-  read_bytes_unedited: number;
 };
 
 /** A run's or a code task's diff in one repository, cut at the server's limit. */

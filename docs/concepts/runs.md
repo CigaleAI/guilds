@@ -233,7 +233,10 @@ Model settings include:
 
 Flags: `browser`, `coding`, `cli`, `scripting`, and `memory`. Beside
 them, `harness` is a coding agent's harness, or null
-([Code tools](../tools-and-connectors/code.md#code-task)).
+([Code tools](../tools-and-connectors/code.md#code-task)). A run with
+`coding` and no `harness` fails at start with
+`coding.harness_missing`, before the machine is woken
+([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)).
 
 The complete tool schemas offered to the model:
 
@@ -244,8 +247,7 @@ The complete tool schemas offered to the model:
 - the six schedule tools on direct and group-chat runs
 - `group_post` when that binding is on
 - the eight browser tools when `browser` is true
-- the code tools when `coding` is true
-- `code_task` when `coding` is true and `harness` is set
+- the five code tools when `coding` is true
 - enabled MCP schemas, including curated lists from the CoinGecko,
   Alchemy, X, TwitterAPI.io, Qonto, and DexPaprika adapters, and a
   registry connector's manifest
@@ -620,10 +622,10 @@ Consequences:
 
 ### Code execution
 
-A coding agent runs commands with the `shell` tool
-([Code tools](../tools-and-connectors/code.md)). A coding agent with a
-harness also delegates code work to it with `code_task`: the harness
-CLI runs headless in the container, in the repository's directory.
+A coding agent delegates code work to its harness with `code_task`,
+and runs commands with the `shell` tool
+([Code tools](../tools-and-connectors/code.md)). The harness CLI runs
+headless in the container, in the repository's directory.
 Its raw event log, `.runs/<run id>/<call id>.harness.jsonl` in the
 agent's home, is unredacted like a `shell` log and kept with the same
 20 most recent runs

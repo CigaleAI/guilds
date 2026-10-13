@@ -39,8 +39,9 @@ function loginStep(entry: HarnessCredential, cli: boolean, tabs: Tabs, again: bo
 
 /**
  * Whether the selected harness has a credential for this agent: the granted secret it runs on,
- * or what to set up (the secret to grant on the Secrets tab, a login from the CLI tab), with when
- * a code task last found a login in the agent's home.
+ * or what to set up (the secret to grant on the Secrets tab, a login from the CLI tab, which a
+ * harness without a secret cannot do while the CLI is off), with when a code task last found a
+ * login in the agent's home.
  */
 export function HarnessCredentials({
   guildId,
@@ -69,6 +70,14 @@ export function HarnessCredentials({
     );
   }
   const seen = entry.login_seen_at;
+  if (!entry.secret && !cli && !seen) {
+    return (
+      <p className="text-sm text-fg-2">
+        {entry.label} runs only on a login, and logging in needs the CLI: turn on CLI, then log in
+        from its tab.
+      </p>
+    );
+  }
   const secret = entry.secret ? (
     <>
       grant the secret <code className="font-mono">{entry.secret}</code> on the{" "}
