@@ -7,7 +7,8 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
 
 - `check`: whether the harness's CLI is installed, its version, and the credential it would
   run on.
-- `start`: forks a supervisor in its own session and returns at once. The supervisor starts
+- `start`: removes the harness's local configuration and memory from the agent's home, then
+  forks a supervisor in its own session and returns at once. The supervisor starts
   the CLI in its own process group in the repository directory, writes the CLI's raw events
   to the log, waits for it, and records its exit code.
 - `poll`: the normalised progress lines after a byte offset into the log, the new offset,
@@ -122,6 +123,26 @@ class Driver:
     removed_env: tuple[str, ...] = ()
     added_env: dict[str, str] = {}
     prompt_on_stdin = True
+    # The harness's own configuration and memory in the agent's home, as globs: removed before
+    # every call, so the brief is the only state the agent hands it. Logins, account state, and
+    # session transcripts (which a resume needs) are never in it.
+    local_state: tuple[str, ...] = ()
+
+    def reset(self) -> list[str]:
+        """Removes the harness's local configuration and memory; returns what it removed."""
+        removed = []
+        home = Path(os.path.realpath(HOME))
+        for pattern in self.local_state:
+            for found in sorted(HOME.glob(pattern)):
+                real = Path(os.path.realpath(found))
+                if home not in real.parents:
+                    continue
+                if found.is_dir() and not found.is_symlink():
+                    shutil.rmtree(found, ignore_errors=True)
+                else:
+                    found.unlink(missing_ok=True)
+                removed.append(str(found.relative_to(HOME)))
+        return removed
 
     def command(self, session_id: str, prompt_path: Path) -> list[str]:
         raise NotImplementedError
@@ -165,9 +186,29 @@ class ClaudeCode(Driver):
         "IS_SANDBOX": "1",
         "DISABLE_AUTOUPDATER": "1",
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
     }
-    # Beside /etc/claude-code/managed-settings.json, on every call.
-    settings = {"disableAllHooks": True, "enableAllProjectMcpServers": False}
+    # The only settings a call loads, beside /etc/claude-code/managed-settings.json.
+    settings = {
+        "disableAllHooks": True,
+        "enableAllProjectMcpServers": False,
+        "autoMemoryEnabled": False,
+        "enabledPlugins": {},
+    }
+    local_state = (
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".claude/CLAUDE.md",
+        ".claude/CLAUDE.local.md",
+        ".claude/rules",
+        ".claude/hooks",
+        ".claude/plugins",
+        ".claude/skills",
+        ".claude/commands",
+        ".claude/agents",
+        ".claude/output-styles",
+        ".claude/projects/*/memory",
+    )
 
     def command(self, session_id: str, prompt_path: Path) -> list[str]:
         argv = [
@@ -178,8 +219,9 @@ class ClaudeCode(Driver):
             "--verbose",
             "--dangerously-skip-permissions",
             "--setting-sources",
-            "user",
+            "",
             "--strict-mcp-config",
+            "--disable-slash-commands",
             "--settings",
             json.dumps(self.settings),
         ]
@@ -242,9 +284,13 @@ class Codex(Driver):
     name = "codex"
     binary = "codex"
     removed_env = ("CODEX_API_KEY", "OPENAI_API_KEY")
-    # Hooks, plugins, apps, MCP servers, notifications, update checks, and analytics off, on
-    # every call, over the configuration in the agent's home.
+    # config.toml and execution-policy rules in the agent's home are not loaded; memories, hooks,
+    # plugins, apps, MCP servers, notifications, update checks, and analytics are off.
     managed = (
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--disable",
+        "memories",
         "--disable",
         "hooks",
         "--disable",
@@ -263,6 +309,17 @@ class Codex(Driver):
         "analytics.enabled=false",
         "-c",
         'otel.exporter="none"',
+    )
+
+    local_state = (
+        ".codex/AGENTS.md",
+        ".codex/AGENTS.override.md",
+        ".codex/skills",
+        ".codex/prompts",
+        ".codex/rules",
+        ".codex/memories",
+        ".codex/memories_*.sqlite*",
+        ".codex/hooks.json",
     )
 
     def command(self, session_id: str, prompt_path: Path) -> list[str]:
@@ -346,6 +403,18 @@ class Cursor(Driver):
     binary = "agent"
     # The Cursor CLI takes no prompt on stdin: its argument names the prompt file.
     prompt_on_stdin = False
+    # It has no switch to ignore the configuration in the home; a repository's own `.cursor/`,
+    # hooks included, still loads.
+    local_state = (
+        ".cursor/hooks.json",
+        ".cursor/hooks",
+        ".cursor/mcp.json",
+        ".cursor/rules",
+        ".cursor/skills",
+        ".cursor/commands",
+        ".cursor/agents",
+        ".cursor/plugins",
+    )
 
     def command(self, session_id: str, prompt_path: Path) -> list[str]:
         argv = [self.binary, "-p", "--force", "--trust", "--output-format", "stream-json"]
@@ -583,6 +652,7 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
         raise ToolError(f"call {call_id} is already running")
     for key in ("pid", "exit", "session", "stderr", "stopped"):
         paths[key].unlink(missing_ok=True)
+    reset = driver.reset()
     run_dir = _run_dir(run_id)
     log = run_dir / f"{call_id}.harness.jsonl"
     prompt_path = run_dir / f"{call_id}.prompt.md"
@@ -625,7 +695,13 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     text = f"started {driver.name} in {repository}" + (f" (pid {pid})" if pid else "")
     return {
         "text": text,
-        "meta": {"pid": pid, "log_path": str(log), "exited": exited and pid is None, "exit_code": code},
+        "meta": {
+            "pid": pid,
+            "log_path": str(log),
+            "exited": exited and pid is None,
+            "exit_code": code,
+            "reset": reset,
+        },
     }
 
 

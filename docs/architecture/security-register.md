@@ -8,6 +8,7 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-31 | Cursor runs a repository's hooks | Open, accepted |
 | SEC-30 | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
 | SEC-29 | A repository can carry configuration its coding harness loads | Open |
 | SEC-28 | A coding harness runs with its permission prompts off | Open |
@@ -38,6 +39,36 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-31 — Cursor runs a repository's hooks
+
+**Status:** open, accepted on 2026-10-13: Cursor stays available for every repository.
+
+**Found:** 2026-10-13, removing the local state of coding harnesses.
+
+**Where:** the Cursor driver in `runtime/guilds-harness`, pinned to
+the Cursor CLI `2026.10.01-e373342`.
+
+**Exposure:** the Cursor CLI runs the hooks a repository declares in
+`.cursor/hooks.json` (or `.cursor/hooks/`) on events of its turn,
+without the model deciding to run them, and has no flag or variable
+to turn project hooks off. Whoever can push to a repository a Cursor
+agent works on can run commands in that agent's sandbox, as root
+(SEC-6), with its granted secrets in their environment and its git
+token through the credential helper (SEC-10), and through the
+machine with every agent on it (SEC-24).
+
+**Control in place:** none on the hooks themselves. The driver removes
+user-level hooks from `~/.cursor/` before every call, so only the
+repository's own hooks run, and those are versioned in the
+repository, where review sees them. Claude Code and Codex run no
+project hooks (SEC-29). The guild's repositories are the ones its
+operators add.
+
+**Residual risk:** a Cursor agent on a repository that takes pushes
+from people the organisation does not trust runs their hooks. An
+operator who wants no repository hook to run picks Claude Code or
+Codex for that agent.
 
 ## SEC-30 — Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms
 
@@ -87,26 +118,24 @@ push to a guild repository could then run commands in the agent's
 sandbox, with its secrets.
 
 **Control in place:** every call runs Claude Code with
-`--setting-sources user`, so project and local settings are not
+`--setting-sources ""`, so no user, project, or local settings are
 loaded; `--strict-mcp-config`, so no MCP server loads that the call
-does not pass, and it passes none; and `--settings` with
+does not pass, and it passes none; skills off; and `--settings` with
 `disableAllHooks`. The managed settings, which no user or project
 file overrides, turn hooks off and project MCP servers off. Every
-Codex call disables hooks, plugins, and apps and sets `mcp_servers`
-empty; Codex runs no hook it has not been told to trust. Cursor calls
-never pass `--approve-mcps`.
+Codex call ignores `config.toml` and execution-policy rules, disables
+hooks, plugins, apps, and memories, and sets `mcp_servers` empty.
+Cursor calls never pass `--approve-mcps`. Before every call the driver
+removes the harness's user-level configuration and memory from the
+agent's home, so what the agent, its commands, an earlier harness
+turn, or another agent on the machine (SEC-24) wrote there does not
+reach the next call.
 
-**Residual risk:** Cursor runs a repository's `.cursor/hooks.json`:
-the Cursor CLI has no switch to turn project hooks off. An agent
-whose repositories take pushes from people it should not trust runs
-Claude Code or Codex. User-level settings in the agent's home
-(`~/.claude/`, `~/.codex/config.toml`, `~/.cursor/`) still load,
-including plugins enabled there. The
-agent, the harness, and every agent on the machine (SEC-24) can write
-them, so a steered agent or harness can change what a later call
-loads. Instruction files in the repository (`CLAUDE.md`, and
-`AGENTS.md` where the harness reads it) are read and can steer the
-harness (SEC-28).
+**Residual risk:** Cursor runs a repository's hooks (SEC-31).
+Instruction files in the repository (`CLAUDE.md`, `AGENTS.md`,
+`.cursor/rules`) are read and can steer the harness (SEC-28). Between
+the reset and the start of the CLI, another process on the machine
+can write configuration back; the window is the time of one exec.
 
 ## SEC-28 — A coding harness runs with its permission prompts off
 
@@ -130,7 +159,7 @@ credential helper (SEC-10). Its final message returns to the agent,
 which can be steered by it in turn.
 
 **Control in place:** the container is the boundary. The harness has
-no guild tools, no MCP servers, and no hooks (SEC-29). `GH_TOKEN` and
+no guild tools, no MCP servers, and no hooks but a repository's Cursor hooks (SEC-29, SEC-31). `GH_TOKEN` and
 `GITHUB_TOKEN` are never in its environment, nor the variables that
 would move it to metered API billing. The brief's preamble tells it
 never to push or open pull requests. The `coding` prompt block tells

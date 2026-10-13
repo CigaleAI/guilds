@@ -63,7 +63,7 @@ function harnessSandbox(binary: string, events: (repo: string) => string[], env:
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     HARNESS_STUB_EVENTS: eventsFile,
     HARNESS_STUB_RECORD: record,
-    HARNESS_STUB_SHOW: "IS_SANDBOX,ANTHROPIC_API_KEY,GH_TOKEN,GUILD_RUN_ID,CLAUDE_CODE_OAUTH_TOKEN",
+    HARNESS_STUB_SHOW: "IS_SANDBOX,ANTHROPIC_API_KEY,GH_TOKEN,GUILD_RUN_ID,CLAUDE_CODE_OAUTH_TOKEN,CLAUDE_CODE_DISABLE_AUTO_MEMORY",
     HARNESS_STUB_DELAY: "0.02",
     ANTHROPIC_API_KEY: "metered-api-key",
     GH_TOKEN: "installation-token",
@@ -154,17 +154,18 @@ describe("code_task with the Claude Code driver", () => {
 
     const [call] = calls();
     assert.ok(call);
-    assert.deepEqual(call.argv.slice(1, 11), [
+    assert.deepEqual(call.argv.slice(1, 12), [
       "-p",
       "--output-format",
       "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
       "--setting-sources",
-      "user",
+      "",
       "--strict-mcp-config",
+      "--disable-slash-commands",
       "--settings",
-      '{"disableAllHooks": true, "enableAllProjectMcpServers": false}',
+      '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}',
     ]);
     assert.ok(!call.argv.includes("--resume"));
     assert.equal(realpathSync(call.cwd), realpathSync(repo));
@@ -172,6 +173,7 @@ describe("code_task with the Claude Code driver", () => {
     assert.ok(call.stdin.includes("Make the greeting name the guild."));
     assert.ok(!call.argv.some((arg) => arg.includes("Make the greeting")), "never on its command line");
     assert.equal(call.env.IS_SANDBOX, "1");
+    assert.equal(call.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, "1");
     assert.equal(call.env.ANTHROPIC_API_KEY, null, "a metered key never reaches the harness");
     assert.equal(call.env.GH_TOKEN, null);
     assert.equal(call.env.GUILD_RUN_ID, "r_harness");
@@ -356,6 +358,10 @@ describe("code_task with the Codex driver", () => {
       "exec",
       "--json",
       "--dangerously-bypass-approvals-and-sandbox",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--disable",
+      "memories",
       "--disable",
       "hooks",
       "--disable",
@@ -474,6 +480,55 @@ describe("code_task with the Cursor driver", () => {
     const { metadata } = await codeTask(context(sandbox, { harness: "cursor", secrets: {} }).ctx, { brief: "x" });
     assert.equal(metadata.status, "completed");
   });
+});
+
+test("each call first removes the harness's local configuration and memory, never its login or sessions", async () => {
+  const cases: Array<{ harness: "claude-code" | "codex" | "cursor"; binary: string; removed: string[]; kept: string[] }> = [
+    {
+      harness: "claude-code",
+      binary: "claude",
+      removed: [
+        ".claude/settings.json",
+        ".claude/CLAUDE.md",
+        ".claude/hooks/pre.sh",
+        ".claude/plugins/p/plugin.json",
+        ".claude/skills/s/SKILL.md",
+        ".claude/projects/-home-a_1-repos-app/memory/MEMORY.md",
+      ],
+      kept: [".claude/.credentials.json", ".claude/projects/-home-a_1-repos-app/0f9c.jsonl", ".claude.json"],
+    },
+    {
+      harness: "codex",
+      binary: "codex",
+      removed: [".codex/AGENTS.md", ".codex/skills/s/SKILL.md", ".codex/memories/m.md", ".codex/rules/r.rules"],
+      kept: [".codex/auth.json", ".codex/config.toml", ".codex/sessions/2026/10/13/rollout.jsonl", ".codex/state_5.sqlite"],
+    },
+    {
+      harness: "cursor",
+      binary: "agent",
+      removed: [".cursor/hooks.json", ".cursor/mcp.json", ".cursor/rules/r.mdc"],
+      kept: [".config/cursor/auth.json", ".cursor/cli-config.json", ".cursor/chats/c/store.db"],
+    },
+  ];
+  for (const { harness, binary, removed, kept } of cases) {
+    const { sandbox, repo } = harnessSandbox(binary, () => recorded(harness === "claude-code" ? "claude-code" : harness));
+    for (const file of [...removed, ...kept]) {
+      mkdirSync(path.dirname(path.join(sandbox.home, file)), { recursive: true });
+      writeFileSync(path.join(sandbox.home, file), file === ".codex/auth.json" ? '{"tokens": {"refresh_token": "r"}}' : "x");
+    }
+    mkdirSync(path.join(repo, ".claude"), { recursive: true });
+    writeFileSync(path.join(repo, ".claude", "settings.json"), "{}");
+    const secrets: Record<string, string> = harness === "codex" ? {} : { [harness === "cursor" ? "CURSOR_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN"]: "t" };
+    const { metadata } = await codeTask(context(sandbox, { harness, secrets }).ctx, { brief: "x" });
+    assert.equal(metadata.status, "completed", harness);
+    for (const file of removed) {
+      assert.equal(existsSync(path.join(sandbox.home, file)), false, `${harness} removes ${file}`);
+    }
+    for (const file of kept) {
+      assert.equal(existsSync(path.join(sandbox.home, file)), true, `${harness} keeps ${file}`);
+    }
+    assert.ok(existsSync(path.join(repo, ".claude", "settings.json")), "the repository is left as it is");
+  }
 });
 
 /** The harness's process group outlives the exec that started it, and only `stop` ends it. */

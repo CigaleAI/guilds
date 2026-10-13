@@ -340,8 +340,8 @@ version the image installs.
 
 | Harness | Command | Resume | Prompt | Driver environment |
 | --- | --- | --- | --- | --- |
-| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources user --strict-mcp-config --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false}'` | `--resume <session id>` | stdin | Sets `IS_SANDBOX=1` (commands run as root, and Claude Code bypasses permissions as root only with it), `DISABLE_AUTOUPDATER=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` |
-| Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `codex exec resume … <thread id> -` | stdin (`-`) | Removes `CODEX_API_KEY`, `OPENAI_API_KEY` |
+| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--resume <session id>` | stdin | Sets `IS_SANDBOX=1` (commands run as root, and Claude Code bypasses permissions as root only with it), `DISABLE_AUTOUPDATER=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` |
+| Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `codex exec resume … <thread id> -` | stdin (`-`) | Removes `CODEX_API_KEY`, `OPENAI_API_KEY` |
 | Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--resume=<chat id>` | the prompt file, named on its command line | none |
 
 The Cursor CLI reads no prompt on stdin, so its command line names the
@@ -359,11 +359,32 @@ A turn ends:
 
 ### Managed configuration
 
-Each driver passes its harness the configuration above through flags
-and environment variables on every call. It never writes files in the
-home: the files that hold logins and account state
-(`~/.claude.json`, `~/.claude/.credentials.json`, `~/.codex/auth.json`,
-`~/.config/cursor/auth.json`) are left alone.
+The agent is the only source of a harness's state: the brief, the
+notes it appends, and the session it resumes. Each driver passes its
+harness the configuration above through flags and environment
+variables on every call, and loads no configuration of its own from
+the agent's home: Claude Code loads no settings source
+(`--setting-sources ""`), Codex no `config.toml` or rules
+(`--ignore-user-config`, `--ignore-rules`).
+
+Before every call, `start` removes the harness's local configuration
+and memory from the agent's home, whoever wrote it (the agent's own
+commands, the CLI tab, or an earlier harness turn):
+
+| Harness | Removed before each call |
+| --- | --- |
+| Claude Code | `~/.claude/` `settings.json`, `settings.local.json`, `CLAUDE.md`, `CLAUDE.local.md`, `rules/`, `hooks/`, `plugins/`, `skills/`, `commands/`, `agents/`, `output-styles/`, and each project's `memory/` under `projects/` |
+| Codex | `~/.codex/` `AGENTS.md`, `AGENTS.override.md`, `skills/`, `prompts/`, `rules/`, `memories/` and its `memories_*.sqlite` databases, `hooks.json` |
+| Cursor | `~/.cursor/` `hooks.json`, `hooks/`, `mcp.json`, `rules/`, `skills/`, `commands/`, `agents/`, `plugins/` |
+
+What stays is what a call needs and nothing it is configured by: the
+logins and account state (`~/.claude.json`,
+`~/.claude/.credentials.json`, `~/.codex/auth.json`,
+`~/.config/cursor/auth.json`), which are never touched, and the
+harness's session transcripts and thread records, which `session_id`
+resumes. Memory is off as well as removed: Claude Code's auto-memory
+(`CLAUDE_CODE_DISABLE_AUTO_MEMORY`, `autoMemoryEnabled: false`) and
+Codex's memories feature. A repository's files are never changed.
 
 Claude Code also reads `/etc/claude-code/managed-settings.json`, baked
 into the image, which sets `disableAllHooks` and
@@ -371,15 +392,16 @@ into the image, which sets `disableAllHooks` and
 overrides it.
 
 A repository's own harness configuration (`.claude/`, `.mcp.json`,
-`.codex/`, `.cursor/`) is repository content. Instruction files
-(`CLAUDE.md`, `AGENTS.md`) are read. Executable configuration is
-turned off where the harness allows:
+`.codex/`, `.cursor/`) is repository content, versioned with it.
+Instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`) are
+read. Executable configuration is turned off where the harness
+allows:
 
 | Harness | Project hooks, plugins, MCP |
 | --- | --- |
-| Claude Code | Off: `--setting-sources user` leaves project settings out, `--strict-mcp-config` loads no MCP server the call does not pass, and the managed settings turn hooks off. User-level settings in the agent's home still load |
-| Codex | Off: hooks, plugins, and apps are disabled, and `mcp_servers` is empty. Execution policy `.rules` files still load |
-| Cursor | An MCP server not approved in the agent's home needs `--approve-mcps`, which the driver never passes. Project hooks in `.cursor/hooks.json` run: the CLI has no switch to turn them off |
+| Claude Code | Off: no settings source is loaded, `--strict-mcp-config` loads no MCP server the call does not pass, skills are off, and the managed settings turn hooks off |
+| Codex | Off: hooks, plugins, apps, and execution-policy rules are off, and `mcp_servers` is empty |
+| Cursor | An MCP server needs `--approve-mcps`, which the driver never passes. Project hooks in `.cursor/hooks.json` run: the CLI has no switch to turn them off ([SEC-31](../architecture/security-register.md#sec-31--cursor-runs-a-repositorys-hooks)) |
 
 What stays on is recorded in the
 [Security register](../architecture/security-register.md).
