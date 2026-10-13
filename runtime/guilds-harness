@@ -238,7 +238,180 @@ class ClaudeCode(Driver):
         return {"message": last_text, "is_error": True, "error": "the harness ended without a result"}
 
 
-DRIVERS: dict[str, Driver] = {driver.name: driver for driver in (ClaudeCode(),)}
+class Codex(Driver):
+    name = "codex"
+    binary = "codex"
+    removed_env = ("CODEX_API_KEY", "OPENAI_API_KEY")
+    # Hooks, plugins, apps, MCP servers, notifications, update checks, and analytics off, on
+    # every call, over the configuration in the agent's home.
+    managed = (
+        "--disable",
+        "hooks",
+        "--disable",
+        "plugins",
+        "--disable",
+        "apps",
+        "--disable",
+        "in_app_updates",
+        "-c",
+        "mcp_servers={}",
+        "-c",
+        "notify=[]",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "analytics.enabled=false",
+        "-c",
+        'otel.exporter="none"',
+    )
+
+    def command(self, session_id: str, prompt_path: Path) -> list[str]:
+        argv = [self.binary, "exec"]
+        if session_id:
+            argv.append("resume")
+        argv += ["--json", "--dangerously-bypass-approvals-and-sandbox", *self.managed]
+        if session_id:
+            argv.append(session_id)
+        # The prompt is read from stdin.
+        argv.append("-")
+        return argv
+
+    def credential(self, env: dict[str, str]) -> str | None:
+        """A ChatGPT login: auth.json holding tokens, not only an API key."""
+        home = Path(env.get("CODEX_HOME") or HOME / ".codex")
+        try:
+            auth = json.loads((home / "auth.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        tokens = auth.get("tokens") if isinstance(auth, dict) else None
+        return "login" if isinstance(tokens, dict) and tokens else None
+
+    def session(self, event: dict[str, Any]) -> str:
+        value = event.get("thread_id") if event.get("type") == "thread.started" else None
+        return value if isinstance(value, str) else ""
+
+    def progress(self, event: dict[str, Any]) -> list[str]:
+        kind = event.get("type")
+        item = event.get("item") if isinstance(event.get("item"), dict) else {}
+        if kind == "thread.started":
+            return ["started"]
+        if kind == "item.started" and item.get("type") == "command_execution":
+            return [f"shell: {_first_line(str(item.get('command') or ''))}"]
+        if kind != "item.completed":
+            return []
+        if item.get("type") == "file_change":
+            return [
+                f"{change.get('kind') or 'change'}: {change.get('path')}"
+                for change in item.get("changes") or []
+                if isinstance(change, dict) and change.get("path")
+            ]
+        if item.get("type") == "agent_message" and _first_line(item.get("text", "")):
+            return [_first_line(item["text"])]
+        if item.get("type") == "mcp_tool_call":
+            return [f"tool: {item.get('server')}.{item.get('tool')}"]
+        if item.get("type") == "web_search":
+            return [f"search: {_first_line(str(item.get('query') or ''))}"]
+        return []
+
+    def outcome(self, events: Iterator[dict[str, Any]]) -> dict[str, Any]:
+        message = ""
+        ended: dict[str, Any] | None = None
+        for event in events:
+            item = event.get("item") if isinstance(event.get("item"), dict) else {}
+            if event.get("type") == "item.completed" and item.get("type") == "agent_message":
+                message = str(item.get("text") or "")
+            elif event.get("type") == "turn.completed":
+                ended = {"message": message, "is_error": False, "error": ""}
+            elif event.get("type") == "turn.failed":
+                error = (event.get("error") or {}).get("message") if isinstance(event.get("error"), dict) else None
+                ended = {"message": message, "is_error": True, "error": str(error or "the turn failed")}
+        return ended or {"message": message, "is_error": True, "error": "the harness ended without a result"}
+
+
+CURSOR_TOOLS = {
+    "readToolCall": "Read",
+    "writeToolCall": "Write",
+    "editToolCall": "Edit",
+    "deleteToolCall": "Delete",
+    "shellToolCall": "Shell",
+    "grepToolCall": "Grep",
+    "globToolCall": "Glob",
+    "lsToolCall": "List",
+    "todoToolCall": "Todo",
+}
+
+
+class Cursor(Driver):
+    name = "cursor"
+    binary = "agent"
+    # The Cursor CLI takes no prompt on stdin: its argument names the prompt file.
+    prompt_on_stdin = False
+
+    def command(self, session_id: str, prompt_path: Path) -> list[str]:
+        argv = [self.binary, "-p", "--force", "--trust", "--output-format", "stream-json"]
+        if session_id:
+            argv.append(f"--resume={session_id}")
+        argv.append(f"Read your task in {prompt_path} and follow it.")
+        return argv
+
+    def credential(self, env: dict[str, str]) -> str | None:
+        if env.get("CURSOR_API_KEY"):
+            return "secret"
+        config = Path(env.get("XDG_CONFIG_HOME") or HOME / ".config")
+        if (config / "cursor" / "auth.json").is_file():
+            return "login"
+        return None
+
+    def session(self, event: dict[str, Any]) -> str:
+        value = event.get("session_id")
+        return value if isinstance(value, str) else ""
+
+    def progress(self, event: dict[str, Any]) -> list[str]:
+        kind = event.get("type")
+        if kind == "system" and event.get("subtype") == "init":
+            model = event.get("model")
+            return [f"started{f' on {model}' if isinstance(model, str) and model else ''}"]
+        if kind == "assistant":
+            texts = [
+                part.get("text", "")
+                for part in (event.get("message") or {}).get("content") or []
+                if isinstance(part, dict) and part.get("type") == "text"
+            ]
+            line = _first_line("\n".join(texts))
+            return [line] if line else []
+        if kind == "tool_call" and event.get("subtype") == "started":
+            call = event.get("tool_call") if isinstance(event.get("tool_call"), dict) else {}
+            for key, body in call.items():
+                args = body.get("args") if isinstance(body, dict) else None
+                if key == "function" and isinstance(body, dict):
+                    return [str(body.get("name") or "tool")]
+                return [_tool_summary(CURSOR_TOOLS.get(key, key.removesuffix("ToolCall")), args)]
+        return []
+
+    def outcome(self, events: Iterator[dict[str, Any]]) -> dict[str, Any]:
+        last_text = ""
+        for event in events:
+            if event.get("type") == "assistant":
+                texts = [
+                    part.get("text", "")
+                    for part in (event.get("message") or {}).get("content") or []
+                    if isinstance(part, dict) and part.get("type") == "text"
+                ]
+                if any(text.strip() for text in texts):
+                    last_text = "\n".join(text for text in texts if text.strip())
+            elif event.get("type") == "result":
+                is_error = event.get("is_error") is True or event.get("subtype") not in (None, "success")
+                result = event.get("result") if isinstance(event.get("result"), str) else ""
+                # The result joins every assistant message; the last one carries the summary and any question.
+                return {
+                    "message": last_text or result,
+                    "is_error": is_error,
+                    "error": (result or str(event.get("subtype") or "")) if is_error else "",
+                }
+        return {"message": last_text, "is_error": True, "error": "the harness ended without a result"}
+
+
+DRIVERS: dict[str, Driver] = {driver.name: driver for driver in (ClaudeCode(), Codex(), Cursor())}
 
 
 def _driver(spec: dict[str, Any]) -> Driver:

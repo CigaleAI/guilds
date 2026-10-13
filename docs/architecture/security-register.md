@@ -46,8 +46,8 @@ Ids are never reused.
 **Found:** 2026-10-13, building coding harnesses.
 
 **Where:** a coding agent's harness credential: the secret
-`CLAUDE_CODE_OAUTH_TOKEN` granted to it, or a login stored in its
-home (`runtime/guilds-harness`), and the **Harness** select on
+`CLAUDE_CODE_OAUTH_TOKEN` or `CURSOR_API_KEY` granted to it, or a
+login stored in its home (`runtime/guilds-harness`), and the **Harness** select on
 Create agent and agent Settings
 (`apps/web/src/features/agent/settings/configForm.tsx`).
 
@@ -74,14 +74,14 @@ the operator's call. The platform does not check it.
 
 **Found:** 2026-10-13, building coding harnesses.
 
-**Where:** the Claude Code driver's command line in
-`runtime/guilds-harness` and `runtime/claude-code-managed-settings.json`,
-copied to `/etc/claude-code/managed-settings.json` by
-`runtime/Dockerfile`.
+**Where:** the drivers' command lines in `runtime/guilds-harness`,
+and `runtime/claude-code-managed-settings.json`, copied to
+`/etc/claude-code/managed-settings.json` by `runtime/Dockerfile`.
 
 **Exposure:** a coding CLI reads configuration from the repository it
-works in. For Claude Code that is `.claude/` (settings, hooks,
-commands, agents) and `.mcp.json`. A hook or an MCP server is code
+works in: for Claude Code `.claude/` (settings, hooks, commands,
+agents) and `.mcp.json`, for Codex `.codex/`, for Cursor `.cursor/`
+(rules, `mcp.json`, `hooks.json`). A hook or an MCP server is code
 that runs on load, without the model deciding to run it. Whoever can
 push to a guild repository could then run commands in the agent's
 sandbox, with its secrets.
@@ -91,10 +91,17 @@ sandbox, with its secrets.
 loaded; `--strict-mcp-config`, so no MCP server loads that the call
 does not pass, and it passes none; and `--settings` with
 `disableAllHooks`. The managed settings, which no user or project
-file overrides, turn hooks off and project MCP servers off.
+file overrides, turn hooks off and project MCP servers off. Every
+Codex call disables hooks, plugins, and apps and sets `mcp_servers`
+empty; Codex runs no hook it has not been told to trust. Cursor calls
+never pass `--approve-mcps`.
 
-**Residual risk:** user-level settings in the agent's home
-(`~/.claude/`) still load, including plugins enabled there. The
+**Residual risk:** Cursor runs a repository's `.cursor/hooks.json`:
+the Cursor CLI has no switch to turn project hooks off. An agent
+whose repositories take pushes from people it should not trust runs
+Claude Code or Codex. User-level settings in the agent's home
+(`~/.claude/`, `~/.codex/config.toml`, `~/.cursor/`) still load,
+including plugins enabled there. The
 agent, the harness, and every agent on the machine (SEC-24) can write
 them, so a steered agent or harness can change what a later call
 loads. Instruction files in the repository (`CLAUDE.md`, and
@@ -108,9 +115,10 @@ harness (SEC-28).
 **Found:** 2026-10-13, building coding harnesses.
 
 **Where:** `code_task` (`apps/orchestrator/src/toolbox/harness.ts`)
-and the Claude Code driver in `runtime/guilds-harness`
-(`--dangerously-skip-permissions`, with `IS_SANDBOX=1` because
-commands run as root, SEC-6).
+and the drivers in `runtime/guilds-harness`: Claude Code with
+`--dangerously-skip-permissions` (and `IS_SANDBOX=1`, because
+commands run as root, SEC-6), Codex with
+`--dangerously-bypass-approvals-and-sandbox`, Cursor with `--force`.
 
 **Exposure:** the harness runs every command and edit it decides on,
 with nobody to approve. It reads repository files, issue text,
@@ -142,10 +150,10 @@ machine (SEC-24). Nothing enforces the preamble.
 **Found:** 2026-10-13, building coding harnesses.
 
 **Where:** the harness credentials in `apps/orchestrator/src/coding/harnesses.ts`
-and `runtime/guilds-harness`: the secret `CLAUDE_CODE_OAUTH_TOKEN`
-in the environment of the agent's commands, and a login stored in
-the agent's home (`~/.claude/.credentials.json`). `CURSOR_API_KEY`
-is the Cursor harness's secret.
+and `runtime/guilds-harness`: the secrets `CLAUDE_CODE_OAUTH_TOKEN`
+and `CURSOR_API_KEY` in the environment of the agent's commands, and
+the logins stored in the agent's home (`~/.claude/.credentials.json`,
+`~/.codex/auth.json`, `~/.config/cursor/auth.json`).
 
 **Exposure:** a subscription token granted as a secret is in the
 environment of every command the agent runs, its harness included.

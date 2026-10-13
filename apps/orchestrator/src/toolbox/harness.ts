@@ -306,9 +306,11 @@ export const codeTask: Tool = {
 
     const check = await harnessOp(ops, "check", { harness });
     if (check.meta.installed !== true) {
-      throw new Error(
-        `${info.label} is not installed in this machine's image: build the runtime image with HARNESSES naming ${harness}`,
-      );
+      const fix =
+        harness === "codex"
+          ? "rebuild the runtime image, which always installs it"
+          : `build the runtime image with HARNESSES naming ${harness}`;
+      throw new Error(`${info.label} is not installed in this machine's image: ${fix}`);
     }
     const version = typeof check.meta.version === "string" ? check.meta.version : null;
     if (check.meta.credential === "login") {

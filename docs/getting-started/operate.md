@@ -29,13 +29,14 @@ the image with:
 docker build --build-arg BROWSER=chromium --tag agent-runtime:0.4 runtime/
 ```
 
-The image installs Claude Code, the coding harness behind
-`code_task`, when the `HARNESSES` build argument names `claude-code`,
-its default. Claude Code is proprietary: the published image is built
-with `HARNESSES` empty, and coding agents on it need an image built
-with it
+The image always installs Codex, a coding harness behind `code_task`.
+It installs Claude Code and the Cursor CLI when the `HARNESSES` build
+argument names them (`claude-code cursor`, its default). Both are
+proprietary: the published image is built with `HARNESSES` empty, so
+Codex is its one harness, and coding agents on Claude Code or Cursor
+need an image built with them
 ([Code tools](../tools-and-connectors/code.md#credentials-and-errors)).
-To build without it:
+To build without them:
 
 ```text
 docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/

@@ -170,9 +170,8 @@ call is one harness turn. It is offered when the run snapshot has
 `coding: true` and a `harness`
 ([Guilds and agents](../concepts/guilds-and-agents.md#configuration-and-appearance)).
 
-`harness` takes `claude-code`, `codex`, or `cursor`. `guilds-harness`
-has a driver for Claude Code. A call on a harness without a driver
-is an error, `unknown harness`.
+`harness` takes `claude-code`, `codex`, or `cursor`. Each has a
+driver in `guilds-harness` ([Drivers](#drivers)).
 
 | Argument | Meaning |
 | --- | --- |
@@ -288,19 +287,11 @@ runs for the agent: `HOME`, `GUILDS_AGENT_HOME`, `PORT`,
 the harness does not open pull requests. git still reads its token
 through the credential helper ([GitHub](github.md)).
 
-The Claude Code driver:
-
-- runs `claude -p --output-format stream-json --verbose
-  --dangerously-skip-permissions --setting-sources user
-  --strict-mcp-config --settings '{"disableAllHooks":true,"enableAllProjectMcpServers":false}'`,
-  with `--resume <session id>` to resume
-- sets `IS_SANDBOX=1` (commands run as root, and Claude Code bypasses
-  permissions as root only with it), `DISABLE_AUTOUPDATER=1`, and
-  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
-- removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and
-  `ANTHROPIC_BASE_URL`, which would move it from the subscription to
-  metered API billing. A secret of one of those names granted to the
-  agent stays out of the harness and of the commands it runs.
+Each driver also sets its own variables and removes those that would
+move the harness from the subscription to metered API billing
+([Drivers](#drivers)). A secret of a removed name granted to the
+agent for other work stays out of the harness and of the commands it
+runs.
 
 The harness's own permission prompts are off. The container is the
 boundary, and nobody is there to approve
@@ -309,11 +300,11 @@ boundary, and nobody is there to approve
 ### Progress
 
 Each poll reads at most 256 KiB of the log. A progress line is one
-normalised event. For Claude Code: `started on <model>`, the first
-line of each assistant message, and each tool use as `<tool>: <first
-line of its command, path, pattern, URL, description, or query>`. A
-poll returns at most 60 lines, the earlier ones counted as `… N more
-steps`.
+normalised event: the harness starting, the first line of each
+assistant message, and each tool use or file change as `<tool>:
+<first line of its command, path, pattern, URL, description, or
+query>`. A poll returns at most 60 lines, the earlier ones counted as
+`… N more steps`.
 
 Each line passes redaction with the run's secret values, GitHub
 tokens included, and is cut at 240 characters. The orchestrator
@@ -328,8 +319,10 @@ id, so a call that ends without a result still names its session.
 
 ### Sessions
 
-Session ids are the harness's own. Claude Code keeps its session
-state in `~/.claude` in the agent's home, so a session survives
+Session ids are the harness's own: Claude Code's session id, Codex's
+thread id, Cursor's chat id, each read from the first event that
+carries it. Each harness keeps its session state in the agent's home
+(`~/.claude`, `~/.codex`, `~/.cursor`), so a session survives
 container recreation and counts against `max_workspace_mib`. A
 session from an earlier run can be resumed when the agent kept its
 id, in Memory or a note. A resumed session whose state is gone fails
@@ -365,6 +358,8 @@ The harness runs on the operator's subscription, first found wins:
 | Harness | Secret granted to the agent | Login in the agent's CLI tab |
 | --- | --- | --- |
 | Claude Code | `CLAUDE_CODE_OAUTH_TOKEN`, a long-lived token from `claude setup-token` | `claude`, then `/login`, stored in `~/.claude/.credentials.json` in the home |
+| Codex | none | `codex login --device-auth`, a ChatGPT login stored in `~/.codex/auth.json`. An `auth.json` holding only an API key is no credential |
+| Cursor | `CURSOR_API_KEY` | `NO_OPEN_BROWSER=1 agent login`, stored in `~/.config/cursor/auth.json` |
 
 A token reaches the harness as every granted secret reaches a
 command: in its environment. A login persists in the agent's home.
@@ -375,36 +370,76 @@ Organisation model keys never enter the sandbox.
 
 A call with no credential is an error naming the fix: the secret to
 grant, or the login to run in the CLI tab. An agent with `cli` off has
-no CLI tab, and only the secret is offered.
+no CLI tab, and only the secret is offered: Codex, which has no
+secret, cannot run for it.
 
 A CLI missing from the image is an error naming it. The runtime
-image installs Claude Code under the build argument `HARNESSES`
-(default `claude-code`), pinned by `CLAUDE_CODE_VERSION`. Claude Code
-is proprietary: the published image is built with `HARNESSES` empty,
-as it is built with Chromium, and its Claude Code calls fail with the
-CLI missing ([Operate](../getting-started/operate.md)).
+image always installs Codex, pinned by `CODEX_VERSION`. Claude Code
+(`CLAUDE_CODE_VERSION`) and the Cursor CLI (`CURSOR_VERSION`, a
+release tarball checksum-verified per architecture) are proprietary:
+they are installed when the build argument `HARNESSES` names them
+(default `claude-code cursor`). The published image is built with
+`HARNESSES` empty, as it is built with Chromium, so Codex is its one
+harness ([Operate](../getting-started/operate.md)). The image lists
+the harness CLIs it carries in `/usr/local/share/guilds/harnesses`.
+
+A driver that parses none of its CLI's output fails the call with
+the CLI's version.
 
 Harness calls record no usage or cost: the subscription bills
 nothing per call.
 
+### Drivers
+
+A driver turns a call into a command line, and the CLI's event log
+into progress lines and a result. Each one is pinned to the CLI
+version the image installs.
+
+| Harness | Command | Resume | Prompt | Driver environment |
+| --- | --- | --- | --- | --- |
+| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources user --strict-mcp-config --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false}'` | `--resume <session id>` | stdin | Sets `IS_SANDBOX=1` (commands run as root, and Claude Code bypasses permissions as root only with it), `DISABLE_AUTOUPDATER=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`. Removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` |
+| Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `codex exec resume … <thread id> -` | stdin (`-`) | Removes `CODEX_API_KEY`, `OPENAI_API_KEY` |
+| Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--resume=<chat id>` | the prompt file, named on its command line | none |
+
+The Cursor CLI reads no prompt on stdin, so its command line names the
+prompt file in the agent's home; the prompt itself never appears on a
+command line.
+
+A turn ends:
+
+- for Claude Code, at its `result` event: an error when `is_error` or
+  a subtype other than `success`
+- for Codex, at `turn.completed`, or `turn.failed` with its error.
+  An `error` event alone, such as a reconnect, does not end it
+- for Cursor, at its `result` event. Its `result` joins every
+  assistant message; the final message is the last one
+
 ### Managed configuration
 
-The driver passes Claude Code its configuration through flags and
-environment variables on every call. It never writes files in the
-home: `~/.claude.json` and `~/.claude/.credentials.json`, which hold
-the login and account state, are left alone.
+Each driver passes its harness the configuration above through flags
+and environment variables on every call. It never writes files in the
+home: the files that hold logins and account state
+(`~/.claude.json`, `~/.claude/.credentials.json`, `~/.codex/auth.json`,
+`~/.config/cursor/auth.json`) are left alone.
 
-`/etc/claude-code/managed-settings.json`, baked into the image, sets
-`disableAllHooks` and `enableAllProjectMcpServers: false`. Claude Code
-lets no user or project file override it.
+Claude Code also reads `/etc/claude-code/managed-settings.json`, baked
+into the image, which sets `disableAllHooks` and
+`enableAllProjectMcpServers: false`. No user or project file
+overrides it.
 
-A repository's own harness configuration (`.claude/`, `.mcp.json`)
-is repository content. `--setting-sources user` leaves project
-settings out, `--strict-mcp-config` loads no MCP server the call does
-not pass, and the managed settings turn hooks off. User-level
-settings in the agent's home still load. Instruction files
-(`CLAUDE.md`, `AGENTS.md`) are read
-([Security register](../architecture/security-register.md)).
+A repository's own harness configuration (`.claude/`, `.mcp.json`,
+`.codex/`, `.cursor/`) is repository content. Instruction files
+(`CLAUDE.md`, `AGENTS.md`) are read. Executable configuration is
+turned off where the harness allows:
+
+| Harness | Project hooks, plugins, MCP |
+| --- | --- |
+| Claude Code | Off: `--setting-sources user` leaves project settings out, `--strict-mcp-config` loads no MCP server the call does not pass, and the managed settings turn hooks off. User-level settings in the agent's home still load |
+| Codex | Off: hooks, plugins, and apps are disabled, and `mcp_servers` is empty. Execution policy `.rules` files still load |
+| Cursor | An MCP server not approved in the agent's home needs `--approve-mcps`, which the driver never passes. Project hooks in `.cursor/hooks.json` run: the CLI has no switch to turn them off |
+
+What stays on is recorded in the
+[Security register](../architecture/security-register.md).
 
 **Metadata.** Beside the fields every tool call records: `harness`,
 `status`, `session_id`, `repository`, `exit_code`, `duration_ms`,

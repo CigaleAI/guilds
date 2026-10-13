@@ -319,6 +319,146 @@ describe("code_task with the Claude Code driver", () => {
   });
 });
 
+describe("code_task with the Codex driver", () => {
+  const THREAD = "01a13707-f086-7261-8d15-5306e7a49a3c";
+
+  /** A ChatGPT login in the agent's home, as `codex login` writes it. */
+  function chatgptLogin(sandbox: HostCodeSandbox, auth: Record<string, unknown>) {
+    mkdirSync(path.join(sandbox.home, ".codex"), { recursive: true });
+    writeFileSync(path.join(sandbox.home, ".codex", "auth.json"), JSON.stringify(auth));
+  }
+
+  test("a turn runs on the ChatGPT login, with hooks, plugins, and MCP off, and no API key", async () => {
+    const { sandbox, repo, calls } = harnessSandbox(
+      "codex",
+      (root) => recorded("codex", [{ at: 4, path: path.join(root, "greet.py"), text: "print('hello, guild')\n" }]),
+      { OPENAI_API_KEY: "metered-openai-key", CODEX_API_KEY: "metered-codex-key", HARNESS_STUB_SHOW: "OPENAI_API_KEY,CODEX_API_KEY,GH_TOKEN" },
+    );
+    chatgptLogin(sandbox, { OPENAI_API_KEY: null, tokens: { id_token: "id", access_token: "access", refresh_token: "refresh" } });
+    const seen: string[] = [];
+    const { ctx, progress } = context(sandbox, {
+      harness: "codex",
+      secrets: {},
+      harness_login_seen: async (harness) => {
+        seen.push(harness);
+      },
+    });
+    const { text, metadata } = await codeTask(ctx, { brief: "Make the greeting name the guild." });
+    assert.match(text, new RegExp(`^completed · codex · app · session ${THREAD} · `));
+    assert.ok(text.includes("1 file changed, +1 −1\ngreet.py (+1 −1)"));
+    assert.ok(text.includes("Should the greeting also name the agent?"));
+    assert.equal(metadata.session_id, THREAD);
+    assert.deepEqual(seen, ["codex"]);
+    assert.ok(progress.includes("shell: bash -lc 'cat greet.py'"), progress.join("\n"));
+    assert.ok(progress.includes("update: /home/a_1/repos/app/greet.py"));
+    const [call] = calls();
+    assert.deepEqual(call!.argv.slice(1), [
+      "exec",
+      "--json",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--disable",
+      "hooks",
+      "--disable",
+      "plugins",
+      "--disable",
+      "apps",
+      "--disable",
+      "in_app_updates",
+      "-c",
+      "mcp_servers={}",
+      "-c",
+      "notify=[]",
+      "-c",
+      "check_for_update_on_startup=false",
+      "-c",
+      "analytics.enabled=false",
+      "-c",
+      'otel.exporter="none"',
+      "-",
+    ]);
+    assert.equal(realpathSync(call!.cwd), realpathSync(repo));
+    assert.ok(call!.stdin.includes("Make the greeting name the guild."));
+    assert.deepEqual(call!.env, { OPENAI_API_KEY: null, CODEX_API_KEY: null, GH_TOKEN: null });
+  });
+
+  test("a session resumes with exec resume and the brief on stdin", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
+    chatgptLogin(sandbox, { tokens: { refresh_token: "refresh" } });
+    await codeTask(context(sandbox, { harness: "codex", secrets: {} }).ctx, { brief: "Yes.", session_id: THREAD });
+    const argv = calls()[0]!.argv;
+    assert.deepEqual(argv.slice(1, 3), ["exec", "resume"]);
+    assert.deepEqual(argv.slice(-2), [THREAD, "-"]);
+  });
+
+  test("an API key login is not a subscription: the call names the login to run", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
+    chatgptLogin(sandbox, { OPENAI_API_KEY: "sk-metered", tokens: null });
+    const { text } = await codeTask(context(sandbox, { harness: "codex", secrets: {} }).ctx, { brief: "x" });
+    assert.match(text, /^ERROR: Codex has no credential: log in from the agent's CLI tab with `codex login --device-auth`/);
+    assert.equal(calls().length, 0);
+    const { text: noCli } = await codeTask(context(sandbox, { harness: "codex", secrets: {}, cli: false }).ctx, { brief: "x" });
+    assert.match(noCli, /Codex needs a login from the agent's CLI tab, and this agent has the CLI turned off/);
+  });
+
+  test("a failed turn fails with the harness's error", async () => {
+    const { sandbox } = harnessSandbox("codex", () => recorded("codex-failed"));
+    chatgptLogin(sandbox, { tokens: { refresh_token: "refresh" } });
+    const { text, metadata } = await codeTask(context(sandbox, { harness: "codex", secrets: {} }).ctx, { brief: "x" });
+    assert.equal(metadata.status, "failed");
+    assert.match(text, /^failed · codex · app · session 01a13707-cdbf/);
+    assert.match(text, /\nerror: unexpected status 401 Unauthorized/);
+  });
+});
+
+describe("code_task with the Cursor driver", () => {
+  const CHAT = "6d1c0f3e-9b2a-4e57-8c41-2a7f5e9d0b13";
+
+  test("a turn reads its prompt from a file named on its command line and returns the last message", async () => {
+    const { sandbox, repo, calls } = harnessSandbox(
+      "agent",
+      (root) => recorded("cursor", [{ at: 5, path: path.join(root, "greet.py"), text: "print('hello, guild')\n" }]),
+      { CURSOR_API_KEY: "cursor-key" },
+    );
+    const { ctx, progress } = context(sandbox, { harness: "cursor", secrets: { CURSOR_API_KEY: "cursor-key" } });
+    const { text, metadata } = await codeTask(ctx, { brief: "Make the greeting name the guild." });
+    assert.match(text, new RegExp(`^completed · cursor · app · session ${CHAT} · `));
+    assert.ok(text.includes("\n\nChanged the greeting in greet.py"), "the last assistant message, not the joined result");
+    assert.ok(!text.includes("I'll update the greeting.Changed"));
+    assert.equal(metadata.files_changed, 1);
+    assert.ok(progress.includes("Write: /home/a_1/repos/app/greet.py"), progress.join("\n"));
+    assert.ok(progress.includes("Shell: python3 greet.py"));
+    const [call] = calls();
+    const promptFile = path.join(sandbox.home, ".runs", "r_harness", "call_task.prompt.md");
+    assert.deepEqual(call!.argv.slice(1), [
+      "-p",
+      "--force",
+      "--trust",
+      "--output-format",
+      "stream-json",
+      `Read your task in ${promptFile} and follow it.`,
+    ]);
+    assert.equal(call!.stdin, "", "the CLI takes no stdin");
+    assert.equal(realpathSync(call!.cwd), realpathSync(repo));
+  });
+
+  test("a chat resumes with --resume", async () => {
+    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"), { CURSOR_API_KEY: "cursor-key" });
+    await codeTask(context(sandbox, { harness: "cursor", secrets: { CURSOR_API_KEY: "cursor-key" } }).ctx, {
+      brief: "Yes.",
+      session_id: CHAT,
+    });
+    assert.ok(calls()[0]!.argv.includes(`--resume=${CHAT}`));
+  });
+
+  test("a login in the home is a credential", async () => {
+    const { sandbox } = harnessSandbox("agent", () => recorded("cursor"));
+    mkdirSync(path.join(sandbox.home, ".config", "cursor"), { recursive: true });
+    writeFileSync(path.join(sandbox.home, ".config", "cursor", "auth.json"), "{}");
+    const { metadata } = await codeTask(context(sandbox, { harness: "cursor", secrets: {} }).ctx, { brief: "x" });
+    assert.equal(metadata.status, "completed");
+  });
+});
+
 /** The harness's process group outlives the exec that started it, and only `stop` ends it. */
 test("a supervisor outlives the call that started it, and stop ends the harness's process group", async () => {
   const lines = recorded("claude-code").slice(0, 2);

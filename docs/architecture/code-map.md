@@ -291,9 +291,12 @@ helper that acts for one agent takes its id, or reads its home from
 
 - `Dockerfile`: `python:3.12-slim` plus Chromium/Chrome, TigerVNC,
   noVNC, ttyd, Playwright 1.52.0, Node.js 24, build tools, GitHub CLI,
-  mise, ast-grep, Graft, Claude Code (pinned by `CLAUDE_CODE_VERSION`,
-  installed when the `HARNESSES` build argument names `claude-code`,
-  its default), and the helpers below
+  mise, ast-grep, Graft, the coding harnesses (Codex, pinned by
+  `CODEX_VERSION`; Claude Code and the Cursor CLI, pinned by
+  `CLAUDE_CODE_VERSION` and `CURSOR_VERSION` and installed when the
+  `HARNESSES` build argument names them, its default), the list of
+  harness CLIs it carries at `/usr/local/share/guilds/harnesses`, and
+  the helpers below
 - `guilds-code`: the code tools: `shell` and background commands, the
   file tools, ripgrep and ast-grep search, Graft queries, output
   shaping, the size of the agent's home and of its machine, and git
@@ -303,7 +306,8 @@ helper that acts for one agent takes its id, or reads its home from
 - `guilds-harness`: the coding harnesses behind `code_task`: `check`,
   `start` (a detached supervisor running the CLI in its own process
   group), `poll`, `result`, and `stop`, one driver per harness
-  (Claude Code), call state under `/run/guilds/<agent id>/harness/`
+  (Claude Code, Codex, Cursor), call state under
+  `/run/guilds/<agent id>/harness/`
 - `claude-code-managed-settings.json`: Claude Code's managed settings,
   copied to `/etc/claude-code/managed-settings.json`: hooks off, no
   project MCP servers

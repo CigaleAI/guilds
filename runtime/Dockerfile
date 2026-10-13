@@ -105,18 +105,42 @@ RUN set -eu; \
     echo "${sum}  /usr/local/bin/mise" | sha256sum -c -; \
     chmod 755 /usr/local/bin/mise
 
-# Coding harnesses, each run headless by guilds-harness on the user's own subscription. Claude
-# Code is proprietary: it is installed when HARNESSES names it, as Chrome is under BROWSER, and an
-# image that is published is built with HARNESSES empty.
-ARG HARNESSES="claude-code"
+# Coding harnesses, each run headless by guilds-harness on the user's own subscription. Codex is
+# open source and always installed. Claude Code and the Cursor CLI are proprietary: they are
+# installed when HARNESSES names them, as Chrome is under BROWSER, and an image that is published
+# is built with HARNESSES empty. The Cursor CLI has no npm package: its release tarball is pinned
+# and checksum-verified per architecture.
+ARG HARNESSES="claude-code cursor"
+ARG CODEX_VERSION=0.162.1
 ARG CLAUDE_CODE_VERSION=2.1.296
+ARG CURSOR_VERSION=2026.10.01-e373342
 RUN set -eu; \
     for harness in $HARNESSES; do \
-        case "$harness" in claude-code) ;; *) echo "unknown harness $harness" >&2; exit 1 ;; esac; \
+        case "$harness" in claude-code|cursor) ;; *) echo "unknown harness $harness" >&2; exit 1 ;; esac; \
     done; \
+    mkdir -p /usr/local/share/guilds; \
+    npm install --global --no-fund --no-audit "@openai/codex@${CODEX_VERSION}"; \
+    codex --version; \
+    echo codex > /usr/local/share/guilds/harnesses; \
     case " $HARNESSES " in *" claude-code "*) \
         npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
-        claude --version ;; \
+        claude --version; \
+        echo claude-code >> /usr/local/share/guilds/harnesses ;; \
+    esac; \
+    case " $HARNESSES " in *" cursor "*) \
+        case "$(dpkg --print-architecture)" in \
+            amd64) asset=x64; sum=a79726c6e644520e993970be4c45775a6889802b67abe461a677a53219ae28e8 ;; \
+            arm64) asset=arm64; sum=785c5f6bf2a60eb1121e27ed8c14f5ee07ed1b5b6692324f2d9a997238245eb5 ;; \
+            *) echo "unsupported architecture for the Cursor CLI" >&2; exit 1 ;; \
+        esac; \
+        curl -fsSL -o /tmp/cursor.tar.gz "https://downloads.cursor.com/lab/${CURSOR_VERSION}/linux/${asset}/agent-cli-package.tar.gz"; \
+        echo "${sum}  /tmp/cursor.tar.gz" | sha256sum -c -; \
+        mkdir -p "/opt/cursor-agent/${CURSOR_VERSION}"; \
+        tar -xzf /tmp/cursor.tar.gz -C "/opt/cursor-agent/${CURSOR_VERSION}" --strip-components=1 --no-same-owner; \
+        rm /tmp/cursor.tar.gz; \
+        ln -s "/opt/cursor-agent/${CURSOR_VERSION}/cursor-agent" /usr/local/bin/agent; \
+        agent --version; \
+        echo cursor >> /usr/local/share/guilds/harnesses ;; \
     esac; \
     npm cache clean --force
 # Claude Code reads its managed settings here; no user or project file overrides them.

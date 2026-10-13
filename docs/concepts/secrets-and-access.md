@@ -141,7 +141,8 @@ The agent's commands carry that environment:
 - a coding agent's harness, started by `code_task`, and the commands
   it runs, less the variables its driver removes: for Claude Code
   `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and
-  `ANTHROPIC_BASE_URL`, which would move it from the subscription to
+  `ANTHROPIC_BASE_URL`, for Codex `CODEX_API_KEY` and
+  `OPENAI_API_KEY`, which would move it from the subscription to
   metered API billing, and `GH_TOKEN` and `GITHUB_TOKEN` for every
   harness ([Code tools](../tools-and-connectors/code.md#environment))
 - the browser tools
