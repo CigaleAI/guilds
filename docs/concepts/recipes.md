@@ -139,6 +139,15 @@ The document has none of:
 `config.harness` names a coding role's harness: `claude-code`,
 `codex`, or `cursor`. It is optional; apply asks for it.
 
+`config.harness_model` names the model that harness runs, under the
+agent configuration's rule. It is optional; without it the harness
+runs its subscription's default.
+
+`config.secret_aliases` maps variable names to secret names, under
+the agent configuration's rule
+([Secrets and access](secrets-and-access.md#aliases)). It is
+optional.
+
 `repositories` lists the git repositories the guild's coding roles
 work in, by `name` and a one-line `purpose`.
 
@@ -172,6 +181,12 @@ Harness findings are warnings, never refusals:
   subscription credential that cannot be known before apply. It names
   the fix after apply: the secret to grant, or the login to run in
   the agent's CLI tab
+- `harness_model.invalid` when `config.harness_model` is not a model
+  name; apply leaves it out
+- `harness_model.harness` when a role names a harness model and no
+  `config.harness`; apply leaves it out
+- `secret_aliases.invalid` when `config.secret_aliases` is not a map
+  of variable names to secret names; apply leaves it out
 
 Optional `connections[].resources` names confirmed long-lived external
 tables (`kind`, `id`, `title`, `url?`, `use?`).
@@ -249,7 +264,9 @@ Chromium profiles do not.
 
 `config.coding` travels.
 `config.harness` travels as it is; an agent without one leaves the key
-out.
+out. `config.harness_model` travels the same way; an agent on its
+harness's default model leaves the key out. `config.secret_aliases`
+travels the same way; an agent without an alias leaves the key out.
 The guild's repositories are captured by name with an empty
 `purpose`.
 Their URLs, branches, and GitHub connections stay with the guild.
@@ -477,7 +494,11 @@ The preview shows a harness picker per coding role, preselected with
 the role's harness. The apply request carries `harnesses`
 (`[{ role, harness }]`), and apply refuses with `choose a harness for
 …` while a coding role has none. A harness for a role without
-`coding` is refused. Only a coding role keeps a harness.
+`coding` is refused. Only a coding role keeps a harness. A role keeps
+the recipe's `harness_model` only when it applies with the harness
+the recipe names; with another harness, its model is the
+subscription's default. A role's `secret_aliases` apply as written
+when they validate; otherwise apply leaves them out.
 
 #### Preview
 

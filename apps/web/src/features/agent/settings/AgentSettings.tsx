@@ -10,6 +10,7 @@ import {
 import type { AgentDetail } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Button, TextAreaField, TextField, Banner, SkeletonRows, toast } from "@guildsrun/ui";
+import { CodingReadinessBanner } from "../CodingReadiness";
 import { MachinePicker } from "../../machines/MachinePicker";
 import { chosenMachine } from "../../machines/machines";
 import { agentHandleError, handleHint } from "../../names";
@@ -20,7 +21,6 @@ import {
   configFormOf,
   configOf,
   DiskFields,
-  harnessFieldId,
   LimitFields,
   ModelFields,
   type ConfigForm,
@@ -60,40 +60,13 @@ export function Group({ title, children }: { title: string; children: ReactNode 
   );
 }
 
-/** Brings the Harness select into view and focuses it. */
-function focusHarnessField() {
-  const field = document.getElementById(harnessFieldId);
-  field?.scrollIntoView({ block: "center", behavior: "smooth" });
-  field?.focus({ preventScroll: true });
-}
-
-/** A coding agent without a harness: native coding is gone, and its coding runs fail until one is picked. */
-function HarnessMissingNotice({ coding }: { coding: boolean }) {
-  return (
-    <Banner
-      tone="warning"
-      title="Native coding is no longer available"
-      action={
-        coding ? (
-          <Button variant="outline" size="sm" onClick={focusHarnessField}>
-            Pick a harness
-          </Button>
-        ) : undefined
-      }
-    >
-      This agent needs a harness to run with Coding on: pick Claude Code, Codex or Cursor under
-      Agent capabilities and save, or turn Coding off.
-    </Banner>
-  );
-}
-
 /**
  * How the agent looks and runs: its name, focus and mascot, what wakes it in group chat, its model
  * and reasoning, its run limits, its disk and script caps, its machine (a picker when the
  * organisation has several; a new one moves the agent there), and its capabilities (Browser,
  * Coding, CLI, scripting, Memory; Coding is greyed out on a standard machine, the browser's
  * language shows while it is on, and the harness with its credentials while Coding is). A coding
- * agent without a harness opens on a notice that leads to the Harness select.
+ * agent whose saved setup is not ready opens on a banner that lists what is missing.
  */
 export function AgentSettings() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -153,9 +126,7 @@ export function AgentSettings() {
     <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
         <div className="mx-auto flex max-w-240 flex-col gap-7">
-          {agent.data.deprecated === "coding.harness_missing" ? (
-            <HarnessMissingNotice coding={form.coding} />
-          ) : null}
+          {agent.data.config.coding ? <CodingReadinessBanner agentId={agentId} /> : null}
           <Group title="Identity">
             <TextField
               tone="surface"

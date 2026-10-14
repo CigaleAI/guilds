@@ -1,5 +1,6 @@
 import { parseModelId, providerLabel } from "../llm/providers.js";
-import { credentialFix, HARNESS_INFO, HARNESSES, isHarness } from "../coding/harnesses.js";
+import { secretAliasesOf } from "../agents/validation.js";
+import { credentialFix, HARNESS_INFO, harnessModelOf, HARNESSES, isHarness } from "../coding/harnesses.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../db/seed/catalog.js";
@@ -57,6 +58,76 @@ function finding(
   message: string,
 ): RecipeFinding {
   return { code, severity, path, message };
+}
+
+type RecipeRole = RecipeDocument["roles"][number];
+
+/** A harness the recipe names that apply cannot use, or null. */
+function harnessChoiceFinding(role: RecipeRole): RecipeFinding | null {
+  const harness = role.config.harness;
+  const path = `roles.${role.role}.config.harness`;
+  if (harness !== undefined && harness !== null && !isHarness(harness)) {
+    return finding("harness.unknown", "warning", path, `unknown harness ${String(harness)}; apply asks for one of ${HARNESSES.join(", ")}`);
+  }
+  if (isHarness(harness) && role.config.coding !== true) {
+    return finding("harness.coding", "warning", path, "config.harness is only for a coding role; apply leaves it out");
+  }
+  return null;
+}
+
+/** A coding role's harness runs on a credential nobody can know before apply. */
+function harnessCredentialFinding(role: RecipeRole): RecipeFinding {
+  const harness = role.config.harness;
+  const named = isHarness(harness);
+  const fix = named ? `after apply, ${credentialFix(harness, { cli: role.config.cli !== false })}` : "apply asks for its harness";
+  return finding(
+    "harness.credential",
+    "warning",
+    `roles.${role.role}.config.harness`,
+    `${named ? HARNESS_INFO[harness].label : "the harness"} runs on a subscription credential that is not known before apply; ${fix}`,
+  );
+}
+
+/** A harness model apply cannot use: not a model name, or on a role without a harness. */
+function harnessModelFinding(role: RecipeRole): RecipeFinding | null {
+  const model = role.config.harness_model;
+  const path = `roles.${role.role}.config.harness_model`;
+  if (model === undefined || model === null) {
+    return null;
+  }
+  if (harnessModelOf(role.config) === null) {
+    return finding("harness_model.invalid", "warning", path, "config.harness_model is not a model name; apply leaves it out");
+  }
+  if (!isHarness(role.config.harness)) {
+    return finding("harness_model.harness", "warning", path, "config.harness_model needs config.harness; apply leaves it out");
+  }
+  return null;
+}
+
+/** Secret aliases apply cannot use: not a map of variable names to secret names. */
+function secretAliasesFinding(role: RecipeRole): RecipeFinding | null {
+  const raw = role.config.secret_aliases;
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  const kept = Object.keys(secretAliasesOf(role.config)).length;
+  const given = typeof raw === "object" && !Array.isArray(raw) ? Object.keys(raw as object).length : -1;
+  if (kept === given) {
+    return null;
+  }
+  return finding(
+    "secret_aliases.invalid",
+    "warning",
+    `roles.${role.role}.config.secret_aliases`,
+    "config.secret_aliases is not a map of variable names to secret names; apply leaves it out",
+  );
+}
+
+function harnessFindings(role: RecipeRole): RecipeFinding[] {
+  const choice = harnessChoiceFinding(role);
+  const model = harnessModelFinding(role);
+  const credential = role.config.coding === true ? harnessCredentialFinding(role) : null;
+  return [choice, model, credential, secretAliasesFinding(role)].filter((item): item is RecipeFinding => item !== null);
 }
 
 export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
@@ -140,39 +211,7 @@ export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContex
         ),
       );
     }
-    const harness = role.config.harness;
-    if (harness !== undefined && harness !== null && !isHarness(harness)) {
-      findings.push(
-        finding(
-          "harness.unknown",
-          "warning",
-          `roles.${role.role}.config.harness`,
-          `unknown harness ${String(harness)}; apply asks for one of ${HARNESSES.join(", ")}`,
-        ),
-      );
-    } else if (isHarness(harness) && role.config.coding !== true) {
-      findings.push(
-        finding(
-          "harness.coding",
-          "warning",
-          `roles.${role.role}.config.harness`,
-          "config.harness is only for a coding role; apply leaves it out",
-        ),
-      );
-    }
-    if (role.config.coding === true) {
-      const fix = isHarness(harness)
-        ? `after apply, ${credentialFix(harness, { cli: role.config.cli !== false })}`
-        : "apply asks for its harness";
-      findings.push(
-        finding(
-          "harness.credential",
-          "warning",
-          `roles.${role.role}.config.harness`,
-          `${isHarness(harness) ? HARNESS_INFO[harness].label : "the harness"} runs on a subscription credential that is not known before apply; ${fix}`,
-        ),
-      );
-    }
+    findings.push(...harnessFindings(role));
     if (Boolean(role.config.browser) !== role.browser.required) {
       findings.push(
         finding(

@@ -17,6 +17,7 @@ import {
   addMissingRunLimits,
   addMissingTemperatureAndStepLimits,
   addMissingThinkingLevel,
+  secretAliasesOf,
 } from "../agents/validation.js";
 import { jsonObj } from "../db/json.js";
 import { secretGrants } from "../secrets/access.js";
@@ -80,8 +81,12 @@ export function portableRoleConfig(
     if (key === "box" || key === "cpu" || key === "memory_mib") {
       continue;
     }
-    // A role without a harness leaves the key out; apply settles it.
-    if (key === "harness" && filled.harness == null) {
+    // A role without a harness, or on its harness's default model, leaves the key out; apply settles it.
+    if ((key === "harness" || key === "harness_model") && filled[key] == null) {
+      continue;
+    }
+    // A role without secret aliases leaves the key out.
+    if (key === "secret_aliases" && !Object.keys(secretAliasesOf(filled)).length) {
       continue;
     }
     if (key in filled) {

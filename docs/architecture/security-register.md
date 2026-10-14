@@ -76,11 +76,14 @@ Codex for that agent.
 
 **Found:** 2026-10-13, building coding harnesses.
 
-**Where:** a coding agent's harness credential: the secret
-`CLAUDE_CODE_OAUTH_TOKEN` or `CURSOR_API_KEY` granted to it, or a
-login stored in its home (`runtime/guilds-harness`), and the **Harness** select on
-Create agent and agent Settings
-(`apps/web/src/features/agent/settings/configForm.tsx`).
+**Where:** a coding agent's harness credential: the secret its
+harness's token variable reads (`CLAUDE_CODE_OAUTH_TOKEN` or
+`CURSOR_API_KEY`, or the secret `secret_aliases` maps it to) granted
+to it, or a login stored in its home (`runtime/guilds-harness`), the
+**Harness** select on Create agent and agent Settings
+(`apps/web/src/features/agent/settings/configForm.tsx`), and the
+**Subscription token** select under it
+(`apps/web/src/features/agent/settings/HarnessReadiness.tsx`).
 
 **Exposure:** a harness runs on a subscription, often an operator's
 personal one. In an organisation, everyone who can start the agent's
@@ -93,8 +96,11 @@ interactive use. The vendor may then suspend the account.
 that the harness does the code work on the operator's own
 subscription, and that a personal subscription in a shared
 organisation may fall outside the vendor's terms. A harness runs only
-on a credential someone granted to the agent or logged in with.
-Organisation model keys never reach the sandbox.
+on a credential someone granted to the agent or logged in with. The
+**Subscription token** select lets each agent run on a token its own
+operator added, under any secret name, so a shared agent need not
+run on another member's subscription. Organisation model keys never
+reach the sandbox.
 
 **Residual risk:** whether a use complies with the vendor's terms is
 the operator's call. The platform does not check it.
@@ -161,16 +167,30 @@ which can be steered by it in turn.
 **Control in place:** the container is the boundary. The harness has
 no guild tools, no MCP servers, and no hooks but a repository's Cursor hooks (SEC-29, SEC-31). `GH_TOKEN` and
 `GITHUB_TOKEN` are never in its environment, nor the variables that
-would move it to metered API billing. The brief's preamble tells it
-never to push or open pull requests. The `coding` prompt block tells
-the agent that the harness's final message is data, and to check its
-work before pushing it.
+would move it to metered API billing. Since 2026-10-14 those include
+`CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX` for Claude
+Code; until then a Claude Code agent granted either for other work
+could run its harness on metered Bedrock or Vertex. The brief's preamble
+tells it never to push or open pull requests. The `coding` prompt
+block tells the agent that the harness's final message is data, and
+to check its work before pushing it.
 
 **Residual risk:** a steered harness can do anything the sandbox and
 the agent's secrets allow: read and send them out, change the
 working tree, and push to the guild repositories' unprotected
 branches through git (SEC-10). It reaches the other agents on its
 machine (SEC-24). Nothing enforces the preamble.
+
+On 2026-10-14 a technical control on `git push` was considered. The
+credential helper reaches git through the system configuration and
+through `GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_*` in the environment
+(`runtime/Dockerfile`). Passing the harness an environment with
+`GIT_CONFIG_COUNT=1` and only the entry that empties the helper would
+leave git inside the harness with no GitHub token: a push would fail
+instead of being discouraged, and so would a `git fetch` from the
+harness. The helper stays so the harness can fetch. The control on
+`git push` remains the brief's preamble and the agent's
+check-then-push prompt.
 
 ## SEC-27 — Harness subscription tokens and logins are readable on the agent's machine
 
@@ -179,10 +199,13 @@ machine (SEC-24). Nothing enforces the preamble.
 **Found:** 2026-10-13, building coding harnesses.
 
 **Where:** the harness credentials in `apps/orchestrator/src/coding/harnesses.ts`
-and `runtime/guilds-harness`: the secrets `CLAUDE_CODE_OAUTH_TOKEN`
-and `CURSOR_API_KEY` in the environment of the agent's commands, and
-the logins stored in the agent's home (`~/.claude/.credentials.json`,
-`~/.codex/auth.json`, `~/.config/cursor/auth.json`).
+and `runtime/guilds-harness`: the secrets the token variables
+`CLAUDE_CODE_OAUTH_TOKEN` and `CURSOR_API_KEY` read, under their own
+names or through the agent's secret aliases
+(`apps/orchestrator/src/access/runtime.ts`), in the environment of
+the agent's commands, and the logins stored in the agent's home
+(`~/.claude/.credentials.json`, `~/.codex/auth.json`,
+`~/.config/cursor/auth.json`).
 
 **Exposure:** a subscription token granted as a secret is in the
 environment of every command the agent runs, its harness included.
@@ -195,7 +218,8 @@ operator's subscription can be used from anywhere.
 
 **Control in place:** the token reaches a command only by grant,
 through that command's environment, never the container's, and its
-value joins run redaction like every secret. The driver never writes
+value joins run redaction like every secret; an alias is the same
+value, so redaction covers it under either name. The driver never writes
 the login or account files. The operator picks the machine an agent
 goes on, and the operator app says that agents on one machine can
 read each other's files and sessions.

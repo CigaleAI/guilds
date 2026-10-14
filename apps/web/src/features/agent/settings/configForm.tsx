@@ -13,17 +13,24 @@ import { useIdentity } from "../../../app/identity";
 import { cn, Icon, Select, Slider, TextField } from "@guildsrun/ui";
 import { chosenMachine, machineAllowsCoding } from "../../machines/machines";
 import { StandardMachineNote } from "../../machines/MachineNotes";
-import { modelLimits, modelOptions, modelProviderConnected, providerLabel } from "../../models/models";
+import {
+  modelLimits,
+  modelOptions,
+  modelProviderConnected,
+  providerLabel,
+} from "../../models/models";
 import { ModelKeysLink } from "../../settings/ModelKeysLink";
 import {
   harnessCarried,
   harnessChoices,
   harnessImageNote,
   harnessLabel,
+  harnessModelHelp,
+  harnessSubscriptionNote,
   isHarness,
   showsHarnessImageNote,
 } from "../harness";
-import { HarnessCredentials } from "./HarnessCredentials";
+import { HarnessReadiness } from "./HarnessReadiness";
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
 export const defaultAgentConfig: AgentConfig = {
   model: "",
@@ -40,6 +47,8 @@ export const defaultAgentConfig: AgentConfig = {
   browser_language: "en-US",
   coding: false,
   harness: null,
+  harness_model: null,
+  secret_aliases: {},
   scripting: true,
   memory: true,
   thinking_level: "none",
@@ -135,6 +144,10 @@ export type ConfigForm = {
   coding: boolean;
   /** The coding agent's harness; empty until one is picked. */
   harness: Harness | "";
+  /** The model the harness runs; empty for its subscription's default. */
+  harness_model: string;
+  /** Variable names the agent's commands see, each holding the value of the secret it names. */
+  secret_aliases: Record<string, string>;
   scripting: boolean;
   memory: boolean;
   max_scripts: string;
@@ -149,7 +162,8 @@ export type ConfigErrors = Partial<
     | "max_workspace_mib"
     | "model"
     | "machine"
-    | "harness",
+    | "harness"
+    | "harness_model",
     string
   >
 >;
@@ -172,6 +186,8 @@ export function configFormOf(config: AgentConfig, machineId = ""): ConfigForm {
     browser_language: config.browser_language ?? "en-US",
     coding: config.coding,
     harness: isHarness(config.harness) ? config.harness : "",
+    harness_model: config.harness_model ?? "",
+    secret_aliases: { ...config.secret_aliases },
     scripting: config.scripting !== false,
     memory: config.memory !== false,
     max_tokens: String(config.max_tokens),
@@ -188,6 +204,9 @@ function positiveInteger(text: string): boolean {
   return /^\d+$/.test(text.trim()) && Number(text) >= 1;
 }
 
+/** The server's rule for a harness model: empty for the default, else an alias or a full model name. */
+const harnessModelPattern = /^(?:[A-Za-z0-9][A-Za-z0-9._:/=,[\]-]{0,119})?$/;
+
 export function configErrors(form: ConfigForm, context: ConfigErrorContext = {}): ConfigErrors {
   const errors: ConfigErrors = {};
   for (const field of limitFields) {
@@ -199,6 +218,9 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
   if (!form.temperature.trim() || !Number.isFinite(Number(form.temperature)))
     errors.temperature = "A number.";
   if (form.coding && !form.harness) errors.harness = "Pick a harness.";
+  if (form.coding && !harnessModelPattern.test(form.harness_model.trim()))
+    errors.harness_model =
+      "Up to 120 letters, digits, and . _ : / = , [ ] -, starting with a letter or digit.";
   if (context.machines) {
     const machine = chosenMachine(context.machines, form.machine_id);
     if (!machine) errors.machine = "Choose a machine.";
@@ -213,9 +235,14 @@ export function configErrors(form: ConfigForm, context: ConfigErrorContext = {})
   return errors;
 }
 
+/** The harness model to send: only with a harness, and null for its subscription's default. */
+function harnessModelOf(form: ConfigForm): string | null {
+  return form.coding && form.harness ? form.harness_model.trim() || null : null;
+}
+
 /**
  * The config to send, without the machine; a model that does not reason gets thinking off, and
- * only a coding agent carries a harness.
+ * only a coding agent carries a harness and its model.
  */
 export function configOf(form: ConfigForm, models: OrgModels | undefined): AgentConfig {
   return {
@@ -227,6 +254,8 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     browser_language: form.browser_language,
     coding: form.coding,
     harness: form.coding && form.harness ? form.harness : null,
+    harness_model: harnessModelOf(form),
+    secret_aliases: form.secret_aliases,
     scripting: form.scripting,
     memory: form.memory,
     max_tokens: Number(form.max_tokens),
@@ -262,7 +291,9 @@ export function ModelFields({ form, onChange, errors }: FieldsProps) {
   const { org } = useIdentity();
   const models = useOrgModels(org.id);
   const { thinkingOff, temperatureOff } = modelLimits(models.data, form.model);
-  const codingConnected = models.data?.providers.some((item) => item.kind === "coding" && item.connected);
+  const codingConnected = models.data?.providers.some(
+    (item) => item.kind === "coding" && item.connected,
+  );
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Select
@@ -412,7 +443,9 @@ function CapabilityField({
         {icon ? <Icon icon={icon} size={16} /> : null}
         {label}
       </span>
-      <span className={cn("text-xs text-pretty", checked ? "opacity-80" : "text-muted")}>{hint}</span>
+      <span className={cn("text-xs text-pretty", checked ? "opacity-80" : "text-muted")}>
+        {hint}
+      </span>
     </button>
   );
 }
@@ -420,7 +453,7 @@ function CapabilityField({
 /**
  * A new agent's form with coding switched: limits still at the defaults move to the coding
  * budgets, and back when coding is switched off again. Turning coding on also turns on CLI
- * and scripting; turning it off clears the harness.
+ * and scripting; turning it off clears the harness and its model.
  */
 export function withCoding(
   form: ConfigForm,
@@ -432,7 +465,7 @@ export function withCoding(
   return {
     ...form,
     coding,
-    ...(coding ? { cli: true, scripting: true } : { harness: "" as const }),
+    ...(coding ? { cli: true, scripting: true } : { harness: "" as const, harness_model: "" }),
     ...(!coding && isCodingOnlyModel(form.model, models)
       ? { model: models?.default ?? "", thinking: "none" as ThinkingLevel }
       : {}),
@@ -445,7 +478,13 @@ export function withCoding(
 }
 
 /** Chrome's language while the browser is on. */
-function BrowserLanguageField({ form, onChange }: { form: ConfigForm; onChange: (next: ConfigForm) => void }) {
+function BrowserLanguageField({
+  form,
+  onChange,
+}: {
+  form: ConfigForm;
+  onChange: (next: ConfigForm) => void;
+}) {
   return (
     <Select
       tone="surface"
@@ -461,55 +500,127 @@ function BrowserLanguageField({ form, onChange }: { form: ConfigForm; onChange: 
 /** The agent an existing agent's settings edit, for the links and credentials they show. */
 export type SettingsAgent = { guildId: string; agentId: string };
 
-/** The Harness select's id, for notices that lead to it. */
-export const harnessFieldId = "agent-harness";
+/** The Harness model field's list of suggested names. */
+const harnessModelsListId = "agent-harness-models";
+
+/** The model the picked harness runs, with the names it suggests; empty leaves it to the subscription. */
+function HarnessModelField({
+  form,
+  harness,
+  onChange,
+  error,
+}: {
+  form: ConfigForm;
+  harness: Harness;
+  onChange: (next: ConfigForm) => void;
+  error?: string | undefined;
+}) {
+  const help = harnessModelHelp[harness];
+  return (
+    <>
+      <TextField
+        tone="surface"
+        label="Harness model"
+        placeholder="Subscription default"
+        autoComplete="off"
+        list={harnessModelsListId}
+        hint={`${help.hint} Empty uses your subscription's default.`}
+        value={form.harness_model}
+        onChange={(event) => onChange({ ...form, harness_model: event.currentTarget.value })}
+        {...(error ? { error } : {})}
+      />
+      <datalist id={harnessModelsListId}>
+        {help.suggestions.map((model) => (
+          <option key={model} value={model} />
+        ))}
+      </datalist>
+    </>
+  );
+}
 
 /**
- * The coding agent's harness, with a note that it runs on the operator's own subscription; for
- * an existing agent, the harness's credential status under it. A harness the machine's image
- * lacks is unavailable, with why.
+ * The harness select and, once one is picked, its model. A harness the machine's image lacks is
+ * unavailable, with why. Picking another harness clears the model.
+ */
+export function HarnessChoiceFields({
+  form,
+  onChange,
+  errors,
+  carried,
+}: {
+  form: ConfigForm;
+  onChange: (next: ConfigForm) => void;
+  errors: ConfigErrors;
+  carried?: readonly Harness[] | null | undefined;
+}) {
+  const pick = (value: string) =>
+    onChange({
+      ...form,
+      harness: value as Harness,
+      harness_model: value === form.harness ? form.harness_model : "",
+    });
+  return (
+    <>
+      <Select
+        tone="surface"
+        label="Harness"
+        placeholder="Choose a harness"
+        value={form.harness}
+        onValueChange={pick}
+        options={harnessChoices(carried)}
+        {...(errors.harness ? { error: errors.harness } : {})}
+      />
+      {form.harness ? (
+        <HarnessModelField
+          form={form}
+          harness={form.harness}
+          onChange={onChange}
+          error={errors.harness_model}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The coding agent's harness and the model it runs, with a note that it runs on the operator's own
+ * subscription; for an existing agent, what its code tasks still need under it.
  */
 function HarnessField({
   form,
   onChange,
-  error,
+  errors,
   agent,
   carried,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
-  error?: string | undefined;
+  errors: ConfigErrors;
   agent?: SettingsAgent | undefined;
   carried?: readonly Harness[] | null | undefined;
 }) {
   const missing = form.harness ? harnessCarried(carried, form.harness) === false : false;
   return (
     <div className="flex flex-col gap-2">
-      <Select
-        id={harnessFieldId}
-        tone="surface"
-        label="Harness"
-        placeholder="Choose a harness"
-        value={form.harness}
-        onValueChange={(value) => onChange({ ...form, harness: value as Harness })}
-        options={harnessChoices(carried)}
-        {...(error ? { error } : {})}
-      />
+      <HarnessChoiceFields form={form} onChange={onChange} errors={errors} carried={carried} />
       {missing ? (
         <p className="text-sm text-t-ochre-fg">
           This machine&apos;s image doesn&apos;t carry {harnessLabel(form.harness)}, so its code
           tasks fail. Pick another harness, or move the agent to a machine that has it.
         </p>
       ) : agent && form.harness ? (
-        <HarnessCredentials {...agent} harness={form.harness} cli={form.cli} />
+        <HarnessReadiness
+          agent={agent}
+          harness={form.harness}
+          cli={form.cli}
+          aliases={form.secret_aliases}
+          onAliasesChange={(secret_aliases) => onChange({ ...form, secret_aliases })}
+        />
       ) : null}
       {showsHarnessImageNote(carried) ? (
         <p className="text-sm text-muted">{harnessImageNote}</p>
       ) : null}
-      <p className="text-sm text-muted">
-        The harness does the code work on your own subscription. Using a personal subscription in a
-        shared organisation may fall outside the vendor&apos;s terms.
-      </p>
+      <p className="text-sm text-muted">{harnessSubscriptionNote}</p>
     </div>
   );
 }
@@ -517,7 +628,8 @@ function HarnessField({
 /**
  * Browser, Coding, CLI, scripting, and Memory. Coding is greyed out on a standard machine, with a
  * line that points to Settings → Machines; an agent that already codes there can still switch it
- * off. A coding agent picks its harness.
+ * off. A coding agent picks its harness. `codingToggle` false leaves the Coding card out, where
+ * the kind of agent was chosen before the form.
  */
 export function CapabilitiesFields({
   form,
@@ -527,6 +639,7 @@ export function CapabilitiesFields({
   machine,
   agent,
   carried,
+  codingToggle = true,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
@@ -538,11 +651,14 @@ export function CapabilitiesFields({
   agent?: SettingsAgent | undefined;
   /** The harness CLIs the machine's image carries; null or undefined while unknown. */
   carried?: readonly Harness[] | null | undefined;
+  codingToggle?: boolean;
 }) {
   const standard = machine !== undefined && !machineAllowsCoding(machine.box);
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div
+        className={cn("grid grid-cols-2 gap-2", codingToggle ? "sm:grid-cols-5" : "sm:grid-cols-4")}
+      >
         <CapabilityField
           label="Browser"
           hint="Browser tab and tools. Uses a browser slot."
@@ -550,14 +666,16 @@ export function CapabilitiesFields({
           checked={form.browser}
           onChange={(browser) => onChange({ ...form, browser })}
         />
-        <CapabilityField
-          label="Coding"
-          hint="Shell, and a harness for code work. Turns on CLI and scripting. Uses a coding slot."
-          icon={Code2}
-          checked={form.coding}
-          disabled={standard && !form.coding}
-          onChange={(coding) => onChange(withCoding(form, coding, models))}
-        />
+        {codingToggle ? (
+          <CapabilityField
+            label="Coding"
+            hint="Shell, and a harness for code work. Turns on CLI and scripting. Uses a coding slot."
+            icon={Code2}
+            checked={form.coding}
+            disabled={standard && !form.coding}
+            onChange={(coding) => onChange(withCoding(form, coding, models))}
+          />
+        ) : null}
         <CapabilityField
           label="CLI"
           hint="The CLI tab, a terminal on the machine."
@@ -580,12 +698,12 @@ export function CapabilitiesFields({
           onChange={(memory) => onChange({ ...form, memory })}
         />
       </div>
-      {standard ? <StandardMachineNote machine={machine} /> : null}
-      {form.coding ? (
+      {standard && codingToggle ? <StandardMachineNote machine={machine} /> : null}
+      {form.coding && codingToggle ? (
         <HarnessField
           form={form}
           onChange={onChange}
-          error={errors.harness}
+          errors={errors}
           agent={agent}
           carried={carried}
         />

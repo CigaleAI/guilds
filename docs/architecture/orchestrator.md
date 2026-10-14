@@ -2,7 +2,7 @@
 
 The control plane is a strict TypeScript service in
 `apps/orchestrator`. Python remains in `runtime/` for user scripts,
-browser automation, and the code tools.
+browser automation, the code tools, and the coding harness drivers.
 
 The process model and the trust boundary are [System](system.md).
 Where each module lives is the [Code map](code-map.md).
@@ -233,9 +233,10 @@ On startup reconciliation:
 1. list every active run
 2. append interruption tool results for unresolved committed tool
    calls; an unresolved `code_task` first gets `guilds-harness stop`
-   on its machine when the machine is running, and its result is
-   `interrupted`, naming the session and log from the run's
-   `metadata.harness_task`
+   on its machine when the machine is running, its state is cleared
+   once the harness has exited, and the task's end checkpoint is
+   taken; its result is `interrupted`, naming the session and log
+   from the run's `metadata.harness_task`
 3. leave direct runs active and reusable
 4. append a `generation.interrupted` run error to group and
    schedule runs
@@ -261,7 +262,10 @@ table, including `pg_trgm`. Numbered migrations follow it.
 
 Production never uses `drizzle-kit push`. Boot runs committed
 migrations before the HTTP listener becomes ready: core's, recorded
-in `public.__drizzle_migrations`, then each extension's chain.
+in `public.__drizzle_migrations`, then each extension's chain. A
+core migration the database has not recorded after that stops boot
+with `MigrationsNotApplied`, naming it
+([Development](../contributing/development.md#schema-changes)).
 An extension keeps its tables and its record in a schema of its own
 ([Extension points](extension-points.md#data)).
 
@@ -520,8 +524,14 @@ through `guilds-harness`).
 
 Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
-`coding: true`. A coding run whose snapshot has no `harness` fails at
-start with `coding.harness_missing`, before the machine is woken.
+`coding: true`. A coding generation runs its start checks in order:
+no `harness` in the snapshot fails with `harness.missing` and
+a guild without repositories with `coding.repositories_missing`, both
+before the machine is woken; once the workspace check passes,
+`guilds-harness check` fails it with `harness.not_installed`,
+`harness.credential`, or `harness.check`; then the repositories are
+prepared. All of them run before the model is called
+([Runs](../concepts/runs.md#generation)).
 `group_post` is offered when that binding is on. `secret_request`
 is offered only on direct runs. `report_issue` is always offered.
 

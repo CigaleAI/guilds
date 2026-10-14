@@ -20,7 +20,7 @@ import type {
 } from "../../api/types";
 import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
-import { harnessLabel, harnessOptions } from "../agent/harness";
+import { harnessLabel, harnessOptions, harnessSubscriptionNote } from "../agent/harness";
 import { setupSearch } from "../instance/instance";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { modelOptions } from "../models/models";
@@ -339,8 +339,8 @@ function AgentChoices({
           options={harnessOptions}
           hint={
             recommendedHarness
-              ? `The recipe names ${harnessLabel(recommendedHarness)}. It runs on your own subscription.`
-              : "It runs on your own subscription."
+              ? `The recipe names ${harnessLabel(recommendedHarness)}. ${harnessSubscriptionNote}`
+              : harnessSubscriptionNote
           }
           {...(harness ? {} : { error: "Choose a harness." })}
         />

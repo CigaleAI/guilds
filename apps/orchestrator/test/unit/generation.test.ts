@@ -25,6 +25,7 @@ import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.
 import { createGroupRouter, createTypeSafeClient } from "../../src/typesafe/index.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
+import { helperAnswer, helperRequest } from "../helpers/code-sandbox.js";
 import {
   abortableHang,
   AGENT_CONFIG,
@@ -1511,7 +1512,11 @@ describe("generation", { concurrency: 1 }, () => {
     assert.equal((tool?.metadata as Record<string, unknown>).remaining_tool_calls, 49);
   });
 
-  test("reconcile stops a code_task left running and names its session and log", async () => {
+  /** A run of a Claude Code agent with a `code_task` call left unresolved, on a running machine answering `answers`. */
+  async function lostCodeTask(
+    answers: Record<string, Record<string, unknown>>,
+    machine: { running: boolean; connect?: () => Promise<never> } = { running: true },
+  ) {
     const { loop, db } = await seededLoop();
     loop._spawn = () => undefined;
     await loop.create_run("a_1", null);
@@ -1527,7 +1532,22 @@ describe("generation", { concurrency: 1 }, () => {
       },
     };
     const sandboxes = loop.sandboxes as unknown as FakeSandboxes;
-    sandboxes.running.add("mach_1");
+    if (machine.running) {
+      sandboxes.running.add("mach_1");
+    }
+    if (machine.connect) {
+      sandboxes.connectRunning = machine.connect;
+    }
+    const requests: Array<Record<string, unknown>> = [];
+    sandboxes.commands = {
+      run: async (command: string) => {
+        const request = helperRequest(command);
+        if (request !== null) {
+          requests.push(request);
+        }
+        return helperAnswer(answers[String(request?.op)] ?? {});
+      },
+    };
     db.messages.push({
       seq: 3,
       payload: {
@@ -1540,16 +1560,65 @@ describe("generation", { concurrency: 1 }, () => {
     });
     await loop.reconcile();
     const tool = db.messages[db.messages.length - 1];
-    const content = String((tool?.payload as Record<string, unknown>).content);
-    assert.match(content, /^interrupted · claude-code · app · session s_9\n/);
+    return {
+      content: String((tool?.payload as Record<string, unknown>).content),
+      metadata: tool?.metadata as Record<string, unknown>,
+      ops: requests.map((request) => `${String(request.op)}${request.which ? `:${String(request.which)}` : ""}`),
+      requests,
+    };
+  }
+
+  test("reconcile stops a code_task left running, clears its state, and takes its end checkpoint", async () => {
+    const { content, metadata, ops, requests } = await lostCodeTask({
+      stop: { missing: false, exited: true, session_id: "s_9" },
+      result: { missing: false, exited: true, session_id: "s_10" },
+      checkpoint: { repositories: [{ name: "app", start_sha: "a".repeat(40), end_sha: "b".repeat(40) }] },
+    });
+    assert.deepEqual(ops, ["stop", "result", "checkpoint:end"], "result clears the call's state");
+    assert.ok(requests.every((request) => request.call_id === "call_task"));
+    assert.deepEqual(requests[2]?.repositories, ["app"]);
+    assert.equal(requests[2]?.task, "call_task");
+    assert.match(content, /^interrupted · claude-code · app · session s_10\n/);
+    assert.ok(content.includes("The harness was stopped before it finished"));
     assert.ok(content.includes("refs/guild/runs/"));
     assert.ok(content.includes("log: .runs/r/call_task.harness.jsonl"));
-    const metadata = tool?.metadata as Record<string, unknown>;
     assert.equal(metadata.status, "interrupted");
-    assert.equal(metadata.session_id, "s_9");
+    assert.equal(metadata.session_id, "s_10");
+    assert.equal(metadata.repository, "app");
+    assert.equal(metadata.start_sha, "a".repeat(40));
+    assert.equal(metadata.end_sha, "b".repeat(40), "the task diff is available");
     assert.equal(metadata.error, "execution interrupted");
-    const commands = (sandboxes.commands as FakeCommands).commands;
-    assert.ok(commands.some((command) => command.includes("/usr/local/bin/guilds-harness")), "the harness gets stop");
+  });
+
+  test("reconcile says when the harness did not stop, and reads no result from it", async () => {
+    const { content, metadata, ops } = await lostCodeTask({
+      stop: { missing: false, exited: false },
+      checkpoint: { repositories: [{ name: "app", start_sha: "a".repeat(40), end_sha: "b".repeat(40) }] },
+    });
+    assert.deepEqual(ops, ["stop", "checkpoint:end"]);
+    assert.ok(content.includes("the harness did not stop: it may still be running"), content);
+    assert.equal(metadata.session_id, "s_9", "the session the run remembered");
+  });
+
+  test("reconcile has nothing to stop on a machine that is not running", async () => {
+    const { content, metadata, ops } = await lostCodeTask({}, { running: false });
+    assert.deepEqual(ops, []);
+    assert.ok(content.includes("The harness was stopped before it finished"));
+    assert.equal(metadata.end_sha, null);
+  });
+
+  test("reconcile that cannot reach the machine says the harness may still be running", async () => {
+    const { content, ops } = await lostCodeTask(
+      {},
+      {
+        running: true,
+        connect: async () => {
+          throw new Error("the sandbox provider is down");
+        },
+      },
+    );
+    assert.deepEqual(ops, []);
+    assert.ok(content.includes("the harness did not stop: it may still be running"), content);
   });
 
   test("hard_cancel_during_settlement_resolves_each_call_once", async () => {

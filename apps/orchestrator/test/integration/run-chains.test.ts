@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
@@ -11,7 +13,7 @@ import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
-import { HostCodeSandbox } from "../helpers/code-sandbox.js";
+import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
@@ -70,6 +72,13 @@ test("a coding run near its input limit hands off and continues in a new run", {
   await connectModelProvider(repo, "org_home", "openrouter");
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const sandbox = new HostCodeSandbox();
+  // The harness is ready, and the guild's repository is already in the home: nothing is cloned.
+  mkdirSync(path.join(sandbox.home, "repos", "shop"), { recursive: true });
+  answerOps(sandbox, {
+    check: { installed: true, version: "9.9.9 (stub)", credential: "secret" },
+    git_setup: { failed: [] },
+    checkpoint: { repositories: [] },
+  });
   const sandboxes = new FakeSandboxes();
   sandboxes.ensure = (async (agentId: string) => {
     sandboxes.running.add(agentId);
@@ -107,6 +116,13 @@ test("a coding run near its input limit hands off and continues in a new run", {
     thinking_level: "none",
   };
   await codeDefaultMachine(app, headers);
+  const added = await app.inject({
+    method: "POST",
+    url: `/api/guilds/${String(guild.json().id)}/repositories`,
+    headers,
+    payload: { name: "shop", url: "https://git.example.com/team/shop.git" },
+  });
+  assert.equal(added.statusCode, 201, added.body);
   const agent = await app.inject({
     method: "POST",
     url: `/api/guilds/${String(guild.json().id)}/agents`,

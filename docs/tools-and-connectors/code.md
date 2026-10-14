@@ -109,12 +109,19 @@ seconds.
 coding CLI that runs headless in the agent's sandbox, against one of
 the guild's repositories, on the operator's own subscription. One
 call is one harness turn. It is offered when the run snapshot has
-`coding: true`. A coding run whose snapshot has no `harness` fails at
-start with `coding.harness_missing`
-([Guilds and agents](../concepts/guilds-and-agents.md#configuration-and-appearance)).
+`coding: true`. Every generation of a coding run checks, before the
+model is called, that code tasks can run
+([Runs](../concepts/runs.md#generation)). A snapshot without
+`harness` fails it with `harness.missing`
+([Guilds and agents](../concepts/guilds-and-agents.md#configuration-and-appearance)),
+a guild without repositories with `coding.repositories_missing`, and
+a harness the image lacks or that has no credential with
+`harness.not_installed` or `harness.credential`
+([Credentials and errors](#credentials-and-errors)).
 
 `harness` takes `claude-code`, `codex`, or `cursor`. Each has a
-driver in `guilds-harness` ([Drivers](#drivers)).
+driver in `guilds-harness` ([Drivers](#drivers)). `harness_model`
+picks the model it runs ([Model](#model)).
 
 | Argument | Meaning |
 | --- | --- |
@@ -129,10 +136,13 @@ A call runs these steps:
 1. **Repository.** `repo`, else the guild's only repository. A guild
    without repositories, an unknown name, or a missing `repo` with
    several repositories is an error naming the guild's repositories.
-   A session resumes in the repository it started in.
+   With `session_id`, the agent passes the repository the session
+   started in; the orchestrator does not check the pair
+   ([Sessions](#sessions)).
 2. **Check.** `guilds-harness check` reports whether the CLI is in
-   the image, its version, and the credential it would run on. A CLI
-   missing from the image, or no credential, is an error
+   the image, its version, and the credential it would run on, as at
+   the generation's start. A CLI missing from the image, or no
+   credential, is an error
    ([Credentials and errors](#credentials-and-errors)).
 3. **Brief.** A fixed preamble, then the brief under `# Task`, then
    each note under `# <display path>`. The preamble says the harness
@@ -147,17 +157,23 @@ A call runs these steps:
    `refs/guild/runs/<run id>/tasks/<call id>/start`, through
    `guilds-code checkpoint` with `task`
    ([Runs](../concepts/runs.md#repositories)).
-5. **Start.** `guilds-harness start` writes the brief to
+5. **Start.** A generation cancelled before this step never starts
+   the harness. `guilds-harness start` writes the brief to
    `.runs/<run id>/<call id>.prompt.md` in the home (mode 0600),
-   starts the harness detached ([Process](#process)), and returns at
-   once. The brief reaches the CLI on stdin, never on its command
-   line.
+   starts the harness detached ([Process](#process)) on the run's
+   harness model ([Model](#model)), and returns at once. The brief
+   reaches the CLI on stdin, never on its command line.
 6. **Poll** every 3 seconds until the CLI exits, publishing its
    progress ([Progress](#progress)).
-7. **Result.** `guilds-harness result` reads the final message, the
-   session id, and how the turn ended from the log, then removes the
-   prompt file and the call's state.
-8. **End checkpoint** at `…/tasks/<call id>/end`, with the diffstat
+7. **Stop.** Once `start` has been sent, every way out of the call
+   sends `stop`: a cancel, a timeout, three failed polls, or an
+   error. The two exceptions are a poll that saw the CLI exit and a
+   poll that found the call's state gone.
+8. **Result.** Once the CLI has exited, by itself or after `stop`,
+   `guilds-harness result` reads the final message, the session id,
+   and how the turn ended from the log, then removes the 0600 prompt
+   file and the call's state files.
+9. **End checkpoint** at `…/tasks/<call id>/end`, with the diffstat
    since the start and the changed files, at most 30.
 
 Result text:
@@ -173,6 +189,10 @@ Result text:
 log: .runs/<run id>/<call id>.harness.jsonl
 ```
 
+The `log:` path is in the run's folder under `.runs/` in the agent's
+home. `.runs/` keeps the folders of the agent's 20 most recent runs,
+so the log of an older run is gone.
+
 The final message gives way so the whole result fits
 `CODE_RESULT_MAX_BYTES`. The cut keeps its end, where questions and
 summaries are, and says how many bytes it removed from the start.
@@ -184,8 +204,15 @@ and the `remaining_tool_calls` trailer.
 | `completed` | The CLI exited 0 and its turn did not end in error | none |
 | `failed` | The CLI exited otherwise, or its turn ended in error | A driver that parses none of the CLI's output says so with the CLI's version. A CLI that printed no event (one refusing to start without a login) gives the last 5 lines of its stderr. Otherwise the harness's error, else its stderr, else its exit code |
 | `timed_out` | `timeout_minutes` passed; the harness got `stop` | `Stopped after N minutes. Resume the session to continue.` |
-| `cancelled` | The generation was cancelled; the harness got `stop` | `Stopped: the generation was cancelled.` |
-| `interrupted` | The call's state is gone, or three polls in a row failed | The machine restarted or its container was recreated |
+| `cancelled` | The generation was cancelled; a started harness got `stop` | `Stopped: the generation was cancelled.`, or that it was cancelled before the harness started |
+| `interrupted` | Three polls in a row failed; the harness got `stop` | `The harness stopped answering, so it was stopped. Resume the session to continue.` |
+| `interrupted` | A poll found the call's state gone | The harness's state is gone: the machine restarted or its container was recreated |
+| `interrupted` | The CLI exited and `result` could not be read | The harness exited, and its result could not be read |
+
+When `stop` reports that the harness did not exit, the detail says
+the harness did not stop, may still be running, and names its log.
+The call's state then stays under `/run/guilds/<agent id>/harness/`
+until the container goes.
 
 A question from the harness is not a status. It is the final
 message, and the agent answers it by resuming the session.
@@ -200,7 +227,7 @@ up to 300.
 
 | Op | Does |
 | --- | --- |
-| `check` | Whether the harness's CLI is installed, its version, and its credential (`secret`, `login`, or none) |
+| `check` | Whether the harness's CLI is installed, its version, its credential (`secret`, `login`, or none), and with a login its `account`: whose it is, when the home says |
 | `start` | Forks a supervisor in its own session and returns. The supervisor starts the CLI in its own process group in `repos/<repo>`, appends the CLI's raw events to the log, waits for it, and records its exit code |
 | `poll` | The progress lines after a byte offset into the log, the new offset, the session id once the harness has reported one, and whether the CLI has exited |
 | `result` | The final message, the session id, the exit code, whether the turn ended in error, and the tail of the CLI's stderr |
@@ -208,8 +235,8 @@ up to 300.
 
 A call's state is under `/run/guilds/<agent id>/harness/` (mode 0700),
 which goes with the container: `<call id>.json` (what was started),
-`.pid` (the CLI's process group), `.exit`, `.session`, `.stderr`, and
-`.stopped`. `result` removes them once the CLI has exited.
+`.pid` (the CLI's process group), `.exit`, `.session`, and `.stderr`.
+`result` removes them and the prompt file once the CLI has exited.
 
 The raw event log, `.runs/<run id>/<call id>.harness.jsonl` in the
 agent's home, is stored unredacted like a `shell` log, under the same
@@ -220,7 +247,7 @@ runs. Reading it back with `file_read` passes through redaction.
 
 The harness gets the environment of every command the orchestrator
 runs for the agent: `HOME`, `GUILDS_AGENT_HOME`, `PORT`,
-`GUILDS_PORTS`, and the agent's secrets
+`GUILDS_PORTS`, the agent's secrets, and its secret aliases
 ([Runs](../concepts/runs.md#sandbox)). It also gets `PAGER=cat`,
 `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
 `DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and
@@ -272,6 +299,11 @@ id, in Memory or a note. A resumed session whose state is gone fails
 with the harness's error, and the agent starts a new session with a
 full brief.
 
+The agent is trusted to pass a `session_id` together with the
+repository the session started in. The orchestrator keeps no session
+registry and does not check that the session belongs to `repo`: the
+harness owns its session state.
+
 ### Lifecycle
 
 - `code_task` blocks the generation for the length of the harness
@@ -282,49 +314,90 @@ full brief.
   time.
 - Before the start and each poll, a GitHub token within 10 minutes
   of expiry is replaced, as before a `shell` command.
+- Once `start` has been sent, every way out of the call stops the
+  harness, unless it exited by itself or its state is gone
+  ([`code_task`](#code-task)).
 - An orchestrator restart cuts the generation short. On startup, each
   `code_task` left unresolved in an active run gets `stop` on its
-  machine when the machine is running, then an `interrupted` result
-  naming its session id and log when known. A harness never keeps
-  running with nobody polling it.
+  machine when the machine is running. Once the harness has exited,
+  its state is cleared. The task's end checkpoint is taken in its
+  repository, so the task diff is available. Its result is
+  `interrupted`, naming its session id and log when known. When the
+  harness did not stop, the result says it may still be running.
 - A machine restart or container recreation ends the harness with
   everything else in the container. The next poll finds no state and
   the call ends `interrupted`, with the session id when known.
 - After an interruption, the working tree holds whatever the harness
   wrote, and the task's start checkpoint stays in the repository.
   The agent can resume the session to finish the work.
+- Checkpoint refs are never deleted. A run writes two,
+  `refs/guild/runs/<run id>/start` and `…/end`, and each `code_task`
+  call two more under `…/tasks/<call id>/`. Each ref keeps its
+  commits from `git gc`, so their objects count toward the agent's
+  `max_workspace_mib`.
 
 ### Credentials and errors
 
 The harness runs on the operator's subscription, first found wins:
 
-| Harness | Secret granted to the agent | Login in the agent's CLI tab |
+| Harness | Token variable in the agent's environment | Login in the agent's CLI tab |
 | --- | --- | --- |
 | Claude Code | `CLAUDE_CODE_OAUTH_TOKEN`, a long-lived token from `claude setup-token` | `claude`, then `/login`, stored in `~/.claude/.credentials.json` in the home |
 | Codex | none | `codex login --device-auth`, a ChatGPT login stored in `~/.codex/auth.json`. An `auth.json` holding only an API key is no credential |
 | Cursor | `CURSOR_API_KEY` | `NO_OPEN_BROWSER=1 agent login`, stored in `~/.config/cursor/auth.json` |
 
-A token reaches the harness as every granted secret reaches a
-command: in its environment. A login persists in the agent's home.
-When a call runs on a login, the agent's `harness_logins` records
-when it was last seen, which Settings shows
+The token variable reads the secret of its own name granted to the
+agent, or the secret the agent's `secret_aliases` map it to
+([Secrets and access](../concepts/secrets-and-access.md#aliases)):
+`{ "CLAUDE_CODE_OAUTH_TOKEN": "TEAM_TOKEN" }` runs Claude Code on
+the secret `TEAM_TOKEN`. So each agent runs on its operator's own
+token while secret names stay unique in the organisation. A token
+reaches the harness as every granted secret reaches a command: in
+its environment. A login persists in the agent's home. Organisation
+model keys never enter the sandbox.
+
+`guilds-harness check` runs at every generation start of a coding
+run, before each call, and from Settings. A check that finds a login
+records the time and the login's account in the agent's
+`harness_logins`, per harness as `{ seen_at, account }`; one that
+finds no credential at all removes the harness's entry. Each driver
+reads the account from the home: Claude Code from
+`oauthAccount.emailAddress` in `~/.claude.json`, Codex from the
+`email` claim of `tokens.id_token` in its `auth.json`, decoded
+without checking its signature, and Cursor from `email` in its
+`auth.json`; null when the file does not say. The chat's coding
+strip names it ([Operator app](../concepts/operator-app.md#agent));
+Settings shows when the login was last seen
 ([Guilds and agents](../concepts/guilds-and-agents.md#configuration-and-appearance)).
-Organisation model keys never enter the sandbox.
+The check from Settings, **Check login**
+(`POST /api/agents/:id/harness/check`), runs outside any run and
+without the agent's secrets, so it finds a login or nothing, and
+toasts whose login it found.
 
-A call with no credential is an error naming the fix: the secret to
-grant, or the login to run in the CLI tab. An agent with `cli` off has
-no CLI tab, and only the secret is offered: Codex, which has no
-secret, cannot run for it.
+In Settings, a harness with a token variable offers a **Subscription
+token** select: by default the variable's own secret, or a login
+when none reaches the agent; else any other secret reaching the
+agent, written as the alias. **Add a token** creates a secret
+granted to this agent alone and picks it
+([Operator app](../concepts/operator-app.md#agent)). The create
+dialog's Harness step offers the same select over the secrets
+reaching the guild, or a token to paste, saved as a secret granted
+to the new agent alone once it exists
+([Operator app](../concepts/operator-app.md#sidebar)).
 
-A CLI missing from the image is an error naming it. The runtime
-image always installs Codex, pinned by `CODEX_VERSION`. Claude Code
-(`CLAUDE_CODE_VERSION`) and the Cursor CLI (`CURSOR_VERSION`, a
-release tarball checksum-verified per architecture) are proprietary:
-they are installed when the build argument `HARNESSES` names them
-(default `claude-code cursor`). The published image is built with
-`HARNESSES` empty, as it is built with Chromium, so Codex is its one
-harness ([Operate](../getting-started/operate.md)). The image lists
-the harness CLIs it carries in `/usr/local/share/guilds/harnesses`.
+No credential is an error naming the fix: the secret to grant, with
+the variable it is read as when an alias names another secret
+(`grant the secret TEAM_TOKEN (read as CLAUDE_CODE_OAUTH_TOKEN) to
+the agent`), or the login to run in the CLI tab. At a generation's
+start it is the run error `harness.credential`. An agent with `cli`
+off has no CLI tab, and only the secret is offered: Codex, which has
+no secret, cannot run for it.
+
+A CLI missing from the image is an error naming it and the fix:
+rebuild the image for Codex, or build it with `HARNESSES` naming the
+harness ([Harnesses in the image](#harnesses-in-the-image)). At a
+generation's start it is the run error `harness.not_installed`, and
+a check that fails to run is `harness.check`.
 
 A driver that parses none of its CLI's output fails the call with
 the CLI's version.
@@ -332,17 +405,54 @@ the CLI's version.
 Harness calls record no usage or cost: the subscription bills
 nothing per call.
 
+### Model
+
+The agent's `harness_model` is the model the harness runs, or null
+for the default of its subscription
+([Guilds and agents](../concepts/guilds-and-agents.md#configuration-and-appearance)).
+It is written to the run snapshot and stays fixed for the run.
+
+`start` passes it as `model`. `guilds-harness` checks it against the
+same rule as the configuration (`model is invalid` otherwise), and
+the driver adds `--model <model>` to the CLI's command line, as one
+argument ([Drivers](#drivers)). Without a model, no flag is passed.
+A model the subscription does not offer fails the turn with the
+harness's error.
+
+### Harnesses in the image
+
+The runtime image always installs Codex, pinned by `CODEX_VERSION`.
+Claude Code (`CLAUDE_CODE_VERSION`) and the Cursor CLI
+(`CURSOR_VERSION`, a release tarball checksum-verified per
+architecture) are proprietary. They are installed when the build
+argument `HARNESSES` names them. Its default, `claude-code cursor`,
+installs both, so `./setup.sh` builds an image with all three.
+
+The published image is built with `HARNESSES` empty, as it is built
+with Chromium, so Codex is its one harness. A coding agent on Claude
+Code or Cursor needs an image built with its harness. To build an
+image with Codex alone:
+
+```text
+docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
+```
+
+The image lists the harness CLIs it carries in
+`/usr/local/share/guilds/harnesses`. The orchestrator reads that list
+when it creates a machine's container. Settings marks a harness the
+machine's image lacks as unavailable.
+
 ### Drivers
 
 A driver turns a call into a command line, and the CLI's event log
 into progress lines and a result. Each one is pinned to the CLI
 version the image installs.
 
-| Harness | Command | Resume | Prompt | Driver environment |
-| --- | --- | --- | --- | --- |
-| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--resume <session id>` | stdin | Sets `IS_SANDBOX=1` (commands run as root, and Claude Code bypasses permissions as root only with it), `DISABLE_AUTOUPDATER=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` |
-| Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `codex exec resume … <thread id> -` | stdin (`-`) | Removes `CODEX_API_KEY`, `OPENAI_API_KEY` |
-| Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--resume=<chat id>` | the prompt file, named on its command line | none |
+| Harness | Command | Model | Resume | Prompt | Driver environment |
+| --- | --- | --- | --- | --- | --- |
+| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, before `--resume` | `--resume <session id>` | stdin | Sets `IS_SANDBOX=1` (commands run as root, and Claude Code bypasses permissions as root only with it), `DISABLE_AUTOUPDATER=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` |
+| Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>` after the managed flags, before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) | Removes `CODEX_API_KEY`, `OPENAI_API_KEY` |
+| Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <model>`, before `--resume` | `--resume=<chat id>` | the prompt file, named on its command line | none |
 
 The Cursor CLI reads no prompt on stdin, so its command line names the
 prompt file in the agent's home; the prompt itself never appears on a

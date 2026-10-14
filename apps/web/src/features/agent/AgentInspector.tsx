@@ -12,7 +12,6 @@ import {
   Settings,
   SquareTerminal,
   Trash2,
-  TriangleAlert,
   Unlink,
   Wrench,
   X,
@@ -43,6 +42,8 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { BrowserLoginStrip } from "./BrowserLoginStrip";
+import { CodingNotReadyButton } from "./CodingReadiness";
+import { CodingStrip } from "./CodingStrip";
 import { ChatSessionChrome } from "./chat/SessionChrome";
 import { capabilityOn } from "./settings/configForm";
 
@@ -126,20 +127,8 @@ export function AgentInspector() {
                       }
                     />
                   ) : null}
-                  {agent.data.deprecated === "coding.harness_missing" ? (
-                    <IconButton
-                      icon={TriangleAlert}
-                      label="Native coding is no longer available: pick a harness in Settings"
-                      title="Native coding is no longer available: pick a harness in Settings"
-                      variant="surface"
-                      className="text-t-ochre-fg"
-                      onClick={() =>
-                        void navigate({
-                          to: "/guilds/$guildId/agents/$agentId/settings",
-                          params: { guildId, agentId },
-                        })
-                      }
-                    />
+                  {agent.data.config.coding ? (
+                    <CodingNotReadyButton guildId={guildId} agentId={agentId} />
                   ) : null}
                   {wide ? (
                     <IconButton
@@ -188,6 +177,9 @@ export function AgentInspector() {
               </TabsNav>
               {onChat ? <ChatSessionChrome /> : null}
             </div>
+            {onChat && agent.data.config.coding ? (
+              <CodingStrip guildId={guildId} agentId={agentId} />
+            ) : null}
             {agent.data.config.browser ? (
               <BrowserLoginStrip guildId={guildId} agentId={agentId} />
             ) : null}

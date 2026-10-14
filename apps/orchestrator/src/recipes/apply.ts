@@ -15,12 +15,13 @@ import {
   addMissingTemperatureAndStepLimits,
   addMissingThinkingLevel,
   maxScriptsOf,
+  secretAliasesOf,
   validateAgentName,
 } from "../agents/validation.js";
 import { coreModelCredentials } from "../llm/credentials.js";
 import { ModelsService } from "../llm/models.js";
 import { parseModelId } from "../llm/providers.js";
-import { HARNESSES, isHarness, type Harness } from "../coding/harnesses.js";
+import { HARNESSES, harnessModelOf, harnessOf, isHarness, type Harness } from "../coding/harnesses.js";
 import { operatorActor } from "../artifacts/grants.js";
 import {
   ArtifactError,
@@ -1603,17 +1604,23 @@ function roleModelMap(models: RoleModel[]): Map<string, string> {
   return new Map(models.flatMap((item) => (item.model ? [[item.role, item.model] as const] : [])));
 }
 
+/** The recipe's harness model, kept only while the role applies with the harness the recipe names. */
+function appliedHarnessModel(roleConfig: Record<string, unknown>, applied: Harness | null): string | null {
+  return applied !== null && applied === harnessOf(roleConfig) ? harnessModelOf(roleConfig) : null;
+}
+
 /**
  * The agent config a role applies as: the role's, with the model and harness the operator chose
  * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
- * harness. The machine the agent goes on is the apply's.
+ * harness, and the recipe's harness model only with the recipe's harness. The machine the agent
+ * goes on is the apply's.
  */
 export function configFromRecipeRole(role: RecipeRole, model?: string, harness?: Harness): Record<string, unknown> {
   const roleConfig = { ...role.config };
   const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
   const chosen = model ?? recommended;
   const coding = roleConfig.coding === true;
-  const recipeHarness = isHarness(roleConfig.harness) ? roleConfig.harness : null;
+  const applied = coding ? (harness ?? harnessOf(roleConfig)) : null;
   return addMissingFlags(
     addMissingCliScriptingAndMemory(
       addMissingThinkingLevel(
@@ -1624,7 +1631,9 @@ export function configFromRecipeRole(role: RecipeRole, model?: string, harness?:
               model: chosen,
               browser: Boolean(role.browser.required || roleConfig.browser),
               coding,
-              harness: coding ? (harness ?? recipeHarness) : null,
+              harness: applied,
+              harness_model: appliedHarnessModel(roleConfig, applied),
+              secret_aliases: secretAliasesOf(roleConfig),
             }),
           ),
         ),

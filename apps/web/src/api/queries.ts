@@ -84,6 +84,8 @@ import type {
   AccessEdit,
   AccessEditResult,
   AgentHarness,
+  Harness,
+  HarnessCheck,
   ApplyChoices,
   ApplyPreview,
   ApplyRow,
@@ -257,6 +259,19 @@ export function useAgentHarness(agentId: string) {
     queryKey: keys.agentHarness(agentId),
     staleTime: 0,
     queryFn: () => api<AgentHarness>(`/api/agents/${encodeURIComponent(agentId)}/harness`),
+  });
+}
+
+/** Checks the agent's machine for a harness's login, waking the machine; the credentials then re-read. */
+export function useCheckHarness(agentId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (harness: Harness) =>
+      api<HarnessCheck>(`/api/agents/${encodeURIComponent(agentId)}/harness/check`, {
+        method: "POST",
+        body: { harness },
+      }),
+    onSettled: () => void client.invalidateQueries({ queryKey: keys.agentHarness(agentId) }),
   });
 }
 

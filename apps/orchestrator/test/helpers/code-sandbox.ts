@@ -99,3 +99,37 @@ export class HostCodeSandbox {
     });
   }
 }
+
+/** The request a helper command carries inline, or null for one sent through a file or no helper at all. */
+export function helperRequest(command: string): Record<string, unknown> | null {
+  const match = /guilds-(?:code|harness) ([A-Za-z0-9+/=]+)$/.exec(command.trim());
+  return match ? (JSON.parse(Buffer.from(match[1]!, "base64").toString("utf8")) as Record<string, unknown>) : null;
+}
+
+/** A helper's answer, as the sandbox returns it: an `ok` envelope holding `meta`. */
+export function helperAnswer(meta: Record<string, unknown>, text = "") {
+  const envelope = Buffer.from(JSON.stringify({ ok: true, text, meta }), "utf8").toString("base64");
+  return { exit_code: 0, logs: { stdout: [{ text: envelope }], stderr: [] } };
+}
+
+/**
+ * Answers the ops `answers` names with its envelope, and runs every other command on `sandbox`;
+ * returns the requests answered, in order.
+ */
+export function answerOps(
+  sandbox: HostCodeSandbox,
+  answers: Record<string, Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const answered: Array<Record<string, unknown>> = [];
+  const run = sandbox.commands.run;
+  sandbox.commands.run = async (command, opts) => {
+    const request = helperRequest(command);
+    const meta = request ? answers[String(request.op)] : undefined;
+    if (request === null || meta === undefined) {
+      return run(command, opts);
+    }
+    answered.push(request);
+    return helperAnswer(meta);
+  };
+  return answered;
+}

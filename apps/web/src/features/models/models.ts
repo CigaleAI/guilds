@@ -16,18 +16,32 @@ export function modelOptions(
   }
   const groups: SelectOptionGroup[] = models.providers
     .filter((provider) => provider.connected)
-    .filter((provider) => provider.kind !== "coding" || (options.coding && !options.marketplaceOnly))
+    .filter(
+      (provider) => provider.kind !== "coding" || (options.coding && !options.marketplaceOnly),
+    )
     .map((provider) => ({
       label: provider.label,
       options: models.models
         .filter((model) => model.provider === provider.id)
-        .map((model): SelectOption => ({ value: model.id, label: model.label, description: model.id })),
+        .map((model): SelectOption => ({
+          value: model.id,
+          label: model.label,
+          description: model.id,
+        })),
     }))
     .filter((group) => group.options.length > 0);
-  if (current && !groups.some((group) => group.options.some((option) => option.value === current))) {
+  if (
+    current &&
+    !groups.some((group) => group.options.some((option) => option.value === current))
+  ) {
     groups.unshift({ label: "Not offered", options: [{ value: current, label: current }] });
   }
   return groups;
+}
+
+/** A model's label as the organisation's catalog shows it; its id when the catalog does not list it. */
+export function modelLabel(models: OrgModels | undefined, modelId: string): string {
+  return models?.models.find((model) => model.id === modelId)?.label ?? modelId;
 }
 
 /** The organisation's default when the picker may list it, else nothing. */
@@ -55,13 +69,21 @@ export function providerOf(modelId: string): string {
 }
 
 /** Whether the model's provider is connected, or null while the organisation's models still load. */
-export function modelProviderConnected(models: OrgModels | undefined, modelId: string): boolean | null {
+export function modelProviderConnected(
+  models: OrgModels | undefined,
+  modelId: string,
+): boolean | null {
   if (!models) return null;
-  return models.providers.some((provider) => provider.id === providerOf(modelId) && provider.connected);
+  return models.providers.some(
+    (provider) => provider.id === providerOf(modelId) && provider.connected,
+  );
 }
 
 export function providerLabel(models: OrgModels | undefined, modelId: string): string {
-  return models?.providers.find((provider) => provider.id === providerOf(modelId))?.label ?? providerOf(modelId);
+  return (
+    models?.providers.find((provider) => provider.id === providerOf(modelId))?.label ??
+    providerOf(modelId)
+  );
 }
 
 /** The three steps of the organisation's model setup, each done or not, as the setup gate shows them. */
@@ -81,17 +103,26 @@ export function setupProgress(models: OrgModels | undefined): SetupStep[] {
 export type ProviderMeta = { blurb: string; keyURL: string | null; urlPlaceholder?: string };
 
 export const PROVIDER_META: Record<ModelProvider, ProviderMeta> = {
-  openai: { blurb: "GPT models, straight from OpenAI.", keyURL: "https://platform.openai.com/api-keys" },
+  openai: {
+    blurb: "GPT models, straight from OpenAI.",
+    keyURL: "https://platform.openai.com/api-keys",
+  },
   openrouter: {
     blurb: "Hundreds of models behind one key, Claude and Gemini included.",
     keyURL: "https://openrouter.ai/settings/keys",
   },
   xai: { blurb: "Grok models from xAI.", keyURL: "https://console.x.ai/" },
-  deepinfra: { blurb: "Open-weight models, priced low.", keyURL: "https://deepinfra.com/dash/api_keys" },
+  deepinfra: {
+    blurb: "Open-weight models, priced low.",
+    keyURL: "https://deepinfra.com/dash/api_keys",
+  },
   local: {
     blurb: "Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run.",
     keyURL: null,
     urlPlaceholder: "http://127.0.0.1:11434/v1",
   },
-  kimi: { blurb: "Kimi models on a Kimi Code plan, for coding agents.", keyURL: "https://www.kimi.com/code" },
+  kimi: {
+    blurb: "Kimi models on a Kimi Code plan, for coding agents.",
+    keyURL: "https://www.kimi.com/code",
+  },
 };

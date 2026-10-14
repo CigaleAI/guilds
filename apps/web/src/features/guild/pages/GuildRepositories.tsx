@@ -1,17 +1,12 @@
 import { Plus, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { useAddGuildRepository, useGuildRepositories, useRemoveGuildRepository } from "../../../api/queries";
-import type { Guild, GuildRepository } from "../../../api/types";
 import {
-  Button,
-  IconButton,
-  TextField,
-  Banner,
-  Select,
-  toast,
-  Icon,
-  Tag,
-} from "@guildsrun/ui";
+  useAddGuildRepository,
+  useGuildRepositories,
+  useRemoveGuildRepository,
+} from "../../../api/queries";
+import type { Guild, GuildRepository } from "../../../api/types";
+import { Button, IconButton, TextField, Banner, Select, toast, Icon, Tag } from "@guildsrun/ui";
 import { isGithubUrl, NO_LOGIN, repositoryLogin, repositoryNamePattern } from "../repositories";
 
 type Draft = { name: string; url: string; branch: string; login: string };
@@ -37,13 +32,15 @@ function loginLabel(repository: GuildRepository): ReactNode {
  * Extra git URLs this guild's coding agents clone, besides the repositories picked on a GitHub
  * login (Tools → GitHub).
  */
-export function GuildRepositories({ guild }: { guild: Guild }) {
+export function GuildRepositories({ guild }: { guild: Pick<Guild, "id"> }) {
   const listed = useGuildRepositories(guild.id);
   const add = useAddGuildRepository(guild.id);
   const remove = useRemoveGuildRepository(guild.id);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const repositories = listed.data?.repositories ?? [];
-  const logins = (listed.data?.github_connections ?? []).filter((login) => login.status === "connected");
+  const logins = (listed.data?.github_connections ?? []).filter(
+    (login) => login.status === "connected",
+  );
   const github = isGithubUrl(draft.url);
   const login = repositoryLogin(draft.url, draft.login, logins);
 
@@ -70,15 +67,15 @@ export function GuildRepositories({ guild }: { guild: Guild }) {
   };
 
   return (
-    <section aria-label="Repositories" className="flex flex-col gap-3">
+    <section id="repositories" aria-label="Repositories" className="flex flex-col gap-3">
       <h3 className="type-label text-muted">Repositories</h3>
       <p className="text-sm text-fg-2">
         Extra git URLs each coding agent of this guild clones into{" "}
         <span className="font-mono text-xs">repos/&lt;name&gt;</span> in its home,{" "}
-        <span className="font-mono text-xs">/home/&lt;agent id&gt;</span>, at its next run.
-        Pick GitHub repositories on the GitHub integration (Tools), at this guild or an agent, or
-        add one here with a GitHub login. One without a login is cloned anonymously, which only a
-        public repository allows.
+        <span className="font-mono text-xs">/home/&lt;agent id&gt;</span>, at its next run. Pick
+        GitHub repositories on the GitHub integration (Tools), at this guild or an agent, or add one
+        here with a GitHub login. One without a login is cloned anonymously, which only a public
+        repository allows.
       </p>
       {repositories.length ? (
         <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
@@ -175,7 +172,9 @@ export function GuildRepositories({ guild }: { guild: Guild }) {
           <Button
             type="button"
             variant="outline"
-            disabled={add.isPending || !draft.name.trim() || !draft.url.trim() || Boolean(nameError)}
+            disabled={
+              add.isPending || !draft.name.trim() || !draft.url.trim() || Boolean(nameError)
+            }
             onClick={submit}
           >
             <Icon icon={Plus} size={14} />

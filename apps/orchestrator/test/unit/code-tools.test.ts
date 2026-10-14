@@ -21,14 +21,44 @@ import {
 } from "../../src/toolbox/code.js";
 import { REGISTRY } from "../../src/toolbox/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
-import { HostCodeSandbox } from "../helpers/code-sandbox.js";
+import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
-import { AGENT_CONFIG, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
+import { AGENT_CONFIG, FakeDB, FakeSandboxes, liveSecret, makeLoop } from "../helpers/generation.js";
 
 const live = generationLive;
 /** A coding agent's config: coding on, with a harness. */
 const CODER = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
 const originalStream = live.streamCompletion;
+/** What `guilds-harness check` answers for Claude Code installed and running on a granted token. */
+const HARNESS_READY = { installed: true, version: "9.9.9 (stub)", credential: "secret" };
+
+type RepoDB = FakeDB & { listGuildRepositories(guildId: string): Promise<Array<Record<string, unknown>>> };
+
+/** A FakeDB whose guild has the repositories named, each at `url`. */
+function withRepositories<T extends FakeDB>(db: T, names: string[], url = "file:///nowhere.git"): T & RepoDB {
+  const repos = db as T & RepoDB;
+  repos.listGuildRepositories = async () =>
+    names.map((name, index) => ({
+      id: `repo_${index + 1}`,
+      guild_id: "guild_1",
+      name,
+      url,
+      default_branch: "main",
+      connection_id: null,
+    }));
+  return repos;
+}
+
+/**
+ * A sandbox on this machine whose harness check finds Claude Code ready and, unless `clones`,
+ * whose repository setup and checkpoints answer without cloning.
+ */
+function readySandbox(options: { clones?: boolean } = {}): HostCodeSandbox {
+  const sandbox = new HostCodeSandbox();
+  const skipped = options.clones ? {} : { git_setup: { failed: [] }, checkpoint: { repositories: [] } };
+  answerOps(sandbox, { check: HARNESS_READY, ...skipped });
+  return sandbox;
+}
 
 function ctxFor(sandbox: HostCodeSandbox, runId = "r_code") {
   return createToolContext({
@@ -243,6 +273,23 @@ test("coding offers code_task and the code tools; without it they are refused na
   const snapshot = configSnapshot({ ...AGENT_CONFIG, coding: true, harness: "codex" }, { tools: [], secrets: [] });
   assert.equal(snapshot.coding, true);
   assert.equal(snapshot.harness, "codex");
+  assert.equal(snapshot.harness_model, null, "the subscription's default");
+  const pinned = configSnapshot(
+    { ...AGENT_CONFIG, coding: true, harness: "claude-code", harness_model: "opus" },
+    { tools: [], secrets: [] },
+  );
+  assert.equal(pinned.harness_model, "opus");
+  assert.deepEqual(snapshot.secret_aliases, {});
+  const aliased = configSnapshot(
+    { ...AGENT_CONFIG, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" } },
+    { tools: [], secrets: [] },
+  );
+  assert.deepEqual(aliased.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
+  assert.deepEqual(
+    configSnapshot({ ...AGENT_CONFIG, secret_aliases: { SAME: "SAME" } }, { tools: [], secrets: [] }).secret_aliases,
+    {},
+    "aliases that do not validate are left out",
+  );
   const names = (snapshot.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
   assert.ok(names.includes("shell"));
   assert.ok(names.includes("code_task"));
@@ -308,10 +355,10 @@ describe("coding runs in the generation loop", () => {
   }
 
   test("a repeated read of an unchanged range becomes a pointer; a change brings content back", async () => {
-    const sandbox = new HostCodeSandbox();
+    const sandbox = readySandbox();
     mkdirSync(path.join(sandbox.home, "repo"));
     writeFileSync(path.join(sandbox.home, "repo/a.txt"), "one\ntwo\nthree\n");
-    const db = new FakeDB(codingSnapshot());
+    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]);
     db.agent.config = { ...CODER };
     const read = (id: string) => ({ id, function: { name: "file_read", arguments: '{"path":"repo/a.txt"}' } });
     live.streamCompletion = scripted(db, [
@@ -335,9 +382,11 @@ describe("coding runs in the generation loop", () => {
   });
 
   test("a coding generation records the workspace size and stops at start when it is over the limit", async () => {
-    const sandbox = new HostCodeSandbox();
+    const sandbox = readySandbox();
     const sizes: number[] = [];
-    const db = new FakeDB(codingSnapshot()) as FakeDB & { setAgentWorkspaceMib(id: string, mib: number): Promise<void> };
+    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]) as RepoDB & {
+      setAgentWorkspaceMib(id: string, mib: number): Promise<void>;
+    };
     db.setAgentWorkspaceMib = async (_id, mib) => {
       sizes.push(mib);
     };
@@ -369,9 +418,11 @@ describe("coding runs in the generation loop", () => {
   });
 
   test("a generation uses the agent's max_workspace_mib when it is below the host cap", async () => {
-    const sandbox = new HostCodeSandbox();
+    const sandbox = readySandbox();
     writeFileSync(path.join(sandbox.home, "blob"), Buffer.alloc(3 * 1024 * 1024));
-    const db = new FakeDB(codingSnapshot()) as FakeDB & { setAgentWorkspaceMib(id: string, mib: number): Promise<void> };
+    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]) as RepoDB & {
+      setAgentWorkspaceMib(id: string, mib: number): Promise<void>;
+    };
     db.setAgentWorkspaceMib = async () => {};
     db.agent.config = { ...CODER, max_workspace_mib: 2 };
     db.agent.workspace_mib = 50;
@@ -396,13 +447,85 @@ describe("coding runs in the generation loop", () => {
     assert.equal(db.llm_histories.length, 0);
     assert.equal(machines.length, 0, "the machine is not woken");
     const errors = db.run.errors as Array<Record<string, unknown>>;
-    assert.equal(errors.at(-1)?.operation, "coding.harness_missing");
-    assert.match(String(errors.at(-1)?.message), /pick a harness \(Claude Code, Codex, or Cursor\) in the agent's Settings/);
+    assert.equal(errors.at(-1)?.operation, "harness.missing");
+    assert.match(String(errors.at(-1)?.message), /no harness is picked: choose Claude Code, Codex, or Cursor in the agent's Settings/);
 
     const plain = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [] }));
     live.streamCompletion = scripted(plain, []) as typeof live.streamCompletion;
     await makeLoop(plain, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
     assert.equal(plain.llm_histories.length, 1);
+  });
+
+  test("a secret alias reaches the run's commands with the value of the secret it names", async () => {
+    const sandbox = readySandbox();
+    const aliases = { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" };
+    const config = { ...CODER, secret_aliases: aliases };
+    const db = withRepositories(new FakeDB(configSnapshot(config, { tools: [], secrets: [] })), ["shop", "admin"]);
+    db.agent.config = { ...config };
+    db.secrets = [liveSecret("BOB_TOKEN")];
+    live.streamCompletion = scripted(db, [
+      [
+        {
+          id: "c1",
+          function: {
+            name: "shell",
+            arguments: JSON.stringify({
+              command: '[ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ "$CLAUDE_CODE_OAUTH_TOKEN" = "$BOB_TOKEN" ] && echo same',
+            }),
+          },
+        },
+      ],
+    ]) as typeof live.streamCompletion;
+    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    const tool = db.messages.find((row) => (row.payload as Record<string, unknown>).role === "tool");
+    assert.match(String((tool?.payload as Record<string, unknown>).content), /^same\n/);
+  });
+
+  test("a coding run in a guild without repositories fails at start, naming where to add one", async () => {
+    const sandbox = readySandbox();
+    const db = new FakeDB(codingSnapshot());
+    db.agent.config = { ...CODER };
+    live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
+    const { sandboxes, machines } = codingSandboxes(sandbox);
+    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes)._generate("r_1", 1);
+    assert.equal(db.llm_histories.length, 0);
+    assert.equal(machines.length, 0, "the machine is not woken");
+    const errors = db.run.errors as Array<Record<string, unknown>>;
+    assert.equal(errors.at(-1)?.operation, "coding.repositories_missing");
+    assert.match(String(errors.at(-1)?.message), /add one in the guild's Repositories/);
+  });
+
+  test("a coding run whose harness has no credential fails at start, before the model, and forgets the login", async () => {
+    const sandbox = new HostCodeSandbox();
+    answerOps(sandbox, { check: { installed: true, version: "9.9.9", credential: null } });
+    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]) as RepoDB & {
+      clearHarnessLogin(agentId: string, harness: string): Promise<void>;
+    };
+    const cleared: string[] = [];
+    db.clearHarnessLogin = async (_agentId, harness) => {
+      cleared.push(harness);
+    };
+    db.agent.config = { ...CODER };
+    live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
+    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    assert.equal(db.llm_histories.length, 0);
+    const errors = db.run.errors as Array<Record<string, unknown>>;
+    assert.equal(errors.at(-1)?.operation, "harness.credential");
+    assert.match(String(errors.at(-1)?.message), /Claude Code has no credential: grant the secret CLAUDE_CODE_OAUTH_TOKEN/);
+    assert.deepEqual(cleared, ["claude-code"]);
+  });
+
+  test("a coding run whose harness is not in the machine's image fails at start, naming the image to build", async () => {
+    const sandbox = new HostCodeSandbox();
+    answerOps(sandbox, { check: { installed: false, version: null, credential: null } });
+    const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]);
+    db.agent.config = { ...CODER };
+    live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
+    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    assert.equal(db.llm_histories.length, 0);
+    const errors = db.run.errors as Array<Record<string, unknown>>;
+    assert.equal(errors.at(-1)?.operation, "harness.not_installed");
+    assert.match(String(errors.at(-1)?.message), /build the runtime image with HARNESSES naming claude-code/);
   });
 
   test("a machine's row keeps the harness CLIs its container carries, written when they change", async () => {
@@ -502,14 +625,9 @@ describe("repositories in a coding generation", () => {
   }
 
   function setup(url: string) {
-    const sandbox = new HostCodeSandbox();
-    const db = new FakeDB(configSnapshot(CODER, { tools: [], secrets: [] })) as FakeDB & {
-      listGuildRepositories(guildId: string): Promise<Array<Record<string, unknown>>>;
-    };
+    const sandbox = readySandbox({ clones: true });
+    const db = withRepositories(new FakeDB(configSnapshot(CODER, { tools: [], secrets: [] })), ["shop"], url);
     db.agent.config = { ...CODER };
-    db.listGuildRepositories = async () => [
-      { id: "repo_1", guild_id: "guild_1", name: "shop", url, default_branch: "main", connection_id: null },
-    ];
     const sandboxes = new FakeSandboxes();
     sandboxes.ensure = (async (machine: MachineSpec) => {
       sandboxes.running.add(machine.id);

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  assertHarnessChosen,
+  assertCodingHarness,
+  secretAliasesOf,
   AgentValidationError,
   addMissingFlags,
   CONFIG_KEYS,
@@ -241,12 +242,24 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 17);
+  assert.equal(CONFIG_KEYS.size, 19);
   assert.throws(() => validateConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateConfig({ model }), false);
-  assert.deepEqual(addMissingFlags({}), { browser: false, coding: false, harness: null });
-  assert.deepEqual(addMissingFlags({ coding: true }), { coding: true, browser: false, harness: null });
+  assert.deepEqual(addMissingFlags({}), {
+    browser: false,
+    coding: false,
+    harness: null,
+    harness_model: null,
+    secret_aliases: {},
+  });
+  assert.deepEqual(addMissingFlags({ coding: true }), {
+    coding: true,
+    browser: false,
+    harness: null,
+    harness_model: null,
+    secret_aliases: {},
+  });
 });
 
 test("harness is one of the coding harnesses, and only a coding agent has one", () => {
@@ -257,17 +270,49 @@ test("harness is one of the coding harnesses, and only a coding agent has one", 
   assert.throws(() => validateConfig({ model, coding: false, harness: "cursor" }), /only for coding agents/);
 });
 
-test("a coding agent needs a harness on create and when coding or harness changes", () => {
+test("harness_model is a model name for a set harness; blank or missing leaves the subscription's default", () => {
+  const model = VALID_CONFIG.model;
+  const coder = { model, coding: true, harness: "claude-code" };
+  assert.equal(validateConfig(coder).harness_model, null);
+  assert.equal(validateConfig({ ...coder, harness_model: "  " }).harness_model, null);
+  assert.equal(validateConfig({ ...coder, harness_model: " opus " }).harness_model, "opus");
+  assert.equal(
+    validateConfig({ ...coder, harness_model: "claude-opus-4-8[context=1m,effort=high]" }).harness_model,
+    "claude-opus-4-8[context=1m,effort=high]",
+  );
+  assert.throws(() => validateConfig({ ...coder, harness_model: "--dangerous" }), /harness_model must be a model name/);
+  assert.throws(() => validateConfig({ ...coder, harness_model: "opus; rm -rf /" }), /harness_model must be a model name/);
+  assert.throws(() => validateConfig({ ...coder, harness_model: 4 }), /harness_model must be a model name/);
+  assert.throws(() => validateConfig({ ...coder, harness_model: "x".repeat(121) }), /harness_model must be a model name/);
+  assert.throws(() => validateConfig({ model, harness_model: "opus" }), /harness_model needs a harness/);
+});
+
+test("secret_aliases maps variable names to other secrets' names, at most 32 of them", () => {
+  const model = VALID_CONFIG.model;
+  assert.deepEqual(validateConfig({ model }).secret_aliases, {});
+  const aliased = validateConfig({ model, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN", GH_PAT: "BOB_GH" } });
+  assert.deepEqual(aliased.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN", GH_PAT: "BOB_GH" });
+  assert.throws(() => validateConfig({ model, secret_aliases: [] }), /must be an object/);
+  assert.throws(() => validateConfig({ model, secret_aliases: "x" }), /must be an object/);
+  assert.throws(() => validateConfig({ model, secret_aliases: { "1BAD": "X" } }), /variable names to secret names/);
+  assert.throws(() => validateConfig({ model, secret_aliases: { GOOD: "not a name" } }), /variable names to secret names/);
+  assert.throws(() => validateConfig({ model, secret_aliases: { GOOD: 4 } }), /variable names to secret names/);
+  assert.throws(() => validateConfig({ model, secret_aliases: { SAME: "SAME" } }), /SAME must name another secret/);
+  const many = Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`A${i}`, `S${i}`]));
+  assert.throws(() => validateConfig({ model, secret_aliases: many }), /at most 32 entries/);
+  assert.deepEqual(secretAliasesOf({ secret_aliases: { A: "B" } }), { A: "B" });
+  assert.deepEqual(secretAliasesOf({ secret_aliases: { A: "A" } }), {}, "a map that does not validate reads as none");
+  assert.deepEqual(secretAliasesOf({}), {});
+  assert.deepEqual(secretAliasesOf(null), {});
+});
+
+test("a coding agent needs a harness to save; a stored one without it still validates", () => {
   const model = VALID_CONFIG.model;
   const unharnessed = validateConfig({ model, coding: true });
-  assert.throws(() => assertHarnessChosen(unharnessed, null), /coding agents need a harness/);
-  assert.throws(() => assertHarnessChosen(unharnessed, { coding: false, harness: null }), /need a harness/);
-  assert.throws(() => assertHarnessChosen(unharnessed, { coding: true, harness: "codex" }), /need a harness/);
-  // A stored coding agent without a harness can still save its other settings.
-  assert.doesNotThrow(() => assertHarnessChosen(unharnessed, { coding: true, harness: null }));
-  assert.doesNotThrow(() => assertHarnessChosen(unharnessed, { coding: true }));
-  assert.doesNotThrow(() => assertHarnessChosen(validateConfig({ model, coding: true, harness: "cursor" }), null));
-  assert.doesNotThrow(() => assertHarnessChosen(validateConfig({ model }), null));
+  assert.equal(unharnessed.harness, null);
+  assert.throws(() => assertCodingHarness(unharnessed), /coding agents need a harness: claude-code, codex, cursor/);
+  assert.doesNotThrow(() => assertCodingHarness(validateConfig({ model, coding: true, harness: "cursor" })));
+  assert.doesNotThrow(() => assertCodingHarness(validateConfig({ model })));
 });
 
 test("config defaults missing run limits", () => {

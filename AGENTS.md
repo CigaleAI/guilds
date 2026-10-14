@@ -9,6 +9,7 @@
 - Code and docs must exclusively describe the current state of the project ("what is"). 
 - Do not treat documentation as specifications, to-do lists, or conversation history. Keep files clean, authorittive, and strictly descriptive of the active implementation.
 - The only exception is `docs/architecture/security-register.md`: it records security issues that were fixed or are still open, with their history. Add an entry for every security issue found, update its status when it is fixed, and never remove one.
+- Refer to `docs/contributing/code-guidelines.md` for more details on the code guidelines.
 
 ## 3. Do not care about backward compatibility
 - If some changes aren't backward compatible, you should flag it and let the operator choose how to handle this.

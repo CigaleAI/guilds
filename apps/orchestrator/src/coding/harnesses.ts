@@ -50,23 +50,60 @@ export function harnessOf(config: Record<string, unknown> | null | undefined): H
   return isHarness(config?.harness) ? config.harness : null;
 }
 
-/** What a coding agent without a harness carries, and what its coding runs fail with. */
-export const HARNESS_MISSING = "coding.harness_missing";
+/**
+ * A harness model name: an alias or a full model name, with the bracketed parameters some
+ * harnesses take (`claude-opus-4-8[context=1m]`). The driver passes it as one argument.
+ */
+export const HARNESS_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/=,[\]-]{0,119}$/;
 
-export const HARNESS_MISSING_MESSAGE =
-  "native coding is no longer available: pick a harness (Claude Code, Codex, or Cursor) in the agent's Settings, then start a new session";
+/** The model the agent's harness runs; null leaves it to the harness's subscription. */
+export function harnessModelOf(config: Record<string, unknown> | null | undefined): string | null {
+  const model = config?.harness_model;
+  return typeof model === "string" && HARNESS_MODEL_RE.test(model) ? model : null;
+}
 
-/** Whether this config is a coding agent without a harness. */
-export function harnessMissing(config: Record<string, unknown> | null | undefined): boolean {
-  return config?.coding === true && harnessOf(config) === null;
+/** A coding run whose guild has no repository fails at start with this. */
+export const REPOSITORIES_MISSING = "coding.repositories_missing";
+
+export const REPOSITORIES_MISSING_MESSAGE =
+  "this guild has no repositories: add one in the guild's Repositories, then send again";
+
+/** What `agents.harness_logins` records per harness: when a check last found a login, and whose it is. */
+export type HarnessLogin = { seen_at: string | null; account: string | null };
+
+/** The login record for a harness as stored, or none. */
+export function harnessLoginOf(logins: Record<string, unknown> | null | undefined, harness: Harness): HarnessLogin {
+  const stored = logins?.[harness];
+  if (typeof stored !== "object" || stored === null) {
+    return { seen_at: null, account: null };
+  }
+  const record = stored as Record<string, unknown>;
+  return {
+    seen_at: typeof record.seen_at === "string" ? record.seen_at : null,
+    account: typeof record.account === "string" ? record.account : null,
+  };
+}
+
+/**
+ * The secret the harness's token variable reads: the one the agent's aliases map it to, else the
+ * variable's own name; null for a harness without a secret.
+ */
+export function harnessSecretSource(harness: Harness, aliases: Record<string, string>): string | null {
+  const secret = HARNESS_INFO[harness].secret;
+  return secret === null ? null : (aliases[secret] ?? secret);
 }
 
 /** How a credential problem names its fix: the secret to grant, or the login to run. */
-export function credentialFix(harness: Harness, options: { cli: boolean }): string {
+export function credentialFix(
+  harness: Harness,
+  options: { cli: boolean; aliases?: Record<string, string> },
+): string {
   const info = HARNESS_INFO[harness];
   const ways: string[] = [];
-  if (info.secret) {
-    ways.push(`grant the secret ${info.secret} to the agent`);
+  const source = harnessSecretSource(harness, options.aliases ?? {});
+  if (source !== null) {
+    const as = source === info.secret ? "" : ` (read as ${info.secret})`;
+    ways.push(`grant the secret ${source}${as} to the agent`);
   }
   if (options.cli) {
     ways.push(`log in from the agent's CLI tab with \`${info.login}\``);

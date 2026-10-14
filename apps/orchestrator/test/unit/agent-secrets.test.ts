@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { applySecretAliases } from "../../src/access/runtime.js";
 import { offeredToolNames } from "../../src/generation/index.js";
 import { SecretNameTaken } from "../../src/db/errors.js";
 import {
@@ -253,4 +254,12 @@ test("the generation's secret store removes the value file and resyncs the agent
   assert.equal(existsSync(file), false);
   assert.equal(secrets.rows[0]?.name, "ACME_KEY");
   assert.deepEqual(sandboxes.destroyed, [], "a secret reaches commands, never the container");
+});
+
+test("applySecretAliases sets each alias to its secret's value, wins over a same-named secret, and skips a missing one", () => {
+  const env = { BOB_TOKEN: "bob", CLAUDE_CODE_OAUTH_TOKEN: "shared", OTHER: "o" };
+  const aliased = applySecretAliases(env, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN", GH_PAT: "MISSING" });
+  assert.deepEqual(aliased, { BOB_TOKEN: "bob", CLAUDE_CODE_OAUTH_TOKEN: "bob", OTHER: "o" });
+  assert.deepEqual(env.CLAUDE_CODE_OAUTH_TOKEN, "shared", "the input is not changed");
+  assert.deepEqual(applySecretAliases(env, {}), env);
 });

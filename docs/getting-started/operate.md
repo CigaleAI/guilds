@@ -29,18 +29,18 @@ the image with:
 docker build --build-arg BROWSER=chromium --tag agent-runtime:0.4 runtime/
 ```
 
-The image always installs Codex, a coding harness behind `code_task`.
-It installs Claude Code and the Cursor CLI when the `HARNESSES` build
-argument names them (`claude-code cursor`, its default). Both are
-proprietary: the published image is built with `HARNESSES` empty, so
-Codex is its one harness, and coding agents on Claude Code or Cursor
-need an image built with them
-([Code tools](../tools-and-connectors/code.md#credentials-and-errors)).
-To build without them:
+A coding harness is the coding tool an agent hands its code work
+to. The image you build carries three: Codex, Claude Code, and the
+Cursor CLI. To build it with Codex as its one harness, run:
 
 ```text
 docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
 ```
+
+A coding run of an agent on Claude Code or Cursor then fails at
+start with an error that names its missing harness.
+[Code tools](../tools-and-connectors/code.md#harnesses-in-the-image)
+explains which harnesses an image carries.
 
 ## Where the state lives
 

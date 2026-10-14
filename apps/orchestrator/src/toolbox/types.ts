@@ -160,6 +160,10 @@ export type ToolContext = {
   before_command: (() => Promise<void>) | null;
   /** The run's coding harness, from its snapshot; null without one. */
   harness: Harness | null;
+  /** The model the run's harness runs, from its snapshot; null for its subscription's default. */
+  harness_model: string | null;
+  /** The run's secret aliases, from its snapshot: which secret each aliased variable reads. */
+  secret_aliases: Record<string, string>;
   /** The guild repositories a coding run works on, by their folder under `repos/`. */
   code_repositories: string[];
   /** Whether the agent has a CLI tab, where a harness login runs. */
@@ -170,8 +174,10 @@ export type ToolContext = {
     | null;
   /** Keeps the running harness call with its run, so a restart can stop it and name its session. */
   remember_harness_task: ((task: Record<string, unknown>) => Promise<void>) | null;
-  /** Records that the harness found a login in the agent's home. */
-  harness_login_seen: ((harness: Harness) => Promise<void>) | null;
+  /** Records that the harness found a login in the agent's home, and whose it is when known. */
+  harness_login_seen: ((harness: Harness, account: string | null) => Promise<void>) | null;
+  /** Records that the harness found no credential at all, so no login is left in the agent's home. */
+  harness_login_lost: ((harness: Harness) => Promise<void>) | null;
 };
 
 export function createToolContext(
@@ -210,11 +216,14 @@ export function createToolContext(
     code_default_cwd: "",
     before_command: null,
     harness: null,
+    harness_model: null,
+    secret_aliases: {},
     code_repositories: [],
     cli: true,
     publish_progress: null,
     remember_harness_task: null,
     harness_login_seen: null,
+    harness_login_lost: null,
     ...partial,
   };
 }

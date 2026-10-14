@@ -52,6 +52,38 @@ function stderrOf(execution: { logs?: { stderr?: Array<{ text?: string }> } }): 
   return (execution.logs?.stderr ?? []).map((message) => message.text ?? "").join("\n").trim();
 }
 
+/** The command that runs `helper` on `request`: inline, or through a request file when it is too large. */
+async function helperCommand(ctx: ToolContext, helper: string, request: Record<string, unknown>): Promise<string> {
+  const json = JSON.stringify(request);
+  const encoded = Buffer.from(json, "utf8").toString("base64");
+  if (encoded.length <= INLINE_REQUEST_MAX) {
+    return `python3 ${helper} ${encoded}`;
+  }
+  const files = ctx.sandbox?.files;
+  if (!files) {
+    throw new Error("request is too large for this sandbox");
+  }
+  const requestPath = `${CODE_REQUEST_DIR}/${ctx.run_id}-${String(request.call_id)}.json`;
+  await files.writeFiles([{ path: requestPath, data: json }]);
+  return `python3 ${helper} @${requestPath}`;
+}
+
+/** The helper's result from its envelope; throws with its error text, or with stderr when it printed no envelope. */
+function helperResult(execution: Parameters<typeof stdoutOf>[0] & Parameters<typeof stderrOf>[0]): CodeResult {
+  let envelope: ReturnType<typeof decodeEnvelope>;
+  try {
+    envelope = decodeEnvelope(stdoutOf(execution));
+  } catch {
+    const detail = stderrOf(execution).split("\n").slice(-5).join("\n");
+    throw new Error(`code helper failed${detail ? `: ${detail}` : ""}`);
+  }
+  if (!envelope.ok) {
+    throw new Error(envelope.error || "code helper failed");
+  }
+  const meta = envelope.meta && typeof envelope.meta === "object" && !Array.isArray(envelope.meta) ? envelope.meta : {};
+  return { text: typeof envelope.text === "string" ? envelope.text : "", meta: meta as Record<string, unknown> };
+}
+
 /**
  * Runs one op of a sandbox helper (`guilds-code` unless `helper` names another). The request
  * travels base64 on the command line, or through the sandbox file API when it is too large
@@ -64,50 +96,22 @@ export async function runCodeHelper(
   args: Record<string, unknown>,
   options: { timeoutSeconds?: number; maxBytes?: number; helper?: string } = {},
 ): Promise<CodeResult> {
-  const helper = options.helper ?? CODE_HELPER;
-  const callId = callSegment(ctx.tool_call_id || `${op}_${Date.now()}`);
   const request = {
     ...args,
     op,
     run_id: ctx.run_id,
     agent_id: ctx.agent_id,
-    call_id: callId,
+    call_id: callSegment(ctx.tool_call_id || `${op}_${Date.now()}`),
     default_cwd: ctx.code_default_cwd,
     max_bytes: options.maxBytes ?? codeResultMaxBytes(),
   };
-  const json = JSON.stringify(request);
-  const encoded = Buffer.from(json, "utf8").toString("base64");
-  let command: string;
-  if (encoded.length <= INLINE_REQUEST_MAX) {
-    command = `python3 ${helper} ${encoded}`;
-  } else {
-    const files = ctx.sandbox?.files;
-    if (!files) {
-      throw new Error("request is too large for this sandbox");
-    }
-    const requestPath = `${CODE_REQUEST_DIR}/${ctx.run_id}-${callId}.json`;
-    await files.writeFiles([{ path: requestPath, data: json }]);
-    command = `python3 ${helper} @${requestPath}`;
-  }
+  const command = await helperCommand(ctx, options.helper ?? CODE_HELPER, request);
   const execution = await executeCommand(ctx, command, {
     timeoutSeconds: options.timeoutSeconds ?? CODE_HELPER_TIMEOUT_SECONDS,
   });
-  let envelope: ReturnType<typeof decodeEnvelope>;
-  try {
-    envelope = decodeEnvelope(stdoutOf(execution));
-  } catch {
-    const detail = stderrOf(execution).split("\n").slice(-5).join("\n");
-    throw new Error(`code helper failed${detail ? `: ${detail}` : ""}`);
-  }
-  if (!envelope.ok) {
-    throw new Error(envelope.error || "code helper failed");
-  }
-  const meta =
-    envelope.meta && typeof envelope.meta === "object" && !Array.isArray(envelope.meta)
-      ? (envelope.meta as Record<string, unknown>)
-      : {};
-  ctx.tool_metadata = meta;
-  return { text: typeof envelope.text === "string" ? envelope.text : "", meta };
+  const result = helperResult(execution);
+  ctx.tool_metadata = result.meta;
+  return result;
 }
 
 function tool(

@@ -1,0 +1,92 @@
+import assert from "node:assert/strict";
+import { after, test } from "node:test";
+import { buildApp } from "../../src/app.js";
+import { decodeMasterKey } from "../../src/config/index.js";
+import { connect } from "../../src/db/client.js";
+import { Repositories } from "../../src/db/repositories.js";
+import type { GenerationLoop } from "../../src/generation/index.js";
+import { McpPool } from "../../src/mcp/index.js";
+import { ArtifactStore } from "../../src/artifacts/index.js";
+import { NotesStore } from "../../src/notes/store.js";
+import { Scripts } from "../../src/scripts/catalog.js";
+import { Schedules } from "../../src/schedules/service.js";
+import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
+import { templatesRoot } from "../helpers/fixtures.js";
+import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+
+const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
+const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
+const dbName = uniqueDbName("agent_platform_task_diff");
+
+after(async () => {
+  await dropIsolatedDatabase(dbName);
+});
+
+test("a code_task's diff is read from its own checkpoints, and a call without them has none", { timeout: 60_000 }, async () => {
+  const databaseUrl = await createIsolatedDatabase(dbName);
+  const env = testEnv(databaseUrl);
+  Object.assign(process.env, env);
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const database = await connect(databaseUrl);
+  const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
+  await notes.ensureSystemPrompt();
+  const repo = new Repositories(database.pool);
+  const diffs: Array<[string, string, string | null]> = [];
+  // Only what the routes reach: the group-chat feed they observe, and the diff read from the machine.
+  const generation = {
+    group_chat: { observe: () => undefined },
+    async runDiff(runId: string, repository: string, task: string | null = null) {
+      diffs.push([runId, repository, task]);
+      return { diff: "+print('hello, guild')\n", truncated: false };
+    },
+  } as unknown as GenerationLoop;
+  const app = await buildApp(database, {
+    repo,
+    notes,
+    artifacts: new ArtifactStore(database.pool, notes.templates),
+    scripts: new Scripts(repo),
+    schedules: new Schedules(repo, notes),
+    masterKey: decodeMasterKey(HEX_MASTER_KEY),
+    mcp: new McpPool(),
+    generation,
+  });
+  try {
+    const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "diff-desk" } });
+    assert.equal(guild.statusCode, 201, guild.body);
+    const now = new Date();
+    await repo.insertAgent("a_diff", String(guild.json().id), "coder", { model: "openrouter/openai/gpt-5.6-luna" }, now);
+    await repo.createRun("r_diff", "a_diff", {}, "sys", "task", null, now, {
+      systemPromptHash: "s",
+      taskPromptHash: "t",
+      memoryPromptHash: "m",
+    });
+    const result = (callId: string, metadata: Record<string, unknown>, seq: number) =>
+      repo.insertMessage(
+        "r_diff",
+        seq,
+        { role: "tool", tool_call_id: callId, content: "done" },
+        { tool_call_id: callId, ...metadata },
+        now,
+      );
+    await result("call_done", { tool_name: "code_task", repository: "app", end_sha: "b".repeat(40) }, 1);
+    await result("call_lost", { tool_name: "code_task", repository: "app", end_sha: null }, 2);
+    await result("call_read", { tool_name: "file_read" }, 3);
+    const diff = (callId: string) =>
+      app.inject({ method: "GET", url: `/api/runs/r_diff/tasks/${callId}/diff`, headers: AUTH });
+
+    const done = await diff("call_done");
+    assert.equal(done.statusCode, 200, done.body);
+    assert.deepEqual(done.json(), { repository: "app", diff: "+print('hello, guild')\n", truncated: false });
+    assert.deepEqual(diffs, [["r_diff", "app", "call_done"]]);
+
+    for (const callId of ["call_lost", "call_read", "call_missing"]) {
+      const none = await diff(callId);
+      assert.equal(none.statusCode, 404, callId);
+      assert.match(none.body, /that call has no task diff/);
+    }
+    assert.equal(diffs.length, 1, "the machine is never woken for a call without a diff");
+  } finally {
+    await app.close();
+    await database.close();
+  }
+});

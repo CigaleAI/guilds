@@ -48,11 +48,12 @@ An agent's environment is:
 - the secrets granted to its guild
 - the secrets granted to it
 
-Those resolve in one query. There are no secret bindings, switches,
-or shadowing.
+Those resolve in one query. There are no secret bindings or
+switches.
 
 One name is one value in the organisation. An agent that needs its
-own value uses another name.
+own value uses another name, and an alias when a tool reads a fixed
+one ([Aliases](#aliases)).
 
 Deleting a guild removes its grants and its agents' grants and
 deletes every secret whose grants all went with it. Deleting an
@@ -61,6 +62,38 @@ agent deletes every secret granted only to it.
 A secret created unassigned, or whose access an admin emptied, stays
 unassigned until it is granted or deleted. Deleting the organisation
 deletes its secrets.
+
+## Aliases
+
+An agent's config key `secret_aliases` maps environment variable
+names to secret names: `{ "CLAUDE_CODE_OAUTH_TOKEN": "TEAM_TOKEN" }`
+makes the variable `CLAUDE_CODE_OAUTH_TOKEN` carry the value of the
+secret `TEAM_TOKEN`
+([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)).
+
+Each alias is set in the run's environment to the value of the
+secret it names, when that secret reaches the agent. An alias whose
+secret does not reach the agent is absent. An alias wins over a
+secret of its own name. One name stays one value in the
+organisation, and an alias never widens who gets a secret.
+
+Keys and values are variable names (`^[A-Za-z_][A-Za-z0-9_]*$`), a
+value differs from its key, and the map holds at most 32 entries
+(422 otherwise). A stored map that does not validate reads as
+empty. The map is written to the run snapshot and stays fixed for
+the run.
+
+The aliased value is in the environment of every command the
+orchestrator runs for the agent, like the secret it copies, and the
+redaction set already holds it. The CLI tab carries no secrets, so
+no aliases either.
+
+An alias points a tool that reads a fixed variable at a secret of
+any name. A coding harness reads `CLAUDE_CODE_OAUTH_TOKEN` or
+`CURSOR_API_KEY`, and the **Subscription token** select in an
+agent's Settings writes this key, so each agent runs on its
+operator's own token
+([Code tools](../tools-and-connectors/code.md#credentials-and-errors)).
 
 ## Who manages a secret
 
@@ -117,7 +150,8 @@ the agent's environment as `[{ id, name, description }]`.
 Each generation resolves the agent's environment, writes it onto the
 run snapshot as `[{ id, name, description }]`, decrypts the values,
 and passes them as environment variables on every command it runs
-for the agent, each named after its secret. The machine's container
+for the agent, each named after its secret, with the agent's aliases
+beside them ([Aliases](#aliases)). The machine's container
 environment holds no secret, so no secret change replaces a
 container. A missing or undecryptable secret is a generation-start
 error.
@@ -140,15 +174,17 @@ The agent's commands carry that environment:
 - a coding agent's `shell` commands and what they start
 - a coding agent's harness, started by `code_task`, and the commands
   it runs, less the variables its driver removes: for Claude Code
-  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and
-  `ANTHROPIC_BASE_URL`, for Codex `CODEX_API_KEY` and
+  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, and
+  `CLAUDE_CODE_USE_VERTEX`, for Codex `CODEX_API_KEY` and
   `OPENAI_API_KEY`, which would move it from the subscription to
   metered API billing, and `GH_TOKEN` and `GITHUB_TOKEN` for every
   harness ([Code tools](../tools-and-connectors/code.md#environment))
 - the browser tools
 
 The operator's CLI tab, a root shell on the agent's machine, does not
-carry it. Any process on the machine can still read the environment
+carry it, nor does the harness check Settings runs outside a run
+([Code tools](../tools-and-connectors/code.md#credentials-and-errors)). Any process on the machine can still read the environment
 of a command that is running, whichever agent it belongs to
 ([Machines](guilds-and-agents.md#machines)).
 
@@ -285,6 +321,8 @@ state), every entry with its effective value and where it comes from.
 ## What an operator relies on
 
 - A secret reaches every agent its access names.
+- An alias copies a secret's value under a second variable name for
+  the agents the secret already reaches. It grants nothing.
 - While such an agent's command runs, any process on its machine can
   read the secret and send it out.
 - Agents on one machine trust each other. Grant narrowly.

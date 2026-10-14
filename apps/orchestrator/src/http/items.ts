@@ -13,7 +13,6 @@ import { agentSecrets } from "../access/runtime.js";
 import type { Repositories } from "../db/repositories.js";
 import { canSeeGuild, DEFAULT_GUILD_AGENTS, guildOperators, guildRole } from "../guilds/validation.js";
 import { HttpError } from "./errors.js";
-import { HARNESS_MISSING, harnessMissing } from "../coding/harnesses.js";
 
 function iso(value: unknown): string | null {
   if (value === null || value === undefined) {
@@ -70,7 +69,6 @@ export function agentItem(row: Record<string, unknown>, generating = false): Rec
     avatar_color: row.avatar_color || "#7c5cff",
     browser: Boolean(config.browser),
     coding: Boolean(config.coding),
-    deprecated: harnessMissing(config) ? HARNESS_MISSING : null,
     machine_id: row.machine_id,
     machine: { id: row.machine_id, name: row.machine_name, box: row.machine_box },
     archived_at: iso(row.archived_at),

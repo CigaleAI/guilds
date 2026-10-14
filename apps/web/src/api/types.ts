@@ -116,8 +116,6 @@ export type Agent = {
   browser: boolean;
   /** Code work through a harness, with Node.js, build tools and git on its machine. */
   coding: boolean;
-  /** Set for a coding agent without a harness: its coding runs fail until one is picked. */
-  deprecated: "coding.harness_missing" | null;
   /** The organisation's machine it runs on. */
   machine_id: string;
   machine: MachineRef;
@@ -196,6 +194,10 @@ export type AgentConfig = {
   coding: boolean;
   /** The harness a coding agent runs; null when coding is off. */
   harness: Harness | null;
+  /** The model the harness runs; null leaves it to the harness's subscription. */
+  harness_model: string | null;
+  /** Variable names the agent's commands see, each holding the value of the secret it names. */
+  secret_aliases: Record<string, string>;
   scripting: boolean;
   memory: boolean;
   thinking_level: ThinkingLevel;
@@ -205,22 +207,43 @@ export type AgentConfig = {
 export type HarnessCredential = {
   harness: Harness;
   label: string;
-  /** The secret holding a subscription token; null when the harness takes none. */
+  /** The variable the harness reads its subscription token from; null when it takes none. */
   secret: string | null;
+  /** The secret that variable reads: the one aliased to it, else its own name; null with `secret`. */
+  secret_source: string | null;
+  /** Whether `secret_source` reaches the agent. */
   secret_granted: boolean;
+  /** Whether an alias replaces a secret named `secret` that also reaches the agent. */
+  secret_shadowed: boolean;
   /** What to run in the agent's CLI tab to log in; null while the agent has the CLI off. */
   login: string | null;
-  /** When a code task last found a login in the agent's home; null before one did. */
+  /** When a check last found a login in the agent's home; null before one did, or once one found none. */
   login_seen_at: string | null;
+  /** Whose that login is, as the harness recorded it; null when unknown. */
+  login_account: string | null;
 };
 
 /** `GET /api/agents/:id/harness`: the agent's harness, and each harness's credentials for it. */
 export type AgentHarness = {
   harness: Harness | null;
+  /** The model the harness runs; null for its subscription's default. */
+  harness_model: string | null;
   cli: boolean;
   harnesses: HarnessCredential[];
   /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
   machine_harnesses: Harness[] | null;
+  /** The guild repositories a coding run clones, by name; a coding run of a guild with none fails at start. */
+  repositories: string[];
+};
+
+/** `POST /api/agents/:id/harness/check`: what the agent's machine has for a harness, outside a run. */
+export type HarnessCheck = {
+  installed: boolean;
+  version: string | null;
+  /** A login in the agent's home, or nothing; a granted secret reaches only a run. */
+  credential: "secret" | "login" | null;
+  /** Whose the login is, as the harness recorded it; null without one or when unknown. */
+  account: string | null;
 };
 
 /** One agent with its model settings; `access` is its resolved tools, secrets and grants. */

@@ -135,7 +135,16 @@ Folded guilds and the retracted state are remembered in
 - **Private** (on by default; only the guild's operators see it, and
   the creator is its admin)
 
-**Add agent**:
+**Add agent** opens **Create an agent** on two cards, one per kind
+of agent:
+
+- **Agent**: "Talks, researches, and works with tools and connectors
+  on one of the organisation's models."
+- **Coding agent**: "Leads code work in the guild's repositories,
+  delegated to a coding harness (Claude Code, Codex, or Cursor) on
+  your own subscription."
+
+**Agent** opens one form:
 
 - name (changeable later in Settings)
 - optional focus (150 characters; seeds `task`)
@@ -152,9 +161,12 @@ Folded guilds and the retracted state are remembered in
   **Max scripts** (`max_scripts`, default 10)
 - under **Machine**, shown when the organisation has more than one
   machine, a picker of its machines
-- under **Agent capabilities**, five buttons: Browser, Coding, CLI,
+- under **Agent capabilities**, four buttons: Browser, CLI,
   scripting, and Memory (CLI, scripting, and Memory on by default;
-  Browser and Coding off)
+  Browser off)
+
+Coding is the other kind of agent, so this form has no Coding
+button. An existing agent's Settings has it.
 
 With one machine the agent goes on it and no picker shows. The
 picker shows each machine's tier and size, and the planned memory
@@ -169,21 +181,80 @@ each other's files and sessions.
 counts against the browser-agent capacity. The browser language
 shows while it is on.
 
-**Coding** gives the agent the code tools, with a harness for code
-work. It counts against the
-coding-agent capacity. It is greyed out on a standard machine, with
-a link to Settings, Machines. It turns CLI and scripting on and
-moves step and tool-call limits still at their defaults to 200.
-While it is on, a **Harness** select (Claude Code, Codex, or Cursor)
-is required. A note under it says the harness does the code work on
-the operator's own subscription, and that a personal subscription in
-a shared organisation may fall outside the vendor's terms. A harness
-whose CLI the machine's image lacks is unavailable, marked "Not on
-this machine's image", and a second note says that a published image
-carries Codex only, and that Claude Code and Cursor need an image
-built with them. Before the machine's container first started, every
-harness is available and that note shows
-([Machines](guilds-and-agents.md#machines)).
+**Coding agent** opens **Create a coding agent**: four steps on a
+stepper, the header reading "Step n of 4 · <step>", with **Back**
+and **Next** between them and **Cancel** throughout. Each step must
+be complete before **Next**.
+
+1. **Identity**: name, focus, and the avatar picker, as above.
+2. **Harness**: the **Machine** picker, hinting that coding agents
+   need a Code machine. Then a line that the harness writes the code,
+   headless in the agent's sandbox, on the operator's own
+   subscription, while the agent briefs it and checks its work, and
+   the **Harness** select (Claude Code, Codex, or Cursor), required.
+   Once a harness is picked, a **Harness model** field shows under
+   it, empty for "Subscription default". It suggests Claude Code's
+   aliases (fable, opus, sonnet, haiku) and nothing for Codex or
+   Cursor. Its hint says what the harness takes: an alias or a full
+   model name, a model the ChatGPT plan offers, or a name that
+   `agent models` lists in the CLI tab. Picking another harness
+   clears the model. A harness whose CLI the machine's image lacks
+   is unavailable, marked "Not on this machine's image", and a note
+   says that a published image carries Codex only, and that Claude
+   Code and Cursor need an image built with them; before the
+   machine's container first started, every harness is available and
+   that note shows ([Machines](guilds-and-agents.md#machines)). A
+   second note says the harness does the code work on the operator's
+   own subscription, and that a personal subscription in a shared
+   organisation may fall outside the vendor's terms. Then
+   **Subscription**. For Claude Code and Cursor: a **Subscription
+   token** select of the secrets reaching the guild, with the hint
+   "A secret reaching this guild, read as <variable>. Your own token
+   keeps the work on your subscription." Its options are those of
+   the select in Settings: first "<variable> (default)" when a
+   secret of that name reaches the guild, else "None: log in from
+   the CLI tab", then every other secret by name, each with "Added
+   by <name>". Under it, **Or paste a token**, a password field;
+   while it holds a value the select is disabled. For Codex: a line
+   that it runs on a login, to run from the agent's CLI tab once it
+   exists.
+3. **Lead model**: "Two models work here. The lead model plans,
+   talks to you, and reviews the work, on the organisation's key.
+   The harness writes the code on your subscription." Then the
+   model, thinking level, and temperature fields, as above;
+   **Agent capabilities** with Browser, CLI, scripting, and Memory;
+   and **Run limits and disk** folded under a disclosure, starting
+   at 200 steps and 200 tool calls, with CLI and scripting on.
+4. **Repositories**: a line that code tasks run in the guild's
+   repositories, cloned into the agent's sandbox, that every coding
+   agent of the guild shares them, and that runs fail at start
+   without one. Then GitHub, from the guild's access
+   ([GitHub](../tools-and-connectors/github.md)): when the GitHub
+   App is not set up on the box, a note that a platform admin
+   registers it under **Admin**, **Platform keys**, and that
+   repositories are added by URL below; while no login is connected,
+   **Connect GitHub**, which starts the guild's connect flow; once
+   one is, "GitHub · <account>" over the login's repository picker.
+   The picker edits a login the guild owns. An inherited
+   organisation login lists its repositories read-only, with
+   **Connect GitHub** to pick for this guild alone. Then the guild's
+   **Repositories**, added by URL as in the guild's Settings. While
+   the guild has no repository, picked or added, an ochre line reads
+   "No repository yet. You can create the agent and add one later in
+   the guild's Settings." and the last button reads **Create without
+   a repository** instead of **Create agent**.
+
+**Create agent** creates the agent with what the steps set. A
+pasted token is then saved as a secret granted to the new agent
+alone, with the description **Add a token** prefills in Settings. It
+is named after the variable, or `<VARIABLE>_<AGENT_NAME>` (the
+agent's name upper-cased, runs of other characters as `_`) when a
+secret of the variable's name already reaches the guild; the agent's
+`secret_aliases` point the variable at that name from the start. A
+secret picked in the select is written as the alias in the same way
+([Secrets and access](secrets-and-access.md#aliases)). When the
+secret cannot be saved, a toast says the agent was created but its
+token was not saved, to add under Settings.
 
 A new agent opens on its Prompt tab.
 
@@ -318,9 +389,13 @@ Selecting an agent opens its inspector at
 The expand control fills the window instead and is remembered.
 
 The header shows the avatar, the name, whether it is running, and
-the focus. A coding agent without a harness shows a warning flag,
-"Native coding is no longer available: pick a harness in Settings",
-that opens Settings.
+the focus. A coding agent whose coding runs would fail at start
+shows a warning icon, "Coding isn't ready: …. Fix it in Settings.",
+naming each problem: no harness is picked, the machine's image lacks
+the harness, the harness has no credential (neither a granted secret
+nor a login a check found), or the guild has no repositories. With
+no harness picked, the image and the credential are not checked. It
+opens Settings.
 When the Task embeds notes or tables that no longer exist, an unlink
 button names them and opens the Prompt tab.
 
@@ -346,6 +421,23 @@ The strip scrolls sideways when they do not fit.
 
   The tab strip carries a clock that opens the session drawer
   (`?history=true`) and a plus that starts a new session.
+
+  On a coding agent, a coding strip sits under the tab strip on
+  Chat only: one line, with the code icon, of parts separated by
+  "·", each a link. "<lead model> leads", the
+  model as the catalog labels it, else its id (Settings).
+  "<Harness> · <harness model> codes", "default model" without one
+  (Settings); a harness the machine's image lacks reads "<Harness>
+  is not in this machine's image". What the harness runs on: "on
+  <secret>, added by <name>" when the secret its variable reads
+  reaches the agent, the name from the agent's Secrets; else "on its
+  login, seen <when>" when a check last found a login, with "as
+  <account>" after "login" when the login says whose it is; else
+  "no credential" (Settings). With no harness picked, one part "no
+  harness picked" (Settings) stands for those two. "repos <names>",
+  or "no repositories" (**Repositories** in the guild's Settings). A
+  part that names a problem is bold, and the whole strip turns
+  ochre. The header's warning icon stays on every tab.
 
   The drawer lists every direct, group-triggered, and
   schedule-triggered run, newest first by day, filterable by kind,
@@ -458,9 +550,8 @@ The strip scrolls sideways when they do not fit.
   A `shell` call reads **Run** (or **Start** for a background
   command) and the command's first line, followed by its exit code
   when not 0.
-  A file call reads **Read**, **Edit**, or **Write** and the path,
-  an edit followed by its added and removed line counts, and a
-  repeated read by the step it points to.
+  A `file_read` call reads **Read** and the path, and a repeated
+  read by the step it points to.
 
   The latest generation, a running one, and failed steps start
   open.
@@ -471,7 +562,9 @@ The strip scrolls sideways when they do not fit.
   A `code_task` call renders as a card: the harness, the repository,
   and its live progress lines from `tool.progress` while it runs;
   then its status, session, final message, diffstat with a link to
-  the task's diff, and log path.
+  the task's diff, and log path. Progress lines are live only. They
+  stream while the run view is open and are not kept, so a reload
+  shows the card without them until the result lands.
 
   A run with repository changes ends with a **Changes** panel: each
   repository with its branch and diffstat, and **Show diff**, which
@@ -623,25 +716,61 @@ The strip scrolls sideways when they do not fit.
   temperature, the four run limits, **Max disk** (MiB, default
   10240) beside **Max scripts** (default 10).
   Under **Machine**, shown when the organisation has more than one
-  machine: the picker with its planned memory bar, as on Create
-  agent. Saving another machine moves the agent: its processes
+  machine: the picker with its planned memory bar, as in the create
+  dialog. Saving another machine moves the agent: its processes
   stop, and its home moves with it. A move is refused while the
   agent generates.
   Under **Agent capabilities**: five buttons for Browser, Coding,
   CLI, scripting, and Memory. Coding is greyed out on a standard
   machine; the browser language shows while Browser is on. With
-  Coding on, the required **Harness** select carries the same notes
-  and unavailable harnesses as on Create agent, and a credential
-  status line: whether the secret the harness reads is granted, when
-  a login was last found in the agent's home, and the login to run in
-  the CLI tab when CLI is on
+  Coding on, the required **Harness** select and **Harness model**
+  field carry the same notes and unavailable harnesses as the create
+  dialog's Harness step. Under them, Settings shows what the harness
+  still needs
   ([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)).
+  For a harness with a token variable (Claude Code's
+  `CLAUDE_CODE_OAUTH_TOKEN`, Cursor's `CURSOR_API_KEY`), a
+  **Subscription token** select says which secret that variable
+  reads, with the hint "The secret read as <variable>. Your own
+  token keeps the work on your subscription." Its first option is
+  the default: "<variable> (default)" when a secret of that name
+  reaches the agent, else "None: log in from the CLI tab". Then
+  every other secret reaching the agent (organisation-wide, its
+  guild's, or granted to it), by name, each with "Added by <name>".
+  Picking one writes `secret_aliases[<variable>]`; the default
+  removes the alias
+  ([Secrets and access](secrets-and-access.md#aliases)). The choice
+  is saved with the settings. **Add a token** beside it opens the
+  add-secret dialog granted to this agent, the name prefilled with
+  the variable, or `<VARIABLE>_<AGENT_NAME>` (the agent's name
+  upper-cased, runs of other characters as `_`) when the agent's
+  environment already has that name, and the description prefilled
+  with what the token is for. The secret it adds is picked on success.
+  When an alias is set and a secret of the variable's own name also
+  reaches the agent, a line reads "Replaces the <variable> that also
+  reaches this agent."
+  A credential status line says what the harness runs on: "Runs on
+  the secret <name>", with "as <variable>" when the names differ;
+  else when a login was last found in the agent's home, or that the
+  harness has no credential yet and how to set one up: choose a
+  subscription token above, or log in from the CLI tab with the
+  harness's login when CLI is on.
+  **Check login**, shown when CLI is on and the harness has no
+  granted secret, wakes the machine, looks for the harness's login
+  in the agent's home, and toasts "Logged in as <account>" ("Login
+  found" when the login does not say whose it is), "No login found",
+  or that the harness isn't in the machine's image.
+  A last line names the guild's repositories, "Code tasks work in
+  …", or warns that the guild has none, so its coding runs fail at
+  start, with a link to **Repositories** in the guild's Settings.
   When the stored harness is one the machine's image lacks, a warning
-  under the select says its code tasks fail, and to pick another
-  harness or move the agent.
-  A coding agent without a harness opens Settings on a warning
-  banner, **Native coding is no longer available**, whose **Pick a
-  harness** button focuses the Harness select.
+  under the select replaces all of this: its code tasks fail, and the
+  operator picks another harness or moves the agent.
+  A coding agent whose saved setup would fail a coding run at start
+  opens Settings on a warning banner, **Coding isn't ready**, that
+  lists the same problems as the header's warning icon. With no
+  harness picked, the Harness select shows "Pick a harness." and Save
+  stays disabled until one is.
 
 ## Access view (Tools and Secrets)
 

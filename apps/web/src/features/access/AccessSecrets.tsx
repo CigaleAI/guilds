@@ -243,29 +243,39 @@ function nameError(name: string): string | undefined {
     : undefined;
 }
 
-function AddSecretDialog({
+/**
+ * Adds a secret with its access. `initialName` and `initialDescription` start the form, as the
+ * subscription token picker does; `onCreated` hears the secret once it is stored.
+ */
+export function AddSecretDialog({
   open,
   onOpenChange,
   initialAccess,
   manager,
+  initialName = "",
+  initialDescription = "",
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialAccess: SecretAccessChoice;
   manager: boolean;
+  initialName?: string;
+  initialDescription?: string;
+  onCreated?: (secret: Secret) => void;
 }) {
   const create = useCreateSecret();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [value, setValue] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initialDescription);
   const [access, setAccess] = useState(initialAccess);
   const invalidName = nameError(name);
   const needsGrant = !manager && !access.guild_ids.length && !access.agent_ids.length;
 
   const reset = () => {
-    setName("");
+    setName(initialName);
     setValue("");
-    setDescription("");
+    setDescription(initialDescription);
     setAccess(initialAccess);
     create.reset();
   };
@@ -276,8 +286,9 @@ function AddSecretDialog({
     create.mutate(
       { name: name.trim(), value, description: description.trim(), ...access },
       {
-        onSuccess: () => {
+        onSuccess: (secret) => {
           toast({ kind: "success", title: `${name.trim()} added` });
+          onCreated?.(secret);
           reset();
           onOpenChange(false);
         },

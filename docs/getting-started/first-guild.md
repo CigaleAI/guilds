@@ -36,7 +36,8 @@ only.
 
 ## 2. Add an agent
 
-In the sidebar, click **Add agent** under the guild. Fill in:
+In the sidebar, click **Add agent** under the guild. A dialog offers
+two kinds of agent. Click **Agent**. A form opens. Fill in:
 
 - **Name**: `researcher`
 - **Focus**: `Answers the guild's questions and remembers what it was asked`

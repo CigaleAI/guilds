@@ -151,3 +151,63 @@ test("a stored harness reaches the form and back", () => {
   assert.equal(configOf(form, undefined).harness, "claude-code");
   assert.equal(configFormOf({ ...defaultAgentConfig, coding: true, harness: null }).harness, "");
 });
+
+test("a harness model reaches the form and back, trimmed; empty sends the subscription's default", () => {
+  const stored = {
+    ...defaultAgentConfig,
+    coding: true,
+    harness: "claude-code" as const,
+    harness_model: "opus",
+  };
+  const form = configFormOf(stored);
+  assert.equal(form.harness_model, "opus");
+  assert.equal(configOf(form, undefined).harness_model, "opus");
+  assert.equal(
+    configOf({ ...form, harness_model: "  sonnet " }, undefined).harness_model,
+    "sonnet",
+  );
+  assert.equal(configOf({ ...form, harness_model: "  " }, undefined).harness_model, null);
+  assert.equal(configFormOf({ ...stored, harness_model: null }).harness_model, "");
+  assert.equal(
+    configOf({ ...form, harness: "" }, undefined).harness_model,
+    null,
+    "no model without a harness",
+  );
+});
+
+test("a harness model must be a model name, and turning coding off clears it", () => {
+  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "cursor" });
+  assert.equal(
+    configErrors({ ...form, harness_model: "claude-opus-4-8[context=1m]" }).harness_model,
+    undefined,
+  );
+  assert.match(
+    String(configErrors({ ...form, harness_model: "--force" }).harness_model),
+    /Up to 120/,
+  );
+  assert.match(String(configErrors({ ...form, harness_model: "a b" }).harness_model), /Up to 120/);
+  const off = withCoding({ ...form, harness_model: "gpt-5" }, false);
+  assert.equal(off.harness_model, "");
+  assert.equal(
+    configErrors({ ...off, harness_model: "--force" }).harness_model,
+    undefined,
+    "only a coding agent is checked",
+  );
+});
+
+test("secret aliases reach the form and back, and turning coding off keeps them", () => {
+  const stored = {
+    ...defaultAgentConfig,
+    secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" },
+  };
+  const form = configFormOf(stored);
+  assert.deepEqual(form.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
+  assert.notEqual(form.secret_aliases, stored.secret_aliases, "the form holds its own copy");
+  assert.deepEqual(configOf(form, undefined).secret_aliases, {
+    CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN",
+  });
+  assert.deepEqual(
+    withCoding({ ...form, coding: true }, false).secret_aliases,
+    form.secret_aliases,
+  );
+});

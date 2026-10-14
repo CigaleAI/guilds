@@ -10,6 +10,10 @@ A guild is a team of agents. Each agent has a role, a model, and
 tools. The team shares a chat, notes, and tables. Every run keeps
 the prompt the model saw, every tool call, and every memory change.
 
+[X](https://x.com/guildsrun) ·
+[Discord](https://discord.gg/aqp5aPq9Uh) ·
+[Product Hunt](https://www.producthunt.com/p/guilds-run)
+
 ## Get started
 
 You need Docker. Run three commands:
@@ -66,6 +70,7 @@ is the one page that keeps history.
 | Run it for other people | [Run the box](#run-the-box) |
 | Reach Gmail, Drive, or GitHub from an agent | [Tools and connectors](#tools-and-connectors) |
 | Change the code | [Architecture](#architecture), then [Contributing](#contributing) |
+| Meet the people around it | [Community](contributing/community.md) |
 
 ## Run the box
 
@@ -108,7 +113,8 @@ How the product works, for the operator.
   what a run offers
 - [Native tools](tools-and-connectors/native.md) — notes, tables,
   memory, browser, scripts, routines, secrets
-- [Code tools](tools-and-connectors/code.md) — shell, files, search
+- [Code tools](tools-and-connectors/code.md) — `code_task` and the
+  coding harness, shell, file reads, search
 - [Connectors](tools-and-connectors/connectors.md) — token logins
   and remote MCP
 - [Gmail and Drive](tools-and-connectors/google.md) — the Google
@@ -141,6 +147,7 @@ For the people who change the code.
   stack, verify, check, CI, fixtures
 - [Code guidelines](contributing/code-guidelines.md) — names,
   functions, boundaries, docs
+- [Community](contributing/community.md) — X, Discord, Product Hunt
 
 ## Licence
 

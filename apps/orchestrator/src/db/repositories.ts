@@ -1123,12 +1123,23 @@ export class Repositories {
     }));
   }
 
-  /** Records when the agent's harness last found a login in its home. */
-  async markHarnessLogin(agentId: string, harness: string, now: Date): Promise<void> {
+  /** Records when the agent's harness last found a login in its home, and whose it is when known. */
+  async markHarnessLogin(agentId: string, harness: string, now: Date, account: string | null): Promise<void> {
     await this.pool.query(
-      `UPDATE agents SET harness_logins = harness_logins || jsonb_build_object($2::text, $3::text) WHERE id = $1`,
-      [agentId, harness, now.toISOString()],
+      `UPDATE agents
+       SET harness_logins = harness_logins
+         || jsonb_build_object($2::text, jsonb_build_object('seen_at', $3::text, 'account', $4::text))
+       WHERE id = $1`,
+      [agentId, harness, now.toISOString(), account],
     );
+  }
+
+  /** Forgets the agent's harness login, once a check found no credential in its home. */
+  async clearHarnessLogin(agentId: string, harness: string): Promise<void> {
+    await this.pool.query(`UPDATE agents SET harness_logins = harness_logins - $2::text WHERE id = $1`, [
+      agentId,
+      harness,
+    ]);
   }
 
   async setAgentWorkspaceMib(agentId: string, mib: number): Promise<void> {
@@ -2961,6 +2972,18 @@ export class Repositories {
       [runId],
     );
     return result.rows as Array<Record<string, unknown>>;
+  }
+
+  /** The metadata of a run's result for one tool call, or null when the call has no result. */
+  async getToolResultMetadata(runId: string, toolCallId: string): Promise<Record<string, unknown> | null> {
+    const result = await this.pool.query(
+      `SELECT metadata FROM messages
+       WHERE run_id = $1 AND payload->>'role' = 'tool' AND metadata->>'tool_call_id' = $2
+       ORDER BY seq LIMIT 1`,
+      [runId, toolCallId],
+    );
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? ((jsonObj(row.metadata) as Record<string, unknown> | null) ?? {}) : null;
   }
 
   async listPayloads(runId: string): Promise<Array<Record<string, unknown>>> {

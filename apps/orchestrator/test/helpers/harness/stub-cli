@@ -5,10 +5,12 @@ Installed under each harness's binary name on PATH. It writes its argv, working 
 stdin, and the variables named in HARNESS_STUB_SHOW to HARNESS_STUB_RECORD, then prints the
 events of HARNESS_STUB_EVENTS one line at a time, HARNESS_STUB_DELAY seconds apart. A line
 `{"stub": "edit", "path": ..., "text": ...}` writes that file instead of printing;
-`{"stub": "hang"}` sleeps until the process is stopped. It exits with HARNESS_STUB_EXIT.
+`{"stub": "hang"}` sleeps until the process is stopped, and `{"stub": "hang", "ignore_term": true}`
+until it is killed. It exits with HARNESS_STUB_EXIT.
 """
 import json
 import os
+import signal
 import sys
 import time
 
@@ -37,6 +39,8 @@ with open(os.environ["HARNESS_STUB_EVENTS"], encoding="utf-8") as events:
                 target.write(event["text"])
             continue
         if event.get("stub") == "hang":
+            if event.get("ignore_term"):
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
             while True:
                 time.sleep(1)
         sys.stdout.write(line if line.endswith("\n") else line + "\n")

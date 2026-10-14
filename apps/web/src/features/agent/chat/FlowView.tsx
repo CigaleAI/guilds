@@ -93,7 +93,11 @@ const TITLE_MIN = 40;
 function stepTitle(step: FlowStep): string {
   const text = step.turn ? turnText(step.turn).trim() || turnReasoning(step.turn).trim() : "";
   if (!text) return step.calls.map((call) => call.info.name).join(", ");
-  const line = text.split("\n").map(plainLine).find((item) => item.trim()) ?? "";
+  const line =
+    text
+      .split("\n")
+      .map(plainLine)
+      .find((item) => item.trim()) ?? "";
   let title = "";
   for (const sentence of line.split(/(?<=[.!?])\s+/)) {
     title = title ? `${title} ${sentence}` : sentence;
@@ -138,7 +142,9 @@ function stepFacts(step: FlowStep, meta: Record<string, unknown>): StepFact[] {
   if (typeof meta.cost_usd === "number") {
     facts.push({
       label: formatCost(meta.cost_usd),
-      ...(typeof meta.cost_source === "string" ? { title: `Cost source: ${meta.cost_source}` } : {}),
+      ...(typeof meta.cost_source === "string"
+        ? { title: `Cost source: ${meta.cost_source}` }
+        : {}),
     });
   }
   return facts;
@@ -362,10 +368,12 @@ export function FlowView({
           expanded ? (
             <ToolCallDetail
               call={call}
-              generating={generating}
+              run={{
+                generating,
+                ...(runId ? { id: runId } : {}),
+                ...(reported ? { progress: reported } : {}),
+              }}
               onAsk={onAskCall}
-              {...(runId ? { runId } : {})}
-              {...(reported ? { progress: reported } : {})}
             />
           ) : undefined
         }

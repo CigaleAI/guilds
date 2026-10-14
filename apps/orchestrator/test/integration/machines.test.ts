@@ -132,43 +132,92 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal(placed.statusCode, 201, placed.body);
     assert.equal(placed.json().machine.name, "builder");
     assert.equal(placed.json().config.max_steps, 200, "a new coding agent takes the coding budgets");
-    assert.equal(placed.json().deprecated, null);
+    assert.equal("deprecated" in placed.json(), false);
     const coderId = String(placed.json().id);
     assert.equal((await machines()).find((item) => item.id === codeId)?.harnesses, null, "before its container first started");
 
-    // A coding agent stored without a harness is deprecated until one is picked; its other settings still save.
+    // A coding agent stored without a harness is not ready: it saves nothing until a harness is picked.
     await repo.pool.query(`UPDATE agents SET config = config - 'harness' WHERE id = $1`, [coderId]);
-    const legacy = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: AUTH });
-    assert.equal(legacy.json().deprecated, "coding.harness_missing");
-    const kept = await app.inject({
+    const stripped = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: AUTH });
+    assert.equal(stripped.statusCode, 200, stripped.body);
+    assert.equal("deprecated" in stripped.json(), false);
+    const unpicked = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
+    assert.equal(unpicked.json().harness, null);
+    const unsaved = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...legacy.json().config, temperature: 0.5 } },
+      payload: { config: { ...stripped.json().config, temperature: 0.5 } },
     });
-    assert.equal(kept.statusCode, 200, kept.body);
+    assert.equal(unsaved.statusCode, 422, unsaved.body);
+    assert.match(unsaved.json().detail, /coding agents need a harness/);
     const picked = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...kept.json().config, harness: "codex" } },
+      payload: { config: { ...stripped.json().config, harness: "codex" } },
     });
     assert.equal(picked.statusCode, 200, picked.body);
-    assert.equal(picked.json().deprecated, null);
     const status = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
     assert.equal(status.statusCode, 200, status.body);
     assert.equal(status.json().harness, "codex");
+    assert.equal(status.json().harness_model, null, "the subscription's default");
     assert.equal(status.json().machine_harnesses, null);
-    assert.deepEqual(
-      (status.json().harnesses as Array<{ harness: string; secret: string | null; secret_granted: boolean }>).map(
-        (item) => [item.harness, item.secret, item.secret_granted],
-      ),
-      [
-        ["claude-code", "CLAUDE_CODE_OAUTH_TOKEN", false],
-        ["codex", null, false],
-        ["cursor", "CURSOR_API_KEY", false],
-      ],
-    );
+    assert.deepEqual(status.json().repositories, []);
+    const pinned = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, harness_model: "gpt-5-codex" } },
+    });
+    assert.equal(pinned.statusCode, 200, pinned.body);
+    assert.equal(pinned.json().config.harness_model, "gpt-5-codex");
+    const refused = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, harness_model: "--settings" } },
+    });
+    assert.equal(refused.statusCode, 422, refused.body);
+    const unknown = await app.inject({
+      method: "POST",
+      url: `/api/agents/${coderId}/harness/check`,
+      headers: JSON_AUTH,
+      payload: { harness: "pi" },
+    });
+    assert.equal(unknown.statusCode, 422, unknown.body);
+    type Credential = {
+      harness: string;
+      secret: string | null;
+      secret_source: string | null;
+      secret_granted: boolean;
+      secret_shadowed: boolean;
+    };
+    const credentials = (payload: { harnesses: Credential[] }) =>
+      payload.harnesses.map((item) => [item.harness, item.secret, item.secret_source, item.secret_granted, item.secret_shadowed]);
+    assert.deepEqual(credentials(status.json()), [
+      ["claude-code", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", false, false],
+      ["codex", null, null, false, false],
+      ["cursor", "CURSOR_API_KEY", "CURSOR_API_KEY", false, false],
+    ]);
+    // An alias names the secret the harness's token variable reads.
+    const aliased = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "MY_CLAUDE_TOKEN" } } },
+    });
+    assert.equal(aliased.statusCode, 200, aliased.body);
+    assert.deepEqual(aliased.json().config.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "MY_CLAUDE_TOKEN" });
+    const mapped = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
+    assert.deepEqual(credentials(mapped.json())[0], ["claude-code", "CLAUDE_CODE_OAUTH_TOKEN", "MY_CLAUDE_TOKEN", false, false]);
+    const badAlias = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "CLAUDE_CODE_OAUTH_TOKEN" } } },
+    });
+    assert.equal(badAlias.statusCode, 422, badAlias.body);
 
     // The list carries each machine's agents and its planned memory.
     const listed = await machines();
