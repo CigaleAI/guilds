@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a feature for guilds.run
+labels: ["feature request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One feature per issue. A need without a proposal is enough; say that the proposal is open.
+
+        How to write this issue is in [Contributing](https://github.com/CigaleAI/guilds/blob/main/docs/CONTRIBUTING.md#feature-requests).
+  - type: textarea
+    id: need
+    attributes:
+      label: Need
+      description: The job you are trying to do, and what the product does not do for it today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What an operator should be able to see or do once the feature exists. Leave the implementation out.
+    validations:
+      required: false
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this request leaves unchanged.
+    validations:
+      required: false
