@@ -4,7 +4,7 @@ import { numberOrNull } from "../lib/numbers.js";
 import { isHarness, type Harness } from "../coding/harnesses.js";
 
 /**
- * An organisation's machines (docs/concepts/guilds-and-agents.md#machines): one sandbox container
+ * An organisation's machines (docs/concepts/machines.md): one sandbox container
  * and one host directory each, sized by a tier. Every agent sits on one machine of its
  * organisation, in a slot that sets its display and ports.
  */
@@ -37,7 +37,7 @@ export const DEFAULT_MACHINE_MAX_WORKSPACE_MIB = 10240;
 export const MAX_AGENTS_PER_MACHINE = 32;
 
 /**
- * Machine sizing (docs/concepts/guilds-and-agents.md#machine-sizing). The smallest machine an
+ * Machine sizing (docs/concepts/machines.md#machine-sizing). The smallest machine an
  * agent runs on, by what it has on: every agent has `base`, and `browser` and `coding` raise it.
  * An agent's minimum is the largest of these, CPUs and memory each, not their sum: Chrome and the
  * coding toolchain only run while the agent works. Placement refuses a machine below the minimum.

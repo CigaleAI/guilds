@@ -92,10 +92,9 @@ agents on its machine that read the credential (SEC-27). A vendor's
 terms may restrict a personal subscription to its holder or to
 interactive use. The vendor may then suspend the account.
 
-**Control in place:** the note under the **Harness** select says
-that the harness does the code work on the operator's own
-subscription, and that a personal subscription in a shared
-organisation may fall outside the vendor's terms. A harness runs only
+**Control in place:** the note under the **Harness** select reads
+"Tasks run on your own subscription. Ensure shared use complies
+with your vendor plan." A harness runs only
 on a credential someone granted to the agent or logged in with. The
 **Subscription token** select lets each agent run on a token its own
 operator added, under any secret name, so a shared agent need not
@@ -289,7 +288,7 @@ is one trust boundary inside an organisation.
 `apps/orchestrator/src/sandbox/index.ts`), with every agent's home
 at `/home/<agent id>` and its runtime files, git tokens among them,
 at `/run/guilds/<agent id>/`
-([Machines](../concepts/guilds-and-agents.md#machines)).
+([Agent home](../concepts/agent-home.md)).
 
 **Exposure:** every agent placed on a machine runs its commands as
 root (SEC-6) in that machine's one container. That covers `shell`,
@@ -995,7 +994,7 @@ ones who change who gets one. A member creates a secret only with
 grants inside guilds they can see, and edits, rotates, or deletes
 only a secret whose every grant lies in such guilds. A refused
 write is 403 inside the organisation and 404 outside it. See
-[Secrets and access](../concepts/secrets-and-access.md).
+[Secrets](../concepts/secrets.md).
 
 **Residual risk:** none known.
 

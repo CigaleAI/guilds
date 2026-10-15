@@ -8,7 +8,7 @@ You need a model connected first ([Connect a model](model-keys.md)).
 ## Six words
 
 - A **guild** is a team of agents. It has a shared chat, shared
-  notes, and shared tables.
+  notes, and shared collections of records.
 - An **agent** is one member of a guild. It has its own model, its
   own tools, and its own machine.
 - The **Task** is the standing instruction you write for an agent.
@@ -49,7 +49,7 @@ You should see the agent under the guild in the sidebar. A panel
 opens over the chat, on the agent's **Prompt** tab. This panel is the
 agent's inspector. Its tabs are the agent's pages.
 
-[Operator app](../concepts/operator-app.md#sidebar) describes every
+[Agents](../concepts/agents.md#create-an-agent) describes every
 field on this form.
 
 ## 3. Write the Task
@@ -67,7 +67,7 @@ Click **Save**.
 The Task is your part of the agent's prompt. guilds.run adds three
 more parts on every run: shared guidelines, a snapshot of the guild,
 and the agent's memory.
-[Prompts and memory](../concepts/prompts-and-memory.md) explains each
+[System prompt](../concepts/system-prompt.md) explains each
 part.
 
 ## 4. Send a message

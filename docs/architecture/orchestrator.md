@@ -107,7 +107,7 @@ Configurable only in tests:
 - agents per machine = 32 (slots 0 to 31)
 - agent minimum = the largest of 0.5 CPU and 256 MiB, 1 CPU and 2 GiB
   with `browser`, 2 CPU and 4 GiB with `coding`
-  ([Machine sizing](../concepts/guilds-and-agents.md#machine-sizing))
+  ([Machine sizing](../concepts/machines.md#machine-sizing))
 - overcommit before placement warns = 5× a machine's CPUs, 3× its
   memory
 - browser desktop = 1280×720

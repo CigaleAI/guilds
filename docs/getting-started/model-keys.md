@@ -27,7 +27,7 @@ spending limit. Set one on the provider's side if you want one.
 The dialog also lists **Kimi Code** under **For coding agents only**.
 Skip it for now. It serves coding agents only, and it cannot be the
 default.
-[Model keys](../concepts/model-keys.md#marketplace-and-coding-providers)
+[Model keys](../concepts/model-keys.md#providers)
 explains it.
 
 ### If you run a local model server
