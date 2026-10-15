@@ -183,9 +183,10 @@ A comment says why, not what. The code says what.
 
 Every page under `docs/` describes what the code does today,
 in the present tense, with no history, roadmap, or record of a
-discussion. The one exception is the
-[security register](../architecture/security-register.md), which
-keeps the history of each issue.
+discussion. The
+[security register](../architecture/security-register.md) keeps
+the history of each security issue. Release history is the
+[changelog](../../CHANGELOG.md).
 
 A change to behaviour updates the page that describes it in the
 same commit.

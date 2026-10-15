@@ -69,6 +69,7 @@ is the one page that keeps history.
 | Use it | [Get started](#get-started), then [Concepts](#concepts) |
 | Run it for other people | [Run the box](#run-the-box) |
 | Reach Gmail, Drive, or GitHub from an agent | [Tools and connectors](#tools-and-connectors) |
+| Ask for a feature | [Feature requests](CONTRIBUTING.md#feature-requests) |
 | Change the code | [Architecture](#architecture), then [Contributing](#contributing) |
 | Meet the people around it | [Community](contributing/community.md) |
 
@@ -80,6 +81,8 @@ is the one page that keeps history.
   from another computer
 - [Operate](getting-started/operate.md) — update, back up, restore,
   logs, error messages
+- [Changelog](../CHANGELOG.md) — each version, and whether a running
+  box stays, rebuilds, or breaks
 
 ## Concepts
 
@@ -142,7 +145,8 @@ For the people who change the code.
 
 ## Contributing
 
-- [Contributing](CONTRIBUTING.md) — licence, pull requests, the check
+- [Contributing](CONTRIBUTING.md) — licence, feature requests,
+  versions, pull requests, the check
 - [Development](contributing/development.md) — the development
   stack, verify, check, CI, fixtures
 - [Code guidelines](contributing/code-guidelines.md) — names,

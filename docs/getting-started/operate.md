@@ -64,6 +64,17 @@ Everything the box knows is this tree plus `.env`.
 
 ## Update
 
+Read the [changelog](../../CHANGELOG.md). The digit that changed
+says what this box does.
+
+| Change | Do |
+| --- | --- |
+| Patch (`1.2.3` to `1.2.4`) | Nothing. The images this box runs did not change |
+| Minor (`1.2.3` to `1.3.0`) | Rebuild, below. State, `.env`, recipes, and the API stay valid |
+| Major (`1.2.3` to `2.0.0`) | [Back up](#back-up), then follow the steps in that version. The commands below are not enough |
+
+A minor version:
+
 ```text
 git pull
 ./setup.sh
