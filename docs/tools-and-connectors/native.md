@@ -15,9 +15,9 @@ They keep separate tool families.
 
 - `record_search` / `record_list` / `record_add` / `record_update` /
   `record_remove`: records of the organisation's collections, the typed
-  tables the operator defines and grants.
+  stores of records the operator defines and grants.
 
-  Every tool names the table by `collection`. No tool creates, alters,
+  Every tool names the collection by `collection`. No tool creates, alters,
   or deletes one.
 
   `record_search` takes:
@@ -59,8 +59,8 @@ They keep separate tool families.
   Reach is the collection grant:
 
   - the agent's own row when it has one (`none` keeps it out)
-  - otherwise its guild's `read` or `write` on an organisation table
-  - or `write` on the agent's guild's own table
+  - otherwise its guild's `read` or `write` on an organisation collection
+  - or `write` on the agent's guild's own collection
 
   An ungranted collection is 404. A write on `read` is 403.
 
@@ -103,7 +103,7 @@ They keep separate tool families.
 
 - `code_task` / `shell` / `shell_status` / `file_read` /
   `code_search`: the code tools, offered when the run snapshot has
-  `coding: true` ([Code tools](code.md)). `code_task` runs in the
+  `coding: true` ([Code tools](../concepts/coding/code-tools.md)). `code_task` runs in the
   sandbox through `guilds-harness` and delegates code work to the
   agent's coding harness; the other four run through `guilds-code`.
 
@@ -130,7 +130,7 @@ They keep separate tool families.
   (minute hour day month weekday). Consecutive wake-ups must be at
   least 5 minutes apart. `schedule_create_window` takes `timezone`,
   `start`, `end`, and `max_wakes`, a daily random window described
-  in [Runs](../concepts/runs.md).
+  in [Routines](../concepts/routines.md).
 
   `description` is a required one-line label at most 400 characters.
   `instruction` is markdown at most 2000 characters, stored as
@@ -159,13 +159,13 @@ They keep separate tool families.
   name from this run's snapshot. A row with `parameters` is also a
   first-class tool on **new** runs. Its arguments reach stdin the
   same way. The five tools are omitted when `config.scripting` is
-  false ([Runs](../concepts/runs.md#scripts)).
+  false ([Scripts](../concepts/scripts.md)).
 
 - `secret_store` / `secret_request`: orchestrator. `secret_store`
   saves a value the agent produced as a secret granted to that
   agent. `secret_request` asks the operator in a direct chat for
   one. Both are described in
-  [Secrets and access](../concepts/secrets-and-access.md#secret_store-and-secret_request).
+  [Secrets](../concepts/secrets.md#agents-storing-and-asking-for-secrets).
 
 Web search is not a native tool: it is the Tavily connector's
 `tavily_search`, served on the Web search platform key a platform

@@ -412,8 +412,7 @@ describe("code_task with the Claude Code driver", () => {
       publish_progress: async () => {
         if (!lost) {
           lost = true;
-          stopStubs(sandbox);
-          rmSync(path.join(sandbox.runDir, "a_1", "harness"), { recursive: true, force: true });
+          restartMachine(sandbox);
         }
       },
     });
@@ -918,4 +917,28 @@ function stopStubs(sandbox: HostCodeSandbox): void {
       // already gone
     }
   }
+}
+
+/**
+ * What a machine restart does to a call: every process ends and the harness state is gone. The
+ * supervisors go first, so none writes a CLI's exit into the folder while it is removed.
+ */
+function restartMachine(sandbox: HostCodeSandbox): void {
+  const state = path.join(sandbox.runDir, "a_1", "harness");
+  for (const name of existsSync(state) ? readdirSync(state) : []) {
+    if (!name.endsWith(".json") || name.startsWith(".")) {
+      continue;
+    }
+    const supervisor = (JSON.parse(readFileSync(path.join(state, name), "utf8")) as { supervisor_pid?: unknown })
+      .supervisor_pid;
+    if (typeof supervisor === "number") {
+      try {
+        process.kill(supervisor, "SIGKILL");
+      } catch {
+        // already gone
+      }
+    }
+  }
+  stopStubs(sandbox);
+  rmSync(state, { recursive: true, force: true });
 }

@@ -127,7 +127,7 @@ from another computer.
 Agents' CPU, memory, and disk are bounded by their organisation's
 machines, not by `.env`. Owners and admins create and size them under
 **Settings**, **Machines**
-([Machines](../concepts/guilds-and-agents.md#machines)).
+([Machines](../concepts/machines.md)).
 
 ## Model catalog
 

@@ -175,7 +175,7 @@ Before a `shell` call and each `code_task` poll, a token within 10
 minutes of expiry is replaced.
 
 Every token joins the run's redaction set. What a coding run does
-with the repositories is in [Runs](../concepts/runs.md#repositories).
+with the repositories is in [Repositories](../concepts/coding/repositories.md).
 
 **Removal.** When GitHub refuses a token because the installation
 was removed or suspended (404 or 403), the connection becomes

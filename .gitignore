@@ -12,3 +12,6 @@ htmlcov/
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Working specifications, kept out of the docs
+docs/specs/

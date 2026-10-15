@@ -101,4 +101,4 @@ The request creates the user and a personal organisation they own.
 
 In this mode the user directory answers the instance administrator
 only. That is an owner of the organisation `Home`. Anyone else gets a
-404 ([Users and organisations](../concepts/users-and-organisations.md)).
+404 ([Users](../concepts/users.md)).

@@ -28,7 +28,7 @@ export const defaultMachineMaxWorkspaceMib = 10240;
 export type MachineSize = { cpu: number; memory_mib: number };
 
 /**
- * Machine sizing, as the server rules it (docs/concepts/guilds-and-agents.md#machine-sizing): the
+ * Machine sizing, as the server rules it (docs/concepts/machines.md#machine-sizing): the
  * smallest machine an agent runs on, by what it has on. An agent's minimum is the largest of these,
  * CPUs and memory each, not their sum. A machine below it refuses the agent.
  */

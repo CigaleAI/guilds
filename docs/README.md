@@ -4,11 +4,12 @@
 
 guilds.run runs standing teams of AI agents you can inspect.
 
-<a href="https://www.producthunt.com/products/guilds-run?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-guilds-run" target="_blank" rel="noopener noreferrer"><img alt="guilds.run - Create multi-agent workflows that you can trust | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1274741&amp;theme=light&amp;t=1791832617881"></a>
+<a href="https://www.producthunt.com/products/guilds-run?embed=true&amp;utm_source=badge-top-post-badge&amp;utm_medium=badge&amp;utm_campaign=badge-guilds-run" target="_blank" rel="noopener noreferrer"><img alt="guilds.run - Create multi-agent workflows that you can trust | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/top-post-badge.svg?post_id=1274741&amp;theme=neutral&amp;period=daily&amp;t=1792057699315"></a>
 
 A guild is a team of agents. Each agent has a role, a model, and
-tools. The team shares a chat, notes, and tables. Every run keeps
-the prompt the model saw, every tool call, and every memory change.
+tools. The team shares a chat, notes, and collections of records.
+Every run keeps the prompt the model saw, every tool call, and every
+memory change.
 
 [X](https://x.com/guildsrun) ·
 [Discord](https://discord.gg/aqp5aPq9Uh) ·
@@ -41,6 +42,9 @@ Then one short page each:
   search the web.
 - [Save a recipe](getting-started/save-a-recipe.md) saves the guild
   as one file and applies it again.
+- [Add a coding agent](getting-started/add-a-coding-agent.md) gives
+  the guild an agent that writes code with Claude Code, Codex, or
+  Cursor.
 
 ## Why guilds.run
 
@@ -86,38 +90,95 @@ is the one page that keeps history.
 
 ## Concepts
 
-How the product works, for the operator.
+How the product works, for the operator. Start with
+[How it fits together](concepts/how-it-fits.md).
 
-- [Users and organisations](concepts/users-and-organisations.md) —
-  identity, organisations, members, the instance admin
+**People**
+
+- [Users](concepts/users.md) — accounts, sign-in, the instance admin
+- [Organisations](concepts/organisations.md) — members, roles, what
+  an organisation owns
+- [Operators](concepts/operators.md) — the people a guild works for,
+  the Inbox
 - [Model keys](concepts/model-keys.md) — providers, the welcome
-  dialog, the Settings page, where keys live
-- [Guilds and agents](concepts/guilds-and-agents.md) — membership,
-  machines, configuration, deletion
-- [Prompts and memory](concepts/prompts-and-memory.md) — the system
-  prompt, the Task, memory
-- [Notes and collections](concepts/notes-and-collections.md) — notes,
-  tables, records, grants
+  dialog, which models an organisation offers
+
+**Teams**
+
+- [Guilds](concepts/guilds.md) — a team of agents and what it owns
+- [Agents](concepts/agents.md) — name, focus, model, limits,
+  capabilities
+- [Group chat](concepts/group-chat.md) — tags, recipients, wake
+  triggers, posting
+- [Routines](concepts/routines.md) — wake an agent on a schedule
+
+**Where agents run**
+
+- [Machines](concepts/machines.md) — the containers agents share,
+  sizing, placement
+- [Agent home](concepts/agent-home.md) — an agent's files, disk,
+  and terminal
+- [Browser](concepts/browser.md) — an agent's own Chrome
+- [Scripts](concepts/scripts.md) — reusable Python an agent keeps
+
+**How an agent thinks**
+
 - [Runs](concepts/runs.md) — direct, group, and schedule runs;
-  the machine an agent runs on
-- [Group chat](concepts/group-chat.md) — tags, recipients, posting
-- [Secrets and access](concepts/secrets-and-access.md) — secrets,
-  grants, what reaches a sandbox
+  what each run records
+- [System prompt](concepts/system-prompt.md) — Guidelines and the
+  State snapshot
+- [Task](concepts/task.md) — the operator's standing instructions
+- [Memory](concepts/memory.md) — what an agent keeps between runs
+- [Usage](concepts/usage.md) — tokens and cost
+
+**Shared knowledge**
+
+- [Artifacts](concepts/artifacts.md) — the store and its display
+  paths
+- [Notes](concepts/notes.md) — markdown at agent, guild, and
+  organisation level
+- [Collections](concepts/collections.md) — typed records agents
+  read and write
+
+**Access**
+
+- [Access](concepts/access.md) — scopes, bindings, and grants
+- [Secrets](concepts/secrets.md) — values handed to an agent's
+  commands
+
+**Coding agents**
+
+- [Coding agents](concepts/coding/index.md) — an agent that leads
+  code work with Claude Code, Codex, or Cursor
+- [Harnesses](concepts/coding/harnesses.md) — the coding CLI and
+  your subscription
+- [Repositories](concepts/coding/repositories.md) — the guild's git
+  repositories
+- [Code tools](concepts/coding/code-tools.md) — `code_task`, shell,
+  file reads, search
+- [Reviewing changes](concepts/coding/reviewing-changes.md) —
+  checkpoints, diffs, commit trailers
+- [Coding teams](concepts/coding/teams.md) — several coding agents
+  in one guild
+
+**Workspaces**
+
 - [Recipes](concepts/recipes.md) — a guild as one file
+- [Recipe format](concepts/recipe-format.md) — the recipe document
+- [Applying recipes](concepts/applying-recipes.md) — from a recipe
+  to a running guild
 - [Prompt Studio](concepts/prompt-studio.md) — improve Tasks on a
   live guild
 - [Guild builder](concepts/guild-builder.md) — design a recipe from a
   conversation
-- [Operator app](concepts/operator-app.md) — every screen
+- [Operator app](concepts/operator-app.md) — a map of every screen
 
 ## Tools and connectors
 
 - [Catalog](tools-and-connectors/catalog.md) — native and MCP tools,
   what a run offers
-- [Native tools](tools-and-connectors/native.md) — notes, tables,
+- [Native tools](tools-and-connectors/native.md) — notes, collections,
   memory, browser, scripts, routines, secrets
-- [Code tools](tools-and-connectors/code.md) — `code_task` and the
-  coding harness, shell, file reads, search
 - [Connectors](tools-and-connectors/connectors.md) — token logins
   and remote MCP
 - [Gmail and Drive](tools-and-connectors/google.md) — the Google
@@ -126,12 +187,16 @@ How the product works, for the operator.
 - [Registry](tools-and-connectors/registry.md) — connectors beyond
   the image
 
+The code tools are in [Coding agents](concepts/coding/code-tools.md).
+
 ## Architecture
 
 For the people who change the code.
 
 - [System](architecture/system.md) — processes, state on disk,
   images, the trust boundary
+- [Web app](architecture/web-app.md) — the operator app: stack,
+  extension slots, state and events
 - [Code map](architecture/code-map.md) — repository layout, boot,
   the request path, the run flow
 - [Orchestrator](architecture/orchestrator.md) — startup, events,

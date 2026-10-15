@@ -407,7 +407,7 @@ need an invoice:
 
 `upload_invoice` attaches a PDF, JPEG, or PNG from the agent
 home (`/home/<agent id>`, under the
-[home file rules](../concepts/secrets-and-access.md#agent-home-files)).
+[home file rules](../concepts/agent-home.md#agent-home-files)).
 Qonto processes the file in the background and the call waits up
 to 60 seconds.
 

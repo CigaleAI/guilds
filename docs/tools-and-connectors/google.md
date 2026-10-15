@@ -64,7 +64,7 @@ orchestrator reads the file.
 
 `download_file_content` writes that path and returns it. It does not
 return file bytes. Both follow the
-[home file rules](../concepts/secrets-and-access.md#agent-home-files).
+[home file rules](../concepts/agent-home.md#agent-home-files).
 
 Small UTF-8 text may use `textContent`. Create and copy stay off
 until the operator enables them. Official Drive MCP has no delete.

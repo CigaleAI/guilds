@@ -207,6 +207,25 @@ for someone who has never seen the product:
 - No parentheses, no chained colons, no file paths, no HTTP verbs.
   Depth lives on a concept page, reached by a link.
 
+A page under **Concepts** explains one concept. One concept has one
+page. It teaches first and keeps the exact detail at the bottom,
+under these headings, in this order:
+
+1. The title, then one or two plain paragraphs: what it is, and how
+   it relates to the concepts next to it. No column names, routes, or
+   file paths.
+2. **Why it exists** or **When you use it**.
+3. **How it works**: the mental model. A diagram where a flow or a
+   hierarchy is easier seen than read.
+4. **In the app**: where the operator sees and changes it.
+5. **Rules and limits**: a short table of defaults, caps, and
+   refusals.
+6. **Reference**: complete and exact. Fields, configuration keys,
+   HTTP routes, storage, and edge cases.
+
+A heading with nothing to say is left out. Everything above
+**Reference** reads on its own.
+
 Every other page is reference. It is complete and exact, and it
 follows the same sentence rules where they do not cost precision.
 

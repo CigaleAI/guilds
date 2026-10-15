@@ -71,7 +71,7 @@ writes the path into `.env`.
 Notes, collection records, `memory`, and scripts are artifact rows.
 `task` is a column on the agent. Display paths are the unique
 reference
-([Notes and collections](../concepts/notes-and-collections.md)):
+([Artifacts](../concepts/artifacts.md#display-paths)):
 
 ```text
 org/<org_id>/agents/<agent_id>/task.md
@@ -252,7 +252,7 @@ orchestrator on 8080.
    organisation model key never reaches it. The code tools,
    `code_task` included, run inside the container and never open a
    path in its home from the orchestrator
-   ([Code tools](../tools-and-connectors/code.md)).
+   ([Code tools](../concepts/coding/code-tools.md)).
 
    A coding agent's GitHub installation tokens sit in
    `/run/guilds/<agent id>/`, outside every home. They are readable

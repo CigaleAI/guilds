@@ -17,7 +17,7 @@ The stack is three containers.
 Only the orchestrator is reachable from outside Docker, and only on
 this host. Agents run on their organisation's machines: one
 sandbox container per machine, shared by every agent placed on it
-([Machines](../concepts/guilds-and-agents.md#machines)). Sandboxes
+([Machines](../concepts/machines.md)). Sandboxes
 can reach the public internet.
 
 Every machine runs `agent-runtime:0.4`. It has a browser and the
@@ -39,7 +39,7 @@ docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
 
 A coding run of an agent on Claude Code or Cursor then fails at
 start with an error that names its missing harness.
-[Code tools](../tools-and-connectors/code.md#harnesses-in-the-image)
+[Harnesses](../concepts/coding/harnesses.md#harnesses-in-the-image)
 explains which harnesses an image carries.
 
 ## Where the state lives
@@ -124,7 +124,7 @@ not backward compatible. [Back up](#back-up) first, then:
    takes `machine_id`, required when the organisation has more than
    one machine. Agent payloads carry `machine_id` and `machine`. A
    machine holds the tier and size
-   ([Machines](../concepts/guilds-and-agents.md#machines)). An
+   ([Machines](../concepts/machines.md)). An
    edition's `SandboxProvider`, `GenerationSandboxes`, and
    `machineHost` are keyed by machine
    ([Extension points](../architecture/extension-points.md)).
