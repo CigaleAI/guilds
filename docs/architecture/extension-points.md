@@ -208,7 +208,7 @@ does; an optional field tunes it and never switches it off.
 |---|---|---|---|---|
 | Web search | store | `api_key` | The Tavily connector's platform login, `tavily_search` | The platform login is disconnected and runs leave `tavily_search` out; an organisation may connect a Tavily key of its own |
 | Group routing | store | `api_key`, and `model` to tune it | Recipient and history selection in group chat | Tag rules and the last 10 messages |
-| GitHub App | store | `app_id`, `slug`, `private_key`, `client_id`, `client_secret`, entered by hand or filled by the manifest flow ([GitHub](../tools-and-connectors/github.md#registering-the-app)) | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing fields, and disables Connect; a Connect sent anyway answers 422 |
+| GitHub App | store | `app_id`, `slug`, `private_key`, `client_id`, `client_secret`, entered by hand or filled by the manifest flow ([GitHub](../tools-and-connectors/github.md#step-1-create-the-app)) | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing fields, and disables Connect; a Connect sent anyway answers 422 |
 | Google connectors | store | `client_id`, `client_secret` | The Gmail and Drive connectors ([Gmail and Drive](../tools-and-connectors/google.md)) | As for the GitHub App |
 | Error reporting | env | `SENTRY_DSN` | Sentry | Structured logs only |
 | Registry | env | `REGISTRY_URL`, the guilds.run registry while unset; `REGISTRY_PUBLIC_KEY` | Installing connectors and recipes from a registry; with the key, only from a signed index | Set empty, the box is offline |

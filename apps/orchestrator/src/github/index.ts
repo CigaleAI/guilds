@@ -86,14 +86,15 @@ export function appJwt(config: GithubAppConfig, now = new Date()): string {
   return `${header}.${payload}.${signer.sign(config.privateKey).toString("base64url")}`;
 }
 
-/** Where Connect sends the operator: the App's install page, which returns `state` to the callback. */
+/** The App's install page, for a user who reaches no installation yet; it returns `state` to the callback. */
 export function installUrl(config: GithubAppConfig, state: string): string {
   return `${GITHUB_WEB}/apps/${encodeURIComponent(config.slug)}/installations/new?state=${encodeURIComponent(state)}`;
 }
 
 /**
- * User authorization after a setup redirect that has an installation but no `code`.
- * GitHub's "OAuth during installation" hop does not take `redirect_uri` or `state`; this one does.
+ * User authorization, where Connect sends the operator, and again after a setup redirect that has
+ * an installation but no `code`. GitHub's "OAuth during installation" hop does not take
+ * `redirect_uri` or `state`; this one does.
  */
 export function userAuthorizationUrl(config: GithubAppConfig, state: string, redirectUri: string): string {
   const params = new URLSearchParams({

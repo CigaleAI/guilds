@@ -1,184 +1,203 @@
 # GitHub
 
-`github` is backed by one GitHub App per box. The **GitHub App**
-integration holds it, under **Admin**, **Platform keys**, in five
-fields:
+Connecting GitHub lets coding agents clone, push to, and open pull
+requests on the repositories you pick. It runs through one GitHub
+App per box. You set it up in three steps:
 
-- App ID (`app_id`)
-- App slug (`slug`)
-- Private key (PEM) (`private_key`)
-- Client ID (`client_id`)
-- Client secret (`client_secret`)
+1. A platform admin creates the App, once per box.
+2. An operator connects their GitHub account under **Tools**.
+3. The operator picks the repositories agents may use.
 
-Until all five are set, Tools marks the connector **Not set up**
-with the missing fields and disables Connect; a Connect sent anyway
-is a 422 with `setup_state: unsupported`
-([Integrations](catalog.md#integrations)).
+## Before you start
 
-The App:
+- You are a platform admin on the box, for step 1.
+- The box's public address is set. The App sends GitHub logins back
+  to `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`. When
+  `PUBLIC_BASE_URL` is empty, that is the address you reach the box
+  at, such as `http://localhost:8080`. To reach the box from
+  elsewhere, set the address first
+  ([Remote access](../getting-started/remote-access.md)).
 
-- asks for the repository permissions Contents and Pull requests
-  (read and write) and Metadata (read)
-- requests user authorization (OAuth) during installation and
-  redirects on update, with `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`
-  as its callback URL, or the address the box is reached at when
-  `PUBLIC_BASE_URL` is empty
-- is private and subscribes to no webhook
+## Step 1: Create the App
 
-## Registering the App
+1. Open **Admin**, **Platform keys**, and expand **GitHub App**.
+2. Click **Create the GitHub App**.
+3. Fill in the dialog, or leave it empty:
+   - **App name**: shown on GitHub, where it must be unique. 34
+     characters at most. The default is `Guilds (<host>)`.
+   - **Organisation**: the GitHub organisation that owns the App.
+     Empty creates it on your own account.
+4. Click **Continue on GitHub**, and confirm the App on GitHub.
 
-A platform admin registers it one of two ways.
+GitHub sends you back to **Platform keys**, and **GitHub App** reads
+**On**. If it shows **Couldn't create the GitHub App** instead,
+nothing was stored: start again.
 
-**Create the GitHub App**, on Platform keys, registers it from a
-manifest. The dialog takes an optional App name (GitHub caps it at
-34 characters; the default is `Guilds (<host>)`) and an optional
-organisation login (without one, the App belongs to the admin's own
-account). The browser posts the manifest to GitHub, the admin
-confirms it there, and GitHub returns them to the box with the five
-fields stored and the integration on. The manifest carries the
-settings above, `url` = the box's address, the manifest callback as
-`redirect_url`, and as callback URLs
-`<PUBLIC_BASE_URL>/api/mcp/oauth/callback` plus, when the admin
-reached the box at another address (`http://localhost:8080` with
-`PUBLIC_BASE_URL` empty), that address's `/api/mcp/oauth/callback`
-too. When that address is on the public internet, the manifest also
-names an inactive webhook at `<address>/api/github/webhook`. A
-loopback or private address omits the hook: GitHub refuses a hook
-URL it cannot reach.
+The App asks for read and write access to Contents and Pull requests,
+and read access to Metadata. It is private and receives no webhooks.
 
-The flow: `POST /api/admin/instance/keys/github-app/manifest` with
+## Step 2: Connect GitHub
+
+1. Open **Tools** at the organisation, the guild, or the agent.
+2. On the **GitHub** card, click **Connect**.
+3. On GitHub, authorize the App.
+4. If the App is not installed on your account yet, GitHub asks next
+   which account to install it on and which repositories it may
+   reach.
+
+GitHub sends you back with the card connected and showing the
+account. The App is installed once per GitHub account: a later
+Connect, from another guild or agent, reuses that installation. When
+you reach several installations, a page asks which account to use.
+
+When the GitHub organisation needs an admin to approve the install,
+click **Connect** again once they have.
+
+## Step 3: Pick the repositories
+
+On the **GitHub** card, pick each repository from **From GitHub ·
+`<account>`**. The list holds the repositories the installation
+reaches. To see another one, give the App access to it on GitHub.
+
+A guild or agent without its own login uses its organisation's
+repositories, and an agent its guild's. Connecting a login at the
+narrower scope lets it pick a different set.
+
+The guild's coding agents clone these repositories at their next
+run ([Repositories](../concepts/coding/repositories.md),
+[Add a coding agent](../getting-started/add-a-coding-agent.md)).
+
+## Registering the App by hand
+
+Instead of step 1, you can register the App yourself on GitHub
+(**Settings**, **Developer settings**, **GitHub Apps**):
+
+1. Create an App with:
+   - Callback URL: `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`
+   - **Request user authorization (OAuth) during installation** and
+     **Redirect on update** checked
+   - Webhook inactive
+   - Repository permissions: Contents and Pull requests read and
+     write, Metadata read
+   - **Only on this account** for where it can be installed
+2. Generate a client secret and a private key.
+3. On **Platform keys**, **GitHub App**, enter:
+   - **App ID**
+   - **App slug**: the last segment of `https://github.com/apps/<slug>`
+   - **Private key (PEM)**: the file's content as is
+   - **Client ID**
+   - **Client secret**
+4. Click **Save**.
+
+## Replacing the App
+
+An App with another App ID, or removing the App, disconnects every
+GitHub login installed with the old one. The form asks first, with
+the count. A new private key or client secret for the same App
+disconnects nothing.
+
+## Reference
+
+### Setup state
+
+The **GitHub App** integration stores `app_id`, `slug`,
+`private_key`, `client_id`, and `client_secret`. Until all five are
+set, Tools marks the connector **Not set up** with the missing fields
+and disables Connect. A Connect sent anyway is a 422 with
+`setup_state: unsupported` ([Integrations](catalog.md#integrations)).
+A replacing write without `confirm_replace` is a 409 with
+`replaces_app: true` and `connections`. The private key accepts one
+line with `\n` escapes too.
+
+### Manifest flow
+
+`POST /api/admin/instance/keys/github-app/manifest` with
 `{ name?, owner?, return_to? }` answers `{ action, manifest, state }`
-and sets a state cookie (`guilds_github_manifest`, HttpOnly,
-SameSite=Lax, 20 minutes, path = the callback). GitHub redirects to
-`GET /api/admin/instance/keys/github-app/manifest/callback?code&state`,
-which checks that the cookie's state matches a flow this process
-started, trades the code once at
-`POST https://api.github.com/app-manifests/{code}/conversions` (no
-token), stores the fields for the admin who started the flow, and
-redirects to `return_to` (a path on this app only) or to
+and sets the `guilds_github_manifest` cookie (HttpOnly, SameSite=Lax,
+20 minutes, path = the callback). The browser posts the manifest to
+`action`.
+
+The manifest carries the settings above, with `url` = the box's
+address and callback URLs `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`
+plus, when the admin reached the box at another address, that
+address's callback too. A box on the public internet also names an
+inactive webhook at `<address>/api/github/webhook`. A loopback or
+private address omits it: GitHub refuses a hook URL it cannot reach.
+
+GitHub redirects to
+`GET /api/admin/instance/keys/github-app/manifest/callback?code&state`.
+The callback checks that the cookie's state matches a flow this
+process started, trades the code once at
+`POST https://api.github.com/app-manifests/{code}/conversions`, and
+stores the fields for the admin who started the flow. It redirects to
+`return_to` (a path on this app only) or to
 `/admin?tab=instance&integration=github-app`. A failure redirects
 there with `setup_error=state|conversion|store` and stores nothing
 ([Security register](../architecture/security-register.md), SEC-22).
 
-**Paste.** Register the App on GitHub by hand (Settings, Developer
-settings, GitHub Apps) with the settings above and the callback URL,
-generate a client secret and a private key, and enter the App ID,
-the slug (the last segment of `https://github.com/apps/<slug>`), the
-PEM (as is, in the text area; one line with `\n` escapes is also
-accepted), the client ID, and the client secret in the form.
+### Connect flow
 
-**Replacing it.** Entering an App with another App ID, or removing
-the integration, disconnects every GitHub login installed with the
-old App, since their installations belong to it. The form asks for
-confirmation with the count; the API answers 409 with
-`replaces_app: true` and `connections` until `confirm_replace` is
-sent. A new private key or client secret on the same App ID
-disconnects nothing.
+Connect follows the pending-connection path of the browser logins
+([Connectors](connectors.md#browser-oauth)).
 
-Connect is offered at organisation, guild, and agent scope. It
-follows the pending-connection path of the browser logins. The App
-is installed once per GitHub account. Later Connects reuse that
-install.
-
-Each login then chooses its own repositories on the GitHub card
-(Tools), stored in the login's settings. A narrower scope
-inherits the wider login's repositories until it connects its own
-login and picks a different set.
-
-1. Connect creates a pending connection with its `oauth_state`. When
-   the organisation has no connected GitHub login the operator can
-   see, it answers with `authorization_url`
-   `https://github.com/apps/<slug>/installations/new?state=…`, where
-   the operator chooses the account and the repositories the App may
-   reach. When a login already exists, Connect sends the operator to
-   user authorization at `/login/oauth/authorize` instead, so a
-   second guild can attach the existing installation without
-   installing the App again. A short-lived cookie stores that state
-   so the callback can find the login if GitHub omits it after the
-   authorize hop.
-2. After install, GitHub either sends `code` (and sometimes
-   `installation_id` and `state`) or a setup redirect with
-   `installation_id` and `state` and no `code`. A setup redirect
-   starts user authorization at `/login/oauth/authorize` with the
-   same `state` and the callback URL. The orchestrator exchanges
-   `code` for a user token and keeps an installation only when that
-   user can reach it: the callback's id when present, otherwise this
-   App's only installation on the token. Several installations open
-   a picker (`/api/mcp/oauth/github-installation`) so the operator
-   chooses the account, or installs the App on another. An id in
-   the URL alone proves nothing. The user token is discarded. A
-   refused callback deletes a new pending connection.
+1. Connect creates a pending connection with its `oauth_state` and
+   answers with user authorization at `/login/oauth/authorize`, with
+   the callback URL and the state. A short-lived cookie keeps the
+   state in case GitHub omits it after a later hop. Connect never
+   starts on the install page: GitHub sends nobody back from editing
+   an existing installation, since the App has no setup URL.
+2. The orchestrator trades the `code` for a user token and keeps an
+   installation only when that user reaches it: the callback's
+   `installation_id` when present, else the App's only installation
+   on the token. Several open a picker
+   (`/api/mcp/oauth/github-installation`). None redirects to
+   `https://github.com/apps/<slug>/installations/new?state=…`, whose
+   own authorization hop returns a new `code` with the
+   `installation_id`, traded without `redirect_uri`. A setup redirect
+   with `installation_id` and no `code` starts user authorization with
+   the same `state`. An id in the URL alone proves nothing. The user
+   token is discarded. A refused callback deletes a new pending
+   connection.
 3. The connection stores the installation id, takes the account's
    login as `account_hint`, becomes `connected`, and writes its
    enabled binding.
 
-An installation that needs an organisation admin's approval returns
-`setup_action=request`. Connect again after they approve, and
-GitHub's update redirect completes it.
+An install awaiting an organisation admin returns
+`setup_action=request`.
 
-The connection lists no model tools. Agents use `git` and `gh` in
-the sandbox. The Tools view shows it without an On/Off switch.
+The connection lists no model tools: agents use `git` and `gh` in the
+sandbox. Tools shows it without an On/Off switch.
 
-`GET /api/mcp/connections/:id/github/repositories` lists the
-repositories the installation reaches:
+### Repositories
 
-- `name`
-- `full_name`
-- `owner`
-- `private`
-- `default_branch`
-- `url`
+`GET /api/mcp/connections/:id/github/repositories` lists what the
+installation reaches: `name`, `full_name`, `owner`, `private`,
+`default_branch`, `url`.
 
 `PUT /api/mcp/connections/:id/github/selected` stores
-`{ repositories: [{ name, url, default_branch }] }` in that login's
-settings, as `repositories`.
-Each must be one the installation reaches. Each is stored with
-GitHub's id for it (`github_id`). A rename of the repository or its
-owner keeps that id.
+`{ repositories: [{ name, url, default_branch }] }` in the login's
+settings as `repositories`. Each must be one the installation
+reaches, and is stored with GitHub's id for it (`github_id`), which a
+rename of the repository or its owner keeps. A guild-owned login
+mirrors its selection into `guild_repositories`.
 
-The access payload carries the selection in the login's `settings`. A guild-owned login also mirrors the selection
-into `guild_repositories`. `GET /api/guilds/:id/repositories` still
-lists that guild's extra git URLs and the GitHub logins the
-operator can see.
+### Tokens
 
-**Tokens.** The App's private key and the installation id never
-leave the orchestrator. At each generation start of a coding agent
-the orchestrator signs an App token (RS256, 9 minutes) and
-requests, for each connection the guild's repositories use, an
-installation access token limited to those repositories by their
-GitHub ids, with contents and pull requests write. GitHub makes it
-valid for one hour.
+The App's private key and the installation id never leave the
+orchestrator. At each generation start of a coding agent, it signs an
+App token (RS256, 9 minutes) and mints, per connection, an
+installation token limited to the guild's repositories, valid one
+hour ([Repositories](../concepts/coding/repositories.md#tokens)).
 
-A repository stored without an id gets the one GitHub lists under
-its name in the installation. GitHub's answer names every
-repository as it is now: a repository whose name or owner GitHub
-changed gets its current URL, on the guild repository and in the
-login's selection. When GitHub refuses the token because the
-installation no longer reaches a repository, the error names it.
+`guilds-git-credential` is the credential helper for
+`https://github.com` with `useHttpPath`. It reads
+`/run/guilds/<agent id>/git-tokens.json` for the agent
+`GUILDS_AGENT_HOME` names. It is set in the image's system git
+configuration and again through `GIT_CONFIG_COUNT`, which git reads
+after every configuration file, so a helper the agent configures,
+such as the one `gh auth setup-git` writes, cannot replace it.
 
-The tokens go to `/run/guilds/<agent id>/git-tokens.json` through
-the sandbox file API, outside every home. `guilds-git-credential`
-reads the file of the agent `GUILDS_AGENT_HOME` names. It is the
-credential helper for
-`https://github.com` with `useHttpPath`, set in the image's system
-git configuration and again through the environment
-(`GIT_CONFIG_COUNT`), which git reads after every configuration
-file. A helper the agent configures in its home, such as the one
-`gh auth setup-git` writes, cannot replace it.
-
-git gets the token of the repository it is talking to. `shell`
-exports the token of the repository that holds the working
-directory as `GH_TOKEN` for `gh`. A coding harness's environment has
-neither `GH_TOKEN` nor `GITHUB_TOKEN`: the harness does not open pull
-requests. git still gets its token through the credential helper.
-Before a `shell` call and each `code_task` poll, a token within 10
-minutes of expiry is replaced.
-
-Every token joins the run's redaction set. What a coding run does
-with the repositories is in [Repositories](../concepts/coding/repositories.md).
-
-**Removal.** When GitHub refuses a token because the installation
-was removed or suspended (404 or 403), the connection becomes
-`disconnected`, and the coding generation that needed it fails at
-start. Deleting the connection deletes the guild repositories
-added through it.
+When GitHub refuses a token because the installation was removed or
+suspended (404 or 403), the connection becomes `disconnected` and the
+coding generation that needed it fails at start. Deleting the
+connection deletes the guild repositories added through it.

@@ -37,16 +37,33 @@ function reply(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
-/** GitHub as the App sees it: one user who installed the App on `acme` (installation 77). */
+/** The `redirect_uri` of each code GitHub was asked to trade, in order. */
+const exchangedRedirects: Array<string | undefined> = [];
+
+/**
+ * GitHub as the App sees it: one user who installed the App on `acme` (installation 77), and one
+ * (`fresh-code`) who has not installed it yet.
+ */
 function github(url: string, init: RequestInit = {}): Response {
   const parsed = new URL(url);
   if (parsed.host === "github.com" && parsed.pathname === "/login/oauth/access_token") {
-    const body = JSON.parse(String(init.body)) as { code: string; client_secret: string };
-    return body.code === "good-code" && body.client_secret === "client-secret"
-      ? reply(200, { access_token: "ghu_user" })
+    const body = JSON.parse(String(init.body)) as { code: string; client_secret: string; redirect_uri?: string };
+    exchangedRedirects.push(body.redirect_uri);
+    if (body.client_secret !== "client-secret") {
+      return reply(200, { error: "bad_verification_code" });
+    }
+    if (body.code === "good-code") {
+      return reply(200, { access_token: "ghu_user" });
+    }
+    return body.code === "fresh-code"
+      ? reply(200, { access_token: "ghu_fresh" })
       : reply(200, { error: "bad_verification_code" });
   }
   if (parsed.pathname === "/user/installations") {
+    const headers = new Headers(init.headers);
+    if (headers.get("authorization") === "Bearer ghu_fresh") {
+      return reply(200, { installations: [] });
+    }
     return reply(200, {
       installations: [{ id: 77, app_id: 4242, account: { login: "acme" }, updated_at: "2026-09-30T12:00:00Z" }],
     });
@@ -154,7 +171,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     const badName = await app.inject({ method: "POST", url: base, headers: JSON_HEADERS, payload: { name: "Docs", url: "https://x.dev/a" } });
     assert.equal(badName.statusCode, 422);
 
-    // Connect sends the operator to the App's install page; the login waits, with no binding.
+    // Connect sends the operator to user authorization; the login waits, with no binding.
     const connectRes = await app.inject({
       method: "POST",
       url: "/api/mcp/connections",
@@ -163,7 +180,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     });
     assert.equal(connectRes.statusCode, 201, connectRes.body);
     const authorize = new URL(String(connectRes.json().authorization_url));
-    assert.equal(authorize.origin + authorize.pathname, "https://github.com/apps/guilds-run-test/installations/new");
+    assert.equal(authorize.origin + authorize.pathname, "https://github.com/login/oauth/authorize");
     const state = String(authorize.searchParams.get("state"));
     const connectionId = String(connectRes.json().id);
     assert.equal(connectRes.json().status, "pending");
@@ -300,6 +317,38 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
       installation_id: 77,
       account: "acme",
     });
+    assert.equal(
+      (await app.inject({ method: "DELETE", url: `/api/mcp/connections/${String(hop.json().id)}`, headers: OWNER })).statusCode,
+      204,
+    );
+
+    // A user who has not installed the App is sent on to install it. GitHub's own authorization
+    // hop then returns a code issued without `redirect_uri`, which is traded without one.
+    const fresh = await app.inject({
+      method: "POST",
+      url: "/api/mcp/connections",
+      headers: JSON_HEADERS,
+      payload: { mcp_server_id: "mcp_github", owner_scope: "org", owner_id: "org_home" },
+    });
+    assert.equal(fresh.statusCode, 201, fresh.body);
+    const freshState = String(new URL(String(fresh.json().authorization_url)).searchParams.get("state"));
+    const toInstall = await app.inject({
+      method: "GET",
+      url: `/api/mcp/oauth/callback?code=fresh-code&state=${freshState}`,
+    });
+    assert.equal(toInstall.statusCode, 302, toInstall.body);
+    const install = new URL(String(toInstall.headers.location));
+    assert.equal(install.origin + install.pathname, "https://github.com/apps/guilds-run-test/installations/new");
+    assert.equal(install.searchParams.get("state"), freshState);
+    assert.equal((await repo.getMcpConnection(String(fresh.json().id)))?.status, "pending");
+    exchangedRedirects.length = 0;
+    const installed = await app.inject({
+      method: "GET",
+      url: `/api/mcp/oauth/callback?code=good-code&installation_id=77&setup_action=install&state=${freshState}`,
+    });
+    assert.equal(installed.statusCode, 200, installed.body);
+    assert.deepEqual(exchangedRedirects, [undefined]);
+    assert.equal((await repo.getMcpConnection(String(fresh.json().id)))?.status, "connected");
   } finally {
     globalThis.fetch = realFetch;
     setInstanceKeys({});
@@ -354,7 +403,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     });
     assert.equal(first.statusCode, 201, first.body);
     const firstAuthorize = new URL(String(first.json().authorization_url));
-    assert.equal(firstAuthorize.origin + firstAuthorize.pathname, "https://github.com/apps/guilds-run-test/installations/new");
+    assert.equal(firstAuthorize.origin + firstAuthorize.pathname, "https://github.com/login/oauth/authorize");
     const firstState = String(firstAuthorize.searchParams.get("state"));
     const firstId = String(first.json().id);
     const setup = await app.inject({

@@ -88,11 +88,8 @@ The guild's **Settings** tab has two parts for coding:
   owns the Vercel project (Hobby: the account owner). Empty uses each
   agent's platform address." It is saved with **Save**.
 - **Repositories**: the extra git URLs each coding agent of the guild
-  clones into `repos/<name>` in its home, at its next run. Its line
-  says that GitHub repositories are picked on the GitHub integration
-  under **Tools**, at this guild or an agent, or added here with a
-  GitHub login, and that one without a login is cloned anonymously,
-  which only a public repository allows. Each row
+  clones into `repos/<name>` in its home, at its next run, under the
+  line "Other git repositories, added by URL." Each row
   shows the name, URL, and default branch, a tag, "anonymous",
   "GitHub · `<account>`", or "`<account>` disconnected", and a remove
   button. With none, "No extra repositories yet." Under them, an add
@@ -111,22 +108,23 @@ The create dialog's **Repositories** step and the **Repositories**
 section of a coding agent's Settings show the guild's repositories.
 Changes there are the guild's, saved as they are made.
 
-A line says that code tasks run in the guild's repositories, cloned
-into the agent's sandbox, that every coding agent of the guild shares
-them, and that without one the agent's runs fail at start. Then the
-guild's GitHub login:
+A line reads "Code tasks run in these repositories, shared by every
+coding agent of `<guild>`." Then the guild's GitHub login:
 
-- When the GitHub App is not set up on the box: "The GitHub App is not
-  set up on this box. A platform admin registers it under Admin,
-  Platform keys; until then, repositories are added by URL below."
-- While no login is connected: "Install the GitHub App on your account
-  and pick the repositories it may reach; private ones need it." and
-  **Connect GitHub**, which starts the guild's connect flow.
+- When the GitHub App is not set up on the box: "GitHub is not set up
+  on this box.", then **Set up**, which opens the GitHub App under
+  **Admin**, **Platform keys**, for a platform admin, or "Ask a
+  platform admin to set it up." for anyone else, and **Learn more**,
+  which opens [GitHub](../../tools-and-connectors/github.md) on
+  docs.guilds.run in a new tab.
+- While no login is connected: "Connect GitHub to pick repositories,
+  private ones included." and **Connect GitHub**, which starts the
+  guild's connect flow.
 - With the guild's own login: "GitHub · `<account>`" over the login's
   repository picker, **From GitHub · `<account>`**.
 - With the organisation's login: "GitHub · `<account>` (the
-  organisation's login; connect here to pick for this guild alone)",
-  its repositories listed read-only, and **Connect GitHub**.
+  organisation's login)", its repositories listed read-only, and
+  **Connect GitHub**, which connects a login of the guild's own.
 
 Then the guild's **Repositories**, as on the guild's Settings. While
 the guild has none, picked or added, an ochre line says so: in the

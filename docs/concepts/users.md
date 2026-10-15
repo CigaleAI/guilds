@@ -152,11 +152,15 @@ and which of its fields are set, with when and by whom.
   in a dialog that takes an optional name and organisation.
   Replacing the App with one of another App ID, or removing it, asks
   for confirmation with the count of GitHub logins it disconnects.
+- The GitHub App opens with a **Setup guide** link to
+  [GitHub](../tools-and-connectors/github.md) on docs.guilds.run, in a
+  new tab.
 
-The **Set up** links from Tools and a recipe's preview land on
+The **Set up** links from Tools, a coding agent's repositories, and a
+recipe's preview land on
 Platform keys with that integration preselected
 ([Configure](../getting-started/configure.md#platform-keys),
-[GitHub](../tools-and-connectors/github.md#registering-the-app)).
+[GitHub](../tools-and-connectors/github.md#step-1-create-the-app)).
 
 ## Rules and limits
 

@@ -73,7 +73,7 @@ carries none of these.
 |---|---|---|---|
 | Web search | Tavily API key | The Tavily connector on the platform's key, `tavily_search` | Runs leave the tool out. An organisation may connect a Tavily key of its own |
 | Group routing | TypeSafe API key, and a model to tune it | Recipient and history selection in group chat, beyond tag rules | Tag rules and the last 10 messages |
-| GitHub App | App ID, App slug, private key (PEM), client ID, client secret. **Create the GitHub App** fills them from GitHub ([GitHub](../tools-and-connectors/github.md#registering-the-app)) | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing fields, and disables Connect |
+| GitHub App | App ID, App slug, private key (PEM), client ID, client secret. **Create the GitHub App** fills them from GitHub ([GitHub](../tools-and-connectors/github.md#step-1-create-the-app)) | The GitHub connector and a guild's repositories | Tools marks the connector **Not set up**, names the missing fields, and disables Connect |
 | Google connectors | Client ID, client secret ([Gmail and Drive](../tools-and-connectors/google.md)) | The Gmail and Drive connectors | As for the GitHub App |
 
 ### Environment

@@ -189,7 +189,7 @@ test("the App token is an RS256 JWT issued by the App, valid under ten minutes",
   assert.ok(verifier.verify(publicKey, Buffer.from(signature!, "base64url")));
 });
 
-test("Connect sends the operator to the App's install page with the state", () => {
+test("the App's install page carries the state", () => {
   assert.equal(installUrl(APP, "s t"), "https://github.com/apps/guilds-run-test/installations/new?state=s%20t");
 });
 

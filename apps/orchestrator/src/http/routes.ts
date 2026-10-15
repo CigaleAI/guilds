@@ -3153,6 +3153,21 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return { status: "connected" };
     }
     if (choice.action === "install") {
+      // The install page's own authorization hop returns to the App's first callback URL with no
+      // `redirect_uri`, so its code is traded without one.
+      const { redirect_uri: _redirect, ...oauth } =
+        fields.pending.oauth && typeof fields.pending.oauth === "object" && !Array.isArray(fields.pending.oauth)
+          ? (fields.pending.oauth as Record<string, unknown>)
+          : {};
+      const [ciphertext, nonce] = encrypt({ ...fields.pending, oauth });
+      await repo.saveMcpConnection(String(row.id), {
+        ciphertext,
+        nonce,
+        status: "pending",
+        accountHint: "",
+        oauthState: String(row.oauth_state ?? ""),
+        now: new Date(),
+      });
       return { status: "install" };
     }
     const pickerState = newState();
@@ -3685,26 +3700,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       oauthState = newState();
       const redirect = oauthCallbackUrl(deps.config?.publicBaseUrl ?? "", request);
-      let orgIdForGithub: string | null = null;
-      if (ownerScope === "org") {
-        orgIdForGithub = ownerId;
-      } else if (ownerScope === "agent" && ownerId) {
-        const agent = await repo.getAgent(ownerId);
-        orgIdForGithub = agent === null ? null : String(agent.org_id);
-      } else if (ownerId) {
-        const guild = await repo.getGuild(ownerId);
-        orgIdForGithub = guild === null ? null : String(guild.org_id);
-      }
-      const visibleIds = orgIdForGithub
-        ? (await repo.listGuildsForUser(orgIdForGithub, String(user.id))).map((guild) => String(guild.id))
-        : [];
-      const existingGithub = orgIdForGithub
-        ? await repo.listVisibleGithubConnections(String(server.id), orgIdForGithub, visibleIds)
-        : [];
-      [ciphertext, nonce] = encrypt(pendingOauthPayload("", existingGithub.length ? redirect : "", replaces));
-      authorize = existingGithub.length
-        ? userAuthorizationUrl(github, oauthState, redirect)
-        : installUrl(github, oauthState);
+      // User authorization first: the callback then uses an installation the user already
+      // reaches, or sends them on to install the App. GitHub sends nobody back from editing an
+      // existing installation, so Connect never starts on the install page.
+      [ciphertext, nonce] = encrypt(pendingOauthPayload("", redirect, replaces));
+      authorize = userAuthorizationUrl(github, oauthState, redirect);
       bind = false;
       appendSetCookie(reply, githubOauthStateCookie(oauthState, githubOauthCookieSecure()));
     } else if (startsBrowserOauth(server)) {

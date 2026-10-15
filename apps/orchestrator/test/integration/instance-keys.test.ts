@@ -138,7 +138,7 @@ test("instance keys switch platform logins and the GitHub connector; replacing t
     assert.equal(appStored.body.includes("PRIVATE KEY"), false);
     const configured = await connectGithub();
     assert.equal(configured.statusCode, 201, configured.body);
-    assert.ok(String(configured.json().authorization_url).startsWith("https://github.com/apps/guilds-run-test/installations/new?state="));
+    assert.ok(String(configured.json().authorization_url).startsWith("https://github.com/login/oauth/authorize?client_id=Iv1.client&"));
 
     // Replacing the App strands the logins installed with it: the admin confirms, with the count.
     const seeded = await seedConnectedGithub();
@@ -292,7 +292,7 @@ test("the GitHub App registers from a manifest: the box posts it, GitHub calls b
       payload: { mcp_server_id: GITHUB_SERVER_ID, owner_scope: "org", owner_id: "org_home" },
     });
     assert.equal(connected.statusCode, 201, connected.body);
-    assert.ok(String(connected.json().authorization_url).startsWith("https://github.com/apps/guilds-box/installations/new?state="));
+    assert.ok(String(connected.json().authorization_url).startsWith("https://github.com/login/oauth/authorize?client_id=Iv1.client&"));
 
     // A return_to on another origin, or none, lands on the admin page.
     const foreignState = (await start({ return_to: "https://evil.example/x" })).json().state as string;

@@ -1,26 +1,39 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import { useAccess, useGuildRepositories } from "../../api/queries";
 import type { GithubSelectedRepository } from "../../api/types";
+import { DocsLink } from "../../app/docs";
+import { useIdentity } from "../../app/identity";
 import { Button } from "@guildsrun/ui";
 import { GithubSettings } from "../access/GithubRepositories";
 import { useServerConnect } from "../access/ConnectDialogs";
 import { GuildRepositories } from "../guild/pages/GuildRepositories";
+import { setupSearch } from "../instance/instance";
 
 /** The GitHub login the guild's repositories come from: connect one, or pick repositories on it. */
 function GithubBlock({ guildId }: { guildId: string }) {
   const owner = { scope: "guild", id: guildId } as const;
   const access = useAccess(owner);
   const connect = useServerConnect(owner);
+  const { user } = useIdentity();
+  const location = useLocation();
   const github = access.data?.mcp.find((server) => server.slug === "github");
   if (!github) return null;
   if (github.oauth_setup_state === "unsupported") {
     return (
-      <p className="text-sm text-fg-2">
-        The GitHub App is not set up on this box. A platform admin registers it under{" "}
-        <Link to="/admin" className="underline">
-          Admin
-        </Link>
-        , Platform keys; until then, repositories are added by URL below.
+      <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-fg-2">
+        GitHub is not set up on this box.
+        {user.platform_admin ? (
+          <Link
+            to="/admin"
+            search={setupSearch("github-app", location.href)}
+            className="underline"
+          >
+            Set up
+          </Link>
+        ) : (
+          "Ask a platform admin to set it up."
+        )}
+        <DocsLink path="/tools-and-connectors/github">Learn more</DocsLink>
       </p>
     );
   }
@@ -31,8 +44,8 @@ function GithubBlock({ guildId }: { guildId: string }) {
       <div className="flex flex-wrap items-center gap-3">
         <p className="min-w-60 flex-1 text-sm text-fg-2">
           {connected
-            ? `GitHub · ${github.account_hint}${owned ? "" : " (the organisation's login; connect here to pick for this guild alone)"}`
-            : "Install the GitHub App on your account and pick the repositories it may reach; private ones need it."}
+            ? `GitHub · ${github.account_hint}${owned ? "" : " (the organisation's login)"}`
+            : "Connect GitHub to pick repositories, private ones included."}
         </p>
         {!connected || !owned ? (
           <Button
@@ -77,8 +90,7 @@ export function CodingRepositories({
   return (
     <>
       <p className="text-sm text-fg-2">
-        Code tasks run in the guild&apos;s repositories, cloned into the agent&apos;s sandbox. Every
-        coding agent of {guild.name} shares them. Without one, this agent&apos;s runs fail at start.
+        Code tasks run in these repositories, shared by every coding agent of {guild.name}.
       </p>
       <GithubBlock guildId={guild.id} />
       <GuildRepositories guild={guild} />

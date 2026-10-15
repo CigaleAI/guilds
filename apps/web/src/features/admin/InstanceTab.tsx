@@ -26,6 +26,7 @@ import {
   useStartGithubAppManifest,
 } from "../../api/queries";
 import type { InstanceIntegration, IntegrationField, IntegrationState } from "../../api/types";
+import { DocsLink } from "../../app/docs";
 import type { TabSearch } from "../../app/router";
 import { safeReturnTo } from "../instance/instance";
 import { submitManifestForm } from "./githubManifest";
@@ -34,6 +35,11 @@ const stateTag: Record<IntegrationState, { tone: "tide" | "ochre" | "well"; labe
   on: { tone: "tide", label: "On" },
   incomplete: { tone: "ochre", label: "Incomplete" },
   off: { tone: "well", label: "Off" },
+};
+
+/** The docs page that walks through setting up an integration, by its id. */
+const integrationDocs: Record<string, string> = {
+  "github-app": "/tools-and-connectors/github",
 };
 
 /** What went wrong when GitHub sent the browser back from creating the App, by the callback's code. */
@@ -143,6 +149,7 @@ function IntegrationBlock({
     if (focused) ref.current?.scrollIntoView({ block: "start" });
   }, [focused]);
   const tag = stateTag[integration.state];
+  const docs = integrationDocs[integration.id];
 
   return (
     <div ref={ref} className="border-b border-line last:border-b-0">
@@ -168,6 +175,11 @@ function IntegrationBlock({
       </button>
       {expanded ? (
         <div className="flex flex-col gap-4 bg-paper px-4 py-4 pl-11">
+          {docs ? (
+            <p className="text-sm text-fg-2">
+              <DocsLink path={docs}>Setup guide</DocsLink>
+            </p>
+          ) : null}
           {integration.source === "store" ? (
             <KeysForm integration={integration} returnTo={returnTo} onSaved={onSaved} />
           ) : (
