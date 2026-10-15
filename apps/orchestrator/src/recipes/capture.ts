@@ -13,11 +13,13 @@ import {
   CONFIG_KEYS,
   addMissingBrowser,
   addMissingBrowserLanguage,
-  addMissingCliScriptingAndMemory,
+  addMissingScriptingAndMemory,
   addMissingRunLimits,
   addMissingTemperatureAndStepLimits,
   addMissingThinkingLevel,
+  secretAliasesOf,
 } from "../agents/validation.js";
+import { HARNESS_INFO, HARNESSES, harnessSecretSource } from "../coding/harnesses.js";
 import { jsonObj } from "../db/json.js";
 import { secretGrants } from "../secrets/access.js";
 import { emptyRecipe } from "./minimal.js";
@@ -52,6 +54,29 @@ function secretRecipeScope(secret: Record<string, unknown>, guildId: string): "o
   return secretGrants(secret).some((grant) => grant.guild_id === guildId) ? "guild" : "agent";
 }
 
+/** The variables the harnesses read their subscription tokens from. */
+const HARNESS_TOKEN_VARIABLES = new Set(
+  HARNESSES.flatMap((harness) => HARNESS_INFO[harness].secret ?? []),
+);
+
+/**
+ * The secrets a coding agent's harnesses read their subscription tokens from. They are the
+ * operator's own subscription, so a recipe leaves them out: the applying operator sets one up
+ * for the harness they pick.
+ */
+function harnessTokenSecrets(config: Record<string, unknown>): Set<string> {
+  if (config.coding !== true) return new Set();
+  const aliases = secretAliasesOf(config);
+  return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, aliases) ?? []));
+}
+
+/** The role's secret aliases a recipe carries: a coding role's harness token aliases stay behind. */
+function portableSecretAliases(config: Record<string, unknown>): Record<string, string> {
+  const aliases = secretAliasesOf(config);
+  if (config.coding !== true) return aliases;
+  return Object.fromEntries(Object.entries(aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)));
+}
+
 function clippedHint(value: unknown): string {
   return String(value ?? "").slice(0, RECIPE_HINT_MAX);
 }
@@ -60,7 +85,7 @@ export function portableRoleConfig(
   config: Record<string, unknown>,
   browserRequired: boolean,
 ): Record<string, unknown> {
-  const filled = addMissingCliScriptingAndMemory(
+  const filled = addMissingScriptingAndMemory(
     addMissingThinkingLevel(
       addMissingBrowserLanguage(
         addMissingRunLimits(
@@ -78,6 +103,18 @@ export function portableRoleConfig(
   for (const key of CONFIG_KEYS) {
     // A recipe carries the flags alone: at apply the box follows them, and a custom size stays behind.
     if (key === "box" || key === "cpu" || key === "memory_mib") {
+      continue;
+    }
+    // A role without a harness, or on its harness's default model, leaves the key out; apply settles it.
+    if ((key === "harness" || key === "harness_model") && filled[key] == null) {
+      continue;
+    }
+    // A role left without secret aliases leaves the key out.
+    if (key === "secret_aliases") {
+      const aliases = portableSecretAliases(filled);
+      if (Object.keys(aliases).length) {
+        out.secret_aliases = aliases;
+      }
       continue;
     }
     if (key in filled) {
@@ -279,8 +316,12 @@ export async function captureGuild(
       );
       connection.roles[role] = { enabled: Boolean(server.enabled), tools };
     }
+    const harnessTokens = harnessTokenSecrets(config);
     for (const secret of await deps.repo.listSecrets(orgId, { agentId })) {
       const name = String(secret.name);
+      if (harnessTokens.has(name)) {
+        continue;
+      }
       const scope = secretRecipeScope(secret, guildId);
       let entry = recipe.secrets.find((item) => item.name === name);
       if (!entry) {

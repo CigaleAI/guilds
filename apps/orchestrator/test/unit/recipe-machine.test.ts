@@ -15,6 +15,7 @@ function machineWith(box: MachineBox, agents: number): MachineWithAgents {
     memory_mib: box === "custom" ? 3072 : null,
     max_workspace_mib: 10240,
     workspace_mib: null,
+    harnesses: null,
     agents: Array.from(
       { length: agents },
       (_, slot): MachineAgent => ({
@@ -25,6 +26,7 @@ function machineWith(box: MachineBox, agents: number): MachineWithAgents {
         slot,
         browser: false,
         coding: false,
+        max_workspace_mib: 10240,
       }),
     ),
   };
@@ -43,21 +45,27 @@ function recipeCoding(...roles: string[]): RecipeDocument {
 
 const ROOMY = { maxAgents: 32, private: false };
 
-test("a coding role on a standard machine is refused once per coding role", () => {
+test("a role whose minimum the machine is below is refused once per role, naming both sizes", () => {
   const findings = machineFindings(recipeCoding("researcher", "fund"), machineWith("standard", 0), ROOMY);
   assert.deepEqual(
     findings.map((finding) => [finding.code, finding.severity, finding.path]),
     [
-      ["machine.coding", "error", "roles.researcher.config.coding"],
-      ["machine.coding", "error", "roles.fund.config.coding"],
+      ["machine.size", "error", "machine_id"],
+      ["machine.size", "error", "machine_id"],
     ],
   );
-  assert.match(findings[0]!.message, /researcher codes and needs a code or custom machine; shared is standard/);
+  assert.equal(
+    findings[0]!.message,
+    "researcher needs a machine with at least 2 CPUs and 4 GiB; shared has 1 CPU and 2 GiB",
+  );
 });
 
-test("coding roles fit a code or custom machine, and a recipe without coding fits a standard one", () => {
+test("a custom machine is judged by its size: coding roles fit a code machine, not a 3 GiB custom one", () => {
   assert.deepEqual(machineFindings(recipeCoding("researcher"), machineWith("code", 0), ROOMY), []);
-  assert.deepEqual(machineFindings(recipeCoding("researcher", "ta"), machineWith("custom", 0), ROOMY), []);
+  assert.deepEqual(
+    machineFindings(recipeCoding("researcher"), machineWith("custom", 0), ROOMY).map((finding) => finding.code),
+    ["machine.size"],
+  );
   assert.deepEqual(machineFindings(recipeCoding(), machineWith("standard", 0), ROOMY), []);
 });
 
@@ -77,7 +85,7 @@ test("a machine hosting a guild the operator cannot see is refused, alongside th
   const findings = machineFindings(recipeCoding("ta"), machineWith("standard", 3), { maxAgents: 4, private: true });
   assert.deepEqual(
     findings.map((finding) => finding.code),
-    ["machine.coding", "machine.full", "machine.private"],
+    ["machine.size", "machine.full", "machine.private"],
   );
   assert.match(findings[2]!.message, /shared hosts agents of a guild you cannot see/);
 });

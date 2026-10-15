@@ -98,17 +98,11 @@ export const BROWSER_NATIVE_TOOLS = [
 
 /** Code tools: offered when the agent's coding capability is on; not bindings. */
 export const CODING_NATIVE_TOOLS = [
+  "code_task",
   "shell",
   "shell_status",
   "file_read",
-  "file_edit",
-  "file_write",
   "code_search",
-  "code_match",
-  "code_map",
-  "code_find",
-  "code_outline",
-  "code_callers",
 ] as const;
 
 /** Native tools a run always offers; not bindings. */

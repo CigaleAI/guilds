@@ -42,6 +42,8 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { BrowserLoginStrip } from "./BrowserLoginStrip";
+import { CodingNotReadyButton } from "./CodingReadiness";
+import { CodingStrip } from "./CodingStrip";
 import { ChatSessionChrome } from "./chat/SessionChrome";
 import { capabilityOn } from "./settings/configForm";
 
@@ -64,7 +66,6 @@ const tabs = [
     route: "/guilds/$guildId/agents/$agentId/cli",
     label: "CLI",
     icon: SquareTerminal,
-    capability: "cli",
   },
   { route: "/guilds/$guildId/agents/$agentId/tools", label: "Tools", icon: Wrench },
   { route: "/guilds/$guildId/agents/$agentId/secrets", label: "Secrets", icon: KeyRound },
@@ -125,6 +126,9 @@ export function AgentInspector() {
                       }
                     />
                   ) : null}
+                  {agent.data.config.coding ? (
+                    <CodingNotReadyButton guildId={guildId} agentId={agentId} />
+                  ) : null}
                   {wide ? (
                     <IconButton
                       icon={full ? Minimize2 : Maximize2}
@@ -172,6 +176,9 @@ export function AgentInspector() {
               </TabsNav>
               {onChat ? <ChatSessionChrome /> : null}
             </div>
+            {onChat && agent.data.config.coding ? (
+              <CodingStrip guildId={guildId} agentId={agentId} />
+            ) : null}
             {agent.data.config.browser ? (
               <BrowserLoginStrip guildId={guildId} agentId={agentId} />
             ) : null}

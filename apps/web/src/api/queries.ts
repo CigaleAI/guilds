@@ -67,6 +67,7 @@ import type {
   RegistryReload,
   RegistryRecipes,
   Run,
+  RunDiff,
   RunMessage,
   Schedule,
   StudioAgent,
@@ -82,6 +83,9 @@ import type {
   User,
   AccessEdit,
   AccessEditResult,
+  AgentHarness,
+  Harness,
+  HarnessCheck,
   ApplyChoices,
   ApplyPreview,
   ApplyRow,
@@ -120,6 +124,7 @@ export const keys = {
   agent: (agentId: string) => ["agent", agentId] as const,
   agentRuns: (agentId: string) => ["agent", agentId, "runs"] as const,
   agentSchedules: (agentId: string) => ["agent", agentId, "schedules"] as const,
+  agentHarness: (agentId: string) => ["agent", agentId, "harness"] as const,
   /** Everything read from notes, memory, Tasks and tables; a file change in any guild refreshes it. */
   files: ["files"] as const,
   agentTask: (agentId: string) => ["files", "task", agentId] as const,
@@ -178,6 +183,7 @@ export const keys = {
   secrets: (owner: { scope: string; id: string }) => ["secrets", owner.scope, owner.id] as const,
   run: (runId: string) => ["run", runId] as const,
   runDiff: (runId: string, repository: string) => ["run", runId, "diff", repository] as const,
+  taskDiff: (runId: string, callId: string) => ["run", runId, "task-diff", callId] as const,
   guildRepositories: (guildId: string) => ["guild", guildId, "repositories"] as const,
   githubRepositories: (connectionId: string) => ["github", connectionId, "repositories"] as const,
   runMessages: (runId: string) => ["run", runId, "messages"] as const,
@@ -244,6 +250,28 @@ export function useAgent(agentId: string) {
   return useQuery({
     queryKey: keys.agent(agentId),
     queryFn: () => api<AgentDetail>(`/api/agents/${encodeURIComponent(agentId)}`),
+  });
+}
+
+/** Each harness's credentials for the agent; read fresh, since grants and logins change elsewhere. */
+export function useAgentHarness(agentId: string) {
+  return useQuery({
+    queryKey: keys.agentHarness(agentId),
+    staleTime: 0,
+    queryFn: () => api<AgentHarness>(`/api/agents/${encodeURIComponent(agentId)}/harness`),
+  });
+}
+
+/** Checks the agent's machine for a harness's login, waking the machine; the credentials then re-read. */
+export function useCheckHarness(agentId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (harness: Harness) =>
+      api<HarnessCheck>(`/api/agents/${encodeURIComponent(agentId)}/harness/check`, {
+        method: "POST",
+        body: { harness },
+      }),
+    onSettled: () => void client.invalidateQueries({ queryKey: keys.agentHarness(agentId) }),
   });
 }
 
@@ -922,6 +950,7 @@ export function useSaveAgentSettings(agentId: string, guildId: string) {
       client.setQueryData(keys.agent(agentId), agent);
       void client.invalidateQueries({ queryKey: keys.agents(guildId) });
       void client.invalidateQueries({ queryKey: keys.agentUsage(agentId) });
+      void client.invalidateQueries({ queryKey: keys.agentHarness(agentId) });
       refreshMachines(client);
     },
   });
@@ -1064,7 +1093,7 @@ function refreshMachines(client: QueryClient) {
   });
 }
 
-/** The organisation's machines, each with its agents, their planned memory, and its disk. */
+/** The organisation's machines, each with its agents, their planned load, and its disk. */
 export function useOrgMachines(orgId: string) {
   return useQuery({
     queryKey: keys.orgMachines(orgId),
@@ -1194,9 +1223,17 @@ export function useRunDiff(runId: string, repository: string | null) {
     enabled: Boolean(repository),
     staleTime: Infinity,
     queryFn: () =>
-      api<{ repository: string; diff: string; truncated: boolean }>(
-        `${runPath(runId)}/changes/${encodeURIComponent(repository ?? "")}/diff`,
-      ),
+      api<RunDiff>(`${runPath(runId)}/changes/${encodeURIComponent(repository ?? "")}/diff`),
+  });
+}
+
+/** The diff one code task made, between its start and end checkpoints, fetched on demand. */
+export function useTaskDiff(runId: string, callId: string | null) {
+  return useQuery({
+    queryKey: keys.taskDiff(runId, callId ?? ""),
+    enabled: Boolean(callId),
+    staleTime: Infinity,
+    queryFn: () => api<RunDiff>(`${runPath(runId)}/tasks/${encodeURIComponent(callId ?? "")}/diff`),
   });
 }
 

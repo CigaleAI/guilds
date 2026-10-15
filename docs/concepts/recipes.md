@@ -136,6 +136,22 @@ The document has none of:
 
 `config.coding` (boolean) makes a role a coding agent.
 
+A role's `config` holds only agent configuration keys
+([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)). Validation
+errors with `config.unknown` on any other key.
+
+`config.harness` names a coding role's harness: `claude-code`,
+`codex`, or `cursor`. It is optional; apply asks for it.
+
+`config.harness_model` names the model that harness runs, under the
+agent configuration's rule. It is optional; without it the harness
+runs its subscription's default.
+
+`config.secret_aliases` maps variable names to secret names, under
+the agent configuration's rule
+([Secrets and access](secrets-and-access.md#aliases)). It is
+optional.
+
 `repositories` lists the git repositories the guild's coding roles
 work in, by `name` and a one-line `purpose`.
 
@@ -158,6 +174,23 @@ boolean.
 
 It warns with `repositories.unused` when repositories are listed and
 no role sets `config.coding`.
+
+Harness findings are warnings, never refusals:
+
+- `harness.unknown` when `config.harness` is not one of the three;
+  apply asks for one
+- `harness.coding` when a role without `coding` names a harness;
+  apply leaves it out
+- `harness.credential` on every coding role: the harness runs on a
+  subscription credential that cannot be known before apply. It names
+  the fix after apply: the secret to grant, or the login to run in
+  the agent's CLI tab
+- `harness_model.invalid` when `config.harness_model` is not a model
+  name; apply leaves it out
+- `harness_model.harness` when a role names a harness model and no
+  `config.harness`; apply leaves it out
+- `secret_aliases.invalid` when `config.secret_aliases` is not a map
+  of variable names to secret names; apply leaves it out
 
 Optional `connections[].resources` names confirmed long-lived external
 tables (`kind`, `id`, `title`, `url?`, `use?`).
@@ -234,6 +267,15 @@ Apply inserts them paused.
 Chromium profiles do not.
 
 `config.coding` travels.
+`config.harness` travels as it is; an agent without one leaves the key
+out. `config.harness_model` travels the same way; an agent on its
+harness's default model leaves the key out. `config.secret_aliases`
+travels the same way; an agent without an alias leaves the key out.
+A harness subscription token stays behind: on a coding agent, the
+aliases of the harness token variables (`CLAUDE_CODE_OAUTH_TOKEN`,
+`CURSOR_API_KEY`) are left out, and so are the secrets those variables
+read, unless another role gets the same secret for its own use. The
+`harness.credential` finding names the token to set up after apply.
 The guild's repositories are captured by name with an empty
 `purpose`.
 Their URLs, branches, and GitHub connections stay with the guild.
@@ -456,6 +498,17 @@ and nothing is created while a role has none. The Builder writes the
 coach's model into the roles it drafts without one; capturing a guild
 keeps each agent's live model.
 
+A coding role's `config.harness` works the same way, with no default.
+The preview shows a harness picker per coding role, preselected with
+the role's harness. The apply request carries `harnesses`
+(`[{ role, harness }]`), and apply refuses with `choose a harness for
+…` while a coding role has none. A harness for a role without
+`coding` is refused. Only a coding role keeps a harness. A role keeps
+the recipe's `harness_model` only when it applies with the harness
+the recipe names; with another harness, its model is the
+subscription's default. A role's `secret_aliases` apply as written
+when they validate; otherwise apply leaves them out.
+
 #### Preview
 
 `POST /api/recipes/:id/preview` resolves, without writing:
@@ -467,23 +520,29 @@ keeps each agent's live model.
   recommendation when the organisation has its provider, else the
   organisation's default, else none; the preview's `models` lists
   each role's `recommended` and resolved `model`
+- each coding role's harness: the operator's choice, else the role's;
+  the preview's `harnesses` lists each coding role's `recommended`
+  and resolved `harness`
 - the organisation's remaining capacity for the whole batch: agents,
   browser agents, and coding agents (roles with `config.coding: true`),
   each against the organisation's limit, `null` where nothing caps it
   The preview's `remaining` carries `agents`, `browser_agents`, and
   `coding_agents`
 - the machine every role goes on: the operator's choice
-  (`machine_id`), else the organisation's only machine. The
-  preview's `machines` lists each machine with its `box`,
-  `memory_mib`, `planned_mib`, and number of agents, `machine_id` the
-  one chosen, and `adds_mib` the planned memory the roles add
-  ([Machines](guilds-and-agents.md#machines)). It is a blocking
-  finding when no machine is chosen among several
-  (`machine.required`), when a coding role would go on a standard
-  machine (`machine.coding`, pointing to Settings, Machines), when
-  the roles would take the machine past 32 agents or the policy's
-  agents per machine (`machine.full`), and when the machine hosts an
-  agent of a guild the operator cannot see (`machine.private`)
+  (`machine_id`), else the organisation's only machine, else null
+  until the operator picks one. A recipe does not name a machine; it
+  needs one of at least its agents' largest
+  [minimum](guilds-and-agents.md#machine-sizing), which the preview
+  returns as `minimum_cpu` and `minimum_mib`. The preview's `machines`
+  lists each machine with its `box`, `cpu`, `memory_mib`,
+  `planned_cpu`, `planned_mib`, number of agents, and `fits`, whether
+  it meets that minimum. `adds_cpu` and `adds_mib` are the planned
+  load the roles add. On the chosen machine it is a blocking finding
+  when the machine is below a role's minimum (`machine.size`, one per
+  role), when the roles would take the machine past 32 agents or the
+  policy's agents per machine (`machine.full`), and when the machine
+  hosts an agent of a guild the operator cannot see
+  (`machine.private`). Apply without a machine is refused
 - catalog presence of each `connections.server`; the preview's
   `installs` lists each one the box lacks that can be added: from the
   registry (`server`, `from: "registry"`, `version`, `verified`), which
@@ -663,6 +722,7 @@ It shows:
 
 - the new guild's name
 - each agent's name
+- each agent's model, and each coding agent's harness
 - for each connector, a live login to reuse or one to connect
   afterwards
 

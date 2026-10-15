@@ -7,6 +7,7 @@ import type { Issues } from "../issues/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
+import type { Harness } from "../coding/harnesses.js";
 
 export type GroupChat = {
   publish?(guildId: string, event: string, data: Record<string, unknown>): Promise<void>;
@@ -155,8 +156,26 @@ export type ToolContext = {
   ensure_browser: (() => Promise<void>) | null;
   /** Where a coding run's working directory starts, relative to the agent's home; empty for its root. */
   code_default_cwd: string;
-  /** Runs before each `shell` command: replaces repository tokens close to expiry. */
+  /** Runs before each `shell` command and harness poll: replaces repository tokens close to expiry. */
   before_command: (() => Promise<void>) | null;
+  /** The run's coding harness, from its snapshot; null without one. */
+  harness: Harness | null;
+  /** The model the run's harness runs, from its snapshot; null for its subscription's default. */
+  harness_model: string | null;
+  /** The run's secret aliases, from its snapshot: which secret each aliased variable reads. */
+  secret_aliases: Record<string, string>;
+  /** The guild repositories a coding run works on, by their folder under `repos/`. */
+  code_repositories: string[];
+  /** Publishes a running tool call's progress on the run's stream. */
+  publish_progress:
+    | ((toolCallId: string, update: { lines: string[]; session_id: string | null }) => Promise<void>)
+    | null;
+  /** Keeps the running harness call with its run, so a restart can stop it and name its session. */
+  remember_harness_task: ((task: Record<string, unknown>) => Promise<void>) | null;
+  /** Records that the harness found a login in the agent's home, and whose it is when known. */
+  harness_login_seen: ((harness: Harness, account: string | null) => Promise<void>) | null;
+  /** Records that the harness found no credential at all, so no login is left in the agent's home. */
+  harness_login_lost: ((harness: Harness) => Promise<void>) | null;
 };
 
 export function createToolContext(
@@ -194,6 +213,14 @@ export function createToolContext(
     ensure_browser: null,
     code_default_cwd: "",
     before_command: null,
+    harness: null,
+    harness_model: null,
+    secret_aliases: {},
+    code_repositories: [],
+    publish_progress: null,
+    remember_harness_task: null,
+    harness_login_seen: null,
+    harness_login_lost: null,
     ...partial,
   };
 }

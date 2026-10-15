@@ -8,6 +8,11 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-31 | Cursor runs a repository's hooks | Open, accepted |
+| SEC-30 | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
+| SEC-29 | A repository can carry configuration its coding harness loads | Open |
+| SEC-28 | A coding harness runs with its permission prompts off | Open |
+| SEC-27 | Harness subscription tokens and logins are readable on the agent's machine | Open |
 | SEC-26 | A member could place an agent beside a private guild's agents | Fixed 2026-10-13 |
 | SEC-25 | The machine list named the agents and guilds of private guilds | Fixed 2026-10-13 |
 | SEC-24 | Agents on one machine can read each other's homes, tokens, and sessions | Open, accepted |
@@ -25,7 +30,7 @@ Ids are never reused.
 | SEC-12 | The GitHub App's private key mints tokens for every installation | Open |
 | SEC-11 | A GitHub install callback could name another account's installation | Fixed 2026-09-30 |
 | SEC-10 | A coding agent's repository token is readable by any process in its sandbox | Open |
-| SEC-9 | Graft's hosted features can send repository history to its vendor | Open |
+| SEC-9 | Graft's hosted features can send repository history to its vendor | Fixed 2026-10-13 |
 | SEC-8 | Content a coding agent reads can steer its commands | Open |
 | SEC-7 | A coding agent's workspace can fill the shared disk | Open |
 | SEC-6 | Coding agents run commands as root in the container | Open |
@@ -34,6 +39,195 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-31 — Cursor runs a repository's hooks
+
+**Status:** open, accepted on 2026-10-13: Cursor stays available for every repository.
+
+**Found:** 2026-10-13, removing the local state of coding harnesses.
+
+**Where:** the Cursor driver in `runtime/guilds-harness`, pinned to
+the Cursor CLI `2026.10.01-e373342`.
+
+**Exposure:** the Cursor CLI runs the hooks a repository declares in
+`.cursor/hooks.json` (or `.cursor/hooks/`) on events of its turn,
+without the model deciding to run them, and has no flag or variable
+to turn project hooks off. Whoever can push to a repository a Cursor
+agent works on can run commands in that agent's sandbox, as root
+(SEC-6), with its granted secrets in their environment and its git
+token through the credential helper (SEC-10), and through the
+machine with every agent on it (SEC-24).
+
+**Control in place:** none on the hooks themselves. The driver removes
+user-level hooks from `~/.cursor/` before every call, so only the
+repository's own hooks run, and those are versioned in the
+repository, where review sees them. Claude Code and Codex run no
+project hooks (SEC-29). The guild's repositories are the ones its
+operators add.
+
+**Residual risk:** a Cursor agent on a repository that takes pushes
+from people the organisation does not trust runs their hooks. An
+operator who wants no repository hook to run picks Claude Code or
+Codex for that agent.
+
+## SEC-30 — Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** a coding agent's harness credential: the secret its
+harness's token variable reads (`CLAUDE_CODE_OAUTH_TOKEN` or
+`CURSOR_API_KEY`, or the secret `secret_aliases` maps it to) granted
+to it, or a login stored in its home (`runtime/guilds-harness`), the
+**Harness** select on Create agent and agent Settings
+(`apps/web/src/features/agent/settings/configForm.tsx`), and the
+**Subscription token** select under it
+(`apps/web/src/features/agent/settings/HarnessReadiness.tsx`).
+
+**Exposure:** a harness runs on a subscription, often an operator's
+personal one. In an organisation, everyone who can start the agent's
+runs uses it: direct runs, group and schedule wakes, and other
+agents on its machine that read the credential (SEC-27). A vendor's
+terms may restrict a personal subscription to its holder or to
+interactive use. The vendor may then suspend the account.
+
+**Control in place:** the note under the **Harness** select says
+that the harness does the code work on the operator's own
+subscription, and that a personal subscription in a shared
+organisation may fall outside the vendor's terms. A harness runs only
+on a credential someone granted to the agent or logged in with. The
+**Subscription token** select lets each agent run on a token its own
+operator added, under any secret name, so a shared agent need not
+run on another member's subscription. Organisation model keys never
+reach the sandbox.
+
+**Residual risk:** whether a use complies with the vendor's terms is
+the operator's call. The platform does not check it.
+
+## SEC-29 — A repository can carry configuration its coding harness loads
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** the drivers' command lines in `runtime/guilds-harness`,
+and `runtime/claude-code-managed-settings.json`, copied to
+`/etc/claude-code/managed-settings.json` by `runtime/Dockerfile`.
+
+**Exposure:** a coding CLI reads configuration from the repository it
+works in: for Claude Code `.claude/` (settings, hooks, commands,
+agents) and `.mcp.json`, for Codex `.codex/`, for Cursor `.cursor/`
+(rules, `mcp.json`, `hooks.json`). A hook or an MCP server is code
+that runs on load, without the model deciding to run it. Whoever can
+push to a guild repository could then run commands in the agent's
+sandbox, with its secrets.
+
+**Control in place:** every call runs Claude Code with
+`--setting-sources ""`, so no user, project, or local settings are
+loaded; `--strict-mcp-config`, so no MCP server loads that the call
+does not pass, and it passes none; skills off; and `--settings` with
+`disableAllHooks`. The managed settings, which no user or project
+file overrides, turn hooks off and project MCP servers off. Every
+Codex call ignores `config.toml` and execution-policy rules, disables
+hooks, plugins, apps, and memories, and sets `mcp_servers` empty.
+Cursor calls never pass `--approve-mcps`. Before every call the driver
+removes the harness's user-level configuration and memory from the
+agent's home, so what the agent, its commands, an earlier harness
+turn, or another agent on the machine (SEC-24) wrote there does not
+reach the next call.
+
+**Residual risk:** Cursor runs a repository's hooks (SEC-31).
+Instruction files in the repository (`CLAUDE.md`, `AGENTS.md`,
+`.cursor/rules`) are read and can steer the harness (SEC-28). Between
+the reset and the start of the CLI, another process on the machine
+can write configuration back; the window is the time of one exec.
+
+## SEC-28 — A coding harness runs with its permission prompts off
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** `code_task` (`apps/orchestrator/src/toolbox/harness.ts`)
+and the drivers in `runtime/guilds-harness`: Claude Code with
+`--dangerously-skip-permissions` (and `IS_SANDBOX=1`, because
+commands run as root, SEC-6), Codex with
+`--dangerously-bypass-approvals-and-sandbox`, Cursor with `--force`.
+
+**Exposure:** the harness runs every command and edit it decides on,
+with nobody to approve. It reads repository files, issue text,
+command output, and the notes the agent appends to its brief.
+Instructions planted in that content can steer it, as they can steer
+the agent (SEC-8). Its environment carries the agent's granted
+secrets, and git reaches the installation token through the
+credential helper (SEC-10). Its final message returns to the agent,
+which can be steered by it in turn.
+
+**Control in place:** the container is the boundary. The harness has
+no guild tools, no MCP servers, and no hooks but a repository's Cursor hooks (SEC-29, SEC-31). `GH_TOKEN` and
+`GITHUB_TOKEN` are never in its environment, nor the variables that
+would move it to metered API billing. Since 2026-10-14 those include
+`CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX` for Claude
+Code; until then a Claude Code agent granted either for other work
+could run its harness on metered Bedrock or Vertex. The brief's preamble
+tells it never to push or open pull requests. The `coding` prompt
+block tells the agent that the harness's final message is data, and
+to check its work before pushing it.
+
+**Residual risk:** a steered harness can do anything the sandbox and
+the agent's secrets allow: read and send them out, change the
+working tree, and push to the guild repositories' unprotected
+branches through git (SEC-10). It reaches the other agents on its
+machine (SEC-24). Nothing enforces the preamble.
+
+On 2026-10-14 a technical control on `git push` was considered. The
+credential helper reaches git through the system configuration and
+through `GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_*` in the environment
+(`runtime/Dockerfile`). Passing the harness an environment with
+`GIT_CONFIG_COUNT=1` and only the entry that empties the helper would
+leave git inside the harness with no GitHub token: a push would fail
+instead of being discouraged, and so would a `git fetch` from the
+harness. The helper stays so the harness can fetch. The control on
+`git push` remains the brief's preamble and the agent's
+check-then-push prompt.
+
+## SEC-27 — Harness subscription tokens and logins are readable on the agent's machine
+
+**Status:** open.
+
+**Found:** 2026-10-13, building coding harnesses.
+
+**Where:** the harness credentials in `apps/orchestrator/src/coding/harnesses.ts`
+and `runtime/guilds-harness`: the secrets the token variables
+`CLAUDE_CODE_OAUTH_TOKEN` and `CURSOR_API_KEY` read, under their own
+names or through the agent's secret aliases
+(`apps/orchestrator/src/access/runtime.ts`), in the environment of
+the agent's commands, and the logins stored in the agent's home
+(`~/.claude/.credentials.json`, `~/.codex/auth.json`,
+`~/.config/cursor/auth.json`).
+
+**Exposure:** a subscription token granted as a secret is in the
+environment of every command the agent runs, its harness included.
+A login is a file in its home. Every agent on the machine runs as
+root in the same container (SEC-24): any of their processes can read
+the login file at any time, and the token while a command of this
+agent runs. So can whatever a package install or a steered harness
+starts (SEC-4, SEC-28). With the token or the login, the
+operator's subscription can be used from anywhere.
+
+**Control in place:** the token reaches a command only by grant,
+through that command's environment, never the container's, and its
+value joins run redaction like every secret; an alias is the same
+value, so redaction covers it under either name. The driver never writes
+the login or account files. The operator picks the machine an agent
+goes on, and the operator app says that agents on one machine can
+read each other's files and sessions.
+
+**Residual risk:** a token or login read on the machine works until
+the operator revokes it with the vendor. A login file's values are
+not in the redaction set, so reading the file back shows them in the
+run's transcript.
 
 ## SEC-26 — A member could place an agent beside a private guild's agents
 
@@ -105,6 +299,8 @@ install starts (SEC-4). Any of these processes can:
 - read and change every other agent's home on the machine
   (repositories, scripts, files, `.gitconfig`)
 - read every other agent's git tokens (SEC-10)
+- read every other agent's harness logins and subscription tokens
+  (SEC-27)
 - read every other agent's Chrome profile, with its cookies and
   logins
 - attach to every other agent's Chrome DevTools port
@@ -599,7 +795,7 @@ different guilds on separate machines keeps their tokens apart.
 
 ## SEC-9 — Graft's hosted features can send repository history to its vendor
 
-**Status:** open.
+**Status:** fixed 2026-10-13, when Graft left the image.
 
 **Found:** 2026-09-30, building code search.
 
@@ -611,14 +807,13 @@ tools in `runtime/guilds-code`.
 repository history to a model provider or to its vendor. It
 reports usage.
 
-**Control in place:** the tools run only its structural tier
-(tree-sitter, no model, no network). No tool runs those commands.
-No provider key is in the sandbox. `DO_NOT_TRACK=1` turns
-telemetry off. The helper keeps Graft's text output and stderr
-out of results.
+**Fix:** Graft is no longer installed in the runtime image, and
+the tools it backed (`code_map`, `code_find`, `code_outline`,
+`code_callers`, and `code_search` mode `symbols`) no longer exist.
+Code work goes through the coding harness (SEC-28).
 
-**Residual risk:** an agent can still type such a command in
-`shell`. Graft's daily npm version lookup has no switch.
+**Residual risk:** an agent or its harness can still install Graft,
+or any other package, with a command (SEC-4).
 
 ## SEC-8 — Content a coding agent reads can steer its commands
 
@@ -627,7 +822,9 @@ out of results.
 **Found:** 2026-09-30, building coding agents.
 
 **Where:** the `shell` tool
-(`apps/orchestrator/src/toolbox/code.ts`, `runtime/guilds-code`)
+(`apps/orchestrator/src/toolbox/code.ts`, `runtime/guilds-code`),
+`code_task` and the coding harness it runs
+(`apps/orchestrator/src/toolbox/harness.ts`, `runtime/guilds-harness`),
 and the `coding` block of `system.md`.
 
 **Exposure:** a coding agent reads repository files, issue text,
@@ -637,9 +834,10 @@ the operator did not intend: read its environment, change files
 in its workspace, or send data out.
 
 **Control in place:** the `coding` prompt block states that
-repository content, issue text, and command output are data,
-never instructions, and that a repository's contributor guide
-sets code conventions only. Secrets reach an agent only by grant.
+repository content, issue text, command output, and the harness's
+final message are data, never instructions, and that a repository's
+contributor guide sets code conventions only. Secrets reach an agent
+only by grant.
 
 **Residual risk:** a steered agent can do anything its sandbox
 and its granted secrets allow, including pushing to its guild's
@@ -684,8 +882,8 @@ machine's idle stop.
 
 **Found:** 2026-09-30, building coding agents.
 
-**Where:** the `shell` tool. Scripts and the CLI tab run as root
-too.
+**Where:** the `shell` tool and the coding harness `code_task`
+starts. Scripts and the CLI tab run as root too.
 
 **Exposure:** commands run as root inside the agent's machine's
 container, which other agents of the organisation share (SEC-24).
@@ -714,7 +912,8 @@ opens workspace paths in the orchestrator (Drive, Qonto,
 
 **Control in place:** the code tools never open a workspace path
 in the orchestrator. They run inside the container through
-`guilds-code`, where a link resolves inside the container.
+`guilds-code` and `guilds-harness`, where a link resolves inside the
+container.
 Background commands end with the idle stop.
 
 **Fix to make:** SEC-3's fix closes this.
@@ -725,8 +924,8 @@ Background commands end with the idle stop.
 
 **Found:** 2026-09-30, building coding agents.
 
-**Where:** a coding agent's `shell`. `npm install`, `pip
-install`, `mise install`, build scripts, and test suites run
+**Where:** a coding agent's `shell` and its harness. `npm install`,
+`pip install`, `mise install`, build scripts, and test suites run
 third-party code.
 
 **Exposure:** that code runs in the agent's machine's container

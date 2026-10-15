@@ -10,6 +10,7 @@ import {
   maxWorkspaceMibOf,
   validateAvatarColor,
   validateAvatarShape,
+  assertCodingAgent,
   validateConfig,
   withCodingLimits,
   validateFocus,
@@ -132,7 +133,7 @@ import { memoryHistory } from "../memory/history.js";
 import { isUniqueViolation } from "../db/pg.js";
 import { GuildNameTaken, LastGuildAdmin, SecretNameTaken } from "../db/errors.js";
 import { assertCanPlaceOn } from "../machines/access.js";
-import type { MachineRow } from "../machines/index.js";
+import type { AgentNeeds, MachineRow } from "../machines/index.js";
 import {
   SecretAccessError,
   accessOf,
@@ -505,9 +506,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     orgId: string,
     user: Record<string, unknown>,
     requested: unknown,
-    agent: { coding: boolean; machineId?: string },
+    agent: { needs: AgentNeeds; machineId?: string },
   ): Promise<{ machine: MachineRow; maxAgentsPerMachine: number | null; moves: boolean }> {
-    const machine = await repo.placementMachine(orgId, machineIdOf(requested) ?? agent.machineId, agent.coding);
+    const machine = await repo.placementMachine(orgId, machineIdOf(requested) ?? agent.machineId, agent.needs);
     if (machine.id === agent.machineId) {
       return { machine, maxAgentsPerMachine: null, moves: false };
     }
@@ -1301,6 +1302,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         body.avatar_color === undefined ? undefined : String(body.avatar_color),
       );
       const config = validateConfig(withCodingLimits((body.config ?? {}) as Record<string, unknown>));
+      assertCodingAgent(config);
       await assertModelConnected(modelCredentials, String(guild.org_id), config.model);
       await assertCanCreateAgent(policy, repo, String(guild.org_id), {
         browser: config.browser,
@@ -1308,7 +1310,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       });
       await assertGuildAgentRoom(repo, String(guild.id), 1);
       const { machine, maxAgentsPerMachine } = await placement(String(guild.org_id), user, body.machine_id, {
-        coding: config.coding,
+        needs: { browser: config.browser, coding: config.coding },
       });
       const agentId = newId("a");
       await persistAgent(repo, notes, {
@@ -1965,10 +1967,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const config = validateConfig((body.config ?? {}) as Record<string, unknown>);
-      await assertModelConnected(modelCredentials, String(existing.org_id), config.model);
       const previous = agentConfigObject(existing);
+      assertCodingAgent(config, previous);
+      await assertModelConnected(modelCredentials, String(existing.org_id), config.model);
+      const needs = { browser: config.browser, coding: config.coding };
       const { machine, maxAgentsPerMachine, moves } = await placement(String(existing.org_id), user, body.machine_id, {
-        coding: config.coding,
+        needs,
         machineId: String(existing.machine_id),
       });
       if (config.browser && !previous.browser) {
@@ -1995,7 +1999,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         }
       }
       if (moves) {
-        await generationOf(deps).moveAgent(agentId, machine.id, { maxAgentsPerMachine, coding: config.coding });
+        await generationOf(deps).moveAgent(agentId, machine.id, { maxAgentsPerMachine, needs });
       }
       let row: Record<string, unknown> | null;
       try {
@@ -2008,7 +2012,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         });
       } catch (error) {
         if (moves) {
-          await generationOf(deps).moveAgent(agentId, String(existing.machine_id), { coding: Boolean(previous.coding) });
+          await generationOf(deps).moveAgent(agentId, String(existing.machine_id), {
+            needs: { browser: Boolean(previous.browser), coding: Boolean(previous.coding) },
+          });
         }
         throw error;
       }
@@ -2072,7 +2078,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     try {
       const { machine, maxAgentsPerMachine, moves } = await placement(String(existing.org_id), user, body.machine_id, {
-        coding: agentConfigObject(existing).coding === true,
+        needs: {
+          browser: agentConfigObject(existing).browser === true,
+          coding: agentConfigObject(existing).coding === true,
+        },
         machineId: String(existing.machine_id),
       });
       if (moves) {

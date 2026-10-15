@@ -163,6 +163,7 @@ export const machines = pgTable(
     memoryMib: integer("memory_mib"),
     maxWorkspaceMib: integer("max_workspace_mib").notNull().default(10240),
     workspaceMib: integer("workspace_mib"),
+    harnesses: text("harnesses").array(),
     createdAt: timestamptz("created_at").notNull(),
     updatedAt: timestamptz("updated_at").notNull(),
   },
@@ -210,6 +211,7 @@ export const agents = pgTable(
     workspaceMib: integer("workspace_mib"),
     machineId: text("machine_id").notNull(),
     machineSlot: smallint("machine_slot").notNull(),
+    harnessLogins: jsonb("harness_logins").notNull().default(sql`'{}'::jsonb`),
   },
   (table) => [
     unique("agents_name_key").on(table.name),

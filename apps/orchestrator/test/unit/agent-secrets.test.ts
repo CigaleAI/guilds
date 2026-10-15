@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { applySecretAliases } from "../../src/access/runtime.js";
+import { decryptPayload } from "../../src/credentials/crypto.js";
 import { offeredToolNames } from "../../src/generation/index.js";
 import { SecretNameTaken } from "../../src/db/errors.js";
 import {
@@ -44,6 +46,7 @@ class SecretsDb implements AgentSecretsDatabase {
       grants: input.access.agent_ids.map((id) => ({ guild_id: null, agent_id: id, name: id, in_guild_id: "g" })),
       created_by_agent_id: input.createdByAgentId ?? null,
       ciphertext: input.ciphertext,
+      nonce: input.nonce,
     };
     this.rows.push(row);
     return row;
@@ -65,14 +68,16 @@ function workspace(): string {
   return dir;
 }
 
-test("readSecretFile reads one value in the agent's home and strips one trailing newline", async () => {
+test("readSecretFile reads one value in the agent's home without the whitespace around it", async () => {
   const dir = workspace();
-  writeFileSync(path.join(dir, "key.txt"), "sk-live-123\n\n");
+  writeFileSync(path.join(dir, "key.txt"), "  sk-live-123\n\n");
   const read = await readSecretFile(dir, "/home/a_1/key.txt");
-  assert.equal(read.value, "sk-live-123\n");
+  assert.equal(read.value, "sk-live-123");
   assert.equal(read.path, path.join(dir, "key.txt"));
   writeFileSync(path.join(dir, "crlf.txt"), "abc\r\n");
   assert.equal((await readSecretFile(dir, "crlf.txt")).value, "abc");
+  writeFileSync(path.join(dir, "phrase.txt"), "correct horse battery\n");
+  assert.equal((await readSecretFile(dir, "phrase.txt")).value, "correct horse battery");
 });
 
 test("readSecretFile refuses paths out of the workspace, links out of it, and bad contents", async () => {
@@ -86,6 +91,7 @@ test("readSecretFile refuses paths out of the workspace, links out of it, and ba
   writeFileSync(path.join(dir, "binary.txt"), Buffer.from([0xff, 0xfe, 0xfd]));
   writeFileSync(path.join(dir, "nul.txt"), "a\0b");
   writeFileSync(path.join(dir, "empty.txt"), "\n");
+  writeFileSync(path.join(dir, "blank.txt"), " \t\n");
   const cases: Array<[string, RegExp]> = [
     ["/etc/passwd", /under \/home\/a_1/],
     ["/home/a_2/key.txt", /under \/home\/a_1/],
@@ -98,6 +104,7 @@ test("readSecretFile refuses paths out of the workspace, links out of it, and ba
     ["binary.txt", /UTF-8/],
     ["nul.txt", /NUL byte/],
     ["empty.txt", /empty/],
+    ["blank.txt", /empty/],
   ];
   for (const [file, reason] of cases) {
     await assert.rejects(() => readSecretFile(dir, file), reason, file);
@@ -113,6 +120,14 @@ test("storeAgentSecret grants a new secret to the agent that stored it", async (
   assert.equal(row.created_by_agent_id, "a_1");
   assert.equal(row.org_wide, false);
   assert.deepEqual((row.grants as Array<{ agent_id: string }>).map((grant) => grant.agent_id), ["a_1"]);
+});
+
+test("storeAgentSecret stores and returns the value without the whitespace around it", async () => {
+  const db = new SecretsDb();
+  const stored = await storeAgentSecret(db, AGENT, { name: "ACME_KEY", description: "Calls Acme", value: " v1 \n" });
+  assert.equal(stored.value, "v1");
+  const ciphertext = db.rows[0]!.ciphertext as Buffer;
+  assert.deepEqual(decryptPayload(ciphertext, db.rows[0]!.nonce as Buffer), { value: "v1" });
 });
 
 test("storeAgentSecret rotates its own secret and refuses a name held otherwise", async () => {
@@ -148,6 +163,10 @@ test("storeAgentSecret validates its input and stops at the per-agent cap", asyn
   const db = new SecretsDb();
   await assert.rejects(() => storeAgentSecret(db, AGENT, { name: "1BAD", description: "d", value: "x" }), AgentSecretError);
   await assert.rejects(() => storeAgentSecret(db, AGENT, { name: "OK", description: "", value: "x" }), AgentSecretError);
+  await assert.rejects(
+    () => storeAgentSecret(db, AGENT, { name: "OK", description: "d", value: " \n" }),
+    /value must contain non-whitespace text/,
+  );
   await assert.rejects(
     () => storeAgentSecret(db, AGENT, { name: "OK", description: "d".repeat(401), value: "x" }),
     /at most 400/,
@@ -253,4 +272,12 @@ test("the generation's secret store removes the value file and resyncs the agent
   assert.equal(existsSync(file), false);
   assert.equal(secrets.rows[0]?.name, "ACME_KEY");
   assert.deepEqual(sandboxes.destroyed, [], "a secret reaches commands, never the container");
+});
+
+test("applySecretAliases sets each alias to its secret's value, wins over a same-named secret, and skips a missing one", () => {
+  const env = { BOB_TOKEN: "bob", CLAUDE_CODE_OAUTH_TOKEN: "shared", OTHER: "o" };
+  const aliased = applySecretAliases(env, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN", GH_PAT: "MISSING" });
+  assert.deepEqual(aliased, { BOB_TOKEN: "bob", CLAUDE_CODE_OAUTH_TOKEN: "bob", OTHER: "o" });
+  assert.deepEqual(env.CLAUDE_CODE_OAUTH_TOKEN, "shared", "the input is not changed");
+  assert.deepEqual(applySecretAliases(env, {}), env);
 });

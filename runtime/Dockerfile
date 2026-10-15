@@ -40,7 +40,7 @@ RUN apt-get update \
         | tee /etc/chromium-browser/policies/managed/guilds.json \
         > /etc/opt/chrome/policies/managed/guilds.json \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir playwright==1.52.0 ast-grep-cli==0.45.3
+    && pip install --no-cache-dir playwright==1.52.0
 
 # Google Chrome on amd64 by default. Chrome may not be redistributed, so an image that is
 # published is built with --build-arg BROWSER=chromium and runs Debian's Chromium everywhere.
@@ -61,8 +61,8 @@ RUN set -eu; \
     echo "${sum}  /usr/local/bin/ttyd" | sha256sum -c -; \
     chmod 755 /usr/local/bin/ttyd
 
-# Node.js for JavaScript and TypeScript projects and for Graft. Release tarball,
-# pinned and checksum-verified per architecture.
+# Node.js for JavaScript and TypeScript projects and for the coding harnesses. Release
+# tarball, pinned and checksum-verified per architecture.
 ARG NODE_VERSION=24.21.0
 RUN set -eu; \
     case "$(dpkg --print-architecture)" in \
@@ -105,14 +105,46 @@ RUN set -eu; \
     echo "${sum}  /usr/local/bin/mise" | sha256sum -c -; \
     chmod 755 /usr/local/bin/mise
 
-# Graft builds the code graph behind the code_map, code_find, code_outline, and
-# code_callers tools, in its structural tier only: tree-sitter, no model, no key.
-# Its native tree-sitter bindings predate Node 24's headers, which need C++20.
-ARG GRAFT_VERSION=0.21.1
-RUN CXXFLAGS="-std=gnu++20" npm install --global --no-fund --no-audit "@nanonets/graft@${GRAFT_VERSION}" \
-    && npm cache clean --force \
-    && rm -rf /root/.cache/node-gyp \
-    && graft --version
+# Coding harnesses, each run headless by guilds-harness on the user's own subscription. Codex is
+# open source and always installed. Claude Code and the Cursor CLI are proprietary: they are
+# installed when HARNESSES names them, as Chrome is under BROWSER, and an image that is published
+# is built with HARNESSES empty. The Cursor CLI has no npm package: its release tarball is pinned
+# and checksum-verified per architecture.
+ARG HARNESSES="claude-code cursor"
+ARG CODEX_VERSION=0.162.1
+ARG CLAUDE_CODE_VERSION=2.1.296
+ARG CURSOR_VERSION=2026.10.01-e373342
+RUN set -eu; \
+    for harness in $HARNESSES; do \
+        case "$harness" in claude-code|cursor) ;; *) echo "unknown harness $harness" >&2; exit 1 ;; esac; \
+    done; \
+    mkdir -p /usr/local/share/guilds; \
+    npm install --global --no-fund --no-audit "@openai/codex@${CODEX_VERSION}"; \
+    codex --version; \
+    echo codex > /usr/local/share/guilds/harnesses; \
+    case " $HARNESSES " in *" claude-code "*) \
+        npm install --global --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"; \
+        claude --version; \
+        echo claude-code >> /usr/local/share/guilds/harnesses ;; \
+    esac; \
+    case " $HARNESSES " in *" cursor "*) \
+        case "$(dpkg --print-architecture)" in \
+            amd64) asset=x64; sum=a79726c6e644520e993970be4c45775a6889802b67abe461a677a53219ae28e8 ;; \
+            arm64) asset=arm64; sum=785c5f6bf2a60eb1121e27ed8c14f5ee07ed1b5b6692324f2d9a997238245eb5 ;; \
+            *) echo "unsupported architecture for the Cursor CLI" >&2; exit 1 ;; \
+        esac; \
+        curl -fsSL -o /tmp/cursor.tar.gz "https://downloads.cursor.com/lab/${CURSOR_VERSION}/linux/${asset}/agent-cli-package.tar.gz"; \
+        echo "${sum}  /tmp/cursor.tar.gz" | sha256sum -c -; \
+        mkdir -p "/opt/cursor-agent/${CURSOR_VERSION}"; \
+        tar -xzf /tmp/cursor.tar.gz -C "/opt/cursor-agent/${CURSOR_VERSION}" --strip-components=1 --no-same-owner; \
+        rm /tmp/cursor.tar.gz; \
+        ln -s "/opt/cursor-agent/${CURSOR_VERSION}/cursor-agent" /usr/local/bin/agent; \
+        agent --version; \
+        echo cursor >> /usr/local/share/guilds/harnesses ;; \
+    esac; \
+    npm cache clean --force
+# Claude Code reads its managed settings here; no user or project file overrides them.
+COPY claude-code-managed-settings.json /etc/claude-code/managed-settings.json
 
 COPY agent-browser-start /usr/local/bin/agent-browser-start
 COPY agent-cli-start /usr/local/bin/agent-cli-start
@@ -122,6 +154,7 @@ COPY guilds-browser /usr/local/bin/guilds-browser
 COPY guilds-script-run /usr/local/bin/guilds-script-run
 COPY guilds-locale /usr/local/bin/guilds-locale
 COPY guilds-code /usr/local/bin/guilds-code
+COPY guilds-harness /usr/local/bin/guilds-harness
 COPY guilds-git-credential /usr/local/bin/guilds-git-credential
 COPY git-template /usr/local/share/guilds/git-template
 # git asks the credential helper for github.com with the repository path, so each
@@ -142,17 +175,13 @@ ENV GIT_CONFIG_COUNT=3 \
     GIT_CONFIG_VALUE_2=true
 RUN chmod 755 /usr/local/bin/agent-browser-start /usr/local/bin/agent-cli-start /usr/local/bin/agent-stop \
         /usr/local/bin/guilds-browser /usr/local/bin/guilds-script-run /usr/local/bin/guilds-locale \
-        /usr/local/bin/guilds-code /usr/local/bin/guilds-git-credential \
+        /usr/local/bin/guilds-code /usr/local/bin/guilds-harness /usr/local/bin/guilds-git-credential \
         /usr/local/share/guilds/git-template/hooks/prepare-commit-msg \
-    && chmod 644 /usr/local/lib/guilds/agent-lib.sh \
+    && chmod 644 /usr/local/lib/guilds/agent-lib.sh /etc/claude-code/managed-settings.json \
     && mkdir -p /tmp/.X11-unix /run/guilds/requests \
     && chmod 1777 /tmp/.X11-unix \
     && chmod 700 /run/guilds
 
-# Graft: no usage telemetry, and a build writes nothing into the repository.
 ENV LANG=en_US.UTF-8 \
-    DO_NOT_TRACK=1 \
-    GRAFT_NO_GITIGNORE=1 \
-    GRAFT_NO_IGNORE=1 \
     NPM_CONFIG_UPDATE_NOTIFIER=false
 WORKDIR /home

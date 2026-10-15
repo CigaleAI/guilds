@@ -231,7 +231,13 @@ Model settings include:
 - `projection_policy_version`
 - `thinking_level`
 
-Flags: `browser`, `coding`, `cli`, `scripting`, and `memory`.
+Flags: `browser`, `coding`, `scripting`, and `memory`. Beside
+them, `harness` is a coding agent's harness, or null,
+`harness_model` the model that harness runs, or null for its
+subscription's default
+([Code tools](../tools-and-connectors/code.md#code-task)), and
+`secret_aliases` the agent's secret aliases
+([Secrets and access](secrets-and-access.md#aliases)).
 
 The complete tool schemas offered to the model:
 
@@ -242,7 +248,7 @@ The complete tool schemas offered to the model:
 - the six schedule tools on direct and group-chat runs
 - `group_post` when that binding is on
 - the eight browser tools when `browser` is true
-- the code tools when `coding` is true
+- the five code tools when `coding` is true
 - enabled MCP schemas, including curated lists from the CoinGecko,
   Alchemy, X, TwitterAPI.io, Qonto, and DexPaprika adapters, and a
   registry connector's manifest
@@ -287,6 +293,29 @@ again. It fails the generation at start with `workspace.full` if
 either is still over.
 
 After the generation it measures and stores both sizes.
+
+A coding run is checked further at every generation start, before
+the model is called:
+
+1. Before the machine is woken, a snapshot without `harness` fails
+   with `harness.missing` ("no harness is picked: choose Claude Code,
+   Codex, or Cursor in the agent's Settings")
+   ([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)).
+2. Before the machine is woken, a guild without repositories fails
+   with `coding.repositories_missing` ("this guild has no
+   repositories: add one in the guild's Repositories, then send
+   again"). The list is the one the clone uses: the guild's
+   repositories and those picked on the agent's effective GitHub
+   login.
+3. After the workspace check, `guilds-harness check` runs for the
+   snapshot's harness with the run's secrets. A CLI missing from the
+   image fails with `harness.not_installed`, naming the image to
+   build. No credential, neither a granted secret nor a login, fails
+   with `harness.credential`, naming the secret to grant, with the
+   variable it is read as when an alias names another secret, or the
+   login to run. A check that fails to run is `harness.check`
+   ([Code tools](../tools-and-connectors/code.md#credentials-and-errors)).
+4. The repositories are prepared ([Repositories](#repositories)).
 
 It loads every payload in order and repeats up to `max_steps`:
 
@@ -404,8 +433,9 @@ Cancelling the running continuation stops the chain. The run payload
 carries `chain` and `continued_by_run_id` when they are set.
 
 Committed assistant and tool rows are published over SSE after the
-database transaction. Reasoning and token deltas may stream first.
-History is the committed row.
+database transaction. Reasoning and token deltas may stream first,
+and a running `code_task` streams its progress lines as
+`tool.progress`. History is the committed row.
 
 On reconnect the UI reloads ordered history, then consumes new events.
 
@@ -418,7 +448,12 @@ cancellation or restart appends `ERROR: execution interrupted` for
 every unresolved call so the next model request is valid.
 
 On orchestrator startup, unresolved tool calls in active runs get those
-interruption results. Startup does not replay a model call.
+interruption results. Startup does not replay a model call. An
+unresolved `code_task` first gets `stop` on its machine when the
+machine is running, its state is cleared once the harness has
+exited, and its end checkpoint is taken. Its result is
+`interrupted`, naming the harness session and log when known
+([Code tools](../tools-and-connectors/code.md#lifecycle)).
 
 For an interrupted group-triggered run that the operator has not
 resumed, startup also:
@@ -491,14 +526,16 @@ must stay out of every home (git tokens, the terminal's token, logs)
 are under `/run/guilds/<agent id>/`, which goes with the container.
 
 Every command the orchestrator runs for an agent (`shell`, the code
-helper, `script_run`, the browser tools, maintenance) runs in the
+helper, the harness helper, `script_run`, the browser tools,
+maintenance) runs in the
 agent's home and carries in its own environment:
 
 - `HOME` and `GUILDS_AGENT_HOME`, the agent's home
 - `PORT`, the first port of the agent's block, and `GUILDS_PORTS`,
   the whole block (`20000+100·slot` to `20000+100·slot+99`)
 - every secret that reaches the agent, as a variable named after the
-  secret
+  secret, and each of the agent's secret aliases, holding the value
+  of the secret it names
   ([Secrets and access](secrets-and-access.md#what-reaches-a-sandbox))
 
 The container's own environment carries no secret. Commands run as
@@ -611,8 +648,14 @@ Consequences:
 
 ### Code execution
 
-A coding agent runs commands with the `shell` tool
-([Code tools](../tools-and-connectors/code.md)).
+A coding agent delegates code work to its harness with `code_task`,
+and runs commands with the `shell` tool
+([Code tools](../tools-and-connectors/code.md)). The harness CLI runs
+headless in the container, in the repository's directory.
+Its raw event log, `.runs/<run id>/<call id>.harness.jsonl` in the
+agent's home, is unredacted like a `shell` log and kept with the same
+20 most recent runs
+([Code tools](../tools-and-connectors/code.md#code-task)).
 
 For every other agent, reusable Python is the one way to execute code:
 an agent-level `script` artifact. A run snapshots source and
@@ -635,8 +678,8 @@ redaction.
 ## Repositories
 
 At each generation of a coding agent, after the sandbox is up and the
-workspace check passes, the orchestrator prepares the guild's
-repositories:
+workspace and harness checks pass, the orchestrator prepares the
+guild's repositories:
 
 1. **Tokens.** For each GitHub connection the guild's repositories use,
    it mints an installation access token limited to those repositories
@@ -666,8 +709,8 @@ repositories:
 3. **Start checkpoint** (below).
 
 The run's working directory starts in the repository when the guild has
-exactly one. Before each `shell` command, a token within 10 minutes of
-expiry is replaced and rewritten.
+exactly one. Before each `shell` command and each `code_task` poll, a
+token within 10 minutes of expiry is replaced and rewritten.
 
 State carries `repositories` (`[{ name, path, default_branch }]`) on a
 coding agent's runs. Live git state is not in State.
@@ -679,27 +722,38 @@ are included. Each snapshot is a commit built through a temporary
 index and recorded at `refs/guild/runs/<run id>/start` (once) or
 `…/end` (each time), without touching the index or the current branch.
 
-These refs are local and never pushed. The run stores `metadata.repos`:
+These refs are local, never pushed, and never deleted. Each keeps
+its commits from `git gc`, so their objects count toward the agent's
+`max_workspace_mib`. The run stores `metadata.repos`:
 `[{ name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions }]`,
 the diffstat from start to end. The run payload carries it as `repos`.
 
+Each `code_task` call takes its own checkpoints of its repository, at
+`refs/guild/runs/<run id>/tasks/<call id>/start` before the harness
+starts and `…/end` after it ends, the same way. Its result and
+metadata carry the diffstat between them.
+
 A generation cut short by an orchestrator restart has no end
 checkpoint. The working tree is intact. The change is attributed to
-the run that checkpoints next.
+the run that checkpoints next. A `code_task` the restart cut short
+gets its own end checkpoint at startup, so its task diff is
+available.
 
 ```text
 GET /api/runs/:id/changes                     diffstat per repository
 GET /api/runs/:id/changes/:repository/diff    start..end, at most 256 KiB
+GET /api/runs/:id/tasks/:call_id/diff         one code_task's start..end
 ```
 
-The diff runs `git diff` on the agent's machine, waking it as the CLI
+The task diff names the call's repository, has the same limit, and is
+404 for a call without an end checkpoint. Each diff runs `git diff` on the agent's machine, waking it as the CLI
 tab does. It is redacted with the agent's secret values. A repository
 the run did not record is 404.
 
 **Commit trailers.** A `prepare-commit-msg` hook in the image's git
 template adds `Guild-Run: <run id>` and `Guild-Agent: <agent id>` to a
-commit made through `shell`. `shell` sets `GUILD_RUN_ID` and
-`GUILD_AGENT_ID`.
+commit made through `shell` or by a harness. Both set `GUILD_RUN_ID`
+and `GUILD_AGENT_ID`.
 
 Clones and `git init` take it from the template. A repository that
 sets its own hooks path skips it.

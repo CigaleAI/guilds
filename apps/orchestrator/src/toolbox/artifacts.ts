@@ -80,6 +80,31 @@ function renderGet(
   return `${view.display_path}\n\n${String(view.content ?? "")}`;
 }
 
+/**
+ * A note's or a collection record's content as text, read with the agent's access, the
+ * way `note_get` and the record tools read it. A record is its JSON view.
+ */
+export async function readArtifactText(ctx: ToolContext, path: string): Promise<{ path: string; text: string }> {
+  const parsed = agentPath(path);
+  if (parsed.kind === "collection") {
+    throw new ArtifactError(`${path} is a collection; name one of its records`, 422);
+  }
+  const artifacts = store(ctx);
+  const loaded = await artifacts.getByDisplayPath(actor(ctx), path);
+  if (!loaded.row || loaded.tombstone) {
+    throw new ArtifactError("artifact not found", 404);
+  }
+  if (loaded.row.kind === "script") {
+    throw new ArtifactError("use script_read for scripts", 422);
+  }
+  const view = artifacts.view(loaded.row);
+  const shown = typeof view.display_path === "string" ? view.display_path : path;
+  if (parsed.kind === "record") {
+    return { path: shown, text: JSON.stringify(view, null, 2) };
+  }
+  return { path: shown, text: String(view.content ?? "") };
+}
+
 const RECORD_TOOLS_HINT = "Use record_search or record_list for collection records.";
 
 export const noteFind: Tool = {

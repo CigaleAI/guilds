@@ -1,21 +1,24 @@
 import type { Machine } from "../../api/types";
 import { Select } from "@guildsrun/ui";
-import { MemoryBudget } from "./MachineMeters";
-import { MachinesSettingsLink, NoMachines } from "./MachineNotes";
+import { LoadBudget } from "./MachineMeters";
+import { MachinesSettingsLink, NoMachines, TooSmallNote } from "./MachineNotes";
 import {
   chosenMachine,
   machineBoxLabel,
   machineSizeLabel,
   placementBudget,
   sharedMachineNote,
+  sizeMeets,
+  agentMinimum,
 } from "./machines";
 
 type PlacedAgent = { id?: string | undefined; browser: boolean; coding: boolean };
 
 /**
  * Where an agent goes: a Machine picker when the organisation has several machines, else the only
- * one by name, or a pointer to Settings → Machines when it has none. Under it, the machine's
- * planned memory with what this agent adds, and what sharing a machine means.
+ * one by name, or a pointer to Settings → Machines when it has none. Machines below the agent's
+ * minimum are offered disabled. Under it, the machine's planned load with what this agent adds,
+ * and what sharing a machine means.
  */
 export function MachinePicker({
   machines,
@@ -46,10 +49,14 @@ export function MachinePicker({
           className="max-w-md"
           value={machine?.id ?? ""}
           onValueChange={onChange}
-          options={machines.map((item) => ({
-            value: item.id,
-            label: `${item.name} · ${machineBoxLabel[item.box]} · ${machineSizeLabel(item)}`,
-          }))}
+          options={machines.map((item) => {
+            const fits = sizeMeets(item, agentMinimum(agent)) || item.id === machine?.id;
+            return {
+              value: item.id,
+              label: `${item.name} · ${machineBoxLabel[item.box]} · ${machineSizeLabel(item)}${fits ? "" : " · too small"}`,
+              disabled: !fits,
+            };
+          })}
           hint={hint}
           {...(error ? { error } : {})}
         />
@@ -66,16 +73,21 @@ export function MachinePicker({
   );
 }
 
-/** The machine's planned memory, with what the agent being placed adds. */
+/** Whether the machine meets the agent's minimum, and its planned load with what the agent adds. */
 function PlacementBudget({ machine, agent }: { machine: Machine; agent: PlacedAgent }) {
   const budget = placementBudget(machine, agent);
   return (
-    <MemoryBudget
-      plannedMib={budget.othersMib}
-      addsMib={budget.addsMib}
-      addsLabel="this agent"
-      memoryMib={budget.memoryMib}
-      remedy="resize it or pick another machine"
-    />
+    <>
+      {budget.fits ? null : (
+        <TooSmallNote machine={machine} minimum={budget.minimum} what="This agent" />
+      )}
+      <LoadBudget
+        size={machine}
+        planned={budget.planned}
+        adds={budget.adds}
+        addsLabel="this agent's minimum"
+        remedy="resize it or pick another machine"
+      />
+    </>
   );
 }

@@ -10,16 +10,18 @@ import { GuildAgentLimitError, assertGuildAgentRoom, validateGuildName } from ".
 import {
   addMissingBrowserLanguage,
   addMissingFlags,
-  addMissingCliScriptingAndMemory,
+  addMissingScriptingAndMemory,
   addMissingRunLimits,
   addMissingTemperatureAndStepLimits,
   addMissingThinkingLevel,
   maxScriptsOf,
+  secretAliasesOf,
   validateAgentName,
 } from "../agents/validation.js";
 import { coreModelCredentials } from "../llm/credentials.js";
 import { ModelsService } from "../llm/models.js";
 import { parseModelId } from "../llm/providers.js";
+import { HARNESSES, harnessModelOf, harnessOf, isHarness, type Harness } from "../coding/harnesses.js";
 import { operatorActor } from "../artifacts/grants.js";
 import {
   ArtifactError,
@@ -33,11 +35,15 @@ import { newId } from "../lib/ids.js";
 import { hostsOnlyVisible, visibleGuildIds } from "../machines/access.js";
 import {
   MAX_AGENTS_PER_MACHINE,
-  agentPlannedMib,
-  machineAllowsCoding,
+  agentMinimum,
+  agentsMinimum,
+  belowMinimumMessage,
   machineSize,
-  plannedMib,
+  plannedLoad,
+  sizeMeets,
+  type AgentNeeds,
   type MachineBox,
+  type MachineSize,
   type MachineWithAgents,
 } from "../machines/index.js";
 import { jsonObj } from "../db/json.js";
@@ -98,6 +104,10 @@ type ModelDecision = { role: string; model: string };
 
 /** A role's model on the preview: what the recipe recommends, and what apply will create it with. */
 export type RoleModel = { role: string; recommended: string | null; model: string | null };
+/** The harness the operator picked for a coding role on the apply preview. */
+type HarnessDecision = { role: string; harness: string };
+/** A coding role's harness on the preview: what the recipe names, and what apply will create it with. */
+export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null };
 
 /**
  * What apply will do with one recipe collection: create it, reuse the live
@@ -114,6 +124,8 @@ export type ApplyChoices = {
   guild_id?: string;
   names?: NameDecision[];
   models?: ModelDecision[];
+  /** The harness of each coding role. */
+  harnesses?: HarnessDecision[];
   connections?: ConnectionDecision[];
   secrets?: SecretDecision[];
   activate_keys?: string[];
@@ -121,39 +133,50 @@ export type ApplyChoices = {
   machine_id?: string;
 };
 
-/** A machine the preview offers, with the memory its agents plan to use and what the roles add. */
+/**
+ * A machine the preview offers: its size, its agents' planned load, and whether it meets the
+ * minimum of every role of the recipe.
+ */
 export type MachineChoice = {
   id: string;
   name: string;
   box: MachineBox;
+  cpu: number;
   memory_mib: number;
+  planned_cpu: number;
   planned_mib: number;
   agents: number;
+  fits: boolean;
 };
 
-function machineChoice(machine: MachineWithAgents): MachineChoice {
+function machineChoice(machine: MachineWithAgents, minimum: MachineSize): MachineChoice {
+  const size = machineSize(machine);
+  const planned = plannedLoad(machine.agents);
   return {
     id: machine.id,
     name: machine.name,
     box: machine.box,
-    memory_mib: machineSize(machine).memory_mib,
-    planned_mib: plannedMib(machine.agents),
+    cpu: size.cpu,
+    memory_mib: size.memory_mib,
+    planned_cpu: planned.cpu,
+    planned_mib: planned.memory_mib,
     agents: machine.agents.length,
+    fits: sizeMeets(size, minimum),
   };
 }
 
-/** The planned memory the recipe's roles add to their machine. */
-function rolesPlannedMib(recipe: RecipeDocument): number {
-  return recipe.roles.reduce(
-    (sum, role) =>
-      sum + agentPlannedMib({ browser: Boolean(role.browser.required || role.config.browser), coding: role.config.coding === true }),
-    0,
-  );
+/** What each role of the recipe has on that sets its minimum. */
+function rolesNeeds(recipe: RecipeDocument): Array<AgentNeeds & { role: string }> {
+  return recipe.roles.map((role) => ({
+    role: role.role,
+    browser: Boolean(role.browser.required || role.config.browser),
+    coding: role.config.coding === true,
+  }));
 }
 
 /**
- * What blocks the roles on a machine: a coding role on a standard machine, more roles than the
- * machine has room for under `maxAgents`, or agents of a guild the operator cannot see on it.
+ * What blocks the roles on a machine: a role whose minimum the machine is below, more roles than
+ * the machine has room for under `maxAgents`, or agents of a guild the operator cannot see on it.
  */
 export function machineFindings(
   recipe: RecipeDocument,
@@ -161,13 +184,14 @@ export function machineFindings(
   rules: { maxAgents: number; private: boolean },
 ): RecipeFinding[] {
   const findings: RecipeFinding[] = [];
-  if (!machineAllowsCoding(machine.box)) {
-    for (const role of recipe.roles.filter((item) => item.config.coding === true)) {
+  const size = machineSize(machine);
+  for (const needs of rolesNeeds(recipe)) {
+    if (!sizeMeets(size, agentMinimum(needs))) {
       findings.push({
-        code: "machine.coding",
+        code: "machine.size",
         severity: "error",
-        path: `roles.${role.role}.config.coding`,
-        message: `${role.role} codes and needs a code or custom machine; ${machine.name} is standard. Create or resize one in Settings, Machines.`,
+        path: "machine_id",
+        message: belowMinimumMessage(needs.role, needs, machine),
       });
     }
   }
@@ -252,6 +276,27 @@ export class RecipeApplyService {
       const model = choice ?? (fits(recommended) ? recommended : fits(defaultModel) ? defaultModel : null);
       return { role: role.role, recommended, model };
     });
+  }
+
+  /** The harness each coding role is created with: the operator's choice, else the recipe's. */
+  private resolveHarnesses(recipe: RecipeDocument, decisions: HarnessDecision[]): RoleHarness[] {
+    const chosen = new Map(decisions.map((item) => [item.role, String(item.harness ?? "").trim()]));
+    for (const role of chosen.keys()) {
+      const found = recipe.roles.find((item) => item.role === role);
+      if (!found || found.config.coding !== true) {
+        throw new RecipeError(`harnesses.${role}: only a coding role takes a harness`);
+      }
+    }
+    return recipe.roles
+      .filter((role) => role.config.coding === true)
+      .map((role) => {
+        const recommended = isHarness(role.config.harness) ? role.config.harness : null;
+        const choice = chosen.get(role.role) || null;
+        if (choice !== null && !isHarness(choice)) {
+          throw new RecipeError(`harnesses.${role.role}: harness must be one of ${HARNESSES.join(", ")}`);
+        }
+        return { role: role.role, recommended, harness: choice ?? recommended };
+      });
   }
 
   /**
@@ -349,7 +394,8 @@ export class RecipeApplyService {
       ctx.connectedProviders ?? new Set(),
       await this.models.defaultModel(String(org.id)),
     );
-    const prepared = prepareRecipeForApply(recipe, ctx.publishedServers, roleModelMap(models));
+    const harnesses = this.resolveHarnesses(recipe, choices.harnesses ?? []);
+    const prepared = prepareRecipeForApply(recipe, ctx.publishedServers, roleModelMap(models), roleHarnessMap(harnesses));
     const collections = await this.planCollections(org, prepared, user);
     findings.push(...collectionConflicts(collections));
     const errors = applyBlockingErrors(findings);
@@ -404,9 +450,13 @@ export class RecipeApplyService {
       guild_id: destGuild ? destGuild.id : null,
       names: [...names.entries()].map(([role, name]) => ({ role, name })),
       models,
+      harnesses,
       machines: placement.machines,
       machine_id: placement.machineId,
-      adds_mib: placement.addsMib,
+      minimum_cpu: placement.minimum.cpu,
+      minimum_mib: placement.minimum.memory_mib,
+      adds_cpu: placement.adds.cpu,
+      adds_mib: placement.adds.memory_mib,
       collisions,
       connections,
       installs,
@@ -426,27 +476,31 @@ export class RecipeApplyService {
   }
 
   /**
-   * The machine the roles go on: the one chosen, else the organisation's only one. No machine
-   * chosen among several, or the findings of `machineFindings` on the one chosen, block the apply.
+   * The machine the roles go on: the one chosen, else the organisation's only one; null while
+   * several wait for a choice, which the apply form makes. With the smallest machine every role
+   * runs on, and the planned load the roles add. The findings of `machineFindings` on the machine
+   * block the apply.
    */
   private async planMachine(
     orgId: string,
     recipe: RecipeDocument,
     chosen: string | undefined,
     user: Record<string, unknown> | undefined,
-  ): Promise<{ machines: MachineChoice[]; machineId: string | null; addsMib: number; findings: RecipeFinding[] }> {
+  ): Promise<{
+    machines: MachineChoice[];
+    machineId: string | null;
+    minimum: MachineSize;
+    adds: MachineSize;
+    findings: RecipeFinding[];
+  }> {
     const rows = await this.deps.repo.listMachines(orgId);
-    const machines = rows.map(machineChoice);
-    const addsMib = rolesPlannedMib(recipe);
+    const needs = rolesNeeds(recipe);
+    const minimum = agentsMinimum(needs);
+    const adds = plannedLoad(needs);
+    const machines = rows.map((row) => machineChoice(row, minimum));
     const machineId = chosen ?? (rows.length === 1 ? rows[0]!.id : null);
     if (machineId === null) {
-      const finding: RecipeFinding = {
-        code: "machine.required",
-        severity: "error",
-        path: "machine_id",
-        message: "choose the machine the roles go on",
-      };
-      return { machines, machineId, addsMib, findings: [finding] };
+      return { machines, machineId, minimum, adds, findings: [] };
     }
     const machine = rows.find((item) => item.id === machineId);
     if (!machine) {
@@ -458,7 +512,7 @@ export class RecipeApplyService {
       maxAgents: Math.min(limits.maxAgentsPerMachine ?? MAX_AGENTS_PER_MACHINE, MAX_AGENTS_PER_MACHINE),
       private: visible !== null && !hostsOnlyVisible(machine, visible),
     });
-    return { machines, machineId, addsMib, findings };
+    return { machines, machineId, minimum, adds, findings };
   }
 
   async createSkeleton(
@@ -479,6 +533,9 @@ export class RecipeApplyService {
           .join("; ")}`,
       );
     }
+    if (preview.machine_id === null) {
+      throw new RecipeError("choose the machine the agents go on");
+    }
     if ((preview.collisions as string[]).length) {
       throw new RecipeConflictError(`agent names already exist: ${(preview.collisions as string[]).join(", ")}`);
     }
@@ -487,8 +544,18 @@ export class RecipeApplyService {
     if (unchosen.length) {
       throw new RecipeError(`choose a model for ${unchosen.join(", ")}`);
     }
+    const roleHarnesses = preview.harnesses as RoleHarness[];
+    const withoutHarness = roleHarnesses.filter((item) => !item.harness).map((item) => item.role);
+    if (withoutHarness.length) {
+      throw new RecipeError(`choose a harness for ${withoutHarness.join(", ")}`);
+    }
     const ctx = await this.validationContext(String(org.id));
-    const recipe = prepareRecipeForApply(parseRecipe(recipeRow.body), ctx.publishedServers, roleModelMap(roleModels));
+    const recipe = prepareRecipeForApply(
+      parseRecipe(recipeRow.body),
+      ctx.publishedServers,
+      roleModelMap(roleModels),
+      roleHarnessMap(roleHarnesses),
+    );
     const machineId = String(preview.machine_id);
     const maxAgentsPerMachine = await assertCanPlaceAgents(
       this.policy,
@@ -1549,21 +1616,39 @@ function schedulesForRole(role: RecipeRole, recipe: RecipeDocument): RecipeSched
 }
 
 /** The models the preview resolved, by role. */
+function roleHarnessMap(harnesses: RoleHarness[]): Map<string, Harness> {
+  const map = new Map<string, Harness>();
+  for (const item of harnesses) {
+    if (item.harness) {
+      map.set(item.role, item.harness);
+    }
+  }
+  return map;
+}
+
 function roleModelMap(models: RoleModel[]): Map<string, string> {
   return new Map(models.flatMap((item) => (item.model ? [[item.role, item.model] as const] : [])));
 }
 
+/** The recipe's harness model, kept only while the role applies with the harness the recipe names. */
+function appliedHarnessModel(roleConfig: Record<string, unknown>, applied: Harness | null): string | null {
+  return applied !== null && applied === harnessOf(roleConfig) ? harnessModelOf(roleConfig) : null;
+}
+
 /**
- * The agent config a role applies as: the role's, with the model the operator chose (else the
- * recipe's recommendation), and the browser and coding flags settled. The machine the agent goes
- * on is the apply's.
+ * The agent config a role applies as: the role's, with the model and harness the operator chose
+ * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
+ * harness, and the recipe's harness model only with the recipe's harness. The machine the agent
+ * goes on is the apply's.
  */
-export function configFromRecipeRole(role: RecipeRole, model?: string): Record<string, unknown> {
+export function configFromRecipeRole(role: RecipeRole, model?: string, harness?: Harness): Record<string, unknown> {
   const roleConfig = { ...role.config };
   const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
   const chosen = model ?? recommended;
+  const coding = roleConfig.coding === true;
+  const applied = coding ? (harness ?? harnessOf(roleConfig)) : null;
   return addMissingFlags(
-    addMissingCliScriptingAndMemory(
+    addMissingScriptingAndMemory(
       addMissingThinkingLevel(
         addMissingBrowserLanguage(
           addMissingRunLimits(
@@ -1571,7 +1656,10 @@ export function configFromRecipeRole(role: RecipeRole, model?: string): Record<s
               ...roleConfig,
               model: chosen,
               browser: Boolean(role.browser.required || roleConfig.browser),
-              coding: roleConfig.coding === true,
+              coding,
+              harness: applied,
+              harness_model: appliedHarnessModel(roleConfig, applied),
+              secret_aliases: secretAliasesOf(roleConfig),
             }),
           ),
         ),
@@ -1584,10 +1672,11 @@ export function prepareRecipeForApply(
   recipe: RecipeDocument,
   publishedServers?: Set<string>,
   models?: Map<string, string>,
+  harnesses?: Map<string, Harness>,
 ): RecipeDocument {
   void publishedServers;
   for (const role of recipe.roles) {
-    role.config = configFromRecipeRole(role, models?.get(role.role));
+    role.config = configFromRecipeRole(role, models?.get(role.role), harnesses?.get(role.role));
     if (!role.task.body.trim()) {
       role.task.body = roleTaskText(role, recipe);
     }

@@ -168,8 +168,11 @@ file. A helper the agent configures in its home, such as the one
 
 git gets the token of the repository it is talking to. `shell`
 exports the token of the repository that holds the working
-directory as `GH_TOKEN` for `gh`. Before a `shell` call, a token
-within 10 minutes of expiry is replaced.
+directory as `GH_TOKEN` for `gh`. A coding harness's environment has
+neither `GH_TOKEN` nor `GITHUB_TOKEN`: the harness does not open pull
+requests. git still gets its token through the credential helper.
+Before a `shell` call and each `code_task` poll, a token within 10
+minutes of expiry is replaced.
 
 Every token joins the run's redaction set. What a coding run does
 with the repositories is in [Runs](../concepts/runs.md#repositories).

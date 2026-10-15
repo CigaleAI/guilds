@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
 import { keys } from "./queries";
+import { applyToolProgress, dropToolProgress, type ToolProgress } from "./toolProgress";
 import type {
   BuilderSession,
   GroupChatState,
@@ -13,6 +14,7 @@ import type {
 } from "./types";
 
 export type { LiveTurn } from "./liveTurn";
+export type { ToolProgress } from "./toolProgress";
 
 type StreamOptions = {
   /** Event names to listen for. */
@@ -159,27 +161,34 @@ const runEvents = [
   "assistant.reasoning.delta",
   "assistant.delta",
   "message.committed",
+  "tool.progress",
   "run.error",
   "generation.finished",
   "run.continued",
 ] as const;
 
+/** What a run's stream shows before it is committed: the turn being written, and running calls' progress. */
+export type RunStreamState = { live: LiveTurn | null; progress: ToolProgress };
+
 /**
- * Follows one open run: streamed reasoning and text arrive as `LiveTurn`, committed rows go
- * straight into the cached transcript, and the end of a generation refreshes the run. A run that
+ * Follows one open run: streamed reasoning and text arrive as `live`, the lines a running tool
+ * call reports arrive as `progress` until its result is committed, committed rows go straight
+ * into the cached transcript, and the end of a generation refreshes the run. A run that
  * continues in a new one of its chain hands `onContinued` the new run's id.
  */
 export function useRunStream(
   agentId: string,
   runId: string | undefined,
   onContinued?: (nextRunId: string) => void,
-): LiveTurn | null {
+): RunStreamState {
   const client = useQueryClient();
   const [live, setLive] = useState<LiveTurn | null>(null);
+  const [progress, setProgress] = useState<ToolProgress>({});
   const [trackedRun, setTrackedRun] = useState(runId);
   if (trackedRun !== runId) {
     setTrackedRun(runId);
     setLive(null);
+    setProgress({});
   }
   const refreshRun = () => {
     if (!runId) return;
@@ -217,12 +226,18 @@ export function useRunStream(
         if (message.payload.role === "assistant") setLive(null);
         // Files, scripts and routines follow the guild's stream; records follow the run's tools.
         if (message.payload.role === "tool") {
+          setProgress((current) => dropToolProgress(current, message.payload.tool_call_id));
           void client.invalidateQueries({ queryKey: keys.databases });
         }
         return;
       }
+      if (name === "tool.progress") {
+        setProgress((current) => applyToolProgress(current, data));
+        return;
+      }
       if (name === "generation.finished" || name === "run.error") {
         setLive(null);
+        setProgress({});
         refreshRun();
         return;
       }
@@ -234,7 +249,7 @@ export function useRunStream(
     },
   });
 
-  return live;
+  return { live, progress };
 }
 
 const studioEvents = [

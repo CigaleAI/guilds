@@ -1,4 +1,4 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { RotateCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../../api/client";
@@ -21,9 +21,8 @@ function terminalUrl(agentId: string, nonce: number): string {
  * minutes after the last input. The shell has the agent's home and port block, and no secrets.
  */
 export function AgentCli() {
-  const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
+  const { agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);
-  const enabled = agent.data?.config.cli !== false;
   const [session, setSession] = useState<Session>({ kind: "idle" });
   const mounted = useRef(true);
 
@@ -43,25 +42,6 @@ export function AgentCli() {
         setSession({ kind: "failed", detail: error.message || "Could not start the terminal." }),
     );
   };
-
-  if (agent.data && !enabled) {
-    return (
-      <div className="grid flex-1 place-items-center p-6">
-        <EmptyState
-          icon={SquareTerminal}
-          title="This agent has no CLI"
-          description="Turn it on in Settings to open a terminal on the agent's machine."
-          action={
-            <Button asChild size="sm">
-              <Link to="/guilds/$guildId/agents/$agentId/settings" params={{ guildId, agentId }}>
-                Open Settings
-              </Link>
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
 
   if (session.kind === "idle") {
     return (

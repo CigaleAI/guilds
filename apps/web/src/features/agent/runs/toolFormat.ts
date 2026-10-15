@@ -1,3 +1,5 @@
+import { diffstat } from "../chat/changes";
+
 /** A recorded run message: the API's message row, every field optional so partial rows fit too. */
 export type RunMessage = {
   id?: unknown;
@@ -258,6 +260,10 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
     const command = firstCommandLine(args.command);
     return command ? `${args.background === true ? "Start" : "Run"} ${command}` : "Run command";
   }
+  if (name === "code_task") {
+    const where = typeof args.repo === "string" && args.repo ? ` in ${args.repo}` : "";
+    return `${args.session_id ? "Resume code task" : "Code task"}${where}`;
+  }
   if (name === "shell_status") {
     if (typeof args.id !== "string" || !args.id) return "List background commands";
     return args.stop === true ? `Stop ${args.id}` : `Check ${args.id}`;
@@ -269,27 +275,11 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
       ? `Read ${args.path} from line ${from}`
       : `Read ${args.path}`;
   }
-  if (name === "file_edit") return args.path ? `Edit ${args.path}` : "Edit file";
   if (name === "code_search") {
     const where = args.path ? ` in ${args.path}` : "";
-    const how =
-      args.mode === "content"
-        ? "Search lines"
-        : args.mode === "symbols"
-          ? "Search symbols"
-          : "Search files";
+    const how = args.mode === "content" ? "Search lines" : "Search files";
     return args.pattern ? `${how} "${args.pattern}"${where}` : how;
   }
-  if (name === "code_match") return args.pattern ? `Match ${args.pattern}` : "Match syntax";
-  if (name === "code_map") return args.repo ? `Map ${args.repo}` : "Map repository";
-  if (name === "code_find") return args.question ? `Find: ${args.question}` : "Find code";
-  if (name === "code_outline") return args.path ? `Outline ${args.path}` : "Outline file";
-  if (name === "code_callers") {
-    const verb = args.direction === "out" ? "What" : "Callers of";
-    const tail = args.direction === "out" ? " calls" : "";
-    return args.symbol ? `${verb} ${args.symbol}${tail}` : "Trace references";
-  }
-  if (name === "file_write") return args.path ? `Write ${args.path}` : "Write file";
   if (name === "script_run") {
     return args.name ? `Run ${args.name}` : "Run script";
   }
@@ -344,16 +334,45 @@ function firstCommandLine(command: unknown): string {
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
 
+const CODE_TASK_STATUSES: Readonly<Record<string, string>> = Object.freeze({
+  completed: "completed",
+  failed: "failed",
+  timed_out: "timed out",
+  cancelled: "cancelled",
+  interrupted: "interrupted",
+});
+
+/** A code task's status in words, such as "timed out"; empty for anything else. */
+export function codeTaskStatus(status: unknown): string {
+  return typeof status === "string" && Object.hasOwn(CODE_TASK_STATUSES, status)
+    ? (CODE_TASK_STATUSES[status] ?? "")
+    : "";
+}
+
+/** A code task's diffstat from its metadata, such as "2 files · +14 −3"; empty before it has one. */
+export function codeTaskChanges(metadata: Record<string, unknown>): string {
+  const { files_changed: files, insertions, deletions } = metadata;
+  if (typeof files !== "number") return "";
+  return diffstat({
+    files_changed: files,
+    insertions: typeof insertions === "number" ? insertions : 0,
+    deletions: typeof deletions === "number" ? deletions : 0,
+  });
+}
+
 /**
- * What a code tool's result metadata says at a glance: a command's non-zero exit code, the
- * lines an edit added and removed, or the step a repeated read points back to; empty otherwise.
+ * What a code tool's result metadata says at a glance: a command's non-zero exit code, the step
+ * a repeated read points back to, or how a code task ended and what it changed; empty otherwise.
  */
 export function toolOutcome(metadata: Record<string, unknown> | null | undefined): string {
   if (!metadata) return "";
+  if (metadata.tool_name === "code_task") {
+    const status = codeTaskStatus(metadata.status);
+    return [status === "completed" ? "" : status, codeTaskChanges(metadata)]
+      .filter(Boolean)
+      .join(" · ");
+  }
   if (typeof metadata.repeat_of === "number") return `unchanged since step ${metadata.repeat_of}`;
-  const added = metadata.lines_added;
-  const removed = metadata.lines_removed;
-  if (typeof added === "number" && typeof removed === "number") return `+${added} −${removed}`;
   if (metadata.tool_name === "shell") {
     if (metadata.timed_out === true) return "timed out";
     const code = metadata.exit_code;

@@ -207,47 +207,37 @@ test("coding tools run through execd in the runtime image", { skip: imageMissing
     assert.match(long.text, /\n20000$/);
     assert.equal(long.metadata.log_path, `${home}/.runs/r_contract/call_2.log`);
 
-    const content = `${"x".repeat(150 * 1024)}\n`;
-    const wrote = await call("file_write", { path: "big.txt", content });
-    assert.equal(wrote.text, "wrote big.txt (1 lines)");
+    // Past the inline limit, under Linux's 128 KiB for one argument: the request goes through the file API.
+    const content = `${"x".repeat(100 * 1024)}\n`;
+    const wrote = await call("shell", { command: `printf '%s\\n' ${"x".repeat(100 * 1024)} > big.txt && wc -c < big.txt` });
+    assert.equal(wrote.text.trim(), String(content.length));
     const onHost = path.join(server.workspaceRoot, MACHINE.id, agentId, "repos/demo/big.txt");
     assert.equal(readFileSync(onHost, "utf8"), content);
 
-    await call("file_write", { path: "a.ts", content: "export const a = 1;\n" });
-    const edited = await call("file_edit", { path: "a.ts", old_string: "= 1", new_string: "= 2" });
-    assert.equal(edited.text, "edited a.ts (+1 −1)");
+    await call("shell", { command: "printf 'export const a = 2;\\n' > a.ts" });
     const read = await call("file_read", { path: "a.ts" });
     assert.equal(read.text, "a.ts · lines 1–1 of 1\n1  export const a = 2;");
 
-    await call("file_write", {
-      path: `${home}/repos/shop/src/money.ts`,
-      content: "export function cents(amount: number): number {\n  return Math.round(amount * 100);\n}\n",
+    await call("shell", {
+      command:
+        `mkdir -p ${home}/repos/shop/src && cd ${home}/repos/shop && ` +
+        "printf 'export function cents(amount: number): number {\\n  return Math.round(amount * 100);\\n}\\n' > src/money.ts && " +
+        "printf 'import { cents } from \"./money\";\\n\\n// validate the refund amount\\nexport function validateRefund(amount: number): number {\\n  if (amount <= 0) throw new Error(\"refund must be positive\");\\n  return cents(amount);\\n}\\n' > src/refund.ts && " +
+        "git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init",
     });
-    await call("file_write", {
-      path: `${home}/repos/shop/src/refund.ts`,
-      content:
-        "import { cents } from \"./money\";\n\n// validate the refund amount\nexport function validateRefund(amount: number): number {\n  if (amount <= 0) throw new Error(\"refund must be positive\");\n  return cents(amount);\n}\n",
-    });
-    await call("shell", { command: `cd ${home}/repos/shop && git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init` });
 
-    const map = await call("code_map", { repo: "shop" });
-    assert.match(map.text, /^shop \(\.\): 2 files · 2 symbols · \d+ edges · typescript\n/);
-    assert.match(map.text, /cents · function · src\/money\.ts:1-3 · 1 refs/);
     const files = await call("code_search", { pattern: "refund" });
     assert.equal(files.text, "src/refund.ts: 2\n2 matches in 1 files");
     const lines = await call("code_search", { pattern: "cents\\(", mode: "content" });
     assert.match(lines.text, /src\/refund\.ts:6: {3}return cents\(amount\);/);
-    const symbols = await call("code_search", { pattern: "positive", mode: "symbols" });
-    assert.match(symbols.text, /^validateRefund · function · src\/refund\.ts:4-7 · 0 refs\n {2}5: if \(amount <= 0\)/);
-    const match = await call("code_match", { pattern: "cents($A)" });
-    assert.match(match.text, /src\/refund\.ts:6: return cents\(amount\);/);
-    const found = await call("code_find", { question: "where is the refund amount validated", limit: 2 });
-    assert.match(found.text, /^1\. validateRefund · function · src\/refund\.ts:4-7/);
-    const outline = await call("code_outline", { path: "src/refund.ts" });
-    assert.match(outline.text, /^src\/refund\.ts · 1 symbols\n {6}4-7 {2}function validateRefund\(amount: number\): number$/);
-    const callers = await call("code_callers", { symbol: "cents" });
-    assert.match(callers.text, /^cents · function · src\/money\.ts:1-3\n/);
-    assert.match(callers.text, /\n {2}← validateRefund · function · src\/refund\.ts:4-7/);
+    for (const removed of ["graft", "ast-grep"]) {
+      const missing = await call("shell", { command: `command -v ${removed} || echo none` });
+      assert.equal(missing.text, "none", `${removed} is not in the image`);
+    }
+    const carried = await call("shell", { command: "cat /usr/local/share/guilds/harnesses; command -v codex >/dev/null && echo codex-cli" });
+    assert.match(carried.text, /^codex\n/);
+    assert.ok(carried.text.endsWith("codex-cli"));
+    assert.deepEqual(sandboxes.harnessesOf(MACHINE.id), carried.text.split("\n").slice(0, -1));
     const clean = await call("shell", { command: "git status --porcelain" });
     assert.equal(clean.text, "(no output)");
 

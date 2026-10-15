@@ -1,7 +1,8 @@
+import type { UseQueryResult } from "@tanstack/react-query";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
 import { useRunDiff } from "../../../api/queries";
-import type { Run, RunRepositoryChange } from "../../../api/types";
+import type { Run, RunDiff, RunRepositoryChange } from "../../../api/types";
 import { Button, CopyButton, Banner, cn, Icon } from "@guildsrun/ui";
 import { diffLineTone, diffstat } from "./changes";
 
@@ -12,6 +13,39 @@ const toneClass = {
   meta: "text-muted",
   context: "text-fg-2",
 } as const;
+
+/** A diff fetched from the agent's machine: its lines toned, with a copy button and the cut noted. */
+export function DiffView({
+  diff,
+  className,
+}: {
+  diff: UseQueryResult<RunDiff>;
+  className?: string;
+}) {
+  if (diff.isError) {
+    return <Banner tone="error" title="Couldn't load the diff" meta={diff.error.message} />;
+  }
+  if (!diff.data) {
+    return <p className="text-xs text-muted">Loading the diff from the agent&apos;s machine…</p>;
+  }
+  return (
+    <div className={cn("relative overflow-hidden rounded-lg bg-paper", className)}>
+      <CopyButton text={diff.data.diff} what="diff" className="absolute top-1 right-1" />
+      <pre className="max-h-120 overflow-auto p-3 font-mono text-xs leading-5">
+        {diff.data.diff.split("\n").map((line, index) => (
+          <div key={index} className={cn("whitespace-pre", toneClass[diffLineTone(line)])}>
+            {line || " "}
+          </div>
+        ))}
+      </pre>
+      {diff.data.truncated ? (
+        <p className="border-t border-line px-3 py-1.5 text-xs text-muted">
+          The diff is cut at 256 KiB.
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function RepositoryChange({ runId, change }: { runId: string; change: RunRepositoryChange }) {
   const [open, setOpen] = useState(false);
@@ -37,29 +71,7 @@ function RepositoryChange({ runId, change }: { runId: string; change: RunReposit
           {open ? "Hide diff" : "Show diff"}
         </Button>
       </div>
-      {open ? (
-        diff.isError ? (
-          <Banner tone="error" title="Couldn't load the diff" meta={diff.error.message} />
-        ) : diff.data ? (
-          <div className="relative overflow-hidden rounded-lg bg-paper">
-            <CopyButton text={diff.data.diff} what="diff" className="absolute top-1 right-1" />
-            <pre className="max-h-120 overflow-auto p-3 font-mono text-xs leading-5">
-              {diff.data.diff.split("\n").map((line, index) => (
-                <div key={index} className={cn("whitespace-pre", toneClass[diffLineTone(line)])}>
-                  {line || " "}
-                </div>
-              ))}
-            </pre>
-            {diff.data.truncated ? (
-              <p className="border-t border-line px-3 py-1.5 text-xs text-muted">
-                The diff is cut at 256 KiB.
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-xs text-muted">Loading the diff from the agent&apos;s machine…</p>
-        )
-      ) : null}
+      {open ? <DiffView diff={diff} /> : null}
     </div>
   );
 }

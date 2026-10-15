@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { HARNESS_LIST, isHarness, type Harness } from "../coding/harnesses.js";
 import { agentHome } from "../lib/agent-file.js";
+import { writeLog } from "../observability/log.js";
 import { orchestratorRoot } from "../lib/paths.js";
 import { agentDirectory, machineDirectory, machineSize, slotPorts, type MachineBox, type SlotPorts } from "../machines/index.js";
 import { SCRIPTS_DIR } from "../scripts/validation.js";
@@ -704,6 +706,8 @@ export class RunSandboxes {
   private sdk: OpenSandboxModule | null;
   private sleep: (ms: number) => Promise<void>;
   private readySeconds: number;
+  /** The harness CLIs of each container this process created, by machine. */
+  private carried = new Map<string, Harness[]>();
 
   constructor(options: {
     url: string;
@@ -782,7 +786,7 @@ export class RunSandboxes {
     }
     const directory = machineDirectory(this.workspaceRoot, machine.id);
     mkdirSync(directory, { recursive: true });
-    return sdk.Sandbox.create(this.image, {
+    const created = await sdk.Sandbox.create(this.image, {
       timeout: null,
       timeoutSeconds: null,
       metadata: machineMetadata(machine, { hostId: this.hostId, image: this.image }),
@@ -800,6 +804,27 @@ export class RunSandboxes {
       connection_config: this.config,
       connectionConfig: this.config,
     });
+    await this.readHarnesses(machine.id, created);
+    return created;
+  }
+
+  /** The harness CLIs a new container's image lists; an image without the list carries none. */
+  private async readHarnesses(machineId: string, sandbox: SandboxHandle): Promise<void> {
+    try {
+      const execution = await sandbox.commands.run(`cat ${HARNESS_LIST} 2>/dev/null || true`, { timeoutSeconds: 10 });
+      const listed = (execution.logs?.stdout ?? []).map((message) => message.text ?? "").join("\n");
+      this.carried.set(machineId, [...new Set(listed.split(/\s+/).filter(isHarness))]);
+    } catch (error) {
+      writeLog("warn", error instanceof Error ? error.message : String(error), {
+        operation: "machine.harnesses",
+        machine_id: machineId,
+      });
+    }
+  }
+
+  /** The harness CLIs the container this process last created for the machine carries. */
+  harnessesOf(machineId: string): Harness[] | null {
+    return this.carried.get(machineId) ?? null;
   }
 
   async connectRunning(machineId: string): Promise<SandboxHandle | null> {

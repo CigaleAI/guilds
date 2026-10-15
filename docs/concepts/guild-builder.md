@@ -68,7 +68,13 @@ The recipe carries the guild's mode and the roles that write.
 
 A role that reads, changes, runs, and ships code sets
 `config.coding`.
-Its code tools come with the flag.
+Its code tools (`code_task`, `shell`, `shell_status`, `file_read`,
+`code_search`) come with the flag.
+The coach sets `config.harness` (`claude-code`, `codex`, or `cursor`)
+only when the operator named one; otherwise apply asks for it. It
+sets `config.harness_model` only when the operator named a model for
+that harness, and `config.secret_aliases` only when the operator
+asked for one.
 
 The recipe lists the repositories the guild works in by name and
 purpose, never a URL or credential.

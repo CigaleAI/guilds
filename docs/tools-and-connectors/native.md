@@ -101,11 +101,11 @@ They keep separate tool families.
   snippet by writing it to an agent note and reading it back with
   `note_get`. Each call has a 60-second timeout.
 
-- `shell` / `shell_status` / `file_read` / `file_edit` / `file_write` /
-  `code_search` / `code_match` / `code_map` / `code_find` /
-  `code_outline` / `code_callers`: the code tools, sandbox through
-  `guilds-code`, offered when the run snapshot has `coding: true`
-  ([Code tools](code.md)).
+- `code_task` / `shell` / `shell_status` / `file_read` /
+  `code_search`: the code tools, offered when the run snapshot has
+  `coding: true` ([Code tools](code.md)). `code_task` runs in the
+  sandbox through `guilds-harness` and delegates code work to the
+  agent's coding harness; the other four run through `guilds-code`.
 
 - `group_post`: orchestrator, offered when the binding is on
   ([Group chat](../concepts/group-chat.md)).

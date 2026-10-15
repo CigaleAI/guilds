@@ -5,7 +5,6 @@ import { configErrors, configFormOf, configOf, defaultAgentConfig, withCoding } 
 
 test("switching coding on moves default limits to the coding budgets and back", () => {
   const form = configFormOf(defaultAgentConfig);
-  assert.equal(form.cli, true);
   assert.equal(form.scripting, true);
   assert.equal(form.memory, true);
   assert.equal(form.browser, false);
@@ -13,7 +12,6 @@ test("switching coding on moves default limits to the coding budgets and back", 
   assert.equal(form.max_workspace_mib, "10240");
   const coding = withCoding(form, true);
   assert.equal(coding.coding, true);
-  assert.equal(coding.cli, true);
   assert.equal(coding.browser, false);
   assert.equal(coding.scripting, true);
   assert.equal(coding.max_steps, "200");
@@ -24,6 +22,11 @@ test("switching coding on moves default limits to the coding budgets and back", 
   assert.equal(off.max_steps, "30");
   assert.equal(off.max_tool_calls, "50");
   assert.equal(configOf(coding, undefined).coding, true);
+});
+
+test("a config sent from the form carries no CLI flag", () => {
+  const coding = withCoding(configFormOf(defaultAgentConfig), true);
+  assert.equal("cli" in configOf(coding, undefined), false);
 });
 
 test("turning coding off drops a Kimi Code model for the organisation's default, or nothing", () => {
@@ -95,9 +98,12 @@ function machine(id: string, box: Machine["box"]): Machine {
     memory_mib: 2048,
     max_workspace_mib: 10240,
     workspace_mib: null,
+    allocated_workspace_mib: 0,
+    planned_cpu: 0,
     planned_mib: 0,
     agents: [],
     hidden_agents: 0,
+    harnesses: null,
   };
 }
 
@@ -128,4 +134,85 @@ test("the only machine stands in for a choice; among several one must be picked"
 test("an organisation without machines leaves nothing to pick", () => {
   const form = { ...configFormOf(defaultAgentConfig), model: "openai/gpt-5" };
   assert.equal(configErrors(form, { machines: [] }).machine, "Choose a machine.");
+});
+
+test("a coding agent needs a harness, and turning coding off clears it", () => {
+  const form = withCoding(configFormOf(defaultAgentConfig), true);
+  assert.equal(form.harness, "");
+  assert.equal(configErrors(form).harness, "Pick a harness.");
+  const picked = { ...form, harness: "codex" as const };
+  assert.equal(configErrors(picked).harness, undefined);
+  assert.equal(configOf(picked, undefined).harness, "codex");
+  const off = withCoding(picked, false);
+  assert.equal(off.harness, "");
+  assert.equal(configErrors(off).harness, undefined);
+  assert.equal(configOf(off, undefined).harness, null);
+  assert.equal(configOf({ ...off, harness: "cursor" }, undefined).harness, null);
+});
+
+test("a stored harness reaches the form and back", () => {
+  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "claude-code" });
+  assert.equal(form.harness, "claude-code");
+  assert.equal(configOf(form, undefined).harness, "claude-code");
+  assert.equal(configFormOf({ ...defaultAgentConfig, coding: true, harness: null }).harness, "");
+});
+
+test("a harness model reaches the form and back, trimmed; empty sends the subscription's default", () => {
+  const stored = {
+    ...defaultAgentConfig,
+    coding: true,
+    harness: "claude-code" as const,
+    harness_model: "opus",
+  };
+  const form = configFormOf(stored);
+  assert.equal(form.harness_model, "opus");
+  assert.equal(configOf(form, undefined).harness_model, "opus");
+  assert.equal(
+    configOf({ ...form, harness_model: "  sonnet " }, undefined).harness_model,
+    "sonnet",
+  );
+  assert.equal(configOf({ ...form, harness_model: "  " }, undefined).harness_model, null);
+  assert.equal(configFormOf({ ...stored, harness_model: null }).harness_model, "");
+  assert.equal(
+    configOf({ ...form, harness: "" }, undefined).harness_model,
+    null,
+    "no model without a harness",
+  );
+});
+
+test("a harness model must be a model name, and turning coding off clears it", () => {
+  const form = configFormOf({ ...defaultAgentConfig, coding: true, harness: "cursor" });
+  assert.equal(
+    configErrors({ ...form, harness_model: "claude-opus-4-8[context=1m]" }).harness_model,
+    undefined,
+  );
+  assert.match(
+    String(configErrors({ ...form, harness_model: "--force" }).harness_model),
+    /Up to 120/,
+  );
+  assert.match(String(configErrors({ ...form, harness_model: "a b" }).harness_model), /Up to 120/);
+  const off = withCoding({ ...form, harness_model: "gpt-5" }, false);
+  assert.equal(off.harness_model, "");
+  assert.equal(
+    configErrors({ ...off, harness_model: "--force" }).harness_model,
+    undefined,
+    "only a coding agent is checked",
+  );
+});
+
+test("secret aliases reach the form and back, and turning coding off keeps them", () => {
+  const stored = {
+    ...defaultAgentConfig,
+    secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" },
+  };
+  const form = configFormOf(stored);
+  assert.deepEqual(form.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
+  assert.notEqual(form.secret_aliases, stored.secret_aliases, "the form holds its own copy");
+  assert.deepEqual(configOf(form, undefined).secret_aliases, {
+    CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN",
+  });
+  assert.deepEqual(
+    withCoding({ ...form, coding: true }, false).secret_aliases,
+    form.secret_aliases,
+  );
 });

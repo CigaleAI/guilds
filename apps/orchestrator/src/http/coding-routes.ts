@@ -1,6 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import { installationIdOf, RepositoryAccessError } from "../coding/git.js";
 import {
+  HARNESSES,
+  HARNESS_INFO,
+  harnessLoginOf,
+  harnessModelOf,
+  harnessOf,
+  harnessSecretSource,
+  isHarness,
+} from "../coding/harnesses.js";
+import { secretAliasesOf } from "../agents/validation.js";
+import { agentSecrets } from "../access/runtime.js";
+import {
   DEFAULT_BRANCH,
   githubLoginItem,
   githubRepositoriesOf,
@@ -28,8 +39,14 @@ import { markDisconnected } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser } from "./identity.js";
-import { ownedGuild, ownedRun } from "./items.js";
+import { agentConfigObject, ownedAgent, ownedGuild, ownedRun } from "./items.js";
 import { bodyOf, param } from "./request.js";
+
+/** The repository a `code_task` result's diff is in, or null when the result has no end checkpoint. */
+function taskDiffRepository(metadata: Record<string, unknown> | null): string | null {
+  const repository = metadata?.tool_name === "code_task" ? metadata.repository : null;
+  return typeof repository === "string" && repository && typeof metadata?.end_sha === "string" ? repository : null;
+}
 
 function proxyUrl(): string {
   return process.env.ADAPTER_PROXY_URL ?? "";
@@ -313,12 +330,86 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     return { repositories: selected };
   });
 
+  app.get("/api/agents/:agent_id/harness", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const agent = await ownedAgent(repo, param(request, "agent_id"), user);
+    const config = agentConfigObject(agent);
+    const granted = new Set((await agentSecrets(repo, agent)).map((secret) => secret.name));
+    const aliases = secretAliasesOf(config);
+    const logins = (jsonObj(agent.harness_logins) as Record<string, unknown> | null) ?? {};
+    const carried = Array.isArray(agent.machine_harnesses) ? agent.machine_harnesses.filter(isHarness) : null;
+    return {
+      harness: harnessOf(config),
+      harness_model: harnessModelOf(config),
+      machine_harnesses: carried,
+      repositories: (await deps.generation?.codingRepositoryNames(agent)) ?? [],
+      harnesses: HARNESSES.map((harness) => {
+        const info = HARNESS_INFO[harness];
+        const login = harnessLoginOf(logins, harness);
+        const source = harnessSecretSource(harness, aliases);
+        return {
+          harness,
+          label: info.label,
+          secret: info.secret,
+          secret_source: source,
+          secret_granted: source !== null && granted.has(source),
+          secret_shadowed: source !== null && source !== info.secret && granted.has(String(info.secret)),
+          login: info.login,
+          login_seen_at: login.seen_at,
+          login_account: login.account,
+        };
+      }),
+    };
+  });
+
+  app.post("/api/agents/:agent_id/harness/check", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const agent = await ownedAgent(repo, param(request, "agent_id"), user);
+    const harness = bodyOf(request).harness;
+    if (!isHarness(harness)) {
+      throw new HttpError(422, `harness must be one of: ${HARNESSES.join(", ")}`);
+    }
+    if (!deps.generation) {
+      throw new HttpError(503, "generation is unavailable");
+    }
+    try {
+      return await deps.generation.checkHarness(String(agent.id), harness);
+    } catch (error) {
+      if (error instanceof RunRequestError) {
+        throw new HttpError(error.status, error.detail);
+      }
+      throw error;
+    }
+  });
+
   app.get("/api/runs/:run_id/changes", async (request) => {
     const user = await currentUser(repo, request, deps);
     const run = await ownedRun(repo, param(request, "run_id"), user);
     const metadata = jsonObj(run.metadata) as Record<string, unknown> | null;
     const repos = metadata && Array.isArray(metadata.repos) ? metadata.repos : [];
     return { repositories: repos };
+  });
+
+  app.get("/api/runs/:run_id/tasks/:call_id/diff", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const run = await ownedRun(repo, param(request, "run_id"), user);
+    const callId = param(request, "call_id");
+    const repository = taskDiffRepository(await repo.getToolResultMetadata(String(run.id), callId));
+    if (repository === null) {
+      throw new HttpError(404, "that call has no task diff");
+    }
+    if (!deps.generation) {
+      throw new HttpError(503, "generation is unavailable");
+    }
+    try {
+      const result = await deps.generation.runDiff(String(run.id), repository, callId);
+      return { repository, ...result };
+    } catch (error) {
+      if (error instanceof RunRequestError) {
+        throw new HttpError(error.status, error.detail);
+      }
+      throw error;
+    }
   });
 
   app.get("/api/runs/:run_id/changes/:repository/diff", async (request) => {

@@ -13,6 +13,8 @@ submitting it. There is no separate contributor agreement.
 - Understand the system before changing it: start at the
   [index](README.md) and [Philosophy](philosophy.md), then the
   [Architecture](README.md#architecture) pages.
+- Talk with other operators and contributors:
+  [Community](contributing/community.md).
 
 A change is a branch and a pull request against `main`.
 

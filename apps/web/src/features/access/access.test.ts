@@ -206,6 +206,8 @@ test("browser and coding tools follow the agent's capability, not a binding", ()
   });
   assert.equal(isCapabilityNativeTool("browser_click"), true);
   assert.equal(isCapabilityNativeTool("shell"), true);
+  assert.equal(isCapabilityNativeTool("code_task"), true);
+  assert.equal(isCapabilityNativeTool("file_edit"), false);
   assert.equal(isCapabilityNativeTool("report_issue"), true);
   assert.equal(isCapabilityNativeTool("note_find"), false);
 });

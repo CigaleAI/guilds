@@ -10,6 +10,7 @@ import {
   useStartRun,
 } from "../../../api/queries";
 import { useRunStream } from "../../../api/streams";
+import { progressLineCount } from "../../../api/toolProgress";
 import { messageTime } from "../../../app/format";
 import { useMediaQuery, wideScreen } from "../../../app/media";
 import { Button, Composer, Banner, EmptyState, SkeletonRows, toast, Row } from "@guildsrun/ui";
@@ -42,7 +43,8 @@ export function AgentChat() {
   const log = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
-  const live = useRunStream(agentId, runId, (next) => selectRun(next));
+  const { live, progress } = useRunStream(agentId, runId, (next) => selectRun(next));
+  const progressLines = progressLineCount(progress);
 
   useLayoutEffect(() => {
     atBottom.current = true;
@@ -51,7 +53,14 @@ export function AgentChat() {
   useLayoutEffect(() => {
     const el = log.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages.data?.length, live?.text, live?.reasoning, run.data?.generating, runId]);
+  }, [
+    messages.data?.length,
+    live?.text,
+    live?.reasoning,
+    progressLines,
+    run.data?.generating,
+    runId,
+  ]);
 
   const failed = (title: string) => (error: Error) =>
     toast({ kind: "error", title, description: error.message });
@@ -168,6 +177,7 @@ export function AgentChat() {
                 run={current}
                 messages={messages.data}
                 live={live}
+                progress={progress}
                 {...(search.call !== undefined || search.seq !== undefined
                   ? {
                       reveal: {

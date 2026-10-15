@@ -248,6 +248,23 @@ export async function agentRuntime(
   return { tools, secrets: metas, mcp, grants };
 }
 
+/**
+ * The environment with each alias set to the value of the secret it names, when that secret is in
+ * it; an alias wins over a variable of its own name.
+ */
+export function applySecretAliases(
+  env: Record<string, string>,
+  aliases: Record<string, string>,
+): Record<string, string> {
+  const aliased = { ...env };
+  for (const [alias, source] of Object.entries(aliases)) {
+    if (source in env) {
+      aliased[alias] = env[source]!;
+    }
+  }
+  return aliased;
+}
+
 export async function snapshotEnvValues(
   db: AccessDatabase,
   secretRefs: Array<Record<string, string>>,

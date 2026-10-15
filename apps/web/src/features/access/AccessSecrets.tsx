@@ -11,6 +11,7 @@ import {
 import type { Secret, SecretAccessChoice } from "../../api/types";
 import { relativeTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";
+import { SecretValueField } from "./SecretValueField";
 import {
   Button,
   IconButton,
@@ -243,29 +244,39 @@ function nameError(name: string): string | undefined {
     : undefined;
 }
 
-function AddSecretDialog({
+/**
+ * Adds a secret with its access. `initialName` and `initialDescription` start the form, as the
+ * subscription token picker does; `onCreated` hears the secret once it is stored.
+ */
+export function AddSecretDialog({
   open,
   onOpenChange,
   initialAccess,
   manager,
+  initialName = "",
+  initialDescription = "",
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialAccess: SecretAccessChoice;
   manager: boolean;
+  initialName?: string;
+  initialDescription?: string;
+  onCreated?: (secret: Secret) => void;
 }) {
   const create = useCreateSecret();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [value, setValue] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(initialDescription);
   const [access, setAccess] = useState(initialAccess);
   const invalidName = nameError(name);
   const needsGrant = !manager && !access.guild_ids.length && !access.agent_ids.length;
 
   const reset = () => {
-    setName("");
+    setName(initialName);
     setValue("");
-    setDescription("");
+    setDescription(initialDescription);
     setAccess(initialAccess);
     create.reset();
   };
@@ -276,8 +287,9 @@ function AddSecretDialog({
     create.mutate(
       { name: name.trim(), value, description: description.trim(), ...access },
       {
-        onSuccess: () => {
+        onSuccess: (secret) => {
           toast({ kind: "success", title: `${name.trim()} added` });
+          onCreated?.(secret);
           reset();
           onOpenChange(false);
         },
@@ -311,14 +323,12 @@ function AddSecretDialog({
               onChange={(event) => setName(event.currentTarget.value)}
               {...(invalidName ? { error: invalidName } : {})}
             />
-            <TextField
+            <SecretValueField
               tone="surface"
               label="Value"
-              type="password"
               required
-              autoComplete="off"
               value={value}
-              onChange={(event) => setValue(event.currentTarget.value)}
+              onValueChange={setValue}
             />
             <TextField
               tone="surface"
@@ -409,14 +419,12 @@ function EditSecretDialog({ secret, onClose }: { secret: Secret; onClose: () => 
               value={description}
               onChange={(event) => setDescription(event.currentTarget.value)}
             />
-            <TextField
+            <SecretValueField
               tone="surface"
               label="New value"
-              type="password"
-              autoComplete="off"
               hint="Leave empty to keep the current value."
               value={value}
-              onChange={(event) => setValue(event.currentTarget.value)}
+              onValueChange={setValue}
             />
             {update.isError ? (
               <Banner tone="error" title="Couldn't save the secret">

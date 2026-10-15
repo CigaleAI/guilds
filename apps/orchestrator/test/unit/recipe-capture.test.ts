@@ -366,6 +366,44 @@ test("captureGuild takes each secret's scope from how the role gets it", async (
   assert.equal(JSON.stringify(recipe.secrets).includes("sec_"), false);
 });
 
+test("captureGuild leaves a coding role's harness tokens and their aliases behind", async () => {
+  const grant = (agentId: string) => ({ guild_id: null, agent_id: agentId, name: "", in_guild_id: GUILD.id });
+  const recipe = await captureGuild(
+    captureDeps({
+      agents: [
+        {
+          id: "a_coder",
+          name: "coder",
+          focus: "Code",
+          config: {
+            model: TEST_MODEL,
+            coding: true,
+            harness: "claude-code",
+            secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "CLAUDE_CODE_OAUTH_TOKEN_CODER", DEPLOY_KEY: "PROD_DEPLOY" },
+          },
+        },
+        { id: "a_writer", name: "writer", focus: "Write", config: { model: TEST_MODEL, browser: true } },
+      ],
+      secrets: [
+        { id: "sec_cc", name: "CLAUDE_CODE_OAUTH_TOKEN_CODER", description: "token", org_wide: false, grants: [grant("a_coder")] },
+        { id: "sec_cursor", name: "CURSOR_API_KEY", description: "key", org_wide: false, grants: [grant("a_coder")] },
+        { id: "sec_deploy", name: "PROD_DEPLOY", description: "deploy", org_wide: false, grants: [grant("a_coder")] },
+        { id: "sec_writer", name: "CLAUDE_CODE_OAUTH_TOKEN", description: "writer", org_wide: false, grants: [grant("a_writer")] },
+      ],
+    }),
+    { guild: GUILD, user: USER },
+  );
+  const coder = recipe.roles.find((role) => role.role === "coder");
+  assert.deepEqual(coder?.config.secret_aliases, { DEPLOY_KEY: "PROD_DEPLOY" });
+  assert.deepEqual(
+    recipe.secrets.map((item) => [item.name, item.roles]),
+    [
+      ["PROD_DEPLOY", ["coder"]],
+      ["CLAUDE_CODE_OAUTH_TOKEN", ["writer"]],
+    ],
+  );
+});
+
 test("captureGuild keeps a random window and labels its design cadence", async () => {
   const window = { timezone: "Europe/Paris", start: "08:00", end: "20:00", max_wakes: 6 };
   const recipe = await captureGuild(

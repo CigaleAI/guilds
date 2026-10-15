@@ -187,6 +187,7 @@ export function RecipePage() {
             plan={plan}
             findings={findings}
             catalog={capabilities.data?.catalog}
+            hideName
             onEditTask={(role, text) =>
               review
                 .mutateAsync({ path: `roles.${role}.task`, action: "edit", value: text })

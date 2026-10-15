@@ -1,7 +1,8 @@
 # Local development only, merged into docker-compose.yml by docker-compose.dev.yml: the
 # orchestrator runs the checkout's source, bind-mounted over the image, and restarts itself when
-# it changes; it accepts the all-zero master key the Makefile gives a development stack; and
-# PostgreSQL is published on loopback for tests and tools on the host. CORE is where this
+# it changes, migrations included, so a new migration is applied at the restart; it accepts the
+# all-zero master key the Makefile gives a development stack; and PostgreSQL is published on
+# loopback for tests and tools on the host. CORE is where this
 # repository sits under /app in the image, as in the orchestrator's Dockerfile.
 services:
   postgres:
@@ -18,6 +19,8 @@ services:
       - node_modules/.bin/tsx
       - watch
       - --clear-screen=false
+      - --include
+      - drizzle/**
       - --import
       - ./src/observability/instrument.ts
       - src/server.ts

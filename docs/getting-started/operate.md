@@ -29,6 +29,19 @@ the image with:
 docker build --build-arg BROWSER=chromium --tag agent-runtime:0.4 runtime/
 ```
 
+A coding harness is the coding tool an agent hands its code work
+to. The image you build carries three: Codex, Claude Code, and the
+Cursor CLI. To build it with Codex as its one harness, run:
+
+```text
+docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
+```
+
+A coding run of an agent on Claude Code or Cursor then fails at
+start with an error that names its missing harness.
+[Code tools](../tools-and-connectors/code.md#harnesses-in-the-image)
+explains which harnesses an image carries.
+
 ## Where the state lives
 
 `STATE_ROOT` in `.env` is an absolute path on this host. The

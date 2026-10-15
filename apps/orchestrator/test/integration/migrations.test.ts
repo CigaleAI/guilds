@@ -1,18 +1,27 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { applyMigrations, connect, createPool } from "../../src/db/client.js";
+import { applyMigrations, connect, createPool, repairMigrations } from "../../src/db/client.js";
+import { MigrationsNotApplied, committedMigrations } from "../../src/db/migrations.js";
 import { orchestratorRoot } from "../../src/lib/paths.js";
+import { tempDir } from "../helpers/env.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
 const migrationsFolder = path.join(orchestratorRoot(import.meta.url), "drizzle");
 const freshDb = uniqueDbName("agent_platform_migrate_fresh");
 const editionDb = uniqueDbName("agent_platform_migrate_edition");
+const driftDb = uniqueDbName("agent_platform_migrate_drift");
+const cliDb = uniqueDbName("agent_platform_migrate_cli");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
   await dropIsolatedDatabase(editionDb);
+  await dropIsolatedDatabase(driftDb);
+  await dropIsolatedDatabase(cliDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -39,6 +48,48 @@ test("migrations are stamped in order and before now, so a database applies ever
   }
 });
 
+/** A copy of the migrations folder whose journal ends one migration early. */
+function chainWithoutLast(): string {
+  const folder = path.join(tempDir("migrations-"), "drizzle");
+  cpSync(migrationsFolder, folder, { recursive: true });
+  const journalPath = path.join(folder, "meta", "_journal.json");
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: unknown[] };
+  journal.entries.pop();
+  writeFileSync(journalPath, JSON.stringify(journal));
+  return folder;
+}
+
+test("a migration skipped behind a later recorded stamp fails boot by name, and repair applies it keeping the data", async () => {
+  const pool = await createPool(await createIsolatedDatabase(driftDb));
+  try {
+    await migrate(drizzle(pool), {
+      migrationsFolder: chainWithoutLast(),
+      migrationsSchema: "public",
+      migrationsTable: "__drizzle_migrations",
+    });
+    const [before, last] = committedMigrations(migrationsFolder).slice(-2);
+    // The second to last migration was applied from a draft stamped after the last one.
+    await pool.query("UPDATE public.__drizzle_migrations SET created_at = $1 WHERE hash = $2", [last!.stamp + 1, before!.hash]);
+    await pool.query("CREATE TABLE public.kept (value text)");
+    await pool.query("INSERT INTO public.kept VALUES ('data')");
+
+    await assert.rejects(applyMigrations(pool), (error: unknown) => {
+      assert.ok(error instanceof MigrationsNotApplied);
+      assert.deepEqual(error.tags, [last!.tag]);
+      assert.match(error.message, /make migrate/);
+      return true;
+    });
+
+    assert.deepEqual(await repairMigrations(pool), [before!.tag]);
+    const recorded = await pool.query("SELECT hash FROM public.__drizzle_migrations");
+    assert.equal(recorded.rowCount, committedMigrations(migrationsFolder).length);
+    assert.equal((await pool.query("SELECT value FROM public.kept")).rows[0].value, "data");
+    assert.deepEqual(await repairMigrations(pool), [], "a repaired database has nothing left to re-stamp");
+  } finally {
+    await pool.end();
+  }
+});
+
 test("an edition's migrations run after core's and before any seed", { timeout: 60_000 }, async () => {
   const order: string[] = [];
   const database = await connect(await createIsolatedDatabase(editionDb), [
@@ -60,5 +111,41 @@ test("an edition's migrations run after core's and before any seed", { timeout: 
     assert.deepEqual(order, ["migrate: core tables present, 0 seeded rows", "seed: own table present, core seeded true"]);
   } finally {
     await database.close();
+  }
+});
+
+test("the native CLI migration drops the cli flag from recipe roles, keeping their order", async () => {
+  const pool = await createPool(await createIsolatedDatabase(cliDb));
+  try {
+    const folder = chainWithoutLast();
+    assert.equal(committedMigrations(migrationsFolder).at(-1)?.tag, "0007_native_cli");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    const body = {
+      format: "guilds.recipe",
+      roles: [
+        { role: "lead", config: { model: "m", cli: false, browser: true } },
+        { role: "coder", config: { coding: true, cli: true } },
+        { role: "bare" },
+      ],
+    };
+    await pool.query(
+      `INSERT INTO public.recipes (id, org_id, name, body, source_kind, created_at, updated_at)
+       VALUES ('rec_1', 'org_1', 'r', $1, 'file', $2, $2), ('rec_2', 'org_1', 'r2', '{"roles": []}', 'file', $2, $2)`,
+      [JSON.stringify(body), now],
+    );
+
+    await applyMigrations(pool);
+    const migrated = await pool.query("SELECT id, body FROM public.recipes ORDER BY id");
+    assert.deepEqual(migrated.rows[0].body.roles, [
+      { role: "lead", config: { model: "m", browser: true } },
+      { role: "coder", config: { coding: true } },
+      { role: "bare" },
+    ]);
+    assert.equal(migrated.rows[0].body.format, "guilds.recipe");
+    assert.deepEqual(migrated.rows[1].body, { roles: [] });
+  } finally {
+    await pool.end();
   }
 });

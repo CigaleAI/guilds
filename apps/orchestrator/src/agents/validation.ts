@@ -1,4 +1,6 @@
 import { isCodingOnlyModel, parseModelId } from "../llm/providers.js";
+import { HARNESS_MODEL_RE, HARNESSES, isHarness, type Harness } from "../coding/harnesses.js";
+import { SECRET_NAME } from "../credentials/validate.js";
 import { NAME_RE } from "../lib/names.js";
 
 export const CONFIG_KEYS = new Set([
@@ -11,10 +13,12 @@ export const CONFIG_KEYS = new Set([
   "keep_tool_result_generations",
   "max_scripts",
   "max_workspace_mib",
-  "cli",
   "browser",
   "browser_language",
   "coding",
+  "harness",
+  "harness_model",
+  "secret_aliases",
   "scripting",
   "memory",
   "thinking_level",
@@ -29,12 +33,12 @@ export const DEFAULT_KEEP_TOOL_RESULT_GENERATIONS = 1;
 export const DEFAULT_MAX_SCRIPTS = 10;
 /** An agent's workspace cap, in MiB. Above this the next generation fails at start. */
 export const DEFAULT_MAX_WORKSPACE_MIB = 10240;
-/** A new agent can open a terminal on its machine unless the operator turns this off. */
-export const DEFAULT_CLI = true;
 /** A new agent keeps script tools unless the operator turns this off. */
 export const DEFAULT_SCRIPTING = true;
 /** A new agent keeps Memory and `memory_write` unless the operator turns this off. */
 export const DEFAULT_MEMORY = true;
+/** How many secret aliases an agent's config may hold. */
+export const SECRET_ALIASES_MAX = 32;
 /** The step and tool-call budgets an agent created with `coding` on starts with. */
 export const CODING_MAX_STEPS = 200;
 export const CODING_MAX_TOOL_CALLS = 200;
@@ -113,10 +117,18 @@ export type AgentConfig = {
   keep_tool_result_generations: number;
   max_scripts: number;
   max_workspace_mib: number;
-  cli: boolean;
   browser: boolean;
   browser_language: string;
   coding: boolean;
+  harness: Harness | null;
+  /** The model the harness runs; null leaves it to the harness's subscription. */
+  harness_model: string | null;
+  /**
+   * Variable names the agent's commands see beside the secrets reaching it, each holding the
+   * value of the secret it names: `{ CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" }`. An alias wins over
+   * a secret of its own name.
+   */
+  secret_aliases: Record<string, string>;
   scripting: boolean;
   memory: boolean;
   thinking_level: ThinkingLevel;
@@ -185,24 +197,27 @@ export function addMissingBrowser(config: Record<string, unknown>): Record<strin
   return fillMissingKeys(config, { browser: false });
 }
 
-/** The flags a payload leaves out: no browser and no coding. */
+/**
+ * What a payload leaves out: no browser, no coding, no harness, the harness's default model, and
+ * no secret aliases.
+ */
 export function addMissingFlags(config: Record<string, unknown>): Record<string, unknown> {
-  return fillMissingKeys(config, { browser: false, coding: false });
-}
-
-export function addMissingCliScriptingAndMemory(
-  config: Record<string, unknown>,
-): Record<string, unknown> {
   return fillMissingKeys(config, {
-    cli: DEFAULT_CLI,
-    scripting: DEFAULT_SCRIPTING,
-    memory: DEFAULT_MEMORY,
+    browser: false,
+    coding: false,
+    harness: null,
+    harness_model: null,
+    secret_aliases: {},
   });
 }
 
-/** Whether the operator CLI tab and API are on; missing means on. */
-export function cliOf(config: Record<string, unknown> | null | undefined): boolean {
-  return config?.cli !== false;
+export function addMissingScriptingAndMemory(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  return fillMissingKeys(config, {
+    scripting: DEFAULT_SCRIPTING,
+    memory: DEFAULT_MEMORY,
+  });
 }
 
 /** Whether script tools and the Scripts tab are on; missing means on. */
@@ -328,7 +343,7 @@ export function validateThinkingLevel(value: unknown): ThinkingLevel {
 
 function fillMissingAgentConfig(config: Record<string, unknown>): Record<string, unknown> {
   return addMissingFlags(
-    addMissingCliScriptingAndMemory(
+    addMissingScriptingAndMemory(
       addMissingThinkingLevel(
         addMissingBrowserLanguage(addMissingRunLimits(addMissingTemperatureAndStepLimits(config))),
       ),
@@ -385,6 +400,88 @@ function requireBooleanField(value: unknown, field: string): boolean {
   return value;
 }
 
+function requireHarness(value: unknown, coding: boolean): Harness | null {
+  if (value === null) {
+    return null;
+  }
+  if (!isHarness(value)) {
+    throw new AgentValidationError(`harness must be one of: ${HARNESSES.join(", ")}`);
+  }
+  if (!coding) {
+    throw new AgentValidationError("harness is only for coding agents");
+  }
+  return value;
+}
+
+/** The harness's model: null or blank for its subscription's default, else a model name for a set harness. */
+function requireHarnessModel(value: unknown, harness: Harness | null): string | null {
+  const model = typeof value === "string" ? value.trim() : value;
+  if (model === null || model === "") {
+    return null;
+  }
+  if (typeof model !== "string" || !HARNESS_MODEL_RE.test(model)) {
+    throw new AgentValidationError(
+      "harness_model must be a model name: up to 120 letters, digits, and . _ : / = , [ ] -",
+    );
+  }
+  if (harness === null) {
+    throw new AgentValidationError("harness_model needs a harness");
+  }
+  return model;
+}
+
+function isAliasMap(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireAliasEntry(alias: string, source: unknown): string {
+  if (!SECRET_NAME.test(alias) || typeof source !== "string" || !SECRET_NAME.test(source)) {
+    throw new AgentValidationError("secret_aliases maps environment variable names to secret names");
+  }
+  if (source === alias) {
+    throw new AgentValidationError(`secret_aliases: ${alias} must name another secret`);
+  }
+  return source;
+}
+
+/** The agent's secret aliases: a map of variable names to secret names, at most `SECRET_ALIASES_MAX`. */
+function requireSecretAliases(value: unknown): Record<string, string> {
+  if (!isAliasMap(value)) {
+    throw new AgentValidationError("secret_aliases must be an object");
+  }
+  const entries = Object.entries(value);
+  if (entries.length > SECRET_ALIASES_MAX) {
+    throw new AgentValidationError(`secret_aliases holds at most ${SECRET_ALIASES_MAX} entries`);
+  }
+  return Object.fromEntries(entries.map(([alias, source]) => [alias, requireAliasEntry(alias, source)]));
+}
+
+/** The agent's secret aliases as stored, or an empty map when the config has none or they do not validate. */
+export function secretAliasesOf(config: Record<string, unknown> | null | undefined): Record<string, string> {
+  try {
+    return requireSecretAliases(config?.secret_aliases ?? {});
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A coding agent needs a harness: every create and update is refused without one, and an update
+ * cannot switch a coding agent's coding off. A stored coding agent without one still validates;
+ * it is not ready, and its coding runs fail at start.
+ */
+export function assertCodingAgent(config: AgentConfig, previous?: Record<string, unknown>): void {
+  if (previous?.coding === true && !config.coding) {
+    throw new AgentValidationError("coding cannot be switched off on a coding agent");
+  }
+  if (!config.coding) {
+    return;
+  }
+  if (config.harness === null) {
+    throw new AgentValidationError(`coding agents need a harness: ${HARNESSES.join(", ")}`);
+  }
+}
+
 function rejectCodingOnlyModelWithoutCoding(model: string, coding: boolean): void {
   if (isCodingOnlyModel(model) && !coding) {
     throw new AgentValidationError("coding API models are only for coding agents");
@@ -398,6 +495,7 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
   const coding = requireBooleanField(filled.coding, "coding");
   const browser = requireBooleanField(filled.browser, "browser");
   rejectCodingOnlyModelWithoutCoding(model, coding);
+  const harness = requireHarness(filled.harness, coding);
   return {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),
@@ -411,10 +509,12 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
     ),
     max_scripts: requirePositiveInteger(filled.max_scripts, "max_scripts"),
     max_workspace_mib: requirePositiveInteger(filled.max_workspace_mib, "max_workspace_mib"),
-    cli: requireBooleanField(filled.cli, "cli"),
     browser,
     browser_language: validateBrowserLanguage(filled.browser_language),
     coding,
+    harness,
+    harness_model: requireHarnessModel(filled.harness_model, harness),
+    secret_aliases: requireSecretAliases(filled.secret_aliases),
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),
     thinking_level: validateThinkingLevel(filled.thinking_level),

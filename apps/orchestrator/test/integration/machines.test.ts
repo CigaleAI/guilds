@@ -91,13 +91,13 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const browser = await createAgent("browser", { browser: true });
     assert.equal(browser.statusCode, 201, browser.body);
 
-    // A box in the config is refused, and coding needs a code or custom machine.
+    // A box in the config is refused, and a coding agent needs a machine of at least 2 CPUs and 4 GiB.
     const boxed = await createAgent("boxed", { box: "code" });
     assert.equal(boxed.statusCode, 422, boxed.body);
     assert.match(boxed.json().detail, /unknown keys: box/);
-    const coder = await createAgent("coder", { coding: true });
+    const coder = await createAgent("coder", { coding: true, harness: "claude-code" });
     assert.equal(coder.statusCode, 422, coder.body);
-    assert.match(coder.json().detail, /coding needs a code or custom machine/);
+    assert.match(coder.json().detail, /a coding agent needs a machine with at least 2 CPUs and 4 GiB; default has 1 CPU and 2 GiB\. Pick a larger machine, or resize default under Settings, Machines/);
 
     // Owners and admins add machines; a name is unique, a custom one carries its size.
     const code = await app.inject({
@@ -128,20 +128,118 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const unplaced = await createAgent("unplaced", {});
     assert.equal(unplaced.statusCode, 422, unplaced.body);
     assert.match(unplaced.json().detail, /machine_id is required/);
-    const placed = await createAgent("coder", { coding: true }, { machine_id: codeId });
+    const placed = await createAgent("coder", { coding: true, harness: "claude-code" }, { machine_id: codeId });
     assert.equal(placed.statusCode, 201, placed.body);
     assert.equal(placed.json().machine.name, "builder");
     assert.equal(placed.json().config.max_steps, 200, "a new coding agent takes the coding budgets");
+    assert.equal("deprecated" in placed.json(), false);
     const coderId = String(placed.json().id);
+    assert.equal((await machines()).find((item) => item.id === codeId)?.harnesses, null, "before its container first started");
 
-    // The list carries each machine's agents and its planned memory.
+    // A coding agent stored without a harness is not ready: it saves nothing until a harness is picked.
+    await repo.pool.query(`UPDATE agents SET config = config - 'harness' WHERE id = $1`, [coderId]);
+    const stripped = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: AUTH });
+    assert.equal(stripped.statusCode, 200, stripped.body);
+    assert.equal("deprecated" in stripped.json(), false);
+    const unpicked = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
+    assert.equal(unpicked.json().harness, null);
+    const unsaved = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...stripped.json().config, temperature: 0.5 } },
+    });
+    assert.equal(unsaved.statusCode, 422, unsaved.body);
+    assert.match(unsaved.json().detail, /coding agents need a harness/);
+    const picked = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...stripped.json().config, harness: "codex" } },
+    });
+    assert.equal(picked.statusCode, 200, picked.body);
+    const status = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
+    assert.equal(status.statusCode, 200, status.body);
+    assert.equal(status.json().harness, "codex");
+    assert.equal(status.json().harness_model, null, "the subscription's default");
+    assert.equal(status.json().machine_harnesses, null);
+    assert.deepEqual(status.json().repositories, []);
+    const pinned = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, harness_model: "gpt-5-codex" } },
+    });
+    assert.equal(pinned.statusCode, 200, pinned.body);
+    assert.equal(pinned.json().config.harness_model, "gpt-5-codex");
+
+    // A coding agent stays one.
+    const uncoded = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...pinned.json().config, coding: false, harness: null, harness_model: null } },
+    });
+    assert.equal(uncoded.statusCode, 422, uncoded.body);
+    assert.match(uncoded.json().detail, /coding cannot be switched off/);
+    const refused = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, harness_model: "--settings" } },
+    });
+    assert.equal(refused.statusCode, 422, refused.body);
+    const unknown = await app.inject({
+      method: "POST",
+      url: `/api/agents/${coderId}/harness/check`,
+      headers: JSON_AUTH,
+      payload: { harness: "pi" },
+    });
+    assert.equal(unknown.statusCode, 422, unknown.body);
+    type Credential = {
+      harness: string;
+      secret: string | null;
+      secret_source: string | null;
+      secret_granted: boolean;
+      secret_shadowed: boolean;
+    };
+    const credentials = (payload: { harnesses: Credential[] }) =>
+      payload.harnesses.map((item) => [item.harness, item.secret, item.secret_source, item.secret_granted, item.secret_shadowed]);
+    assert.deepEqual(credentials(status.json()), [
+      ["claude-code", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", false, false],
+      ["codex", null, null, false, false],
+      ["cursor", "CURSOR_API_KEY", "CURSOR_API_KEY", false, false],
+    ]);
+    // An alias names the secret the harness's token variable reads.
+    const aliased = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "MY_CLAUDE_TOKEN" } } },
+    });
+    assert.equal(aliased.statusCode, 200, aliased.body);
+    assert.deepEqual(aliased.json().config.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "MY_CLAUDE_TOKEN" });
+    const mapped = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
+    assert.deepEqual(credentials(mapped.json())[0], ["claude-code", "CLAUDE_CODE_OAUTH_TOKEN", "MY_CLAUDE_TOKEN", false, false]);
+    const badAlias = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...picked.json().config, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "CLAUDE_CODE_OAUTH_TOKEN" } } },
+    });
+    assert.equal(badAlias.statusCode, 422, badAlias.body);
+
+    // The list carries each machine's agents, their planned load (the sum of their minimums), and the disk their caps reserve.
     const listed = await machines();
     const byName = Object.fromEntries(listed.map((machine) => [String(machine.name), machine]));
     assert.deepEqual(byName.default?.agents.map((agent: { name: string }) => agent.name), ["scripter", "browser"]);
-    assert.equal(byName.default?.planned_mib, 100 + 600);
-    assert.equal(byName.builder?.planned_mib, 100 + 1536);
+    assert.equal(byName.default?.planned_cpu, 0.5 + 1);
+    assert.equal(byName.default?.planned_mib, 256 + 2048);
+    assert.equal(byName.builder?.planned_cpu, 2);
+    assert.equal(byName.builder?.planned_mib, 4096);
+    assert.equal(byName.default?.allocated_workspace_mib, 2 * 10240);
 
-    // A standard tier is refused while a coding agent sits on the machine.
+    // A size below the minimum of an agent on the machine is refused.
     const downgrade = await app.inject({
       method: "PATCH",
       url: `/api/orgs/org_home/machines/${codeId}`,
@@ -149,6 +247,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       payload: { box: "standard" },
     });
     assert.equal(downgrade.statusCode, 409, downgrade.body);
+    assert.match(downgrade.json().detail, /this machine's agents need at least 2 CPUs and 4 GiB/);
 
     // A running machine resized gets a new container; its directory stays.
     const started = await app.inject({ method: "POST", url: `/api/agents/${coderId}/cli`, headers: AUTH });
@@ -173,7 +272,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal(renamed.statusCode, 200, renamed.body);
     assert.deepEqual(sandboxes.destroyed, [codeId], "a rename keeps the container");
 
-    // A coding agent cannot move to a standard machine; a plain one moves with its home.
+    // A coding agent cannot move to a machine below its minimum; a plain one moves with its home.
     const blocked = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/machine`,
@@ -202,7 +301,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       method: "PUT",
       url: `/api/agents/${scripterId}/config`,
       headers: JSON_AUTH,
-      payload: { config: { ...detail.json().config, coding: true }, machine_id: defaultId },
+      payload: { config: { ...detail.json().config, coding: true, harness: "claude-code" }, machine_id: defaultId },
     });
     assert.equal(codingThere.statusCode, 422, codingThere.body);
     const back = await app.inject({

@@ -12,6 +12,7 @@ import {
 import { jsonObj } from "./json.js";
 import { SEED_USERS } from "../users/index.js";
 import { firstRow, isUniqueViolation, stamp, withTransaction } from "./pg.js";
+import { maxWorkspaceMibOf } from "../agents/validation.js";
 import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../guilds/validation.js";
 import { loadConnector } from "../connectors/load.js";
 import { ArtifactError } from "../artifacts/errors.js";
@@ -32,8 +33,14 @@ import {
   DEFAULT_MACHINE_NAME,
   lowestFreeSlot,
   MachineError,
-  machineAllowsCoding,
+  agentMinimum,
+  agentsMinimum,
+  belowMinimumMessage,
   machineFromRow,
+  machineSize,
+  sizeLabel,
+  sizeMeets,
+  type AgentNeeds,
   type MachineAgent,
   type MachineInput,
   type MachineRow,
@@ -45,7 +52,8 @@ import type { PlannedWake } from "../schedules/window.js";
 
 type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
-const MACHINE_COLUMNS = "id, org_id, name, box, cpu, memory_mib, max_workspace_mib, workspace_mib, created_at, updated_at";
+const MACHINE_COLUMNS =
+  "id, org_id, name, box, cpu, memory_mib, max_workspace_mib, workspace_mib, harnesses, created_at, updated_at";
 
 /** The machine every organisation starts with, created in the transaction that creates it. */
 export async function insertDefaultMachine(client: Queryable, orgId: string, now: Date): Promise<string> {
@@ -60,13 +68,13 @@ export async function insertDefaultMachine(client: Queryable, orgId: string, now
 
 /**
  * The machine an agent goes on, locked with the organisation's other machines: the one named, or
- * the organisation's only machine when none is. Refuses a coding agent on a standard machine.
+ * the organisation's only machine when none is. Refuses a machine below the agent's minimum.
  */
 async function placementMachine(
   client: Queryable,
   orgId: string,
   machineId: string | null | undefined,
-  coding: boolean,
+  needs: AgentNeeds,
 ): Promise<MachineRow> {
   const rows = (
     await client.query(
@@ -89,10 +97,21 @@ async function placementMachine(
     );
   }
   const machine = machineFromRow(row!);
-  if (coding && !machineAllowsCoding(machine.box)) {
-    throw new MachineError(422, `coding needs a code or custom machine; ${machine.name} is standard`);
+  if (!sizeMeets(machineSize(machine), agentMinimum(needs))) {
+    throw new MachineError(
+      422,
+      `${belowMinimumMessage(needsLabel(needs), needs, machine)}. Pick a larger machine, or resize ${machine.name} under Settings, Machines`,
+    );
   }
   return machine;
+}
+
+/** What an agent with these needs is called in a refusal. */
+function needsLabel(needs: AgentNeeds): string {
+  if (needs.coding) {
+    return "a coding agent";
+  }
+  return needs.browser ? "a browser agent" : "an agent";
 }
 
 /** The lowest slot free on a machine, under `ceiling` agents; a full machine is refused. */
@@ -119,13 +138,14 @@ async function lockMachine(client: Queryable, orgId: string, machineId: string):
 }
 
 const MACHINES_WITH_AGENTS = `
-  SELECT m.id, m.org_id, m.name, m.box, m.cpu, m.memory_mib, m.max_workspace_mib, m.workspace_mib,
+  SELECT m.id, m.org_id, m.name, m.box, m.cpu, m.memory_mib, m.max_workspace_mib, m.workspace_mib, m.harnesses,
          (SELECT COALESCE(
                    jsonb_agg(jsonb_build_object(
                                'id', a.id, 'name', a.name, 'guild_id', a.guild_id, 'guild_name', g.name,
                                'slot', a.machine_slot,
                                'browser', COALESCE((a.config->>'browser')::boolean, FALSE),
-                               'coding', COALESCE((a.config->>'coding')::boolean, FALSE))
+                               'coding', COALESCE((a.config->>'coding')::boolean, FALSE),
+                               'max_workspace_mib', a.config->'max_workspace_mib')
                              ORDER BY a.machine_slot),
                    '[]'::jsonb)
             FROM agents a JOIN guilds g ON g.id = a.guild_id
@@ -133,7 +153,11 @@ const MACHINES_WITH_AGENTS = `
     FROM machines m`;
 
 function machineWithAgents(row: Record<string, unknown>): MachineWithAgents {
-  return { ...machineFromRow(row), agents: (row.agents ?? []) as MachineAgent[] };
+  const agents = (row.agents ?? []) as Array<Record<string, unknown>>;
+  return {
+    ...machineFromRow(row),
+    agents: agents.map((agent) => ({ ...agent, max_workspace_mib: maxWorkspaceMibOf(agent) }) as MachineAgent),
+  };
 }
 
 const SCRIPT_RETURNING = `
@@ -794,7 +818,10 @@ export class Repositories {
       if (!guild) {
         throw new Error("agent insert failed: guild not found");
       }
-      const machine = await placementMachine(client, String(guild.org_id), placement.machineId, config.coding === true);
+      const machine = await placementMachine(client, String(guild.org_id), placement.machineId, {
+        browser: config.browser === true,
+        coding: config.coding === true,
+      });
       const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
       const result = await client.query(
         `INSERT INTO agents (
@@ -861,10 +888,11 @@ export class Repositories {
       `SELECT
          a.id, a.guild_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
          a.created_at, a.updated_at, a.archived_at,
-         a.task, a.task_version, a.task_hash, a.task_updated_at, a.workspace_mib,
+         a.task, a.task_version, a.task_hash, a.task_updated_at, a.workspace_mib, a.harness_logins,
          a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box,
          m.cpu AS machine_cpu, m.memory_mib AS machine_memory_mib,
          m.max_workspace_mib AS machine_max_workspace_mib, m.workspace_mib AS machine_workspace_mib,
+         m.harnesses AS machine_harnesses,
          p.name AS guild_name, p.about AS guild_about, p.description AS guild_description,
          p.archived_at AS guild_archived_at, p.org_id AS org_id, o.slug AS org_slug,
          ${guildOperatorsColumn("guild_operators")}
@@ -946,10 +974,10 @@ export class Repositories {
 
   /**
    * The machine an agent goes on: the one named, or the organisation's only machine when none is.
-   * Refuses a coding agent on a standard machine.
+   * Refuses a machine below the agent's minimum.
    */
-  async placementMachine(orgId: string, machineId: string | null | undefined, coding: boolean): Promise<MachineRow> {
-    return placementMachine(this.pool, orgId, machineId, coding);
+  async placementMachine(orgId: string, machineId: string | null | undefined, needs: AgentNeeds): Promise<MachineRow> {
+    return placementMachine(this.pool, orgId, machineId, needs);
   }
 
   async getMachine(orgId: string, machineId: string): Promise<MachineRow | null> {
@@ -997,8 +1025,8 @@ export class Repositories {
   }
 
   /**
-   * Changes a machine's name, tier, size, or disk cap. A standard tier is refused while a coding
-   * agent sits on the machine. Returns the machine before and after the change.
+   * Changes a machine's name, tier, size, or disk cap. A size below the minimum of an agent on the
+   * machine is refused. Returns the machine before and after the change.
    */
   async updateMachine(
     orgId: string,
@@ -1012,14 +1040,20 @@ export class Repositories {
         if (current === null) {
           return null;
         }
-        if (!machineAllowsCoding(input.box)) {
-          const coding = await client.query(
-            `SELECT 1 FROM agents WHERE machine_id = $1 AND COALESCE((config->>'coding')::boolean, FALSE) LIMIT 1`,
+        const hosted = (
+          await client.query(
+            `SELECT COALESCE((config->>'browser')::boolean, FALSE) AS browser,
+                    COALESCE((config->>'coding')::boolean, FALSE) AS coding
+               FROM agents WHERE machine_id = $1`,
             [machineId],
+          )
+        ).rows as AgentNeeds[];
+        const minimum = agentsMinimum(hosted);
+        if (hosted.length && !sizeMeets(machineSize(input), minimum)) {
+          throw new MachineError(
+            409,
+            `this machine's agents need at least ${sizeLabel(minimum)}; move them or turn their browser or coding off first`,
           );
-          if (coding.rowCount) {
-            throw new MachineError(409, "a coding agent is on this machine; move it or turn coding off first");
-          }
         }
         const row = firstRow(
           await client.query(
@@ -1068,13 +1102,14 @@ export class Repositories {
   }
 
   /**
-   * Moves an agent to another machine of its organisation, in the lowest free slot there.
-   * Returns where it was and where it is.
+   * Moves an agent to another machine of its organisation, in the lowest free slot there. `needs`
+   * is what the agent has on once moved, its saved config's when omitted. Returns where it was and
+   * where it is.
    */
   async moveAgent(
     agentId: string,
     machineId: string,
-    options: { maxAgentsPerMachine?: number | null; coding?: boolean } = {},
+    options: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds } = {},
   ): Promise<{ from: { machineId: string; slot: number }; to: { machineId: string; slot: number } } | null> {
     return withTransaction(this.pool, async (client) => {
       const agent = firstRow(
@@ -1090,12 +1125,17 @@ export class Repositories {
         return { from, to: from };
       }
       const config = jsonObj(agent.config) as Record<string, unknown>;
-      const coding = options.coding ?? config.coding === true;
-      const machine = await placementMachine(client, String(agent.org_id), machineId, coding);
+      const needs = options.needs ?? { browser: config.browser === true, coding: config.coding === true };
+      const machine = await placementMachine(client, String(agent.org_id), machineId, needs);
       const slot = await freeSlot(client, machine, options.maxAgentsPerMachine ?? undefined);
       await client.query(`UPDATE agents SET machine_id = $2, machine_slot = $3 WHERE id = $1`, [agentId, machine.id, slot]);
       return { from, to: { machineId: machine.id, slot } };
     });
+  }
+
+  /** The coding harness CLIs the machine's image carries, as its container reported them. */
+  async setMachineHarnesses(machineId: string, harnesses: string[]): Promise<void> {
+    await this.pool.query(`UPDATE machines SET harnesses = $2 WHERE id = $1`, [machineId, harnesses]);
   }
 
   async setMachineWorkspaceMib(machineId: string, mib: number): Promise<void> {
@@ -1114,6 +1154,25 @@ export class Repositories {
       machineId: row.machine_id,
       agentId: row.id,
     }));
+  }
+
+  /** Records when the agent's harness last found a login in its home, and whose it is when known. */
+  async markHarnessLogin(agentId: string, harness: string, now: Date, account: string | null): Promise<void> {
+    await this.pool.query(
+      `UPDATE agents
+       SET harness_logins = harness_logins
+         || jsonb_build_object($2::text, jsonb_build_object('seen_at', $3::text, 'account', $4::text))
+       WHERE id = $1`,
+      [agentId, harness, now.toISOString(), account],
+    );
+  }
+
+  /** Forgets the agent's harness login, once a check found no credential in its home. */
+  async clearHarnessLogin(agentId: string, harness: string): Promise<void> {
+    await this.pool.query(`UPDATE agents SET harness_logins = harness_logins - $2::text WHERE id = $1`, [
+      agentId,
+      harness,
+    ]);
   }
 
   async setAgentWorkspaceMib(agentId: string, mib: number): Promise<void> {
@@ -2946,6 +3005,18 @@ export class Repositories {
       [runId],
     );
     return result.rows as Array<Record<string, unknown>>;
+  }
+
+  /** The metadata of a run's result for one tool call, or null when the call has no result. */
+  async getToolResultMetadata(runId: string, toolCallId: string): Promise<Record<string, unknown> | null> {
+    const result = await this.pool.query(
+      `SELECT metadata FROM messages
+       WHERE run_id = $1 AND payload->>'role' = 'tool' AND metadata->>'tool_call_id' = $2
+       ORDER BY seq LIMIT 1`,
+      [runId, toolCallId],
+    );
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return row ? ((jsonObj(row.metadata) as Record<string, unknown> | null) ?? {}) : null;
   }
 
   async listPayloads(runId: string): Promise<Array<Record<string, unknown>>> {

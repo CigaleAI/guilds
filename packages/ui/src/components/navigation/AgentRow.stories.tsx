@@ -25,6 +25,7 @@ export const States: Story = {
       <AgentRow name="skyzo" tone="signal" state="running" />
       <AgentRow name="researchoor" tone="moss" state="idle" browser />
       <AgentRow name="wallet" tone="tide" state="idle" selected />
+      <AgentRow name="builder" tone="dusk" state="idle" coding />
       <AgentRow name="managooor" tone="rosewood" state="connecting" />
       <AgentRow name="linkedin-researcher" tone="dusk" state="idle" browser />
       <AgentRow name="treasury" tone="ochre" state="idle" brokenLinks={["notes/desk.md"]} />

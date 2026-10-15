@@ -122,6 +122,7 @@ Code belongs in `lib/` only if:
 - It does one very specific thing.
 - It is a **pure function** where possible.
 - Every branch has a test.
+- The function name perfectly describe what it does and is easy to find by search
 
 `lib/` never imports from a feature.
 

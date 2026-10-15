@@ -46,7 +46,7 @@ enabled for that agent.
 A later turn also drops a native tool that is now off, including:
 
 - the eight browser tools when `config.browser` is false
-- the code tools when `config.coding` is false
+- the five code tools when `config.coding` is false
 - the five script tools when `config.scripting` is false
 - `memory_write` when `config.memory` is false
 

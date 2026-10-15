@@ -40,7 +40,7 @@ $(error EDITION=$(EDITION) names no development stack: an edition sets COMPOSE_D
 endif
 COMPOSE_ALL := $(COMPOSE) -f $(CORE)/docker-compose.yml $(EDITION_COMPOSE_FILES)
 
-.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image core-image build up up-dev dev down reset verify check soak compat-verify
+.PHONY: contract contract-opensandbox contract-model state opensandbox-image runtime-image core-image build up up-dev dev down reset migrate verify check soak compat-verify
 
 contract: contract-opensandbox contract-model
 
@@ -88,6 +88,13 @@ reset:
 	$(MAKE) down
 	rm -rf "$(STATE_ROOT)/postgres" "$(STATE_ROOT)/opensandbox" "$(STATE_ROOT)/workspaces" "$(STATE_ROOT)/notes" "$(STATE_ROOT)/attachments" "$(STATE_ROOT)/connectors"
 	$(MAKE) up
+
+# Applies new migrations to the development database and keeps its data: each recorded migration
+# gets its committed stamp, so none is skipped, then the orchestrator restarts on the result.
+migrate:
+	$(COMPOSE_DEV) run --rm --no-deps orchestrator node_modules/.bin/tsx src/cli/migrate.ts
+	$(COMPOSE_DEV) restart orchestrator
+	$(COMPOSE_DEV) up --detach --wait --no-deps orchestrator
 
 verify:
 	curl -fsS http://127.0.0.1:8080/health

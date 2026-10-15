@@ -98,7 +98,11 @@ export function AgentBrowser() {
           description="Turn it on in Settings to give the agent a Chromium it can sign in with."
           action={
             <Button asChild size="sm">
-              <Link to="/guilds/$guildId/agents/$agentId/settings" params={{ guildId, agentId }}>
+              <Link
+                to="/guilds/$guildId/agents/$agentId/settings"
+                params={{ guildId, agentId }}
+                search={{ section: "model" }}
+              >
                 Open Settings
               </Link>
             </Button>

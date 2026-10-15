@@ -275,8 +275,11 @@ login_failure_policy }`. That is what creates the apply take-control login
   step. Do not invent a connector. The six `browser_*` tools are offered by the
   `config.browser` flag — do not list them under `native_tools`.
 - coding (a role that reads, changes, runs, and ships code in git repositories):
-  `config.coding: true`. The shell, file, and code search tools come with the
-  flag — do not list them under `native_tools`. List the repositories the
+  `config.coding: true`. `code_task`, `shell`, `file_read`, and `code_search`
+  come with the flag — do not list them under `native_tools`. A coding agent
+  delegates code changes to a coding harness on the operator's own subscription:
+  `config.harness` is `claude-code`, `codex`, or `cursor`. Set it only when
+  the operator named one; otherwise leave it out and apply asks for it. List the repositories the
   guild works in at the top level as `repositories: [{ name, purpose }]`:
   `name` is the folder under `repos/` in each coding agent's home (`^[a-z][a-z0-9_-]{0,62}$`),
   `purpose` one line on what the repository holds. Never a URL, an owner, or

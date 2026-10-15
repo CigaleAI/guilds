@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  codeTaskStatus,
   formatCost,
   formatDuration,
   formatReturnedData,
@@ -103,21 +104,42 @@ test("code tools read as the command, the file, or the background job they touch
   assert.equal(call("shell_status", {}), "List background commands");
   assert.equal(call("shell_status", { id: "b2", stop: true }), "Stop b2");
   assert.equal(call("file_read", { path: "src/app.ts", offset: 120 }), "Read src/app.ts from line 120");
-  assert.equal(call("file_edit", { path: "src/app.ts" }), "Edit src/app.ts");
-  assert.equal(call("file_write", { path: "README.md" }), "Write README.md");
   assert.equal(call("code_search", { pattern: "refund", mode: "content", path: "src" }), 'Search lines "refund" in src');
   assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
-  assert.equal(call("code_find", { question: "where are refunds validated" }), "Find: where are refunds validated");
-  assert.equal(call("code_callers", { symbol: "cents" }), "Callers of cents");
-  assert.equal(call("code_callers", { symbol: "cents", direction: "out" }), "What cents calls");
-  assert.equal(call("code_outline", { path: "src/refund.ts" }), "Outline src/refund.ts");
 });
 
-test("toolOutcome names a failing exit, an edit's line counts, and a repeated read", () => {
+test("toolOutcome names a failing exit and a repeated read", () => {
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 0 }), "");
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 2 }), "exit 2");
   assert.equal(toolOutcome({ tool_name: "shell", exit_code: 124, timed_out: true }), "timed out");
-  assert.equal(toolOutcome({ tool_name: "file_edit", lines_added: 3, lines_removed: 1 }), "+3 −1");
   assert.equal(toolOutcome({ tool_name: "file_read", repeat_of: 14 }), "unchanged since step 14");
   assert.equal(toolOutcome(null), "");
+});
+
+test("a code task reads by its repository and session, and ends with its status and diffstat", () => {
+  const call = (args: Record<string, unknown>) => ({
+    id: "c1",
+    function: { name: "code_task", arguments: JSON.stringify(args) },
+  });
+  assert.equal(friendlyToolCall(call({ brief: "Fix greet", repo: "app" })), "Code task in app");
+  assert.equal(
+    friendlyToolCall(call({ brief: "Go on", repo: "app", session_id: "s1" })),
+    "Resume code task in app",
+  );
+  assert.equal(friendlyToolCall(call({ brief: "Fix greet" })), "Code task");
+  const done = {
+    tool_name: "code_task",
+    status: "completed",
+    files_changed: 2,
+    insertions: 14,
+    deletions: 3,
+  };
+  assert.equal(toolOutcome(done), "2 files · +14 −3");
+  assert.equal(
+    toolOutcome({ ...done, status: "timed_out", files_changed: 0 }),
+    "timed out · no changes",
+  );
+  assert.equal(toolOutcome({ tool_name: "code_task", status: "failed" }), "failed");
+  assert.equal(codeTaskStatus("interrupted"), "interrupted");
+  assert.equal(codeTaskStatus("other"), "");
 });

@@ -232,11 +232,14 @@ Every agent sits on exactly one machine of its organisation, and
 many agents share one machine. A machine never spans
 organisations.
 
-| Tier | CPU | Memory | Coding agents |
-| --- | --- | --- | --- |
-| `standard` | 1 | 2 GiB | no |
-| `code` | 2 | 4 GiB | yes |
-| `custom` | 0.5 to 4, in steps of 0.25 | 512 to 8192 MiB | yes |
+| Tier | CPU | Memory |
+| --- | --- | --- |
+| `standard` | 1 | 2 GiB |
+| `code` | 2 | 4 GiB |
+| `custom` | 0.5 to 4, in steps of 0.25 | 512 to 8192 MiB |
+
+Which agents a machine takes depends on its size, not its tier
+([Machine sizing](#machine-sizing)).
 
 Every machine runs the one runtime image (`SANDBOX_IMAGE`), with
 Chromium and the coding toolchains. A machine row in `machines`
@@ -249,6 +252,11 @@ holds:
 - `max_workspace_mib`, the disk cap over every home on it, default
   10240
 - `workspace_mib`, the size of its directory as last measured
+- `harnesses`, the coding harness CLIs its image carries, as the
+  image lists them in `/usr/local/share/guilds/harnesses`. The
+  orchestrator reads the list when it creates the machine's
+  container and stores it when it changes. It is null until the
+  container first started
 
 Every path that creates an organisation (user creation,
 `POST /api/orgs`, the boot seed) creates one `standard` machine
@@ -257,7 +265,7 @@ resizes a machine or adds another one.
 
 | Route | Who | Body or result |
 | --- | --- | --- |
-| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `planned_mib`, `agents` (id, name, guild, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
+| `GET /api/orgs/:id/machines` | members | each machine with `cpu`, `memory_mib`, `max_workspace_mib`, `workspace_mib`, `allocated_workspace_mib`, `harnesses`, `planned_cpu` and `planned_mib` (its [planned load](#machine-sizing)), `agents` (id, name, guild, `browser`, `coding`), and `hidden_agents`, the number of agents of guilds the caller cannot see, which `agents` leaves out |
 | `POST /api/orgs/:id/machines` | owners, admins | `name`, `box`, `cpu`?, `memory_mib`?, `max_workspace_mib`?; 201 with the machine |
 | `PATCH /api/orgs/:id/machines/:machine_id` | owners, admins | the same fields; the body fills in what it leaves out from the machine |
 | `DELETE /api/orgs/:id/machines/:machine_id` | owners, admins | 204 |
@@ -269,8 +277,8 @@ resizes a machine or adds another one.
 - Deleting a machine that still has agents is 409.
 - Deleting the organisation's last machine is 409.
 - Deleting a machine removes its container and its directory.
-- Changing a machine to `standard` while it hosts a coding agent is
-  409.
+- Changing a machine's tier or size to below the minimum of an agent
+  on it is 409.
 - The organisation policy's `maxMachines` caps the machines. Past
   it, a create is refused with a limit error (409).
 - The policy's `maxAgentsPerMachine` caps the agents on one machine.
@@ -291,9 +299,11 @@ With more, it is required (422 without it). `PUT
 when it names another machine. Agent payloads carry `machine_id`
 and `machine` (`id`, `name`, `box`).
 
-A coding agent needs a `code` or `custom` machine. Creating one on
-a standard machine is 422. Turning `coding` on there is 422. Moving
-one there is 422.
+An agent goes only on a machine at or above its
+[minimum](#machine-sizing). Creating an agent on a smaller machine is
+422. Turning `browser` or `coding` on is 422 when the agent's machine
+is below the minimum that sets. Moving an agent to a smaller machine
+is 422.
 
 A caller cannot place an agent on a machine that hosts an agent of
 a guild the caller cannot see. Agent create, a `machine_id` in `PUT
@@ -346,27 +356,60 @@ of a command running at the same moment
 ([Security register](../architecture/security-register.md#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions)).
 An agent whose data must stay apart goes on a machine of its own.
 
-### Planned memory
+### Machine sizing
 
-The Machines tab and the machine picker show a planned memory
-budget per machine: an estimate of every agent on it working at
-once, against the machine's memory.
+Machine sizing has two rules. Both live in `machines/index.ts`
+(`AGENT_MINIMUMS` and `OVERCOMMIT`). The app mirrors them in
+`features/machines/machines.ts`, and states them on Settings,
+Machines, under every planned-load meter, and on the recipe page.
 
-| Agent | Weight |
-| --- | --- |
-| Base (scripts, notes, MCP) | 100 MiB |
-| `browser` on | + 500 MiB |
-| `coding` on | + 1536 MiB |
+**An agent's minimum.** Each capability has the smallest machine
+it runs on:
 
-`GET /api/orgs/:id/machines` returns `planned_mib` and `memory_mib`
-for each machine. Agents of guilds the caller cannot see count
-toward `planned_mib` and toward the machine's 32 slots. A
-placement over 100% still saves. The app warns that agents on the
-machine may run out of memory when they all work at once.
+| Capability | CPU | Memory |
+| --- | --- | --- |
+| Every agent | 0.5 | 256 MiB |
+| `browser` on | 1 | 2 GiB |
+| `coding` on | 2 | 4 GiB |
+
+An agent's minimum is the largest of the minimums of what it has on,
+CPU and memory each, not their sum. Chrome and the coding toolchains
+run only while the agent works. A machine below an agent's minimum
+refuses it ([Placement](#placement)). With these values a `standard`
+machine takes browser agents, a `code` machine coding agents, and a
+`custom` machine whatever its size meets.
+
+**Overcommit.** A machine's planned load is the sum of its agents'
+minimums: `planned_cpu` and `planned_mib` in
+`GET /api/orgs/:id/machines`. Few agents work at once, so a machine
+takes more than it could run together. Its capacity is its size
+times the overcommit factors:
+
+| Resource | Factor | Capacity of a `standard` machine |
+| --- | --- | --- |
+| CPU | 5× | 5 CPUs |
+| Memory | 3× | 6 GiB |
+
+Memory gets the lower factor. Too little CPU slows agents down. Too
+little memory gets their processes killed.
+
+A placement past either capacity still saves. The Machines tab, the
+machine picker, and the apply preview warn that agents on the
+machine may slow down or run out of memory when many work at once.
+Agents of guilds the caller cannot see count toward the planned load
+and toward the machine's 32 slots.
+
+Disk is reserved the same way. Each machine also returns
+`allocated_workspace_mib`: the sum of its agents' own
+`max_workspace_mib`, counting agents of guilds the caller cannot see.
+What that sum leaves of the machine's `max_workspace_mib` is
+unreserved. An agent whose cap is no larger than that can fill its
+own cap before the machine reaches the machine's cap. A placement
+past it still saves, and the app warns.
 
 ## Configuration and appearance
 
-Agent configuration is sixteen required keys:
+Agent configuration is nineteen required keys:
 
 - `model`
 - `temperature`
@@ -377,10 +420,12 @@ Agent configuration is sixteen required keys:
 - `keep_tool_result_generations`
 - `max_scripts`
 - `max_workspace_mib`
-- `cli`
 - `browser`
 - `browser_language`
 - `coding`
+- `harness`
+- `harness_model`
+- `secret_aliases`
 - `scripting`
 - `memory`
 - `thinking_level`
@@ -396,22 +441,58 @@ machine ([Machines](#machines)). Missing keys take defaults:
 - 1 live generation of tool results
 - 10 scripts
 - 10240 MiB of workspace
-- CLI, scripting, and Memory on
+- scripting and Memory on
 - thinking `none`
 - browser language `en-US`
-- `browser` and `coding` off
+- `browser` and `coding` off, no `harness`, no `harness_model`, no
+  secret aliases
 
 An agent created with `coding` on and no step or tool-call limit
 starts with 200 steps and 200 tool calls instead.
 
-The create and Settings forms offer Browser, Coding, CLI, scripting,
-and Memory under Agent capabilities as five buttons. Coding is
-unavailable on a standard machine. When the organisation has more
-than one machine, they offer the **Machine** picker with its planned
+Settings offers Browser, Coding, scripting, and Memory under Agent
+capabilities as four buttons. The create dialog offers the other
+three, and asks for coding as the kind of agent on its first screen
+([Operator app](operator-app.md#sidebar)). Browser and Coding are
+unavailable while off on a machine below the minimum they would set
+([Machine sizing](#machine-sizing)), and a saved coding agent keeps
+Coding on. Every
+agent has the CLI tab and the CLI API, a terminal on its machine
+that the runtime image's ttyd serves: it is not a capability, and no
+config key turns it off. When the organisation
+has more than one machine, both offer the **Machine** picker with its planned
 memory bar ([Machines](#machines)).
 
-CLI, scripting, and Memory start on. The operator can turn any of
-them off.
+With Coding on, both require a **Harness** select, with a **Harness
+model** field under it. Settings shows what the harness still needs
+from `GET /api/agents/:id/harness`: `harness`, `harness_model`,
+`machine_harnesses`, the harness CLIs the agent's machine carries
+(null until its container first started), `repositories`, the names
+of the guild repositories a coding run clones, and per harness its
+`label`, the `secret` variable it reads its token from (null for
+Codex), `secret_source`, the secret that variable reads (the one
+`secret_aliases` maps it to, else its own name; null without a
+`secret`), `secret_granted`, whether `secret_source` reaches the
+agent, `secret_shadowed`, whether an alias is set and a secret of
+the variable's own name also reaches the agent, the `login` to run
+in the CLI tab, `login_seen_at`, when a
+harness check last found a login in the agent's home, and
+`login_account`, whose login it is (null when the login does not
+say). `agents.harness_logins` keeps both per harness as
+`{ seen_at, account }`; a value that is not an object reads as no
+login. A check that finds no credential at all removes the entry.
+
+`POST /api/agents/:id/harness/check` takes `{ harness }` (422 for an
+unknown one; 503 when generation is unavailable). It wakes the
+agent's machine and runs `guilds-harness check` outside any run,
+without the agent's secrets: a granted secret reaches only a run, so
+it reports a login or nothing. It returns `{ installed, version,
+credential, account }`, `credential` being `login` or null and
+`account` whose login it is, records a login it finds as seen with
+its account, and removes the entry when the CLI is installed and no
+login is found.
+
+Scripting and Memory start on. The operator can turn either off.
 
 - `max_scripts` is how many reusable Python scripts the agent may
   keep. Creating a new name past that count is refused. Replacing an
@@ -440,10 +521,6 @@ them off.
   the current one, keep full tool output in the model prompt. Default
   1: large tool results from earlier turns are stubbed. The stored
   transcript is unchanged ([Runs](runs.md#tool-result-stubbing)).
-- `cli` is whether the operator can open a terminal on this agent's
-  machine. It selects the CLI tab and the CLI API. It is not a
-  binding. The runtime image already includes ttyd. The flag only
-  exposes it.
 - `browser` is whether this agent has its own Chrome on its machine.
   It selects the Browser pane, a live 1280×720 Chromium/noVNC session
   on the agent's display, and the eight Playwright tools on that
@@ -458,12 +535,55 @@ them off.
   ([Code tools](../tools-and-connectors/code.md)) and the `coding`
   section of the system prompt. Package caches, toolchains, and git
   configuration persist in its home across idle stops. It needs a
-  `code` or `custom` machine. It is independent of `browser`. An
-  agent that debugs a web front end has both. It is not a binding.
+  `code` or `custom` machine. An update cannot turn `coding` off on
+  a coding agent (422 `coding cannot be switched off on a coding
+  agent`). It is independent of `browser`. An agent that debugs a web
+  front end has both. It is not a binding.
   The organisation policy's `max_coding_agents` bounds how many
   agents have it. Core sets no bound. Where an edition's policy
   does, creating a coding agent, or turning the flag on, is refused
   above it.
+- `harness` is the coding harness a coding agent delegates code work
+  to: `claude-code`, `codex`, or `cursor`, or null. It is only for an
+  agent with `coding` on (422 otherwise). A coding agent needs one:
+  every create and update with `coding` on and no `harness` is
+  refused with 422 `coding agents need a harness: claude-code, codex,
+  cursor`. A coding agent's runs offer `code_task`, and the
+  `coding` section of its system prompt tells it to delegate code
+  changes and check them
+  ([Code tools](../tools-and-connectors/code.md#code-task)). The
+  harness runs on the operator's own subscription: a token granted to
+  the agent as a secret, or a login in the agent's CLI tab, stored in
+  its home.
+- `harness_model` is the model the harness runs, or null for the
+  default of the harness's subscription. It is a model name of up to
+  120 characters: letters, digits, and `. _ : / = , [ ] -`, starting
+  with a letter or digit, such as an alias (`opus`) or a full name
+  with bracketed parameters. A blank value saves as null. It needs a
+  `harness` (422 otherwise). Its driver passes it to the CLI as
+  `--model` ([Code tools](../tools-and-connectors/code.md#model)).
+- `secret_aliases` maps environment variable names to secret names,
+  default `{}`. In the run's environment each alias holds the value
+  of the secret it names, when that secret reaches the agent, and
+  wins over a secret of its own name
+  ([Secrets and access](secrets-and-access.md#aliases)). Keys and
+  values are variable names, a value differs from its key, and the
+  map holds at most 32 entries (422 otherwise). It is generic: any
+  tool that reads a fixed variable can be pointed at a secret of
+  another name. The **Subscription token** select in Settings writes
+  the harness's variable ([Operator app](operator-app.md#agent)).
+
+A coding agent stored without a harness is not ready. Its stored
+config still validates, so it stays an agent and its runs are still
+created, but:
+
+- a coding run of it fails at start, before its machine is woken,
+  with the run error `harness.missing` ("no harness is picked: choose
+  Claude Code, Codex, or Cursor in the agent's Settings"). The check
+  reads the run snapshot. A run with `coding` off is unaffected
+- its settings save only with a harness picked
+- its header and Settings name the missing harness as a readiness
+  problem ([Operator app](operator-app.md#agent))
 - `scripting` is whether this agent may keep and run Python scripts.
   It selects the State's Scripts view and the five script tools. Those
   tools remain bindings when the flag is on. When it is off they are

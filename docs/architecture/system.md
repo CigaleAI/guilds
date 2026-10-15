@@ -160,7 +160,8 @@ its container and trust each other
 
 It publishes Postgres at `127.0.0.1:5432`. It bind-mounts `src/`,
 `scripts/`, and `drizzle/` into the orchestrator container. `tsx
-watch` restarts the orchestrator when its source changes.
+watch` restarts the orchestrator when its source or a migration
+changes, and boot applies a new migration.
 
 It also accepts the all-zero master key the Makefile gives a
 development stack (`ALLOW_ZERO_MASTER_KEY=1`). The shipped stack
@@ -244,8 +245,14 @@ orchestrator on 8080.
    [security register](security-register.md).
 
    A coding agent's `shell` runs any command there as root with open
-   egress. Its code tools run inside the container and never open a
-   path in its home from the orchestrator.
+   egress. Its code changes are the work of a coding harness:
+   `code_task` runs `guilds-harness` in the container, which starts
+   the harness CLI there. The harness runs on the operator's
+   subscription token or on a login stored in the agent's home. An
+   organisation model key never reaches it. The code tools,
+   `code_task` included, run inside the container and never open a
+   path in its home from the orchestrator
+   ([Code tools](../tools-and-connectors/code.md)).
 
    A coding agent's GitHub installation tokens sit in
    `/run/guilds/<agent id>/`, outside every home. They are readable

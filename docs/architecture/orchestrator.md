@@ -2,7 +2,7 @@
 
 The control plane is a strict TypeScript service in
 `apps/orchestrator`. Python remains in `runtime/` for user scripts,
-browser automation, and the code tools.
+browser automation, the code tools, and the coding harness drivers.
 
 The process model and the trust boundary are [System](system.md).
 Where each module lives is the [Code map](code-map.md).
@@ -63,7 +63,8 @@ admin enters takes effect without a restart
 
 A few modules read their own optional variables:
 
-- `CODE_RESULT_MAX_BYTES` (the code tools' result cap, default 8192)
+- `CODE_RESULT_MAX_BYTES` (the code tools' and `code_task`'s result
+  cap, default 8192)
 - `WORKSPACE_MAX_MIB` (host-wide cap on one agent's home, default
   10240; each agent also has `max_workspace_mib`, default the same,
   and each machine a `max_workspace_mib` over every home on it)
@@ -88,10 +89,12 @@ Configurable only in tests:
 - browser tool timeout = 60 seconds
 - browser ready wait = 60 seconds
 - code tool timeout = 120 seconds; `shell` gets its own timeout plus 30;
-  Graft-backed calls 660 seconds (a first graph build); ripgrep and
-  ast-grep stop after 60 seconds inside the sandbox
+  ripgrep stops after 60 seconds inside the sandbox
 - inline code-tool request = 64 KiB of base64; larger goes through the
   sandbox file API
+- `code_task` = 30 minutes by default, at most 60; polled every 3
+  seconds; each `guilds-harness` op 60 seconds, each task checkpoint
+  300 seconds; three failed polls in a row end it `interrupted`
 - MCP catalog refresh interval = 10 minutes
 - MCP tools/list timeout = 15 seconds
 - MCP tools/call timeout = 90 seconds
@@ -102,8 +105,11 @@ Configurable only in tests:
   4Gi on a code machine, and the machine's `cpu` and `memory_mib` on
   a custom one (0.5 to 4 CPUs in steps of 0.25, 512 to 8192 MiB)
 - agents per machine = 32 (slots 0 to 31)
-- planned memory per agent = 100 MiB, plus 500 with `browser`, plus
-  1536 with `coding`
+- agent minimum = the largest of 0.5 CPU and 256 MiB, 1 CPU and 2 GiB
+  with `browser`, 2 CPU and 4 GiB with `coding`
+  ([Machine sizing](../concepts/guilds-and-agents.md#machine-sizing))
+- overcommit before placement warns = 5× a machine's CPUs, 3× its
+  memory
 - browser desktop = 1280×720
 - event queue per subscriber = 4096
 
@@ -172,9 +178,11 @@ This class includes:
   `agent.scripts.changed`, `agent.routines.changed`)
 
 **Ephemeral events** cannot be reconstructed.
-`assistant.delta` and `assistant.reasoning.delta` are live-only.
+`assistant.delta`, `assistant.reasoning.delta`, and `tool.progress`
+are live-only.
 The UI recovers by re-fetching committed messages, whose metadata
-carries the full reasoning text.
+carries the full reasoning text, and whose `code_task` result carries
+the harness's final message and log path.
 
 Delivery rules:
 
@@ -227,7 +235,11 @@ On startup reconciliation:
 
 1. list every active run
 2. append interruption tool results for unresolved committed tool
-   calls
+   calls; an unresolved `code_task` first gets `guilds-harness stop`
+   on its machine when the machine is running, its state is cleared
+   once the harness has exited, and the task's end checkpoint is
+   taken; its result is `interrupted`, naming the session and log
+   from the run's `metadata.harness_task`
 3. leave direct runs active and reusable
 4. append a `generation.interrupted` run error to group and
    schedule runs
@@ -253,7 +265,10 @@ table, including `pg_trgm`. Numbered migrations follow it.
 
 Production never uses `drizzle-kit push`. Boot runs committed
 migrations before the HTTP listener becomes ready: core's, recorded
-in `public.__drizzle_migrations`, then each extension's chain.
+in `public.__drizzle_migrations`, then each extension's chain. A
+core migration the database has not recorded after that stops boot
+with `MigrationsNotApplied`, naming it
+([Development](../contributing/development.md#schema-changes)).
 An extension keeps its tables and its record in a schema of its own
 ([Extension points](extension-points.md#data)).
 
@@ -507,11 +522,19 @@ Control-plane tools run in Node (notes, records, memory, schedules,
 scripts, secrets, remote MCP servers, adapters). Sandbox tools
 invoke reviewed helpers inside the agent container
 (`script_run` through `guilds-script-run`, Playwright through
-`guilds-browser`, the code tools through `guilds-code`).
+`guilds-browser`, the code tools through `guilds-code`, `code_task`
+through `guilds-harness`).
 
 Browser tools are offered when the run snapshot has
 `browser: true`. The code tools are offered when it has
-`coding: true`.
+`coding: true`. A coding generation runs its start checks in order:
+no `harness` in the snapshot fails with `harness.missing` and
+a guild without repositories with `coding.repositories_missing`, both
+before the machine is woken; once the workspace check passes,
+`guilds-harness check` fails it with `harness.not_installed`,
+`harness.credential`, or `harness.check`; then the repositories are
+prepared. All of them run before the model is called
+([Runs](../concepts/runs.md#generation)).
 `group_post` is offered when that binding is on. `secret_request`
 is offered only on direct runs. `report_issue` is always offered.
 
@@ -541,6 +564,8 @@ Run events:
 - `run.error`
 - `run.continued` (a coding run continued in the run named by
   `run_id`)
+- `tool.progress` (`{run_id, tool_call_id, lines, session_id}`: a
+  running `code_task`'s redacted progress lines)
 
 Cancellation is a `run.error` whose payload has
 `operation: "generation.cancelled"`.

@@ -22,7 +22,9 @@ product stack (`docker-compose.yml`) with the development overlay
 The overlay publishes PostgreSQL on `127.0.0.1:5432`. It
 bind-mounts `src/`, `scripts/`, and `drizzle/` into the
 orchestrator container. `tsx watch` restarts the orchestrator
-when a source file changes.
+when a source file or a migration changes. Boot applies new
+migrations, so the database keeps its data and gains the new
+schema.
 
 The operator app is served at `http://127.0.0.1:8080/` as built
 into the image at the last `make up`.
@@ -51,6 +53,7 @@ user.
 | `make dev` | `make up`, then the Vite server |
 | `make down` | Stops every service of the stack |
 | `make reset` | `make down`, removes the local state trees, `make up` |
+| `make migrate` | Gives each recorded migration its committed stamp, applies the migrations it was hiding, and restarts the orchestrator. The data stays ([Schema changes](#schema-changes)) |
 | `make verify` | Health, the guild list as the seed user, the app page, typecheck, lint, the orchestrator tests, the fixture digests, against a running stack |
 | `make soak` | Creates and deletes a guild, restarts the orchestrator, and reads the migration, seed, binding, and run tables |
 | `make contract` | The OpenSandbox and model contract tests (`RUN_OPENSANDBOX_CONTRACT`, `RUN_MODEL_CONTRACT` with `MODEL_CONTRACT_MODEL`, a `{provider}/{model}` id, and `MODEL_CONTRACT_API_KEY` in `.env`; `MODEL_CONTRACT_BASE_URL` for a local endpoint) |
@@ -202,6 +205,24 @@ migration before it.
 
 Boot applies committed migrations before the HTTP listener is
 ready. Production never uses `drizzle-kit push`.
+
+The migrator applies a migration only when its stamp is later than
+the last one the database recorded. It never compares the SQL. A
+database that applied a migration under a draft stamp, later than
+the one committed, skips every committed migration stamped before
+it. Boot then checks that every committed migration is recorded.
+When one is not, the orchestrator does not start, and its log names
+the migration. On the development stack, run:
+
+```text
+make migrate
+```
+
+It gives each recorded migration the stamp committed for the same
+SQL. It then applies the migrations that were skipped and restarts
+the orchestrator. The data stays. A migration whose SQL changed
+after it was applied is a different migration to the database.
+`make reset` starts that database over.
 
 `0001_baseline.sql` is a schema-only snapshot.
 `drizzle/0001.notes.md` says how it is regenerated

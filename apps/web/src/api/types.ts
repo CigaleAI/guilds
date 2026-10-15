@@ -114,7 +114,7 @@ export type Agent = {
   /** `#rrggbb`. */
   avatar_color: string;
   browser: boolean;
-  /** Code tools, with Node.js, build tools and git on its machine. */
+  /** Code work through a harness, with Node.js, build tools and git on its machine. */
   coding: boolean;
   /** The organisation's machine it runs on. */
   machine_id: string;
@@ -127,8 +127,8 @@ export type Agent = {
 export type ThinkingLevel = "none" | "low" | "medium" | "high";
 
 /**
- * A machine's tier: `standard` hosts agents without coding, `code` is the larger machine coding
- * agents need, and `custom` is sized by an owner or admin and hosts any agent.
+ * A machine's tier: `standard` and `code` have fixed sizes, `custom` is sized by an owner or admin.
+ * Which agents a machine takes depends on its size (`agentMinimum` in features/machines).
  */
 export type MachineBox = "standard" | "code" | "custom";
 
@@ -153,12 +153,17 @@ export type Machine = MachineRef & {
   max_workspace_mib: number;
   /** Every agent home on it, measured after a generation; null before one. */
   workspace_mib: number | null;
-  /** The memory its agents plan to use when they all work at once. */
+  /** The disk its agents' own caps reserve, those in guilds the viewer cannot see included. */
+  allocated_workspace_mib: number;
+  /** Its planned load: the sum of its agents' minimum CPUs, and of their minimum memory. */
+  planned_cpu: number;
   planned_mib: number;
   /** Its agents in guilds the viewer can see. */
   agents: MachineAgent[];
-  /** How many of its agents sit in guilds the viewer cannot see; `planned_mib` counts them too. */
+  /** How many of its agents sit in guilds the viewer cannot see; the planned load counts them too. */
   hidden_agents: number;
+  /** The harness CLIs its image carries; null before it first started. */
+  harnesses: Harness[] | null;
 };
 
 /** A machine to create, or the fields to change; `cpu` and `memory_mib` only on custom. */
@@ -169,6 +174,9 @@ export type MachineInput = {
   memory_mib?: number;
   max_workspace_mib?: number;
 };
+
+/** The coding CLI a coding agent delegates code work to through `code_task`. */
+export type Harness = "claude-code" | "codex" | "cursor";
 
 export type AgentConfig = {
   model: string;
@@ -182,14 +190,61 @@ export type AgentConfig = {
   max_scripts: number;
   /** The agent home's cap in MiB. A generation will not start while the home is over this. */
   max_workspace_mib: number;
-  cli: boolean;
   browser: boolean;
   /** Chrome UI and Accept-Language. Default `en-US`. */
   browser_language: string;
   coding: boolean;
+  /** The harness a coding agent runs; null when coding is off. */
+  harness: Harness | null;
+  /** The model the harness runs; null leaves it to the harness's subscription. */
+  harness_model: string | null;
+  /** Variable names the agent's commands see, each holding the value of the secret it names. */
+  secret_aliases: Record<string, string>;
   scripting: boolean;
   memory: boolean;
   thinking_level: ThinkingLevel;
+};
+
+/** One harness's credentials for an agent: the secret that carries a subscription token, and the CLI login. */
+export type HarnessCredential = {
+  harness: Harness;
+  label: string;
+  /** The variable the harness reads its subscription token from; null when it takes none. */
+  secret: string | null;
+  /** The secret that variable reads: the one aliased to it, else its own name; null with `secret`. */
+  secret_source: string | null;
+  /** Whether `secret_source` reaches the agent. */
+  secret_granted: boolean;
+  /** Whether an alias replaces a secret named `secret` that also reaches the agent. */
+  secret_shadowed: boolean;
+  /** What to run in the agent's CLI tab to log in. */
+  login: string;
+  /** When a check last found a login in the agent's home; null before one did, or once one found none. */
+  login_seen_at: string | null;
+  /** Whose that login is, as the harness recorded it; null when unknown. */
+  login_account: string | null;
+};
+
+/** `GET /api/agents/:id/harness`: the agent's harness, and each harness's credentials for it. */
+export type AgentHarness = {
+  harness: Harness | null;
+  /** The model the harness runs; null for its subscription's default. */
+  harness_model: string | null;
+  harnesses: HarnessCredential[];
+  /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
+  machine_harnesses: Harness[] | null;
+  /** The guild repositories a coding run clones, by name; a coding run of a guild with none fails at start. */
+  repositories: string[];
+};
+
+/** `POST /api/agents/:id/harness/check`: what the agent's machine has for a harness, outside a run. */
+export type HarnessCheck = {
+  installed: boolean;
+  version: string | null;
+  /** A login in the agent's home, or nothing; a granted secret reaches only a run. */
+  credential: "secret" | "login" | null;
+  /** Whose the login is, as the harness recorded it; null without one or when unknown. */
+  account: string | null;
 };
 
 /** One agent with its model settings; `access` is its resolved tools, secrets and grants. */
@@ -333,8 +388,6 @@ export type Run = {
   archived_at: string | null;
   group_chat_through_seq: number | null;
   schedule_id?: string;
-  /** A coding run's exploration before its first edit. */
-  exploration?: RunExploration;
   /** What a coding run changed in each repository, between its checkpoints. */
   repos?: RunRepositoryChange[];
   /** A coding run's place in a run chain, when it continues an earlier run. */
@@ -343,9 +396,15 @@ export type Run = {
   continued_by_run_id?: string;
 };
 
-export type RunExploration = {
-  calls_before_first_edit: number | null;
-  read_bytes_unedited: number;
+/** A run's or a code task's diff in one repository, cut at the server's limit. */
+export type RunDiff = { repository: string; diff: string; truncated: boolean };
+
+/** `tool.progress` on a run's stream: the lines a running tool call reported since the last event. */
+export type ToolProgressEvent = {
+  run_id: string;
+  tool_call_id: string;
+  lines: string[];
+  session_id: string | null;
 };
 
 /** One repository's change over a run: its start and end checkpoints and their diffstat. */
@@ -1718,8 +1777,15 @@ export type ApplyInstall =
  */
 export type ApplySetup = { server: string; integration: string | null; label: string };
 
-/** A machine the apply preview offers: its size, the memory its agents plan to use, and how many it holds. */
-export type ApplyMachine = MachineRef & { memory_mib: number; planned_mib: number; agents: number };
+/** A machine the apply preview offers: its size, its planned load, and whether it meets every role's minimum. */
+export type ApplyMachine = MachineRef & {
+  cpu: number;
+  memory_mib: number;
+  planned_cpu: number;
+  planned_mib: number;
+  agents: number;
+  fits: boolean;
+};
 
 /** `POST /api/recipes/:id/preview`: the apply plan, its findings, and what it creates (recipes/apply.ts). */
 export type ApplyPreview = {
@@ -1730,11 +1796,17 @@ export type ApplyPreview = {
   names: Array<{ role: string; name: string }>;
   /** Each role's recommended model, and the one apply creates it with unless the operator picks another. */
   models: RoleModel[];
+  /** Each coding role's harness: what the recipe names, and the one apply creates it with. */
+  harnesses: RoleHarness[];
   /** The organisation's machines the roles may go on. */
   machines: ApplyMachine[];
   /** The machine the roles go on: the one chosen, or the only one; null while several wait for a choice. */
   machine_id: string | null;
-  /** The memory the recipe's roles plan to use on it. */
+  /** The smallest machine every role runs on. */
+  minimum_cpu: number;
+  minimum_mib: number;
+  /** The planned load the recipe's roles add: the sum of their minimums. */
+  adds_cpu: number;
   adds_mib: number;
   collisions: string[];
   connections: PlannedConnection[];
@@ -1811,11 +1883,15 @@ export type ApplyConnectionChoice = {
 /** A role's model on the apply preview: what the recipe recommends, and what apply will create it with. */
 export type RoleModel = { role: string; recommended: string | null; model: string | null };
 
-/** What the operator decides before apply: the guild's name, each agent's name and model, and each login. */
+/** A coding role's harness on the apply preview: what the recipe names, and what apply will create it with. */
+export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null };
+
+/** What the operator decides before apply: the guild's name, each agent's name and model, each coding agent's harness, and each login. */
 export type ApplyChoices = {
   guild_name: string;
   names: Array<{ role: string; name: string }>;
   models: Array<{ role: string; model: string }>;
+  harnesses?: Array<{ role: string; harness: Harness }>;
   connections: ApplyConnectionChoice[];
   /** The machine every role goes on; the organisation's only one when absent. */
   machine_id?: string;

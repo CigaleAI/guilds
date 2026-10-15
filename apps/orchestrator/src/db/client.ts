@@ -6,6 +6,7 @@ import { orchestratorRoot } from "../lib/paths.js";
 import { seedOperator } from "./seed/operator.js";
 import { seedSystem } from "./seed/system.js";
 import { installCodecs } from "./install-codecs.js";
+import { assertMigrationsApplied, restampMigrations } from "./migrations.js";
 import * as schema from "./schema/index.js";
 
 const migrationsFolder = path.join(orchestratorRoot(import.meta.url), "drizzle");
@@ -35,6 +36,7 @@ export async function createPool(databaseUrl: string): Promise<pg.Pool> {
   });
 }
 
+/** Applies core's committed migrations; throws `MigrationsNotApplied` when one was skipped. */
 export async function applyMigrations(pool: pg.Pool): Promise<void> {
   const db = drizzle(pool, { schema });
   await migrate(db, {
@@ -42,6 +44,18 @@ export async function applyMigrations(pool: pg.Pool): Promise<void> {
     migrationsSchema: "public",
     migrationsTable: "__drizzle_migrations",
   });
+  await assertMigrationsApplied(pool, migrationsFolder);
+}
+
+/**
+ * Re-stamps the recorded migrations with their committed stamps, then applies core's
+ * migrations; returns the tags it re-stamped. For a development database that recorded a
+ * draft's stamp.
+ */
+export async function repairMigrations(pool: pg.Pool): Promise<string[]> {
+  const restamped = await restampMigrations(pool, migrationsFolder);
+  await applyMigrations(pool);
+  return restamped;
 }
 
 /**

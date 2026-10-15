@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { cn } from "../../cn";
 import { TreeRail } from "../../primitives/Divider";
 import { Icon } from "../../primitives/Icon";
-import { CapacityBadge } from "../identity/CapacityBadge";
 
 export type GuildVisibility = "org" | "private";
 
@@ -86,17 +85,10 @@ export function GuildRow({
               <Icon icon={Lock} size={14} label="Private to its operators" />
             </span>
           ) : null}
-          <CapacityBadge
-            count={agentCount}
-            max={maxAgents}
-            size="sm"
-            tone={selected ? "accent" : "sand"}
-            className="ml-auto"
-          />
         </button>
       </div>
       <Collapsible.Content>
-        <TreeRail className="ml-5 flex flex-col gap-0.5 pt-1 pb-2.5 pl-3.5">
+        <TreeRail className="ml-4 flex flex-col gap-0.5 pt-1 pb-2 pl-2.5">
           {children}
           {onAddAgent ? (
             <button
@@ -108,7 +100,7 @@ export function GuildRow({
                   ? `${name} is limited to ${maxAgents} agents. Raise the limit in its settings.`
                   : undefined
               }
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm text-muted transition-colors enabled:hover:bg-paper enabled:hover:text-fg disabled:cursor-not-allowed disabled:text-faint"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted transition-colors enabled:hover:bg-paper enabled:hover:text-fg disabled:cursor-not-allowed disabled:text-faint"
             >
               <span className="flex w-6 shrink-0 justify-center">
                 <Icon icon={Plus} size={16} />

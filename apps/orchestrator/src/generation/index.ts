@@ -10,6 +10,7 @@ import {
   maxScriptsOf,
   maxWorkspaceMibOf,
   memoryOf,
+  secretAliasesOf,
   validateConfig,
   type AgentConfig,
 } from "../agents/validation.js";
@@ -18,6 +19,7 @@ import { NOTE_TOOLS } from "../db/seed/catalog.js";
 import {
   agentRuntime,
   agentSecrets,
+  applySecretAliases,
   snapshotEnvValues,
   type AccessDatabase,
 } from "../access/runtime.js";
@@ -116,6 +118,7 @@ import {
   machineDirectory,
   machineFromRow,
   slotPorts,
+  type AgentNeeds,
 } from "../machines/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
@@ -162,16 +165,35 @@ import {
 import { BROWSER_TOOLS } from "../toolbox/browser.js";
 import { agentGitIdentity, cloneFailures, RepositoryAccessError, RepositoryTokens } from "../coding/git.js";
 import { codingRepositories, stateRepositories } from "../coding/repositories.js";
+import {
+  harnessModelOf,
+  harnessOf,
+  REPOSITORIES_MISSING,
+  REPOSITORIES_MISSING_MESSAGE,
+  type Harness,
+} from "../coding/harnesses.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import {
   CODING_TOOLS,
-  explorationOf,
   measureMachine,
   measureWorkspace,
   repeatedReadStep,
   repeatedReadText,
+  callSegment,
   runCodeHelper,
 } from "../toolbox/code.js";
+import {
+  assertHarnessReady,
+  checkHarnessOn,
+  endLostTurn,
+  HARNESS_TOOLS,
+  type HarnessCheck,
+  harnessMissingError,
+  HarnessSetupError,
+  interruptedText,
+  type LostTurnEnd,
+  shownProgressLines,
+} from "../toolbox/harness.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
 import { Issues, type IssuesDatabase } from "../issues/index.js";
 import { SCHEDULE_TOOLS } from "../toolbox/schedule.js";
@@ -282,6 +304,44 @@ function asObj(value: unknown): Record<string, unknown> {
   return loaded as Record<string, unknown>;
 }
 
+/** A `code_task` call the orchestrator lost track of when it restarted. */
+type LostCodeTask = {
+  harness: Harness;
+  repository: string | null;
+  session_id: string | null;
+  log_path: string | null;
+  run_id: string;
+  call_id: string;
+};
+
+function optionalText(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+function callArguments(call: Record<string, unknown>): Record<string, unknown> {
+  try {
+    return parseArguments(call);
+  } catch {
+    return {};
+  }
+}
+
+/** A lost `code_task` call, from what its run remembered about it and from the call's own arguments. */
+function lostCodeTask(run: Record<string, unknown>, call: Record<string, unknown>, harness: Harness): LostCodeTask {
+  const callId = callSegment(String(call.id ?? ""));
+  const remembered = asObj(asObj(run.metadata).harness_task);
+  const known = remembered.call_id === callId ? remembered : {};
+  const args = callArguments(call);
+  return {
+    harness,
+    repository: optionalText(known.repository) ?? optionalText(args.repo),
+    session_id: optionalText(known.session_id) ?? optionalText(args.session_id),
+    log_path: optionalText(known.log_path),
+    run_id: String(run.id),
+    call_id: callId,
+  };
+}
+
 function runKind(run: Record<string, unknown> | null | undefined): string {
   if (!run) {
     return "direct";
@@ -352,7 +412,8 @@ function errorMessage(error: unknown): string {
 function isBrowserOrCodingToolName(name: string): boolean {
   return (
     (BROWSER_TOOLS as readonly string[]).includes(name) ||
-    (CODING_TOOLS as readonly string[]).includes(name)
+    (CODING_TOOLS as readonly string[]).includes(name) ||
+    (HARNESS_TOOLS as readonly string[]).includes(name)
   );
 }
 
@@ -396,7 +457,10 @@ function offeredNativeNames(
 }
 
 function capabilityToolNames(options: { coding?: boolean; browser?: boolean }): string[] {
-  return [...(options.coding ? CODING_TOOLS : []), ...(options.browser ? BROWSER_TOOLS : [])];
+  return [
+    ...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []),
+    ...(options.browser ? BROWSER_TOOLS : []),
+  ];
 }
 
 // The browser and code tools follow the agent's flags, not bindings.
@@ -583,10 +647,12 @@ export function configSnapshot(
     max_input_tokens: positiveInt(config.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS),
     keep_tool_result_generations: keepToolResultGenerationsOf(config),
     projection_policy_version: RUN_PROJECTION_POLICY_VERSION,
-    cli: config.cli !== false,
     browser: Boolean(config.browser),
     browser_language: browserLanguageOf(config),
     coding: Boolean(config.coding),
+    harness: harnessOf(config),
+    harness_model: harnessModelOf(config),
+    secret_aliases: secretAliasesOf(config),
     scripting: config.scripting !== false,
     memory: memoryOf(config),
     thinking_level: config.thinking_level ?? "none",
@@ -929,6 +995,11 @@ export type GenerationDb = AccessDatabase &
     nextGeneration(runId: string): Promise<number>;
     appendRunError(runId: string, entry: Record<string, unknown>, now: Date): Promise<unknown[]>;
     mergeRunMetadata(runId: string, extra: Record<string, unknown>, now: Date): Promise<void>;
+    /** Records when the agent's harness last found a login in its home. */
+    markHarnessLogin?(agentId: string, harness: Harness, now: Date, account: string | null): Promise<void>;
+    clearHarnessLogin?(agentId: string, harness: Harness): Promise<void>;
+    /** Keeps the harness CLIs a machine's image carries. */
+    setMachineHarnesses?(machineId: string, harnesses: string[]): Promise<void>;
     completeRun(runId: string, now: Date): Promise<void>;
     reopenRun(runId: string, now: Date): Promise<void>;
     completeGroupDelivery(
@@ -1028,7 +1099,7 @@ export type GenerationDb = AccessDatabase &
     moveAgent?(
       agentId: string,
       machineId: string,
-      options?: { maxAgentsPerMachine?: number | null; coding?: boolean },
+      options?: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds },
     ): Promise<{ from: { machineId: string; slot: number }; to: { machineId: string; slot: number } } | null>;
     listGuildRepositories?(guildId: string): Promise<Array<Record<string, unknown>>>;
     getMcpConnectionForOwner?(
@@ -1083,6 +1154,8 @@ export type GenerationSandboxes = {
   /** The machine's running container, created when there is none or replaced when its size changed. */
   ensure(machine: MachineSpec): Promise<SandboxHandle>;
   connectRunning(machineId: string): Promise<SandboxHandle | null>;
+  /** The harness CLIs the machine's container carries, read when the provider created it. */
+  harnessesOf?(machineId: string): string[] | null;
   destroy(machineId: string): Promise<void>;
   listRunningMachineIds(): Promise<Iterable<string>>;
   /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
@@ -1162,6 +1235,8 @@ export class GenerationLoop implements GroupRunner {
   _commands = new Map<string, [SandboxHandle, string]>();
   /** Machines whose tier or size changed while an agent on them generated. */
   _stale_machines = new Set<string>();
+  /** The harness list each machine's row was last given. */
+  _harness_reports = new Map<string, string>();
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
   _scheduler_tick_ms: number;
@@ -1822,10 +1897,6 @@ export class GenerationLoop implements GroupRunner {
   /** Wakes the agent's machine and starts the agent's terminal in its home. */
   async ensureCli(agentId: string): Promise<unknown> {
     const agent = await this._runnable_agent(agentId);
-    const config = this._valid_config(agent);
-    if (!config.cli) {
-      throw new RunRequestError(409, "cli is not enabled");
-    }
     const sandbox = await this.wakeSandbox(agentId);
     this._touched_machine.set(agentId, String(agent.machine_id));
     await this.startCliOn(sandbox, agent);
@@ -1875,14 +1946,35 @@ export class GenerationLoop implements GroupRunner {
     }
     this._stale_machines.delete(machine.id);
     this._schedule_idle(machine.id);
+    this._report_harnesses(machine.id);
     return sandbox;
   }
 
   /**
-   * The diff a run made in one repository, between its start and end checkpoints, from the
-   * agent's machine (woken as the CLI tab wakes it), at most 256 KiB and redacted.
+   * Keeps on the machine's row the harness CLIs its container carries, as the provider read
+   * them when it created the container.
    */
-  async runDiff(runId: string, repository: string): Promise<{ diff: string; truncated: boolean }> {
+  _report_harnesses(machineId: string): void {
+    const listed = this.sandboxes.harnessesOf?.(machineId) ?? null;
+    if (listed === null || this._harness_reports.get(machineId) === listed.join(" ")) {
+      return;
+    }
+    this._harness_reports.set(machineId, listed.join(" "));
+    void Promise.resolve(this.db.setMachineHarnesses?.(machineId, listed)).catch((error: unknown) => {
+      writeLog("warn", errorMessage(error), { operation: "machine.harnesses", error_type: errorName(error) });
+    });
+  }
+
+  /**
+   * The diff a run made in one repository, between its start and end checkpoints, or with
+   * `task` between one `code_task` call's, from the agent's machine (woken as the CLI tab
+   * wakes it), at most 256 KiB and redacted.
+   */
+  async runDiff(
+    runId: string,
+    repository: string,
+    task: string | null = null,
+  ): Promise<{ diff: string; truncated: boolean }> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
@@ -1892,7 +1984,8 @@ export class GenerationLoop implements GroupRunner {
     const sandbox = await this.wakeSandbox(agentId);
     let result;
     try {
-      result = await runCodeHelper(this._maintenance_ctx(runId, agent, sandbox), "diff", { repository }, {
+      const args = task === null ? { repository } : { repository, task: callSegment(task) };
+      result = await runCodeHelper(this._maintenance_ctx(runId, agent, sandbox), "diff", args, {
         maxBytes: RUN_DIFF_MAX_BYTES,
       });
     } catch (error) {
@@ -1905,6 +1998,33 @@ export class GenerationLoop implements GroupRunner {
       secrets = {};
     }
     return { diff: redact(result.text, secrets), truncated: result.meta.truncated === true };
+  }
+
+  /** The guild repositories a coding run of the agent clones, by their folder under `repos/`. */
+  async codingRepositoryNames(agent: Record<string, unknown>): Promise<string[]> {
+    return (await this._guild_repositories(agent)).map((row) => String(row.name));
+  }
+
+  /**
+   * Checks the agent's machine, waking it, for what `harness` would run on outside a run: a
+   * login in the agent's home or nothing, since a granted secret reaches only a run. Records
+   * the login as seen, or forgets it when none is left.
+   */
+  async checkHarness(agentId: string, harness: Harness): Promise<HarnessCheck> {
+    const agent = await this._runnable_agent(agentId);
+    const sandbox = await this.wakeSandbox(agentId);
+    let check: HarnessCheck;
+    try {
+      check = await checkHarnessOn(this._maintenance_ctx("", agent, sandbox), harness);
+    } catch (error) {
+      throw new RunRequestError(503, errorMessage(error));
+    }
+    if (check.credential === "login") {
+      await this.db.markHarnessLogin?.(agentId, harness, new Date(), check.account);
+    } else if (check.installed) {
+      await this.db.clearHarnessLogin?.(agentId, harness);
+    }
+    return check;
   }
 
   async cli_proxy_target(agentId: string): Promise<[string, Record<string, string>]> {
@@ -2076,7 +2196,7 @@ export class GenerationLoop implements GroupRunner {
   async moveAgent(
     agentId: string,
     machineId: string,
-    options: { maxAgentsPerMachine?: number | null; coding?: boolean } = {},
+    options: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds } = {},
   ): Promise<void> {
     const agent = await this.db.getAgent(agentId);
     if (agent === null) {
@@ -2812,12 +2932,84 @@ export class GenerationLoop implements GroupRunner {
     let executed = executedToolCalls(rows);
     for (const [call, callGeneration] of pending) {
       let [payload, metadata] = interruptionRecord(call, generation ?? callGeneration);
+      if (metadata.tool_name === "code_task" && run) {
+        [payload, metadata] = await this._interrupted_code_task(run, call, [payload, metadata]);
+      }
       executed += 1;
       const remaining = remainingAfter(maxToolCalls, executed);
       [payload, metadata] = stampToolResult(payload, metadata, remaining);
       await this._commit_message(runId, payload, metadata);
     }
     return pending.length;
+  }
+
+  /**
+   * A `code_task` the orchestrator never saw finish: the harness gets `stop` on its machine, so
+   * it never keeps running with nobody polling it; its state is cleared, the task's end
+   * checkpoint is taken, and the result names its session and log.
+   */
+  async _interrupted_code_task(
+    run: Record<string, unknown>,
+    call: Record<string, unknown>,
+    record: [Record<string, unknown>, Record<string, unknown>],
+  ): Promise<[Record<string, unknown>, Record<string, unknown>]> {
+    const harness = harnessOf(asObj(run.config_snapshot));
+    if (harness === null) {
+      return record;
+    }
+    const task = lostCodeTask(run, call, harness);
+    const ended = await this._end_lost_turn(String(run.agent_id), task);
+    const session_id = ended.session_id ?? task.session_id;
+    const content = interruptedText({ ...task, session_id, stopped: ended.stopped });
+    const bytes = Buffer.byteLength(content, "utf8");
+    return [
+      { ...record[0], content },
+      {
+        ...record[1],
+        harness,
+        status: "interrupted",
+        session_id,
+        repository: task.repository ?? "unknown",
+        log_path: task.log_path,
+        start_sha: ended.start_sha,
+        end_sha: ended.end_sha,
+        original_bytes: bytes,
+        stored_bytes: bytes,
+      },
+    ];
+  }
+
+  /** Ends a lost `code_task` on its agent's machine; a machine that is not running has no harness left to stop. */
+  async _end_lost_turn(agentId: string, task: LostCodeTask): Promise<LostTurnEnd> {
+    try {
+      const running = await this._running_agent_sandbox(agentId);
+      if (running === null) {
+        return { stopped: true, session_id: null, start_sha: null, end_sha: null };
+      }
+      const ctx = this._maintenance_ctx(task.run_id, running.agent, running.sandbox);
+      ctx.tool_call_id = task.call_id;
+      return await endLostTurn(ctx, task.harness, task.repository);
+    } catch (error) {
+      writeLog("warn", errorMessage(error), {
+        run_id: task.run_id,
+        agent_id: agentId,
+        operation: "code_task.stop",
+        error_type: errorName(error),
+      });
+      return { stopped: false, session_id: null, start_sha: null, end_sha: null };
+    }
+  }
+
+  /** The agent and its machine's sandbox when that machine is running, else null. */
+  async _running_agent_sandbox(
+    agentId: string,
+  ): Promise<{ agent: Record<string, unknown>; sandbox: SandboxHandle } | null> {
+    const agent = await this.db.getAgent(agentId);
+    if (!agent?.machine_id) {
+      return null;
+    }
+    const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
+    return sandbox === null ? null : { agent, sandbox };
   }
 
   async _commit_message(
@@ -3126,6 +3318,15 @@ export class GenerationLoop implements GroupRunner {
     const machine = agentMachine(agent);
     const seat = agentSeat(agent);
     const snapshot = asObj(run.config_snapshot);
+    if (snapshot.coding === true && harnessOf(snapshot) === null) {
+      const missing = harnessMissingError();
+      await this._fail(runId, generation, missing.code, missing, extra);
+      return;
+    }
+    if (snapshot.coding === true && !(await this._guild_repositories(agent)).length) {
+      await this._fail(runId, generation, REPOSITORIES_MISSING, new Error(REPOSITORIES_MISSING_MESSAGE), extra);
+      return;
+    }
     try {
       const workspaceRoot = await this.workspaceRootFor(machine.id);
       if (this.sandboxes.machineHost) {
@@ -3146,7 +3347,7 @@ export class GenerationLoop implements GroupRunner {
     try {
       secretRefs = await this.syncRunSecrets(agent);
       snapshot.secrets = secretRefs;
-      env = await snapshotEnvValues(this.db, secretRefs);
+      env = applySecretAliases(await snapshotEnvValues(this.db, secretRefs), secretAliasesOf(snapshot));
       secrets = { ...env, ...(await mcpRedactions(this.db, snapshot)), ...instanceRedactions() };
     } catch (error) {
       await this._fail(runId, generation, "secrets.resolve", error, extra);
@@ -3170,6 +3371,7 @@ export class GenerationLoop implements GroupRunner {
         machineSandbox = await this.sandboxes.ensure(machine);
         this._stale_machines.delete(machine.id);
       }
+      this._report_harnesses(machine.id);
       sandbox = agentSandbox(machineSandbox, agentHome(seat.agentId), { ...env, ...seatEnvironment(seat) });
       await applyRunScripts(sandbox, agentHome(seat.agentId), pinned, liveExtraForAgent(pinned, liveRows));
     } catch (error) {
@@ -3272,10 +3474,34 @@ export class GenerationLoop implements GroupRunner {
       dynamic_tools: offered.has("script_run") ? dynamicScriptTools(runScripts) : {},
       connection_tool_names: Object.keys(mcpTools),
       offered_tools: offered,
+      harness: harnessOf(snapshot),
+      harness_model: harnessModelOf(snapshot),
+      secret_aliases: secretAliasesOf(snapshot),
+      // `secrets` holds the run's values and, once minted, its GitHub tokens.
+      publish_progress: async (toolCallId, update) => {
+        await this.publish(runId, "tool.progress", {
+          run_id: runId,
+          tool_call_id: toolCallId,
+          lines: shownProgressLines(update.lines, secrets),
+          session_id: update.session_id,
+        });
+      },
+      remember_harness_task: async (task) => {
+        await this.db.mergeRunMetadata(runId, { harness_task: task }, new Date());
+      },
+      harness_login_seen: async (harness, account) => {
+        await this.db.markHarnessLogin?.(String(agent.id), harness, new Date(), account);
+      },
+      harness_login_lost: async (harness) => {
+        await this.db.clearHarnessLogin?.(String(agent.id), harness);
+      },
     });
     const coding = Boolean(snapshot.coding);
     // Platform work runs on the machine's own sandbox: the agent's home and ports, none of its secrets.
     if (!(await this._workspace_has_room(runId, generation, agent, machineSandbox, extra))) {
+      return;
+    }
+    if (coding && !(await this._harness_ready(runId, generation, ctx, extra))) {
       return;
     }
     if (coding && !(await this._prepare_repositories(runId, generation, agent, machineSandbox, ctx, secrets, extra))) {
@@ -3285,12 +3511,27 @@ export class GenerationLoop implements GroupRunner {
       await this._run_steps(runId, generation, run, snapshot, ctx, tools as unknown[], secrets, mcpTools, extra);
     } finally {
       if (coding) {
-        await this._record_exploration(runId);
         await this._record_checkpoints(runId, agent, machineSandbox);
       }
       if (!this._cancelled(runId)) {
         await this._record_workspace_size(runId, agent, machineSandbox);
       }
+    }
+  }
+
+  /** Whether the run's harness is installed and has a credential; a run that cannot delegate code work fails here. */
+  async _harness_ready(
+    runId: string,
+    generation: number,
+    ctx: ReturnType<typeof createToolContext>,
+    extra: Record<string, string>,
+  ): Promise<boolean> {
+    try {
+      await assertHarnessReady(ctx);
+      return true;
+    } catch (error) {
+      await this._fail(runId, generation, error instanceof HarnessSetupError ? error.code : "harness.check", error, extra);
+      return false;
     }
   }
 
@@ -3387,6 +3628,7 @@ export class GenerationLoop implements GroupRunner {
         error_type: errorName(error),
       });
     }
+    ctx.code_repositories = repositories.map((row) => String(row.name));
     if (repositories.length === 1) {
       ctx.code_default_cwd = `repos/${String(repositories[0]!.name)}`;
     }
@@ -3426,13 +3668,6 @@ export class GenerationLoop implements GroupRunner {
         error_type: errorName(error),
       });
     }
-  }
-
-  async _record_exploration(runId: string): Promise<void> {
-    const rows = (await this.db.listMessages(runId))
-      .filter((row) => asObj(row.payload).role === "tool")
-      .map((row) => ({ metadata: asObj(row.metadata) }));
-    await this.db.mergeRunMetadata(runId, { exploration: explorationOf(rows) }, new Date());
   }
 
   async _run_steps(

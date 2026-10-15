@@ -14,11 +14,13 @@ import type {
   ApplyInstall,
   ApplyPreview,
   ApplySetup,
+  Harness,
   OrgModels,
   PlannedConnection,
 } from "../../api/types";
 import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
+import { harnessLabel, harnessOptions, harnessSubscriptionNote } from "../agent/harness";
 import { setupSearch } from "../instance/instance";
 import { ConnectProviderGuide } from "../models/ConnectProviderGuide";
 import { modelOptions } from "../models/models";
@@ -52,15 +54,24 @@ function blockingReason(checks: {
   approved: boolean;
   noProvider: boolean;
   missingModel: boolean;
+  missingHarness: boolean;
   preview: ApplyPreview;
 }): string | null {
   const reasons: Array<[boolean, string]> = [
     [!checks.approved, "Approve this recipe before applying it."],
     [checks.noProvider, "Connect a model provider on Model keys before applying."],
     [checks.missingModel, "Choose a model for each agent."],
+    [checks.missingHarness, "Choose a harness for each coding agent."],
+    [
+      checks.preview.machine_id === null && checks.preview.machines.length > 0,
+      "Choose the machine the agents go on.",
+    ],
   ];
   return reasons.find(([applies]) => applies)?.[1] ?? checks.preview.errors[0]?.message ?? null;
 }
+
+/** Findings about how the recipe is written, which the recipe page shows; apply cannot act on them. */
+const authoringFindings: ReadonlySet<string> = new Set(["connection.missing"]);
 
 function choiceOf(connection: PlannedConnection, login: string): ApplyConnectionChoice {
   return {
@@ -73,8 +84,8 @@ function choiceOf(connection: PlannedConnection, login: string): ApplyConnection
 
 /**
  * What applying an approved recipe creates, before anything is written: the new guild's name, the
- * machine every agent goes on, each agent's name and model, and for each connector a live login to
- * reuse or one to connect afterwards.
+ * machine every agent goes on, each agent's name and model, each coding agent's harness, and for
+ * each connector a live login to reuse or one to connect afterwards.
  */
 export function ApplyPreviewPage() {
   const { recipeId } = useParams({ from: "/recipes/$recipeId/apply" });
@@ -88,6 +99,7 @@ export function ApplyPreviewPage() {
   const [guildName, setGuildName] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [models, setModels] = useState<Record<string, string>>({});
+  const [harnesses, setHarnesses] = useState<Record<string, Harness>>({});
   const [logins, setLogins] = useState<Record<string, string>>({});
 
   const failed = recipe.error ?? preview.error;
@@ -114,12 +126,28 @@ export function ApplyPreviewPage() {
     models[role] ?? data.models.find((item) => item.role === role)?.model ?? "";
   const noProvider = hasConnectedProvider(orgModels.data) === false;
   const missingModel = creates.agents.some((agent) => !modelOf(agent.role));
-  const blockedBy = blockingReason({ approved, noProvider, missingModel, preview: data });
-  const plan = planFromRecipe(recipe.data.body, {
+  const roleHarness = (role: string) => data.harnesses.find((item) => item.role === role);
+  const harnessOf = (role: string): Harness | "" =>
+    harnesses[role] ?? roleHarness(role)?.harness ?? "";
+  const missingHarness = data.harnesses.some((item) => !harnessOf(item.role));
+  const blockedBy = blockingReason({
+    approved,
+    noProvider,
+    missingModel,
+    missingHarness,
+    preview: data,
+  });
+  const recipePlan = planFromRecipe(recipe.data.body, {
     creates,
     connections: planned,
     secrets: creates.secrets.length ? creates.secrets : data.secrets,
   });
+  const plan = {
+    ...recipePlan,
+    agents: recipePlan.agents.map((agent) =>
+      roleHarness(agent.role) ? { ...agent, harness: harnessOf(agent.role) || null } : agent,
+    ),
+  };
   const nameOf = (role: string, fallback: string) => names[role] ?? fallback;
   const loginOf = (connection: PlannedConnection) =>
     logins[connection.server] ?? defaultLogin(connection);
@@ -133,6 +161,10 @@ export function ApplyPreviewPage() {
           name: nameOf(agent.role, agent.name).trim() || agent.name,
         })),
         models: creates.agents.map((agent) => ({ role: agent.role, model: modelOf(agent.role) })),
+        harnesses: data.harnesses.flatMap((item) => {
+          const harness = harnessOf(item.role);
+          return harness ? [{ role: item.role, harness }] : [];
+        }),
         connections: planned.map((connection) => choiceOf(connection, loginOf(connection))),
         ...(data.machine_id ? { machine_id: data.machine_id } : {}),
       },
@@ -198,8 +230,9 @@ export function ApplyPreviewPage() {
 
         <PlanView
           plan={plan}
-          findings={data.findings}
+          findings={data.findings.filter((finding) => !authoringFindings.has(finding.code))}
           hideEmpty
+          hideName
           agentExtras={(agent) => (
             <AgentChoices
               name={nameOf(agent.role, agent.name)}
@@ -212,6 +245,11 @@ export function ApplyPreviewPage() {
               }
               coding={agent.coding}
               orgModels={orgModels.data}
+              harness={roleHarness(agent.role) ? harnessOf(agent.role) : null}
+              onHarness={(value) =>
+                setHarnesses((current) => ({ ...current, [agent.role]: value }))
+              }
+              recommendedHarness={roleHarness(agent.role)?.recommended ?? null}
             />
           )}
           connectionExtras={(server) => {
@@ -251,7 +289,10 @@ function Readiness({ blockedBy }: { blockedBy: string | null }) {
   );
 }
 
-/** An agent's name and model before apply; no model picker while no provider is connected. */
+/**
+ * An agent's name and model before apply, and a coding agent's harness; no model picker while no
+ * provider is connected.
+ */
 function AgentChoices({
   name,
   onName,
@@ -261,6 +302,9 @@ function AgentChoices({
   recommended,
   coding,
   orgModels,
+  harness,
+  onHarness,
+  recommendedHarness,
 }: {
   name: string;
   onName: (name: string) => void;
@@ -271,6 +315,10 @@ function AgentChoices({
   recommended: string | null;
   coding: boolean;
   orgModels: OrgModels | undefined;
+  /** Null hides the harness picker: the agent does not code. */
+  harness: Harness | "" | null;
+  onHarness: (harness: Harness) => void;
+  recommendedHarness: Harness | null;
 }) {
   return (
     <div className="grid gap-3 md:grid-cols-2">
@@ -293,6 +341,22 @@ function AgentChoices({
           options={modelOptions(orgModels, { current: model, coding })}
           hint={recommended ? `The recipe recommends ${recommended}.` : undefined}
           {...(model ? {} : { error: "Choose a model." })}
+        />
+      )}
+      {harness === null ? null : (
+        <Select
+          tone="paper"
+          label="Harness"
+          placeholder="Choose a harness"
+          value={harness}
+          onValueChange={(value) => onHarness(value as Harness)}
+          options={harnessOptions}
+          hint={
+            recommendedHarness
+              ? `The recipe names ${harnessLabel(recommendedHarness)}. ${harnessSubscriptionNote}`
+              : harnessSubscriptionNote
+          }
+          {...(harness ? {} : { error: "Choose a harness." })}
         />
       )}
     </div>

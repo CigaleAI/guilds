@@ -49,8 +49,8 @@ export type StoredSecret = {
 
 /**
  * Reads a value file from the agent's workspace: a regular file under its home (see
- * `readAgentFile`), at most 16 KiB of UTF-8 with no NUL byte. One trailing newline is stripped;
- * an empty value is refused.
+ * `readAgentFile`), at most 16 KiB of UTF-8 with no NUL byte. The whitespace around the value is
+ * stripped; a value of only whitespace is refused.
  */
 export async function readSecretFile(workspaceDir: string, file: string): Promise<{ value: string; path: string }> {
   let read: { path: string; bytes: Buffer };
@@ -77,7 +77,7 @@ export async function readSecretFile(workspaceDir: string, file: string): Promis
   if (text.includes("\0")) {
     throw new AgentSecretError("file must not contain a NUL byte");
   }
-  const value = text.replace(/\r?\n$/, "");
+  const value = text.trim();
   if (!value) {
     throw new AgentSecretError("file is empty");
   }
@@ -96,17 +96,18 @@ export async function storeAgentSecret(
 ): Promise<StoredSecret> {
   let name: string;
   let description: string;
+  let payload: { value: string };
   try {
     name = validateSecretName(input.name);
     description = validateSecretDescription(input.description);
-    secretPayload(input.value);
+    payload = secretPayload(input.value);
   } catch (error) {
     if (error instanceof CredentialError) {
       throw new AgentSecretError(error.message);
     }
     throw error;
   }
-  const [ciphertext, nonce] = encryptPayload({ value: input.value });
+  const [ciphertext, nonce] = encryptPayload(payload);
   const existing = await db.getSecretByName(agent.orgId, name);
   if (existing !== null) {
     if (!ownsAlone(existing, agent.id)) {
@@ -116,7 +117,7 @@ export async function storeAgentSecret(
     if (row === null) {
       throw new AgentSecretError(`${name} is taken in this organisation; choose another name`);
     }
-    return { secretId: String(row.id), name, rotated: true, value: input.value };
+    return { secretId: String(row.id), name, rotated: true, value: payload.value };
   }
   if ((await db.countSecretsCreatedByAgent(agent.id)) >= AGENT_SECRET_CAP) {
     throw new AgentSecretError(
@@ -135,7 +136,7 @@ export async function storeAgentSecret(
       createdByAgentId: agent.id,
       now,
     });
-    return { secretId: String(row.id), name, rotated: false, value: input.value };
+    return { secretId: String(row.id), name, rotated: false, value: payload.value };
   } catch (error) {
     if (error instanceof SecretNameTaken) {
       throw new AgentSecretError(`${name} is taken in this organisation; choose another name`);
