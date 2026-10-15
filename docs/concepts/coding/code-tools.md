@@ -1,5 +1,6 @@
 # Code tools
 
+
 A [coding agent](index.md)'s runs offer five tools. `code_task` hands
 code work to the agent's [harness](harnesses.md). The other four check
 that work and do what the harness never does: run the project's
