@@ -69,9 +69,10 @@ export class HostCodeSandbox {
     const timeout = Number(opts?.timeoutSeconds ?? opts?.timeout ?? 120) * 1000;
     return new Promise((resolve, reject) => {
       const child = spawn("bash", ["-c", local], {
-        // HOME is the agent's home, as on its machine: git's global config lands there.
+        // HOME is the agent's home, as on its machine: git's global config lands there. The host's
+        // XDG directories are dropped so every per-user path resolves under that home too.
         env: {
-          ...process.env,
+          ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("XDG_"))),
           ...this.env,
           ...envs,
           HOME: this.home,
