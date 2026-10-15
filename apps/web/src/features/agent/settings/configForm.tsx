@@ -1,18 +1,11 @@
-import { Bookmark, Code2, FileCode, Globe, SquareTerminal, type LucideIcon } from "lucide-react";
+import { Bookmark, Check, Code2, FileCode, Globe, Info, type LucideIcon } from "lucide-react";
 import { useOrgModels } from "../../../api/queries";
-import type {
-  AgentConfig,
-  Harness,
-  Machine,
-  MachineRef,
-  OrgModels,
-  ThinkingLevel,
-} from "../../../api/types";
+import type { AgentConfig, Harness, Machine, OrgModels, ThinkingLevel } from "../../../api/types";
 import { isCodingOnlyModel } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { cn, Icon, Select, Slider, TextField } from "@guildsrun/ui";
-import { chosenMachine, machineAllowsCoding } from "../../machines/machines";
-import { StandardMachineNote } from "../../machines/MachineNotes";
+import { agentMinimum, chosenMachine, sizeMeets } from "../../machines/machines";
+import { TooSmallNote } from "../../machines/MachineNotes";
 import {
   modelLimits,
   modelOptions,
@@ -22,7 +15,6 @@ import {
 import { ModelKeysLink } from "../../settings/ModelKeysLink";
 import {
   harnessCarried,
-  harnessChoices,
   harnessImageNote,
   harnessLabel,
   harnessModelHelp,
@@ -31,6 +23,7 @@ import {
   showsHarnessImageNote,
 } from "../harness";
 import { HarnessReadiness } from "./HarnessReadiness";
+import { HarnessLogo } from "../HarnessLogo";
 /** A new agent's settings, as the server defaults them; the model is the organisation's default, or the operator's choice. */
 export const defaultAgentConfig: AgentConfig = {
   model: "",
@@ -42,7 +35,6 @@ export const defaultAgentConfig: AgentConfig = {
   keep_tool_result_generations: 1,
   max_scripts: 10,
   max_workspace_mib: 10240,
-  cli: true,
   browser: false,
   browser_language: "en-US",
   coding: false,
@@ -138,7 +130,6 @@ export type ConfigForm = {
   temperature: string;
   /** The machine the agent goes on; empty until one is picked among several. */
   machine_id: string;
-  cli: boolean;
   browser: boolean;
   browser_language: string;
   coding: boolean;
@@ -181,7 +172,6 @@ export function configFormOf(config: AgentConfig, machineId = ""): ConfigForm {
     thinking: config.thinking_level,
     temperature: String(config.temperature),
     machine_id: machineId,
-    cli: config.cli !== false,
     browser: config.browser,
     browser_language: config.browser_language ?? "en-US",
     coding: config.coding,
@@ -249,7 +239,6 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     model: form.model,
     temperature: Number(form.temperature),
     thinking_level: modelLimits(models, form.model).thinkingOff ? "none" : form.thinking,
-    cli: form.cli,
     browser: form.browser,
     browser_language: form.browser_language,
     coding: form.coding,
@@ -370,43 +359,56 @@ export function LimitFields({ form, onChange, errors }: FieldsProps) {
   );
 }
 
+/** The agent home's disk cap, in MiB. */
+export function MaxDiskField({ form, onChange, errors }: FieldsProps) {
+  return (
+    <TextField
+      tone="surface"
+      label="Max disk"
+      type="number"
+      min={1}
+      step={1}
+      hint="MiB the agent's home may hold. A generation will not start while the home is over this, or while its machine is over the machine's cap. 10240 is 10 GiB."
+      value={form.max_workspace_mib}
+      onChange={(event) => onChange({ max_workspace_mib: event.currentTarget.value })}
+      {...(errors.max_workspace_mib ? { error: errors.max_workspace_mib } : {})}
+    />
+  );
+}
+
+/** How many scripts the agent may keep. */
+export function MaxScriptsField({ form, onChange, errors }: FieldsProps) {
+  return (
+    <TextField
+      tone="surface"
+      label="Max scripts"
+      type="number"
+      min={1}
+      step={1}
+      hint="Reusable Python files this agent may keep. Creating another is refused past this number."
+      value={form.max_scripts}
+      onChange={(event) => onChange({ max_scripts: event.currentTarget.value })}
+      {...(errors.max_scripts ? { error: errors.max_scripts } : {})}
+    />
+  );
+}
+
 /** The agent home's disk cap, in MiB, beside how many scripts the agent may keep. */
-export function DiskFields({ form, onChange, errors }: FieldsProps) {
+export function DiskFields(props: FieldsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <TextField
-        tone="surface"
-        label="Max disk"
-        type="number"
-        min={1}
-        step={1}
-        hint="MiB the agent's home may hold. A generation will not start while the home is over this, or while its machine is over the machine's cap. 10240 is 10 GiB."
-        value={form.max_workspace_mib}
-        onChange={(event) => onChange({ max_workspace_mib: event.currentTarget.value })}
-        {...(errors.max_workspace_mib ? { error: errors.max_workspace_mib } : {})}
-      />
-      <TextField
-        tone="surface"
-        label="Max scripts"
-        type="number"
-        min={1}
-        step={1}
-        hint="Reusable Python files this agent may keep. Creating another is refused past this number."
-        value={form.max_scripts}
-        onChange={(event) => onChange({ max_scripts: event.currentTarget.value })}
-        {...(errors.max_scripts ? { error: errors.max_scripts } : {})}
-      />
+      <MaxDiskField {...props} />
+      <MaxScriptsField {...props} />
     </div>
   );
 }
 
-/** Whether a capability is on. Missing `cli`, `scripting`, and `memory` mean on. */
+/** Whether a capability is on. Missing `scripting` and `memory` mean on. */
 export function capabilityOn(
-  config:
-    Partial<Pick<AgentConfig, "cli" | "browser" | "coding" | "scripting" | "memory">> | undefined,
-  key: "cli" | "browser" | "coding" | "scripting" | "memory",
+  config: Partial<Pick<AgentConfig, "browser" | "coding" | "scripting" | "memory">> | undefined,
+  key: "browser" | "coding" | "scripting" | "memory",
 ): boolean {
-  if (key === "cli" || key === "scripting" || key === "memory") return config?.[key] !== false;
+  if (key === "scripting" || key === "memory") return config?.[key] !== false;
   return Boolean(config?.[key]);
 }
 
@@ -452,8 +454,8 @@ function CapabilityField({
 
 /**
  * A new agent's form with coding switched: limits still at the defaults move to the coding
- * budgets, and back when coding is switched off again. Turning coding on also turns on CLI
- * and scripting; turning it off clears the harness and its model.
+ * budgets, and back when coding is switched off again. Turning coding on also turns on
+ * scripting; turning it off clears the harness and its model.
  */
 export function withCoding(
   form: ConfigForm,
@@ -465,7 +467,7 @@ export function withCoding(
   return {
     ...form,
     coding,
-    ...(coding ? { cli: true, scripting: true } : { harness: "" as const, harness_model: "" }),
+    ...(coding ? { scripting: true } : { harness: "" as const, harness_model: "" }),
     ...(!coding && isCodingOnlyModel(form.model, models)
       ? { model: models?.default ?? "", thinking: "none" as ThinkingLevel }
       : {}),
@@ -524,7 +526,7 @@ function HarnessModelField({
         placeholder="Subscription default"
         autoComplete="off"
         list={harnessModelsListId}
-        hint={`${help.hint} Empty uses your subscription's default.`}
+        hint={help.hint}
         value={form.harness_model}
         onChange={(event) => onChange({ ...form, harness_model: event.currentTarget.value })}
         {...(error ? { error } : {})}
@@ -538,9 +540,67 @@ function HarnessModelField({
   );
 }
 
+const HARNESS_ITEMS = [
+  { value: "claude-code" as const, label: "Claude Code", subtitle: "Anthropic" },
+  { value: "codex" as const, label: "Codex", subtitle: "OpenAI" },
+  { value: "cursor" as const, label: "Cursor", subtitle: "Cursor" },
+] as const;
+
+function HarnessCard({
+  harness,
+  label,
+  subtitle,
+  selected,
+  available,
+  onPick,
+}: {
+  harness: Harness;
+  label: string;
+  subtitle: string;
+  selected: boolean;
+  available: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={!available}
+      onClick={onPick}
+      className={cn(
+        "group relative flex flex-col items-start gap-2.5 rounded-xl border p-3.5 text-left transition-all",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+        selected
+          ? "border-focus/60 bg-paper-hi shadow-sm ring-2 ring-focus/80"
+          : "border-line bg-surface hover:border-rule hover:bg-paper",
+        !available && "cursor-not-allowed opacity-45 hover:border-line hover:bg-surface",
+      )}
+    >
+      <div className="flex w-full items-center justify-between">
+        <HarnessLogo harness={harness} size={36} />
+        {selected ? (
+          <span className="flex size-5 items-center justify-center rounded-full bg-focus text-on-focus">
+            <Icon icon={Check} size={14} />
+          </span>
+        ) : null}
+      </div>
+      <div className="flex flex-col">
+        <span className="text-sm font-semibold text-fg">{label}</span>
+        <span className="text-xs text-muted">{subtitle}</span>
+      </div>
+      {!available ? (
+        <span className="rounded bg-well px-1.5 py-0.5 text-2xs font-medium text-muted">
+          Not on machine
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 /**
- * The harness select and, once one is picked, its model. A harness the machine's image lacks is
- * unavailable, with why. Picking another harness clears the model.
+ * Three harness buttons with their logos and, once one is picked, its model. A harness the
+ * machine's image lacks is disabled with a note. Picking another harness clears the model.
  */
 export function HarnessChoiceFields({
   form,
@@ -553,23 +613,35 @@ export function HarnessChoiceFields({
   errors: ConfigErrors;
   carried?: readonly Harness[] | null | undefined;
 }) {
-  const pick = (value: string) =>
+  const pick = (value: Harness) =>
     onChange({
       ...form,
-      harness: value as Harness,
+      harness: value,
       harness_model: value === form.harness ? form.harness_model : "",
     });
   return (
-    <>
-      <Select
-        tone="surface"
-        label="Harness"
-        placeholder="Choose a harness"
-        value={form.harness}
-        onValueChange={pick}
-        options={harnessChoices(carried)}
-        {...(errors.harness ? { error: errors.harness } : {})}
-      />
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <label className="text-sm font-semibold text-fg">Harness</label>
+        <div
+          className="grid grid-cols-1 gap-2.5 sm:grid-cols-3"
+          role="radiogroup"
+          aria-label="Coding harness"
+        >
+          {HARNESS_ITEMS.map((item) => (
+            <HarnessCard
+              key={item.value}
+              harness={item.value}
+              label={item.label}
+              subtitle={item.subtitle}
+              selected={form.harness === item.value}
+              available={harnessCarried(carried, item.value) !== false}
+              onPick={() => pick(item.value)}
+            />
+          ))}
+        </div>
+        {errors.harness ? <span className="text-xs text-error">{errors.harness}</span> : null}
+      </div>
       {form.harness ? (
         <HarnessModelField
           form={form}
@@ -578,7 +650,7 @@ export function HarnessChoiceFields({
           error={errors.harness_model}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -586,7 +658,7 @@ export function HarnessChoiceFields({
  * The coding agent's harness and the model it runs, with a note that it runs on the operator's own
  * subscription; for an existing agent, what its code tasks still need under it.
  */
-function HarnessField({
+export function HarnessField({
   form,
   onChange,
   errors,
@@ -601,7 +673,7 @@ function HarnessField({
 }) {
   const missing = form.harness ? harnessCarried(carried, form.harness) === false : false;
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <HarnessChoiceFields form={form} onChange={onChange} errors={errors} carried={carried} />
       {missing ? (
         <p className="text-sm text-t-ochre-fg">
@@ -612,77 +684,80 @@ function HarnessField({
         <HarnessReadiness
           agent={agent}
           harness={form.harness}
-          cli={form.cli}
           aliases={form.secret_aliases}
           onAliasesChange={(secret_aliases) => onChange({ ...form, secret_aliases })}
         />
       ) : null}
       {showsHarnessImageNote(carried) ? (
-        <p className="text-sm text-muted">{harnessImageNote}</p>
+        <div className="flex items-center gap-1.5 text-xs text-muted">
+          <Icon icon={Info} size={14} className="shrink-0" />
+          <span>{harnessImageNote}</span>
+        </div>
       ) : null}
-      <p className="text-sm text-muted">{harnessSubscriptionNote}</p>
+      <div className="flex items-center gap-1.5 text-xs text-muted">
+        <Icon icon={Info} size={14} className="shrink-0" />
+        <span>{harnessSubscriptionNote}</span>
+      </div>
     </div>
   );
 }
 
 /**
- * Browser, Coding, CLI, scripting, and Memory. Coding is greyed out on a standard machine, with a
- * line that points to Settings → Machines; an agent that already codes there can still switch it
- * off. A coding agent picks its harness. `codingToggle` false leaves the Coding card out, where
- * the kind of agent was chosen before the form.
+ * Browser, Coding, scripting, and Memory. Every agent has the CLI, so it has no card. Browser and
+ * Coding are greyed out while off when the machine is below the minimum they would set, with a
+ * line that points to Settings → Machines; Coding stays on once saved: a coding agent stays one.
+ * `codingToggle` false leaves the Coding card out, where the kind of agent was chosen before the form.
  */
 export function CapabilitiesFields({
   form,
   onChange,
-  errors = {},
   models,
   machine,
-  agent,
-  carried,
   codingToggle = true,
+  savedCoding = false,
 }: {
   form: ConfigForm;
   onChange: (next: ConfigForm) => void;
-  errors?: ConfigErrors;
   models?: OrgModels | undefined;
   /** The machine the agent goes on; undefined while none is chosen. */
-  machine?: MachineRef | undefined;
-  /** The agent being edited; undefined while one is created. */
-  agent?: SettingsAgent | undefined;
-  /** The harness CLIs the machine's image carries; null or undefined while unknown. */
-  carried?: readonly Harness[] | null | undefined;
+  machine?: Pick<Machine, "name" | "cpu" | "memory_mib"> | undefined;
   codingToggle?: boolean;
+  /** Whether the saved agent codes, which keeps Coding on. */
+  savedCoding?: boolean;
 }) {
-  const standard = machine !== undefined && !machineAllowsCoding(machine.box);
+  const browserMinimum = agentMinimum({ browser: true, coding: form.coding });
+  const codingMinimum = agentMinimum({ browser: form.browser, coding: true });
+  const browserBlocked =
+    !form.browser && machine !== undefined && !sizeMeets(machine, browserMinimum);
+  const codingBlocked =
+    codingToggle && !form.coding && machine !== undefined && !sizeMeets(machine, codingMinimum);
   return (
     <>
       <div
-        className={cn("grid grid-cols-2 gap-2", codingToggle ? "sm:grid-cols-5" : "sm:grid-cols-4")}
+        className={cn("grid grid-cols-2 gap-2", codingToggle ? "sm:grid-cols-4" : "sm:grid-cols-3")}
       >
         <CapabilityField
           label="Browser"
           hint="Browser tab and tools. Uses a browser slot."
           icon={Globe}
           checked={form.browser}
+          disabled={browserBlocked}
           onChange={(browser) => onChange({ ...form, browser })}
         />
         {codingToggle ? (
           <CapabilityField
             label="Coding"
-            hint="Shell, and a harness for code work. Turns on CLI and scripting. Uses a coding slot."
+            hint={
+              savedCoding
+                ? "Shell, and a harness for code work. A coding agent stays one."
+                : "Shell, and a harness for code work. Turns on scripting. Uses a coding slot."
+            }
             icon={Code2}
             checked={form.coding}
-            disabled={standard && !form.coding}
+            disabled={savedCoding || codingBlocked}
             onChange={(coding) => onChange(withCoding(form, coding, models))}
           />
         ) : null}
-        <CapabilityField
-          label="CLI"
-          hint="The CLI tab, a terminal on the machine."
-          icon={SquareTerminal}
-          checked={form.cli}
-          onChange={(cli) => onChange({ ...form, cli })}
-        />
         <CapabilityField
           label="Scripting"
           hint="The Scripts tab and the script tools."
@@ -698,15 +773,10 @@ export function CapabilitiesFields({
           onChange={(memory) => onChange({ ...form, memory })}
         />
       </div>
-      {standard && codingToggle ? <StandardMachineNote machine={machine} /> : null}
-      {form.coding && codingToggle ? (
-        <HarnessField
-          form={form}
-          onChange={onChange}
-          errors={errors}
-          agent={agent}
-          carried={carried}
-        />
+      {machine && codingBlocked ? (
+        <TooSmallNote machine={machine} minimum={codingMinimum} what="Coding" />
+      ) : machine && browserBlocked ? (
+        <TooSmallNote machine={machine} minimum={browserMinimum} what="Browser" />
       ) : null}
       {form.browser ? <BrowserLanguageField form={form} onChange={onChange} /> : null}
     </>

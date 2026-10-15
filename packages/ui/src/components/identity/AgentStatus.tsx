@@ -17,13 +17,16 @@ const stateStyle: Record<AgentState, { tone: Tone; text: string; pulse: boolean 
 
 export type AgentStatusProps = Omit<ComponentProps<"span">, "children"> & {
   state: AgentState;
+  /** Whether to show the text label next to the dot. Defaults to true. */
+  label?: boolean;
 };
 
-/** An agent's live state as a dot and a mono lowercase word. */
-export function AgentStatus({ state, className, ...props }: AgentStatusProps) {
+/** An agent's live state as a dot and an optional mono lowercase word. */
+export function AgentStatus({ state, label = true, className, ...props }: AgentStatusProps) {
   const style = stateStyle[state];
   return (
     <span
+      title={props.title ?? state}
       className={cn(
         "inline-flex shrink-0 items-center gap-1 font-mono text-2xs font-medium whitespace-nowrap",
         style.text,
@@ -32,7 +35,7 @@ export function AgentStatus({ state, className, ...props }: AgentStatusProps) {
       {...props}
     >
       <Dot size="sm" tone={style.tone} className={cn(style.pulse && "animate-pulse")} />
-      {state}
+      {label ? state : <span className="sr-only">{state}</span>}
     </span>
   );
 }

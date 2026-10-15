@@ -275,8 +275,6 @@ describe("code_task with the Claude Code driver", () => {
     assert.match(text, /claude, then \/login/);
     assert.ok(metadata.error);
     assert.equal(calls().length, 0, "the harness never starts");
-    const { text: noCli } = await codeTask(context(sandbox, { secrets: {}, cli: false }).ctx, { brief: "Anything." });
-    assert.ok(!noCli.includes("/login"), "no login is offered without a CLI tab");
   });
 
   test("an aliased secret is the credential, and a missing one is named with the variable it is read as", async () => {
@@ -525,8 +523,6 @@ describe("code_task with the Codex driver", () => {
     const { text } = await codeTask(context(sandbox, { harness: "codex", secrets: {} }).ctx, { brief: "x" });
     assert.match(text, /^ERROR: Codex has no credential: log in from the agent's CLI tab with `codex login --device-auth`/);
     assert.equal(calls().length, 0);
-    const { text: noCli } = await codeTask(context(sandbox, { harness: "codex", secrets: {}, cli: false }).ctx, { brief: "x" });
-    assert.match(noCli, /Codex needs a login from the agent's CLI tab, and this agent has the CLI turned off/);
   });
 
   test("a failed turn fails with the harness's error", async () => {

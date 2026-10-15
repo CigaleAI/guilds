@@ -47,7 +47,7 @@ function credential(
     secret_source: null,
     secret_granted: false,
     secret_shadowed: false,
-    login: null,
+    login: "login",
     login_seen_at: null,
     login_account: null,
     ...patch,
@@ -58,7 +58,6 @@ function status(patch: Partial<AgentHarness> = {}): AgentHarness {
   return {
     harness: "claude-code",
     harness_model: null,
-    cli: true,
     machine_harnesses: ["codex", "claude-code"],
     repositories: ["shop"],
     harnesses: [
@@ -87,7 +86,11 @@ test("a coding agent with a credential, its harness in the image, and a reposito
 });
 
 test("no harness picked is a problem; the image and credential then go unchecked", () => {
-  const unpicked = status({ harness: null, harnesses: [credential("claude-code")], machine_harnesses: [] });
+  const unpicked = status({
+    harness: null,
+    harnesses: [credential("claude-code")],
+    machine_harnesses: [],
+  });
   assert.deepEqual(codingProblems(unpicked), [{ kind: "harness" }]);
   const problems = codingProblems({ ...unpicked, repositories: [] });
   assert.deepEqual(problems, [{ kind: "harness" }, { kind: "repositories" }]);
@@ -174,9 +177,9 @@ test("the chat strip names the lead model, the harness and its model, what it ru
       now,
     }).map((segment) => [segment.text, segment.problem, segment.to]),
     [
-      ["DeepSeek Flash leads", false, "settings"],
-      ["Claude Code · opus codes", false, "settings"],
-      ["on CLAUDE_CODE_OAUTH_TOKEN, added by ada", false, "settings"],
+      ["DeepSeek Flash leads", false, "model"],
+      ["Claude Code · opus codes", false, "harness"],
+      ["on CLAUDE_CODE_OAUTH_TOKEN, added by ada", false, "harness"],
       ["repos shop", false, "repositories"],
     ],
   );
@@ -214,8 +217,8 @@ test("the chat strip names the lead model, the harness and its model, what it ru
       (segment) => [segment.text, segment.problem, segment.to],
     ),
     [
-      ["x leads", false, "settings"],
-      ["no harness picked", true, "settings"],
+      ["x leads", false, "model"],
+      ["no harness picked", true, "harness"],
       ["repos shop", false, "repositories"],
     ],
   );

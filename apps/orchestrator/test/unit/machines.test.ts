@@ -5,18 +5,22 @@ import { test } from "node:test";
 import { layOutAgentHomes } from "../../src/machines/layout.js";
 import { tempDir } from "../helpers/env.js";
 import {
-  CAPACITY_WEIGHTS_MIB,
+  AGENT_MINIMUMS,
   MAX_AGENTS_PER_MACHINE,
   MachineError,
+  OVERCOMMIT,
   agentDirectory,
-  agentPlannedMib,
+  agentMinimum,
+  agentsMinimum,
+  belowMinimumMessage,
   lowestFreeSlot,
-  machineAllowsCoding,
+  machineCapacity,
   machineDirectory,
   machineFromRow,
   machineSize,
   machineSizeChanged,
-  plannedMib,
+  plannedLoad,
+  sizeMeets,
   slotPorts,
   validateMachineInput,
   type MachineRow,
@@ -34,13 +38,36 @@ const CUSTOM: MachineRow = {
   harnesses: null,
 };
 
-test("each tier has its size, a custom machine its own, and coding needs code or custom", () => {
+test("each tier has its size, and a custom machine its own", () => {
   assert.deepEqual(machineSize({ box: "standard", cpu: null, memory_mib: null }), { cpu: 1, memory_mib: 2048 });
   assert.deepEqual(machineSize({ box: "code", cpu: null, memory_mib: null }), { cpu: 2, memory_mib: 4096 });
   assert.deepEqual(machineSize(CUSTOM), { cpu: 2, memory_mib: 3072 });
-  assert.equal(machineAllowsCoding("standard"), false);
-  assert.equal(machineAllowsCoding("code"), true);
-  assert.equal(machineAllowsCoding("custom"), true);
+});
+
+test("an agent's minimum is the largest of its capabilities' minimums, not their sum", () => {
+  assert.deepEqual(agentMinimum({ browser: false, coding: false }), AGENT_MINIMUMS.base);
+  assert.deepEqual(agentMinimum({ browser: true, coding: false }), AGENT_MINIMUMS.browser);
+  assert.deepEqual(agentMinimum({ browser: true, coding: true }), AGENT_MINIMUMS.coding);
+  assert.deepEqual(
+    agentsMinimum([
+      { browser: true, coding: false },
+      { browser: false, coding: false },
+    ]),
+    AGENT_MINIMUMS.browser,
+  );
+});
+
+test("a standard machine takes browser agents, a code machine coding ones, a custom one by its size", () => {
+  const standard = machineSize({ box: "standard", cpu: null, memory_mib: null });
+  const code = machineSize({ box: "code", cpu: null, memory_mib: null });
+  assert.equal(sizeMeets(standard, agentMinimum({ browser: true, coding: false })), true);
+  assert.equal(sizeMeets(standard, agentMinimum({ browser: false, coding: true })), false);
+  assert.equal(sizeMeets(code, agentMinimum({ browser: true, coding: true })), true);
+  assert.equal(sizeMeets(machineSize(CUSTOM), agentMinimum({ browser: false, coding: true })), false);
+  assert.equal(
+    belowMinimumMessage("dev", { browser: false, coding: true }, CUSTOM),
+    "dev needs a machine with at least 2 CPUs and 4 GiB; big has 2 CPUs and 3 GiB",
+  );
 });
 
 test("a machine body: a custom machine has a size within the bounds, no other tier has one", () => {
@@ -124,16 +151,18 @@ test("placement takes the lowest free slot, under the policy's cap and core's ce
   assert.equal(lowestFreeSlot(Array.from({ length: MAX_AGENTS_PER_MACHINE }, (_, slot) => slot), 100), null);
 });
 
-test("the planned budget sums every agent working at once", () => {
-  assert.equal(agentPlannedMib({ browser: false, coding: false }), CAPACITY_WEIGHTS_MIB.base);
-  assert.equal(agentPlannedMib({ browser: true, coding: true }), 100 + 500 + 1536);
-  assert.equal(
-    plannedMib([
+test("a machine's planned load sums its agents' minimums, against its size times the overcommit", () => {
+  assert.deepEqual(
+    plannedLoad([
       { browser: true, coding: false },
       { browser: false, coding: false },
     ]),
-    700,
+    { cpu: 1.5, memory_mib: 2048 + 256 },
   );
+  assert.deepEqual(machineCapacity({ cpu: 1, memory_mib: 2048 }), {
+    cpu: OVERCOMMIT.cpu,
+    memory_mib: 2048 * OVERCOMMIT.memory,
+  });
 });
 
 test("the boot layout destroys per-agent sandboxes and moves each home into its machine's directory", async () => {

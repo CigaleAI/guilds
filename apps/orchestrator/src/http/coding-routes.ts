@@ -9,7 +9,7 @@ import {
   harnessSecretSource,
   isHarness,
 } from "../coding/harnesses.js";
-import { cliOf, secretAliasesOf } from "../agents/validation.js";
+import { secretAliasesOf } from "../agents/validation.js";
 import { agentSecrets } from "../access/runtime.js";
 import {
   DEFAULT_BRANCH,
@@ -334,7 +334,6 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const agent = await ownedAgent(repo, param(request, "agent_id"), user);
     const config = agentConfigObject(agent);
-    const cli = cliOf(config);
     const granted = new Set((await agentSecrets(repo, agent)).map((secret) => secret.name));
     const aliases = secretAliasesOf(config);
     const logins = (jsonObj(agent.harness_logins) as Record<string, unknown> | null) ?? {};
@@ -342,7 +341,6 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     return {
       harness: harnessOf(config),
       harness_model: harnessModelOf(config),
-      cli,
       machine_harnesses: carried,
       repositories: (await deps.generation?.codingRepositoryNames(agent)) ?? [],
       harnesses: HARNESSES.map((harness) => {
@@ -356,7 +354,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
           secret_source: source,
           secret_granted: source !== null && granted.has(source),
           secret_shadowed: source !== null && source !== info.secret && granted.has(String(info.secret)),
-          login: cli ? info.login : null,
+          login: info.login,
           login_seen_at: login.seen_at,
           login_account: login.account,
         };

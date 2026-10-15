@@ -10,7 +10,7 @@ import { GuildAgentLimitError, assertGuildAgentRoom, validateGuildName } from ".
 import {
   addMissingBrowserLanguage,
   addMissingFlags,
-  addMissingCliScriptingAndMemory,
+  addMissingScriptingAndMemory,
   addMissingRunLimits,
   addMissingTemperatureAndStepLimits,
   addMissingThinkingLevel,
@@ -35,11 +35,15 @@ import { newId } from "../lib/ids.js";
 import { hostsOnlyVisible, visibleGuildIds } from "../machines/access.js";
 import {
   MAX_AGENTS_PER_MACHINE,
-  agentPlannedMib,
-  machineAllowsCoding,
+  agentMinimum,
+  agentsMinimum,
+  belowMinimumMessage,
   machineSize,
-  plannedMib,
+  plannedLoad,
+  sizeMeets,
+  type AgentNeeds,
   type MachineBox,
+  type MachineSize,
   type MachineWithAgents,
 } from "../machines/index.js";
 import { jsonObj } from "../db/json.js";
@@ -129,39 +133,50 @@ export type ApplyChoices = {
   machine_id?: string;
 };
 
-/** A machine the preview offers, with the memory its agents plan to use and what the roles add. */
+/**
+ * A machine the preview offers: its size, its agents' planned load, and whether it meets the
+ * minimum of every role of the recipe.
+ */
 export type MachineChoice = {
   id: string;
   name: string;
   box: MachineBox;
+  cpu: number;
   memory_mib: number;
+  planned_cpu: number;
   planned_mib: number;
   agents: number;
+  fits: boolean;
 };
 
-function machineChoice(machine: MachineWithAgents): MachineChoice {
+function machineChoice(machine: MachineWithAgents, minimum: MachineSize): MachineChoice {
+  const size = machineSize(machine);
+  const planned = plannedLoad(machine.agents);
   return {
     id: machine.id,
     name: machine.name,
     box: machine.box,
-    memory_mib: machineSize(machine).memory_mib,
-    planned_mib: plannedMib(machine.agents),
+    cpu: size.cpu,
+    memory_mib: size.memory_mib,
+    planned_cpu: planned.cpu,
+    planned_mib: planned.memory_mib,
     agents: machine.agents.length,
+    fits: sizeMeets(size, minimum),
   };
 }
 
-/** The planned memory the recipe's roles add to their machine. */
-function rolesPlannedMib(recipe: RecipeDocument): number {
-  return recipe.roles.reduce(
-    (sum, role) =>
-      sum + agentPlannedMib({ browser: Boolean(role.browser.required || role.config.browser), coding: role.config.coding === true }),
-    0,
-  );
+/** What each role of the recipe has on that sets its minimum. */
+function rolesNeeds(recipe: RecipeDocument): Array<AgentNeeds & { role: string }> {
+  return recipe.roles.map((role) => ({
+    role: role.role,
+    browser: Boolean(role.browser.required || role.config.browser),
+    coding: role.config.coding === true,
+  }));
 }
 
 /**
- * What blocks the roles on a machine: a coding role on a standard machine, more roles than the
- * machine has room for under `maxAgents`, or agents of a guild the operator cannot see on it.
+ * What blocks the roles on a machine: a role whose minimum the machine is below, more roles than
+ * the machine has room for under `maxAgents`, or agents of a guild the operator cannot see on it.
  */
 export function machineFindings(
   recipe: RecipeDocument,
@@ -169,13 +184,14 @@ export function machineFindings(
   rules: { maxAgents: number; private: boolean },
 ): RecipeFinding[] {
   const findings: RecipeFinding[] = [];
-  if (!machineAllowsCoding(machine.box)) {
-    for (const role of recipe.roles.filter((item) => item.config.coding === true)) {
+  const size = machineSize(machine);
+  for (const needs of rolesNeeds(recipe)) {
+    if (!sizeMeets(size, agentMinimum(needs))) {
       findings.push({
-        code: "machine.coding",
+        code: "machine.size",
         severity: "error",
-        path: `roles.${role.role}.config.coding`,
-        message: `${role.role} codes and needs a code or custom machine; ${machine.name} is standard. Create or resize one in Settings, Machines.`,
+        path: "machine_id",
+        message: belowMinimumMessage(needs.role, needs, machine),
       });
     }
   }
@@ -437,7 +453,10 @@ export class RecipeApplyService {
       harnesses,
       machines: placement.machines,
       machine_id: placement.machineId,
-      adds_mib: placement.addsMib,
+      minimum_cpu: placement.minimum.cpu,
+      minimum_mib: placement.minimum.memory_mib,
+      adds_cpu: placement.adds.cpu,
+      adds_mib: placement.adds.memory_mib,
       collisions,
       connections,
       installs,
@@ -457,27 +476,31 @@ export class RecipeApplyService {
   }
 
   /**
-   * The machine the roles go on: the one chosen, else the organisation's only one. No machine
-   * chosen among several, or the findings of `machineFindings` on the one chosen, block the apply.
+   * The machine the roles go on: the one chosen, else the organisation's only one; null while
+   * several wait for a choice, which the apply form makes. With the smallest machine every role
+   * runs on, and the planned load the roles add. The findings of `machineFindings` on the machine
+   * block the apply.
    */
   private async planMachine(
     orgId: string,
     recipe: RecipeDocument,
     chosen: string | undefined,
     user: Record<string, unknown> | undefined,
-  ): Promise<{ machines: MachineChoice[]; machineId: string | null; addsMib: number; findings: RecipeFinding[] }> {
+  ): Promise<{
+    machines: MachineChoice[];
+    machineId: string | null;
+    minimum: MachineSize;
+    adds: MachineSize;
+    findings: RecipeFinding[];
+  }> {
     const rows = await this.deps.repo.listMachines(orgId);
-    const machines = rows.map(machineChoice);
-    const addsMib = rolesPlannedMib(recipe);
+    const needs = rolesNeeds(recipe);
+    const minimum = agentsMinimum(needs);
+    const adds = plannedLoad(needs);
+    const machines = rows.map((row) => machineChoice(row, minimum));
     const machineId = chosen ?? (rows.length === 1 ? rows[0]!.id : null);
     if (machineId === null) {
-      const finding: RecipeFinding = {
-        code: "machine.required",
-        severity: "error",
-        path: "machine_id",
-        message: "choose the machine the roles go on",
-      };
-      return { machines, machineId, addsMib, findings: [finding] };
+      return { machines, machineId, minimum, adds, findings: [] };
     }
     const machine = rows.find((item) => item.id === machineId);
     if (!machine) {
@@ -489,7 +512,7 @@ export class RecipeApplyService {
       maxAgents: Math.min(limits.maxAgentsPerMachine ?? MAX_AGENTS_PER_MACHINE, MAX_AGENTS_PER_MACHINE),
       private: visible !== null && !hostsOnlyVisible(machine, visible),
     });
-    return { machines, machineId, addsMib, findings };
+    return { machines, machineId, minimum, adds, findings };
   }
 
   async createSkeleton(
@@ -509,6 +532,9 @@ export class RecipeApplyService {
           .filter(Boolean)
           .join("; ")}`,
       );
+    }
+    if (preview.machine_id === null) {
+      throw new RecipeError("choose the machine the agents go on");
     }
     if ((preview.collisions as string[]).length) {
       throw new RecipeConflictError(`agent names already exist: ${(preview.collisions as string[]).join(", ")}`);
@@ -1622,7 +1648,7 @@ export function configFromRecipeRole(role: RecipeRole, model?: string, harness?:
   const coding = roleConfig.coding === true;
   const applied = coding ? (harness ?? harnessOf(roleConfig)) : null;
   return addMissingFlags(
-    addMissingCliScriptingAndMemory(
+    addMissingScriptingAndMemory(
       addMissingThinkingLevel(
         addMissingBrowserLanguage(
           addMissingRunLimits(

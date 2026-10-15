@@ -242,7 +242,11 @@ export function AgentScripts() {
           description="Turn it on in Settings to give the agent script tools and this tab."
           action={
             <Button asChild size="sm">
-              <Link to="/guilds/$guildId/agents/$agentId/settings" params={{ guildId, agentId }}>
+              <Link
+                to="/guilds/$guildId/agents/$agentId/settings"
+                params={{ guildId, agentId }}
+                search={{ section: "model" }}
+              >
                 Open Settings
               </Link>
             </Button>

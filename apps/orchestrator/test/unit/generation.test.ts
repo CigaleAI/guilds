@@ -1840,18 +1840,6 @@ describe("generation", { concurrency: 1 }, () => {
     assert.deepEqual(sandboxes.destroyed, []);
   });
 
-  test("ensure_cli_requires_flag", async () => {
-    const db = new FakeDB({});
-    db.agent.config = { ...AGENT_CONFIG, browser: false, cli: false };
-    const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    await assert.rejects(() => loop.ensure_cli("a_1"), (error: unknown) => {
-      assert.ok(error instanceof RunRequestError);
-      assert.match(error.detail, /cli is not enabled/);
-      assert.equal(error.status, 409);
-      return true;
-    });
-  });
-
   test("create_run_omits_script_tools_when_scripting_is_off", async () => {
     const { loop, db } = await seededLoop();
     loop._spawn = () => undefined;

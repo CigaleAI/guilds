@@ -13,7 +13,6 @@ export const CONFIG_KEYS = new Set([
   "keep_tool_result_generations",
   "max_scripts",
   "max_workspace_mib",
-  "cli",
   "browser",
   "browser_language",
   "coding",
@@ -34,8 +33,6 @@ export const DEFAULT_KEEP_TOOL_RESULT_GENERATIONS = 1;
 export const DEFAULT_MAX_SCRIPTS = 10;
 /** An agent's workspace cap, in MiB. Above this the next generation fails at start. */
 export const DEFAULT_MAX_WORKSPACE_MIB = 10240;
-/** A new agent can open a terminal on its machine unless the operator turns this off. */
-export const DEFAULT_CLI = true;
 /** A new agent keeps script tools unless the operator turns this off. */
 export const DEFAULT_SCRIPTING = true;
 /** A new agent keeps Memory and `memory_write` unless the operator turns this off. */
@@ -120,7 +117,6 @@ export type AgentConfig = {
   keep_tool_result_generations: number;
   max_scripts: number;
   max_workspace_mib: number;
-  cli: boolean;
   browser: boolean;
   browser_language: string;
   coding: boolean;
@@ -215,19 +211,13 @@ export function addMissingFlags(config: Record<string, unknown>): Record<string,
   });
 }
 
-export function addMissingCliScriptingAndMemory(
+export function addMissingScriptingAndMemory(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
   return fillMissingKeys(config, {
-    cli: DEFAULT_CLI,
     scripting: DEFAULT_SCRIPTING,
     memory: DEFAULT_MEMORY,
   });
-}
-
-/** Whether the operator CLI tab and API are on; missing means on. */
-export function cliOf(config: Record<string, unknown> | null | undefined): boolean {
-  return config?.cli !== false;
 }
 
 /** Whether script tools and the Scripts tab are on; missing means on. */
@@ -353,7 +343,7 @@ export function validateThinkingLevel(value: unknown): ThinkingLevel {
 
 function fillMissingAgentConfig(config: Record<string, unknown>): Record<string, unknown> {
   return addMissingFlags(
-    addMissingCliScriptingAndMemory(
+    addMissingScriptingAndMemory(
       addMissingThinkingLevel(
         addMissingBrowserLanguage(addMissingRunLimits(addMissingTemperatureAndStepLimits(config))),
       ),
@@ -476,11 +466,18 @@ export function secretAliasesOf(config: Record<string, unknown> | null | undefin
 }
 
 /**
- * A coding agent needs a harness: every create and update is refused without one. A stored
- * coding agent without one still validates; it is not ready, and its coding runs fail at start.
+ * A coding agent needs a harness: every create and update is refused without one, and an update
+ * cannot switch a coding agent's coding off. A stored coding agent without one still validates;
+ * it is not ready, and its coding runs fail at start.
  */
-export function assertCodingHarness(config: AgentConfig): void {
-  if (config.coding && config.harness === null) {
+export function assertCodingAgent(config: AgentConfig, previous?: Record<string, unknown>): void {
+  if (previous?.coding === true && !config.coding) {
+    throw new AgentValidationError("coding cannot be switched off on a coding agent");
+  }
+  if (!config.coding) {
+    return;
+  }
+  if (config.harness === null) {
     throw new AgentValidationError(`coding agents need a harness: ${HARNESSES.join(", ")}`);
   }
 }
@@ -512,7 +509,6 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
     ),
     max_scripts: requirePositiveInteger(filled.max_scripts, "max_scripts"),
     max_workspace_mib: requirePositiveInteger(filled.max_workspace_mib, "max_workspace_mib"),
-    cli: requireBooleanField(filled.cli, "cli"),
     browser,
     browser_language: validateBrowserLanguage(filled.browser_language),
     coding,

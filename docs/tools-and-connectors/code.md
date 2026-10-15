@@ -389,9 +389,7 @@ No credential is an error naming the fix: the secret to grant, with
 the variable it is read as when an alias names another secret
 (`grant the secret TEAM_TOKEN (read as CLAUDE_CODE_OAUTH_TOKEN) to
 the agent`), or the login to run in the CLI tab. At a generation's
-start it is the run error `harness.credential`. An agent with `cli`
-off has no CLI tab, and only the secret is offered: Codex, which has
-no secret, cannot run for it.
+start it is the run error `harness.credential`.
 
 A CLI missing from the image is an error naming it and the fix:
 rebuild the image for Codex, or build it with `HARNESSES` naming the

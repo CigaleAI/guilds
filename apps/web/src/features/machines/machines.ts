@@ -24,15 +24,29 @@ export const customMachineBounds = {
 /** The disk cap a new machine starts with, in MiB. */
 export const defaultMachineMaxWorkspaceMib = 10240;
 
+/** A machine's CPUs and memory. */
+export type MachineSize = { cpu: number; memory_mib: number };
+
 /**
- * The planned memory of one agent working, by what it runs, as the server weighs it. Only what an
- * agent being placed adds is computed here; a machine's own plan is the server's `planned_mib`.
+ * Machine sizing, as the server rules it (docs/concepts/guilds-and-agents.md#machine-sizing): the
+ * smallest machine an agent runs on, by what it has on. An agent's minimum is the largest of these,
+ * CPUs and memory each, not their sum. A machine below it refuses the agent.
  */
-export const capacityWeightsMib = {
-  base: 100,
-  browser: 500,
-  coding: 1536,
-} as const;
+export const agentMinimums = {
+  base: { cpu: 0.5, memory_mib: 256 },
+  browser: { cpu: 1, memory_mib: 2048 },
+  coding: { cpu: 2, memory_mib: 4096 },
+} as const satisfies Record<string, MachineSize>;
+
+/**
+ * How far a machine's agents may oversubscribe it before placement warns, as the server rules it:
+ * the sum of their minimums against these multiples of its CPUs and memory. Few agents work at
+ * once; memory gets the lower factor because running out of it kills processes.
+ */
+export const overcommit = { cpu: 5, memory: 3 } as const;
+
+/** What an agent has on that sets its minimum. */
+export type AgentNeeds = { browser: boolean; coding: boolean };
 
 /** The server's rule for a machine's name. */
 export const machineNamePattern = /^[a-z][a-z0-9-]{0,62}$/;
@@ -51,18 +65,35 @@ export function canManageMachines(role: OrgRole): boolean {
   return role === "owner" || role === "admin";
 }
 
-/** Whether agents with coding on may sit on a machine of this tier. */
-export function machineAllowsCoding(box: MachineBox): boolean {
-  return box !== "standard";
+/** The smallest machine an agent runs on: the largest of the minimums of what it has on. */
+export function agentMinimum(needs: AgentNeeds): MachineSize {
+  const parts: MachineSize[] = [
+    agentMinimums.base,
+    ...(needs.browser ? [agentMinimums.browser] : []),
+    ...(needs.coding ? [agentMinimums.coding] : []),
+  ];
+  return {
+    cpu: Math.max(...parts.map((part) => part.cpu)),
+    memory_mib: Math.max(...parts.map((part) => part.memory_mib)),
+  };
 }
 
-/** The memory one agent plans to use when it works: the base, plus its browser and coding. */
-export function agentPlannedMib(flags: { browser: boolean; coding: boolean }): number {
-  return (
-    capacityWeightsMib.base +
-    (flags.browser ? capacityWeightsMib.browser : 0) +
-    (flags.coding ? capacityWeightsMib.coding : 0)
-  );
+/** The smallest machine every one of these agents runs on. */
+export function agentsMinimum(agents: readonly AgentNeeds[]): MachineSize {
+  return agentMinimum({
+    browser: agents.some((agent) => agent.browser),
+    coding: agents.some((agent) => agent.coding),
+  });
+}
+
+/** Whether a machine of this size meets a minimum, CPUs and memory both. */
+export function sizeMeets(size: MachineSize, minimum: MachineSize): boolean {
+  return size.cpu >= minimum.cpu && size.memory_mib >= minimum.memory_mib;
+}
+
+/** The planned load a machine takes before placement warns: its size times `overcommit`. */
+export function machineCapacity(size: MachineSize): MachineSize {
+  return { cpu: size.cpu * overcommit.cpu, memory_mib: size.memory_mib * overcommit.memory };
 }
 
 /** Every agent on a machine, those in guilds the viewer cannot see included. */
@@ -78,9 +109,17 @@ export function formatMib(mib: number): string {
 }
 
 /** A machine's size in a line: "2 CPU · 4 GiB". */
-export function machineSizeLabel(machine: { cpu: number; memory_mib: number }): string {
+export function machineSizeLabel(machine: MachineSize): string {
   return `${machine.cpu} CPU · ${formatMib(machine.memory_mib)}`;
 }
+
+/** The sizing rules in a sentence, for every place that shows a machine's planned load. */
+export const sizingNote =
+  `Each agent counts its minimum: ${machineSizeLabel(agentMinimums.base)}, ` +
+  `${machineSizeLabel(agentMinimums.browser)} with a browser, ` +
+  `${machineSizeLabel(agentMinimums.coding)} with coding. A machine takes up to ` +
+  `${overcommit.cpu}× its CPUs and ${overcommit.memory}× its memory in minimums before it warns, ` +
+  `since few agents work at once.`;
 
 /**
  * The machine an agent goes on: the one chosen, else the organisation's only one. Undefined while
@@ -97,26 +136,96 @@ export function chosenMachine<T extends { id: string }>(
   );
 }
 
+/** A machine's planned load on one resource: what is there, what a placement adds, and the capacity. */
+export type LoadShare = { planned: number; adds: number; capacity: number; over: boolean };
+
+/** What adding `adds` to a machine's planned load does, CPUs and memory each. */
+export function loadShares(
+  machine: MachineSize & { planned_cpu: number; planned_mib: number },
+  adds: MachineSize = { cpu: 0, memory_mib: 0 },
+): { cpu: LoadShare; memory: LoadShare } {
+  const capacity = machineCapacity(machine);
+  const share = (planned: number, add: number, cap: number): LoadShare => ({
+    planned,
+    adds: add,
+    capacity: cap,
+    over: planned + add > cap,
+  });
+  return {
+    cpu: share(machine.planned_cpu, adds.cpu, capacity.cpu),
+    memory: share(machine.planned_mib, adds.memory_mib, capacity.memory_mib),
+  };
+}
+
 /**
- * What an agent placed on a machine does to its budget: the memory the other agents there plan to
- * use, what this agent adds, and whether the sum passes the machine's memory. An agent already on
- * the machine counts once, with the flags it is given here.
+ * What an agent placed on a machine does to it: whether the machine meets the agent's minimum, and
+ * the machine's planned load without the agent with what it adds. An agent already on the machine
+ * counts once, with the needs it is given here.
  */
 export function placementBudget(
-  machine: Pick<Machine, "memory_mib" | "planned_mib" | "agents">,
-  agent: { id?: string | undefined; browser: boolean; coding: boolean },
-): { othersMib: number; addsMib: number; totalMib: number; memoryMib: number; over: boolean } {
+  machine: Pick<Machine, "cpu" | "memory_mib" | "planned_cpu" | "planned_mib" | "agents">,
+  agent: { id?: string | undefined } & AgentNeeds,
+): { fits: boolean; minimum: MachineSize; planned: MachineSize; adds: MachineSize } {
   const current = machine.agents.find((item) => item.id === agent.id);
-  const othersMib = machine.planned_mib - (current ? agentPlannedMib(current) : 0);
-  const addsMib = agentPlannedMib(agent);
-  const totalMib = othersMib + addsMib;
+  const own = current ? agentMinimum(current) : { cpu: 0, memory_mib: 0 };
+  const minimum = agentMinimum(agent);
   return {
-    othersMib,
-    addsMib,
-    totalMib,
-    memoryMib: machine.memory_mib,
-    over: totalMib > machine.memory_mib,
+    fits: sizeMeets(machine, minimum),
+    minimum,
+    planned: {
+      cpu: machine.planned_cpu - own.cpu,
+      memory_mib: machine.planned_mib - own.memory_mib,
+    },
+    adds: minimum,
   };
+}
+
+/** The smallest disk cap a new agent is seeded with from a machine's unreserved disk. */
+export const minSeededDiskMib = 1024;
+
+/**
+ * What an agent's own disk cap does to its machine's disk: the free disk as last measured (null
+ * before a measure), what the other agents' caps reserve, the room they leave unreserved, and
+ * whether this cap passes it, so the machine's cap could stop the agent before its own does. An
+ * agent already on the machine gives its saved cap as `ownMib`, which the reserve then leaves out.
+ */
+export function diskBudget(
+  machine: Pick<Machine, "max_workspace_mib" | "workspace_mib" | "allocated_workspace_mib">,
+  capMib: number,
+  ownMib = 0,
+): {
+  freeMib: number | null;
+  othersMib: number;
+  unreservedMib: number;
+  addsMib: number;
+  machineMib: number;
+  over: boolean;
+} {
+  const machineMib = machine.max_workspace_mib;
+  const othersMib = Math.max(0, machine.allocated_workspace_mib - ownMib);
+  const unreservedMib = Math.max(0, machineMib - othersMib);
+  return {
+    freeMib:
+      machine.workspace_mib === null ? null : Math.max(0, machineMib - machine.workspace_mib),
+    othersMib,
+    unreservedMib,
+    addsMib: capMib,
+    machineMib,
+    over: capMib > unreservedMib,
+  };
+}
+
+/**
+ * The disk cap a new agent starts with on a machine: the default, or the machine's unreserved disk
+ * when that is smaller and still at least `minSeededDiskMib`. Below that, the default stands and
+ * the budget warns.
+ */
+export function seededDiskMib(
+  machine: Pick<Machine, "max_workspace_mib" | "allocated_workspace_mib">,
+  defaultMib: number,
+): number {
+  const unreserved = machine.max_workspace_mib - machine.allocated_workspace_mib;
+  return unreserved >= minSeededDiskMib ? Math.min(defaultMib, unreserved) : defaultMib;
 }
 
 /** A machine as its create or edit form holds it: numbers stay text while typed. */

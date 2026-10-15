@@ -231,7 +231,7 @@ Model settings include:
 - `projection_policy_version`
 - `thinking_level`
 
-Flags: `browser`, `coding`, `cli`, `scripting`, and `memory`. Beside
+Flags: `browser`, `coding`, `scripting`, and `memory`. Beside
 them, `harness` is a coding agent's harness, or null,
 `harness_model` the model that harness runs, or null for its
 subscription's default

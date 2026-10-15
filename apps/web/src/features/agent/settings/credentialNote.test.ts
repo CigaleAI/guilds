@@ -12,7 +12,7 @@ const claude: HarnessCredential = {
   secret_source: "CLAUDE_CODE_OAUTH_TOKEN",
   secret_granted: false,
   secret_shadowed: false,
-  login: null,
+  login: "claude",
   login_seen_at: null,
   login_account: null,
 };
@@ -24,7 +24,7 @@ const cursor: HarnessCredential = {
   secret_source: null,
   secret_granted: false,
   secret_shadowed: false,
-  login: null,
+  login: "cursor-agent login",
   login_seen_at: null,
   login_account: null,
 };
@@ -35,7 +35,6 @@ function check(entry: Partial<HarnessCredential>, patch: Partial<CredentialCheck
     credentials: [credential],
     error: null,
     harness: credential.harness,
-    cli: false,
     ...patch,
   };
 }
@@ -77,44 +76,27 @@ test("names the granted secret the harness runs on", () => {
   );
 });
 
-test("says a harness without a secret needs the CLI on to log in", () => {
-  assert.equal(
-    read(check(cursor)),
-    "Cursor runs only on a login, and logging in needs the CLI: turn on CLI, then log in from its tab.",
-  );
-});
-
-test("offers to pick a token or turn on the CLI when the harness has no credential", () => {
+test("offers to pick a token or log in from the CLI tab when the harness has no credential", () => {
   assert.equal(
     read(check({})),
-    "Claude Code has no credential yet. To set one up, choose a subscription token above, or turn on CLI, then log in from its tab.",
+    "Claude Code has no credential yet. To set one up, choose a subscription token above, or log in from the [cli] tab with claude.",
   );
 });
 
-test("says to save with the CLI on before the CLI tab offers a login", () => {
+test("gives a harness without a secret the login command to run in the CLI tab", () => {
   assert.equal(
-    read(check(cursor, { cli: true })),
-    "Cursor has no credential yet. To set one up, save with CLI on, then log in from its tab.",
-  );
-});
-
-test("gives the login command to run in the CLI tab", () => {
-  assert.equal(
-    read(check({ ...cursor, login: "cursor-agent login" }, { cli: true })),
+    read(check(cursor)),
     "Cursor has no credential yet. To set one up, log in from the [cli] tab with cursor-agent login.",
   );
 });
 
 test("says when a login was last seen and how to log in again if it lapses", () => {
   assert.equal(
-    read(check({ login: "claude", login_seen_at: "2026-05-01T10:00:00Z" }, { cli: true })),
+    read(check({ login_seen_at: "2026-05-01T10:00:00Z" })),
     "Runs on its login, last seen 2h ago. If it lapses, choose a subscription token above, or log in again from the [cli] tab with claude.",
   );
-});
-
-test("keeps a seen login's note for a harness without a secret while the CLI is off", () => {
   assert.equal(
     read(check({ ...cursor, login_seen_at: "2026-05-01T11:30:00Z" })),
-    "Runs on its login, last seen 30m ago. If it lapses, turn on CLI, then log in from its tab.",
+    "Runs on its login, last seen 30m ago. If it lapses, log in again from the [cli] tab with cursor-agent login.",
   );
 });

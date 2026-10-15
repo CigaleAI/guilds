@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { visibleGuildIds } from "../machines/access.js";
 import {
+  allocatedWorkspaceMib,
   machineSize,
   machineSizeChanged,
-  plannedMib,
+  plannedLoad,
   validateMachineInput,
   type MachineWithAgents,
 } from "../machines/index.js";
@@ -15,13 +16,15 @@ import { currentUser } from "./identity.js";
 import { bodyOf, param } from "./request.js";
 
 /**
- * A machine as the operator app shows it: its size, the agents on it, their planned memory, and
- * its disk. Agents of guilds the viewer cannot see count toward the planned memory and
- * `hidden_agents`, with no name or guild.
+ * A machine as the operator app shows it: its size, the agents on it, their planned load (the sum
+ * of their minimums), and its disk with what its agents' own caps reserve of it. Agents of guilds
+ * the viewer cannot see count toward the planned load, the reserved disk, and `hidden_agents`,
+ * with no name or guild.
  */
 export function machineItem(machine: MachineWithAgents, visibleGuildIds: ReadonlySet<string>): Record<string, unknown> {
   const size = machineSize(machine);
   const visible = machine.agents.filter((agent) => visibleGuildIds.has(agent.guild_id));
+  const planned = plannedLoad(machine.agents);
   return {
     id: machine.id,
     name: machine.name,
@@ -30,8 +33,10 @@ export function machineItem(machine: MachineWithAgents, visibleGuildIds: Readonl
     memory_mib: size.memory_mib,
     max_workspace_mib: machine.max_workspace_mib,
     workspace_mib: machine.workspace_mib,
+    allocated_workspace_mib: allocatedWorkspaceMib(machine.agents),
     harnesses: machine.harnesses,
-    planned_mib: plannedMib(machine.agents),
+    planned_cpu: planned.cpu,
+    planned_mib: planned.memory_mib,
     agents: visible.map((agent) => ({
       id: agent.id,
       name: agent.name,

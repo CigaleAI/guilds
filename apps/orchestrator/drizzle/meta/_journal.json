@@ -43,6 +43,13 @@
       "when": 1791896400000,
       "tag": "0006_machine_harnesses",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791900000000,
+      "tag": "0007_native_cli",
+      "breakpoints": true
     }
   ]
 }

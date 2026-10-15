@@ -203,7 +203,7 @@ async function assertCredential(ctx: ToolContext, harness: Harness, meta: Record
     await ctx.harness_login_lost?.(harness);
     throw new HarnessSetupError(
       "harness.credential",
-      `${HARNESS_INFO[harness].label} has no credential: ${credentialFix(harness, { cli: ctx.cli, aliases: ctx.secret_aliases })}`,
+      `${HARNESS_INFO[harness].label} has no credential: ${credentialFix(harness, ctx.secret_aliases)}`,
     );
   }
 }

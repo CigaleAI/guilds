@@ -3,13 +3,18 @@ import { TriangleAlert } from "lucide-react";
 import { Banner, IconButton } from "@guildsrun/ui";
 import { useAgentHarness } from "../../api/queries";
 import { codingProblems, codingProblemsSentence, codingProblemsText } from "./harness";
+import { problemSection } from "./settings/sections";
 
-/** A warning in the agent's header while its coding runs would fail at start; it leads to Settings. */
+/**
+ * A warning in the agent's header while its coding runs would fail at start; it opens the Settings
+ * section where the first problem is fixed.
+ */
 export function CodingNotReadyButton({ guildId, agentId }: { guildId: string; agentId: string }) {
   const navigate = useNavigate();
   const status = useAgentHarness(agentId);
   const problems = status.data ? codingProblems(status.data) : [];
-  if (!problems.length) return null;
+  const [first] = problems;
+  if (!first) return null;
   const text = codingProblemsText(problems);
   return (
     <IconButton
@@ -22,6 +27,7 @@ export function CodingNotReadyButton({ guildId, agentId }: { guildId: string; ag
         void navigate({
           to: "/guilds/$guildId/agents/$agentId/settings",
           params: { guildId, agentId },
+          search: { section: problemSection(first) },
         })
       }
     />

@@ -15,11 +15,13 @@ const migrationsFolder = path.join(orchestratorRoot(import.meta.url), "drizzle")
 const freshDb = uniqueDbName("agent_platform_migrate_fresh");
 const editionDb = uniqueDbName("agent_platform_migrate_edition");
 const driftDb = uniqueDbName("agent_platform_migrate_drift");
+const cliDb = uniqueDbName("agent_platform_migrate_cli");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
   await dropIsolatedDatabase(editionDb);
   await dropIsolatedDatabase(driftDb);
+  await dropIsolatedDatabase(cliDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -109,5 +111,41 @@ test("an edition's migrations run after core's and before any seed", { timeout: 
     assert.deepEqual(order, ["migrate: core tables present, 0 seeded rows", "seed: own table present, core seeded true"]);
   } finally {
     await database.close();
+  }
+});
+
+test("the native CLI migration drops the cli flag from recipe roles, keeping their order", async () => {
+  const pool = await createPool(await createIsolatedDatabase(cliDb));
+  try {
+    const folder = chainWithoutLast();
+    assert.equal(committedMigrations(migrationsFolder).at(-1)?.tag, "0007_native_cli");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    const body = {
+      format: "guilds.recipe",
+      roles: [
+        { role: "lead", config: { model: "m", cli: false, browser: true } },
+        { role: "coder", config: { coding: true, cli: true } },
+        { role: "bare" },
+      ],
+    };
+    await pool.query(
+      `INSERT INTO public.recipes (id, org_id, name, body, source_kind, created_at, updated_at)
+       VALUES ('rec_1', 'org_1', 'r', $1, 'file', $2, $2), ('rec_2', 'org_1', 'r2', '{"roles": []}', 'file', $2, $2)`,
+      [JSON.stringify(body), now],
+    );
+
+    await applyMigrations(pool);
+    const migrated = await pool.query("SELECT id, body FROM public.recipes ORDER BY id");
+    assert.deepEqual(migrated.rows[0].body.roles, [
+      { role: "lead", config: { model: "m", browser: true } },
+      { role: "coder", config: { coding: true } },
+      { role: "bare" },
+    ]);
+    assert.equal(migrated.rows[0].body.format, "guilds.recipe");
+    assert.deepEqual(migrated.rows[1].body, { roles: [] });
+  } finally {
+    await pool.end();
   }
 });

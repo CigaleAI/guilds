@@ -11,6 +11,7 @@ import {
 import type { Secret, SecretAccessChoice } from "../../api/types";
 import { relativeTime } from "../../app/format";
 import { useIdentity } from "../../app/identity";
+import { SecretValueField } from "./SecretValueField";
 import {
   Button,
   IconButton,
@@ -322,14 +323,12 @@ export function AddSecretDialog({
               onChange={(event) => setName(event.currentTarget.value)}
               {...(invalidName ? { error: invalidName } : {})}
             />
-            <TextField
+            <SecretValueField
               tone="surface"
               label="Value"
-              type="password"
               required
-              autoComplete="off"
               value={value}
-              onChange={(event) => setValue(event.currentTarget.value)}
+              onValueChange={setValue}
             />
             <TextField
               tone="surface"
@@ -420,14 +419,12 @@ function EditSecretDialog({ secret, onClose }: { secret: Secret; onClose: () => 
               value={description}
               onChange={(event) => setDescription(event.currentTarget.value)}
             />
-            <TextField
+            <SecretValueField
               tone="surface"
               label="New value"
-              type="password"
-              autoComplete="off"
               hint="Leave empty to keep the current value."
               value={value}
-              onChange={(event) => setValue(event.currentTarget.value)}
+              onValueChange={setValue}
             />
             {update.isError ? (
               <Banner tone="error" title="Couldn't save the secret">

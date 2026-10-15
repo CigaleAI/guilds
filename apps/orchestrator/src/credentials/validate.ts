@@ -70,11 +70,16 @@ export function validateSecretDescription(value: unknown): string {
   return text;
 }
 
+/**
+ * A secret's stored payload: the value without the whitespace around it, which a paste picks up
+ * and no token carries. Whitespace inside the value is kept.
+ */
 export function secretPayload(value: unknown): { value: string } {
-  if (typeof value !== "string" || value === "") {
-    throw new CredentialError("value must be a non-empty string");
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) {
+    throw new CredentialError("value must contain non-whitespace text");
   }
-  return { value };
+  return { value: text };
 }
 
 export function secretValue(payload: Record<string, unknown>): string {

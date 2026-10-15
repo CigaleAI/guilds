@@ -9,7 +9,7 @@ import { isHarness, type Harness } from "../coding/harnesses.js";
  * organisation, in a slot that sets its display and ports.
  */
 
-/** A machine's tier: `standard` hosts agents without coding, `code` and `custom` any agent. */
+/** A machine's tier: `standard` and `code` have fixed sizes, `custom` its own. */
 export const MACHINE_BOXES = ["standard", "code", "custom"] as const;
 export type MachineBox = (typeof MACHINE_BOXES)[number];
 
@@ -36,12 +36,28 @@ export const DEFAULT_MACHINE_MAX_WORKSPACE_MIB = 10240;
 /** The most agents one machine holds, whatever the organisation's policy says: slots 0 to 31. */
 export const MAX_AGENTS_PER_MACHINE = 32;
 
-/** The planned memory of one agent working, by what it runs; the budget sums these per machine. */
-export const CAPACITY_WEIGHTS_MIB = {
-  base: 100,
-  browser: 500,
-  coding: 1536,
-} as const;
+/**
+ * Machine sizing (docs/concepts/guilds-and-agents.md#machine-sizing). The smallest machine an
+ * agent runs on, by what it has on: every agent has `base`, and `browser` and `coding` raise it.
+ * An agent's minimum is the largest of these, CPUs and memory each, not their sum: Chrome and the
+ * coding toolchain only run while the agent works. Placement refuses a machine below the minimum.
+ */
+export const AGENT_MINIMUMS = {
+  base: { cpu: 0.5, memory_mib: 256 },
+  browser: { cpu: 1, memory_mib: 2048 },
+  coding: { cpu: 2, memory_mib: 4096 },
+} as const satisfies Record<string, MachineSize>;
+
+/**
+ * How far a machine's agents may oversubscribe it before placement warns: the sum of their
+ * minimums against these multiples of its CPUs and memory. Few agents work at once, so a machine
+ * takes more than it could run together. Memory gets the lower factor: too little CPU slows agents
+ * down, too little memory gets their processes killed. Past either, placement warns; it never refuses.
+ */
+export const OVERCOMMIT = { cpu: 5, memory: 3 } as const;
+
+/** What an agent has on that sets its minimum. */
+export type AgentNeeds = { browser: boolean; coding: boolean };
 
 /** A refused machine request or placement, with the HTTP status it answers with. */
 export class MachineError extends Error {
@@ -76,17 +92,14 @@ export type MachineAgent = {
   slot: number;
   browser: boolean;
   coding: boolean;
+  /** The agent's own disk cap in MiB. */
+  max_workspace_mib: number;
 };
 
 export type MachineWithAgents = MachineRow & { agents: MachineAgent[] };
 
 export function isMachineBox(value: unknown): value is MachineBox {
   return typeof value === "string" && (MACHINE_BOXES as readonly string[]).includes(value);
-}
-
-/** Whether agents with `coding` on may sit on a machine of this tier. */
-export function machineAllowsCoding(box: MachineBox): boolean {
-  return box !== "standard";
 }
 
 /** The CPUs and memory a machine runs with: its tier's, or a custom machine's own. */
@@ -104,18 +117,63 @@ export function machineSizeChanged(before: MachineRow, after: MachineRow): boole
   return before.box !== after.box || from.cpu !== to.cpu || from.memory_mib !== to.memory_mib;
 }
 
-/** One agent's planned memory: the base, plus Chrome with `browser`, plus toolchains with `coding`. */
-export function agentPlannedMib(flags: { browser: boolean; coding: boolean }): number {
-  return (
-    CAPACITY_WEIGHTS_MIB.base
-    + (flags.browser ? CAPACITY_WEIGHTS_MIB.browser : 0)
-    + (flags.coding ? CAPACITY_WEIGHTS_MIB.coding : 0)
+/** The smallest machine an agent runs on: the largest of the minimums of what it has on. */
+export function agentMinimum(needs: AgentNeeds): MachineSize {
+  const parts: MachineSize[] = [
+    AGENT_MINIMUMS.base,
+    ...(needs.browser ? [AGENT_MINIMUMS.browser] : []),
+    ...(needs.coding ? [AGENT_MINIMUMS.coding] : []),
+  ];
+  return {
+    cpu: Math.max(...parts.map((part) => part.cpu)),
+    memory_mib: Math.max(...parts.map((part) => part.memory_mib)),
+  };
+}
+
+/** The smallest machine every one of these agents runs on. */
+export function agentsMinimum(agents: readonly AgentNeeds[]): MachineSize {
+  return agentMinimum({
+    browser: agents.some((agent) => agent.browser),
+    coding: agents.some((agent) => agent.coding),
+  });
+}
+
+/** Whether a machine of this size meets a minimum, CPUs and memory both. */
+export function sizeMeets(size: MachineSize, minimum: MachineSize): boolean {
+  return size.cpu >= minimum.cpu && size.memory_mib >= minimum.memory_mib;
+}
+
+/** A size in words: "2 CPUs and 4 GiB". */
+export function sizeLabel(size: MachineSize): string {
+  const gib = size.memory_mib / 1024;
+  const memory = size.memory_mib < 1024 ? `${size.memory_mib} MiB` : `${Number.isInteger(gib) ? gib : gib.toFixed(1)} GiB`;
+  return `${size.cpu} ${size.cpu === 1 ? "CPU" : "CPUs"} and ${memory}`;
+}
+
+/** Why an agent cannot go on a machine below its minimum. */
+export function belowMinimumMessage(what: string, needs: AgentNeeds, machine: Pick<MachineRow, "name" | "box" | "cpu" | "memory_mib">): string {
+  return `${what} needs a machine with at least ${sizeLabel(agentMinimum(needs))}; ${machine.name} has ${sizeLabel(machineSize(machine))}`;
+}
+
+/** A machine's planned load: the sum of its agents' minimums. */
+export function plannedLoad(agents: readonly AgentNeeds[]): MachineSize {
+  return agents.reduce(
+    (sum, agent) => {
+      const minimum = agentMinimum(agent);
+      return { cpu: sum.cpu + minimum.cpu, memory_mib: sum.memory_mib + minimum.memory_mib };
+    },
+    { cpu: 0, memory_mib: 0 },
   );
 }
 
-/** A machine's planned memory: every agent on it working at once. */
-export function plannedMib(agents: Array<{ browser: boolean; coding: boolean }>): number {
-  return agents.reduce((sum, agent) => sum + agentPlannedMib(agent), 0);
+/** The planned load a machine takes before placement warns: its size times `OVERCOMMIT`. */
+export function machineCapacity(size: MachineSize): MachineSize {
+  return { cpu: size.cpu * OVERCOMMIT.cpu, memory_mib: size.memory_mib * OVERCOMMIT.memory };
+}
+
+/** The disk a machine's agents reserve: the sum of their own disk caps. */
+export function allocatedWorkspaceMib(agents: Array<{ max_workspace_mib: number }>): number {
+  return agents.reduce((sum, agent) => sum + agent.max_workspace_mib, 0);
 }
 
 /** What an agent's slot sets inside its machine. */

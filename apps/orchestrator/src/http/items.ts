@@ -1,7 +1,7 @@
 import {
   addMissingBrowserLanguage,
   addMissingFlags,
-  addMissingCliScriptingAndMemory,
+  addMissingScriptingAndMemory,
   DEFAULT_KEEP_TOOL_RESULT_GENERATIONS,
   DEFAULT_MAX_SCRIPTS,
   DEFAULT_MAX_WORKSPACE_MIB,
@@ -28,7 +28,7 @@ function agentConfig(row: Record<string, unknown>): Record<string, unknown> {
   const value = jsonObj(row.config);
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const config = addMissingFlags(
-      addMissingBrowserLanguage(addMissingCliScriptingAndMemory(value as Record<string, unknown>)),
+      addMissingBrowserLanguage(addMissingScriptingAndMemory(value as Record<string, unknown>)),
     );
     return {
       ...config,

@@ -6,7 +6,6 @@ import {
   DEFAULT_MAX_TOOL_CALLS,
   DEFAULT_MAX_WORKSPACE_MIB,
   browserLanguageOf,
-  cliOf,
   keepToolResultGenerationsOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
@@ -119,6 +118,7 @@ import {
   machineDirectory,
   machineFromRow,
   slotPorts,
+  type AgentNeeds,
 } from "../machines/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
@@ -647,7 +647,6 @@ export function configSnapshot(
     max_input_tokens: positiveInt(config.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS),
     keep_tool_result_generations: keepToolResultGenerationsOf(config),
     projection_policy_version: RUN_PROJECTION_POLICY_VERSION,
-    cli: config.cli !== false,
     browser: Boolean(config.browser),
     browser_language: browserLanguageOf(config),
     coding: Boolean(config.coding),
@@ -1100,7 +1099,7 @@ export type GenerationDb = AccessDatabase &
     moveAgent?(
       agentId: string,
       machineId: string,
-      options?: { maxAgentsPerMachine?: number | null; coding?: boolean },
+      options?: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds },
     ): Promise<{ from: { machineId: string; slot: number }; to: { machineId: string; slot: number } } | null>;
     listGuildRepositories?(guildId: string): Promise<Array<Record<string, unknown>>>;
     getMcpConnectionForOwner?(
@@ -1898,10 +1897,6 @@ export class GenerationLoop implements GroupRunner {
   /** Wakes the agent's machine and starts the agent's terminal in its home. */
   async ensureCli(agentId: string): Promise<unknown> {
     const agent = await this._runnable_agent(agentId);
-    const config = this._valid_config(agent);
-    if (!config.cli) {
-      throw new RunRequestError(409, "cli is not enabled");
-    }
     const sandbox = await this.wakeSandbox(agentId);
     this._touched_machine.set(agentId, String(agent.machine_id));
     await this.startCliOn(sandbox, agent);
@@ -2201,7 +2196,7 @@ export class GenerationLoop implements GroupRunner {
   async moveAgent(
     agentId: string,
     machineId: string,
-    options: { maxAgentsPerMachine?: number | null; coding?: boolean } = {},
+    options: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds } = {},
   ): Promise<void> {
     const agent = await this.db.getAgent(agentId);
     if (agent === null) {
@@ -3482,7 +3477,6 @@ export class GenerationLoop implements GroupRunner {
       harness: harnessOf(snapshot),
       harness_model: harnessModelOf(snapshot),
       secret_aliases: secretAliasesOf(snapshot),
-      cli: cliOf(liveConfig),
       // `secrets` holds the run's values and, once minted, its GitHub tokens.
       publish_progress: async (toolCallId, update) => {
         await this.publish(runId, "tool.progress", {

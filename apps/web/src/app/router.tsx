@@ -390,6 +390,7 @@ const agentUsageRoute = createRoute({
   ),
 });
 
+/** Settings, one section at a time; `section` names the one open (Identity without it). */
 const agentSettingsRoute = createRoute({
   getParentRoute: () => agentRoute,
   path: "settings",
@@ -397,6 +398,8 @@ const agentSettingsRoute = createRoute({
     () => import("../features/agent/settings/AgentSettings"),
     "AgentSettings",
   ),
+  validateSearch: (search: Record<string, unknown>): { section?: string } =>
+    typeof search.section === "string" && search.section ? { section: search.section } : {},
 });
 
 const agentHistoryRoute = createRoute({

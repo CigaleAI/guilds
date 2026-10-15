@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
+import { Plus } from "lucide-react";
 import { useState } from "react";
-import { Banner, Button, Select, toast } from "@guildsrun/ui";
+import { Banner, Button, cn, Icon, Select, StatusBadge, toast } from "@guildsrun/ui";
 import { useAgent, useAgentHarness, useCheckHarness, useSecrets } from "../../../api/queries";
 import type { Harness, HarnessCredential, Secret } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
@@ -15,7 +16,7 @@ import {
   withTokenAlias,
 } from "../harness";
 import type { SettingsAgent } from "./configForm";
-import { harnessCredentialNote, type AgentTab, type NotePart } from "./credentialNote";
+import { harnessCredentialNote, type AgentTab, type CredentialNote, type NotePart } from "./credentialNote";
 
 const tabLinks = {
   secrets: { to: "/guilds/$guildId/agents/$agentId/secrets", label: "Secrets" },
@@ -60,8 +61,9 @@ function AddTokenButton({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        Add a token
+      <Button size="xl" variant="outline" className="gap-1.5" onClick={() => setOpen(true)}>
+        <Icon icon={Plus} size={16} />
+        Add token
       </Button>
       {open ? (
         <AddSecretDialog
@@ -88,13 +90,12 @@ function TokenPicker(choice: TokenChoice) {
   const chosen = aliases[variable] ?? NO_TOKEN_ALIAS;
   const shadowed = chosen !== NO_TOKEN_ALIAS && secrets.some((secret) => secret.name === variable);
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1.5">
       <div className="flex items-end gap-2">
         <div className="min-w-0 flex-1">
           <Select
             tone="surface"
             label="Subscription token"
-            hint={`The secret read as ${variable}. Your own token keeps the work on your subscription.`}
             value={chosen}
             onValueChange={(value) => onAliasesChange(withTokenAlias(aliases, variable, value))}
             options={tokenOptions(variable, secrets)}
@@ -103,7 +104,7 @@ function TokenPicker(choice: TokenChoice) {
         <AddTokenButton {...choice} />
       </div>
       {shadowed ? (
-        <p className="text-sm text-muted">
+        <p className="text-xs text-muted">
           Replaces the <code className="font-mono">{variable}</code> that also reaches this agent.
         </p>
       ) : null}
@@ -147,30 +148,53 @@ function CheckLogin({ agent, harness }: { agent: SettingsAgent; harness: Harness
   );
 }
 
-/** The guild repositories code tasks work in; a coding run of a guild without one fails at start. */
-function RepositoriesLine({
+function statusBadgeProps(entry: HarnessCredential | null, muted: boolean) {
+  if (muted) return { status: "warning" as const, label: "Check failed" };
+  if (entry?.secret_granted) return { status: "ok" as const, label: "Active token" };
+  if (entry?.login_seen_at) return { status: "ok" as const, label: "Logged in" };
+  return { status: "warning" as const, label: "Setup needed" };
+}
+
+/** A reassuring status card showing credential status, active secret, and login checks. */
+function CredentialStatusCard({
+  note,
+  entry,
   agent,
-  repositories,
+  harness,
 }: {
+  note: CredentialNote;
+  entry: HarnessCredential | null;
   agent: SettingsAgent;
-  repositories: readonly string[];
+  harness: Harness;
 }) {
-  if (repositories.length) {
-    return <p className="text-sm text-fg-2">Code tasks work in {repositories.join(", ")}.</p>;
-  }
+  const badge = statusBadgeProps(entry, note.muted);
+  const showLoginCheck = Boolean(entry && !entry.secret_granted);
+  const showDetails = !entry?.secret_granted;
+
   return (
-    <p className="text-sm text-t-ochre-fg">
-      This guild has no repositories, so its coding runs fail at start. Add one in the guild&apos;s{" "}
-      <Link
-        to="/guilds/$guildId/settings"
-        params={{ guildId: agent.guildId }}
-        hash="repositories"
-        className="underline"
-      >
-        Repositories
-      </Link>
-      .
-    </p>
+    <div
+      className={cn(
+        "flex rounded-xl border border-line bg-surface/60 p-3",
+        showDetails ? "flex-col gap-2" : "items-center justify-between",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <StatusBadge status={badge.status}>{badge.label}</StatusBadge>
+          <span className="text-xs font-medium text-fg">
+            {badge.status === "ok" ? "Ready for code tasks" : "Authentication required"}
+          </span>
+        </div>
+        {showLoginCheck ? <CheckLogin agent={agent} harness={harness} /> : null}
+      </div>
+      {showDetails ? (
+        <p className="text-xs text-muted leading-relaxed">
+          {note.parts.map((part, index) => (
+            <NotePartView key={index} part={part} agent={agent} />
+          ))}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -201,20 +225,16 @@ function liveEntry(
 /**
  * What the picked harness still needs before the agent's code tasks run: the token its variable
  * reads, with a picker among the secrets reaching the agent; its credential status as
- * `harnessCredentialNote` words it; a check for a login in the agent's home; and the guild's
- * repositories.
+ * `harnessCredentialNote` words it; and a check for a login in the agent's home.
  */
 export function HarnessReadiness({
   agent,
   harness,
-  cli,
   aliases,
   onAliasesChange,
 }: {
   agent: SettingsAgent;
   harness: Harness;
-  /** Whether the form has the CLI on; a login needs it. */
-  cli: boolean;
   aliases: Record<string, string>;
   onAliasesChange: (aliases: Record<string, string>) => void;
 }) {
@@ -226,13 +246,12 @@ export function HarnessReadiness({
       credentials: entry ? [entry] : undefined,
       error: status.isError ? status.error.message : null,
       harness,
-      cli,
     },
     new Date(),
   );
   const variable = harnessSecrets[harness];
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       {variable && secrets.data ? (
         <TokenPicker
           agent={agent}
@@ -244,17 +263,12 @@ export function HarnessReadiness({
         />
       ) : null}
       {note ? (
-        <p className={note.muted ? "text-sm text-muted" : "text-sm text-fg-2"}>
-          {note.parts.map((part, index) => (
-            <NotePartView key={index} part={part} agent={agent} />
-          ))}
-        </p>
-      ) : null}
-      {entry?.login && !entry.secret_granted ? (
-        <CheckLogin agent={agent} harness={harness} />
-      ) : null}
-      {status.data ? (
-        <RepositoriesLine agent={agent} repositories={status.data.repositories} />
+        <CredentialStatusCard
+          note={note}
+          entry={entry}
+          agent={agent}
+          harness={harness}
+        />
       ) : null}
     </div>
   );

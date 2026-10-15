@@ -1,5 +1,12 @@
 import { Banner, cn } from "@guildsrun/ui";
-import { formatMib } from "./machines";
+import {
+  formatMib,
+  loadShares,
+  overcommit,
+  sizingNote,
+  type LoadShare,
+  type MachineSize,
+} from "./machines";
 
 /**
  * A share of a limit as a bar: what is used, then what a placement adds in a lighter fill. Past the
@@ -46,38 +53,106 @@ function percent(part: number, whole: number): string {
   return `${Math.round((part / Math.max(whole, 1)) * 100)}%`;
 }
 
-/**
- * A machine's planned memory against its memory: every agent on it working at once, plus what a
- * placement adds. Over 100% it warns, with what to do next.
- */
-export function MemoryBudget({
-  plannedMib,
-  addsMib = 0,
-  addsLabel,
-  memoryMib,
-  remedy,
+/** A CPU count without float noise: 1.5, 0.75. */
+function formatCpu(cpu: number): string {
+  return String(Number(cpu.toFixed(2)));
+}
+
+/** One resource of a machine's planned load against its capacity, with what the capacity is. */
+function LoadMeter({
+  label,
+  share,
+  format,
+  size,
+  factor,
 }: {
-  plannedMib: number;
-  addsMib?: number;
-  /** Who adds `addsMib`: "this agent", "the recipe's agents". */
-  addsLabel?: string;
-  memoryMib: number;
-  /** What to do when it is over, after the warning. */
-  remedy: string;
+  label: string;
+  share: LoadShare;
+  format: (value: number) => string;
+  size: string;
+  factor: number;
 }) {
-  const total = plannedMib + addsMib;
+  const total = share.planned + share.adds;
   return (
     <div className="flex flex-col gap-1.5">
-      <Meter used={plannedMib} adds={addsMib} max={memoryMib} label="Planned memory" />
+      <Meter
+        used={share.planned}
+        adds={share.adds}
+        max={share.capacity}
+        label={`Planned ${label}`}
+      />
       <p className="text-xs text-muted">
-        {formatMib(total)} of {formatMib(memoryMib)} planned ({percent(total, memoryMib)})
-        {addsMib > 0 && addsLabel ? `, ${formatMib(addsMib)} of it for ${addsLabel}` : ""}. The plan
-        counts every agent working at once.
+        <span className="font-medium text-fg-2">{label}</span> {format(total)} of{" "}
+        {format(share.capacity)} planned ({percent(total, share.capacity)})
+        {share.adds > 0 ? `, ${format(share.adds)} added` : ""}. Capacity is {factor}× its {size}.
       </p>
-      {total > memoryMib ? (
+    </div>
+  );
+}
+
+/**
+ * A machine's planned load against its capacity, CPUs and memory each: the sum of its agents'
+ * minimums, plus what a placement adds, against its size times the overcommit factors. The sizing
+ * rules sit under it; past either capacity it warns, with what to do next.
+ */
+export function LoadBudget({
+  size,
+  planned,
+  adds,
+  addsLabel,
+  remedy,
+  rules = true,
+}: {
+  size: MachineSize;
+  /** The planned load of the agents already on it. */
+  planned: MachineSize;
+  /** What a placement adds. */
+  adds?: MachineSize | undefined;
+  /** Who adds `adds`: "this agent", "the recipe's agents". */
+  addsLabel?: string;
+  /** What to do when it is over, after the warning. */
+  remedy: string;
+  /** Show the sizing rules under the meters; off where the page states them once. */
+  rules?: boolean;
+}) {
+  const shares = loadShares(
+    { ...size, planned_cpu: planned.cpu, planned_mib: planned.memory_mib },
+    adds,
+  );
+  const over = [
+    shares.cpu.over ? "slow down" : null,
+    shares.memory.over ? "run out of memory" : null,
+  ]
+    .filter(Boolean)
+    .join(" and ");
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <LoadMeter
+          label="CPU"
+          share={shares.cpu}
+          format={(value) => `${formatCpu(value)} CPU`}
+          size={`${formatCpu(size.cpu)} CPU`}
+          factor={overcommit.cpu}
+        />
+        <LoadMeter
+          label="Memory"
+          share={shares.memory}
+          format={formatMib}
+          size={formatMib(size.memory_mib)}
+          factor={overcommit.memory}
+        />
+      </div>
+      {rules || (adds && addsLabel) ? (
+        <p className="text-xs text-muted">
+          {adds && addsLabel ? `The added share is ${addsLabel}. ` : ""}
+          {rules ? sizingNote : null}
+        </p>
+      ) : null}
+      {over ? (
         <Banner
           tone="warning"
-          title={`Agents on this machine may run out of memory when they all work at once; ${remedy}.`}
+          title={`Agents on this machine may ${over} when many work at once; ${remedy}.`}
         />
       ) : null}
     </div>
@@ -102,6 +177,52 @@ export function DiskMeter({
           ? `Not measured yet, of ${formatMib(maxMib)}. Disk is measured after a generation.`
           : `${formatMib(usedMib)} of ${formatMib(maxMib)} (${percent(usedMib, maxMib)}). Measured after the last generation.`}
       </p>
+    </div>
+  );
+}
+
+/**
+ * A machine's disk as its agents' own caps reserve it, plus the cap of the agent being placed: the
+ * room left unreserved, and the disk free as last measured. Past the unreserved room it warns.
+ */
+export function DiskBudget({
+  othersMib,
+  addsMib,
+  unreservedMib,
+  machineMib,
+  freeMib,
+}: {
+  othersMib: number;
+  addsMib: number;
+  unreservedMib: number;
+  machineMib: number;
+  /** The machine's cap less its homes as last measured; null before a measure. */
+  freeMib: number | null;
+}) {
+  const total = othersMib + addsMib;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Meter used={othersMib} adds={addsMib} max={machineMib} label="Reserved disk" />
+      <p className="text-xs text-muted">
+        {formatMib(total)} of {formatMib(machineMib)} reserved by agents&apos; disk caps (
+        {percent(total, machineMib)}), {formatMib(addsMib)} of it for this agent.{" "}
+        {unreservedMib > 0
+          ? `Up to ${formatMib(unreservedMib)} is safe: the other agents' caps leave it unreserved.`
+          : "The other agents' caps reserve all of it."}{" "}
+        {freeMib === null
+          ? "Free disk is measured after a generation."
+          : `${formatMib(freeMib)} free now, measured after the last generation.`}
+      </p>
+      {total > machineMib ? (
+        <Banner
+          tone="warning"
+          title={
+            unreservedMib > 0
+              ? `The machine's disk may fill before this agent reaches its own cap; set Max disk to ${formatMib(unreservedMib)} or less, or pick another machine.`
+              : "The machine's disk may fill before this agent reaches its own cap; pick another machine, or raise this machine's disk cap."
+          }
+        />
+      ) : null}
     </div>
   );
 }

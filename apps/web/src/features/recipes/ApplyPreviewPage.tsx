@@ -62,9 +62,16 @@ function blockingReason(checks: {
     [checks.noProvider, "Connect a model provider on Model keys before applying."],
     [checks.missingModel, "Choose a model for each agent."],
     [checks.missingHarness, "Choose a harness for each coding agent."],
+    [
+      checks.preview.machine_id === null && checks.preview.machines.length > 0,
+      "Choose the machine the agents go on.",
+    ],
   ];
   return reasons.find(([applies]) => applies)?.[1] ?? checks.preview.errors[0]?.message ?? null;
 }
+
+/** Findings about how the recipe is written, which the recipe page shows; apply cannot act on them. */
+const authoringFindings: ReadonlySet<string> = new Set(["connection.missing"]);
 
 function choiceOf(connection: PlannedConnection, login: string): ApplyConnectionChoice {
   return {
@@ -130,11 +137,17 @@ export function ApplyPreviewPage() {
     missingHarness,
     preview: data,
   });
-  const plan = planFromRecipe(recipe.data.body, {
+  const recipePlan = planFromRecipe(recipe.data.body, {
     creates,
     connections: planned,
     secrets: creates.secrets.length ? creates.secrets : data.secrets,
   });
+  const plan = {
+    ...recipePlan,
+    agents: recipePlan.agents.map((agent) =>
+      roleHarness(agent.role) ? { ...agent, harness: harnessOf(agent.role) || null } : agent,
+    ),
+  };
   const nameOf = (role: string, fallback: string) => names[role] ?? fallback;
   const loginOf = (connection: PlannedConnection) =>
     logins[connection.server] ?? defaultLogin(connection);
@@ -217,8 +230,9 @@ export function ApplyPreviewPage() {
 
         <PlanView
           plan={plan}
-          findings={data.findings}
+          findings={data.findings.filter((finding) => !authoringFindings.has(finding.code))}
           hideEmpty
+          hideName
           agentExtras={(agent) => (
             <AgentChoices
               name={nameOf(agent.role, agent.name)}

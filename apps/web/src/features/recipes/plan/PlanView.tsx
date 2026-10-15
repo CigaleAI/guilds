@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Bot,
   ChevronDown,
+  Code2,
   Database,
   FileText,
   GitBranch,
@@ -10,7 +11,9 @@ import {
   PenLine,
   Plug,
   Repeat,
+  Server,
   Trash2,
+  TriangleAlert,
   Undo2,
   Wrench,
   type LucideIcon,
@@ -29,11 +32,14 @@ import {
   cn,
   Icon,
   Tag,
+  Tooltip,
 } from "@guildsrun/ui";
 import { connectorLogo } from "../../access/connectorLogo";
+import { sizingNote } from "../../machines/machines";
 import {
   accessSection,
   agentCard,
+  type AgentCapability,
   blockingSummary,
   collectionView,
   connectionCard,
@@ -42,6 +48,7 @@ import {
   handoffChart,
   noteCard,
   planIssues,
+  planMachineMinimum,
   planSections,
   planTally,
   routineView,
@@ -76,6 +83,8 @@ type PlanViewProps = {
   connectionExtras?: ((server: string) => ReactNode) | undefined;
   /** Leaves out sections with nothing in them. */
   hideEmpty?: boolean;
+  /** Leaves the guild's name out of the header, for a page whose own title already names it. */
+  hideName?: boolean;
 };
 
 /** What a plan's cards can do besides showing it. */
@@ -97,12 +106,20 @@ const sectionIcon: Record<PlanSectionId, LucideIcon> = {
  * scripts and operator steps, the connectors, secrets and systems they reach, the collections and
  * notes apply writes, how work passes between agents, and what to set up outside the platform.
  */
-export function PlanView({ plan, findings, catalog, hideEmpty = false, ...hooks }: PlanViewProps) {
+export function PlanView({
+  plan,
+  findings,
+  catalog,
+  hideEmpty = false,
+  hideName = false,
+  ...hooks
+}: PlanViewProps) {
   const prefix = useId();
   const hero = guildHero(plan);
   const blocking = blockingSummary(findings);
   const issues = planIssues(findings);
   const sections = planSections(plan, { hideEmpty });
+  const minimum = planMachineMinimum(plan);
   const [open, setOpen] = useState<ReadonlySet<PlanSectionId>>(
     () => new Set(sections.filter((section) => section.open).map((section) => section.id)),
   );
@@ -116,12 +133,14 @@ export function PlanView({ plan, findings, catalog, hideEmpty = false, ...hooks 
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
-      <header className="flex flex-col gap-3 rounded-xl bg-surface p-5">
-        <div className="flex flex-col gap-1">
-          <h2 className="font-mono text-xl font-semibold">{hero.name}</h2>
-          {hero.about ? <p className="text-md text-fg-2">{hero.about}</p> : null}
-          {hero.goal ? <p className="text-sm text-muted">{hero.goal}</p> : null}
-        </div>
+      <header className="flex flex-col gap-3">
+        {!hideName || hero.about || hero.goal ? (
+          <div className="flex flex-col gap-1">
+            {hideName ? null : <h2 className="font-mono text-xl font-semibold">{hero.name}</h2>}
+            {hero.about ? <p className="text-md text-fg-2">{hero.about}</p> : null}
+            {hero.goal ? <p className="text-sm text-muted">{hero.goal}</p> : null}
+          </div>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {planTally(plan).map((item) => (
             <button
@@ -133,12 +152,23 @@ export function PlanView({ plan, findings, catalog, hideEmpty = false, ...hooks 
                   .getElementById(`${prefix}-${item.section}`)
                   ?.scrollIntoView({ block: "start", behavior: "smooth" });
               }}
-              className="flex cursor-pointer items-baseline gap-1.5 rounded-full bg-paper px-3 py-1.5 text-sm hover:bg-paper-hi"
+              className="flex cursor-pointer items-baseline gap-1.5 rounded-full bg-surface px-3 py-1.5 text-sm hover:bg-paper"
             >
               <span className="font-semibold">{item.count}</span>
               <span className="text-fg-2">{item.label}</span>
             </button>
           ))}
+          {minimum ? (
+            <Tooltip label={sizingNote}>
+              <span
+                tabIndex={0}
+                className="flex cursor-help items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted"
+              >
+                <Icon icon={Server} size={14} />
+                Needs a machine of at least {minimum}
+              </span>
+            </Tooltip>
+          ) : null}
           {hero.groupLimit ? (
             <span className="flex items-baseline gap-1.5 rounded-full px-3 py-1.5 text-sm text-muted">
               {hero.groupLimit} group messages per agent
@@ -485,14 +515,22 @@ function AgentCardView({
       icon: Plug,
       label: metrics.connectors.label,
       empty: metrics.connectors.empty,
+      warning: null,
     },
     {
       id: "routines" as const,
       icon: Repeat,
       label: metrics.routines.label,
       empty: metrics.routines.empty,
+      warning: metrics.routines.warning,
     },
-    { id: "tools" as const, icon: Wrench, label: metrics.tools.label, empty: metrics.tools.empty },
+    {
+      id: "tools" as const,
+      icon: Wrench,
+      label: metrics.tools.label,
+      empty: metrics.tools.empty,
+      warning: null,
+    },
   ];
 
   return (
@@ -509,28 +547,39 @@ function AgentCardView({
           <p className="truncate font-mono text-xs text-muted">
             @{agent.role}
             {agent.model ? ` · ${agent.model}` : ""}
-            {agent.coding ? " · coding" : ""}
           </p>
         </div>
       </header>
 
       <div className="flex flex-wrap gap-1.5">
-        {pills.map((pill) => (
-          <button
-            key={pill.id}
-            type="button"
-            aria-pressed={metric === pill.id}
-            onClick={() => setMetric(metric === pill.id ? null : pill.id)}
-            className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-              "bg-paper hover:bg-paper-hi selected:bg-ink-fill selected:text-on-ink",
-              pill.empty && "text-muted",
-            )}
-          >
-            <Icon icon={pill.icon} size={14} />
-            {pill.label}
-          </button>
-        ))}
+        {pills.map((pill) => {
+          const button = (
+            <button
+              key={pill.id}
+              type="button"
+              aria-pressed={metric === pill.id}
+              onClick={() => setMetric(metric === pill.id ? null : pill.id)}
+              className={cn(
+                "flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+                "bg-paper hover:bg-paper-hi selected:bg-ink-fill selected:text-on-ink",
+                pill.empty && "text-muted",
+              )}
+            >
+              <Icon icon={pill.icon} size={14} />
+              {pill.label}
+              {pill.warning ? (
+                <Icon icon={TriangleAlert} size={14} className="text-t-ochre-fg" />
+              ) : null}
+            </button>
+          );
+          return pill.warning ? (
+            <Tooltip key={pill.id} label={pill.warning}>
+              {button}
+            </Tooltip>
+          ) : (
+            button
+          );
+        })}
       </div>
       {metric === "connectors" ? (
         <ul className="flex flex-col gap-1 rounded-lg bg-paper px-3 py-2 text-xs">
@@ -540,9 +589,6 @@ function AgentCardView({
               <span className="text-muted">{entry.detail}</span>
             </li>
           ))}
-          {metrics.connectors.browserNote ? (
-            <li className="text-fg-2">Browser: {metrics.connectors.browserNote}</li>
-          ) : null}
           {metrics.connectors.empty ? <li className="text-muted">No connectors.</li> : null}
         </ul>
       ) : metric === "routines" ? (
@@ -573,9 +619,7 @@ function AgentCardView({
         </div>
       ) : null}
 
-      {metrics.routines.warning ? (
-        <p className="text-xs text-t-ochre-fg">{metrics.routines.warning}</p>
-      ) : null}
+      {card.capabilities.length ? <CapabilityList capabilities={card.capabilities} /> : null}
       {card.findings.notices.map((notice, index) => (
         <Banner
           key={`${notice.path}:${index}`}
@@ -593,23 +637,6 @@ function AgentCardView({
       />
       {hooks.agentExtras?.(agent)}
 
-      {card.operator?.browser ? (
-        <div className="flex flex-col gap-1 rounded-lg bg-t-sig px-3 py-2 text-sm">
-          <span className="flex items-center gap-2 font-semibold">
-            <Icon icon={Globe} size={14} />
-            Browser login
-            {card.operator.browser.reviewer ? (
-              <ReviewerTag by={card.operator.browser.reviewer} />
-            ) : null}
-          </span>
-          <p className="text-fg-2">{card.operator.browser.instructions}</p>
-          {card.operator.browser.notes.map((note) => (
-            <p key={note} className="text-xs text-fg-2">
-              {note}
-            </p>
-          ))}
-        </div>
-      ) : null}
       {card.operator?.cards.map((item, index) => (
         <div key={index} className="flex flex-col gap-1 rounded-lg bg-t-sig px-3 py-2 text-sm">
           {item.title ? <span className="font-semibold">{item.title}</span> : null}
@@ -627,6 +654,48 @@ function AgentCardView({
         </Fold>
       ))}
     </article>
+  );
+}
+
+const capabilityIcon: Record<AgentCapability["id"], LucideIcon> = {
+  browser: Globe,
+  coding: Code2,
+};
+
+/** An agent's capabilities as chips; hovering one shows what apply needs for it. */
+function CapabilityList({ capabilities }: { capabilities: readonly AgentCapability[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="type-label mr-1 text-muted">Capabilities</span>
+      {capabilities.map((capability) => (
+        <Tooltip
+          key={capability.id}
+          label={
+            <span className="flex flex-col gap-1">
+              {capability.hint.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+              {capability.reviewer ? (
+                <span className="text-on-panel-muted">
+                  Last written by the {capability.reviewer}
+                </span>
+              ) : null}
+            </span>
+          }
+        >
+          <span
+            tabIndex={0}
+            className={cn(
+              "flex cursor-help items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-xs font-medium",
+              capability.pending && "text-muted",
+            )}
+          >
+            <Icon icon={capabilityIcon[capability.id]} size={14} />
+            {capability.label}
+          </span>
+        </Tooltip>
+      ))}
+    </div>
   );
 }
 

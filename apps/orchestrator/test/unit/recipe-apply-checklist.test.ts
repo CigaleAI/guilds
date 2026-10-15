@@ -162,6 +162,8 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
   assert.equal(configFromRecipeRole(role).harness_model, null);
   role.config = { coding: true };
   assert.equal(configFromRecipeRole(role).harness_model, null);
+  role.config = { coding: true, harness: "codex" };
+  assert.equal(configFromRecipeRole(role).browser, false, "a coding role has the browser only when it asks for it");
   role.config = { secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" } };
   assert.deepEqual(configFromRecipeRole(role).secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
   role.config = { secret_aliases: { SAME: "SAME" } };
@@ -279,4 +281,25 @@ test("a carried manifest must be an endpoint-only connector under the connection
     /signs in with a configured client; an organisation's server registers its own/,
   );
   assert.throws(() => parseRecipe(carrying({ ...base, endpoint: { url: "http://10.0.0.5/mcp" } })), /connections\[0\]\.manifest/);
+});
+
+test("a role config with a key an agent config does not have is an error", () => {
+  const recipe = parseRecipe(huskLeadMatcherRecipe(operatorAuthor()));
+  const role = recipe.roles[0]!;
+  const ctx = {
+    publishedServers: new Set<string>(),
+    remainingAgents: 20,
+    remainingBrowserAgents: 5,
+    remainingCodingAgents: 5,
+    groupLimit: 20,
+  };
+  const unknown = () => validateRecipe(recipe, ctx).filter((item) => item.code === "config.unknown");
+  role.config = { ...role.config, cli: true, box: "code" };
+  assert.deepEqual(
+    unknown().map((item) => [item.severity, item.path, item.message]),
+    [["error", `roles.${role.role}.config`, "unknown keys: box, cli"]],
+  );
+  delete role.config.cli;
+  delete role.config.box;
+  assert.deepEqual(unknown(), []);
 });

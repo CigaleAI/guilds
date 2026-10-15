@@ -29,6 +29,13 @@ environment. `secrets` holds:
 (`secrets_org_name_unique`). `description` is required, at most 400
 characters, and tells agents how to use the value.
 
+The value is stored without the whitespace around it, which a paste
+picks up and no token carries. Whitespace inside it is kept. A value
+of only whitespace is refused (422). The operator app's value fields
+have a button that shows the typed value, and a note under the field
+says when the value has whitespace around it, which is removed on
+save, or inside it, which is kept.
+
 Access says which agents get it:
 
 - **Organisation**: `org_wide`: every agent in the organisation. An
@@ -219,9 +226,9 @@ It refuses:
 - more than 16 KiB
 - invalid UTF-8
 - a NUL byte
-- an empty value
+- a value of only whitespace
 
-One trailing newline is stripped. A name the organisation already
+The whitespace around the value is stripped. A name the organisation already
 holds is rotated when this agent created that secret and is its only
 grant, and refused otherwise
 (`NAME is taken in this organisation; choose another name`).

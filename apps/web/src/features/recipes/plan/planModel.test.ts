@@ -22,6 +22,7 @@ import {
   noteSnippet,
   noteTitle,
   operatorActions,
+  planMachineMinimum,
   operatorSystemsForRole,
   pendingAccessEdits,
   pendingAccessSummary,
@@ -762,6 +763,7 @@ test("findings attach by path to roles, the blocking banner, and the issues list
       "info",
       "removed",
     ),
+    finding("harness.credential", "roles.writer.config.harness"),
   ];
   assert.equal(findingsByPath(findings).get("roles.writer.task")?.length, 1);
 
@@ -769,7 +771,7 @@ test("findings attach by path to roles, the blocking banner, and the issues list
   assert.equal(writer.routine?.code, "schedule.missing");
   assert.deepEqual(
     writer.notices.map((item) => item.path),
-    ["roles.writer.task", "roles.writer2.task"],
+    ["roles.writer.task"],
   );
 
   assert.deepEqual(blockingSummary(findings), {
@@ -792,6 +794,11 @@ test("findings attach by path to roles, the blocking banner, and the issues list
   );
   assert.equal(planIssues([finding("server.unknown", "connections.x", "warning")])?.title, "Notes");
   assert.equal(planIssues(findings.slice(0, 4)), null);
+  assert.equal(
+    planIssues([finding("machine.full", "machine_id", "error")]),
+    null,
+    "the machine picker shows machine findings",
+  );
 });
 
 test("agentCard gathers connectors, metrics, prompt, routines, operator steps, and scripts", () => {
@@ -801,9 +808,12 @@ test("agentCard gathers connectors, metrics, prompt, routines, operator steps, a
   ];
   const watcher = agentCard(plan.agents[0]!, plan, findings);
   assert.deepEqual(watcher.connectors, []);
-  assert.equal(watcher.metrics.connectors.label, "1 browser");
-  assert.equal(watcher.metrics.connectors.icon, "browser");
-  assert.equal(watcher.metrics.connectors.active, 1);
+  assert.equal(watcher.metrics.connectors.label, "0 connectors");
+  assert.equal(watcher.metrics.connectors.empty, true);
+  assert.deepEqual(
+    watcher.capabilities.map((item) => [item.id, item.label]),
+    [["browser", "Browser"]],
+  );
   assert.equal(watcher.metrics.routines.label, "1 routine");
   assert.deepEqual(watcher.metrics.routines.entries, [
     { key: "watch-feed", cadence: "Every 15 minutes", description: "Check the feed" },
@@ -827,7 +837,7 @@ test("agentCard gathers connectors, metrics, prompt, routines, operator steps, a
   assert.deepEqual(writer.metrics.connectors.entries, [
     { server: "crm", detail: "oauth · guild · tools: crm_write" },
   ]);
-  assert.equal(writer.metrics.connectors.browserNote, null);
+  assert.deepEqual(writer.capabilities, []);
   assert.equal(writer.metrics.routines.warning, "Add a routine");
   assert.equal(writer.metrics.routines.label, "0 routines");
   assert.equal(writer.metrics.tools.empty, true);
@@ -996,4 +1006,40 @@ test("a recipe's repositories become a section and steps to connect GitHub and a
   );
   const sections = planSections(plan, { hideEmpty: true }).map((section) => section.id);
   assert.ok(sections.includes("repositories"));
+});
+
+test("a plan needs the largest minimum of its agents, not their sum", () => {
+  const plan = planFromRecipe(deskRecipe());
+  assert.equal(planMachineMinimum(plan), "1 CPU · 2 GiB");
+  assert.equal(planMachineMinimum({ agents: [] }), null);
+});
+
+test("a coding agent lists its harness as a capability, pending until one is named", () => {
+  const coder = (harness?: string) =>
+    planFromRecipe({
+      ...deskRecipe(),
+      roles: [
+        {
+          role: "dev",
+          name_suggestion: "dev",
+          focus: "",
+          config: { model: "m", coding: true, ...(harness ? { harness } : {}) },
+          task: { body: "", embeds: [], author: null },
+        },
+      ],
+    });
+  const named = coder("codex");
+  assert.deepEqual(agentCard(named.agents[0]!, named, []).capabilities, [
+    {
+      id: "coding",
+      label: "Coding · Codex",
+      hint: ["Code tasks run on Codex."],
+      reviewer: null,
+      pending: false,
+    },
+  ]);
+  const unnamed = coder();
+  const [coding] = agentCard(unnamed.agents[0]!, unnamed, []).capabilities;
+  assert.equal(coding?.label, "Coding · no harness yet");
+  assert.equal(coding?.pending, true);
 });

@@ -58,7 +58,7 @@ of core is a repository of its own that holds this one as a submodule
 | `src/extension.ts` | `ServerExtension`: what an edition adds to core. Its own migrations, boot seeds, routes, instance keys, the hook for a new organisation, and its own organisation policy, identity provider, and sandbox provider, and the build of the operator app it serves |
 | `src/app.ts` | Fastify app: the React app's build at the site root, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
 | `src/` | Domain modules (table below) |
-| `drizzle/` | Core's migrations: `0001_baseline`, the snapshot of core's schema (`0001.notes.md` says how it is regenerated), then the numbered migrations after it: `0002_model_providers` (an organisation's model keys), `0003_instance_keys` (the encrypted platform keys), `0004_machines` (an organisation's machines, and every agent placed on one with its slot), `0005_harness_logins` (`agents.harness_logins`: per harness, when a check last found a login in the agent's home, and whose it is), `0006_machine_harnesses` (`machines.harnesses`: the harness CLIs a machine's image carries) |
+| `drizzle/` | Core's migrations: `0001_baseline`, the snapshot of core's schema (`0001.notes.md` says how it is regenerated), then the numbered migrations after it: `0002_model_providers` (an organisation's model keys), `0003_instance_keys` (the encrypted platform keys), `0004_machines` (an organisation's machines, and every agent placed on one with its slot), `0005_harness_logins` (`agents.harness_logins`: per harness, when a check last found a login in the agent's home, and whose it is), `0006_machine_harnesses` (`machines.harnesses`: the harness CLIs a machine's image carries), `0007_native_cli` (every agent has the CLI tab: the `cli` flag leaves agent configs, active run snapshots, and recipe roles) |
 | `test/` | `unit/`, `integration/`, `contract/`, `helpers/` |
 | `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog` (rewrites the HTTP fixture when catalog shapes change), `build-connector` (bundles a connector folder into a registry package), `sweep-workspaces` (lists, or with `--apply` removes, machine directories and agent homes no live machine or agent owns), `typesafe-replay` |
 | `Dockerfile` | The core image. Pinned Node image; a `web` stage builds `apps/web` and Storybook, the final stage copies `src`, `scripts`, `drizzle` and the web build |
@@ -134,12 +134,18 @@ orchestrator serves.
   the guild's view of `access/` (Tools: integrations and native
   tools). An agent's inspector opens over the group chat.
 - `agent/` — creating an agent, and the agent inspector over its
-  guild. `CreateAgentDialog.tsx` asks which kind on its first screen
-  and holds the one-form agent; `CreateCodingAgent.tsx` walks a
-  coding agent through its identity, its machine, harness, and
-  subscription token, its lead model, and the guild's repositories,
-  then saves a pasted token as the agent's secret;
-  `IdentityFields.tsx` is the name, focus, and look both draft.
+  guild. `CreateAgentDialog.tsx` asks which kind on its first screen.
+  `CreateStandardAgent.tsx` walks an agent through its identity, its
+  model, and its machine; `CreateCodingAgent.tsx` walks a coding
+  agent through its identity, its machine, harness, and subscription
+  token, its lead model, and the guild's repositories, then saves a
+  pasted token as the agent's secret. `AgentSteps.tsx` holds the
+  model step and the machine with its disk budget, which the create
+  dialogs and Settings share, and the dialogs' footer;
+  `CodingRepositories.tsx` is the guild's GitHub login and
+  repositories, in the coding dialog and Settings;
+  `IdentityFields.tsx` is the name, focus, and look both dialogs
+  draft.
   - Chat tab (`chat/`) — shows a run's prompt (tagged parts as
     nested cards), turns, steps with what the model reported, and
     tool calls (arguments and results as JSON trees or raw text,
@@ -169,29 +175,35 @@ orchestrator serves.
   - Secrets tab — the agent's view of `access/` secrets.
   - Usage tab — its lifetime model usage, its home's disk against
     its cap, and its machine's against the machine's cap.
-  - Settings tab (`settings/`) — edits its name, focus, mascot and
-    identity colour, wake triggers, model, thinking, run limits,
-    disk and script caps, machine (with the planned memory bar),
-    capabilities (Browser, Coding, CLI, scripting, Memory), the
-    harness and its model, and browser language.
+  - Settings tab (`settings/`) — the create dialog's steps as
+    sections on a stepper, opened in any order and by `?section=`
+    (`settings/sections.ts`: which sections an agent's kind has,
+    where a link opens, and which section fixes each error and
+    readiness problem). It edits its name, focus, mascot and
+    identity colour, wake triggers, model, thinking, run limits and
+    script cap, capabilities (Browser, Coding, scripting,
+    Memory), machine (with the planned load bars) and disk cap
+    (with the reserved disk bar), the harness and its model,
+    browser language, and the guild's repositories.
     `settings/HarnessReadiness.tsx` shows what the harness still
     needs: the **Subscription token** select that picks, among the
     secrets reaching the agent, the one the harness's variable
     reads and writes it as a secret alias, with **Add a token**;
-    its credential line (`settings/credentialNote.ts`); a login
-    check; and the guild's repositories. `agent/harness.ts` holds
+    its credential line (`settings/credentialNote.ts`); and a login
+    check. `agent/harness.ts` holds
     the harness labels, each harness's token variable, the
     select's options, alias, and free-name helpers, the plan a new
     coding agent's token is created with, and the coding strip's
     parts.
   - The header flags broken Task links, and a coding agent whose
-    runs would fail at start; Settings opens on a banner listing
+    runs would fail at start, opening the Settings section that
+    fixes the first problem; Settings opens on a banner listing
     the same problems (`CodingReadiness.tsx`, from the readiness
     problems in `agent/harness.ts`). On Chat,
     `CodingStrip.tsx` says under the tab strip how a coding agent
     codes: the model that leads, the harness and model that code,
     what the harness runs on, and the repositories, each a link to
-    where it is set. A
+    the Settings section that sets it. A
     recipe-applied browser login shows a strip until marked done.
     The inspector's menu deletes it. `runState.ts` names runs and says where each
     stands.
@@ -264,12 +276,13 @@ orchestrator serves.
   machines over `machines/`. Its usage by guild and agent.
 - `machines/` — an organisation's machines. The Machines tab
   (`MachinesTab.tsx`): each machine with its agents, the count of
-  agents of guilds the operator cannot see, planned memory, and disk.
+  agents of guilds the operator cannot see, planned load, and disk.
   The add and edit dialog (`MachineDialog.tsx`), the meters
-  (`MachineMeters.tsx`), the machine picker with its planned memory
-  bar (`MachinePicker.tsx`), the empty state and notes
-  (`MachineNotes.tsx`), and the tiers, form checks, and planned
-  memory budget (`machines.ts`).
+  (`MachineMeters.tsx`), the machine picker with its planned load
+  bars (`MachinePicker.tsx`), the empty state and notes
+  (`MachineNotes.tsx`), and the tiers, form checks, and the mirror of
+  the sizing rules: agent minimums, overcommit factors, and the
+  placement budget (`machines.ts`).
 - `models/` — the organisation's model setup and what every picker
   shares: the providers with their connect forms, catalog picker,
   chosen models and default (shown on Model keys and in the setup
@@ -412,7 +425,7 @@ agent runs. Studio and Builder share `conversation/`.
 | `oauth/` | Dynamic-client (PKCE), configured-client, and GitHub App Connect from each manifest's `auth.oauth`, provider discovery for a connector with no endpoint, callback HTML |
 | `github/` | The GitHub App: App token, install and user-authorize URLs, user code exchange, the installation the authorizing user can reach (or a picker when they have several), installation tokens and repositories; `manifest.ts` (the App manifest for this box, the state cookie, and trading a manifest code for the App) |
 | `coding/` | Guild repositories and a GitHub login's selected set (`repositories.ts`: validation, payloads, State entries), a coding run's git side (`git.ts`: identity, installation tokens per connection, the agent's token file under `/run/guilds/<agent id>/`), and the coding harnesses (`harnesses.ts`: ids, labels, the token variable and login of each, the login record a check keeps per harness (when, and whose), the secret that variable reads through the agent's aliases, how a credential problem names its fix, the harness model rule, the image's harness list path, and the `coding.repositories_missing` start error) |
-| `machines/` | An organisation's machines (`index.ts`: tiers and sizes, the custom bounds, the default machine, the 32-agent ceiling, slots and the ports each sets, the planned memory weights, validation, a machine's directory and an agent's home on the host), who may place an agent on a machine (`access.ts`), and the boot step that lays agent homes out by machine (`layout.ts`) |
+| `machines/` | An organisation's machines (`index.ts`: tiers and sizes, the custom bounds, the default machine, the 32-agent ceiling, slots and the ports each sets, machine sizing (`AGENT_MINIMUMS`, `OVERCOMMIT`), validation, a machine's directory and an agent's home on the host), who may place an agent on a machine (`access.ts`), and the boot step that lays agent homes out by machine (`layout.ts`) |
 | `access/` | Binding resolution platform → org → guild → agent; `runtime.ts` resolves a run's tools, MCP, and secrets, and sets its secret aliases in the environment |
 | `credentials/` | AES-GCM encrypt/decrypt, environment fingerprint, connection and binding metadata views, secret name and description validation, connection owner-scope visibility |
 | `secrets/` | `access.ts` (organisation-wide or granted access, who may create and manage a secret, metadata with grants in unseen guilds masked), `agent.ts` (`secret_store`: the value file in the agent's home, the per-agent cap, rotation); redaction |

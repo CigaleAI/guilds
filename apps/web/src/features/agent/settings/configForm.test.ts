@@ -5,7 +5,6 @@ import { configErrors, configFormOf, configOf, defaultAgentConfig, withCoding } 
 
 test("switching coding on moves default limits to the coding budgets and back", () => {
   const form = configFormOf(defaultAgentConfig);
-  assert.equal(form.cli, true);
   assert.equal(form.scripting, true);
   assert.equal(form.memory, true);
   assert.equal(form.browser, false);
@@ -13,7 +12,6 @@ test("switching coding on moves default limits to the coding budgets and back", 
   assert.equal(form.max_workspace_mib, "10240");
   const coding = withCoding(form, true);
   assert.equal(coding.coding, true);
-  assert.equal(coding.cli, true);
   assert.equal(coding.browser, false);
   assert.equal(coding.scripting, true);
   assert.equal(coding.max_steps, "200");
@@ -24,6 +22,11 @@ test("switching coding on moves default limits to the coding budgets and back", 
   assert.equal(off.max_steps, "30");
   assert.equal(off.max_tool_calls, "50");
   assert.equal(configOf(coding, undefined).coding, true);
+});
+
+test("a config sent from the form carries no CLI flag", () => {
+  const coding = withCoding(configFormOf(defaultAgentConfig), true);
+  assert.equal("cli" in configOf(coding, undefined), false);
 });
 
 test("turning coding off drops a Kimi Code model for the organisation's default, or nothing", () => {
@@ -95,6 +98,8 @@ function machine(id: string, box: Machine["box"]): Machine {
     memory_mib: 2048,
     max_workspace_mib: 10240,
     workspace_mib: null,
+    allocated_workspace_mib: 0,
+    planned_cpu: 0,
     planned_mib: 0,
     agents: [],
     hidden_agents: 0,

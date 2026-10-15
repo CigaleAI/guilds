@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { ArrowLeft, ArrowRight, Info, Pencil, Plus, X } from "lucide-react";
 import { Avatar } from "../identity/Avatar";
 import { Icon } from "../../primitives/Icon";
@@ -33,6 +34,18 @@ export const Progress: Story = {
       ))}
     </div>
   ),
+};
+
+/** Steps as sections, opened in any order, one of them flagged. */
+export const Sections: Story = {
+  render: function Render(args) {
+    const [current, setCurrent] = useState(0);
+    return (
+      <div className="rounded-xl bg-paper p-6">
+        <Stepper steps={args.steps} current={current} onSelect={setCurrent} flagged={[2]} />
+      </div>
+    );
+  },
 };
 
 const agents: { name: string; initials: string; tone: IdentityTone; meta: string }[] = [

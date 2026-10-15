@@ -69,6 +69,7 @@ Validation:
 - `coding: true` requires `harness` on create and on every update that
   touches `coding` or `harness`.
 - `harness` requires `coding: true`.
+- An update cannot turn `coding` off on a coding agent.
 - `harness_model` is up to 120 characters of letters, digits, and
   `. _ : / = , [ ] -`, starting with a letter or digit: an alias
   (`opus`) or a full model name, with the bracketed parameters some
@@ -324,9 +325,8 @@ A missing or rejected credential names what to set up:
 - the secret to grant, with the variable it is read as when an alias
   names another secret (see [Credentials](#credentials)), or
 - the login to run in the agent's CLI tab (`claude`, then `/login`;
-  `codex login --device-auth`; `NO_OPEN_BROWSER=1 agent login`). An
-  agent with `cli: false` has no CLI tab: only a secret is offered,
-  so Codex is unavailable to it.
+  `codex login --device-auth`; `NO_OPEN_BROWSER=1 agent login`).
+  Every agent has the CLI tab.
 
 A CLI missing from the image is an error naming the image to build.
 A version the driver does not parse is `failed` with that reason.

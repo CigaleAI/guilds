@@ -126,6 +126,7 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
                       {...(look.src ? { src: look.src } : {})}
                       state={agent.generating ? "running" : "idle"}
                       browser={agent.browser}
+                      coding={agent.coding}
                       {...(brokenEmbeds.has(agent.id)
                         ? { brokenLinks: brokenEmbeds.get(agent.id) ?? [] }
                         : {})}

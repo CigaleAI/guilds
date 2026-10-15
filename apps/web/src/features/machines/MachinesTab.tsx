@@ -15,7 +15,7 @@ import {
   toast,
 } from "@guildsrun/ui";
 import { MachineDialog } from "./MachineDialog";
-import { DiskMeter, MemoryBudget } from "./MachineMeters";
+import { DiskMeter, LoadBudget } from "./MachineMeters";
 import { NoMachines } from "./MachineNotes";
 import {
   canManageMachines,
@@ -23,12 +23,13 @@ import {
   machineBoxLabel,
   machineSizeLabel,
   sharedMachineNote,
+  sizingNote,
 } from "./machines";
 
 /**
- * The organisation's machines: each one's tier and size, the agents on it with their browser and
- * coding flags, its planned memory against its memory, and its disk against its cap. Owners and
- * admins add, resize and delete them; members see them.
+ * The organisation's machines and the sizing rules: each one's tier and size, the agents on it with
+ * their browser and coding flags, its planned load against its capacity, and its disk against its
+ * cap. Owners and admins add, resize and delete them; members see them.
  */
 export function MachinesTab() {
   const { org } = useIdentity();
@@ -55,6 +56,10 @@ export function MachinesTab() {
               {manager ? null : " Owners and admins add, resize and delete machines."}
             </p>
             {machines.data?.length ? addButton : null}
+          </div>
+          <div className="rounded-lg bg-paper px-4 py-3 text-sm text-fg-2">
+            <span className="font-semibold">Sizing.</span> {sizingNote} A machine below an
+            agent&apos;s minimum can&apos;t take it.
           </div>
           {machines.isPending ? (
             <SkeletonRows rows={3} label="Loading machines" />
@@ -167,13 +172,14 @@ function MachineCard({
           </>
         ) : null}
       </header>
-      <div className="grid gap-4 md:grid-cols-2">
-        <section aria-label="Memory" className="flex flex-col gap-1.5">
-          <h3 className="type-label text-muted">Memory</h3>
-          <MemoryBudget
-            plannedMib={machine.planned_mib}
-            memoryMib={machine.memory_mib}
+      <div className="grid gap-4 md:grid-cols-3">
+        <section aria-label="Planned load" className="flex flex-col gap-1.5 md:col-span-2">
+          <h3 className="type-label text-muted">Planned load</h3>
+          <LoadBudget
+            size={machine}
+            planned={{ cpu: machine.planned_cpu, memory_mib: machine.planned_mib }}
             remedy="resize it or move some of its agents to another machine"
+            rules={false}
           />
         </section>
         <section aria-label="Disk" className="flex flex-col gap-1.5">
@@ -221,6 +227,7 @@ function MachineAgentRow({ agent }: { agent: MachineAgent }) {
       <Link
         to="/guilds/$guildId/agents/$agentId/settings"
         params={{ guildId: agent.guild_id, agentId: agent.id }}
+        search={{ section: "machine" }}
         className="font-mono text-sm hover:underline"
       >
         {agent.name}

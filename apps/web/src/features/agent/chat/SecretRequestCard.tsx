@@ -10,6 +10,7 @@ import type { AgentDetail, Run, SecretAccessChoice } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import { Button, Segmented, TextField, Banner, toast, Icon } from "@guildsrun/ui";
 import { SecretReach } from "../../access/AccessSecrets";
+import { SecretValueField } from "../../access/SecretValueField";
 import {
   managesSecrets,
   requestState,
@@ -149,14 +150,12 @@ export function SecretRequestCard({
             value={description}
             onChange={(event) => setDescription(event.currentTarget.value)}
           />
-          <TextField
+          <SecretValueField
             tone="paper"
             label="Value"
-            type="password"
             required
-            autoComplete="off"
             value={value}
-            onChange={(event) => setValue(event.currentTarget.value)}
+            onValueChange={setValue}
           />
           {manager ? (
             <Segmented

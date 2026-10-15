@@ -19,22 +19,11 @@ function SegmentLink({
     "underline-offset-2 hover:underline",
     segment.problem && "font-semibold text-t-ochre-fg",
   );
-  if (segment.to === "repositories") {
-    return (
-      <Link
-        to="/guilds/$guildId/settings"
-        params={{ guildId }}
-        hash="repositories"
-        className={className}
-      >
-        {segment.text}
-      </Link>
-    );
-  }
   return (
     <Link
       to="/guilds/$guildId/agents/$agentId/settings"
       params={{ guildId, agentId }}
+      search={{ section: segment.to }}
       className={className}
     >
       {segment.text}
@@ -44,7 +33,8 @@ function SegmentLink({
 
 /**
  * One line over a coding agent's chat: the model that leads, the harness and model that code,
- * what the harness runs on, and the repositories, each leading where it is set. A missing piece
+ * what the harness runs on, and the repositories, each leading to the Settings section that sets
+ * it. A missing piece
  * is named and turns the strip ochre.
  */
 export function CodingStrip({ guildId, agentId }: { guildId: string; agentId: string }) {

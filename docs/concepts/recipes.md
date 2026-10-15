@@ -136,6 +136,10 @@ The document has none of:
 
 `config.coding` (boolean) makes a role a coding agent.
 
+A role's `config` holds only agent configuration keys
+([Guilds and agents](guilds-and-agents.md#configuration-and-appearance)). Validation
+errors with `config.unknown` on any other key.
+
 `config.harness` names a coding role's harness: `claude-code`,
 `codex`, or `cursor`. It is optional; apply asks for it.
 
@@ -267,6 +271,11 @@ Chromium profiles do not.
 out. `config.harness_model` travels the same way; an agent on its
 harness's default model leaves the key out. `config.secret_aliases`
 travels the same way; an agent without an alias leaves the key out.
+A harness subscription token stays behind: on a coding agent, the
+aliases of the harness token variables (`CLAUDE_CODE_OAUTH_TOKEN`,
+`CURSOR_API_KEY`) are left out, and so are the secrets those variables
+read, unless another role gets the same secret for its own use. The
+`harness.credential` finding names the token to set up after apply.
 The guild's repositories are captured by name with an empty
 `purpose`.
 Their URLs, branches, and GitHub connections stay with the guild.
@@ -520,17 +529,20 @@ when they validate; otherwise apply leaves them out.
   The preview's `remaining` carries `agents`, `browser_agents`, and
   `coding_agents`
 - the machine every role goes on: the operator's choice
-  (`machine_id`), else the organisation's only machine. The
-  preview's `machines` lists each machine with its `box`,
-  `memory_mib`, `planned_mib`, and number of agents, `machine_id` the
-  one chosen, and `adds_mib` the planned memory the roles add
-  ([Machines](guilds-and-agents.md#machines)). It is a blocking
-  finding when no machine is chosen among several
-  (`machine.required`), when a coding role would go on a standard
-  machine (`machine.coding`, pointing to Settings, Machines), when
-  the roles would take the machine past 32 agents or the policy's
-  agents per machine (`machine.full`), and when the machine hosts an
-  agent of a guild the operator cannot see (`machine.private`)
+  (`machine_id`), else the organisation's only machine, else null
+  until the operator picks one. A recipe does not name a machine; it
+  needs one of at least its agents' largest
+  [minimum](guilds-and-agents.md#machine-sizing), which the preview
+  returns as `minimum_cpu` and `minimum_mib`. The preview's `machines`
+  lists each machine with its `box`, `cpu`, `memory_mib`,
+  `planned_cpu`, `planned_mib`, number of agents, and `fits`, whether
+  it meets that minimum. `adds_cpu` and `adds_mib` are the planned
+  load the roles add. On the chosen machine it is a blocking finding
+  when the machine is below a role's minimum (`machine.size`, one per
+  role), when the roles would take the machine past 32 agents or the
+  policy's agents per machine (`machine.full`), and when the machine
+  hosts an agent of a guild the operator cannot see
+  (`machine.private`). Apply without a machine is refused
 - catalog presence of each `connections.server`; the preview's
   `installs` lists each one the box lacks that can be added: from the
   registry (`server`, `from: "registry"`, `version`, `verified`), which

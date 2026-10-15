@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { secretPayload } from "../../src/credentials/validate.js";
 import {
-  assertCodingHarness,
+  assertCodingAgent,
   secretAliasesOf,
   AgentValidationError,
   addMissingFlags,
@@ -242,7 +243,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 19);
+  assert.equal(CONFIG_KEYS.size, 18);
   assert.throws(() => validateConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateConfig({ model }), false);
@@ -310,9 +311,20 @@ test("a coding agent needs a harness to save; a stored one without it still vali
   const model = VALID_CONFIG.model;
   const unharnessed = validateConfig({ model, coding: true });
   assert.equal(unharnessed.harness, null);
-  assert.throws(() => assertCodingHarness(unharnessed), /coding agents need a harness: claude-code, codex, cursor/);
-  assert.doesNotThrow(() => assertCodingHarness(validateConfig({ model, coding: true, harness: "cursor" })));
-  assert.doesNotThrow(() => assertCodingHarness(validateConfig({ model })));
+  assert.throws(() => assertCodingAgent(unharnessed), /coding agents need a harness: claude-code, codex, cursor/);
+  const coding = { model, coding: true, harness: "cursor" };
+  assert.doesNotThrow(() => assertCodingAgent(validateConfig(coding)));
+  assert.doesNotThrow(() => assertCodingAgent(validateConfig({ ...coding, browser: true })));
+  assert.doesNotThrow(() => assertCodingAgent(validateConfig({ model })));
+});
+
+test("an update cannot switch a coding agent's coding off", () => {
+  const model = VALID_CONFIG.model;
+  assert.throws(() => assertCodingAgent(validateConfig({ model }), { coding: true }), /coding cannot be switched off/);
+  assert.doesNotThrow(() => assertCodingAgent(validateConfig({ model }), { coding: false }));
+  assert.doesNotThrow(() =>
+    assertCodingAgent(validateConfig({ model, coding: true, harness: "codex" }), { coding: false }),
+  );
 });
 
 test("config defaults missing run limits", () => {
@@ -355,14 +367,13 @@ test("keepToolResultGenerationsOf uses a valid integer and otherwise the default
   assert.equal(keepToolResultGenerationsOf({}), DEFAULT_KEEP_TOOL_RESULT_GENERATIONS);
 });
 
-test("config defaults missing cli scripting and memory to on", () => {
+test("config defaults missing scripting and memory to on, and has no CLI flag", () => {
   const filled = validateConfig(VALID_CONFIG);
-  assert.equal(filled.cli, true);
   assert.equal(filled.scripting, true);
   assert.equal(filled.memory, true);
-  assert.equal(validateConfig({ ...VALID_CONFIG, cli: false, scripting: false }).cli, false);
+  assert.equal(validateConfig({ ...VALID_CONFIG, scripting: false }).scripting, false);
   assert.equal(validateConfig({ ...VALID_CONFIG, memory: false }).memory, false);
-  assert.throws(() => validateConfig({ ...VALID_CONFIG, cli: "yes" }), /cli must be a boolean/);
+  assert.throws(() => validateConfig({ ...VALID_CONFIG, cli: true }), /unknown keys: cli/);
   assert.throws(
     () => validateConfig({ ...VALID_CONFIG, scripting: "yes" }),
     /scripting must be a boolean/,
@@ -411,3 +422,10 @@ test("config defaults browser_language to en-US", () => {
 });
 
 
+
+test("secretPayload keeps a value without the whitespace around it and refuses one of only whitespace", () => {
+  assert.deepEqual(secretPayload(" sk-token\n"), { value: "sk-token" });
+  assert.deepEqual(secretPayload("correct horse battery"), { value: "correct horse battery" });
+  assert.throws(() => secretPayload(" \t\n"), /value must contain non-whitespace text/);
+  assert.throws(() => secretPayload(42), /value must contain non-whitespace text/);
+});

@@ -108,3 +108,20 @@ export function askedRequest(argumentsText: unknown, resultText: unknown): Secre
     return null;
   }
 }
+
+/** The note a typed secret value gets for whitespace around it, which saving removes. */
+export const whitespaceAroundNote =
+  "Spaces or line breaks at the start or end are removed when you save.";
+
+/** The note a typed secret value gets for whitespace inside it, which is kept. */
+export const whitespaceInsideNote =
+  "The value has spaces inside it. They are kept, which is right when they belong to it.";
+
+/** What a typed secret value's whitespace becomes on save, as notes for the operator; empty when it has none. */
+export function whitespaceNotes(value: string): string[] {
+  const trimmed = value.trim();
+  const notes: string[] = [];
+  if (trimmed !== value) notes.push(whitespaceAroundNote);
+  if (/\s/.test(trimmed)) notes.push(whitespaceInsideNote);
+  return notes;
+}

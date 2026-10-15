@@ -94,22 +94,14 @@ export function harnessSecretSource(harness: Harness, aliases: Record<string, st
 }
 
 /** How a credential problem names its fix: the secret to grant, or the login to run. */
-export function credentialFix(
-  harness: Harness,
-  options: { cli: boolean; aliases?: Record<string, string> },
-): string {
+export function credentialFix(harness: Harness, aliases: Record<string, string> = {}): string {
   const info = HARNESS_INFO[harness];
   const ways: string[] = [];
-  const source = harnessSecretSource(harness, options.aliases ?? {});
+  const source = harnessSecretSource(harness, aliases);
   if (source !== null) {
     const as = source === info.secret ? "" : ` (read as ${info.secret})`;
     ways.push(`grant the secret ${source}${as} to the agent`);
   }
-  if (options.cli) {
-    ways.push(`log in from the agent's CLI tab with \`${info.login}\``);
-  }
-  if (!ways.length) {
-    return `${info.label} needs a login from the agent's CLI tab, and this agent has the CLI turned off`;
-  }
+  ways.push(`log in from the agent's CLI tab with \`${info.login}\``);
   return ways.join(", or ");
 }

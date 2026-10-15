@@ -1,5 +1,5 @@
 import { parseModelId, providerLabel } from "../llm/providers.js";
-import { secretAliasesOf } from "../agents/validation.js";
+import { CONFIG_KEYS, secretAliasesOf } from "../agents/validation.js";
 import { credentialFix, HARNESS_INFO, harnessModelOf, HARNESSES, isHarness } from "../coding/harnesses.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
@@ -79,7 +79,7 @@ function harnessChoiceFinding(role: RecipeRole): RecipeFinding | null {
 function harnessCredentialFinding(role: RecipeRole): RecipeFinding {
   const harness = role.config.harness;
   const named = isHarness(harness);
-  const fix = named ? `after apply, ${credentialFix(harness, { cli: role.config.cli !== false })}` : "apply asks for its harness";
+  const fix = named ? `after apply, ${credentialFix(harness)}` : "apply asks for its harness";
   return finding(
     "harness.credential",
     "warning",
@@ -176,6 +176,12 @@ export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContex
     );
   }
   for (const role of recipe.roles) {
+    const unknown = Object.keys(role.config).filter((key) => !CONFIG_KEYS.has(key)).sort();
+    if (unknown.length) {
+      findings.push(
+        finding("config.unknown", "error", `roles.${role.role}.config`, `unknown keys: ${unknown.join(", ")}`),
+      );
+    }
     if (role.config.coding !== undefined && typeof role.config.coding !== "boolean") {
       findings.push(finding("coding.flag", "error", `roles.${role.role}.config.coding`, "config.coding must be a boolean"));
     }

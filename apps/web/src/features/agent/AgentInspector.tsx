@@ -66,7 +66,6 @@ const tabs = [
     route: "/guilds/$guildId/agents/$agentId/cli",
     label: "CLI",
     icon: SquareTerminal,
-    capability: "cli",
   },
   { route: "/guilds/$guildId/agents/$agentId/tools", label: "Tools", icon: Wrench },
   { route: "/guilds/$guildId/agents/$agentId/secrets", label: "Secrets", icon: KeyRound },

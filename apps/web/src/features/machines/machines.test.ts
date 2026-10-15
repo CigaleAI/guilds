@@ -2,19 +2,24 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Machine } from "../../api/types";
 import {
-  agentPlannedMib,
+  agentMinimum,
+  agentMinimums,
+  agentsMinimum,
   canManageMachines,
-  capacityWeightsMib,
   chosenMachine,
   customSizeErrors,
+  diskBudget,
   formatMib,
+  loadShares,
   machineAgentCount,
-  machineAllowsCoding,
   machineFormErrors,
   machineFormOf,
   machineInputOf,
   newMachineForm,
+  overcommit,
   placementBudget,
+  seededDiskMib,
+  sizeMeets,
 } from "./machines";
 
 function machine(patch: Partial<Machine> = {}): Machine {
@@ -26,6 +31,8 @@ function machine(patch: Partial<Machine> = {}): Machine {
     memory_mib: 2048,
     max_workspace_mib: 10240,
     workspace_mib: null,
+    allocated_workspace_mib: 0,
+    planned_cpu: 0,
     planned_mib: 0,
     agents: [],
     hidden_agents: 0,
@@ -43,36 +50,54 @@ const agent = (id: string, browser: boolean, coding: boolean) => ({
   coding,
 });
 
-test("an agent plans the base memory, plus its browser and its coding", () => {
-  assert.equal(agentPlannedMib({ browser: false, coding: false }), capacityWeightsMib.base);
-  assert.equal(agentPlannedMib({ browser: true, coding: false }), 600);
-  assert.equal(agentPlannedMib({ browser: true, coding: true }), 2136);
+test("an agent's minimum is the largest of its capabilities' minimums, not their sum", () => {
+  assert.deepEqual(agentMinimum({ browser: false, coding: false }), agentMinimums.base);
+  assert.deepEqual(agentMinimum({ browser: true, coding: false }), agentMinimums.browser);
+  assert.deepEqual(agentMinimum({ browser: true, coding: true }), agentMinimums.coding);
+  assert.deepEqual(
+    agentsMinimum([agent("a", true, false), agent("b", false, false)]),
+    agentMinimums.browser,
+  );
+  assert.equal(sizeMeets(machine(), agentMinimums.browser), true);
+  assert.equal(sizeMeets(machine(), agentMinimums.coding), false);
 });
 
-test("a placement starts from the server's plan, counts an agent already there once, and adds this agent", () => {
+test("a placement starts from the server's plan, counts an agent already there once, and adds this agent's minimum", () => {
   const host = machine({
-    planned_mib: 1200,
+    planned_cpu: 2,
+    planned_mib: 4096,
     agents: [agent("a", true, false), agent("b", true, false)],
   });
-  const fresh = placementBudget(host, { browser: true, coding: false });
-  assert.deepEqual(fresh, {
-    othersMib: 1200,
-    addsMib: 600,
-    totalMib: 1800,
-    memoryMib: 2048,
-    over: false,
+  assert.deepEqual(placementBudget(host, { browser: true, coding: false }), {
+    fits: true,
+    minimum: agentMinimums.browser,
+    planned: { cpu: 2, memory_mib: 4096 },
+    adds: agentMinimums.browser,
   });
-  // An agent already on the machine is not counted twice, and its new flags count.
+  // An agent already on the machine is not counted twice, and its new needs count.
   const moved = placementBudget(host, { id: "a", browser: true, coding: true });
-  assert.equal(moved.othersMib, 600);
-  assert.equal(moved.addsMib, 2136);
-  assert.equal(moved.over, true);
+  assert.deepEqual(moved.planned, { cpu: 1, memory_mib: 2048 });
+  assert.equal(moved.fits, false);
   // Agents of guilds the viewer cannot see are in the server's plan though not listed.
-  const shared = placementBudget(machine({ planned_mib: 1700, hidden_agents: 1 }), {
+  const shared = placementBudget(machine({ planned_cpu: 1.5, hidden_agents: 1 }), {
     browser: false,
     coding: false,
   });
-  assert.equal(shared.othersMib, 1700);
+  assert.equal(shared.planned.cpu, 1.5);
+});
+
+test("a machine's capacity is its size times the overcommit, and the load warns past it", () => {
+  const shares = loadShares(
+    machine({ planned_cpu: 4.5, planned_mib: 4096 }),
+    agentMinimums.browser,
+  );
+  assert.deepEqual(shares.cpu, { planned: 4.5, adds: 1, capacity: overcommit.cpu, over: true });
+  assert.deepEqual(shares.memory, {
+    planned: 4096,
+    adds: 2048,
+    capacity: 2048 * overcommit.memory,
+    over: false,
+  });
 });
 
 test("a machine's agent count includes those of guilds the viewer cannot see", () => {
@@ -92,10 +117,7 @@ test("the chosen machine, or the only one", () => {
   assert.equal(chosenMachine(undefined, "mach_2"), undefined);
 });
 
-test("coding goes on code and custom machines; owners and admins manage machines", () => {
-  assert.equal(machineAllowsCoding("standard"), false);
-  assert.equal(machineAllowsCoding("code"), true);
-  assert.equal(machineAllowsCoding("custom"), true);
+test("owners and admins manage machines", () => {
   assert.equal(canManageMachines("owner"), true);
   assert.equal(canManageMachines("admin"), true);
   assert.equal(canManageMachines("member"), false);
@@ -207,4 +229,31 @@ test("the body sends a size only for a custom machine", () => {
     memory_mib: "4096",
     max_workspace_mib: "20480",
   });
+});
+
+test("an agent's disk cap is weighed against what the other agents' caps reserve", () => {
+  const host = machine({ max_workspace_mib: 10240, allocated_workspace_mib: 6144 });
+  assert.deepEqual(diskBudget(host, 4096), {
+    freeMib: null,
+    othersMib: 6144,
+    unreservedMib: 4096,
+    addsMib: 4096,
+    machineMib: 10240,
+    over: false,
+  });
+  assert.equal(diskBudget(host, 4097).over, true);
+  assert.equal(diskBudget(machine({ workspace_mib: 3072 }), 1024).freeMib, 10240 - 3072);
+  const placed = diskBudget(host, 2048, 2048);
+  assert.equal(placed.othersMib, 4096);
+  assert.equal(placed.unreservedMib, 6144);
+  const full = diskBudget(machine({ allocated_workspace_mib: 20480 }), 1024);
+  assert.equal(full.unreservedMib, 0);
+  assert.equal(full.over, true);
+});
+
+test("a new agent's disk cap starts within the machine's unreserved disk when it fits", () => {
+  assert.equal(seededDiskMib(machine(), 10240), 10240);
+  assert.equal(seededDiskMib(machine({ allocated_workspace_mib: 6144 }), 10240), 4096);
+  assert.equal(seededDiskMib(machine({ allocated_workspace_mib: 9728 }), 10240), 10240);
+  assert.equal(seededDiskMib(machine({ max_workspace_mib: 40960 }), 10240), 10240);
 });

@@ -9,6 +9,9 @@ import {
   requestState,
   secretOrigin,
   visibleAccess,
+  whitespaceAroundNote,
+  whitespaceInsideNote,
+  whitespaceNotes,
   withAgent,
 } from "./secrets";
 
@@ -99,4 +102,23 @@ test("owners and admins manage secrets; members do not", () => {
   assert.equal(managesSecrets("owner"), true);
   assert.equal(managesSecrets("admin"), true);
   assert.equal(managesSecrets("member"), false);
+});
+
+test("a value without whitespace gets no note", () => {
+  assert.deepEqual(whitespaceNotes("sk-ant-oat01-abc"), []);
+  assert.deepEqual(whitespaceNotes(""), []);
+});
+
+test("whitespace around a value gets the note that saving removes it", () => {
+  assert.deepEqual(whitespaceNotes("sk-live-123  "), [whitespaceAroundNote]);
+  assert.deepEqual(whitespaceNotes("\tsk-live-123"), [whitespaceAroundNote]);
+  assert.deepEqual(whitespaceNotes("   "), [whitespaceAroundNote]);
+});
+
+test("whitespace inside a value gets the note that it is kept", () => {
+  assert.deepEqual(whitespaceNotes("correct horse battery"), [whitespaceInsideNote]);
+  assert.deepEqual(whitespaceNotes(" correct horse "), [
+    whitespaceAroundNote,
+    whitespaceInsideNote,
+  ]);
 });

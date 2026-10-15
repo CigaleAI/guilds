@@ -2,7 +2,9 @@ import { useState } from "react";
 import { identityHex, TextField } from "@guildsrun/ui";
 import { liveHandleError } from "../names";
 import { AvatarPicker } from "./settings/AvatarPicker";
-import { focusMax } from "./settings/AgentSettings";
+
+/** The server's cap on an agent's focus. */
+export const focusMax = 150;
 
 export type Look = { shape: string; color: string };
 

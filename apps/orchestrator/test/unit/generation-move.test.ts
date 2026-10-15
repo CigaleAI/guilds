@@ -39,8 +39,8 @@ test("a move stops the agent on the machine it leaves and carries its home to th
   const sandboxes = new FakeSandboxes();
   sandboxes.running.add("mach_1");
   const loop = makeLoop(db, {}, root, sandboxes);
-  await loop.moveAgent("a_1", "mach_2", { maxAgentsPerMachine: 4, coding: false });
-  assert.deepEqual(db.moves, [{ agentId: "a_1", machineId: "mach_2", options: { maxAgentsPerMachine: 4, coding: false } }]);
+  await loop.moveAgent("a_1", "mach_2", { maxAgentsPerMachine: 4, needs: { browser: false, coding: false } });
+  assert.deepEqual(db.moves, [{ agentId: "a_1", machineId: "mach_2", options: { maxAgentsPerMachine: 4, needs: { browser: false, coding: false } } }]);
   assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "purge" }]);
   assert.equal(existsSync(path.join(root, "mach_1", "a_1")), false);
   assert.equal(readFileSync(path.join(root, "mach_2", "a_1", "notes.txt"), "utf8"), "kept");

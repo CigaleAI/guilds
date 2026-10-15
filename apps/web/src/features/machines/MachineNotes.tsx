@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Server } from "lucide-react";
 import type { ReactNode } from "react";
-import type { MachineRef } from "../../api/types";
+import type { Machine } from "../../api/types";
+import { machineSizeLabel, type MachineSize } from "./machines";
 import { Button, EmptyState } from "@guildsrun/ui";
 
 /** An inline link to Settings → Machines, where owners and admins add and resize machines. */
@@ -38,11 +39,21 @@ export function NoMachines({ action }: { action?: ReactNode }) {
   );
 }
 
-/** Why Coding is greyed out: the agent's machine is standard, with where to get another. */
-export function StandardMachineNote({ machine }: { machine: MachineRef }) {
+/** Why an agent cannot go on a machine: it is below the agent's minimum, with where to get another. */
+export function TooSmallNote({
+  machine,
+  minimum,
+  what,
+}: {
+  machine: Pick<Machine, "name" | "cpu" | "memory_mib">;
+  minimum: MachineSize;
+  /** Who needs the minimum: "This agent", "Coding". */
+  what: string;
+}) {
   return (
-    <p className="text-sm text-muted">
-      <span className="font-mono">{machine.name}</span> is a standard machine, without coding. Pick
+    <p className="text-sm text-plum-t">
+      {what} needs a machine with at least {machineSizeLabel(minimum)};{" "}
+      <span className="font-mono">{machine.name}</span> has {machineSizeLabel(machine)}. Pick
       another machine, or resize one under <MachinesSettingsLink />.
     </p>
   );

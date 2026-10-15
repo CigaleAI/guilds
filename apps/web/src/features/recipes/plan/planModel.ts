@@ -1,4 +1,6 @@
 import { describeCron, describeWindow } from "../../agent/routine/describeTiming";
+import { harnessLabel, isHarness } from "../../agent/harness";
+import { agentsMinimum, machineSizeLabel } from "../../machines/machines";
 import type {
   AccessEdit,
   ApplyCreates,
@@ -11,6 +13,7 @@ import type {
   DesignHandoff,
   DesignSystem,
   FieldAuthor,
+  Harness,
   PlannedConnection,
   PlannedSecret,
   RecipeConnection,
@@ -146,6 +149,8 @@ export type PlanAgent = {
   avatar_color: string;
   browser: boolean;
   coding: boolean;
+  /** The harness a coding agent runs; null when it does not code or none is named yet. */
+  harness: Harness | null;
   browserInstructions: string;
   task: string;
   taskAuthor: AuthorDraft | null;
@@ -767,6 +772,7 @@ function planAgent(
     avatar_color: role.avatar_color || "#7c5cff",
     browser: Boolean(browser.required || config.browser),
     coding: config.coding === true,
+    harness: config.coding === true && isHarness(config.harness) ? config.harness : null,
     browserInstructions: browser.instructions || "",
     task: taskBody(role),
     taskAuthor: taskAuthor(role),
@@ -952,6 +958,11 @@ export type PlanTallyItem = {
   section: PlanSectionId;
 };
 
+/** The smallest machine every agent of the plan runs on, in a line: "2 CPU · 4 GiB"; null without agents. */
+export function planMachineMinimum(plan: Pick<RecipePlan, "agents">): string | null {
+  return plan.agents.length ? machineSizeLabel(agentsMinimum(plan.agents)) : null;
+}
+
 /** The count tiles above the plan: agents always, then connectors, routines, collections, and secrets when non-zero. */
 export function planTally(plan: RecipePlan): PlanTallyItem[] {
   const items: PlanTallyItem[] = [
@@ -1114,23 +1125,31 @@ export type RoleFindings = {
   notices: RecipeFinding[];
 };
 
+/** Findings about what apply itself asks for or what is set up after it, which no card shows. */
+const settledByApply: ReadonlySet<string> = new Set(["harness.credential"]);
+
 /**
- * The findings whose path starts with `roles.<role>`: the routine advice is a `schedule.missing`
- * finding or one at `roles.<role>.schedules`; notices are the rest outside any schedule path.
+ * The findings at `roles.<role>` or under it: the routine advice is a `schedule.missing` finding
+ * or one at `roles.<role>.schedules`; notices are the rest outside any schedule path, leaving out
+ * what apply settles.
  */
 export function roleFindings(
   findings: readonly RecipeFinding[] | null | undefined,
   role: string,
 ): RoleFindings {
+  const path = `roles.${role}`;
   const all = asArray(findings).filter(
-    (item) => item.path?.startsWith(`roles.${role}`) && item.code !== "review.required",
+    (item) =>
+      (item.path === path || item.path?.startsWith(`${path}.`)) && item.code !== "review.required",
   );
   const routine =
-    all.find(
-      (item) => item.code === "schedule.missing" || item.path === `roles.${role}.schedules`,
-    ) ?? null;
+    all.find((item) => item.code === "schedule.missing" || item.path === `${path}.schedules`) ??
+    null;
   const notices = all.filter(
-    (item) => item.code !== "schedule.missing" && !item.path?.includes(".schedules"),
+    (item) =>
+      item.code !== "schedule.missing" &&
+      !item.path?.includes(".schedules") &&
+      !settledByApply.has(item.code),
   );
   return { all, routine, notices };
 }
@@ -1143,7 +1162,8 @@ export type PlanIssue = {
 };
 
 /**
- * The findings no card shows: every `access.*` finding, and errors and warnings outside role paths.
+ * The findings no card shows: every `access.*` finding, and errors and warnings outside role paths
+ * except `machine.*` ones, which the machine picker shows.
  * The list is titled "System issues" when one is an error, "Notes" otherwise; null when empty.
  */
 export function planIssues(findings: readonly RecipeFinding[] | null | undefined): {
@@ -1152,6 +1172,7 @@ export function planIssues(findings: readonly RecipeFinding[] | null | undefined
 } | null {
   const unhandled = asArray(findings).filter((item) => {
     if (item.code === "review.required") return false;
+    if (String(item.code || "").startsWith("machine.")) return false;
     if (String(item.code || "").startsWith("access.")) return true;
     if (item.path?.startsWith("roles.")) return false;
     return item.severity === "error" || item.severity === "warning";
@@ -1183,16 +1204,13 @@ export function agentConnectors(
   return plan.connections.filter((item) => roleUsesConnection(item, role));
 }
 
-/** The three metric pills of an agent: connectors and browser, routines, and tools with grants. */
+/** The three metric pills of an agent: connectors, routines, and tools with grants. */
 export type AgentMetrics = {
   connectors: {
     count: number;
     label: string;
-    icon: "connector" | "browser";
     empty: boolean;
-    active: number;
     entries: Array<{ server: string; detail: string }>;
-    browserNote: string | null;
   };
   routines: {
     count: number;
@@ -1216,27 +1234,12 @@ export function agentMetrics(
   connectors: readonly ConnectionDraft[],
   routineFinding: RecipeFinding | null,
 ): AgentMetrics {
-  const connCount = connectors.length;
-  let connLabel: string;
-  let icon: "connector" | "browser" = "connector";
-  if (connCount > 0 && agent.browser) {
-    connLabel = `${plural(connCount, "connector")} + browser`;
-  } else if (connCount > 0) {
-    connLabel = plural(connCount, "connector");
-  } else if (agent.browser) {
-    connLabel = "1 browser";
-    icon = "browser";
-  } else {
-    connLabel = "0 connectors";
-  }
   const toolCount = agent.nativeTools.length;
   return {
     connectors: {
-      count: connCount,
-      label: connLabel,
-      icon,
-      empty: connCount === 0 && !agent.browser,
-      active: connCount + (agent.browser ? 1 : 0),
+      count: connectors.length,
+      label: plural(connectors.length, "connector"),
+      empty: connectors.length === 0,
       entries: connectors.map((item) => {
         const tools = connectionTools(item, agent.role);
         const toolText = tools.length ? ` · tools: ${tools.join(", ")}` : "";
@@ -1245,10 +1248,6 @@ export function agentMetrics(
           detail: `${[item.auth || "oauth", item.recommended_scope || "guild"].join(" · ")}${toolText}`,
         };
       }),
-      browserNote: agent.browser
-        ? agent.browserInstructions ||
-          "Take control of this agent's browser and log in before it can use the site."
-        : null,
     },
     routines: {
       count: agent.routines.length,
@@ -1332,18 +1331,58 @@ export function operatorActions(
   return browser || cards.length ? { browser, cards } : null;
 }
 
+/** Something an agent can do beyond chat, as its card lists it. */
+export type AgentCapability = {
+  id: "browser" | "coding";
+  label: string;
+  /** The lines shown on hover: the browser login step and its notes, or which harness runs the code. */
+  hint: string[];
+  reviewer: string | null;
+  /** True while apply still has to ask for something before the capability works. */
+  pending: boolean;
+};
+
+/** An agent's capabilities: its browser with the login step apply needs, and its coding harness. */
+export function agentCapabilities(
+  agent: PlanAgent,
+  operator: OperatorActions | null,
+): AgentCapability[] {
+  const capabilities: AgentCapability[] = [];
+  if (operator?.browser) {
+    capabilities.push({
+      id: "browser",
+      label: "Browser",
+      hint: [operator.browser.instructions, ...operator.browser.notes],
+      reviewer: operator.browser.reviewer,
+      pending: false,
+    });
+  }
+  if (agent.coding) {
+    const name = agent.harness ? harnessLabel(agent.harness) : null;
+    capabilities.push({
+      id: "coding",
+      label: name ? `Coding · ${name}` : "Coding · no harness yet",
+      hint: [name ? `Code tasks run on ${name}.` : "Apply asks for the harness."],
+      reviewer: null,
+      pending: !name,
+    });
+  }
+  return capabilities;
+}
+
 /** Everything an agent's card shows besides the agent itself. */
 export type AgentCard = {
   connectors: ConnectionDraft[];
   findings: RoleFindings;
   metrics: AgentMetrics;
+  capabilities: AgentCapability[];
   prompt: { text: string; badge: string; reviewer: string | null };
   routines: RoutineView[];
   operator: OperatorActions | null;
   scripts: Array<{ name: string; source: string; reviewer: string | null }>;
 };
 
-/** An agent's card: its connectors, findings, metric pills, standing prompt, routines, operator steps, and scripts. */
+/** An agent's card: its connectors, findings, metric pills, capabilities, standing prompt, routines, operator steps, and scripts. */
 export function agentCard(
   agent: PlanAgent,
   plan: RecipePlan,
@@ -1352,13 +1391,15 @@ export function agentCard(
   const connectors = agentConnectors(plan, agent.role);
   const attached = roleFindings(findings, agent.role);
   const text = String(agent.task || "").trim();
+  const operator = operatorActions(agent, plan);
   return {
     connectors,
     findings: attached,
     metrics: agentMetrics(agent, connectors, attached.routine),
+    capabilities: agentCapabilities(agent, operator),
     prompt: { text, badge: promptBadge(text), reviewer: reviewLabel(agent.taskAuthor) },
     routines: agent.routines.map(routineView),
-    operator: operatorActions(agent, plan),
+    operator,
     scripts: agent.scripts.map((script) => ({
       name: script.name ?? "",
       source: script.source || "",

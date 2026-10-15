@@ -1093,7 +1093,7 @@ function refreshMachines(client: QueryClient) {
   });
 }
 
-/** The organisation's machines, each with its agents, their planned memory, and its disk. */
+/** The organisation's machines, each with its agents, their planned load, and its disk. */
 export function useOrgMachines(orgId: string) {
   return useQuery({
     queryKey: keys.orgMachines(orgId),

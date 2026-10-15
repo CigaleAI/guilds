@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
+import { decryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
 import { TEST_MODEL } from "../helpers/models.js";
@@ -118,6 +119,24 @@ test("a name is one secret per organisation", async () => {
     { name: "SHARED_NAME", org_wide: true },
   );
   assert.equal(elsewhere.statusCode, 201);
+});
+
+async function storedValue(secretId: string): Promise<unknown> {
+  const row = (await repo.getSecret(secretId))!;
+  return decryptPayload(row.ciphertext as Buffer, row.nonce as Buffer).value;
+}
+
+test("a value is stored without the whitespace around it, and one of only whitespace is refused", async () => {
+  const created = await create(OWNER, { name: "PASTED_TOKEN", org_wide: true, value: " sk-token \n" });
+  assert.equal(created.statusCode, 201);
+  const id = created.json().id as string;
+  assert.equal(await storedValue(id), "sk-token");
+  assert.equal((await call(OWNER, "PATCH", `/api/secrets/${id}`, { value: "\tcorrect horse  " })).statusCode, 200);
+  assert.equal(await storedValue(id), "correct horse");
+  const blank = await call(OWNER, "PATCH", `/api/secrets/${id}`, { value: "  " });
+  assert.equal(blank.statusCode, 422);
+  assert.match(blank.json().detail, /value must contain non-whitespace text/);
+  assert.equal((await create(OWNER, { name: "BLANK_TOKEN", org_wide: true, value: "\n" })).statusCode, 422);
 });
 
 test("owners and admins write any secret; members write secrets local to their guilds", async () => {

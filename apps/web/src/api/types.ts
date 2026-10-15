@@ -127,8 +127,8 @@ export type Agent = {
 export type ThinkingLevel = "none" | "low" | "medium" | "high";
 
 /**
- * A machine's tier: `standard` hosts agents without coding, `code` is the larger machine coding
- * agents need, and `custom` is sized by an owner or admin and hosts any agent.
+ * A machine's tier: `standard` and `code` have fixed sizes, `custom` is sized by an owner or admin.
+ * Which agents a machine takes depends on its size (`agentMinimum` in features/machines).
  */
 export type MachineBox = "standard" | "code" | "custom";
 
@@ -153,11 +153,14 @@ export type Machine = MachineRef & {
   max_workspace_mib: number;
   /** Every agent home on it, measured after a generation; null before one. */
   workspace_mib: number | null;
-  /** The memory its agents plan to use when they all work at once. */
+  /** The disk its agents' own caps reserve, those in guilds the viewer cannot see included. */
+  allocated_workspace_mib: number;
+  /** Its planned load: the sum of its agents' minimum CPUs, and of their minimum memory. */
+  planned_cpu: number;
   planned_mib: number;
   /** Its agents in guilds the viewer can see. */
   agents: MachineAgent[];
-  /** How many of its agents sit in guilds the viewer cannot see; `planned_mib` counts them too. */
+  /** How many of its agents sit in guilds the viewer cannot see; the planned load counts them too. */
   hidden_agents: number;
   /** The harness CLIs its image carries; null before it first started. */
   harnesses: Harness[] | null;
@@ -187,7 +190,6 @@ export type AgentConfig = {
   max_scripts: number;
   /** The agent home's cap in MiB. A generation will not start while the home is over this. */
   max_workspace_mib: number;
-  cli: boolean;
   browser: boolean;
   /** Chrome UI and Accept-Language. Default `en-US`. */
   browser_language: string;
@@ -215,8 +217,8 @@ export type HarnessCredential = {
   secret_granted: boolean;
   /** Whether an alias replaces a secret named `secret` that also reaches the agent. */
   secret_shadowed: boolean;
-  /** What to run in the agent's CLI tab to log in; null while the agent has the CLI off. */
-  login: string | null;
+  /** What to run in the agent's CLI tab to log in. */
+  login: string;
   /** When a check last found a login in the agent's home; null before one did, or once one found none. */
   login_seen_at: string | null;
   /** Whose that login is, as the harness recorded it; null when unknown. */
@@ -228,7 +230,6 @@ export type AgentHarness = {
   harness: Harness | null;
   /** The model the harness runs; null for its subscription's default. */
   harness_model: string | null;
-  cli: boolean;
   harnesses: HarnessCredential[];
   /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
   machine_harnesses: Harness[] | null;
@@ -1776,8 +1777,15 @@ export type ApplyInstall =
  */
 export type ApplySetup = { server: string; integration: string | null; label: string };
 
-/** A machine the apply preview offers: its size, the memory its agents plan to use, and how many it holds. */
-export type ApplyMachine = MachineRef & { memory_mib: number; planned_mib: number; agents: number };
+/** A machine the apply preview offers: its size, its planned load, and whether it meets every role's minimum. */
+export type ApplyMachine = MachineRef & {
+  cpu: number;
+  memory_mib: number;
+  planned_cpu: number;
+  planned_mib: number;
+  agents: number;
+  fits: boolean;
+};
 
 /** `POST /api/recipes/:id/preview`: the apply plan, its findings, and what it creates (recipes/apply.ts). */
 export type ApplyPreview = {
@@ -1794,7 +1802,11 @@ export type ApplyPreview = {
   machines: ApplyMachine[];
   /** The machine the roles go on: the one chosen, or the only one; null while several wait for a choice. */
   machine_id: string | null;
-  /** The memory the recipe's roles plan to use on it. */
+  /** The smallest machine every role runs on. */
+  minimum_cpu: number;
+  minimum_mib: number;
+  /** The planned load the recipe's roles add: the sum of their minimums. */
+  adds_cpu: number;
   adds_mib: number;
   collisions: string[];
   connections: PlannedConnection[];

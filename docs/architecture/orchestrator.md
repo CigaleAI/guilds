@@ -105,8 +105,11 @@ Configurable only in tests:
   4Gi on a code machine, and the machine's `cpu` and `memory_mib` on
   a custom one (0.5 to 4 CPUs in steps of 0.25, 512 to 8192 MiB)
 - agents per machine = 32 (slots 0 to 31)
-- planned memory per agent = 100 MiB, plus 500 with `browser`, plus
-  1536 with `coding`
+- agent minimum = the largest of 0.5 CPU and 256 MiB, 1 CPU and 2 GiB
+  with `browser`, 2 CPU and 4 GiB with `coding`
+  ([Machine sizing](../concepts/guilds-and-agents.md#machine-sizing))
+- overcommit before placement warns = 5× a machine's CPUs, 3× its
+  memory
 - browser desktop = 1280×720
 - event queue per subscriber = 4096
 

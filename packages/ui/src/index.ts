@@ -34,6 +34,7 @@ export * from "./components/controls/OnOffSwitch";
 export * from "./components/controls/RadioGroup";
 export * from "./components/controls/ScopeTabs";
 export * from "./components/controls/SearchField";
+export * from "./components/controls/SecretField";
 export * from "./components/controls/Segmented";
 export * from "./components/controls/Select";
 export * from "./components/controls/Slider";

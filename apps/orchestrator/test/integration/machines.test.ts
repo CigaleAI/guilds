@@ -91,13 +91,13 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     const browser = await createAgent("browser", { browser: true });
     assert.equal(browser.statusCode, 201, browser.body);
 
-    // A box in the config is refused, and coding needs a code or custom machine.
+    // A box in the config is refused, and a coding agent needs a machine of at least 2 CPUs and 4 GiB.
     const boxed = await createAgent("boxed", { box: "code" });
     assert.equal(boxed.statusCode, 422, boxed.body);
     assert.match(boxed.json().detail, /unknown keys: box/);
     const coder = await createAgent("coder", { coding: true, harness: "claude-code" });
     assert.equal(coder.statusCode, 422, coder.body);
-    assert.match(coder.json().detail, /coding needs a code or custom machine/);
+    assert.match(coder.json().detail, /a coding agent needs a machine with at least 2 CPUs and 4 GiB; default has 1 CPU and 2 GiB\. Pick a larger machine, or resize default under Settings, Machines/);
 
     // Owners and admins add machines; a name is unique, a custom one carries its size.
     const code = await app.inject({
@@ -172,6 +172,16 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     });
     assert.equal(pinned.statusCode, 200, pinned.body);
     assert.equal(pinned.json().config.harness_model, "gpt-5-codex");
+
+    // A coding agent stays one.
+    const uncoded = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...pinned.json().config, coding: false, harness: null, harness_model: null } },
+    });
+    assert.equal(uncoded.statusCode, 422, uncoded.body);
+    assert.match(uncoded.json().detail, /coding cannot be switched off/);
     const refused = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/config`,
@@ -219,14 +229,17 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     });
     assert.equal(badAlias.statusCode, 422, badAlias.body);
 
-    // The list carries each machine's agents and its planned memory.
+    // The list carries each machine's agents, their planned load (the sum of their minimums), and the disk their caps reserve.
     const listed = await machines();
     const byName = Object.fromEntries(listed.map((machine) => [String(machine.name), machine]));
     assert.deepEqual(byName.default?.agents.map((agent: { name: string }) => agent.name), ["scripter", "browser"]);
-    assert.equal(byName.default?.planned_mib, 100 + 600);
-    assert.equal(byName.builder?.planned_mib, 100 + 1536);
+    assert.equal(byName.default?.planned_cpu, 0.5 + 1);
+    assert.equal(byName.default?.planned_mib, 256 + 2048);
+    assert.equal(byName.builder?.planned_cpu, 2);
+    assert.equal(byName.builder?.planned_mib, 4096);
+    assert.equal(byName.default?.allocated_workspace_mib, 2 * 10240);
 
-    // A standard tier is refused while a coding agent sits on the machine.
+    // A size below the minimum of an agent on the machine is refused.
     const downgrade = await app.inject({
       method: "PATCH",
       url: `/api/orgs/org_home/machines/${codeId}`,
@@ -234,6 +247,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       payload: { box: "standard" },
     });
     assert.equal(downgrade.statusCode, 409, downgrade.body);
+    assert.match(downgrade.json().detail, /this machine's agents need at least 2 CPUs and 4 GiB/);
 
     // A running machine resized gets a new container; its directory stays.
     const started = await app.inject({ method: "POST", url: `/api/agents/${coderId}/cli`, headers: AUTH });
@@ -258,7 +272,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal(renamed.statusCode, 200, renamed.body);
     assert.deepEqual(sandboxes.destroyed, [codeId], "a rename keeps the container");
 
-    // A coding agent cannot move to a standard machine; a plain one moves with its home.
+    // A coding agent cannot move to a machine below its minimum; a plain one moves with its home.
     const blocked = await app.inject({
       method: "PUT",
       url: `/api/agents/${coderId}/machine`,

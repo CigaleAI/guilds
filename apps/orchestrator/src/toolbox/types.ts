@@ -166,8 +166,6 @@ export type ToolContext = {
   secret_aliases: Record<string, string>;
   /** The guild repositories a coding run works on, by their folder under `repos/`. */
   code_repositories: string[];
-  /** Whether the agent has a CLI tab, where a harness login runs. */
-  cli: boolean;
   /** Publishes a running tool call's progress on the run's stream. */
   publish_progress:
     | ((toolCallId: string, update: { lines: string[]; session_id: string | null }) => Promise<void>)
@@ -219,7 +217,6 @@ export function createToolContext(
     harness_model: null,
     secret_aliases: {},
     code_repositories: [],
-    cli: true,
     publish_progress: null,
     remember_harness_task: null,
     harness_login_seen: null,
