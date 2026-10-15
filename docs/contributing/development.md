@@ -145,7 +145,8 @@ request, one job installs with the frozen lockfile and runs
 
 `.github/workflows/images.yml` publishes the orchestrator,
 `agent-runtime`, and OpenSandbox server images to `ghcr.io` when a
-version tag is pushed.
+`vMAJOR.MINOR.PATCH` tag is pushed. That tag is the version in the
+[changelog](../../CHANGELOG.md).
 
 An edition built on core runs the same script from its own root
 with `EDITION_ROOT` set. It adds its steps through a

@@ -76,6 +76,8 @@ is the one page that keeps history.
   from another computer
 - [Operate](getting-started/operate.md) — update, back up, restore,
   logs, error messages
+- [Changelog](../CHANGELOG.md) — each version, and whether a running
+  box stays, rebuilds, or breaks
 
 ## Concepts
 
@@ -138,7 +140,7 @@ For the people who change the code.
 ## Contributing
 
 - [Contributing](CONTRIBUTING.md) — licence, feature requests,
-  pull requests, the check
+  versions, pull requests, the check
 - [Development](contributing/development.md) — the development
   stack, verify, check, CI, fixtures
 - [Code guidelines](contributing/code-guidelines.md) — names,

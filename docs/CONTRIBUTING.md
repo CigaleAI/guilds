@@ -7,6 +7,7 @@ A contribution is licensed under the same terms by the act of
 submitting it. There is no separate contributor agreement.
 
 - Request a feature: [Feature requests](#feature-requests).
+- Cut a version: [Versions](#versions).
 - Set up a development machine and run the check:
   [Development](contributing/development.md).
 - Write code the way the repository does:
@@ -41,6 +42,29 @@ Write the issue in three parts:
 
 One feature per issue. A need without a proposal is enough; say
 that the proposal is open.
+
+## Versions
+
+A release is a git tag `vMAJOR.MINOR.PATCH` and an entry at the
+top of the [changelog](../CHANGELOG.md).
+
+Move one digit. It names the effect on a running box:
+
+- **Patch** (`1.2.4`): no impact. Docs, tooling, or anything the
+  images do not run. A running box stays as it is.
+- **Minor** (`1.3.0`): rebuild. The images change. State, `.env`,
+  recipes, and the API stay valid. Migrations apply at boot.
+- **Major** (`2.0.0`): breaking. The previous major cannot run
+  this tree unchanged. The entry leads with the steps.
+
+A fix that changes an image is a minor version. Several changes
+in one release take the highest digit.
+
+The entry is the version, the effect (`no impact`, `rebuild`, or
+`breaking`), and what an operator can see.
+
+Pushing the tag publishes the images
+([Development](contributing/development.md#check)).
 
 ## Security
 
