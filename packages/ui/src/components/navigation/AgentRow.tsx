@@ -33,8 +33,8 @@ function AgentMarkers({
   browser,
 }: {
   broken: string | null;
-  coding?: boolean;
-  browser?: boolean;
+  coding: boolean | undefined;
+  browser: boolean | undefined;
 }) {
   if (!broken && !coding && !browser) return null;
   return (
