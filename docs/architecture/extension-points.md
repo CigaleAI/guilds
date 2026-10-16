@@ -128,8 +128,9 @@ its deployment files.
   directory> up` starts core alone.
 - **Check.** `scripts/check.sh` checks an edition when
   `EDITION_ROOT` names its root. The checkout, the install, and
-  every step happen there, with core at the commit the edition
-  pins. The edition's `check.steps` adds steps, one per line: the
+  every step happen there, with core and any other submodule at
+  the commit the edition pins. The edition's `check.steps` adds
+  steps, one per line: the
   lane it joins (`orchestrator` or `web`), a name, and the command
   ([Development](../contributing/development.md)).
 

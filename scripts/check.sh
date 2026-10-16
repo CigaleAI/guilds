@@ -10,9 +10,9 @@
 # failing step prints its log.
 #
 # An edition on top of core holds core in a subdirectory and runs this script with EDITION_ROOT set
-# to its own root. The checkout, the install and every step then happen in that root, with core at
-# the commit the edition pins, and the edition's check.steps adds steps, one per line: the lane it
-# joins (orchestrator or web), a name, and the command.
+# to its own root. The checkout, the install and every step then happen in that root, with core and
+# every other submodule at the commit the edition pins, and the edition's check.steps adds steps,
+# one per line: the lane it joins (orchestrator or web), a name, and the command.
 set -euo pipefail
 
 core="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -26,11 +26,15 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/guilds-check.XXXXXX")"
 tree="$repo"
 commit=""
 postgres=""
+# The submodules checked out into the tree, by path.
+submodules=()
 
 cleanup() {
   if [[ -n "$postgres" ]]; then docker rm -f "$postgres" >/dev/null 2>&1 || true; fi
   if [[ "$tree" != "$repo" ]]; then
-    if [[ "$core" != "$repo" ]]; then git -C "$core" worktree remove --force "$tree/$core_path" >/dev/null 2>&1 || true; fi
+    for submodule in ${submodules[@]+"${submodules[@]}"}; do
+      git -C "$repo/$submodule" worktree remove --force "$tree/$submodule" >/dev/null 2>&1 || true
+    done
     git -C "$repo" worktree remove --force "$tree" >/dev/null 2>&1 || true
   fi
   # A container's files can belong to another user on Linux; removing them is not part of the check.
@@ -49,11 +53,14 @@ if [[ $# -gt 0 ]]; then
   echo "check: $(git -C "$repo" log -1 --format='%h %s' "$commit")"
   tree="$work/tree"
   git -C "$repo" worktree add --detach --quiet "$tree" "$commit"
-  if [[ "$core" != "$repo" ]]; then
-    # The edition's commit names core's; this checkout of core has it without asking a remote.
-    rmdir "$tree/$core_path"
-    git -C "$core" worktree add --detach --quiet "$tree/$core_path" "$(git -C "$repo" rev-parse "$commit:$core_path")"
-  fi
+  # The commit names each submodule's commit (core's, for an edition); the clone of each beside the
+  # repository has it without asking a remote.
+  while IFS=$'\t' read -r meta submodule; do
+    [[ "$meta" == *" commit "* ]] || continue
+    rmdir "$tree/$submodule"
+    git -C "$repo/$submodule" worktree add --detach --quiet "$tree/$submodule" "${meta##* }"
+    submodules+=("$submodule")
+  done < <(git -C "$repo" ls-tree -r "$commit")
   if ! (cd "$tree" && pnpm install --frozen-lockfile --prefer-offline) >"$work/install.log" 2>&1; then
     echo "✗ pnpm install --frozen-lockfile"
     cat "$work/install.log"

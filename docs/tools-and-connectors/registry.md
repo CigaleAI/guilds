@@ -3,7 +3,12 @@
 A registry publishes connectors and recipes beyond the ones the image
 ships. The box reads the one `REGISTRY_URL` names, the guilds.run
 registry while it is unset, and none while it is set empty (the
-`registry` integration). It reads `<REGISTRY_URL>/index.json`:
+`registry` integration). The guilds.run registry publishes the
+connectors and recipes of
+[CigaleAI/guilds-connectors](https://github.com/CigaleAI/guilds-connectors),
+where anyone adds one by pull request; its README holds the rules
+its check enforces and how Guilds verifies a version. A box reads
+`<REGISTRY_URL>/index.json`:
 
 ```json
 {
