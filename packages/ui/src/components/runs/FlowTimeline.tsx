@@ -1,14 +1,14 @@
-import { Brain, ChevronDown, FolderGit2, Wrench } from "lucide-react";
-import { Collapsible } from "radix-ui";
+import { ChevronDown, FolderGit2, Layers, Wrench } from "lucide-react";
 import { Fragment, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { cn } from "../../cn";
 import { Icon } from "../../primitives/Icon";
+import { Pill } from "../../primitives/Pill";
 import { Tag } from "../../primitives/Tag";
-import { EffectTag, type ToolCallEffect } from "./ToolCall";
+import { EffectTag, toolKindFill, type ToolCallEffect, type ToolKind } from "./ToolCall";
 
 export type FlowTimelineProps = ComponentProps<"ol">;
 
-/** A generation laid out as one line: each entry hangs off a rail, thoughts as brains, calls as wrenches (or their own mark) and answers as dots. */
+/** A generation laid out as one line of steps: each hangs off a rail as a dot, and compacted steps as a stack. */
 export function FlowTimeline({ className, ...props }: FlowTimelineProps) {
   return (
     <ol
@@ -21,21 +21,34 @@ export function FlowTimeline({ className, ...props }: FlowTimelineProps) {
   );
 }
 
-/** How a call entry's wrench reads: settled, still waiting on a call, or holding a failure. */
+/** How an entry's mark reads: settled, still waiting on a call, or holding a failure. */
 export type FlowCallTone = "ok" | "running" | "failed";
 
+const dotTone: Record<FlowCallTone, string> = {
+  ok: "bg-muted",
+  running: "bg-signal motion-safe:animate-pulse",
+  failed: "bg-plum",
+};
+
+const iconTone: Record<FlowCallTone, string> = {
+  ok: "text-muted",
+  running: "text-signal motion-safe:animate-pulse",
+  failed: "text-plum-t",
+};
+
 export type FlowEntryProps = Omit<ComponentProps<"li">, "children"> & {
-  marker: "thought" | "call" | "answer";
-  /** The wrench's colour on a call entry. */
+  /** One step as a dot, or several compacted steps as a stack. */
+  marker: "step" | "steps";
+  /** The mark's colour. */
   tone?: FlowCallTone;
-  /** A call entry's own mark in place of the wrench, such as the logo of the harness it runs on. */
+  /** A step's own mark in place of the dot, such as the logo of the harness its code task runs on. */
   icon?: ReactNode;
   /** Faded out by an active generation filter. */
   dimmed?: boolean;
   children?: ReactNode;
 };
 
-/** One entry on the rail: its marker, level with the entry's first row, then the entry. */
+/** One entry on the rail: its mark, level with the entry's first row, then the entry. */
 export function FlowEntry({
   marker,
   tone = "ok",
@@ -47,35 +60,17 @@ export function FlowEntry({
 }: FlowEntryProps) {
   return (
     <li className={cn("relative flex min-w-0 gap-2", dimmed && "opacity-40", className)} {...props}>
-      <span
-        aria-hidden
-        className={cn(
-          "flex w-6 shrink-0 items-center justify-center",
-          marker === "answer" ? "h-11" : "h-9",
-        )}
-      >
-        {marker === "thought" ? (
-          <span className="flex size-5 items-center justify-center bg-surface">
-            <Icon icon={Brain} size={14} className="text-muted" />
-          </span>
-        ) : marker === "answer" ? (
-          <span className="size-3 rounded-full bg-signal ring-4 ring-surface" />
-        ) : icon ? (
+      <span aria-hidden className="flex h-9 w-6 shrink-0 items-center justify-center">
+        {icon ? (
           <span className="flex items-center justify-center rounded-md ring-4 ring-surface">
             {icon}
           </span>
-        ) : (
+        ) : marker === "steps" ? (
           <span className="flex size-5 items-center justify-center bg-surface">
-            <Icon
-              icon={Wrench}
-              size={14}
-              className={cn(
-                tone === "failed" && "text-plum-t",
-                tone === "running" && "text-signal motion-safe:animate-pulse",
-                tone === "ok" && "text-muted",
-              )}
-            />
+            <Icon icon={Layers} size={14} className={iconTone[tone]} />
           </span>
+        ) : (
+          <span className={cn("size-2.5 rounded-full ring-4 ring-surface", dotTone[tone])} />
         )}
       </span>
       <div className="min-w-0 flex-1">{children}</div>
@@ -86,50 +81,22 @@ export function FlowEntry({
 /** One figure about a step, with its breakdown on hover. */
 export type StepFact = { label: string; title?: string };
 
-function Facts({ facts }: { facts: StepFact[] }) {
-  return (
-    <span className="flex shrink-0 items-center type-meta text-muted">
-      {facts.map((fact, index) => (
-        <Fragment key={fact.label}>
-          {index > 0 ? (
-            <span aria-hidden className="mx-1.5">
-              ·
-            </span>
-          ) : null}
-          <span title={fact.title}>{fact.label}</span>
-        </Fragment>
-      ))}
-    </span>
-  );
-}
-
 export type FlowThoughtProps = {
-  /** What the line is, such as "thinking" or "said". */
+  /** What the line is, such as "thinking". */
   label: string;
   /** The line shown folded: the thought's opening, kept to one line. */
   summary: ReactNode;
-  /** The step's call count, model time, tokens and cost; on hover, and always while open. */
-  facts?: StepFact[];
-  /** Why the model stopped, when that deserves a tag, such as "max tokens". */
-  stop?: string;
   /** The whole thought; with it, **more** unfolds the line onto it. */
   children?: ReactNode;
   defaultOpen?: boolean;
 };
 
-/** What the model thought or said in a step: one line, unfolding onto the whole of it. */
-export function FlowThought({
-  label,
-  summary,
-  facts,
-  stop,
-  children,
-  defaultOpen = false,
-}: FlowThoughtProps) {
+/** What the model thought in a step: one line, unfolding onto the whole of it. */
+export function FlowThought({ label, summary, children, defaultOpen = false }: FlowThoughtProps) {
   const [open, setOpen] = useState(defaultOpen);
   const more = children !== undefined && children !== null;
   return (
-    <div className="group/thought flex min-w-0 flex-col">
+    <div className="flex min-w-0 flex-col">
       <div className="flex min-h-9 min-w-0 items-center gap-3">
         <span className="shrink-0 font-mono text-2xs tracking-wider text-muted uppercase">
           {label}
@@ -137,22 +104,6 @@ export function FlowThought({
         <span className={cn("min-w-0 flex-1 text-sm text-fg-2", !open && "truncate")}>
           {open ? null : summary}
         </span>
-        {stop ? (
-          <Tag tone="ochre" font="sans">
-            {stop}
-          </Tag>
-        ) : null}
-        {facts?.length ? (
-          <span
-            className={cn(
-              "transition-opacity",
-              !open &&
-                "opacity-0 group-hover/thought:opacity-100 group-focus-within/thought:opacity-100",
-            )}
-          >
-            <Facts facts={facts} />
-          </span>
-        ) : null}
         {more ? (
           <button
             type="button"
@@ -174,219 +125,242 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 const triggerClass =
   "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
-type CallsLineProps = {
-  /** The bold lead, such as "2 calls". */
+/** What a step's calls did, for its header without naming them. */
+export type FlowStepCues = {
+  /** The kinds of its calls, each once, such as read or write. */
+  kinds: readonly ToolKind[];
+  /** Whether a call wrote tracked state or ran a script. */
+  effect?: ToolCallEffect | null;
+  /** How many calls failed. */
+  failed?: number;
+  /** How many calls in all. */
+  calls: number;
+  /** The time it took, with its breakdown on hover. */
+  duration?: StepFact;
+  /** Tokens and cost, shown on hover. */
+  facts?: StepFact[];
+  /** Why the model stopped, when that deserves a tag, such as "max tokens". */
+  stop?: string;
+};
+
+type StepLineProps = FlowStepCues & {
+  /** What leads the line: the reasoning's opening, the step's name, or how many steps. */
   lead: ReactNode;
-  names: readonly string[];
-  failed: number;
-  effect: ToolCallEffect | null | undefined;
-  duration: string | undefined;
   open: boolean;
   onToggle: () => void;
   /** Names the chevron for a screen reader. */
   what: string;
-  /** The chevron itself, when a Collapsible owns it. */
-  trigger?: (chevron: ReactNode) => ReactNode;
+  className?: string | undefined;
 };
 
-/** One folded line of calls: what they were, their tags and time, and a chevron. */
-function CallsLine({
+/** A step's header: what leads it, then cues on what its calls did, their count and time, and a chevron. */
+function StepLine({
   lead,
-  names,
-  failed,
+  kinds,
   effect,
+  failed = 0,
+  calls,
   duration,
+  facts,
+  stop,
   open,
   onToggle,
   what,
-  trigger,
-}: CallsLineProps) {
+  className,
+}: StepLineProps) {
   /** Clicks on the row fold it, unless they land on something that acts on its own. */
   const onRowClick = (event: MouseEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest("a, button")) return;
     onToggle();
   };
-  const chevron = (
-    <Icon
-      icon={ChevronDown}
-      size={14}
-      className={cn("transition-transform", !open && "-rotate-90")}
-    />
-  );
   return (
     <div
       onClick={onRowClick}
-      className="-ml-2 flex h-9 min-w-0 cursor-pointer items-center gap-2 rounded-lg pr-1 pl-2 transition-colors hover:bg-paper"
-    >
-      <span className="shrink-0 font-mono text-xs font-bold text-fg">{lead}</span>
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
-        {names.join(", ")}
-      </span>
-      {failed > 0 ? <Tag tone="plum">{failed} failed</Tag> : null}
-      {effect ? <EffectTag effect={effect} /> : null}
-      {duration ? <span className="shrink-0 type-meta text-muted">{duration}</span> : null}
-      {trigger ? (
-        trigger(chevron)
-      ) : (
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-label={open ? `Fold ${what}` : `Unfold ${what}`}
-          onClick={onToggle}
-          className={triggerClass}
-        >
-          {chevron}
-        </button>
+      className={cn(
+        "group/step flex h-9 min-w-0 cursor-pointer items-center gap-2 pr-1",
+        className,
       )}
+    >
+      <span className="flex min-w-0 flex-1 items-center gap-3">{lead}</span>
+      {stop ? (
+        <Tag tone="ochre" font="sans">
+          {stop}
+        </Tag>
+      ) : null}
+      {kinds.map((kind) => (
+        <Pill
+          key={kind}
+          fill={toolKindFill[kind]}
+          className="h-4.5 shrink-0 px-2 font-mono text-2xs font-bold"
+        >
+          {kind}
+        </Pill>
+      ))}
+      {effect ? <EffectTag effect={effect} /> : null}
+      {failed > 0 ? <Tag tone="plum">{failed} failed</Tag> : null}
+      <span className="flex shrink-0 items-center type-meta text-muted">
+        {facts?.map((fact) => (
+          <span
+            key={fact.label}
+            title={fact.title}
+            className="mr-1.5 hidden group-hover/step:inline group-focus-within/step:inline"
+          >
+            {fact.label} ·
+          </span>
+        ))}
+        <span title={plural(calls, "tool call")} className="flex items-center gap-0.5">
+          <Icon icon={Wrench} size={14} />
+          {calls}
+        </span>
+        {duration ? (
+          <Fragment>
+            <span aria-hidden className="mx-1.5">
+              ·
+            </span>
+            <span title={duration.title}>{duration.label}</span>
+          </Fragment>
+        ) : null}
+      </span>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={open ? `Fold ${what}` : `Unfold ${what}`}
+        onClick={onToggle}
+        className={triggerClass}
+      >
+        <Icon
+          icon={ChevronDown}
+          size={14}
+          className={cn("transition-transform", !open && "-rotate-90")}
+        />
+      </button>
     </div>
   );
 }
 
-export type FlowCallGroupProps = {
-  /** The names of the calls the step requested together, in order. */
-  names: string[];
-  /** How many of them failed, for the tag. */
-  failed?: number;
-  /** What the calls did beyond reading: wrote tracked state, or ran a script. */
-  effect?: ToolCallEffect | null;
-  /** Their summed run time, formatted. */
-  duration?: string;
-  defaultOpen?: boolean;
-  /** The calls, as ToolCall cards. */
+const leadLabel = "shrink-0 font-mono text-2xs tracking-wider uppercase";
+
+export type FlowStepBlockProps = FlowStepCues & {
+  /** The step's name, such as "Step 3": its header while open, or when it shows no reasoning. */
+  label: string;
+  /** The opening of its reasoning, which leads its header while folded. */
+  thinking?: ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** What shows while folded: its code tasks and its answer. */
+  outputs?: ReactNode;
+  /** What shows while open: its reasoning, calls, code tasks and answer, in that order. */
   children?: ReactNode;
 };
 
-/** The calls a step requested, folded to one line naming them. */
-export function FlowCallGroup({
-  names,
-  failed = 0,
-  effect,
-  duration,
-  defaultOpen = false,
+/**
+ * One step: a header leading with its reasoning, with cues on what its calls did. Folded, only what
+ * it produced shows under it (its code tasks and answer); open, everything it did.
+ */
+export function FlowStepBlock({
+  label,
+  thinking,
+  open,
+  onOpenChange,
+  outputs,
   children,
-}: FlowCallGroupProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  ...cues
+}: FlowStepBlockProps) {
+  const body = open ? children : outputs;
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen} className="flex min-w-0 flex-col gap-1.5">
-      <CallsLine
-        lead={plural(names.length, "call")}
-        names={names}
-        failed={failed}
-        effect={effect}
-        duration={duration}
+    <section aria-label={label} className="flex min-w-0 flex-col">
+      <StepLine
+        {...cues}
+        lead={
+          !open && thinking ? (
+            <>
+              <span className={cn(leadLabel, "text-muted")}>Thinking</span>
+              <span className="min-w-0 truncate text-sm text-fg-2">{thinking}</span>
+            </>
+          ) : (
+            <span className={cn(leadLabel, "font-semibold text-fg-2")}>{label}</span>
+          )
+        }
         open={open}
-        onToggle={() => setOpen(!open)}
-        what="the calls"
-        trigger={(chevron) => (
-          <Collapsible.Trigger
-            aria-label={open ? "Fold the calls" : "Unfold the calls"}
-            className={triggerClass}
-          >
-            {chevron}
-          </Collapsible.Trigger>
-        )}
+        onToggle={() => onOpenChange(!open)}
+        what={label}
       />
-      <Collapsible.Content className="flex flex-col gap-1.5 pb-1">{children}</Collapsible.Content>
-    </Collapsible.Root>
+      {body ? <div className="flex min-w-0 flex-col gap-1.5 pb-2">{body}</div> : null}
+    </section>
   );
 }
 
-export type FlowStretchProps = {
-  /** How many steps called tools in the stretch. */
-  steps: number;
-  /** The names of the tools they called, each once, in the order first called. */
-  names: string[];
-  /** How many calls in all. */
-  calls: number;
-  failed?: number;
-  /** What the calls did beyond reading: wrote tracked state, or ran a script. */
-  effect?: ToolCallEffect | null;
-  /** Their summed run time, formatted. */
-  duration?: string;
-  /** Whether the stretch's steps show under it, as entries on the same rail. */
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export type FlowBatchProps = {
+  /** The calls, as ToolCall cards numbered in the order they ran. */
+  children: ReactNode;
 };
 
-/** The work between two answers, folded to one line: how many calls in how many steps. */
-export function FlowStretch({
-  steps,
-  names,
-  calls,
-  failed = 0,
-  effect,
-  duration,
-  open,
-  onOpenChange,
-}: FlowStretchProps) {
+/**
+ * Calls a step requested together, held by one bracket: the model asked for them in one turn, and
+ * they ran one after another with no model turn between them.
+ */
+export function FlowBatch({ children }: FlowBatchProps) {
   return (
-    <CallsLine
-      lead={`${plural(calls, "tool call")} in ${plural(steps, "step")}`}
-      names={names}
-      failed={failed}
-      effect={effect}
-      duration={duration}
-      open={open}
-      onToggle={() => onOpenChange(!open)}
-      what="these steps"
-    />
+    <div className="relative flex min-w-0 flex-col gap-1.5 pl-3 before:absolute before:inset-y-2 before:left-0 before:w-1.5 before:rounded-l-md before:border-y-2 before:border-l-2 before:border-rule-2">
+      {children}
+    </div>
+  );
+}
+
+export type FlowStepRunProps = FlowStepCues & {
+  /** How many steps it compacts. */
+  steps: number;
+  /** Whether it shows its steps, framed under its header. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Its steps, as a FlowTimeline of FlowStepBlocks. */
+  children?: ReactNode;
+};
+
+/**
+ * Consecutive steps that produced nothing but calls, compacted to one header (how many steps, and
+ * cues on what their calls did); open, it frames them on a rail of their own.
+ */
+export function FlowStepRun({ steps, open, onOpenChange, children, ...cues }: FlowStepRunProps) {
+  return (
+    <div className={cn("flex min-w-0 flex-col", open && "rounded-xl inset-ring inset-ring-line-2")}>
+      <StepLine
+        {...cues}
+        className={open ? "pl-3" : undefined}
+        lead={<span className="font-mono text-xs font-bold text-fg">{plural(steps, "step")}</span>}
+        open={open}
+        onToggle={() => onOpenChange(!open)}
+        what="these steps"
+      />
+      {open && children ? (
+        <div className="min-w-0 border-t border-line px-2 pt-2 pb-2">{children}</div>
+      ) : null}
+    </div>
   );
 }
 
 export type FlowAnswerProps = Omit<ComponentProps<"article">, "children"> & {
-  /** What the card is, such as "Answer". */
-  label?: string;
-  /** Who wrote it, usually the agent's name. */
-  author?: string;
-  /** When it was written, formatted. */
-  time?: string;
-  /** The same moment as an ISO timestamp, for the time element. */
-  dateTime?: string;
-  /** Why the model stopped, when that deserves a tag, such as "max tokens". */
-  stop?: string;
-  /** Right of the header, such as a copy button. */
+  /** In its top right corner, such as a copy button. */
   actions?: ReactNode;
   /** The text the model wrote, rendered whole. */
   children: ReactNode;
 };
 
 /** What the model said to the reader: always whole, never folded or dimmed. */
-export function FlowAnswer({
-  label = "Answer",
-  author,
-  time,
-  dateTime,
-  stop,
-  actions,
-  children,
-  className,
-  ...props
-}: FlowAnswerProps) {
+export function FlowAnswer({ actions, children, className, ...props }: FlowAnswerProps) {
   return (
     <article
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-xl bg-paper px-5 py-3.5 text-md text-fg inset-ring inset-ring-line-2",
+        "relative min-w-0 rounded-xl bg-paper px-5 py-3.5 text-md text-fg inset-ring inset-ring-line-2",
+        actions && "pr-12",
         className,
       )}
       {...props}
     >
-      <header className="flex min-w-0 items-center gap-2">
-        <span className="text-sm font-bold text-tide-t">{label}</span>
-        {author || time ? (
-          <span className="min-w-0 truncate type-meta text-muted">
-            {author}
-            {author && time ? " · " : null}
-            {time ? <time {...(dateTime ? { dateTime } : {})}>{time}</time> : null}
-          </span>
-        ) : null}
-        {stop ? (
-          <Tag tone="ochre" font="sans">
-            {stop}
-          </Tag>
-        ) : null}
-        {actions ? <span className="ml-auto flex shrink-0 items-center">{actions}</span> : null}
-      </header>
-      <div className="min-w-0">{children}</div>
+      {children}
+      {actions ? (
+        <span className="absolute top-2.5 right-2.5 flex items-center">{actions}</span>
+      ) : null}
     </article>
   );
 }

@@ -199,7 +199,6 @@ export function Transcript({
                   generating={run.generating}
                   {...(progress ? { progress } : {})}
                   harness={agent.config.harness}
-                  agentName={agent.name}
                   {...(reveal ? { reveal } : {})}
                   inspector={{ guildId: agent.guild_id, agentId: agent.id }}
                   onAskCall={onAskCall}

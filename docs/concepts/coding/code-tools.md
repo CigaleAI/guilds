@@ -90,10 +90,10 @@ Each call other than `code_task` is a row in the run's flow on the
 | `file_read` | "Read `<path>`", or "Read `<path>` from line N"; "unchanged since step N" for a repeated read |
 | `code_search` | "Search files" or "Search lines", with "in `<path>`" |
 
-A `code_task` is its own block on the timeline, outside every stretch
-of calls, like an answer. It carries its harness's logo in place of
-the wrench, the one its result names, else the agent's harness, and
-reads:
+A `code_task` is its own block in its step on the timeline, shown even
+while the step is folded, like an answer. Its step carries the
+harness's logo on the rail in place of the dot, the one its result
+names, else the agent's harness. The block reads:
 
 - the harness's name, "coding task", and its status: **Running…**,
   **Done**, **Failed**, or how it ended otherwise, such as **Timed

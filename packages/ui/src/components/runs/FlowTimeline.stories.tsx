@@ -4,10 +4,11 @@ import { JsonTree } from "../content/JsonTree";
 import { Segmented } from "../controls/Segmented";
 import {
   FlowAnswer,
-  FlowCallGroup,
+  FlowBatch,
   FlowEntry,
   FlowHarnessTask,
-  FlowStretch,
+  FlowStepBlock,
+  FlowStepRun,
   FlowThought,
   FlowTimeline,
 } from "./FlowTimeline";
@@ -30,9 +31,8 @@ export default meta;
 
 type Story = StoryObj<typeof FlowTimeline>;
 
+/** Tokens and cost, shown on a step's header on hover. */
 const facts = [
-  { label: "1 call", title: "execute" },
-  { label: "2.6s", title: "2.6s model · 1.5s tools" },
   { label: "7.3k tok", title: "7,120 in · 180 out" },
   { label: "$0.0010", title: "Cost source: catalog" },
 ];
@@ -56,7 +56,7 @@ type Step = {
   thinking?: string;
   /** The rest of the thinking, behind **more**. */
   more?: string;
-  answer?: { time: string; body: ReactNode };
+  answer?: { body: ReactNode };
   calls: Call[];
   task?: Task;
   duration: string;
@@ -80,7 +80,6 @@ const steps: Step[] = [
     thinking: "The repo exists but seems empty. Let me check its contents through the API.",
     more: "If it has no commits, the landing page has to start from scratch.",
     answer: {
-      time: "10:31",
       body: (
         <p>
           The repo is empty, so this means building the hero scaffold as well as the animation. I'll
@@ -151,7 +150,6 @@ const steps: Step[] = [
   {
     thinking: "The push failed because origin has no main branch.",
     answer: {
-      time: "10:36",
       body: (
         <div className="flex flex-col gap-2">
           <p>
@@ -206,13 +204,25 @@ function CallDetail({ kind, value }: { kind: ToolKind; value: unknown }) {
 
 const allCalls = steps.flatMap((step) => step.calls);
 
-/** A piece of a step on the rail; answers split the rail into stretches. */
-/** A piece of a step on the rail; standalone pieces (answers and harness tasks) split it into stretches. */
-type Part = { standalone: boolean; step: Step; calls?: Call[]; node: ReactNode };
-
 function effectOf(calls: readonly Call[]): ToolCallEffect | null {
   if (calls.some((call) => call.effect === "wrote")) return "wrote";
   return calls.some((call) => call.effect === "ran") ? "ran" : null;
+}
+
+const kindOrder: ToolKind[] = ["memory", "read", "write", "execute", "act", "post", "connected"];
+
+/** What steps' calls did, for a header that does not name them. */
+function cuesOf(of: readonly Step[]) {
+  const calls = of.flatMap((step) => step.calls);
+  const seconds = of.reduce((sum, step) => sum + parseFloat(step.duration), 0);
+  return {
+    kinds: kindOrder.filter((kind) => calls.some((call) => call.kind === kind)),
+    effect: effectOf(calls),
+    failed: calls.filter((call) => call.status === "failed").length,
+    calls: calls.length + of.filter((step) => step.task).length,
+    duration: { label: `${seconds.toFixed(1)}s`, title: "model and tool time" },
+    facts,
+  };
 }
 
 function GenerationFlow() {
@@ -221,7 +231,7 @@ function GenerationFlow() {
   const [expanded, setExpanded] = useState(false);
   const [openCall, setOpenCall] = useState<string | null>(null);
   const view = `${expanded}:${filter ?? "all"}`;
-  const [stretches, setStretches] = useState<{ view: string; open: Record<string, boolean> }>({
+  const [folds, setFolds] = useState<{ view: string; open: Record<string, boolean> }>({
     view,
     open: {},
   });
@@ -239,6 +249,14 @@ function GenerationFlow() {
     [...document.querySelectorAll("[data-answer]")]
       .at(-1)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const isOpen = (key: string, calls: readonly Call[]) =>
+    (folds.view === view ? folds.open[key] : undefined) ??
+    (expanded || (filter !== null && calls.some(kept)));
+  const toggle = (key: string, next: boolean) =>
+    setFolds((current) => ({
+      view,
+      open: { ...(current.view === view ? current.open : {}), [key]: next },
+    }));
 
   const card = (call: Call, key: string, index?: number) => (
     <ToolCall
@@ -263,166 +281,123 @@ function GenerationFlow() {
     />
   );
 
-  const parts = (step: Step, index: number): Part[] => {
-    const dimmed = filter !== null && !step.calls.some(kept);
-    const out: Part[] = [];
-    if (step.thinking && !thinkingHidden) {
-      out.push({
-        standalone: false,
-        step,
-        node: (
-          <FlowEntry key={`${index}:thinking:${view}`} marker="thought" dimmed={dimmed}>
+  /** A step as one block: folded to its header, its harness task and its answer; open onto everything. */
+  const stepBlock = (step: Step, index: number) => {
+    const key = `step:${index}`;
+    const thinking = thinkingHidden ? undefined : step.thinking;
+    const [only] = step.calls;
+    const taskKey = `${index}:task`;
+    const outputs = [
+      step.task ? (
+        <FlowHarnessTask
+          key={taskKey}
+          harness="Codex"
+          prompt={step.task.prompt}
+          repository={step.task.repository}
+          status="done"
+          statusLabel="Done"
+          changes={step.task.changes}
+          effect="wrote"
+          duration={step.task.duration}
+          open={openCall === taskKey}
+          onOpenChange={(next) => setOpenCall(next ? taskKey : null)}
+          detail={
+            <CallDetail
+              kind="execute"
+              value={{ brief: step.task.prompt, repo: step.task.repository }}
+            />
+          }
+        />
+      ) : null,
+      step.answer ? (
+        <FlowAnswer key={`${index}:answer`} data-answer="">
+          {step.answer.body}
+        </FlowAnswer>
+      ) : null,
+    ].filter(Boolean);
+    return (
+      <FlowEntry
+        key={key}
+        marker="step"
+        tone={step.calls.some((call) => call.status === "failed") ? "failed" : "ok"}
+        dimmed={filter !== null && !step.answer && !step.calls.some(kept)}
+      >
+        <FlowStepBlock
+          label={`Step ${index + 1}`}
+          {...(thinking ? { thinking } : {})}
+          {...cuesOf([step])}
+          open={isOpen(key, step.calls)}
+          onOpenChange={(next) => toggle(key, next)}
+          {...(outputs.length ? { outputs } : {})}
+        >
+          {thinking ? (
             <FlowThought
+              key={`${index}:thinking:${view}`}
               label="thinking"
-              summary={step.thinking}
-              facts={facts}
+              summary={thinking}
               defaultOpen={expanded}
             >
               {step.more ? (
                 <div className="rounded-lg bg-paper px-3 py-2">
                   <p className="text-sm whitespace-pre-wrap text-fg-2">
-                    {`${step.thinking}\n\n${step.more}`}
+                    {`${thinking}\n\n${step.more}`}
                   </p>
                 </div>
               ) : null}
             </FlowThought>
-          </FlowEntry>
-        ),
-      });
-    }
-    if (step.answer) {
-      out.push({
-        standalone: true,
-        step,
-        node: (
-          <FlowEntry key={`${index}:answer`} marker="answer" data-answer="">
-            <FlowAnswer
-              author="quill"
-              time={step.answer.time}
-              dateTime={`2026-10-16T${step.answer.time}:00Z`}
-            >
-              {step.answer.body}
-            </FlowAnswer>
-          </FlowEntry>
-        ),
-      });
-    }
-    const failed = step.calls.filter((call) => call.status === "failed").length;
-    const [only] = step.calls;
-    if (only)
-      out.push({
-        standalone: false,
-        step,
-        calls: step.calls,
-        node: (
-          <FlowEntry
-            key={`${index}:calls:${view}`}
-            marker="call"
-            tone={failed ? "failed" : "ok"}
-            dimmed={dimmed}
-          >
-            <FlowCallGroup
-              names={step.calls.map((call) => call.name)}
-              failed={failed}
-              effect={effectOf(step.calls)}
-              duration={step.duration}
-              defaultOpen={expanded || filter === null || step.calls.some(kept)}
-            >
-              {step.calls.length === 1 && only
-                ? card(only, `${index}:0`)
-                : step.calls.map((call, position) =>
-                    card(call, `${index}:${position}`, position + 1),
-                  )}
-            </FlowCallGroup>
-          </FlowEntry>
-        ),
-      });
-    if (step.task) {
-      const key = `${index}:task`;
-      out.push({
-        standalone: true,
-        step,
-        node: (
-          <FlowEntry key={key} marker="call" dimmed={filter === "errors"}>
-            <FlowHarnessTask
-              harness="Codex"
-              prompt={step.task.prompt}
-              repository={step.task.repository}
-              status="done"
-              statusLabel="Done"
-              changes={step.task.changes}
-              effect="wrote"
-              duration={step.task.duration}
-              open={openCall === key}
-              onOpenChange={(next) => setOpenCall(next ? key : null)}
-              detail={
-                <CallDetail
-                  kind="execute"
-                  value={{ brief: step.task.prompt, repo: step.task.repository }}
-                />
-              }
-            />
-          </FlowEntry>
-        ),
-      });
-    }
-    return out;
+          ) : null}
+          {only && step.calls.length === 1 ? card(only, `${index}:0`) : null}
+          {step.calls.length > 1 ? (
+            <FlowBatch key={`${index}:calls`}>
+              {step.calls.map((call, position) => card(call, `${index}:${position}`, position + 1))}
+            </FlowBatch>
+          ) : null}
+          {outputs}
+        </FlowStepBlock>
+      </FlowEntry>
+    );
   };
 
-  /** Answers whole; the steps between two answers folded into one stretch until opened. */
+  /** One block per step, and two or more steps that produced nothing compacted into one. */
   const timeline = () => {
     const entries: ReactNode[] = [];
-    let run: Part[] = [];
+    let silent: Step[] = [];
     const flush = () => {
-      const blocks = run.filter((part) => part.calls);
-      const calls = blocks.flatMap((part) => part.calls ?? []);
-      const [first] = run;
-      if (!first || !calls.length) {
-        entries.push(...run.map((part) => part.node));
-        run = [];
-        return;
+      const [first] = silent;
+      if (silent.length === 1 && first) entries.push(stepBlock(first, steps.indexOf(first)));
+      if (silent.length > 1 && first) {
+        const key = `run:${steps.indexOf(first)}`;
+        const calls = silent.flatMap((step) => step.calls);
+        entries.push(
+          <FlowEntry
+            key={key}
+            marker="steps"
+            tone={calls.some((call) => call.status === "failed") ? "failed" : "ok"}
+            dimmed={filter !== null && !calls.some(kept)}
+          >
+            <FlowStepRun
+              steps={silent.length}
+              {...cuesOf(silent)}
+              open={isOpen(key, calls)}
+              onOpenChange={(next) => toggle(key, next)}
+            >
+              <FlowTimeline>
+                {silent.map((step) => stepBlock(step, steps.indexOf(step)))}
+              </FlowTimeline>
+            </FlowStepRun>
+          </FlowEntry>,
+        );
       }
-      const key = `stretch:${steps.indexOf(first.step)}`;
-      const open =
-        (stretches.view === view ? stretches.open[key] : undefined) ??
-        (expanded || (filter !== null && calls.some(kept)));
-      const failed = calls.filter((call) => call.status === "failed").length;
-      const seconds = blocks.reduce((sum, part) => sum + parseFloat(part.step.duration), 0);
-      entries.push(
-        <FlowEntry
-          key={key}
-          marker="call"
-          tone={failed ? "failed" : "ok"}
-          dimmed={filter !== null && !calls.some(kept)}
-        >
-          <FlowStretch
-            steps={blocks.length}
-            calls={calls.length}
-            names={[...new Set(calls.map((call) => call.name))]}
-            failed={failed}
-            effect={effectOf(calls)}
-            duration={`${seconds.toFixed(1)}s`}
-            open={open}
-            onOpenChange={(next) =>
-              setStretches((current) => ({
-                view,
-                open: { ...(current.view === view ? current.open : {}), [key]: next },
-              }))
-            }
-          />
-        </FlowEntry>,
-      );
-      if (open) entries.push(...run.map((part) => part.node));
-      run = [];
+      silent = [];
     };
-    for (const part of steps.flatMap(parts)) {
-      if (part.standalone) {
+    steps.forEach((step, index) => {
+      if (step.answer || step.task) {
         flush();
-        entries.push(part.node);
+        entries.push(stepBlock(step, index));
       } else {
-        run.push(part);
+        silent.push(step);
       }
-    }
+    });
     flush();
     return entries;
   };
@@ -462,10 +437,11 @@ function GenerationFlow() {
 }
 
 /**
- * A generation as one line, fully collapsed: its answers whole, and the work between two answers
- * folded into one stretch ("4 tool calls in 2 steps"); opening a stretch shows its steps with their
- * calls. **Expand all** opens every stretch, thought and group; **Writes** or **Errors** open only
- * the stretches and groups holding those calls and dim the rest; **Collapse all** folds it back.
+ * A generation as one block per step: folded, each reads its reasoning's opening and cues on what
+ * its calls did, with its harness task and answer under it; open, its reasoning, calls (a batch in
+ * one bracket), task and answer. Steps that produced nothing in a row compact into one block.
+ * **Expand all** opens every block; **Writes** or **Errors** open only those holding such calls and
+ * dim the rest; **Collapse all** folds it back.
  */
 export const Generation: Story = {
   render: () => (
@@ -475,36 +451,40 @@ export const Generation: Story = {
   ),
 };
 
-/** A step still waiting on its calls pulses its wrench; its group opens to show them. */
+/** A step still waiting on a call pulses its dot and stays open on the running batch. */
 export const Running: Story = {
   render: () => (
     <div className="w-3xl max-w-full rounded-xl bg-surface p-3">
       <FlowTimeline>
-        <FlowEntry marker="thought">
-          <FlowThought
-            label="thinking"
-            summary="Checking both feeds before posting."
-            facts={facts}
-          />
-        </FlowEntry>
-        <FlowEntry marker="call" tone="running">
-          <FlowCallGroup names={["record_list", "note_find"]} defaultOpen>
-            <ToolCall
-              index={1}
-              name="record_list"
-              kind="read"
-              hint="degen-orders"
-              status="ok"
-              duration="30ms"
-            />
-            <ToolCall
-              index={2}
-              name="note_find"
-              kind="read"
-              hint="Find notes treasury"
-              status="running"
-            />
-          </FlowCallGroup>
+        <FlowEntry marker="step" tone="running">
+          <FlowStepBlock
+            label="Step 1"
+            thinking="Checking both feeds before posting."
+            kinds={["read"]}
+            calls={2}
+            duration={{ label: "2.1s" }}
+            open
+            onOpenChange={() => {}}
+          >
+            <FlowThought label="thinking" summary="Checking both feeds before posting." />
+            <FlowBatch>
+              <ToolCall
+                index={1}
+                name="record_list"
+                kind="read"
+                hint="degen-orders"
+                status="ok"
+                duration="30ms"
+              />
+              <ToolCall
+                index={2}
+                name="note_find"
+                kind="read"
+                hint="Find notes treasury"
+                status="running"
+              />
+            </FlowBatch>
+          </FlowStepBlock>
         </FlowEntry>
       </FlowTimeline>
     </div>
@@ -516,7 +496,7 @@ export const HarnessTask: Story = {
   render: () => (
     <div className="w-3xl max-w-full rounded-xl bg-surface p-3">
       <FlowTimeline>
-        <FlowEntry marker="call" tone="running">
+        <FlowEntry marker="step" tone="running">
           <FlowHarnessTask
             harness="Claude Code"
             prompt="Fix the failing checkout test: the cart total ignores discounts on bundled items. Keep the public API, add a regression test, and commit on the current branch."
@@ -535,7 +515,7 @@ export const HarnessTask: Story = {
             }
           />
         </FlowEntry>
-        <FlowEntry marker="call" tone="failed">
+        <FlowEntry marker="step" tone="failed">
           <FlowHarnessTask
             harness="Codex"
             prompt="Upgrade the router to v2 and fix every call site."

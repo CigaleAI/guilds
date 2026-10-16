@@ -84,7 +84,7 @@ export function CoachLog({
           if (segment.type === "flow") {
             return (
               <div key={segment.key} className="flex flex-col gap-3">
-                <FlowView flow={segment} generating={generating} agentName={coach.name} />
+                <FlowView flow={segment} generating={generating} />
                 {widgetsAfter(segment, rows)}
               </div>
             );

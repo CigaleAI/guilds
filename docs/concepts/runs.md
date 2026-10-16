@@ -188,8 +188,8 @@ part.
 - A reply cut by `finish_reason: length` says the output token limit
   was reached.
 
-Every stretch of model steps that called tools renders as one **run
-flow** per generation. Its header shows:
+Consecutive model steps that called tools render as one **run flow**
+per generation. Its header shows:
 
 - the title, which names the model on hover, and how the generation
   ended: **Done**, **Running…**, or its error count;
@@ -197,51 +197,52 @@ flow** per generation. Its header shows:
   calls, tokens, and cost;
 - a toolbar.
 
-A generation opens fully collapsed: its answers and code tasks whole,
-and the calls between two of them folded into one **stretch** line on
-a wrench,
-**8 tool calls in 4 steps**, then the tools they called, each once, a
-**N failed** tag when any failed, a **wrote** or **ran script** tag,
-and their summed time. Opening a stretch shows its steps, below, with
-their groups of calls unfolded. A stretch holding a running call, or a
-call the view was opened on, starts open. The toolbar changes what is
-open:
+Below the header, the generation reads down a rail as one block per
+model step, on a dot: plum when a call failed, pulsing while one runs,
+or the harness's logo for a step that ran a code task. Every step is
+reasoning followed by calls, an answer, or both. Its header reads
+**THINKING** and the opening of its reasoning, then cues on what its
+calls did without naming them: the kinds they were (read, write,
+execute, …), a **wrote** or **ran script** tag, an **N failed** tag
+when any failed, a wrench with the call count, and the step's time
+(model and tool time on hover). Hovering it adds its tokens and cost.
+A step cut by `finish_reason: length` carries **max tokens**; any
+finish reason other than stopping or calling tools is tagged too.
 
-- **Writes** and **Errors** open the stretches and groups holding calls
-  that changed tracked state, or failed calls, and dim everything
-  else; each carries its count, as does **All**, which keeps every
-  call.
+Folded, a step shows only what it produced under its header: its code
+tasks and its answer, a card holding the whole text with a copy
+button in its corner. Answers are never folded or dimmed. Open,
+its header names it, **Step N**, and it shows in order:
+
+- a **thinking** line for its reasoning, folded to its opening line;
+  **more** unfolds a longer one onto the whole text, with a copy
+  button;
+- the calls it requested. A single call is its card. Several calls
+  requested in the same model turn are a batch: their cards, numbered
+  in the order they ran, held by one bracket. The calls of a batch
+  run one after another, with no model turn between them;
+- its code tasks;
+- its answer.
+
+Two or more steps in a row that produced nothing but calls compact
+into one block on a stack: **N steps**, with the same cues over all
+their calls. Opening it frames them, on a rail of their own, as the
+same step blocks.
+
+A step or compacted block holding a running call, or a call the view
+was opened on, starts open. The toolbar changes what is open:
+
+- **Writes** and **Errors** open the blocks holding calls that changed
+  tracked state, or failed calls, and dim everything else; each
+  carries its count, as does **All**, which keeps every call.
   Tracked state is a note, memory, record, collection, or script
   created, edited, or deleted, or source code changed through
   `code_task`; commands, script runs, posts, schedules, and browser
   actions are not writes.
-- **Expand all** opens every stretch and unfolds every reasoning line
-  and group of calls. **Collapse all** folds them back and returns to
-  **All**.
-- **Hide thinking** drops the reasoning lines.
+- **Expand all** opens every block and unfolds every reasoning line.
+  **Collapse all** folds them back and returns to **All**.
+- **Hide thinking** drops the reasoning, so headers name their step.
 - **Jump to answer** scrolls to the generation's last answer.
-
-Below the header, the generation reads as one timeline down a rail.
-Each step, in an open stretch, adds in order:
-
-- a **thinking** line for its reasoning, on a brain, folded to its
-  opening line.
-  **more** unfolds a longer one onto the whole text, with a copy
-  button. The step's call count, model time, tokens, and cost show on
-  hover and while it is unfolded, each with its breakdown on hover. A
-  step cut by `finish_reason: length` carries **max tokens**; any
-  finish reason other than stopping or calling tools is tagged too;
-- an **Answer** card for the text it wrote alongside its calls, on a
-  filled dot: the agent's name, the time, a copy button, and the whole
-  text. Answers sit outside every stretch and are never folded or
-  dimmed;
-- the calls it requested, on a wrench, folded into one line naming
-  them (**1 call shell**, **4 calls shell, file_read, …**), with their
-  summed time, a **N failed** tag when any failed, and a **wrote** or
-  **ran script** tag. It unfolds onto the call's card, or the cards
-  numbered in the order they ran. The wrench is
-  plum when a call failed and pulses while one runs; a code task shows
-  its harness's logo instead.
 
 A call that changed tracked state carries a tide **wrote** tag,
 and a `script_run` call a **ran script** tag. Filters dim the entries
@@ -267,8 +268,8 @@ the working directory, the file and its lines, the step a repeated
 read points to, stored bytes, and tool calls left. The call's kind and
 level sit beside the views.
 
-A `code_task` call is its own block on the run flow, between the
-stretches of other calls ([Code tools](coding/code-tools.md#in-the-app)).
+A `code_task` call is its own block in its step, shown even while the
+step is folded ([Code tools](coding/code-tools.md#in-the-app)).
 While it runs, its latest progress lines show under its brief. Opening
 it shows its result, its
 metadata (status, harness, repository, session, diffstat, and log

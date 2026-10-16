@@ -230,6 +230,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       ["claude-code", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", false, false],
       ["codex", null, null, false, false],
       ["cursor", "CURSOR_API_KEY", "CURSOR_API_KEY", false, false],
+      ["antigravity", null, null, false, false],
     ]);
     // An alias names the secret the harness's token variable reads.
     const aliased = await app.inject({
