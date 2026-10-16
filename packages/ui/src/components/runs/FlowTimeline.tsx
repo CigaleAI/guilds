@@ -144,7 +144,7 @@ export type FlowStepCues = {
 };
 
 type StepLineProps = FlowStepCues & {
-  /** What leads the line: the reasoning's opening, the step's name, or how many steps. */
+  /** What leads the line: what the step's calls did, or how many steps. */
   lead: ReactNode;
   open: boolean;
   onToggle: () => void;
@@ -241,25 +241,28 @@ function StepLine({
 const leadLabel = "shrink-0 font-mono text-2xs tracking-wider uppercase";
 
 export type FlowStepBlockProps = FlowStepCues & {
-  /** The step's name, such as "Step 3": its header while open, or when it shows no reasoning. */
+  /** The step's name, such as "Step 3", which prefixes its header while open. */
   label: string;
-  /** The opening of its reasoning, which leads its header while folded. */
-  thinking?: ReactNode;
+  /** What its calls did, such as "Read a.md, b.md · Run ls": its header. */
+  title: ReactNode;
+  /** What the model said alongside its calls: two lines while folded, whole while open. */
+  note?: ReactNode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** What shows while folded: its code tasks and its answer. */
+  /** What shows under the note while folded: its code tasks. */
   outputs?: ReactNode;
-  /** What shows while open: its reasoning, calls, code tasks and answer, in that order. */
+  /** What shows under the note while open: its reasoning, calls and code tasks, in that order. */
   children?: ReactNode;
 };
 
 /**
- * One step: a header leading with its reasoning, with cues on what its calls did. Folded, only what
- * it produced shows under it (its code tasks and answer); open, everything it did.
+ * One step: a header naming what its calls did, with cues on them, and what the model said under it.
+ * Folded, only its code tasks show below; open, its reasoning and everything it did.
  */
 export function FlowStepBlock({
   label,
-  thinking,
+  title,
+  note,
   open,
   onOpenChange,
   outputs,
@@ -272,19 +275,20 @@ export function FlowStepBlock({
       <StepLine
         {...cues}
         lead={
-          !open && thinking ? (
-            <>
-              <span className={cn(leadLabel, "text-muted")}>Thinking</span>
-              <span className="min-w-0 truncate text-sm text-fg-2">{thinking}</span>
-            </>
-          ) : (
-            <span className={cn(leadLabel, "font-semibold text-fg-2")}>{label}</span>
-          )
+          <>
+            {open ? <span className={cn(leadLabel, "text-muted")}>{label}</span> : null}
+            <span className="min-w-0 truncate text-sm text-fg">{title}</span>
+          </>
         }
         open={open}
         onToggle={() => onOpenChange(!open)}
         what={label}
       />
+      {note ? (
+        <div data-note="" className={cn("min-w-0 pb-2 text-sm text-fg-2", !open && "line-clamp-2")}>
+          {note}
+        </div>
+      ) : null}
       {body ? <div className="flex min-w-0 flex-col gap-1.5 pb-2">{body}</div> : null}
     </section>
   );
@@ -336,32 +340,6 @@ export function FlowStepRun({ steps, open, onOpenChange, children, ...cues }: Fl
         <div className="min-w-0 border-t border-line px-2 pt-2 pb-2">{children}</div>
       ) : null}
     </div>
-  );
-}
-
-export type FlowAnswerProps = Omit<ComponentProps<"article">, "children"> & {
-  /** In its top right corner, such as a copy button. */
-  actions?: ReactNode;
-  /** The text the model wrote, rendered whole. */
-  children: ReactNode;
-};
-
-/** What the model said to the reader: always whole, never folded or dimmed. */
-export function FlowAnswer({ actions, children, className, ...props }: FlowAnswerProps) {
-  return (
-    <article
-      className={cn(
-        "relative min-w-0 rounded-xl bg-paper px-5 py-3.5 text-md text-fg inset-ring inset-ring-line-2",
-        actions && "pr-12",
-        className,
-      )}
-      {...props}
-    >
-      {children}
-      {actions ? (
-        <span className="absolute top-2.5 right-2.5 flex items-center">{actions}</span>
-      ) : null}
-    </article>
   );
 }
 

@@ -200,19 +200,25 @@ per generation. Its header shows:
 Below the header, the generation reads down a rail as one block per
 model step, on a dot: plum when a call failed, pulsing while one runs,
 or the harness's logo for a step that ran a code task. Every step is
-reasoning followed by calls, an answer, or both. Its header reads
-**THINKING** and the opening of its reasoning, then cues on what its
-calls did without naming them: the kinds they were (read, write,
+reasoning, then calls, and sometimes text the model wrote alongside
+them. The model's final reply has no calls, so it is a bubble after
+the flow, not a step.
+
+A step's header names what its calls did, one short line per call
+such as **Read** and a path or **Run** and a command. Calls in a row
+that open with the same verb share it: **Read a.md, b.md · Run ls**.
+After it come cues on those calls: the kinds they were (read, write,
 execute, …), a **wrote** or **ran script** tag, an **N failed** tag
 when any failed, a wrench with the call count, and the step's time
 (model and tool time on hover). Hovering it adds its tokens and cost.
 A step cut by `finish_reason: length` carries **max tokens**; any
 finish reason other than stopping or calling tools is tagged too.
 
-Folded, a step shows only what it produced under its header: its code
-tasks and its answer, a card holding the whole text with a copy
-button in its corner. Answers are never folded or dimmed. Open,
-its header names it, **Step N**, and it shows in order:
+Under the header sits the text the model wrote alongside the calls,
+as muted lines: two lines of plain text while the step is folded, the
+whole Markdown while it is open. Folded, a step also shows its code
+tasks. Open, its header adds its name, **Step N**, and it shows in
+order:
 
 - a **thinking** line for its reasoning, folded to its opening line;
   **more** unfolds a longer one onto the whole text, with a copy
@@ -221,10 +227,9 @@ its header names it, **Step N**, and it shows in order:
   requested in the same model turn are a batch: their cards, numbered
   in the order they ran, held by one bracket. The calls of a batch
   run one after another, with no model turn between them;
-- its code tasks;
-- its answer.
+- its code tasks.
 
-Two or more steps in a row that produced nothing but calls compact
+Two or more steps in a row with no text and no code task compact
 into one block on a stack: **N steps**, with the same cues over all
 their calls. Opening it frames them, on a rail of their own, as the
 same step blocks.
@@ -241,8 +246,9 @@ was opened on, starts open. The toolbar changes what is open:
   actions are not writes.
 - **Expand all** opens every block and unfolds every reasoning line.
   **Collapse all** folds them back and returns to **All**.
-- **Hide thinking** drops the reasoning, so headers name their step.
-- **Jump to answer** scrolls to the generation's last answer.
+- **Hide thinking** drops the reasoning from open steps.
+- **Jump to answer** scrolls to the last text the model wrote in the
+  flow.
 
 A call that changed tracked state carries a tide **wrote** tag,
 and a `script_run` call a **ran script** tag. Filters dim the entries

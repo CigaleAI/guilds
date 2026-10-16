@@ -9,6 +9,7 @@ import {
   friendlyToolCall,
   previewText,
   stripRemainingToolCalls,
+  summarizeCalls,
   toolOutcome,
   toolResultError,
 } from "./toolFormat";
@@ -106,6 +107,39 @@ test("code tools read as the command, the file, or the background job they touch
   assert.equal(call("file_read", { path: "src/app.ts", offset: 120 }), "Read src/app.ts from line 120");
   assert.equal(call("code_search", { pattern: "refund", mode: "content", path: "src" }), 'Search lines "refund" in src');
   assert.equal(call("code_search", { pattern: "refund" }), 'Search files "refund"');
+});
+
+test("summarizeCalls names what a batch did, merging calls that share a verb", () => {
+  const call = (name: string, args: Record<string, unknown>) => ({
+    function: { name, arguments: JSON.stringify(args) },
+  });
+  assert.equal(summarizeCalls([call("file_read", { path: "a.md" })]), "Read a.md");
+  assert.equal(
+    summarizeCalls([
+      call("file_read", { path: "a.md" }),
+      call("file_read", { path: "b.md" }),
+      call("shell", { command: "ls" }),
+    ]),
+    "Read a.md, b.md · Run ls",
+  );
+  assert.equal(
+    summarizeCalls([
+      call("note_write", {}),
+      call("note_write", {}),
+      call("file_read", { path: "a.md" }),
+    ]),
+    "Wrote note · Read a.md",
+  );
+  assert.equal(
+    summarizeCalls([call("group_post", {}), call("browser_snapshot", {})]),
+    "Post to group · Read page snapshot",
+  );
+  assert.equal(summarizeCalls([call("custom", { a: 1, b: 2 }), null]), "custom · tool");
+  assert.equal(
+    summarizeCalls([call("custom", { a: 1, b: 2 }), call("custom", { a: 3, b: 4 })]),
+    "custom",
+  );
+  assert.equal(summarizeCalls([]), "");
 });
 
 test("toolOutcome names a failing exit and a repeated read", () => {

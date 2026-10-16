@@ -91,7 +91,7 @@ Each call other than `code_task` is a row in the run's flow on the
 | `code_search` | "Search files" or "Search lines", with "in `<path>`" |
 
 A `code_task` is its own block in its step on the timeline, shown even
-while the step is folded, like an answer. Its step carries the
+while the step is folded. Its step carries the
 harness's logo on the rail in place of the dot, the one its result
 names, else the agent's harness. The block reads:
 

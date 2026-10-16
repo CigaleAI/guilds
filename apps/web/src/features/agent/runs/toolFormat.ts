@@ -334,6 +334,32 @@ function firstCommandLine(command: unknown): string {
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
 
+/** Calls that share a leading verb, such as "Read" over two paths. */
+type CallGroup = { verb: string; objects: string[] };
+
+/** Adds a call's summary to the last group when it opens with the same verb, else starts a group. */
+function groupSummary(groups: CallGroup[], summary: string): void {
+  const [verb = "", ...rest] = summary.split(" ");
+  const object = rest.join(" ");
+  const last = groups.at(-1);
+  if (last?.verb !== verb) {
+    groups.push({ verb, objects: object ? [object] : [] });
+    return;
+  }
+  if (object && !last.objects.includes(object)) last.objects.push(object);
+}
+
+/** What a batch of calls did, in one line, such as "Read a.md, b.md · Run ls"; a call with no friendly summary reads as its tool name. */
+export function summarizeCalls(calls: readonly (ToolCallRequest | null | undefined)[]): string {
+  const groups: CallGroup[] = [];
+  for (const call of calls) {
+    groupSummary(groups, friendlyToolCall(call) || String(call?.function?.name || "tool"));
+  }
+  return groups
+    .map(({ verb, objects }) => [verb, objects.join(", ")].filter(Boolean).join(" "))
+    .join(" · ");
+}
+
 const CODE_TASK_STATUSES: Readonly<Record<string, string>> = Object.freeze({
   completed: "completed",
   failed: "failed",

@@ -3,7 +3,6 @@ import { useState, type ReactNode } from "react";
 import { JsonTree } from "../content/JsonTree";
 import { Segmented } from "../controls/Segmented";
 import {
-  FlowAnswer,
   FlowBatch,
   FlowEntry,
   FlowHarnessTask,
@@ -53,10 +52,13 @@ type Call = {
 type Task = { prompt: string; repository: string; changes: string; duration: string };
 
 type Step = {
+  /** What its calls did, for its header. */
+  title: string;
   thinking?: string;
   /** The rest of the thinking, behind **more**. */
   more?: string;
-  answer?: { body: ReactNode };
+  /** What the model said alongside its calls. */
+  note?: string;
   calls: Call[];
   task?: Task;
   duration: string;
@@ -64,6 +66,7 @@ type Step = {
 
 const steps: Step[] = [
   {
+    title: "Run git ls-remote origin",
     thinking: "The remote repo seems empty or inaccessible.",
     calls: [
       {
@@ -77,16 +80,10 @@ const steps: Step[] = [
     duration: "1.5s",
   },
   {
+    title: "Run gh api repos/acme/landing/contents",
     thinking: "The repo exists but seems empty. Let me check its contents through the API.",
     more: "If it has no commits, the landing page has to start from scratch.",
-    answer: {
-      body: (
-        <p>
-          The repo is empty, so this means building the hero scaffold as well as the animation. I'll
-          look for design notes first, then delegate.
-        </p>
-      ),
-    },
+    note: "The repo is empty, so this means building the hero scaffold as well as the animation. I'll look for design notes first, then delegate.",
     calls: [
       {
         name: "shell",
@@ -98,6 +95,7 @@ const steps: Step[] = [
     duration: "1.5s",
   },
   {
+    title: "Wrote brief.md, plan.md",
     calls: [
       {
         name: "note_write",
@@ -119,6 +117,7 @@ const steps: Step[] = [
     duration: "0.2s",
   },
   {
+    title: "Code task in landing",
     thinking: "Now I'll delegate the build to my harness with a self-contained brief.",
     calls: [],
     task: {
@@ -131,6 +130,7 @@ const steps: Step[] = [
     duration: "1m 44s",
   },
   {
+    title: "Run pnpm test · Read src/Hero.tsx, src/hero.css · Run git push origin main",
     thinking: "The harness reports done. Now I verify it myself.",
     calls: [
       { name: "shell", kind: "execute", hint: "pnpm test", duration: "6.1s" },
@@ -148,21 +148,9 @@ const steps: Step[] = [
     duration: "9.2s",
   },
   {
+    title: "Run open_release.py",
     thinking: "The push failed because origin has no main branch.",
-    answer: {
-      body: (
-        <div className="flex flex-col gap-2">
-          <p>
-            No <code className="font-mono text-sm">main</code> branch on origin yet, so the push
-            failed. I'll run the release script to open it, then push again.
-          </p>
-          <ul className="list-disc pl-5 text-fg-2">
-            <li>Tests and lint pass locally.</li>
-            <li>The landing hero is committed on a local branch.</li>
-          </ul>
-        </div>
-      ),
-    },
+    note: "No main branch on origin yet, so the push failed. I'll run the release script to open it, then push again. Tests and lint pass locally, and the landing hero is committed on a local branch.",
     calls: [
       {
         name: "script_run",
@@ -246,7 +234,7 @@ function GenerationFlow() {
     if (!next) setFilter(null);
   };
   const jump = () =>
-    [...document.querySelectorAll("[data-answer]")]
+    [...document.querySelectorAll("[data-note]")]
       .at(-1)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   const isOpen = (key: string, calls: readonly Call[]) =>
@@ -281,7 +269,7 @@ function GenerationFlow() {
     />
   );
 
-  /** A step as one block: folded to its header, its harness task and its answer; open onto everything. */
+  /** A step as one block: folded to its header, its note and its harness task; open onto everything. */
   const stepBlock = (step: Step, index: number) => {
     const key = `step:${index}`;
     const thinking = thinkingHidden ? undefined : step.thinking;
@@ -309,22 +297,18 @@ function GenerationFlow() {
           }
         />
       ) : null,
-      step.answer ? (
-        <FlowAnswer key={`${index}:answer`} data-answer="">
-          {step.answer.body}
-        </FlowAnswer>
-      ) : null,
     ].filter(Boolean);
     return (
       <FlowEntry
         key={key}
         marker="step"
         tone={step.calls.some((call) => call.status === "failed") ? "failed" : "ok"}
-        dimmed={filter !== null && !step.answer && !step.calls.some(kept)}
+        dimmed={filter !== null && !step.calls.some(kept)}
       >
         <FlowStepBlock
           label={`Step ${index + 1}`}
-          {...(thinking ? { thinking } : {})}
+          title={step.title}
+          {...(step.note ? { note: step.note } : {})}
           {...cuesOf([step])}
           open={isOpen(key, step.calls)}
           onOpenChange={(next) => toggle(key, next)}
@@ -391,7 +375,7 @@ function GenerationFlow() {
       silent = [];
     };
     steps.forEach((step, index) => {
-      if (step.answer || step.task) {
+      if (step.note || step.task) {
         flush();
         entries.push(stepBlock(step, index));
       } else {
@@ -437,9 +421,9 @@ function GenerationFlow() {
 }
 
 /**
- * A generation as one block per step: folded, each reads its reasoning's opening and cues on what
- * its calls did, with its harness task and answer under it; open, its reasoning, calls (a batch in
- * one bracket), task and answer. Steps that produced nothing in a row compact into one block.
+ * A generation as one block per step: folded, each names what its calls did with cues on them, and
+ * shows what the model said and its harness task under it; open, its reasoning, calls (a batch in
+ * one bracket) and task. Steps that produced nothing in a row compact into one block.
  * **Expand all** opens every block; **Writes** or **Errors** open only those holding such calls and
  * dim the rest; **Collapse all** folds it back.
  */
@@ -459,7 +443,7 @@ export const Running: Story = {
         <FlowEntry marker="step" tone="running">
           <FlowStepBlock
             label="Step 1"
-            thinking="Checking both feeds before posting."
+            title="List degen-orders · Find notes treasury"
             kinds={["read"]}
             calls={2}
             duration={{ label: "2.1s" }}

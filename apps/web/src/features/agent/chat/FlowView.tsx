@@ -4,7 +4,6 @@ import {
   CopyButton,
   Markdown,
   Banner,
-  FlowAnswer,
   FlowBatch,
   FlowEntry,
   FlowHarnessTask,
@@ -45,6 +44,7 @@ import {
   messageContentText,
   parseToolArgs,
   previewText,
+  summarizeCalls,
   toolOutcome,
 } from "../runs/toolFormat";
 import {
@@ -147,6 +147,15 @@ function thoughtSummary(text: string): string {
   );
 }
 
+/** Markdown flattened to plain text on one line, for a folded step's note. */
+function plainText(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => plainLine(line).trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** What steps' calls did, for a header that does not name them: their kinds, effect, failures, count, time, tokens and cost. */
 function stepCues(steps: readonly FlowStep[], generating: boolean): FlowStepCues {
   const calls = steps.flatMap((step) => step.calls);
@@ -240,7 +249,7 @@ function callLink(call: FlowCall, inspector: Inspector): ReactNode {
 }
 
 /** What the model said alongside a step's calls; empty when it said nothing. */
-function stepAnswer(step: FlowStep): string {
+function stepText(step: FlowStep): string {
   return step.turn ? turnText(step.turn).trim() : "";
 }
 
@@ -302,7 +311,7 @@ type FlowViewProps = {
   harness?: Harness | null;
 };
 
-/** One generation: its header, then one block per step on a rail, folded to its reasoning and what it produced until opened, expanded or filtered. */
+/** One generation: its header, then one block per step on a rail, folded to what its calls did and what the model said until opened, expanded or filtered. */
 export function FlowView({
   flow,
   runId,
@@ -356,12 +365,12 @@ export function FlowView({
     },
     ...(stats.costUsd !== null ? [{ label: formatCost(stats.costUsd) }] : []),
   ];
-  const answered = flow.steps.some((step) => stepAnswer(step));
+  const answered = flow.steps.some((step) => stepText(step));
 
-  /** Scrolls the generation's last answer into the middle of its scroller. */
+  /** Scrolls the last thing the model said in the generation into the middle of its scroller. */
   const jumpToAnswer = () => {
-    const answers = section.current?.querySelectorAll<HTMLElement>("[data-answer]");
-    const last = answers?.[answers.length - 1];
+    const notes = section.current?.querySelectorAll<HTMLElement>("[data-note]");
+    const last = notes?.[notes.length - 1];
     if (last) centerInScroller(last);
   };
 
@@ -504,21 +513,6 @@ export function FlowView({
     );
   };
 
-  /** What the model said in a step, as an answer card that no fold or filter hides. */
-  const answerCard = (step: FlowStep, key: string): ReactNode => {
-    const text = stepAnswer(step);
-    if (!text) return null;
-    return (
-      <FlowAnswer
-        key={`${key}:answer`}
-        data-answer=""
-        actions={<CopyButton text={text} what="message" size={24} />}
-      >
-        <Markdown density="compact">{text}</Markdown>
-      </FlowAnswer>
-    );
-  };
-
   const stepKey = (step: FlowStep, index: number) => `${step.index ?? "result"}:${index}`;
 
   /** The cards of calls a step requested: one card, or a batch of several numbered in the order they ran. */
@@ -549,19 +543,26 @@ export function FlowView({
       open: { ...(current.view === view ? current.open : {}), [key]: next },
     }));
 
+  /** What the model said alongside a step's calls: plain while folded, its Markdown while open. */
+  const stepNote = (step: FlowStep, open: boolean): ReactNode => {
+    const said = stepText(step);
+    if (!said) return null;
+    return open ? <Markdown density="compact">{said}</Markdown> : plainText(said);
+  };
+
   /**
-   * A step as one block: its header leads with its reasoning, with cues on what its calls did.
-   * Folded, its code tasks and answer show; open, its reasoning, calls, code tasks and answer.
+   * A step as one block: its header names what its calls did, and what the model said sits under it.
+   * Folded, its code tasks show below; open, its reasoning, calls and code tasks.
    */
   const stepBlock = (step: FlowStep, index: number): ReactNode => {
     const key = `step:${stepKey(step, index)}`;
+    const open = isOpen(key, step.calls);
     const reasoning = step.turn && !thinkingHidden ? turnReasoning(step.turn).trim() : "";
     const summary = thoughtSummary(reasoning);
-    const said = stepAnswer(step);
+    const note = stepNote(step, open);
     const stop = stopTag(turnMeta(step).finish_reason);
     const tasks = step.calls.filter(isCodeTask);
-    const answer = answerCard(step, key);
-    const outputs = [...tasks.map(taskCard), answer].filter(Boolean);
+    const outputs = tasks.map(taskCard);
     const [task] = tasks;
     const harnessIcon = task ? harnessMark(task) : null;
     return (
@@ -570,14 +571,15 @@ export function FlowView({
         marker="step"
         tone={callsTone(step.calls, generating)}
         {...(harnessIcon ? { icon: harnessIcon } : {})}
-        dimmed={filter !== null && !said && step.calls.every(dimCall)}
+        dimmed={filter !== null && step.calls.every(dimCall)}
       >
         <FlowStepBlock
           label={step.index === null ? "Tool result" : `Step ${step.index}`}
-          {...(reasoning ? { thinking: summary } : {})}
+          title={summarizeCalls(step.calls.map((call) => call.call))}
+          {...(note ? { note } : {})}
           {...stepCues([step], generating)}
           {...(stop ? { stop } : {})}
-          open={isOpen(key, step.calls)}
+          open={open}
           onOpenChange={(next) => toggle(key, next)}
           {...(outputs.length ? { outputs } : {})}
         >
@@ -629,8 +631,8 @@ export function FlowView({
     );
   };
 
-  /** Whether a step produced something to read on its own: an answer, or a code task. */
-  const produced = (step: FlowStep) => Boolean(stepAnswer(step)) || step.calls.some(isCodeTask);
+  /** Whether a step produced something to read on its own: something the model said, or a code task. */
+  const produced = (step: FlowStep) => Boolean(stepText(step)) || step.calls.some(isCodeTask);
 
   /** The rail: one block per step, and runs of two or more steps that produced nothing compacted into one. */
   const timeline = (): ReactNode[] => {

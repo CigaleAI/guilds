@@ -82,7 +82,7 @@ function Inspector() {
               <FlowEntry marker="step" dimmed={dimReads || dimOk}>
                 <FlowStepBlock
                   label="Step 1"
-                  thinking="I need to create a new schedule every 24 hours. First, I should check the existing ones."
+                  title="List schedules · Find notes"
                   kinds={["read"]}
                   calls={3}
                   duration={{ label: "4.2s", title: "4.2s model · 35ms tools" }}
@@ -128,7 +128,7 @@ function Inspector() {
               <FlowEntry marker="step" tone="failed">
                 <FlowStepBlock
                   label="Step 2"
-                  thinking="I need to set a recurring schedule for every 24 hours, considering the user’s retro request."
+                  title="Create schedule 0 0 * * * · Wrote retro_template.md"
                   kinds={["write"]}
                   effect="wrote"
                   failed={1}
