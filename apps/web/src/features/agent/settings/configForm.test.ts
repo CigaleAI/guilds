@@ -208,6 +208,7 @@ const CODEX_CATALOG: HarnessCatalog[] = [
   {
     harness: "codex",
     label: "Codex",
+    enabled: true,
     models: [
       { id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" },
       { id: "gpt-5.6-terra", label: "GPT-5.6-Terra", efforts: ["low", "ultra"], default_effort: "low" },

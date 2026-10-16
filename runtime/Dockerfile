@@ -106,17 +106,20 @@ RUN set -eu; \
     chmod 755 /usr/local/bin/mise
 
 # Coding harnesses, each run headless by guilds-harness on the user's own subscription. Codex is
-# open source and always installed. Claude Code and the Cursor CLI are proprietary: they are
-# installed when HARNESSES names them, as Chrome is under BROWSER, and an image that is published
-# is built with HARNESSES empty. The Cursor CLI has no npm package: its release tarball is pinned
-# and checksum-verified per architecture.
-ARG HARNESSES="claude-code cursor"
+# open source and always installed. Claude Code, the Cursor CLI, and the Antigravity CLI are
+# proprietary: they are installed when HARNESSES names them, as Chrome is under BROWSER, and an
+# image that is published is built with HARNESSES empty. The Cursor and Antigravity CLIs have no
+# npm package: their release tarballs are pinned and checksum-verified per architecture. The
+# Antigravity binary is started through the agy wrapper, which holds it at the pinned version.
+ARG HARNESSES="claude-code cursor antigravity"
 ARG CODEX_VERSION=0.162.1
 ARG CLAUDE_CODE_VERSION=2.1.296
 ARG CURSOR_VERSION=2026.10.01-e373342
+ARG ANTIGRAVITY_VERSION=1.4.0-5281842794987520
+COPY agy /usr/local/share/guilds/agy
 RUN set -eu; \
     for harness in $HARNESSES; do \
-        case "$harness" in claude-code|cursor) ;; *) echo "unknown harness $harness" >&2; exit 1 ;; esac; \
+        case "$harness" in claude-code|cursor|antigravity) ;; *) echo "unknown harness $harness" >&2; exit 1 ;; esac; \
     done; \
     mkdir -p /usr/local/share/guilds; \
     npm install --global --no-fund --no-audit "@openai/codex@${CODEX_VERSION}"; \
@@ -142,6 +145,24 @@ RUN set -eu; \
         agent --version; \
         echo cursor >> /usr/local/share/guilds/harnesses ;; \
     esac; \
+    case " $HARNESSES " in *" antigravity "*) \
+        case "$(dpkg --print-architecture)" in \
+            amd64) asset=linux-x64/cli_linux_x64; sum=6c4b298c2a69b6bd0f58567031cc56d8097a32be54c4b633aa80ad395871b389618ab3860d4ba0a12599831b8226b51b03e258ee2ec7fae105a45b8e0fce2188 ;; \
+            arm64) asset=linux-arm/cli_linux_arm64; sum=64dfb2a9665ebd19b6e9d687c094673b61ca9f5ffdebc81391cea8e3858773e1c88154f088e8a8691208561d946a7aea9acbec7a3bdca9e5d8a48fa197b0a308 ;; \
+            *) echo "unsupported architecture for the Antigravity CLI" >&2; exit 1 ;; \
+        esac; \
+        curl -fsSL -o /tmp/antigravity.tar.gz "https://storage.googleapis.com/antigravity-public/antigravity-cli/${ANTIGRAVITY_VERSION}/${asset}.tar.gz"; \
+        echo "${sum}  /tmp/antigravity.tar.gz" | sha512sum -c -; \
+        mkdir -p "/opt/antigravity/${ANTIGRAVITY_VERSION}"; \
+        tar -xzf /tmp/antigravity.tar.gz -C "/opt/antigravity/${ANTIGRAVITY_VERSION}" --no-same-owner antigravity; \
+        rm /tmp/antigravity.tar.gz; \
+        ln -s "/opt/antigravity/${ANTIGRAVITY_VERSION}/antigravity" /opt/antigravity/antigravity; \
+        install -m 755 /usr/local/share/guilds/agy /usr/local/bin/agy; \
+        HOME=/tmp/antigravity-home agy --version; \
+        rm -rf /tmp/antigravity-home; \
+        echo antigravity >> /usr/local/share/guilds/harnesses ;; \
+    esac; \
+    rm /usr/local/share/guilds/agy; \
     npm cache clean --force
 # Claude Code reads its managed settings here; no user or project file overrides them.
 COPY claude-code-managed-settings.json /etc/claude-code/managed-settings.json

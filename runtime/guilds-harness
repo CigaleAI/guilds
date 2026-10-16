@@ -69,6 +69,8 @@ CHILD_ENV = {
 MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/=,\[\]-]{0,119}")
 # The reasoning efforts the orchestrator validates.
 EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"})
+# Where Antigravity keeps its Google sign-in in the home, when no system keyring is reachable.
+ANTIGRAVITY_TOKEN = Path(".gemini/antigravity-cli/TODO-token-file")
 # Never in a harness's environment: the harness does not open pull requests.
 DROPPED_ENV = ("GUILDS_RUN_DIR", "GH_TOKEN", "GITHUB_TOKEN")
 
@@ -537,7 +539,123 @@ class Cursor(Driver):
         return {"message": last_text, "is_error": True, "error": "the harness ended without a result"}
 
 
-DRIVERS: dict[str, Driver] = {driver.name: driver for driver in (ClaudeCode(), Codex(), Cursor())}
+def _payload(event: dict[str, Any]) -> dict[str, Any]:
+    """An Antigravity event's payload: the object under its event name, else the event itself."""
+    body = event.get(str(event.get("event") or ""))
+    return body if isinstance(body, dict) else event
+
+
+class Antigravity(Driver):
+    name = "antigravity"
+    binary = "agy"
+    # Its `-p` takes the prompt itself; the prompt names the prompt file instead.
+    prompt_on_stdin = False
+    # Each would move it off the Google sign-in: a Gemini API key, Cloud credentials, or another endpoint.
+    removed_env = (
+        "GEMINI_API_KEY",
+        "GOOGLE_GEMINI_BASE_URL",
+        "AGY_ADC_AUTH",
+        "AGY_LLM_GATEWAY_URL",
+        "AGY_ACCOUNT",
+        "GOOGLE_CLOUD_QUOTA_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+    )
+    # The CLI's settings, written before every call over whatever the home holds: tools and plan
+    # reviews proceed unattended, paid credits are never spent past the plan, and nothing is sent
+    # beyond the turn.
+    settings = {
+        "toolPermission": "always-proceed",
+        "artifactReviewPolicy": "always-proceed",
+        "useG1Credits": False,
+        "enableTelemetry": False,
+        "showFeedbackSurvey": False,
+    }
+    settings_path = Path(".gemini/antigravity-cli/settings.json")
+    # It has no switch to ignore the customisations in the home; a repository's own `.agents/`,
+    # `GEMINI.md`, and `AGENTS.md` still load.
+    local_state = (
+        ".gemini/GEMINI.md",
+        ".gemini/AGENTS.md",
+        ".gemini/config/hooks.json",
+        ".gemini/config/mcp_config.json",
+        ".gemini/config/skills",
+        ".gemini/config/skills.json",
+        ".gemini/config/plugins",
+        ".gemini/config/plugins.json",
+        ".gemini/config/workflows",
+        ".gemini/config/workflows.json",
+        ".gemini/config/global_workflows",
+        ".gemini/config/sidecars",
+    )
+
+    def reset(self) -> list[str]:
+        removed = super().reset()
+        path = HOME / self.settings_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.settings), encoding="utf-8")
+        return removed
+
+    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+        argv = [
+            self.binary,
+            "--output-format",
+            "stream-json",
+            "--dangerously-skip-permissions",
+            "--disable-slash-commands",
+            # The prompt file sits outside the repository, the workspace the CLI's tools reach.
+            "--add-dir",
+            str(prompt_path.parent),
+        ]
+        argv += self.model_args(launch)
+        if session_id:
+            argv += ["--conversation", session_id]
+        argv += ["-p", f"Read your task in {prompt_path} and follow it."]
+        return argv
+
+    def effort_args(self, effort: str) -> list[str]:
+        return ["--effort", effort]
+
+    def credential(self, env: dict[str, str]) -> str | None:
+        return "login" if (HOME / ANTIGRAVITY_TOKEN).is_file() else None
+
+    def session(self, event: dict[str, Any]) -> str:
+        value = _payload(event).get("conversation_id")
+        return value if isinstance(value, str) else ""
+
+    def progress(self, event: dict[str, Any]) -> list[str]:
+        kind = event.get("event")
+        body = _payload(event)
+        if kind == "init":
+            model = body.get("model")
+            return [f"started{f' on {model}' if isinstance(model, str) and model else ''}"]
+        if kind != "step_update" or body.get("state") != "DONE":
+            return []
+        if body.get("step_type") == "agent_response":
+            line = _first_line(body.get("text") or "")
+            return [line] if line else []
+        if body.get("step_type") == "tool":
+            info = body.get("tool_info") if isinstance(body.get("tool_info"), dict) else {}
+            return [_tool_summary(str(info.get("name") or body.get("tool_name") or "tool"), info.get("parameters"))]
+        return []
+
+    def outcome(self, events: Iterator[dict[str, Any]]) -> dict[str, Any]:
+        for event in events:
+            if event.get("event") != "result":
+                continue
+            result = _payload(event)
+            is_error = result.get("status") != "SUCCESS"
+            error = result.get("error") if isinstance(result.get("error"), str) else ""
+            return {
+                "message": result.get("response") if isinstance(result.get("response"), str) else "",
+                "is_error": is_error,
+                "error": (error or str(result.get("status") or "")) if is_error else "",
+            }
+        return {"message": "", "is_error": True, "error": "the harness ended without a result"}
+
+
+DRIVERS: dict[str, Driver] = {
+    driver.name: driver for driver in (ClaudeCode(), Codex(), Cursor(), Antigravity())
+}
 
 
 def _json_file(path: Path) -> dict[str, Any]:

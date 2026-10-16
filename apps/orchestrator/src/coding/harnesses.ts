@@ -3,7 +3,7 @@
  * agent's sandbox on the user's own subscription: a token granted to the agent as a secret,
  * or a login stored in the agent's home.
  */
-export const HARNESSES = ["claude-code", "codex", "cursor"] as const;
+export const HARNESSES = ["claude-code", "codex", "cursor", "antigravity"] as const;
 export type Harness = (typeof HARNESSES)[number];
 
 export type HarnessInfo = {
@@ -34,6 +34,12 @@ export const HARNESS_INFO: Record<Harness, HarnessInfo> = {
     secret: "CURSOR_API_KEY",
     login: "NO_OPEN_BROWSER=1 agent login",
   },
+  antigravity: {
+    harness: "antigravity",
+    label: "Antigravity",
+    secret: null,
+    login: "agy, then sign in with Google",
+  },
 };
 
 const HARNESS_SET = new Set<string>(HARNESSES);
@@ -43,6 +49,42 @@ export const HARNESS_LIST = "/usr/local/share/guilds/harnesses";
 
 export function isHarness(value: unknown): value is Harness {
   return typeof value === "string" && HARNESS_SET.has(value);
+}
+
+/** The harnesses the box turns off: still in the image, but not offered and not run. */
+let harnessesOff = new Set<Harness>();
+
+/** Sets the harnesses the box turns off, once at boot. */
+export function installHarnessesOff(off: readonly Harness[]): void {
+  harnessesOff = new Set(off);
+}
+
+export function isHarnessOff(harness: Harness): boolean {
+  return harnessesOff.has(harness);
+}
+
+/** The harnesses the box offers, in their order. */
+export function harnessesOn(): Harness[] {
+  return HARNESSES.filter((harness) => !harnessesOff.has(harness));
+}
+
+/** Why an agent cannot pick, or run on, a harness the box turns off. */
+export function harnessOffMessage(harness: Harness): string {
+  return `${HARNESS_INFO[harness].label} is turned off on this box: pick another harness in the agent's Settings`;
+}
+
+/**
+ * The harnesses a `HARNESSES_OFF` value names, separated by commas or spaces; throws on a name
+ * that is not a harness, so a typo fails boot.
+ */
+export function parseHarnessesOff(value: string | undefined): Harness[] {
+  const names = (value ?? "").split(/[\s,]+/).filter(Boolean);
+  for (const name of names) {
+    if (!isHarness(name)) {
+      throw new Error(`HARNESSES_OFF names an unknown harness ${name}: use ${HARNESSES.join(", ")}`);
+    }
+  }
+  return [...new Set(names as Harness[])];
 }
 
 /** The agent's harness from its config; null when none is set. */

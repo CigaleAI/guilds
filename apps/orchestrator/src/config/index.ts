@@ -1,5 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
+import { parseHarnessesOff, type Harness } from "../coding/harnesses.js";
 import { normalizeEmail } from "../lib/email.js";
 import { orchestratorRoot } from "../lib/paths.js";
 
@@ -33,6 +34,8 @@ export type AppConfig = {
   maxConcurrentGenerations: number;
   /** Directory chat attachments are kept in; empty keeps their bytes in process memory. */
   attachmentsRoot: string;
+  /** The coding harnesses the box turns off: kept in the image, neither offered nor run. */
+  harnessesOff: Harness[];
 };
 
 function readRequired(env: NodeJS.ProcessEnv, name: string): string {
@@ -186,6 +189,7 @@ export function loadConfig(
     operatorEmail: operatorEmail ?? "",
     maxConcurrentGenerations,
     attachmentsRoot: (env.ATTACHMENTS_ROOT ?? "").trim() ? path.resolve((env.ATTACHMENTS_ROOT ?? "").trim()) : "",
+    harnessesOff: parseHarnessesOff(env.HARNESSES_OFF),
   };
 }
 

@@ -32,12 +32,23 @@ const MARKS: Record<Harness, Mark> = {
       />
     ),
   },
+  // A neutral mark: an arch lifting off a baseline.
+  antigravity: {
+    viewBox: "0 0 24 24",
+    paths: (
+      <path
+        fill="currentColor"
+        d="M12 2.5 21.5 20h-4.1L12 9.9 6.6 20H2.5L12 2.5Zm0 13.2a2.15 2.15 0 1 1 0 4.3 2.15 2.15 0 0 1 0-4.3Z"
+      />
+    ),
+  },
 };
 
 const TONES: Record<Harness, TileProps["tone"]> = {
   "claude-code": "ochre",
   codex: "tide",
   cursor: "plum",
+  antigravity: "dusk",
 };
 
 /** A coding harness's mark on a tile. */

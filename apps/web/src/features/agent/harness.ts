@@ -14,6 +14,7 @@ export const harnessLabels: Readonly<Record<Harness, string>> = Object.freeze({
   "claude-code": "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
+  antigravity: "Antigravity",
 });
 
 /** The harnesses a coding agent can run, as select options. */
@@ -33,7 +34,7 @@ export function harnessLabel(value: unknown): string {
 
 /** Why a harness can be missing from a machine, shown wherever the image decides what can run. */
 export const harnessImageNote =
-  "A published image carries Codex only; Claude Code and Cursor need an image built with them.";
+  "A published image carries Codex only; Claude Code, Cursor, and Antigravity need an image built with them.";
 
 /** What a harness runs on; shown wherever a harness is chosen. */
 export const harnessSubscriptionNote =
@@ -187,6 +188,24 @@ export const harnessTokenDescription: Readonly<Partial<Record<Harness, string>>>
     "Claude Code subscription token from claude setup-token, read by the coding harness.",
   cursor: "Cursor API key, read by the coding harness.",
 });
+
+/** The account a harness that only logs in runs on, as the create dialog names it. */
+export const harnessLoginAccounts: Readonly<Partial<Record<Harness, string>>> = Object.freeze({
+  codex: "your ChatGPT subscription",
+  antigravity: "your Google account",
+});
+
+/**
+ * Whether Settings offers a harness: one the box turns off only to an agent already on it.
+ * Before the catalogue loads, every harness is offered.
+ */
+export function harnessOffered(
+  catalog: readonly HarnessCatalog[] | undefined,
+  harness: Harness,
+  current: Harness | "",
+): boolean {
+  return catalogFor(catalog, harness)?.enabled !== false || harness === current;
+}
 
 /** The token picker's value for no alias: the variable's own secret, else a login. Not a secret name. */
 export const NO_TOKEN_ALIAS = "-";

@@ -1,4 +1,4 @@
-import { HARNESS_INFO, HARNESSES, type Harness } from "./harnesses.js";
+import { HARNESS_INFO, HARNESSES, isHarnessOff, type Harness } from "./harnesses.js";
 
 /** The reasoning efforts a harness can run a model at, lowest first. */
 export const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
@@ -66,6 +66,7 @@ export const HARNESS_MODELS: Readonly<Record<Harness, readonly HarnessModel[]>> 
     cursorModel({ id: "grok-4.7", label: "Grok 4.7", prefix: "grok-4.7" }, ["low", "medium", "high", "xhigh"], "medium"),
     model("composer-2.5", "Composer 2.5", [], null),
   ],
+  antigravity: [],
 };
 
 /**
@@ -76,6 +77,7 @@ const UNLISTED_EFFORTS: Readonly<Record<Harness, readonly Effort[]>> = {
   "claude-code": LOW_TO_MAX,
   codex: EFFORTS,
   cursor: [],
+  antigravity: LOW_TO_MAX,
 };
 
 export function isEffort(value: unknown): value is Effort {
@@ -127,6 +129,8 @@ export function harnessLaunch(harness: Harness, modelId: string | null, effort: 
 export type HarnessCatalog = {
   harness: Harness;
   label: string;
+  /** False when the box turns the harness off: Settings offers it only to an agent already on it. */
+  enabled: boolean;
   models: { id: string; label: string; efforts: readonly Effort[]; default_effort: Effort | null }[];
   unlisted_efforts: readonly Effort[];
 };
@@ -136,6 +140,7 @@ export function harnessCatalog(): HarnessCatalog[] {
   return HARNESSES.map((harness) => ({
     harness,
     label: HARNESS_INFO[harness].label,
+    enabled: !isHarnessOff(harness),
     models: HARNESS_MODELS[harness].map(({ id, label, efforts, default_effort }) => ({ id, label, efforts, default_effort })),
     unlisted_efforts: UNLISTED_EFFORTS[harness],
   }));

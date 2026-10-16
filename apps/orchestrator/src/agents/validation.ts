@@ -1,5 +1,5 @@
 import { isCodingOnlyModel, parseModelId } from "../llm/providers.js";
-import { HARNESS_MODEL_RE, HARNESSES, isHarness, type Harness } from "../coding/harnesses.js";
+import { HARNESS_MODEL_RE, HARNESSES, harnessOffMessage, isHarness, isHarnessOff, type Harness } from "../coding/harnesses.js";
 import { EFFORTS, harnessEffortsFor, isEffort, type Effort } from "../coding/harness-models.js";
 import { SECRET_NAME } from "../credentials/validate.js";
 import { NAME_RE } from "../lib/names.js";
@@ -511,6 +511,14 @@ export function assertCodingAgent(config: AgentConfig, previous?: Record<string,
   }
   if (config.harness === null) {
     throw new AgentValidationError(`coding agents need a harness: ${HARNESSES.join(", ")}`);
+  }
+  assertHarnessPickable(config.harness, previous);
+}
+
+/** A harness the box turns off cannot be picked; an agent already on it keeps it until it picks another. */
+function assertHarnessPickable(harness: Harness, previous?: Record<string, unknown>): void {
+  if (isHarnessOff(harness) && previous?.harness !== harness) {
+    throw new AgentValidationError(harnessOffMessage(harness));
   }
 }
 

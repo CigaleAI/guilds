@@ -176,7 +176,7 @@ export type MachineInput = {
 };
 
 /** The coding CLI a coding agent delegates code work to through `code_task`. */
-export type Harness = "claude-code" | "codex" | "cursor";
+export type Harness = "claude-code" | "codex" | "cursor" | "antigravity";
 
 /** The reasoning efforts a harness can run a model at, lowest first. */
 export type HarnessEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
@@ -196,6 +196,8 @@ export type HarnessCatalogModel = {
 export type HarnessCatalog = {
   harness: Harness;
   label: string;
+  /** False when the box turns the harness off: offered only to an agent already on it. */
+  enabled: boolean;
   models: HarnessCatalogModel[];
   /** The efforts for the subscription's default model or a custom one; empty when the model name carries it. */
   unlisted_efforts: HarnessEffort[];

@@ -30,6 +30,7 @@ import {
   harnessEffortsFor,
   harnessImageNote,
   harnessLabel,
+  harnessOffered,
   harnessSubscriptionNote,
   listedHarnessModel,
   isHarness,
@@ -657,6 +658,7 @@ const HARNESS_ITEMS = [
   { value: "claude-code" as const, label: "Claude Code", subtitle: "Anthropic" },
   { value: "codex" as const, label: "Codex", subtitle: "OpenAI" },
   { value: "cursor" as const, label: "Cursor", subtitle: "Cursor" },
+  { value: "antigravity" as const, label: "Antigravity", subtitle: "Google" },
 ] as const;
 
 function HarnessCard({
@@ -665,6 +667,7 @@ function HarnessCard({
   subtitle,
   selected,
   available,
+  off,
   onPick,
 }: {
   harness: Harness;
@@ -672,6 +675,8 @@ function HarnessCard({
   subtitle: string;
   selected: boolean;
   available: boolean;
+  /** The box turns it off; shown only while the agent is on it. */
+  off: boolean;
   onPick: () => void;
 }) {
   return (
@@ -682,7 +687,7 @@ function HarnessCard({
       disabled={!available}
       onClick={onPick}
       className={cn(
-        "group relative flex flex-col items-start gap-2.5 rounded-xl border p-3.5 text-left transition-all",
+        "group relative flex flex-col items-start gap-2 rounded-xl border p-2.5 text-left transition-all",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
         selected
           ? "border-focus/60 bg-paper-hi shadow-sm ring-2 ring-focus/80"
@@ -691,7 +696,7 @@ function HarnessCard({
       )}
     >
       <div className="flex w-full items-center justify-between">
-        <HarnessLogo harness={harness} size={36} />
+        <HarnessLogo harness={harness} size={28} />
         {selected ? (
           <span className="flex size-5 items-center justify-center rounded-full bg-focus text-on-focus">
             <Icon icon={Check} size={14} />
@@ -702,9 +707,9 @@ function HarnessCard({
         <span className="text-sm font-semibold text-fg">{label}</span>
         <span className="text-xs text-muted">{subtitle}</span>
       </div>
-      {!available ? (
+      {!available || off ? (
         <span className="rounded bg-well px-1.5 py-0.5 text-2xs font-medium text-muted">
-          Not on machine
+          {off ? "Turned off" : "Not on machine"}
         </span>
       ) : null}
     </button>
@@ -712,8 +717,9 @@ function HarnessCard({
 }
 
 /**
- * Three harness buttons with their logos and, once one is picked, its model and effort. A harness
- * the machine's image lacks is disabled with a note. Picking another harness clears both.
+ * A button with its logo for each harness the box offers and, once one is picked, its model and
+ * effort. A harness the machine's image lacks is disabled with a note; one the box turns off shows
+ * only while the agent is on it. Picking another harness clears the model and effort.
  */
 export function HarnessChoiceFields({
   form,
@@ -733,16 +739,18 @@ export function HarnessChoiceFields({
       harness_model: value === form.harness ? form.harness_model : "",
       harness_effort: value === form.harness ? form.harness_effort : "",
     });
+  const catalog = useHarnessCatalog();
+  const items = HARNESS_ITEMS.filter((item) => harnessOffered(catalog.data, item.value, form.harness));
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-semibold text-fg">Harness</label>
         <div
-          className="grid grid-cols-1 gap-2.5 sm:grid-cols-3"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
           role="radiogroup"
           aria-label="Coding harness"
         >
-          {HARNESS_ITEMS.map((item) => (
+          {items.map((item) => (
             <HarnessCard
               key={item.value}
               harness={item.value}
@@ -750,6 +758,7 @@ export function HarnessChoiceFields({
               subtitle={item.subtitle}
               selected={form.harness === item.value}
               available={harnessCarried(carried, item.value) !== false}
+              off={catalogFor(catalog.data, item.value)?.enabled === false}
               onPick={() => pick(item.value)}
             />
           ))}

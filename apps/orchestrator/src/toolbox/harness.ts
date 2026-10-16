@@ -1,5 +1,12 @@
 import { Buffer } from "node:buffer";
-import { credentialFix, HARNESS_INFO, type Harness } from "../coding/harnesses.js";
+import {
+  credentialFix,
+  HARNESS_INFO,
+  harnessesOn,
+  harnessOffMessage,
+  isHarnessOff,
+  type Harness,
+} from "../coding/harnesses.js";
 import { harnessLaunch } from "../coding/harness-models.js";
 import { writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
@@ -115,6 +122,9 @@ function requiredHarness(ctx: ToolContext): Harness {
   if (ctx.harness === null) {
     throw harnessMissingError();
   }
+  if (isHarnessOff(ctx.harness)) {
+    throw new HarnessSetupError("harness.off", harnessOffMessage(ctx.harness));
+  }
   return ctx.harness;
 }
 
@@ -167,7 +177,7 @@ export async function buildBrief(ctx: ToolContext, brief: string, paths: string[
 /** Why a harness cannot run: none is picked, its CLI is missing from the image, or it has no credential. */
 export class HarnessSetupError extends Error {
   constructor(
-    readonly code: "harness.missing" | "harness.not_installed" | "harness.credential",
+    readonly code: "harness.missing" | "harness.off" | "harness.not_installed" | "harness.credential",
     message: string,
   ) {
     super(message);
@@ -177,10 +187,9 @@ export class HarnessSetupError extends Error {
 
 /** What a coding run or a `code_task` call of an agent with no harness picked fails with. */
 export function harnessMissingError(): HarnessSetupError {
-  return new HarnessSetupError(
-    "harness.missing",
-    "no harness is picked: choose Claude Code, Codex, or Cursor in the agent's Settings",
-  );
+  const labels = harnessesOn().map((harness) => HARNESS_INFO[harness].label);
+  const choices = labels.length > 1 ? `${labels.slice(0, -1).join(", ")}, or ${labels.at(-1)}` : labels.join("");
+  return new HarnessSetupError("harness.missing", `no harness is picked: choose ${choices} in the agent's Settings`);
 }
 
 function assertInstalled(harness: Harness, meta: Record<string, unknown>): void {

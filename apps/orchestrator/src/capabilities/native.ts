@@ -81,7 +81,7 @@ export const CODING_CAPABILITY = {
   id: "coding",
   label: "Coding",
   description:
-    "A coding agent clones the guild's repositories into its sandbox, delegates code changes to a coding harness (Claude Code, Codex, or Cursor, on the operator's own subscription) with code_task, checks the harness's work with shell, file_read, and code_search, and hands work over through git branches and pull requests. Set config.coding on the role, config.harness when the operator named one, and list the repositories the guild needs in the recipe's repositories (name and purpose; no URL or credential). Node.js, build tools, git, gh, and mise are in the sandbox; the workspace, caches, and toolchains persist. A run near its input limit continues in a new run from the agent's own hand-off.",
+    "A coding agent clones the guild's repositories into its sandbox, delegates code changes to a coding harness (Claude Code, Codex, Cursor, or Antigravity, on the operator's own subscription) with code_task, checks the harness's work with shell, file_read, and code_search, and hands work over through git branches and pull requests. Set config.coding on the role, config.harness when the operator named one, and list the repositories the guild needs in the recipe's repositories (name and purpose; no URL or credential). Node.js, build tools, git, gh, and mise are in the sandbox; the workspace, caches, and toolchains persist. A run near its input limit continues in a new run from the agent's own hand-off.",
   tools: [...CODING_TOOLS, ...HARNESS_TOOLS],
   costs: {
     sandbox: "a code box, 2 CPU, 4 GiB",

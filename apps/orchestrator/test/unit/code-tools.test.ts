@@ -454,7 +454,7 @@ describe("coding runs in the generation loop", () => {
     assert.equal(machines.length, 0, "the machine is not woken");
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "harness.missing");
-    assert.match(String(errors.at(-1)?.message), /no harness is picked: choose Claude Code, Codex, or Cursor in the agent's Settings/);
+    assert.match(String(errors.at(-1)?.message), /no harness is picked: choose Claude Code, Codex, Cursor, or Antigravity in the agent's Settings/);
 
     const plain = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [] }));
     live.streamCompletion = scripted(plain, []) as typeof live.streamCompletion;

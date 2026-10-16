@@ -13,6 +13,7 @@ import {
   harnessChoices,
   harnessEffortsFor,
   harnessLabel,
+  harnessOffered,
   listedHarnessModel,
   NO_TOKEN_ALIAS,
   showsHarnessImageNote,
@@ -27,7 +28,7 @@ test("a harness the machine's image lacks is unavailable; before the machine sta
   const published = harnessChoices(["codex"]);
   assert.deepEqual(
     published.filter((option) => "disabled" in option).map((option) => option.value),
-    ["claude-code", "cursor"],
+    ["claude-code", "cursor", "antigravity"],
   );
   assert.ok(harnessChoices(null).every((option) => !("disabled" in option)));
   assert.ok(harnessChoices(undefined).every((option) => !("disabled" in option)));
@@ -36,7 +37,8 @@ test("a harness the machine's image lacks is unavailable; before the machine sta
 test("the image note shows while the CLIs are unknown or some are missing", () => {
   assert.equal(showsHarnessImageNote(null), true);
   assert.equal(showsHarnessImageNote(["codex"]), true);
-  assert.equal(showsHarnessImageNote(["claude-code", "codex", "cursor"]), false);
+  assert.equal(showsHarnessImageNote(["claude-code", "codex", "cursor"]), true);
+  assert.equal(showsHarnessImageNote(["claude-code", "codex", "cursor", "antigravity"]), false);
   assert.equal(harnessLabel("claude-code"), "Claude Code");
 });
 
@@ -233,12 +235,14 @@ const CATALOG: HarnessCatalog[] = [
   {
     harness: "codex",
     label: "Codex",
+    enabled: true,
     models: [{ id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" }],
     unlisted_efforts: ["minimal", "low", "high"],
   },
   {
     harness: "cursor",
     label: "Cursor",
+    enabled: false,
     models: [{ id: "composer-2.5", label: "Composer 2.5", efforts: [], default_effort: null }],
     unlisted_efforts: [],
   },
@@ -253,6 +257,15 @@ test("a harness runs a listed model at its efforts, and any other at the efforts
   assert.deepEqual(harnessEffortsFor(catalogFor(CATALOG, "cursor"), "composer-2.5"), []);
   assert.deepEqual(harnessEffortsFor(undefined, "gpt-6-luna"), [], "before the catalogue loads");
   assert.equal(catalogFor(undefined, "codex"), undefined);
+});
+
+test("a harness the box turns off is offered only to an agent already on it", () => {
+  assert.equal(harnessOffered(CATALOG, "codex", ""), true);
+  assert.equal(harnessOffered(CATALOG, "cursor", ""), false);
+  assert.equal(harnessOffered(CATALOG, "cursor", "codex"), false);
+  assert.equal(harnessOffered(CATALOG, "cursor", "cursor"), true);
+  assert.equal(harnessOffered(undefined, "cursor", ""), true, "before the catalogue loads");
+  assert.equal(harnessOffered(CATALOG, "antigravity", ""), true, "a harness the catalogue does not name");
 });
 
 test("leaving the effort unset names the model's default effort, else the harness's", () => {

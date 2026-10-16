@@ -27,6 +27,7 @@ import { preselectedModel } from "../models/models";
 import {
   harnessImageNote,
   harnessLabel,
+  harnessLoginAccounts,
   harnessSecrets,
   harnessSubscriptionNote,
   harnessTokenDescription,
@@ -248,7 +249,8 @@ function HarnessStep({
             <div className="flex flex-col gap-0.5">
               <span className="text-sm font-semibold text-fg">CLI Login Required</span>
               <p className="text-xs text-muted">
-                {harnessLabel(form.harness)} runs on your ChatGPT subscription. Once the agent is
+                {harnessLabel(form.harness)} runs on{" "}
+                {harnessLoginAccounts[form.harness] ?? "your subscription"}. Once the agent is
                 created, log in from its CLI tab.
               </p>
             </div>

@@ -123,6 +123,7 @@ from another computer.
 | Variable | Default | Role |
 |---|---|---|
 | `MAX_CONCURRENT_GENERATIONS` | `0` | Generations running at once across the whole box. `0` is no ceiling. Each organisation's own cap applies under it |
+| `HARNESSES_OFF` | empty | Coding harnesses the box turns off, separated by commas or spaces: `claude-code`, `codex`, `cursor`, `antigravity`. They stay in the runtime image, but Settings does not offer them, the API refuses them as a new pick, and a run of an agent still on one fails at start. An unknown name stops the box from starting ([Harnesses](../concepts/coding/harnesses.md#turning-a-harness-off)) |
 
 Agents' CPU, memory, and disk are bounded by their organisation's
 machines, not by `.env`. Owners and admins create and size them under

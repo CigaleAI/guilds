@@ -37,6 +37,7 @@ import { syncCodeConnectors } from "./registry/code.js";
 import { installIntegrations } from "./instance/integrations.js";
 import { refreshConnectorIntegrations } from "./instance/connectors.js";
 import { InstanceKeys } from "./instance/keys.js";
+import { installHarnessesOff } from "./coding/harnesses.js";
 import { syncInstanceLogins } from "./connectors/instance.js";
 
 export type Server = {
@@ -56,6 +57,7 @@ export async function createServer(
   const extensions = options.extensions ?? [];
   installConnectors(extensionConnectors(extensions));
   installIntegrations(extensions.flatMap((extension) => [...(extension.integrations ?? [])]));
+  installHarnessesOff(config.harnessesOff);
   const database = await connect(config.databaseUrl, extensions);
   if (config.operatorEmail) {
     await setOperatorEmail(database.pool, config.operatorEmail);

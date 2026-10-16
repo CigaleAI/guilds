@@ -1,0 +1,7 @@
+#!/bin/sh
+# The Antigravity CLI at the version the image pins. The CLI updates itself in the background
+# unless its last update check is recent; marking the check as just done before every start keeps
+# the pinned binary in place, for guilds-harness and the CLI tab alike.
+state="${HOME:?}/.gemini/antigravity-cli"
+mkdir -p "$state" && touch "$state/last_check.timestamp"
+exec /opt/antigravity/antigravity "$@"

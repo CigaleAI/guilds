@@ -336,7 +336,7 @@ describe("code_task with the Claude Code driver", () => {
     await assert.rejects(() => assertHarnessReady(context(sandbox, { harness: null }).ctx), (error: unknown) => {
       assert.ok(error instanceof HarnessSetupError);
       assert.equal(error.code, "harness.missing");
-      assert.match(error.message, /no harness is picked: choose Claude Code, Codex, or Cursor in the agent's Settings/);
+      assert.match(error.message, /no harness is picked: choose Claude Code, Codex, Cursor, or Antigravity in the agent's Settings/);
       return true;
     });
     const { text } = await codeTask(context(sandbox, { harness: null }).ctx, { brief: "x" });

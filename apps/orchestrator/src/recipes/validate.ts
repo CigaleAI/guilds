@@ -1,6 +1,6 @@
 import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS, secretAliasesOf } from "../agents/validation.js";
-import { credentialFix, HARNESS_INFO, harnessModelOf, HARNESSES, isHarness } from "../coding/harnesses.js";
+import { credentialFix, HARNESS_INFO, harnessModelOf, HARNESSES, isHarness, isHarnessOff } from "../coding/harnesses.js";
 import { EFFORTS, harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
@@ -72,6 +72,9 @@ function harnessChoiceFinding(role: RecipeRole): RecipeFinding | null {
   }
   if (isHarness(harness) && role.config.coding !== true) {
     return finding("harness.coding", "warning", path, "config.harness is only for a coding role; apply leaves it out");
+  }
+  if (isHarness(harness) && isHarnessOff(harness)) {
+    return finding("harness.off", "warning", path, `${HARNESS_INFO[harness].label} is turned off on this box; apply asks for another`);
   }
   return null;
 }

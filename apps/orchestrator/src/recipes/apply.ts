@@ -21,7 +21,15 @@ import {
 import { coreModelCredentials } from "../llm/credentials.js";
 import { ModelsService } from "../llm/models.js";
 import { parseModelId } from "../llm/providers.js";
-import { HARNESSES, harnessModelOf, harnessOf, isHarness, type Harness } from "../coding/harnesses.js";
+import {
+  harnessesOn,
+  harnessModelOf,
+  harnessOf,
+  harnessOffMessage,
+  isHarness,
+  isHarnessOff,
+  type Harness,
+} from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor, type Effort } from "../coding/harness-models.js";
 import { operatorActor } from "../artifacts/grants.js";
 import {
@@ -291,11 +299,8 @@ export class RecipeApplyService {
     return recipe.roles
       .filter((role) => role.config.coding === true)
       .map((role) => {
-        const recommended = isHarness(role.config.harness) ? role.config.harness : null;
-        const choice = chosen.get(role.role) || null;
-        if (choice !== null && !isHarness(choice)) {
-          throw new RecipeError(`harnesses.${role.role}: harness must be one of ${HARNESSES.join(", ")}`);
-        }
+        const recommended = recommendedHarness(role);
+        const choice = chosenHarness(role.role, chosen.get(role.role) || null);
         return { role: role.role, recommended, harness: choice ?? recommended };
       });
   }
@@ -1624,6 +1629,26 @@ function schedulesForRole(role: RecipeRole, recipe: RecipeDocument): RecipeSched
 }
 
 /** The models the preview resolved, by role. */
+/** The harness the recipe names for a coding role; null when it names none, or one the box turns off. */
+function recommendedHarness(role: RecipeRole): Harness | null {
+  const harness = role.config.harness;
+  return isHarness(harness) && !isHarnessOff(harness) ? harness : null;
+}
+
+/** The harness the operator chose for a role, or null; refuses one that is unknown or turned off. */
+function chosenHarness(role: string, choice: string | null): Harness | null {
+  if (choice === null) {
+    return null;
+  }
+  if (!isHarness(choice)) {
+    throw new RecipeError(`harnesses.${role}: harness must be one of ${harnessesOn().join(", ")}`);
+  }
+  if (isHarnessOff(choice)) {
+    throw new RecipeError(`harnesses.${role}: ${harnessOffMessage(choice)}`);
+  }
+  return choice;
+}
+
 function roleHarnessMap(harnesses: RoleHarness[]): Map<string, Harness> {
   const map = new Map<string, Harness>();
   for (const item of harnesses) {
