@@ -417,11 +417,11 @@ export class StudioStore {
               (SELECT COUNT(*)::int FROM schedules s WHERE s.agent_id = a.id AND s.paused) AS paused_count,
               r.id AS latest_run_id, r.kind AS latest_run_kind, r.status AS latest_run_status,
               r.updated_at AS latest_run_at, r.task_prompt_hash AS latest_task_hash,
-              r.errors AS latest_run_errors, r.metadata AS latest_run_metadata,
+              r.errors AS latest_run_errors,
               d.id AS draft_id, d.status AS draft_status, d.base_version AS draft_base_version
          FROM agents a
          LEFT JOIN LATERAL (
-           SELECT id, kind, status, updated_at, task_prompt_hash, errors, metadata
+           SELECT id, kind, status, updated_at, task_prompt_hash, errors
              FROM runs
             WHERE agent_id = a.id
             ORDER BY updated_at DESC

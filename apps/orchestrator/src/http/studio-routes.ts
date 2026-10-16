@@ -464,7 +464,6 @@ function studioRunHeader(deps: AppDeps, row: Record<string, unknown>): Record<st
     group_chat_through_seq: row.group_chat_through_seq ?? null,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
-    memory_skipped: Boolean(metadata.memory_skipped),
     error_count: errorList.length,
     last_error: last ? { operation: last.operation ?? null, message: last.message ?? null } : null,
   };

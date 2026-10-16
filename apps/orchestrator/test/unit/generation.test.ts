@@ -2196,7 +2196,7 @@ describe("generation", { concurrency: 1 }, () => {
     assert.deepEqual(db.messages[db.messages.length - 1]?.metadata, { generation: 2, source: "ui" });
   });
 
-  test("schedule_wake_reminds_and_marks_skipped_without_write", async () => {
+  test("schedule_wake_finishes_without_memory_write", async () => {
     restoreBindings();
     const { loop, db } = await seededLoop();
     let calls = 0;
@@ -2211,13 +2211,8 @@ describe("generation", { concurrency: 1 }, () => {
       instruction: "check inbox",
     });
     await waitTask(loop, String(db.run?.id));
-    assert.equal(calls, 2);
-    const reminder = db.messages.filter((row) =>
-      String((row.payload as Record<string, unknown>).content ?? "").startsWith("Memory: this wake"),
-    );
-    assert.equal(reminder.length, 1);
-    assert.deepEqual(reminder[0]?.metadata, { generation: 1, source: "memory" });
-    assert.equal((db.run?.metadata as Record<string, unknown>).memory_skipped, true);
+    assert.equal(calls, 1);
+    assert.ok(!db.messages.some((row) => (row.metadata as Record<string, unknown>).source === "memory"));
     restoreBindings();
   });
 
@@ -2254,74 +2249,7 @@ describe("generation", { concurrency: 1 }, () => {
     restoreBindings();
   });
 
-  test("schedule_wake_reminder_write_clears_skip", async () => {
-    restoreBindings();
-    const { loop, db } = await seededLoop();
-    let calls = 0;
-    live.streamCompletion = async function* replies() {
-      calls += 1;
-      if (calls === 1) {
-        yield ["done", { payload: { role: "assistant", content: "checked" }, metadata: {} }];
-        return;
-      }
-      yield [
-        "done",
-        {
-          payload: {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-              {
-                id: "call_mem",
-                function: {
-                  name: "memory_write",
-                  arguments: JSON.stringify({ content: "inbox\nread mail" }),
-                },
-              },
-            ],
-          },
-          metadata: {},
-        },
-      ];
-    };
-    await loop.deliver_schedule_run({
-      id: "sch_1",
-      agent_id: "a_1",
-      cron: "*/30 * * * *",
-      instruction: "check inbox",
-    });
-    await waitTask(loop, String(db.run?.id));
-    assert.equal(calls, 2);
-    assert.ok(!(db.run?.metadata as Record<string, unknown> | undefined)?.memory_skipped);
-    const written = db.messages.filter(
-      (row) => (row.metadata as Record<string, unknown>).tool_name === "memory_write",
-    );
-    assert.ok(written.length);
-    assert.ok(String((written[0]?.payload as Record<string, unknown>).content).startsWith("memory.md written"));
-    restoreBindings();
-  });
-
-  test("direct_run_does_not_remind_memory", async () => {
-    restoreBindings();
-    const { loop, db } = await seededLoop();
-    let calls = 0;
-    live.streamCompletion = async function* replies() {
-      calls += 1;
-      yield ["done", { payload: { role: "assistant", content: "ok" }, metadata: {} }];
-    };
-    const created = await loop.create_run("a_1", "hello");
-    await waitTask(loop, String(created.id));
-    assert.equal(calls, 1);
-    assert.ok(
-      !db.messages.some((row) =>
-        String((row.payload as Record<string, unknown>).content ?? "").startsWith("Memory: this wake"),
-      ),
-    );
-    assert.ok(!(db.run?.metadata as Record<string, unknown> | undefined)?.memory_skipped);
-    restoreBindings();
-  });
-
-  test("schedule_wake_skips_reminder_when_memory_write_off", async () => {
+  test("schedule_wake_hides_memory_write_when_binding_off", async () => {
     restoreBindings();
     const { loop, db } = await seededLoop();
     db.bindings = [
@@ -2355,12 +2283,6 @@ describe("generation", { concurrency: 1 }, () => {
     const system = String(db.create_args?.system_content ?? "");
     assert.ok(!system.includes("memory_write"));
     assert.ok(system.includes("<memory>"));
-    assert.ok(
-      !db.messages.some((row) =>
-        String((row.payload as Record<string, unknown>).content ?? "").startsWith("Memory: this wake"),
-      ),
-    );
-    assert.ok(!(db.run?.metadata as Record<string, unknown> | undefined)?.memory_skipped);
     restoreBindings();
   });
 

@@ -219,10 +219,8 @@ carries `instruction_hash`, the hash of the instruction it fired
 with. Run views expose both, so a routine's runs can be listed and a
 run that fired with an older instruction can be told apart.
 
-When Memory is on the run must call `memory_write` once. If the
-generation returns without it, the orchestrator inserts a reminder and
-grants one extra step. A wake that still does not write completes with
-`memory_skipped: true`.
+Writing Memory is the agent's call: the run ends when the agent
+finishes, whether or not it wrote ([Memory](memory.md#when-the-agent-writes)).
 
 Schedule runs do not offer the schedule tools or `secret_request`.
 

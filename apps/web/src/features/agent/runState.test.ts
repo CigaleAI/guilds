@@ -12,7 +12,6 @@ function run(overrides: Partial<Run> = {}): Run {
     config_snapshot: {} as Run["config_snapshot"],
     errors: [],
     generating: false,
-    memory_skipped: false,
     created_at: "2026-09-26T09:00:00+00:00",
     updated_at: "2026-09-26T09:05:00+00:00",
     archived_at: null,

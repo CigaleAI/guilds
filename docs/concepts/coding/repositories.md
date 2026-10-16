@@ -132,8 +132,9 @@ create dialog, "No repository yet. You can create the agent and add
 one later in the guild's Settings."; in Settings, "No repository yet,
 so this agent's coding runs fail at start."
 
-The coding strip names the repositories, "repos `<names>`", or "no
-repositories" in bold ([Coding agents](index.md#coding-strip)).
+The coding strip counts the repositories, "`<n>` repos" with their
+names on hover, or reads "No repos" in bold
+([Coding agents](index.md#coding-strip)).
 
 ## Rules and limits
 

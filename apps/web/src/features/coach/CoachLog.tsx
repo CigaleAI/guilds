@@ -80,15 +80,11 @@ export function CoachLog({
         ) : rows.length <= 1 ? (
           <div className="py-6 text-center text-sm text-muted">{empty}</div>
         ) : null}
-        {segments.map((segment, index) => {
+        {segments.map((segment) => {
           if (segment.type === "flow") {
             return (
               <div key={segment.key} className="flex flex-col gap-3">
-                <FlowView
-                  flow={segment}
-                  generating={generating}
-                  defaultOpen={index === segments.length - 1 && generating}
-                />
+                <FlowView flow={segment} generating={generating} agentName={coach.name} />
                 {widgetsAfter(segment, rows)}
               </div>
             );

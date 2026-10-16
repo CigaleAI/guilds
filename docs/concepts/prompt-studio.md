@@ -84,8 +84,8 @@ starts no sandbox, syncs no connector, and decrypts no credential.
 1. The operator picks the guild and the coach model. Studio keeps a
    copy of that configuration.
 2. Studio lists the guild's active agents with their Task version,
-   routine counts, latest run, and warnings: an empty Task, memory
-   skipped, generation errors, or a stale draft.
+   routine counts, latest run, and warnings: an empty Task,
+   generation errors, or a stale draft.
 3. Selecting an agent opens the inspector on it.
 4. The coach looks at the evidence, then writes a draft: the agent,
    the complete new Task, why, and the evidence it relied on.
@@ -175,7 +175,7 @@ selected item on the right.
 |---|---|---|
 | **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens **Files** at that note; a collection embed opens **Databases**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. It says whether the latest run used this Task and this memory. Banners say when the agent is running and when an embed does not resolve |
 | **Draft** | none | The pending draft: why, a side-by-side diff against its base version, **Publish**, **Edit**, **Discard**. A draft over a Task that changed since shows as conflicted |
-| **History** | Every run: what started it, time, `memory skipped`, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
+| **History** | Every run: what started it, time, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
 | **Memory** | Every version memory has held, newest first: version, author (run kind, person, or agent), added and removed lines; filter by author | Diff against the previous version, or the whole version. **Open step** on a version a run wrote opens the run at its `memory_write` call |
 | **Routines** | Description, timing, next wake or paused, run count; active first | The instruction as Markdown, a banner while the guild's routines are off, then the runs that routine started, marked when they fired with an older instruction. A run opens in **History**. **Edit in agent** |
 | **Scripts** | Script names and descriptions, tagged when offered as a tool | Description, provenance, parameter schema, source; **Edit in agent**. The tab is hidden while the agent's scripting is off |
@@ -714,7 +714,7 @@ matches the latest run).
 
 The runs list takes `schedule_id`, `kind`, and `task_prompt_hash` and
 returns run headers (status, generating, hashes, `schedule_id`,
-`instruction_hash`, error count, `memory_skipped`). The routines list
+`instruction_hash`, error count). The routines list
 adds `run_count` and `latest_run`. The memory timeline returns every
 version with actor, time, line-change stats, and, for a run-written
 version, the run and its `memory_write` call id.

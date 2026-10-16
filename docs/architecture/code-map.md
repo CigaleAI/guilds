@@ -201,8 +201,8 @@ orchestrator serves.
     the same problems (`CodingReadiness.tsx`, from the readiness
     problems in `agent/harness.ts`). On Chat,
     `CodingStrip.tsx` says under the tab strip how a coding agent
-    codes: the model that leads, the harness and model that code,
-    what the harness runs on, and the repositories, each a link to
+    codes: the harness's logo, whether it can sign in, and how many
+    repositories it reaches, each explained on hover and a link to
     the Settings section that sets it. A
     recipe-applied browser login shows a strip until marked done.
     The inspector's menu deletes it. `runState.ts` names runs and says where each

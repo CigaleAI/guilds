@@ -121,7 +121,6 @@ async function resolveRun(deps: StudioFocusDeps, input: Record<string, unknown>)
     throw new StudioUnprocessableError("focus run not found");
   }
   const agent = await guildAgent(deps, String(run.agent_id));
-  const metadata = (jsonObj(run.metadata) ?? {}) as Record<string, unknown>;
   const errors = jsonObj(run.errors);
   const errorList = Array.isArray(errors) ? (errors as Array<Record<string, unknown>>) : [];
   const kind = String(run.kind ?? "direct");
@@ -137,7 +136,6 @@ async function resolveRun(deps: StudioFocusDeps, input: Record<string, unknown>)
     status: run.status,
     created_at: createdAt,
     schedule_id: run.schedule_id ?? null,
-    memory_skipped: Boolean(metadata.memory_skipped),
     error_count: errorList.length,
   };
   const lines: string[] = [

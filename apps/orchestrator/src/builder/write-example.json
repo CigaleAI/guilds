@@ -20,7 +20,7 @@
       "focus": "Find new candidates and write them to the queue.",
       "config": { "browser": false },
       "task": {
-        "body": "Start of work: read Memory, then the playbook.md note. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nBefore queueing a candidate, check seen-set with record_list where key is the candidate name in lower case. Add each new candidate to scout-queue with record_add (name, source_url, status new), then record_add its key and source to seen-set. The runtime assigns ids; never send one. Do not archive. End a useful wake with memory_write.",
+        "body": "Start of work: read Memory, then note_get agent/scout/playbook.md. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nBefore queueing a candidate, check seen-set with record_list where key is the candidate name in lower case. Add each new candidate to scout-queue with record_add (name, source_url, status new), then record_add its key and source to seen-set. The runtime assigns ids; never send one. Do not archive.",
         "embeds": ["guild/field-map.md"]
       },
       "scripts": [],
@@ -42,7 +42,7 @@
       "focus": "Read the queue and write the durable record.",
       "config": { "browser": false },
       "task": {
-        "body": "Start of work: read Memory, then the notion-map.md note. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nFind scout-queue records with record_list where status new and archive each one, then record_update that record by id with status archived, or rejected with a reason. Do not scout. End a useful wake with memory_write.",
+        "body": "Start of work: read Memory, then note_get agent/archivist/notion-map.md. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nFind scout-queue records with record_list where status new and archive each one, then record_update that record by id with status archived, or rejected with a reason. Do not scout.",
         "embeds": ["guild/field-map.md"]
       },
       "scripts": [],

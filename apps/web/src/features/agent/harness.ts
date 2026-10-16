@@ -1,5 +1,12 @@
-import type { SettingsSection } from "./settings/sections";
-import type { AgentHarness, Harness, HarnessCredential, Secret } from "../../api/types";
+import type {
+  AgentHarness,
+  Harness,
+  HarnessCatalog,
+  HarnessCatalogModel,
+  HarnessCredential,
+  HarnessEffort,
+  Secret,
+} from "../../api/types";
 import { relativeTime } from "../../app/format";
 
 /** Each harness's name as the app shows it. */
@@ -57,23 +64,54 @@ export function showsHarnessImageNote(carried: readonly Harness[] | null | undef
   return !carried || harnessOptions.some((option) => !carried.includes(option.value));
 }
 
-/** What the Harness model field suggests and says for each harness; any model the subscription offers works. */
-export const harnessModelHelp: Readonly<
-  Record<Harness, { suggestions: readonly string[]; hint: string }>
-> = Object.freeze({
-  "claude-code": {
-    suggestions: ["opus", "sonnet", "haiku"],
-    hint: "Optional model alias (e.g. opus, sonnet). Defaults to subscription standard.",
-  },
-  codex: {
-    suggestions: [],
-    hint: "Optional model name from your ChatGPT plan. Defaults to standard.",
-  },
-  cursor: {
-    suggestions: [],
-    hint: "Optional model name. Defaults to standard.",
-  },
+/** Each effort's name as the app shows it. */
+export const effortLabels: Readonly<Record<HarnessEffort, string>> = Object.freeze({
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+  ultra: "Ultra",
 });
+
+/** The harness's models and efforts in the catalogue; undefined until it loads. */
+export function catalogFor(
+  catalog: readonly HarnessCatalog[] | undefined,
+  harness: Harness,
+): HarnessCatalog | undefined {
+  return catalog?.find((entry) => entry.harness === harness);
+}
+
+/** The listed model of that id; undefined for the subscription's default or a custom name. */
+export function listedHarnessModel(
+  entry: HarnessCatalog | undefined,
+  model: string,
+): HarnessCatalogModel | undefined {
+  return entry?.models.find((item) => item.id === model);
+}
+
+/** The efforts the harness runs a model at: the listed model's, else what it takes for any other. */
+export function harnessEffortsFor(
+  entry: HarnessCatalog | undefined,
+  model: string,
+): readonly HarnessEffort[] {
+  return listedHarnessModel(entry, model)?.efforts ?? entry?.unlisted_efforts ?? [];
+}
+
+/** What the effort select calls leaving the effort unset: the model's default, else the harness's. */
+export function defaultEffortLabel(listed: HarnessCatalogModel | undefined): string {
+  const effort = listed?.default_effort;
+  return effort ? `Default (${effortLabels[effort]})` : "Harness default";
+}
+
+/** What the harness codes with: the model, and the effort once one is set. */
+function harnessRunsWith(status: AgentHarness): string {
+  const model = status.harness_model ?? "its default model";
+  const effort = status.harness_effort;
+  return effort ? `${model} at ${effortLabels[effort].toLowerCase()} effort` : model;
+}
 
 /** Why a coding agent's runs cannot delegate code work yet. */
 export type CodingProblem =
@@ -200,74 +238,105 @@ export function freeTokenName(
   return `${variable}_${agentName.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`;
 }
 
-/** One segment of the coding strip: its text, whether it flags a problem, and where it leads. */
-/** A part of the coding strip, and the Settings section that sets it. */
-export type StripSegment = {
-  text: string;
-  problem: boolean;
-  to: Extract<SettingsSection, "model" | "harness" | "repositories">;
+/** One part of the coding strip: what it reads, what hovering it adds, and whether it flags a problem. */
+export type StripPart = { text: string; detail: string; problem: boolean };
+
+/** The coding strip: the harness that codes (null before one is picked), what it runs on, and the repositories it clones. */
+export type CodingStripState = {
+  harness: Harness | null;
+  harnessPart: StripPart;
+  credential: StripPart | null;
+  repositories: StripPart & { names: readonly string[] };
 };
 
-/** What a coding agent's chat strip reads from: the harness status, the lead model's label, and the agent's secrets. */
+/** What a coding agent's chat strip reads from: the harness status and the agent's secrets. */
 export type StripInput = {
   status: AgentHarness;
-  leadModel: string;
   secrets: readonly TokenSecret[];
   now: Date;
 };
 
-function harnessSegment(status: AgentHarness, harness: Harness): StripSegment {
+function harnessPart(status: AgentHarness, harness: Harness): StripPart {
   const label = harnessLabels[harness];
   if (harnessCarried(status.machine_harnesses, harness) === false) {
-    return { text: `${label} is not in this machine's image`, problem: true, to: "harness" };
+    return {
+      text: `${label} is not in this machine's image`,
+      detail: `Rebuild the machine's image with ${label}.`,
+      problem: true,
+    };
   }
-  const model = status.harness_model ?? "default model";
-  return { text: `${label} · ${model} codes`, problem: false, to: "harness" };
+  return {
+    text: label,
+    detail: `${label} codes with ${harnessRunsWith(status)}.`,
+    problem: false,
+  };
 }
 
-/** Whose secret the harness runs on: who added it, when the agent's secrets say. */
-function secretSegment(entry: HarnessCredential, secrets: readonly TokenSecret[]): StripSegment {
-  const by = secrets.find((secret) => secret.name === entry.secret_source)?.created_by?.name;
-  const suffix = by ? `, added by ${by}` : "";
-  return { text: `on ${entry.secret_source}${suffix}`, problem: false, to: "harness" };
+/** What the harness runs on: a granted token secret, the login found in the agent's home, or nothing. */
+function credentialPart(entry: HarnessCredential | undefined, input: StripInput): StripPart {
+  if (entry?.secret_granted && entry.secret_source) {
+    const by = input.secrets.find((secret) => secret.name === entry.secret_source)?.created_by
+      ?.name;
+    return {
+      text: `Token ${entry.secret_source}`,
+      detail: `Runs on the secret ${entry.secret_source}${by ? `, added by ${by}` : ""}.`,
+      problem: false,
+    };
+  }
+  if (entry?.login_seen_at) {
+    const who = entry.login_account ? ` as ${entry.login_account}` : "";
+    return {
+      text: "Logged in",
+      detail: `Logged in${who}, seen ${relativeTime(entry.login_seen_at, input.now)}.`,
+      problem: false,
+    };
+  }
+  return {
+    text: "Not logged in",
+    detail: "No login in the agent's home and no token secret: log in from Settings.",
+    problem: true,
+  };
 }
 
-function loginSegment(entry: HarnessCredential, now: Date): StripSegment {
-  const who = entry.login_account ? ` as ${entry.login_account}` : "";
-  const seen = entry.login_seen_at ? `, seen ${relativeTime(entry.login_seen_at, now)}` : "";
-  return { text: `on its login${who}${seen}`, problem: false, to: "harness" };
+function repositoriesPart(names: readonly string[]): CodingStripState["repositories"] {
+  return names.length
+    ? {
+        text: `${names.length} repo${names.length === 1 ? "" : "s"}`,
+        detail: names.join(", "),
+        problem: false,
+        names,
+      }
+    : {
+        text: "No repos",
+        detail: "A coding run of a guild without repositories fails at start.",
+        problem: true,
+        names,
+      };
 }
 
-function credentialSegment(entry: HarnessCredential | undefined, input: StripInput): StripSegment {
-  if (entry?.secret_granted) return secretSegment(entry, input.secrets);
-  if (entry?.login_seen_at) return loginSegment(entry, input.now);
-  return { text: "no credential", problem: true, to: "harness" };
-}
-
-function repositoriesSegment(repositories: readonly string[]): StripSegment {
-  return repositories.length
-    ? { text: `repos ${repositories.join(", ")}`, problem: false, to: "repositories" }
-    : { text: "no repositories", problem: true, to: "repositories" };
-}
-
-/** Which harness and model code and what the harness runs on; one problem segment when none is picked. */
-function harnessSegments(input: StripInput): StripSegment[] {
+/** The chat strip of a coding agent: its harness, whether that harness can sign in, and the repositories it reaches. */
+export function codingStrip(input: StripInput): CodingStripState {
   const { status } = input;
-  if (status.harness === null) return [{ text: "no harness picked", problem: true, to: "harness" }];
+  const repositories = repositoriesPart(status.repositories);
+  if (status.harness === null) {
+    return {
+      harness: null,
+      harnessPart: {
+        text: "No harness picked",
+        detail: "Pick the harness this agent codes through.",
+        problem: true,
+      },
+      credential: null,
+      repositories,
+    };
+  }
   const entry = status.harnesses.find((item) => item.harness === status.harness);
-  return [harnessSegment(status, status.harness), credentialSegment(entry, input)];
-}
-
-/**
- * The chat strip of a coding agent: which model leads, which harness and model code, what the
- * harness runs on, and the repositories; a problem segment names what is missing.
- */
-export function codingStrip(input: StripInput): StripSegment[] {
-  return [
-    { text: `${input.leadModel} leads`, problem: false, to: "model" },
-    ...harnessSegments(input),
-    repositoriesSegment(input.status.repositories),
-  ];
+  return {
+    harness: status.harness,
+    harnessPart: harnessPart(status, status.harness),
+    credential: credentialPart(entry, input),
+    repositories,
+  };
 }
 
 /** What a new coding agent's token step holds: a secret picked among the guild's, or a token pasted. */

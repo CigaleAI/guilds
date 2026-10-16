@@ -1,8 +1,17 @@
 import { Bookmark, Check, Code2, FileCode, Globe, Info, type LucideIcon } from "lucide-react";
-import { useOrgModels } from "../../../api/queries";
-import type { AgentConfig, Harness, Machine, OrgModels, ThinkingLevel } from "../../../api/types";
+import { useHarnessCatalog, useOrgModels } from "../../../api/queries";
+import type {
+  AgentConfig,
+  Harness,
+  HarnessCatalog,
+  HarnessEffort,
+  Machine,
+  OrgModels,
+  ThinkingLevel,
+} from "../../../api/types";
 import { isCodingOnlyModel } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
+import { useState } from "react";
 import { cn, Icon, Select, Slider, TextField } from "@guildsrun/ui";
 import { agentMinimum, chosenMachine, sizeMeets } from "../../machines/machines";
 import { TooSmallNote } from "../../machines/MachineNotes";
@@ -14,11 +23,15 @@ import {
 } from "../../models/models";
 import { ModelKeysLink } from "../../settings/ModelKeysLink";
 import {
+  catalogFor,
+  defaultEffortLabel,
+  effortLabels,
   harnessCarried,
+  harnessEffortsFor,
   harnessImageNote,
   harnessLabel,
-  harnessModelHelp,
   harnessSubscriptionNote,
+  listedHarnessModel,
   isHarness,
   showsHarnessImageNote,
 } from "../harness";
@@ -40,6 +53,7 @@ export const defaultAgentConfig: AgentConfig = {
   coding: false,
   harness: null,
   harness_model: null,
+  harness_effort: null,
   secret_aliases: {},
   scripting: true,
   memory: true,
@@ -137,6 +151,8 @@ export type ConfigForm = {
   harness: Harness | "";
   /** The model the harness runs; empty for its subscription's default. */
   harness_model: string;
+  /** The effort the harness runs its model at; empty for the harness's default. */
+  harness_effort: HarnessEffort | "";
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
   scripting: boolean;
@@ -177,6 +193,7 @@ export function configFormOf(config: AgentConfig, machineId = ""): ConfigForm {
     coding: config.coding,
     harness: isHarness(config.harness) ? config.harness : "",
     harness_model: config.harness_model ?? "",
+    harness_effort: config.harness_effort ?? "",
     secret_aliases: { ...config.secret_aliases },
     scripting: config.scripting !== false,
     memory: config.memory !== false,
@@ -230,6 +247,26 @@ function harnessModelOf(form: ConfigForm): string | null {
   return form.coding && form.harness ? form.harness_model.trim() || null : null;
 }
 
+/** The harness effort to send: only with a harness, and null for the harness's default. */
+function harnessEffortOf(form: ConfigForm): HarnessEffort | null {
+  return form.coding && form.harness ? form.harness_effort || null : null;
+}
+
+/**
+ * The form with another harness model: an effort the new model does not run at goes back to the
+ * default. Without the catalogue the effort stays, for the server to check.
+ */
+export function withHarnessModel(
+  form: ConfigForm,
+  model: string,
+  catalog: readonly HarnessCatalog[] | undefined,
+): ConfigForm {
+  const entry = form.harness ? catalogFor(catalog, form.harness) : undefined;
+  const kept =
+    !entry || !form.harness_effort || harnessEffortsFor(entry, model.trim()).includes(form.harness_effort);
+  return { ...form, harness_model: model, harness_effort: kept ? form.harness_effort : "" };
+}
+
 /**
  * The config to send, without the machine; a model that does not reason gets thinking off, and
  * only a coding agent carries a harness and its model.
@@ -244,6 +281,7 @@ export function configOf(form: ConfigForm, models: OrgModels | undefined): Agent
     coding: form.coding,
     harness: form.coding && form.harness ? form.harness : null,
     harness_model: harnessModelOf(form),
+    harness_effort: harnessEffortOf(form),
     secret_aliases: form.secret_aliases,
     scripting: form.scripting,
     memory: form.memory,
@@ -455,7 +493,7 @@ function CapabilityField({
 /**
  * A new agent's form with coding switched: limits still at the defaults move to the coding
  * budgets, and back when coding is switched off again. Turning coding on also turns on
- * scripting; turning it off clears the harness and its model.
+ * scripting; turning it off clears the harness, its model, and its effort.
  */
 export function withCoding(
   form: ConfigForm,
@@ -467,7 +505,9 @@ export function withCoding(
   return {
     ...form,
     coding,
-    ...(coding ? { scripting: true } : { harness: "" as const, harness_model: "" }),
+    ...(coding
+      ? { scripting: true }
+      : { harness: "" as const, harness_model: "", harness_effort: "" as const }),
     ...(!coding && isCodingOnlyModel(form.model, models)
       ? { model: models?.default ?? "", thinking: "none" as ThinkingLevel }
       : {}),
@@ -502,11 +542,21 @@ function BrowserLanguageField({
 /** The agent an existing agent's settings edit, for the links and credentials they show. */
 export type SettingsAgent = { guildId: string; agentId: string };
 
-/** The Harness model field's list of suggested names. */
-const harnessModelsListId = "agent-harness-models";
+/** The model select's values for the subscription's default and for a name typed in. */
+const DEFAULT_MODEL = "default";
+const CUSTOM_MODEL = "custom";
 
-/** The model the picked harness runs, with the names it suggests; empty leaves it to the subscription. */
-function HarnessModelField({
+/** The model select's value: a listed model, the subscription's default, or a custom name. */
+function modelChoice(model: string, listed: boolean, custom: boolean): string {
+  if (custom) return CUSTOM_MODEL;
+  return listed ? model : DEFAULT_MODEL;
+}
+
+/**
+ * The model the picked harness runs, from its listed models, the subscription's default, or a
+ * custom name typed in; then the effort it runs at, among the ones that model takes.
+ */
+function HarnessModelFields({
   form,
   harness,
   onChange,
@@ -517,26 +567,89 @@ function HarnessModelField({
   onChange: (next: ConfigForm) => void;
   error?: string | undefined;
 }) {
-  const help = harnessModelHelp[harness];
+  const catalog = useHarnessCatalog();
+  const entry = catalogFor(catalog.data, harness);
+  const model = form.harness_model.trim();
+  const listed = listedHarnessModel(entry, model);
+  const [customPicked, setCustomPicked] = useState(false);
+  const custom = customPicked || (model !== "" && !listed);
+  const pick = (value: string) => {
+    setCustomPicked(value === CUSTOM_MODEL);
+    if (value === CUSTOM_MODEL) return;
+    onChange(withHarnessModel(form, value === DEFAULT_MODEL ? "" : value, catalog.data));
+  };
   return (
     <>
-      <TextField
+      <Select
         tone="surface"
         label="Harness model"
-        placeholder="Subscription default"
-        autoComplete="off"
-        list={harnessModelsListId}
-        hint={help.hint}
-        value={form.harness_model}
-        onChange={(event) => onChange({ ...form, harness_model: event.currentTarget.value })}
-        {...(error ? { error } : {})}
+        hint="Custom takes any model name the subscription offers."
+        value={modelChoice(model, listed !== undefined, custom)}
+        onValueChange={pick}
+        options={[
+          { value: DEFAULT_MODEL, label: "Subscription default" },
+          ...(entry?.models ?? []).map((item) => ({
+            value: item.id,
+            label: item.label,
+            description: item.id,
+          })),
+          { value: CUSTOM_MODEL, label: "Custom…" },
+        ]}
       />
-      <datalist id={harnessModelsListId}>
-        {help.suggestions.map((model) => (
-          <option key={model} value={model} />
-        ))}
-      </datalist>
+      {custom ? (
+        <TextField
+          tone="surface"
+          label="Model name"
+          placeholder="Subscription default"
+          autoComplete="off"
+          value={form.harness_model}
+          onChange={(event) => {
+            setCustomPicked(true);
+            onChange(withHarnessModel(form, event.currentTarget.value, catalog.data));
+          }}
+          {...(error ? { error } : {})}
+        />
+      ) : null}
+      <HarnessEffortField form={form} entry={entry} onChange={onChange} />
     </>
+  );
+}
+
+/** The effort select's value for leaving the effort to the model's default. */
+const DEFAULT_EFFORT = "default";
+
+/**
+ * The effort the harness runs its model at, among the ones the model takes; none is shown for a
+ * model that takes none, such as a Cursor model whose name carries it.
+ */
+function HarnessEffortField({
+  form,
+  entry,
+  onChange,
+}: {
+  form: ConfigForm;
+  entry: HarnessCatalog | undefined;
+  onChange: (next: ConfigForm) => void;
+}) {
+  const model = form.harness_model.trim();
+  const efforts = harnessEffortsFor(entry, model);
+  if (efforts.length === 0) return null;
+  const offered = !form.harness_effort || efforts.includes(form.harness_effort);
+  return (
+    <Select
+      tone="surface"
+      label="Effort"
+      hint="How hard the model reasons before it answers."
+      value={form.harness_effort || DEFAULT_EFFORT}
+      onValueChange={(value) =>
+        onChange({ ...form, harness_effort: value === DEFAULT_EFFORT ? "" : (value as HarnessEffort) })
+      }
+      options={[
+        { value: DEFAULT_EFFORT, label: defaultEffortLabel(listedHarnessModel(entry, model)) },
+        ...efforts.map((effort) => ({ value: effort, label: effortLabels[effort] })),
+      ]}
+      {...(offered ? {} : { error: "This model doesn't run at that effort. Pick another." })}
+    />
   );
 }
 
@@ -599,8 +712,8 @@ function HarnessCard({
 }
 
 /**
- * Three harness buttons with their logos and, once one is picked, its model. A harness the
- * machine's image lacks is disabled with a note. Picking another harness clears the model.
+ * Three harness buttons with their logos and, once one is picked, its model and effort. A harness
+ * the machine's image lacks is disabled with a note. Picking another harness clears both.
  */
 export function HarnessChoiceFields({
   form,
@@ -618,6 +731,7 @@ export function HarnessChoiceFields({
       ...form,
       harness: value,
       harness_model: value === form.harness ? form.harness_model : "",
+      harness_effort: value === form.harness ? form.harness_effort : "",
     });
   return (
     <div className="flex flex-col gap-3">
@@ -643,7 +757,8 @@ export function HarnessChoiceFields({
         {errors.harness ? <span className="text-xs text-error">{errors.harness}</span> : null}
       </div>
       {form.harness ? (
-        <HarnessModelField
+        <HarnessModelFields
+          key={form.harness}
           form={form}
           harness={form.harness}
           onChange={onChange}

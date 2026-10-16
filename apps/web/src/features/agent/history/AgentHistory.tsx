@@ -14,7 +14,6 @@ import {
   StatusBadge,
   Icon,
   Row,
-  Tag,
   Tile,
 } from "@guildsrun/ui";
 import { runState, runTitle } from "../runState";
@@ -161,7 +160,6 @@ export function AgentHistoryList({ selectedId, onSelect }: AgentHistoryListProps
                       }
                       trail={
                         <>
-                          {run.memory_skipped ? <Tag tone="ochre">memory skipped</Tag> : null}
                           <StatusBadge
                             status={state.status}
                             {...(state.detail ? { title: state.detail } : {})}

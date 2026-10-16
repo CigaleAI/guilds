@@ -44,12 +44,12 @@ async function writeMemoryThroughNotes(
 
 export const memoryWrite: Tool = {
   name: "memory_write",
-  description: "Replace standing memory with the full text you want to remember.",
+  description: "Replace your whole Memory with the full text to keep. Call it only when the next run needs something this run learned.",
   output_filter: identityOutput,
   filter_name: "identity",
   schema: functionSchema(
     "memory_write",
-    "Replace standing memory with the full text you want to remember.",
+    "Replace your whole Memory with the full text to keep. Call it only when the next run needs something this run learned.",
     {
       content: { type: "string" },
     },

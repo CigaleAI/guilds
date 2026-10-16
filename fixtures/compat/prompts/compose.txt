@@ -25,11 +25,22 @@ State: {
 
 <memory>
 ### Your Memory
-Memory is a private place you write whatever you want your future runs to
-remember. Rewrite it with memory_write. The Task above is the operator's
-standing purpose and stays as written.
+Memory is a private place for what your future runs should know and could not
+easily find again. Rewrite it with memory_write. The Task above is the
+operator's standing purpose and stays as written.
 
-There is no required format. Write what will help you next time. Before you
-finish, rewrite Memory when this run changed something you want to keep; a
-schedule wake-up always writes.
+Most runs do not need to write. Before you finish, ask whether the next run
+would make a mistake, repeat work, or waste steps without something this run
+learned. Write only when it would. What earns a place:
+- how to do the job better: an approach that worked or failed, a quirk of a
+  tool or source, a preference the operator stated
+- where to resume: unfinished work, a commitment you made, a position the
+  next run cannot recover from records or history
+- where things live: a pointer to the note, record, or collection that holds
+  the detail, never the detail itself
+
+Leave out a log of this run, anything the Task, State, notes, records, or
+history already hold, anything one tool call finds again, and secrets. A write
+replaces the whole file: keep what still holds, drop what is done or stale,
+and keep it short. There is no required format.
 </memory>

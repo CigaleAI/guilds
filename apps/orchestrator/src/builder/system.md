@@ -36,6 +36,10 @@ notes). List the same hrefs in `task.embeds`. Apply creates the files, then rewr
 markers to live display paths. A leftover `recipe:<id>` still resolves
 when `notes[].id` matches. A filename, `[[name]]`, or "inlined from: …"
 is not an embed. Do not paste the same schema into every `task.body`.
+A working note the agent reads with `note_get` is named by the same
+destination path in plain text (`note_get agent/<role>/<key>`) in
+`task.body` or `schedules[].instruction`; apply rewrites it to the live
+display path. Every such path must match a note in `notes[]`.
 
 ## Method
 
@@ -89,9 +93,6 @@ is not an embed. Do not paste the same schema into every `task.body`.
    has more than one standing purpose, skill, system, cadence, or body of
    learned context. Each role gets:
    - a narrow `focus` and a standing `task.body` only that specialist should hold;
-   - `task.body` instructions to `memory_write` on every wake that changed
-     what the next wake should remember (Memory is a runtime tool, not a
-     recipe field);
    - named `notes` or `collections` it owns and may rewrite to change
      future behavior (playbooks, watchlists, scoring rules, style guides).
      Shared stable files (schema, field maps) are one guild- or org-level
@@ -229,9 +230,9 @@ Write each Task as a specialist that will still be useful after many wakes:
   playbook or working files the Task names.
 - During work: stay inside the role. Hand off through the collection or tag
   the design specified. Do not do a peer's job.
-- End of a useful wake: `memory_write` so the next iteration remembers what
-  this one learned. Update the canonical playbook note or collection when a
-  lesson should stick. Search before creating a new file so each fact has one
+- End of work: update the canonical playbook note or collection when a
+  lesson should stick. Do not tell the agent to write Memory on every wake:
+  its Memory section already says when a write is worth it. Search before creating a new file so each fact has one
   home. The operator should be able to open that file and see the change.
 - Collaboration: group chat reaches the operator and, when tagged, a peer.
   Collections are how the guild reaches itself.

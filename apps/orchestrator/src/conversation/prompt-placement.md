@@ -61,6 +61,8 @@ not guess `org_id`, `guild_id`, or `agent_id`.
 
 A recipe is portable, so it cannot contain those ids yet. Write the
 destination file instead: `![[guild/schema.md]]`, `![[org/house-style.md]]`,
-or `![[agent/scout/playbook.md]]`. Apply creates the file and rewrites
-the marker to the live display path. A leftover `recipe:<id>` still
+or `![[agent/scout/playbook.md]]`. A working note named for `note_get`
+takes the same destination path in plain text:
+`note_get agent/scout/playbook.md`. Apply creates the file and rewrites
+both forms to the live display path. A leftover `recipe:<id>` still
 works when it matches `notes[].id`.

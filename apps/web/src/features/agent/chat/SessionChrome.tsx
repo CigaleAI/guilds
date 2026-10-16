@@ -6,7 +6,7 @@ import type { Run, Schedule } from "../../../api/types";
 import { messageTime } from "../../../app/format";
 import { IconButton, StatusBadge, Tooltip } from "@guildsrun/ui";
 import { runState, runTitle } from "../runState";
-import { heldChatRun, holdChatRun } from "./chatLinger";
+import { heldChatRun, holdChatRun, useHeldChatRun } from "./chatLinger";
 
 type ChatSearch = {
   run?: string;
@@ -51,7 +51,8 @@ export function RunStatus({ run, className }: { run: Run; className?: string }) 
 
 /**
  * The open session, shared by the chat and the tab-strip chrome. A generating run is held so the
- * transcript stays when that generation finishes; plus or a row in history replaces the hold.
+ * transcript stays when that generation finishes; plus or a row in history replaces the hold, and
+ * a new session opened with plus stays open while another run is generating.
  */
 export function useChatSession() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -61,9 +62,10 @@ export function useChatSession() {
   const schedules = useAgentSchedules(agentId);
   const generatingId = runs.data?.find((candidate) => candidate.generating)?.id;
   useEffect(() => {
-    if (generatingId) holdChatRun(agentId, generatingId);
+    if (generatingId && heldChatRun(agentId) !== null) holdChatRun(agentId, generatingId);
   }, [agentId, generatingId]);
-  const runId = search.run ?? generatingId ?? heldChatRun(agentId);
+  const held = useHeldChatRun(agentId);
+  const runId = search.run ?? (held === null ? undefined : (generatingId ?? held));
   const run = useRun(runId);
 
   const go = (patch: { run?: string | null; history?: boolean }) => {

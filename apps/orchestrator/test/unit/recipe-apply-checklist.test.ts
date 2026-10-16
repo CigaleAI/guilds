@@ -158,6 +158,13 @@ test("apply gives a coding role the harness chosen, else the recipe's, and no ot
   assert.equal(configFromRecipeRole(role).harness_model, "opus");
   assert.equal(configFromRecipeRole(role, undefined, "claude-code").harness_model, "opus");
   assert.equal(configFromRecipeRole(role, undefined, "codex").harness_model, null, "another harness takes its default");
+  role.config = { coding: true, harness: "codex", harness_model: "gpt-5.6-terra", harness_effort: "ultra" };
+  assert.equal(configFromRecipeRole(role).harness_effort, "ultra");
+  assert.equal(configFromRecipeRole(role, undefined, "claude-code").harness_effort, null, "another harness takes its default");
+  role.config = { coding: true, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "ultra" };
+  assert.equal(configFromRecipeRole(role).harness_effort, null, "an effort its model does not run at");
+  role.config = { coding: true, harness: "codex", harness_effort: "turbo" };
+  assert.equal(configFromRecipeRole(role).harness_effort, null);
   role.config = { coding: true, harness: "claude-code", harness_model: "--bad" };
   assert.equal(configFromRecipeRole(role).harness_model, null);
   role.config = { coding: true };
@@ -208,6 +215,18 @@ test("a recipe's harness model that apply cannot use is a warning", () => {
   assert.deepEqual(codes({ coding: true, harness: "claude-code" }), []);
   assert.deepEqual(codes({ coding: true, harness: "claude-code", harness_model: "--bad" }), [["harness_model.invalid", "warning"]]);
   assert.deepEqual(codes({ coding: true, harness_model: "opus" }), [["harness_model.harness", "warning"]]);
+  const effortCodes = (config: Record<string, unknown>) => {
+    role.config = config;
+    return validateRecipe(recipe, ctx)
+      .filter((item) => item.code.startsWith("harness_effort."))
+      .map((item) => [item.code, item.severity]);
+  };
+  assert.deepEqual(effortCodes({ coding: true, harness: "claude-code", harness_model: "opus", harness_effort: "high" }), []);
+  assert.deepEqual(effortCodes({ coding: true, harness: "claude-code", harness_effort: "turbo" }), [["harness_effort.invalid", "warning"]]);
+  assert.deepEqual(effortCodes({ coding: true, harness_effort: "high" }), [["harness_effort.harness", "warning"]]);
+  assert.deepEqual(effortCodes({ coding: true, harness: "cursor", harness_model: "composer-2.5", harness_effort: "low" }), [
+    ["harness_effort.model", "warning"],
+  ]);
   const aliasCodes = (config: Record<string, unknown>) => {
     role.config = config;
     return validateRecipe(recipe, ctx)

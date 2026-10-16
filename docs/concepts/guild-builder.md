@@ -187,7 +187,8 @@ Its code tools (`code_task`, `shell`, `shell_status`, `file_read`,
 [Code tools](coding/code-tools.md)). The coach sets `config.harness`
 (`claude-code`, `codex`, or `cursor`) only when the operator named
 one; otherwise apply asks for it. It sets `config.harness_model` only
-when the operator named a model for that harness, and
+when the operator named a model for that harness,
+`config.harness_effort` only when the operator named an effort, and
 `config.secret_aliases` only when the operator asked for one.
 
 The recipe lists the repositories the guild works in by name and

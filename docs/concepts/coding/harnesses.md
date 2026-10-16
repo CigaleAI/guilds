@@ -4,7 +4,8 @@ A harness is the coding CLI that writes the code for a
 [coding agent](index.md): Claude Code, Codex, or Cursor. It runs
 headless in the agent's sandbox, in one of the guild's
 [repositories](repositories.md), on the operator's own subscription.
-The agent picks one harness, and optionally the model it runs. Each
+The agent picks one harness, and optionally the model it runs and the
+effort it runs it at. Each
 [`code_task`](code-tools.md#code_task) call is one turn of that
 harness.
 
@@ -73,14 +74,47 @@ A check that finds a login records when it saw it and whose it is,
 when the login says. The coding strip and Settings show both. A check
 that finds no credential at all forgets the login.
 
-### Model
+### Model and effort
 
 `harness_model` is the model the harness runs. Empty means the default
-of the subscription. It is an alias such as `opus`, or a full model
-name, with the bracketed parameters some harnesses take. It is copied
-into each run's snapshot and stays fixed for that run. A model the
-subscription does not offer fails the turn with the harness's own
-error.
+of the subscription. It is one of the harness's listed models, or a
+custom name: an alias or a full model name, with the bracketed
+parameters some harnesses take. A model the subscription does not offer
+fails the turn with the harness's own error.
+
+`harness_effort` is how hard the model reasons: `none`, `minimal`,
+`low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. Empty leaves it to
+the model's default. It must be an effort the model runs at:
+
+- a listed model runs at the efforts the catalogue names for it;
+- the subscription's default model or a custom name runs at any effort
+  the harness takes: `low` to `max` on Claude Code, every effort on
+  Codex, and none on Cursor, whose model names carry their effort.
+
+Both are copied into each run's snapshot and stay fixed for that run.
+
+### The model catalogue
+
+`apps/orchestrator/src/coding/harness-models.ts` lists the models
+Settings offers for each harness, with the efforts each runs at and the
+effort it gets when none is set.
+
+| Harness | Listed models | Efforts |
+| --- | --- | --- |
+| Claude Code | `fable`, `opus`, `sonnet`, `haiku` | `low` to `max`; the harness's default without one |
+| Codex | `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` | `low` to `max`, and `ultra` for `gpt-5.6-terra`; `medium` without one |
+| Cursor | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | `none`, then `low` to `max`; `medium` without one |
+| | `claude-fable-5-1`, `claude-fable-5-1-thinking` | `low` to `max`; `high` without one |
+| | `claude-opus-5-5` | `low` to `max`; `medium` without one |
+| | `grok-4.7` | `low` to `xhigh`; `medium` without one |
+| | `composer-2.5` | none |
+
+Claude Code and Codex take the effort apart from the model name. Cursor
+names a model and its effort together, so a listed Cursor model maps
+each effort to the CLI name it starts under (`claude-opus-5-5` at
+`high` starts as `claude-opus-5-5-high`), and without an effort it
+starts under the name for its default effort. Cursor's fast variants
+are not listed; they run as custom names.
 
 ### Harnesses in the image
 
@@ -128,13 +162,22 @@ coding agent's Settings show the same choice:
 - **Harness**: three buttons with their logos, **Claude Code**
   (Anthropic), **Codex** (OpenAI), and **Cursor** (Cursor). A harness
   the machine's image lacks is greyed and marked "Not on machine".
-- **Harness model**, once a harness is picked: empty for "Subscription
-  default". It suggests opus, sonnet, and haiku for Claude Code. Its
-  hint reads "Optional model alias (e.g. opus, sonnet). Defaults to
-  subscription standard." for Claude Code, "Optional model name from
-  your ChatGPT plan. Defaults to standard." for Codex, and "Optional
-  model name. Defaults to standard." for Cursor. Picking another
-  harness clears it.
+- **Harness model**, once a harness is picked: a select of
+  "Subscription default", the harness's listed models by name with
+  their id beneath, and "Custom…". Its hint reads "Custom takes any
+  model name the subscription offers." **Custom…** shows a **Model
+  name** field. A stored model the catalogue does not list opens on
+  Custom.
+- **Effort**, under the model, while the model runs at any effort: a
+  select of "Default (`<effort>`)" for a listed model with a default
+  effort, else "Harness default", then the model's efforts (None,
+  Minimal, Low, Medium, High, Extra high, Max, Ultra). Its hint reads
+  "How hard the model reasons before it answers." Picking a model that
+  does not run at the effort set puts it back to the default. A stored
+  effort the model does not run at shows "This model doesn't run at
+  that effort. Pick another." Cursor shows no effort for a custom name
+  or a model that takes none.
+- Picking another harness clears the model and the effort.
 - A note, "A published image carries Codex only; Claude Code and
   Cursor need an image built with them.", while the machine's image
   lacks a harness, or before its container first started. Until then
@@ -214,6 +257,7 @@ machine that has it."
 | Harnesses | `claude-code`, `codex`, `cursor` |
 | Harness | Only for coding agents, and required on them |
 | Harness model | Up to 120 characters: letters, digits, and `. _ : / = , [ ] -`, starting with a letter or digit; blank saves as null; needs a harness |
+| Harness effort | One the model runs at; blank saves as null; needs a harness |
 | Credential order | The token variable first, then a login in the home |
 | Codex credential | A ChatGPT login only; an `auth.json` holding only an API key is no credential |
 | Organisation model keys | Never in the sandbox |
@@ -232,20 +276,37 @@ machine that has it."
   saves as null. Otherwise 422 `harness_model must be a model name: up
   to 120 letters, digits, and . _ : / = , [ ] -`. Without a harness:
   422 `harness_model needs a harness`.
+- `harness_effort`: one of `none`, `minimal`, `low`, `medium`,
+  `high`, `xhigh`, `max`, `ultra`, or null. A blank value saves as
+  null. Otherwise 422 `harness_effort must be one of: none, minimal,
+  …`. Without a harness: 422 `harness_effort needs a harness`. An
+  effort the model does not run at: 422 `harness_effort must be one of
+  <efforts> for <model>`, or `harness_effort: <model> takes no effort
+  on cursor` for a model that takes none. The default model reads as
+  "the default model".
 
 ### HTTP
 
 ```text
+GET  /api/harnesses
 GET  /api/agents/:id/harness
 POST /api/agents/:id/harness/check
 ```
 
-`GET` returns what the harness still needs:
+`GET /api/harnesses` returns `{ harnesses }`, the catalogue for any
+signed-in user. Each entry holds `harness`, `label`, `models`, and
+`unlisted_efforts`: the efforts the default model or a custom name
+runs at. Each model holds `id`, `label`, `efforts`, and
+`default_effort` (null leaves it to the harness). The CLI names a
+Cursor model starts under stay on the server.
+
+`GET /api/agents/:id/harness` returns what the harness still needs:
 
 | Field | Meaning |
 | --- | --- |
 | `harness` | The agent's harness, or null |
 | `harness_model` | Its model, or null |
+| `harness_effort` | Its effort, or null |
 | `machine_harnesses` | The harness CLIs the agent's machine carries; null until its container first started |
 | `repositories` | The names of the guild repositories a coding run clones |
 | `harnesses` | One entry per harness, below |
@@ -338,15 +399,20 @@ A driver in `runtime/guilds-harness` turns a call into a command line,
 and the CLI's event log into progress lines and a result. Each one is
 pinned to the CLI version the image installs.
 
-| Harness | Command | Model | Resume | Prompt |
+| Harness | Command | Model and effort | Resume | Prompt |
 | --- | --- | --- | --- | --- |
-| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, before `--resume` | `--resume <session id>` | stdin |
-| Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>` after the managed flags, before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) |
-| Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <model>`, before `--resume` | `--resume=<chat id>` | the prompt file, named on its command line |
+| Claude Code | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --setting-sources "" --strict-mcp-config --disable-slash-commands --settings '{"disableAllHooks": true, "enableAllProjectMcpServers": false, "autoMemoryEnabled": false, "enabledPlugins": {}}'` | `--model <model>`, then `--effort <effort>`, before `--resume` | `--resume <session id>` | stdin |
+| Codex | `codex exec --json --dangerously-bypass-approvals-and-sandbox --ignore-user-config --ignore-rules --disable memories --disable hooks --disable plugins --disable apps --disable in_app_updates -c mcp_servers={} -c notify=[] -c check_for_update_on_startup=false -c analytics.enabled=false -c otel.exporter="none" -` | `--model <model>`, then `-c model_reasoning_effort="<effort>"`, after the managed flags and before the thread id | `codex exec resume … <thread id> -` | stdin (`-`) |
+| Cursor | `agent -p --force --trust --output-format stream-json "Read your task in <prompt file> and follow it."` | `--model <CLI name>`, the name for the effort; no effort apart | `--resume=<chat id>` | the prompt file, named on its command line |
 
-The model is passed as one argument. Without a model, no flag is
-passed. `guilds-harness` checks the model against the same rule as the
-configuration (`model is invalid` otherwise). The Cursor CLI reads no
+The orchestrator resolves the agent's model and effort through the
+catalogue before the call: a listed Cursor model becomes its CLI name
+for the effort. The model is passed as one argument. Without a model
+or an effort, no flag is passed for it. `guilds-harness` checks the
+model against the same rule as the configuration (`model is invalid`
+otherwise), the effort against the efforts (`effort is invalid`), and
+refuses an effort for Cursor (`cursor takes its effort in the model
+name`), before the call starts. The Cursor CLI reads no
 prompt on stdin, so its command line names the prompt file in the
 agent's home; the prompt itself never appears on a command line.
 

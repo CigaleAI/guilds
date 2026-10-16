@@ -82,7 +82,8 @@ from breaking by accident.
 
 The agent's **Prompt** tab edits the Task.
 
-- The editor has **Edit** and **Preview** modes. Save, or
+- The editor has **Edit** and **Preview** modes. The tab opens in
+  Preview; double-clicking the text switches to Edit. Save, or
   Cmd/Ctrl+S, writes the Task. **Discard** drops the edits.
 - **Insert › Note** and **Insert › Table** open a picker and insert
   the chosen note or collection at the cursor as `![[display-path]]`.

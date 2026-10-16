@@ -117,7 +117,6 @@ export type ActivityWake = {
   reply: string | null;
   // A direct chat's first operator message inside the window.
   opening: string | null;
-  memory_skipped: boolean;
   last_seq: number | null;
   cost_usd: number;
 };
@@ -453,7 +452,6 @@ export function projectActivity(input: ActivityInput): ActivityView {
       tool_call_count: steps?.count ?? 0,
       reply: steps?.reply ?? null,
       opening: kind === "direct" ? (openingByRun.get(runId) ?? null) : null,
-      memory_skipped: obj(run.metadata).memory_skipped === true,
       last_seq: num(stats?.last_seq),
       cost_usd: num(stats?.cost_usd) ?? 0,
     });

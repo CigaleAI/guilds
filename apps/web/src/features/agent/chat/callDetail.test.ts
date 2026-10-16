@@ -3,8 +3,10 @@ import { test } from "node:test";
 import type { FlowCall } from "../runs/runFlowModel";
 import {
   callArguments,
+  callHarness,
   callMetadata,
   hasTaskDiff,
+  hasTaskLog,
   openingView,
   returnedData,
   toolCallFacts,
@@ -145,4 +147,31 @@ test("a call's arguments come from its function call", () => {
 test("a result's returned data leaves out the remaining tool calls line", () => {
   const returned = returnedData({ payload: { content: "done\n\nremaining_tool_calls: 4" } });
   assert.equal(returned.text, "done");
+});
+
+test("a code task's returned data leaves out its closing log line", () => {
+  const returned = returnedData({
+    payload: { content: "completed · codex\n\nDone.\n\nlog: .runs/r1/c1.harness.jsonl" },
+    metadata: { tool_name: "code_task" },
+  });
+  assert.equal(returned.text, "completed · codex\n\nDone.");
+});
+
+test("another tool's returned data keeps a log line", () => {
+  const returned = returnedData({ payload: { content: "ok\nlog: kept" } });
+  assert.equal(returned.text, "ok\nlog: kept");
+});
+
+test("a code task runs on the harness its result names, else the run's", () => {
+  assert.equal(callHarness(flowCall("code_task", codeTask), "cursor"), "codex");
+  assert.equal(callHarness(flowCall("code_task", null), "cursor"), "cursor");
+  assert.equal(callHarness(flowCall("code_task", null), null), null);
+  assert.equal(callHarness(flowCall("shell", null), "cursor"), null);
+});
+
+test("a code task naming its log has a Log view, given its run", () => {
+  assert.equal(hasTaskLog(flowCall("code_task", codeTask), "r1"), true);
+  assert.equal(hasTaskLog(flowCall("code_task", codeTask), undefined), false);
+  assert.equal(hasTaskLog(flowCall("code_task", { ...codeTask, log_path: null }), "r1"), false);
+  assert.equal(hasTaskLog(flowCall("shell", { log_path: "/tmp/out.log" }), "r1"), false);
 });

@@ -81,7 +81,7 @@ export * from "./components/runs/GenerationHeader";
 export * from "./components/runs/GenerationHero";
 export * from "./components/runs/OutcomeLegend";
 export * from "./components/runs/RunTrace";
-export * from "./components/runs/StepRow";
+export * from "./components/runs/FlowTimeline";
 export * from "./components/runs/ToolCall";
 export * from "./components/runs/stepOutcome";
 

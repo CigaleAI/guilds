@@ -8,7 +8,9 @@ import {
   harnessOf,
   harnessSecretSource,
   isHarness,
+  type Harness,
 } from "../coding/harnesses.js";
+import { harnessCatalog, harnessEffortOf } from "../coding/harness-models.js";
 import { secretAliasesOf } from "../agents/validation.js";
 import { agentSecrets } from "../access/runtime.js";
 import {
@@ -46,6 +48,12 @@ import { bodyOf, param } from "./request.js";
 function taskDiffRepository(metadata: Record<string, unknown> | null): string | null {
   const repository = metadata?.tool_name === "code_task" ? metadata.repository : null;
   return typeof repository === "string" && repository && typeof metadata?.end_sha === "string" ? repository : null;
+}
+
+/** The harness a `code_task` call ran on, when its result names one and the log it kept. */
+function taskLogHarness(metadata: Record<string, unknown> | null): Harness | null {
+  const harness = metadata?.tool_name === "code_task" ? metadata.harness : null;
+  return isHarness(harness) && typeof metadata?.log_path === "string" && metadata.log_path ? harness : null;
 }
 
 function proxyUrl(): string {
@@ -330,6 +338,11 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     return { repositories: selected };
   });
 
+  app.get("/api/harnesses", async (request) => {
+    await currentUser(repo, request, deps);
+    return { harnesses: harnessCatalog() };
+  });
+
   app.get("/api/agents/:agent_id/harness", async (request) => {
     const user = await currentUser(repo, request, deps);
     const agent = await ownedAgent(repo, param(request, "agent_id"), user);
@@ -341,6 +354,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     return {
       harness: harnessOf(config),
       harness_model: harnessModelOf(config),
+      harness_effort: harnessEffortOf(config),
       machine_harnesses: carried,
       repositories: (await deps.generation?.codingRepositoryNames(agent)) ?? [],
       harnesses: HARNESSES.map((harness) => {
@@ -404,6 +418,27 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const result = await deps.generation.runDiff(String(run.id), repository, callId);
       return { repository, ...result };
+    } catch (error) {
+      if (error instanceof RunRequestError) {
+        throw new HttpError(error.status, error.detail);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/runs/:run_id/tasks/:call_id/log", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const run = await ownedRun(repo, param(request, "run_id"), user);
+    const callId = param(request, "call_id");
+    const harness = taskLogHarness(await repo.getToolResultMetadata(String(run.id), callId));
+    if (harness === null) {
+      throw new HttpError(404, "that call has no harness log");
+    }
+    if (!deps.generation) {
+      throw new HttpError(503, "generation is unavailable");
+    }
+    try {
+      return await deps.generation.harnessLog(String(run.id), callId, harness);
     } catch (error) {
       if (error instanceof RunRequestError) {
         throw new HttpError(error.status, error.detail);

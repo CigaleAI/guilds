@@ -290,6 +290,7 @@ export function AgentPrompt() {
           onPickEmbed={pickEmbed}
           onOpenEmbed={setPreviewPath}
           isBrokenEmbed={isBroken}
+          defaultMode="preview"
         />
       )}
 

@@ -56,11 +56,6 @@ export function runItem(
     system_prompt_hash: rowGet(row, "system_prompt_hash") ?? null,
     task_prompt_hash: rowGet(row, "task_prompt_hash") ?? null,
     memory_prompt_hash: rowGet(row, "memory_prompt_hash") ?? null,
-    memory_skipped: Boolean(
-      metadata && typeof metadata === "object" && !Array.isArray(metadata)
-        ? (metadata as { memory_skipped?: unknown }).memory_skipped
-        : false,
-    ),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     archived_at: archived ? iso(archived) : null,

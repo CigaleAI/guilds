@@ -52,7 +52,8 @@ agent**. A dialog opens on five steps.
    `Makes small, tested changes to the code` as the **Focus**. Click
    **Next**.
 2. **Machine**: the step names your machine. Click **Next**.
-3. **Harness**: click **Claude Code**. Leave **Harness model** empty.
+3. **Harness**: click **Claude Code**. Leave **Harness model** on
+   **Subscription default** and **Effort** on **Harness default**.
    Under **Subscription**, click **Log in via CLI**. Click **Next**.
 4. **Lead model**: the lead model is the agent's own model. It plans,
    talks to you, and reviews the harness's work. Keep the model it

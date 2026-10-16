@@ -8,6 +8,7 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-32 | The harness log the app reads is redacted only with the agent's secret values | Open |
 | SEC-31 | Cursor runs a repository's hooks | Open, accepted |
 | SEC-30 | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
 | SEC-29 | A repository can carry configuration its coding harness loads | Open |
@@ -39,6 +40,38 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-32 — The harness log the app reads is redacted only with the agent's secret values
+
+**Status:** open.
+
+**Found:** 2026-10-16, adding the **Log** view of a `code_task` call.
+
+**Where:** `GET /api/runs/:id/tasks/:call_id/log`
+(`apps/orchestrator/src/http/coding-routes.ts`), `harnessLog` in
+`apps/orchestrator/src/generation/index.ts`, `readHarnessLog` in
+`apps/orchestrator/src/toolbox/harness.ts`, and the `log` op of
+`runtime/guilds-harness`.
+
+**Exposure:** a harness's event log is stored unredacted in the
+agent's home. It holds what the harness read and ran, which can
+include values that are not the agent's secrets: the GitHub tokens
+minted for the run, a login file's values (SEC-27), and whatever a
+file in a repository or the home holds. The endpoint serves the log
+to any member who can see the run's guild.
+
+**Control in place:** the log passes redaction with the agent's
+secret values before it leaves the machine's helper output, and its
+progress lines are cut at 240 characters like live progress. Only a
+`code_task` result naming its harness and log can be read, from the
+run's own `.runs/` folder, by call id; the helper refuses ids that are
+not a single safe path segment and a log that is a symlink. The same
+members can already open the agent's terminal and read the file
+unredacted.
+
+**Residual risk:** a value that is not one of the agent's secrets
+shows as written. A run's GitHub tokens expire within the hour, so a
+log read later shows an expired token.
 
 ## SEC-31 — Cursor runs a repository's hooks
 

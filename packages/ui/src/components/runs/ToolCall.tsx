@@ -1,5 +1,5 @@
 import { cva } from "class-variance-authority";
-import { ArrowUpRight, ChevronDown } from "lucide-react";
+import { ArrowUpRight, ChevronDown, PenLine, Play } from "lucide-react";
 import { useId, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { cn } from "../../cn";
 import { ResultGlyph } from "../../primitives/Dot";
@@ -13,15 +13,6 @@ export type ToolKind =
 
 /** Which artifact level a call touched; `all` is a search across every level. */
 export type ToolLevel = "local" | "guild" | "org" | "all";
-
-/** Kinds that change state; the Mutations filter keeps these in focus. */
-export const mutatingKinds: ReadonlySet<ToolKind> = new Set([
-  "write",
-  "memory",
-  "execute",
-  "act",
-  "post",
-]);
 
 /** Lookups read in cyan, mutations in plum, connected servers in tide. */
 export const toolKindFill = {
@@ -44,6 +35,33 @@ export const toolLevelLabel: Record<ToolLevel, string> = {
 
 export type ToolCallStatus = "ok" | "failed" | "running";
 
+/** What a call did beyond reading: `wrote` changed tracked state, `ran` ran a script. */
+export type ToolCallEffect = "wrote" | "ran";
+
+const effectLabel: Record<ToolCallEffect, string> = { wrote: "wrote", ran: "ran script" };
+
+/** A tag saying a call, or a group of calls, wrote tracked state (tide, like the Writes filter) or ran a script. */
+export function EffectTag({ effect, className }: { effect: ToolCallEffect; className?: string }) {
+  return (
+    <Tag tone={effect === "wrote" ? "tide" : "well"} className={cn("gap-1 pl-1.5", className)}>
+      <Icon icon={effect === "wrote" ? PenLine : Play} size={14} />
+      {effectLabel[effect]}
+    </Tag>
+  );
+}
+
+/** A call's kind and the level it touched, as its open detail lists them. */
+export function ToolCallTags({ kind, level }: { kind: ToolKind; level?: ToolLevel | null }) {
+  return (
+    <span className="flex shrink-0 items-center gap-1.5">
+      <Pill fill={toolKindFill[kind]} className="h-4.5 px-2 font-mono text-2xs font-bold">
+        {kind}
+      </Pill>
+      {level ? <Tag tone="term">{toolLevelLabel[level]}</Tag> : null}
+    </span>
+  );
+}
+
 export const toolCall = cva("flex w-full min-w-0 flex-col rounded-lg bg-paper text-left text-fg", {
   variants: {
     dimmed: {
@@ -60,14 +78,17 @@ export const toolCall = cva("flex w-full min-w-0 flex-col rounded-lg bg-paper te
 
 export type ToolCallProps = Omit<ComponentProps<"article">, "onClick"> & {
   name: string;
+  /** A mark before the name, such as the logo of the harness a call runs on. */
+  icon?: ReactNode;
   kind: ToolKind;
-  level?: ToolLevel | null;
   /** Connected server that served the call, when its name does not already say so. */
   server?: string | null;
   /** Position among the calls its step requested, from 1; omit for a call requested alone. */
   index?: number;
   /** One-line summary of the arguments, such as "List schedules" or "cron 0 0 * * *". */
   hint?: string;
+  /** What the call did beyond reading, as an outlined tag. */
+  effect?: ToolCallEffect | null;
   status: ToolCallStatus;
   /** First line of the failure. */
   error?: string;
@@ -121,11 +142,12 @@ export function ToolCallLink({ className, children, ...props }: ToolCallLinkProp
 /** One tool call the model requested: what it touched, how it ended and how long it took. Opening it keeps the detail in this card. */
 export function ToolCall({
   name,
+  icon,
   kind,
-  level,
   server,
   index,
   hint,
+  effect,
   status,
   error,
   duration,
@@ -156,7 +178,7 @@ export function ToolCall({
       <div
         onClick={onSummaryClick}
         className={cn(
-          "flex w-full min-w-0 flex-col gap-1 px-2.5 py-1.5 text-left",
+          "flex min-h-9 w-full min-w-0 flex-col justify-center gap-1 px-3 py-1.5 text-left",
           onClick && "cursor-pointer transition-colors hover:bg-paper-hi",
           showDetail ? "rounded-t-lg border-b border-line" : "rounded-lg",
         )}
@@ -167,17 +189,14 @@ export function ToolCall({
               {index}
             </Tag>
           ) : null}
-          <span className="min-w-0 shrink truncate font-mono text-xs font-medium">{name}</span>
-          <Pill fill={toolKindFill[kind]} className="h-4.5 px-2 text-2xs font-bold">
+          {icon}
+          <span className="min-w-0 shrink truncate font-mono text-xs font-bold">{name}</span>
+          <Pill fill={toolKindFill[kind]} className="h-4.5 px-2 font-mono text-2xs font-bold">
             {kind}
           </Pill>
           {server ? <Tag tone="well">{server}</Tag> : null}
-          {level ? (
-            <Tag tone="term" className="font-sans">
-              {toolLevelLabel[level]}
-            </Tag>
-          ) : null}
-          <span className="min-w-0 flex-1 truncate text-xs text-muted">{hint}</span>
+          {effect ? <EffectTag effect={effect} /> : null}
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-2">{hint}</span>
           {link}
           <Outcome status={status} />
           {duration ? <span className="shrink-0 type-meta text-muted">{duration}</span> : null}

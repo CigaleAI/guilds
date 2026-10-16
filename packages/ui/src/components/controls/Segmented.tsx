@@ -18,6 +18,8 @@ export type SegmentedProps<T extends string> = {
   /** Accessible name of the group, such as "Time range" or "Issue status". */
   label: string;
   size?: "sm" | "md";
+  /** The selected option's fill: ink, or paper for a quieter toolbar. */
+  fill?: "ink" | "paper";
   /** Mono labels, for machine values such as time ranges. */
   mono?: boolean;
   disabled?: boolean;
@@ -34,6 +36,7 @@ export function Segmented<T extends string>({
   options,
   label,
   size = "md",
+  fill = "ink",
   mono = false,
   disabled = false,
   className,
@@ -55,7 +58,7 @@ export function Segmented<T extends string>({
             key={option.value}
             value={option.value}
             disabled={option.disabled ?? false}
-            className={cn(trackItem({ size }), mono && "font-mono font-medium")}
+            className={cn(trackItem({ size, selectedFill: fill }), mono && "font-mono font-medium")}
           >
             {option.label}
             {option.count !== undefined ? (

@@ -4,6 +4,8 @@ import type { RunMessage, ToolCallRequest } from "./toolFormat";
 import {
   classifyToolCall,
   connectedToolServers,
+  isMutation,
+  isScriptRun,
   kindBreakdown,
   levelFromDisplayPath,
   offeredToolNames,
@@ -152,6 +154,32 @@ test("fixed-level tools ignore arguments", () => {
     level: "local",
     server: null,
   });
+});
+
+test("only changes to tracked state are mutations", () => {
+  const mutates = (name: string, args: Record<string, unknown> = {}) =>
+    isMutation(classifyToolCall(call(name, args), null, run));
+  const tracked = [
+    "note_write",
+    "note_delete",
+    "memory_write",
+    "record_add",
+    "studio_delete_collection",
+    "script_create",
+    "code_task",
+  ];
+  for (const name of tracked) assert.equal(mutates(name), true, name);
+  const untracked = ["shell", "script_run", "group_post", "schedule_create_cron", "browser_click"];
+  for (const name of untracked) assert.equal(mutates(name), false, name);
+  assert.equal(mutates("note_get", { path: "org/o1/agents/a1/memory.md" }), false);
+  assert.equal(mutates("studio_list_memory_revisions"), false);
+  assert.equal(mutates("notion_search"), false);
+  assert.equal(mutates("weekly_pnl"), false);
+});
+
+test("a script run is told apart from other commands", () => {
+  assert.equal(isScriptRun(classifyToolCall(call("script_run", { name: "one" }))), true);
+  assert.equal(isScriptRun(classifyToolCall(call("shell", { command: "ls" }))), false);
 });
 
 test("connected tools resolve from the run snapshot with their server slug", () => {

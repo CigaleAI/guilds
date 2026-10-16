@@ -27,7 +27,9 @@ import {
   formatDuration,
   HarnessSetupError,
   harnessTiming,
+  HARNESS_LOG_MAX_BYTES,
   notePaths,
+  readHarnessLog,
   shownProgressLines,
   timeoutMinutes,
   type CodeTaskOutcome,
@@ -230,6 +232,22 @@ describe("code_task with the Claude Code driver", () => {
     const [pinned, plain] = calls();
     assert.deepEqual(pinned!.argv.slice(-4), ["--model", "opus", "--resume", SESSION]);
     assert.ok(!plain!.argv.includes("--model"));
+  });
+
+  test("the agent's harness effort is passed with --effort, after the model", async () => {
+    const { sandbox, calls } = harnessSandbox("claude", () => recorded("claude-code"), { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
+    await codeTask(context(sandbox, { harness_model: "opus", harness_effort: "xhigh" }).ctx, { brief: "x", session_id: SESSION });
+    await codeTask(context(sandbox, { harness_effort: "low" }).ctx, { brief: "x" }, "call_default");
+    const [pinned, plain] = calls();
+    assert.deepEqual(pinned!.argv.slice(-6), ["--model", "opus", "--effort", "xhigh", "--resume", SESSION]);
+    assert.deepEqual(plain!.argv.slice(-2), ["--effort", "low"]);
+  });
+
+  test("the helper refuses an effort it does not know, and never starts the harness", async () => {
+    const { sandbox, calls } = harnessSandbox("claude", () => recorded("claude-code"), { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
+    const { text } = await codeTask(context(sandbox, { harness_effort: "--x" as never }).ctx, { brief: "x" });
+    assert.match(text, /^ERROR: .*effort is invalid/);
+    assert.equal(calls().length, 0);
   });
 
   test("the helper refuses a model that is not a model name, and never starts the harness", async () => {
@@ -506,6 +524,14 @@ describe("code_task with the Codex driver", () => {
     assert.deepEqual(calls()[0]!.argv.slice(-4), ["--model", "gpt-5-codex", THREAD, "-"]);
   });
 
+  test("the agent's harness effort is passed as model_reasoning_effort, before the thread id", async () => {
+    const { sandbox, calls } = harnessSandbox("codex", () => recorded("codex"));
+    chatgptLogin(sandbox, { tokens: { refresh_token: "refresh" } });
+    const ctx = context(sandbox, { harness: "codex", secrets: {}, harness_model: "gpt-6-luna", harness_effort: "high" }).ctx;
+    await codeTask(ctx, { brief: "Yes.", session_id: THREAD });
+    assert.deepEqual(calls()[0]!.argv.slice(-6), ["--model", "gpt-6-luna", "-c", 'model_reasoning_effort="high"', THREAD, "-"]);
+  });
+
   test("a check reads whose the ChatGPT login is from its id token, without checking its signature", async () => {
     const { sandbox } = harnessSandbox("codex", () => recorded("codex"));
     const claims = Buffer.from(JSON.stringify({ email: "bob@example.com" }), "utf8").toString("base64url");
@@ -581,6 +607,27 @@ describe("code_task with the Cursor driver", () => {
     const argv = calls()[0]!.argv;
     assert.deepEqual(argv.slice(-3, -1), ["--model", "sonnet-4-thinking"]);
     assert.match(argv.at(-1)!, /^Read your task in /);
+  });
+
+  test("a listed model starts under Cursor's name for the agent's effort, with no effort apart", async () => {
+    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"), { CURSOR_API_KEY: "cursor-key" });
+    const secrets = { CURSOR_API_KEY: "cursor-key" };
+    const harness = { harness: "cursor" as const, secrets, harness_model: "claude-opus-5-5" };
+    await codeTask(context(sandbox, { ...harness, harness_effort: "max" }).ctx, { brief: "x" });
+    await codeTask(context(sandbox, harness).ctx, { brief: "x" }, "call_default");
+    const [picked, plain] = calls();
+    assert.deepEqual(picked!.argv.slice(-3, -1), ["--model", "claude-opus-5-5-max"]);
+    assert.deepEqual(plain!.argv.slice(-3, -1), ["--model", "claude-opus-5-5-medium"]);
+    assert.ok(!picked!.argv.includes("--effort"));
+  });
+
+  test("the helper refuses an effort apart from Cursor's model name, and never starts the harness", async () => {
+    const { sandbox, calls } = harnessSandbox("agent", () => recorded("cursor"), { CURSOR_API_KEY: "cursor-key" });
+    const ctx = createToolContext({ run_id: "r_harness", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+    ctx.tool_call_id = "call_effort";
+    const start = { harness: "cursor", repository: "app", prompt: "x", model: "grok-4.7-high", effort: "high" };
+    await assert.rejects(runCodeHelper(ctx, "start", start, { helper: HARNESS_HELPER }), /cursor takes its effort in the model name/);
+    assert.equal(calls().length, 0);
   });
 
   test("a CLI that refuses to start fails with what it wrote on stderr", async () => {
@@ -855,6 +902,47 @@ describe("code_task arguments", () => {
     assert.equal(timeoutMinutes({ timeout_minutes: 90 }), 60);
     assert.equal(timeoutMinutes({ timeout_minutes: 0 }), 1);
     assert.equal(timeoutMinutes({ timeout_minutes: 2.7 }), 2);
+  });
+});
+
+describe("a kept harness log", () => {
+  function keptLog(lines: string[]) {
+    const sandbox = new HostCodeSandbox("a_1");
+    const folder = path.join(sandbox.home, ".runs", "r_log");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(path.join(folder, "call_log.harness.jsonl"), lines.join("\n") + "\n");
+    const ctx = createToolContext({ run_id: "r_log", agent_id: "a_1", guild_id: "g_1", sandbox, secrets: {} });
+    return ctx;
+  }
+
+  test("reads as its progress lines and its raw JSONL, both redacted", async () => {
+    const events = [...recorded("claude-code"), JSON.stringify({ type: "note", text: `token ${TOKEN}` }), "not json"];
+    const ctx = keptLog(events);
+    const log = await readHarnessLog(ctx, "claude-code", "call_log", { CLAUDE_CODE_OAUTH_TOKEN: TOKEN });
+    assert.ok(log);
+    assert.ok(log.lines.includes("Bash: python3 greet.py"), log.lines.join("\n"));
+    assert.equal(log.lines_truncated, false);
+    assert.equal(log.raw_truncated, false);
+    assert.equal(log.events, events.length - 1);
+    assert.equal(log.unparsed, 1);
+    assert.ok(log.raw.includes(SESSION));
+    assert.ok(!log.raw.includes(TOKEN), "the raw log is redacted");
+    assert.ok(log.bytes > 0);
+  });
+
+  test("keeps whole lines from the start of a raw log past its cap", async () => {
+    const line = JSON.stringify({ type: "assistant", text: "x".repeat(1000) });
+    const ctx = keptLog(Array.from({ length: Math.ceil(HARNESS_LOG_MAX_BYTES / line.length) + 10 }, () => line));
+    const log = await readHarnessLog(ctx, "claude-code", "call_log", {});
+    assert.ok(log);
+    assert.equal(log.raw_truncated, true);
+    assert.ok(Buffer.byteLength(log.raw) <= HARNESS_LOG_MAX_BYTES);
+    assert.ok(log.raw.endsWith(`${line}\n`), "the cut falls between lines");
+  });
+
+  test("is null once the agent's home no longer keeps it", async () => {
+    const ctx = keptLog([]);
+    assert.equal(await readHarnessLog(ctx, "claude-code", "call_gone", {}), null);
   });
 });
 

@@ -1,5 +1,6 @@
 import { isCodingOnlyModel, parseModelId } from "../llm/providers.js";
 import { HARNESS_MODEL_RE, HARNESSES, isHarness, type Harness } from "../coding/harnesses.js";
+import { EFFORTS, harnessEffortsFor, isEffort, type Effort } from "../coding/harness-models.js";
 import { SECRET_NAME } from "../credentials/validate.js";
 import { NAME_RE } from "../lib/names.js";
 
@@ -18,6 +19,7 @@ export const CONFIG_KEYS = new Set([
   "coding",
   "harness",
   "harness_model",
+  "harness_effort",
   "secret_aliases",
   "scripting",
   "memory",
@@ -123,6 +125,8 @@ export type AgentConfig = {
   harness: Harness | null;
   /** The model the harness runs; null leaves it to the harness's subscription. */
   harness_model: string | null;
+  /** The effort the harness runs its model at; null leaves it to the harness. */
+  harness_effort: Effort | null;
   /**
    * Variable names the agent's commands see beside the secrets reaching it, each holding the
    * value of the secret it names: `{ CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" }`. An alias wins over
@@ -198,8 +202,8 @@ export function addMissingBrowser(config: Record<string, unknown>): Record<strin
 }
 
 /**
- * What a payload leaves out: no browser, no coding, no harness, the harness's default model, and
- * no secret aliases.
+ * What a payload leaves out: no browser, no coding, no harness, the harness's default model and
+ * effort, and no secret aliases.
  */
 export function addMissingFlags(config: Record<string, unknown>): Record<string, unknown> {
   return fillMissingKeys(config, {
@@ -207,6 +211,7 @@ export function addMissingFlags(config: Record<string, unknown>): Record<string,
     coding: false,
     harness: null,
     harness_model: null,
+    harness_effort: null,
     secret_aliases: {},
   });
 }
@@ -430,6 +435,33 @@ function requireHarnessModel(value: unknown, harness: Harness | null): string | 
   return model;
 }
 
+/** Why the harness does not run the model at an effort: it takes none, or other ones. */
+function unofferedEffortMessage(harness: Harness, model: string | null): string {
+  const efforts = harnessEffortsFor(harness, model);
+  const named = model ?? "the default model";
+  return efforts.length === 0
+    ? `harness_effort: ${named} takes no effort on ${harness}`
+    : `harness_effort must be one of ${efforts.join(", ")} for ${named}`;
+}
+
+/** The harness's effort: null or blank for the harness's default, else one the model runs at. */
+function requireHarnessEffort(value: unknown, harness: Harness | null, model: string | null): Effort | null {
+  const effort = typeof value === "string" ? value.trim() : value;
+  if (effort === null || effort === "") {
+    return null;
+  }
+  if (!isEffort(effort)) {
+    throw new AgentValidationError(`harness_effort must be one of: ${EFFORTS.join(", ")}`);
+  }
+  if (harness === null) {
+    throw new AgentValidationError("harness_effort needs a harness");
+  }
+  if (!harnessEffortsFor(harness, model).includes(effort)) {
+    throw new AgentValidationError(unofferedEffortMessage(harness, model));
+  }
+  return effort;
+}
+
 function isAliasMap(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -496,6 +528,7 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
   const browser = requireBooleanField(filled.browser, "browser");
   rejectCodingOnlyModelWithoutCoding(model, coding);
   const harness = requireHarness(filled.harness, coding);
+  const harnessModel = requireHarnessModel(filled.harness_model, harness);
   return {
     model,
     temperature: requireFiniteNumber(filled.temperature, "temperature"),
@@ -513,7 +546,8 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
     browser_language: validateBrowserLanguage(filled.browser_language),
     coding,
     harness,
-    harness_model: requireHarnessModel(filled.harness_model, harness),
+    harness_model: harnessModel,
+    harness_effort: requireHarnessEffort(filled.harness_effort, harness, harnessModel),
     secret_aliases: requireSecretAliases(filled.secret_aliases),
     scripting: requireBooleanField(filled.scripting, "scripting"),
     memory: requireBooleanField(filled.memory, "memory"),

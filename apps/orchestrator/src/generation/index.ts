@@ -66,12 +66,7 @@ import {
   type Completion,
   type ModelEvent,
 } from "../llm/index.js";
-import {
-  hasMemoryWrite,
-  memoryReminderMessage,
-  offersMemoryWrite,
-  readMemory,
-} from "../memory/index.js";
+import { readMemory } from "../memory/index.js";
 import { McpDisconnectedError, McpError, McpPool } from "../mcp/index.js";
 import {
   ArtifactError,
@@ -172,6 +167,7 @@ import {
   REPOSITORIES_MISSING_MESSAGE,
   type Harness,
 } from "../coding/harnesses.js";
+import { harnessEffortOf } from "../coding/harness-models.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import {
   CODING_TOOLS,
@@ -191,7 +187,9 @@ import {
   harnessMissingError,
   HarnessSetupError,
   interruptedText,
+  type HarnessLog,
   type LostTurnEnd,
+  readHarnessLog,
   shownProgressLines,
 } from "../toolbox/harness.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
@@ -652,6 +650,7 @@ export function configSnapshot(
     coding: Boolean(config.coding),
     harness: harnessOf(config),
     harness_model: harnessModelOf(config),
+    harness_effort: harnessEffortOf(config),
     secret_aliases: secretAliasesOf(config),
     scripting: config.scripting !== false,
     memory: memoryOf(config),
@@ -1998,6 +1997,37 @@ export class GenerationLoop implements GroupRunner {
       secrets = {};
     }
     return { diff: redact(result.text, secrets), truncated: result.meta.truncated === true };
+  }
+
+  /**
+   * The kept event log of one `code_task` call of a run, run on `harness`, from the agent's
+   * machine (woken as the CLI tab wakes it), redacted with the agent's secrets. Throws 404 once
+   * the agent's home no longer keeps it.
+   */
+  async harnessLog(runId: string, callId: string, harness: Harness): Promise<HarnessLog> {
+    const run = await this.db.getRun(runId);
+    if (run === null) {
+      throw new RunRequestError(404, "run not found");
+    }
+    const agentId = String(run.agent_id);
+    const agent = await this._runnable_agent(agentId);
+    const sandbox = await this.wakeSandbox(agentId);
+    let secrets: Record<string, string>;
+    try {
+      secrets = await snapshotEnvValues(this.db, await agentSecrets(this.db, agent));
+    } catch {
+      secrets = {};
+    }
+    let log: HarnessLog | null;
+    try {
+      log = await readHarnessLog(this._maintenance_ctx(runId, agent, sandbox), harness, callSegment(callId), secrets);
+    } catch (error) {
+      throw new RunRequestError(503, errorMessage(error));
+    }
+    if (log === null) {
+      throw new RunRequestError(404, "that log is no longer kept: an agent's home keeps its 20 most recent runs");
+    }
+    return log;
   }
 
   /** The guild repositories a coding run of the agent clones, by their folder under `repos/`. */
@@ -3476,6 +3506,7 @@ export class GenerationLoop implements GroupRunner {
       offered_tools: offered,
       harness: harnessOf(snapshot),
       harness_model: harnessModelOf(snapshot),
+      harness_effort: harnessEffortOf(snapshot),
       secret_aliases: secretAliasesOf(snapshot),
       // `secrets` holds the run's values and, once minted, its GitHub tokens.
       publish_progress: async (toolCallId, update) => {
@@ -3688,7 +3719,7 @@ export class GenerationLoop implements GroupRunner {
 
     const chainable = Boolean(snapshot.coding);
     const handoffAt = Math.floor(maxInputTokens * HANDOFF_FRACTION);
-    const modelStep = async (allowHandoff = true): Promise<Array<Record<string, unknown>>> => {
+    const modelStep = async (): Promise<Array<Record<string, unknown>>> => {
       const agent = await this.db.getAgent(String(run.agent_id));
       const { rows, payloads } = await this._modelMessages(runId, agent ?? { org_id: "" }, {
         generation,
@@ -3704,7 +3735,7 @@ export class GenerationLoop implements GroupRunner {
       if (tokens > maxInputTokens) {
         throw new RunLimitError("generation.max_input_tokens", INPUT_TOKEN_LIMIT_MESSAGE);
       }
-      if (chainable && allowHandoff && tokens >= handoffAt) {
+      if (chainable && tokens >= handoffAt) {
         throw new HandoffDue();
       }
       const completion = await this._llm_completion(runId, {
@@ -3744,7 +3775,6 @@ export class GenerationLoop implements GroupRunner {
           new RunLimitError("generation.max_tool_calls", TOOL_CALL_LIMIT_MESSAGE),
           extra,
         );
-        await this._finish_one_shot_memory(runId, generation, run, snapshot, extra, () => modelStep(false));
         await this._end_run(runId);
         return;
       }
@@ -3756,7 +3786,7 @@ export class GenerationLoop implements GroupRunner {
           throw error;
         }
         if (error instanceof HandoffDue) {
-          await this._handoff(runId, generation, run, snapshot, tools, maxInputTokens, extra, () => modelStep(false));
+          await this._handoff(runId, generation, run, snapshot, tools, maxInputTokens, extra);
           return;
         }
         if (error instanceof RunLimitError) {
@@ -3768,7 +3798,6 @@ export class GenerationLoop implements GroupRunner {
         return;
       }
       if (!calls.length) {
-        await this._finish_one_shot_memory(runId, generation, run, snapshot, extra, () => modelStep(false));
         return;
       }
       if (executedToolCalls(await this.db.listMessages(runId)) >= maxToolCalls) {
@@ -3779,7 +3808,6 @@ export class GenerationLoop implements GroupRunner {
           new RunLimitError("generation.max_tool_calls", TOOL_CALL_LIMIT_MESSAGE),
           extra,
         );
-        await this._finish_one_shot_memory(runId, generation, run, snapshot, extra, () => modelStep(false));
         await this._end_run(runId);
         return;
       }
@@ -3791,7 +3819,6 @@ export class GenerationLoop implements GroupRunner {
           new Error("max_steps reached"),
           extra,
         );
-        await this._finish_one_shot_memory(runId, generation, run, snapshot, extra, () => modelStep(false));
         return;
       }
     }
@@ -3810,12 +3837,10 @@ export class GenerationLoop implements GroupRunner {
     tools: unknown[],
     maxInputTokens: number,
     extra: Record<string, string>,
-    finalStep: () => Promise<Array<Record<string, unknown>>>,
   ): Promise<void> {
     const position = chainOf(run);
     if (position.index >= MAX_CHAIN_RUNS) {
       await this._fail(runId, generation, "generation.max_chain", new RunLimitError("generation.max_chain", MAX_CHAIN_MESSAGE), extra);
-      await this._finish_one_shot_memory(runId, generation, run, snapshot, extra, finalStep);
       await this._end_run(runId);
       return;
     }
@@ -4153,55 +4178,6 @@ export class GenerationLoop implements GroupRunner {
       return `run ${runId} (group delivery)`;
     }
     return `run ${runId} (direct)`;
-  }
-
-  async _should_nudge_memory(
-    runId: string,
-    run: Record<string, unknown>,
-    snapshot: Record<string, unknown>,
-  ): Promise<boolean> {
-    const kind = runKind(run);
-    if (kind !== "group" && kind !== "schedule") {
-      return false;
-    }
-    if (!offersMemoryWrite(snapshot)) {
-      return false;
-    }
-    return !hasMemoryWrite(await this.db.listMessages(runId));
-  }
-
-  async _finish_one_shot_memory(
-    runId: string,
-    generation: number,
-    run: Record<string, unknown>,
-    snapshot: Record<string, unknown>,
-    extra: Record<string, string>,
-    modelStep: () => Promise<Array<Record<string, unknown>>>,
-  ): Promise<void> {
-    if (!(await this._should_nudge_memory(runId, run, snapshot))) {
-      return;
-    }
-    const [payload, metadata] = memoryReminderMessage(generation);
-    await this._commit_message(runId, payload, metadata);
-    if (this._cancelled(runId)) {
-      throw new GenerationCancelled();
-    }
-    try {
-      await modelStep();
-    } catch (error) {
-      if (error instanceof GenerationCancelled) {
-        throw error;
-      }
-      await this._fail(runId, generation, "llm.complete", error, extra);
-    }
-    if (hasMemoryWrite(await this.db.listMessages(runId))) {
-      return;
-    }
-    const now = new Date();
-    await this.db.mergeRunMetadata(runId, { memory_skipped: true }, now);
-    const current = asObj(run.metadata);
-    current.memory_skipped = true;
-    run.metadata = current;
   }
 
   async _end_run(runId: string): Promise<void> {

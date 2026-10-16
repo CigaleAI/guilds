@@ -9,6 +9,7 @@ import {
   formatAccessCutsMessage,
   hasForbiddenSecrets,
   operatorAccessCuts,
+  operatorAuthor,
   parseRecipe,
   resetReview,
   stampBuilderWrite,
@@ -142,6 +143,20 @@ test("writers must be roles of the recipe", () => {
   assert.equal(writer.severity, "error");
   assert.equal(writer.path, "collections.seen-ids");
   assert.match(writer.message, /archivist/);
+});
+
+test("plain-text note paths must name a recipe note", () => {
+  const recipe = parseRecipe(fixtureDeskRecipe());
+  recipe.notes = [
+    { id: "rules", level: "guild", key: "rules.md", body: "Rules.\n", kind: "seed", author: operatorAuthor() },
+  ];
+  recipe.roles[0]!.task.body += "\n\nRead guild/rules.md, then note_get agent/reader/playbook.md.";
+  const findings = validateRecipe(recipe, { ...ctx, publishedServers: new Set(["mail", "crm"]) });
+  const unknown = findings.filter((item) => item.code === "task.note_path");
+  assert.equal(unknown.length, 1);
+  assert.equal(unknown[0]?.severity, "error");
+  assert.equal(unknown[0]?.path, "roles.reader.task");
+  assert.match(unknown[0]?.message ?? "", /agent\/reader\/playbook\.md/);
 });
 
 test("recipe schema rejects unknown keys and duplicate routine keys", () => {

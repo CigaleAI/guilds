@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  collectRecipeNotePaths,
   recipeNotePath,
   rewriteHrefsToRecipeIds,
+  rewriteHrefsToRecipeRefs,
   rewriteGuildTextToRecipe,
-  rewriteRecipeEmbedsToDisplayPaths,
+  rewriteRecipePathsToDisplayPaths,
   rewriteRecipeIdsToHrefs,
   rewriteRolesToNames,
   rewriteTagsToRoles,
@@ -49,7 +51,7 @@ test("apply rewrites destination paths and leftover recipe ids", () => {
     ["nte1", "org/org_1/guilds/guild_1/schema.md"],
     ["recipe:nte1", "org/org_1/guilds/guild_1/schema.md"],
   ]);
-  const rewritten = rewriteRecipeEmbedsToDisplayPaths(
+  const rewritten = rewriteRecipePathsToDisplayPaths(
     "See ![[guild/desk-protocol.md]] and ![[recipe:nte1]]",
     resolved,
   );
@@ -61,7 +63,49 @@ test("apply rewrites destination paths and leftover recipe ids", () => {
 });
 
 test("unresolved recipe embeds stay visible", () => {
-  const rewritten = rewriteRecipeEmbedsToDisplayPaths("See ![[guild/missing.md]]", new Map());
+  const rewritten = rewriteRecipePathsToDisplayPaths("See ![[guild/missing.md]]", new Map());
   assert.equal(rewritten.text, "See ![[guild/missing.md]]");
   assert.deepEqual(rewritten.unresolved, ["guild/missing.md"]);
+});
+
+test("apply rewrites plain-text note paths the agent reads with note_get", () => {
+  const resolved = new Map([
+    ["agent/scout/playbook.md", "org/org_1/agents/a_1/playbook.md"],
+    ["guild/desk-protocol.md", "org/org_1/guilds/guild_1/desk-protocol.md"],
+  ]);
+  const rewritten = rewriteRecipePathsToDisplayPaths(
+    "![[guild/desk-protocol.md]]\nThen note_get agent/scout/playbook.md. Keep `agent/scout/playbook.md` current.",
+    resolved,
+  );
+  assert.equal(
+    rewritten.text,
+    "![[org/org_1/guilds/guild_1/desk-protocol.md]]\nThen note_get org/org_1/agents/a_1/playbook.md. Keep `org/org_1/agents/a_1/playbook.md` current.",
+  );
+  assert.deepEqual(rewritten.unresolved, []);
+});
+
+test("unknown plain-text note paths stay visible and are reported once", () => {
+  const rewritten = rewriteRecipePathsToDisplayPaths("note_get agent/scout/missing.md, ![[guild/gone.md]]", new Map());
+  assert.equal(rewritten.text, "note_get agent/scout/missing.md, ![[guild/gone.md]]");
+  assert.deepEqual(rewritten.unresolved, ["agent/scout/missing.md", "guild/gone.md"]);
+});
+
+test("plain-text note paths ignore embeds, live paths, and paths inside other paths", () => {
+  assert.deepEqual(
+    collectRecipeNotePaths(
+      "![[guild/a.md]] note_get org/b.md, see docs/guild/c.md, github.org/d.md, org/org_1/guilds/guild_1/e.md, guild/f.mdx",
+    ),
+    ["org/b.md"],
+  );
+});
+
+test("capture turns live note paths back into recipe paths in embeds and plain text", () => {
+  const hrefToRef = new Map([["org/org_1/agents/a_1/playbook.md", "agent/scout/playbook.md"]]);
+  assert.equal(
+    rewriteHrefsToRecipeRefs(
+      "![[org/org_1/agents/a_1/playbook.md]] then note_get org/org_1/agents/a_1/playbook.md.",
+      hrefToRef,
+    ),
+    "![[agent/scout/playbook.md]] then note_get agent/scout/playbook.md.",
+  );
 });

@@ -74,8 +74,9 @@ Instead of step 1, you can register the App yourself on GitHub
 
 1. Create an App with:
    - Callback URL: `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`
-   - **Request user authorization (OAuth) during installation** and
-     **Redirect on update** checked
+   - **Request user authorization (OAuth) during installation**
+     checked. Without it, GitHub never sends you back to the box
+     after an install, and Connect never completes.
    - Webhook inactive
    - Repository permissions: Contents and Pull requests read and
      write, Metadata read
@@ -88,6 +89,19 @@ Instead of step 1, you can register the App yourself on GitHub
    - **Client ID**
    - **Client secret**
 4. Click **Save**.
+
+## Troubleshooting
+
+**The GitHub window stays on GitHub after you validate.** The App
+does not request user authorization during installation. On GitHub,
+open the App's settings, check **Request user authorization (OAuth)
+during installation**, and save. Then uninstall the App from your
+account and click **Connect** again.
+
+**GitHub sends you to a page that is not the box.** The App's
+callback URL is not the box's address. Set `PUBLIC_BASE_URL`, and
+make `<PUBLIC_BASE_URL>/api/mcp/oauth/callback` the App's first
+callback URL ([Remote access](../getting-started/remote-access.md)).
 
 ## Replacing the App
 

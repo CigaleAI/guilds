@@ -243,7 +243,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
   for (const key of ["box", "cpu", "memory_mib"]) {
     assert.equal(CONFIG_KEYS.has(key), false, key);
   }
-  assert.equal(CONFIG_KEYS.size, 18);
+  assert.equal(CONFIG_KEYS.size, 19);
   assert.throws(() => validateConfig({ model, box: "standard" }), /unknown keys: box/);
   assert.throws(() => validateConfig({ model, cpu: 2, memory_mib: 3072 }), /unknown keys: cpu, memory_mib/);
   assert.equal("box" in validateConfig({ model }), false);
@@ -252,6 +252,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
     coding: false,
     harness: null,
     harness_model: null,
+    harness_effort: null,
     secret_aliases: {},
   });
   assert.deepEqual(addMissingFlags({ coding: true }), {
@@ -259,6 +260,7 @@ test("an agent config has no box: box, cpu, and memory_mib are unknown keys", ()
     browser: false,
     harness: null,
     harness_model: null,
+    harness_effort: null,
     secret_aliases: {},
   });
 });
@@ -286,6 +288,37 @@ test("harness_model is a model name for a set harness; blank or missing leaves t
   assert.throws(() => validateConfig({ ...coder, harness_model: 4 }), /harness_model must be a model name/);
   assert.throws(() => validateConfig({ ...coder, harness_model: "x".repeat(121) }), /harness_model must be a model name/);
   assert.throws(() => validateConfig({ model, harness_model: "opus" }), /harness_model needs a harness/);
+});
+
+test("harness_effort is one its model runs at; blank or missing leaves the harness's default", () => {
+  const model = VALID_CONFIG.model;
+  const coder = { model, coding: true, harness: "codex", harness_model: "gpt-6-luna" };
+  assert.equal(validateConfig(coder).harness_effort, null);
+  assert.equal(validateConfig({ ...coder, harness_effort: "  " }).harness_effort, null);
+  assert.equal(validateConfig({ ...coder, harness_effort: " high " }).harness_effort, "high");
+  assert.equal(validateConfig({ ...coder, harness_model: "gpt-5.6-terra", harness_effort: "ultra" }).harness_effort, "ultra");
+  assert.throws(() => validateConfig({ ...coder, harness_effort: "ultra" }), /one of low, medium, high, xhigh, max for gpt-6-luna/);
+  assert.throws(() => validateConfig({ ...coder, harness_effort: "turbo" }), /harness_effort must be one of: none,/);
+  assert.throws(() => validateConfig({ ...coder, harness_effort: 3 }), /harness_effort must be one of: none,/);
+  assert.throws(() => validateConfig({ model, harness_effort: "high" }), /harness_effort needs a harness/);
+});
+
+test("harness_effort on the default model or a custom one is any effort the harness takes", () => {
+  const model = VALID_CONFIG.model;
+  const claude = { model, coding: true, harness: "claude-code" };
+  assert.equal(validateConfig({ ...claude, harness_effort: "max" }).harness_effort, "max");
+  assert.throws(() => validateConfig({ ...claude, harness_effort: "none" }), /for the default model/);
+  const codex = { model, coding: true, harness: "codex", harness_model: "gpt-5-codex" };
+  assert.equal(validateConfig({ ...codex, harness_effort: "minimal" }).harness_effort, "minimal");
+});
+
+test("a Cursor agent's effort is one its listed model is named for; others carry it in the name", () => {
+  const model = VALID_CONFIG.model;
+  const cursor = { model, coding: true, harness: "cursor" };
+  assert.equal(validateConfig({ ...cursor, harness_model: "gpt-5.6-sol", harness_effort: "none" }).harness_effort, "none");
+  assert.throws(() => validateConfig({ ...cursor, harness_model: "grok-4.7", harness_effort: "max" }), /one of low, medium, high, xhigh for grok-4.7/);
+  assert.throws(() => validateConfig({ ...cursor, harness_model: "composer-2.5", harness_effort: "low" }), /composer-2.5 takes no effort on cursor/);
+  assert.throws(() => validateConfig({ ...cursor, harness_effort: "low" }), /the default model takes no effort on cursor/);
 });
 
 test("secret_aliases maps variable names to other secrets' names, at most 32 of them", () => {

@@ -17,6 +17,10 @@ import {
   Banner,
   personTone,
   Icon,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "@guildsrun/ui";
 import { askedRequest, type SecretRequest } from "../../access/secrets";
 import {
@@ -130,7 +134,7 @@ function secretRequests(flow: FlowSegment): Array<{ id: string; request: SecretR
   );
 }
 
-/** A run from its prompt to its latest turn: messages, and each generation's steps and calls. */
+/** A run from its prompt to its latest turn, with its system prompt and offered tools on their own tabs. */
 export function Transcript({
   agent,
   run,
@@ -147,120 +151,145 @@ export function Transcript({
   );
   const look = agentLook(agent);
   const system = messages.find((message) => message.seq === 0 && message.payload.role === "system");
-  const lastFlow = segments.findLastIndex((segment) => segment.type === "flow");
   const latestError = unattachedErrors.at(-1);
+  const toolGroups = offeredToolGroups(run);
+  const toolCount = toolGroups.reduce((sum, group) => sum + group.tools.length, 0);
+  const [view, setView] = useState("conversation");
 
   return (
-    <>
-      <OfferedTools groups={offeredToolGroups(run)} />
+    <Tabs value={view} onValueChange={setView} className="gap-3">
+      <TabsList aria-label="Run views" className="w-fit">
+        <TabsTrigger value="conversation">Conversation</TabsTrigger>
+        {system ? <TabsTrigger value="system">System</TabsTrigger> : null}
+        {toolCount ? (
+          <TabsTrigger value="tools" count={toolCount}>
+            Tools
+          </TabsTrigger>
+        ) : null}
+      </TabsList>
       {system ? (
-        <PromptSections sections={promptSectionsOf(String(system.payload.content ?? ""))} />
+        <TabsContent value="system">
+          <PromptSections
+            sections={promptSectionsOf(String(system.payload.content ?? ""))}
+            defaultOpen
+          />
+        </TabsContent>
       ) : null}
-      {latestError ? (
-        <Banner
-          tone="error"
-          title={String(latestError.message ?? "The run failed")}
-          meta={String(latestError.operation ?? "")}
-        />
+      {toolCount ? (
+        <TabsContent value="tools">
+          <OfferedTools groups={toolGroups} defaultOpen />
+        </TabsContent>
       ) : null}
+      <TabsContent value="conversation" className="flex flex-col gap-3">
+        {latestError ? (
+          <Banner
+            tone="error"
+            title={String(latestError.message ?? "The run failed")}
+            meta={String(latestError.operation ?? "")}
+          />
+        ) : null}
 
-      {segments.map((segment, index) => {
-        if (segment.type === "flow") {
-          return (
-            <Fragment key={segment.key}>
-              <FlowView
-                flow={segment}
-                runId={run.id}
-                generating={run.generating}
-                {...(progress ? { progress } : {})}
-                defaultOpen={index === lastFlow || run.generating}
-                {...(reveal ? { reveal } : {})}
-                inspector={{ guildId: agent.guild_id, agentId: agent.id }}
-                onAskCall={onAskCall}
-              />
-              {secretRequests(segment).map((item) => (
-                <SecretRequestCard key={item.id} agent={agent} run={run} request={item.request} />
-              ))}
-            </Fragment>
-          );
-        }
-        const message = segment.msg;
-        const payload = record(message.payload);
-        const meta = record(message.metadata);
-        const seq = Number(message.seq);
-        const createdAt = typeof message.created_at === "string" ? message.created_at : "";
-        if (payload.role === "system") {
-          if (seq === 0) return null;
-          return (
-            <Banner key={seq} tone="info" title="System note">
-              {String(payload.content ?? "")}
-            </Banner>
-          );
-        }
-        if (payload.role === "user") {
-          if (meta.source === "group_chat") {
+        {segments.map((segment) => {
+          if (segment.type === "flow") {
             return (
-              <WakeNote key={seq} icon={MessageSquare}>
-                {`Woken by the group chat · message ${String(meta.group_seq ?? "")} from ${String(meta.author_name ?? "someone")}`}
-              </WakeNote>
+              <Fragment key={segment.key}>
+                <FlowView
+                  flow={segment}
+                  runId={run.id}
+                  generating={run.generating}
+                  {...(progress ? { progress } : {})}
+                  harness={agent.config.harness}
+                  agentName={agent.name}
+                  {...(reveal ? { reveal } : {})}
+                  inspector={{ guildId: agent.guild_id, agentId: agent.id }}
+                  onAskCall={onAskCall}
+                />
+                {secretRequests(segment).map((item) => (
+                  <SecretRequestCard key={item.id} agent={agent} run={run} request={item.request} />
+                ))}
+              </Fragment>
             );
           }
-          if (meta.source === "schedule") {
+          const message = segment.msg;
+          const payload = record(message.payload);
+          const meta = record(message.metadata);
+          const seq = Number(message.seq);
+          const createdAt = typeof message.created_at === "string" ? message.created_at : "";
+          if (payload.role === "system") {
+            if (seq === 0) return null;
             return (
-              <WakeNote key={seq} icon={Clock}>
-                Woken by a routine
-              </WakeNote>
+              <Banner key={seq} tone="info" title="System note">
+                {String(payload.content ?? "")}
+              </Banner>
             );
           }
-          const attachments = messageAttachments(meta);
+          if (payload.role === "user") {
+            if (meta.source === "group_chat") {
+              return (
+                <WakeNote key={seq} icon={MessageSquare}>
+                  {`Woken by the group chat · message ${String(meta.group_seq ?? "")} from ${String(meta.author_name ?? "someone")}`}
+                </WakeNote>
+              );
+            }
+            if (meta.source === "schedule") {
+              return (
+                <WakeNote key={seq} icon={Clock}>
+                  Woken by a routine
+                </WakeNote>
+              );
+            }
+            const attachments = messageAttachments(meta);
+            const text = turnText(message);
+            return (
+              <OperatorMessage
+                key={seq}
+                author="You"
+                tone={personTone(user.color)}
+                {...(createdAt
+                  ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) }
+                  : {})}
+              >
+                <div className="flex flex-col gap-2">
+                  <OperatorAttachments items={attachments} />
+                  {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
+                </div>
+              </OperatorMessage>
+            );
+          }
           const text = turnText(message);
+          const reasoning = turnReasoning(message);
           return (
-            <OperatorMessage
+            <AgentMessage
               key={seq}
-              author="You"
-              tone={personTone(user.color)}
+              name={agent.name}
+              {...look}
+              bubble="surface"
               {...(createdAt ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) } : {})}
             >
               <div className="flex flex-col gap-2">
-                <OperatorAttachments items={attachments} />
+                {reasoning ? <Reasoning text={reasoning} /> : null}
                 {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
+                {meta.finish_reason === "length" ? (
+                  <p className="text-xs text-t-ochre-fg">
+                    Output token limit reached; the reply stops here.
+                  </p>
+                ) : null}
               </div>
-            </OperatorMessage>
+            </AgentMessage>
           );
-        }
-        const text = turnText(message);
-        const reasoning = turnReasoning(message);
-        return (
-          <AgentMessage
-            key={seq}
-            name={agent.name}
-            {...look}
-            bubble="surface"
-            {...(createdAt ? { time: messageTime(createdAt), dateTime: isoTime(createdAt) } : {})}
-          >
+        })}
+
+        {liveTurnActive(live) ? (
+          <AgentMessage name={agent.name} {...look} bubble="surface">
             <div className="flex flex-col gap-2">
-              {reasoning ? <Reasoning text={reasoning} /> : null}
-              {text.trim() ? <Markdown density="compact">{text}</Markdown> : null}
-              {meta.finish_reason === "length" ? (
-                <p className="text-xs text-t-ochre-fg">
-                  Output token limit reached; the reply stops here.
-                </p>
-              ) : null}
+              {live.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}
+              {live.text ? <Markdown density="compact">{live.text}</Markdown> : null}
             </div>
           </AgentMessage>
-        );
-      })}
-
-      {liveTurnActive(live) ? (
-        <AgentMessage name={agent.name} {...look} bubble="surface">
-          <div className="flex flex-col gap-2">
-            {live.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}
-            {live.text ? <Markdown density="compact">{live.text}</Markdown> : null}
-          </div>
-        </AgentMessage>
-      ) : run.generating ? (
-        <TypingIndicator name={agent.name} {...look} bubble="surface" />
-      ) : null}
-    </>
+        ) : run.generating ? (
+          <TypingIndicator name={agent.name} {...look} bubble="surface" />
+        ) : null}
+      </TabsContent>
+    </Tabs>
   );
 }

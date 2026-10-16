@@ -49,22 +49,34 @@ sequenceDiagram
 
 A new agent starts with an empty Memory.
 
-### When the agent must write
+### When the agent writes
 
-A run woken by [group chat](group-chat.md) or by a
-[routine](routines.md) is a one-shot run: nobody reads its final
-reply. Such a run must call `memory_write` once. If it finishes
-without writing, the orchestrator adds one reminder and gives it one
-more step, even when its step or tool-call budget is spent. A wake
-that used every step is the one whose Memory matters most. The extra
-step costs one generation and loses nothing.
+No run has to write. Memory is worth only what it saves the next run,
+and a file rewritten on every wake fills with run logs and copies of
+things that live elsewhere. The `<memory>` section gives the agent one
+test: write only when the next run would make a mistake, repeat work,
+or waste steps without something this run learned.
 
-If that step still does not write, the run completes and is marked
-**memory skipped**.
+What passes the test:
 
-A direct run, where the operator chats with the agent, does not have
-to write. The prompt asks the agent to write when something changed.
-The operator is in the loop and can say "remember this".
+- how to do the job better: an approach that worked or failed, a quirk
+  of a tool or source, a preference the operator stated
+- where to resume: unfinished work, a commitment, a position the next
+  run cannot recover from records or history
+- where things live: a pointer to the note, record, or collection that
+  holds the detail
+
+What does not: a log of the run, anything the Task, State, notes,
+records, or history already hold, anything one tool call finds again,
+and secrets. Since a write replaces the whole file, each write is also
+the moment to drop what is done or stale.
+
+Every run kind follows the same rule. The run ends when the agent
+finishes, whether or not it wrote. When 8 tool calls or fewer are
+left, the Guidelines ask the agent to write Memory then if the next
+run needs something this one learned
+([Runs](runs.md)). In a direct run the operator can also say
+"remember this".
 
 ### Turning it off
 
@@ -106,8 +118,7 @@ version. It is the first view of the agent's **State** tab:
 Agents never see the earlier versions. The version list is the
 operator's view of what the agent chose to keep or drop between
 wakes. To see exactly what was said in a run, use the history drawer
-in the agent's Chat tab, which also marks **memory skipped** on a
-one-shot run that completed without a write ([Runs](runs.md)).
+in the agent's Chat tab ([Runs](runs.md)).
 
 Prompt Studio reads the same versions, and its list can be filtered
 by author ([Prompt Studio](prompt-studio.md)).
@@ -126,8 +137,7 @@ Tools view ([Access](access.md)).
 | Writing the same text | nothing changes, no version is archived |
 | Versions kept | the newest 50 |
 | Who reads earlier versions | the operator only |
-| One-shot run without a write | one reminder, one extra step, then **memory skipped** |
-| Direct run | not required to write |
+| Required write | none, on every run kind |
 | Deleting Memory | refused |
 | `memory` switch missing | on |
 
@@ -152,8 +162,7 @@ memory_write(content: str) -> str
   runs. It is a native tool binding, with the note and record tools
   ([Access](access.md)): the instance seeds enable it and any scope
   can turn it off. When it resolves off, the run does not offer it,
-  the reminder does not fire, Guidelines and Memory do not name it,
-  and the row still hydrates.
+  Guidelines and Memory do not name it, and the row still hydrates.
 
 Code: `apps/orchestrator/src/toolbox/memory.ts`,
 `apps/orchestrator/src/memory/index.ts`.
@@ -175,12 +184,19 @@ The Memory tab stays. Missing means on. It is not itself a binding.
 With `memory_write` offered, the section opens with `### Your Memory`
 and these rules:
 
-- Memory is a private place you write whatever you want your future
-  runs to remember. Rewrite it with `memory_write`. The Task above is
-  the operator's standing purpose and stays as written.
-- There is no required format. Write what will help you next time.
-- Before you finish, rewrite Memory when this run changed something
-  you want to keep; a schedule wake-up always writes.
+- Memory is a private place for what future runs should know and
+  could not easily find again. Rewrite it with `memory_write`. The
+  Task above is the operator's standing purpose and stays as written.
+- Most runs do not need to write. Write only when the next run would
+  make a mistake, repeat work, or waste steps without something this
+  run learned.
+- What earns a place: how to do the job better, where to resume, and
+  pointers to where details live.
+- What stays out: a log of the run, anything the Task, State, notes,
+  records, or history already hold, anything one tool call finds
+  again, and secrets.
+- A write replaces the whole file: keep what still holds, drop what is
+  done or stale, keep it short. There is no required format.
 
 With `memory_write` resolved off, the section says only that Memory
 is a private place for whatever future runs should remember, that
@@ -188,22 +204,6 @@ the Task stays as written, and that there is no required format.
 
 The live text follows. A missing row hydrates as empty. The prompt
 never mentions earlier versions.
-
-### Required on one-shot runs
-
-When a group-triggered or schedule-triggered run's generation step
-returns no tool calls and the run has no `memory_write` call, the
-orchestrator inserts one system row:
-
-```text
-Memory: this wake has not called memory_write. Call it now.
-```
-
-The row has `source: memory` and shares the generation. It grants
-exactly one extra step, including when `max_steps` or
-`max_tool_calls` is already reached. If that step still does not
-write, the run completes with `memory_skipped: true` in its metadata
-JSON.
 
 ### Storage
 

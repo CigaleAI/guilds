@@ -146,7 +146,6 @@ function runHeader(row: Record<string, unknown>): Record<string, unknown> {
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     error_count: Array.isArray(errors) ? errors.length : 0,
-    memory_skipped: Boolean(metadata.memory_skipped),
   };
 }
 
@@ -188,7 +187,6 @@ export function sliceStudioBytes(
 
 const STUDIO_AGENT_WARNING_CODES = new Set([
   "empty_task",
-  "memory_skipped",
   "generation_errors",
   "stale_draft",
 ]);
@@ -250,7 +248,7 @@ export const studioListAgents: StudioTool = {
   name: "studio_list_agents",
   schema: functionSchema(
     "studio_list_agents",
-    "Return every active agent in the source guild with task hashes, routines, latest run headers, and draft status. Omit filter and warning unless you need a substring match on name/focus or one of empty_task, memory_skipped, generation_errors, stale_draft. The hydrated system roster is authoritative if this list looks empty.",
+    "Return every active agent in the source guild with task hashes, routines, latest run headers, and draft status. Omit filter and warning unless you need a substring match on name/focus or one of empty_task, generation_errors, stale_draft. The hydrated system roster is authoritative if this list looks empty.",
     {
       filter: {
         type: "string",
@@ -258,7 +256,7 @@ export const studioListAgents: StudioTool = {
       },
       warning: {
         type: "string",
-        description: "Optional warning code: empty_task, memory_skipped, generation_errors, or stale_draft. Omit this field to list every source-guild agent.",
+        description: "Optional warning code: empty_task, generation_errors, or stale_draft. Omit this field to list every source-guild agent.",
       },
       include_archived: { type: "boolean", description: "Include archived agents. Defaults to false." },
     },
@@ -281,8 +279,6 @@ export const studioListAgents: StudioTool = {
       const content = String(row.task_content ?? "");
       const warnings: string[] = [];
       if (!content.trim()) warnings.push("empty_task");
-      const meta = jsonObj(row.latest_run_metadata) as Record<string, unknown> | null;
-      if (meta?.memory_skipped) warnings.push("memory_skipped");
       const errors = jsonObj(row.latest_run_errors);
       if (Array.isArray(errors) && errors.length) warnings.push("generation_errors");
       if (row.draft_id && Number(row.draft_base_version) !== Number(row.task_version)) {

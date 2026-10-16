@@ -287,6 +287,7 @@ agent.
 | `coding` | boolean | `false` | [Coding agents](coding/index.md) |
 | `harness` | `claude-code`, `codex`, `cursor`, or null | `null` | [Harnesses](coding/harnesses.md) |
 | `harness_model` | model name or null | `null` | [Harnesses](coding/harnesses.md) |
+| `harness_effort` | effort or null | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
 | `secret_aliases` | map of variable name to secret name | `{}` | [Secrets](secrets.md#aliases) |
 | `scripting` | boolean | `true` | [Scripts](scripts.md) |
 | `memory` | boolean | `true` | [Memory](memory.md) |

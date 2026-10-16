@@ -71,8 +71,10 @@ their files will live. It uses placeholders instead:
   replaces it with the new agent's name. `@user` stays as it is.
 - **Note links.** A Task embeds a seed note by its place in the
   recipe: `![[guild/<key>]]`, `![[org/<key>]]`, or
-  `![[agent/<role>/<key>]]`. Apply writes the note, then points the
-  embed at the note's live path.
+  `![[agent/<role>/<key>]]`. A Task or routine that names a working
+  note for `note_get` uses the same path as plain text, for example
+  `note_get agent/<role>/<key>`. Apply writes the note, then points
+  both at the note's live path.
 
 ### Who wrote each field
 
@@ -213,6 +215,9 @@ Validation errors with `config.unknown` on any other key.
 - `config.harness_model` names the model that harness runs, under the
   agent configuration's rule. It is optional; without it the harness
   runs its subscription's default.
+- `config.harness_effort` names the effort that model runs at, under
+  the agent configuration's rule. It is optional; without it the model
+  runs at its default effort.
 - `config.secret_aliases` maps variable names to secret names, under
   the agent configuration's rule (see [Secrets](secrets.md)). It is
   optional.
@@ -279,8 +284,16 @@ collection whose columns accept the recipe's; see
 
 A leftover `![[recipe:<note-id>]]` still applies when `notes[].id`
 matches. An embed that is none of these, nor a live display path, is
-the `task.embed` error. Apply rewrites those markers to live display
-paths. It fails if any stay unresolved.
+the `task.embed` error.
+
+The same destination paths may appear as plain text in `task.body` and
+schedule `instruction`, where an agent reads the note with `note_get`.
+A plain-text `guild/<key>.md`, `org/<key>.md`, or
+`agent/<role>/<key>.md` that matches no note in `notes[]` is the
+`task.note_path` error.
+
+Apply rewrites embeds and plain-text note paths to live display paths.
+It fails if any stay unresolved.
 
 Agent tags are `@{role}` until apply. They appear in:
 
@@ -401,6 +414,9 @@ findings `collection.conflict` and `machine.*`
 | `harness.credential` | warning | On every coding role: the harness runs on a subscription credential that cannot be known before apply. It names the fix after apply: the secret to grant, or the login to run in the agent's CLI tab |
 | `harness_model.invalid` | warning | `config.harness_model` is not a model name; apply leaves it out |
 | `harness_model.harness` | warning | A role names a harness model and no `config.harness`; apply leaves it out |
+| `harness_effort.invalid` | warning | `config.harness_effort` is not an effort; apply leaves it out |
+| `harness_effort.harness` | warning | A role names a harness effort and no `config.harness`; apply leaves it out |
+| `harness_effort.model` | warning | `config.harness_model` does not run at `config.harness_effort`; apply leaves it out |
 | `secret_aliases.invalid` | warning | `config.secret_aliases` is not a map of variable names to secret names; apply leaves it out |
 | `browser.flag` | error | `browser.required` does not match `config.browser` |
 | `task.empty` | error | A role has no Task, no focus, and the guild has no objective or about text |

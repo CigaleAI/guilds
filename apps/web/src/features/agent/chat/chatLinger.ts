@@ -1,19 +1,42 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
 /** Idle time after a chat generation ends before the next window focus closes the inspector. */
 export const chatIdleCloseMs = 3 * 60 * 1000;
 
-const held = new Map<string, string>();
+const held = new Map<string, string | null>();
+const listeners = new Set<() => void>();
 
-/** Remembers the run Chat was watching so a finished generation does not drop it. */
-export function holdChatRun(agentId: string, runId: string | null): void {
-  if (runId) held.set(agentId, runId);
-  else held.delete(agentId);
+function changed(): void {
+  for (const listener of listeners) listener();
 }
 
-/** The run Chat is holding for this agent, if any. */
-export function heldChatRun(agentId: string): string | undefined {
+/**
+ * Remembers what Chat shows for this agent: a run, kept when its generation finishes, or `null`
+ * for a new session the operator opened, kept even while another run is generating.
+ */
+export function holdChatRun(agentId: string, runId: string | null): void {
+  if (held.get(agentId) === runId) return;
+  held.set(agentId, runId);
+  changed();
+}
+
+/** Forgets what Chat held for this agent, so it shows the generating run or a new session. */
+export function releaseChatRun(agentId: string): void {
+  if (held.delete(agentId)) changed();
+}
+
+/** What Chat holds for this agent: a run, `null` for a new session, `undefined` for nothing. */
+export function heldChatRun(agentId: string): string | null | undefined {
   return held.get(agentId);
+}
+
+/** What Chat holds for this agent, re-rendering when it changes. */
+export function useHeldChatRun(agentId: string): string | null | undefined {
+  const subscribe = useCallback((listener: () => void) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }, []);
+  return useSyncExternalStore(subscribe, () => held.get(agentId));
 }
 
 /** Whether a finished chat should close on this focus: idle long enough, and not generating. */
@@ -71,7 +94,7 @@ export function useFinishedChatIdleClose(args: {
       ) {
         return;
       }
-      holdChatRun(args.agentId, null);
+      releaseChatRun(args.agentId);
       onCloseRef.current();
     };
     const onVisible = () => {

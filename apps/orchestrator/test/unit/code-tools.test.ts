@@ -279,6 +279,12 @@ test("coding offers code_task and the code tools; without it they are refused na
     { tools: [], secrets: [] },
   );
   assert.equal(pinned.harness_model, "opus");
+  assert.equal(snapshot.harness_effort, null, "the harness's default effort");
+  const effort = configSnapshot(
+    { ...AGENT_CONFIG, coding: true, harness: "claude-code", harness_model: "opus", harness_effort: "high" },
+    { tools: [], secrets: [] },
+  );
+  assert.equal(effort.harness_effort, "high");
   assert.deepEqual(snapshot.secret_aliases, {});
   const aliased = configSnapshot(
     { ...AGENT_CONFIG, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" } },

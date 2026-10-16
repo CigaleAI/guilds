@@ -136,15 +136,16 @@ The agent's **Chat** tab shows sessions with the agent.
 - After three minutes with no action on a finished generation, the
   next time the window is focused the inspector closes.
 - The tab strip carries a clock that opens the session drawer
-  (`?history=true`) and a plus that starts a new session.
+  (`?history=true`) and a plus that starts a new session. A new
+  session opened with the plus stays open while another run is
+  generating.
 - On a coding agent, a coding strip sits under the tab strip
   ([Coding agents](coding/index.md)).
 
 The **session drawer** lists every direct, group, and schedule run,
 newest first by day, filterable by kind, 50 at a time. Each row shows
-the kind, the time, the message a group run read up to, the status,
-and `memory skipped` on a one-shot run that completed without
-updating its Memory. A row opens that run in Chat. On a phone the
+the kind, the time, the message a group run read up to, and the
+status. A row opens that run in Chat. On a phone the
 drawer covers the transcript until it is dismissed.
 `/guilds/<id>/agents/<id>/history` opens Chat with the drawer
 expanded.
@@ -168,9 +169,12 @@ switches to the new run.
 
 ### The transcript
 
-The transcript starts with the tools the run was offered and the
-composed system prompt (`<guidelines>`, `<task>`, `<state>`,
-`<memory>`) as collapsible sections ([System prompt](system-prompt.md)).
+The transcript has three tabs. **Conversation**, open first, holds the
+messages and run flows below. **System** shows the composed system
+prompt (`<guidelines>`, `<task>`, `<state>`, `<memory>`) as sections
+([System prompt](system-prompt.md)), and **Tools** the tools the run
+was offered, with their count on the tab. A run without a system
+message or offered tools has no tab for it.
 Note embeds show as their hydrated bodies, including the nested hop.
 Each section shows its tagged parts as nested cards: JSON as a folding
 tree, the rest as Markdown, with a copy button per section and per
@@ -187,31 +191,61 @@ part.
 Every stretch of model steps that called tools renders as one **run
 flow** per generation. Its header shows:
 
-- step and call counts;
-- model and tool time;
-- tokens;
-- cost;
-- how it ended: **completed**, **running…**, or its error count;
-- a **mutations** chip counting the calls that changed state;
-- a strip of the steps coloured by outcome.
+- the title, which names the model on hover, and how the generation
+  ended: **Done**, **Running…**, or its error count;
+- its time (model and tool time on hover), steps, tool calls, failed
+  calls, tokens, and cost;
+- a toolbar.
 
-The error and mutations chips are toggles: pressed, each dims every
-call outside its filter. Hovering the title names the model.
+A generation opens fully collapsed: its answers and code tasks whole,
+and the calls between two of them folded into one **stretch** line on
+a wrench,
+**8 tool calls in 4 steps**, then the tools they called, each once, a
+**N failed** tag when any failed, a **wrote** or **ran script** tag,
+and their summed time. Opening a stretch shows its steps, below, with
+their groups of calls unfolded. A stretch holding a running call, or a
+call the view was opened on, starts open. The toolbar changes what is
+open:
 
-Each step is a row: a dot coloured by outcome, the first sentence of
-what the model wrote or thought (the tools it called when it wrote
-nothing), then its call count, model time, tokens, and cost, each with
-its breakdown on hover. A step that changed state carries a **wrote**
-chip; a step with a failed call carries a **failed** chip; both toggle
-the header's filters. A step cut by `finish_reason: length` carries
-**max tokens**; any finish reason other than stopping or calling tools
-is tagged too.
+- **Writes** and **Errors** open the stretches and groups holding calls
+  that changed tracked state, or failed calls, and dim everything
+  else; each carries its count, as does **All**, which keeps every
+  call.
+  Tracked state is a note, memory, record, collection, or script
+  created, edited, or deleted, or source code changed through
+  `code_task`; commands, script runs, posts, schedules, and browser
+  actions are not writes.
+- **Expand all** opens every stretch and unfolds every reasoning line
+  and group of calls. **Collapse all** folds them back and returns to
+  **All**.
+- **Hide thinking** drops the reasoning lines.
+- **Jump to answer** scrolls to the generation's last answer.
 
-An open step shows, in order: the model's reasoning (clamped to six
-lines, with **Show all** and a copy button), the text it wrote
-alongside its calls, then the calls it requested, numbered in the
-order they ran. The latest generation, a running one, and failed steps
-start open.
+Below the header, the generation reads as one timeline down a rail.
+Each step, in an open stretch, adds in order:
+
+- a **thinking** line for its reasoning, on a brain, folded to its
+  opening line.
+  **more** unfolds a longer one onto the whole text, with a copy
+  button. The step's call count, model time, tokens, and cost show on
+  hover and while it is unfolded, each with its breakdown on hover. A
+  step cut by `finish_reason: length` carries **max tokens**; any
+  finish reason other than stopping or calling tools is tagged too;
+- an **Answer** card for the text it wrote alongside its calls, on a
+  filled dot: the agent's name, the time, a copy button, and the whole
+  text. Answers sit outside every stretch and are never folded or
+  dimmed;
+- the calls it requested, on a wrench, folded into one line naming
+  them (**1 call shell**, **4 calls shell, file_read, …**), with their
+  summed time, a **N failed** tag when any failed, and a **wrote** or
+  **ran script** tag. It unfolds onto the call's card, or the cards
+  numbered in the order they ran. The wrench is
+  plum when a call failed and pulses while one runs; a code task shows
+  its harness's logo instead.
+
+A call that changed tracked state carries a tide **wrote** tag,
+and a `script_run` call a **ran script** tag. Filters dim the entries
+outside them.
 
 Tool calls are coloured by kind: memory, read, write, execute, act,
 post, connected.
@@ -230,10 +264,13 @@ Opening a call expands its card onto its arguments and result, each as
 a folding JSON tree or raw text with a copy button, and its metadata:
 call id, duration, output filter, exit code, the full-output log path,
 the working directory, the file and its lines, the step a repeated
-read points to, stored bytes, and tool calls left.
+read points to, stored bytes, and tool calls left. The call's kind and
+level sit beside the views.
 
-A `code_task` call is a row of the run flow. While it runs, its latest
-progress lines show under it. Opening it shows its result, its
+A `code_task` call is its own block on the run flow, between the
+stretches of other calls ([Code tools](coding/code-tools.md#in-the-app)).
+While it runs, its latest progress lines show under its brief. Opening
+it shows its result, its
 metadata (status, harness, repository, session, diffstat, and log
 path), and its **Diff** ([Code tools](coding/code-tools.md#in-the-app)).
 Progress lines are live only: they stream while the run view is open
@@ -325,11 +362,9 @@ Schedule wake-up user message (`id`, `cron` or `window`,
 `instruction`, `previous_run_at`) ([Routines](routines.md#firing)).
 History lists it as a schedule wake-up.
 
-When Memory is on, group and schedule runs must call `memory_write`
-once. If the generation returns without it, the orchestrator inserts a
-reminder and grants one extra step. A wake that still does not write
-completes with `memory_skipped: true`. When Memory is off there is no
-reminder.
+No run kind is required to write Memory. The agent writes it when
+the next run needs something this one learned
+([Memory](memory.md#when-the-agent-writes)).
 
 ### Attachments
 
@@ -404,8 +439,9 @@ Model settings include `max_tool_calls`, `max_input_tokens`,
 
 Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
 `harness` is a coding agent's harness or null, `harness_model` the
-model that harness runs or null for its subscription's default
-([Harnesses](coding/harnesses.md)), and `secret_aliases` the agent's
+model that harness runs or null for its subscription's default,
+`harness_effort` the effort it runs that model at or null for the
+model's default ([Harnesses](coding/harnesses.md)), and `secret_aliases` the agent's
 secret aliases ([Secrets](secrets.md)).
 
 The complete tool schemas offered to the model:

@@ -265,7 +265,7 @@ test("standing omits memory guides when memory is off", () => {
     memory: false,
   });
   assert.ok(!off.includes("memory_write"));
-  assert.ok(!off.includes("private place you write"));
+  assert.ok(!off.includes("private place for what your future runs need"));
   assert.ok(off.includes("Task and State are supplied"));
   assert.ok(!off.includes("Task, State, and Memory"));
   assert.ok(!off.includes("<capability"));
@@ -277,7 +277,7 @@ test("standing omits memory guides when memory is off", () => {
     memory: true,
   });
   assert.ok(on.includes("memory_write"));
-  assert.ok(on.includes("private place you write"));
+  assert.ok(on.includes("private place for what your future runs need"));
   assert.ok(on.includes("Task, State, and Memory"));
   const writeOff = standingForCapabilities(text, {
     scripts: false,
@@ -288,7 +288,7 @@ test("standing omits memory guides when memory is off", () => {
     memoryWrite: false,
   });
   assert.ok(!writeOff.includes("memory_write"));
-  assert.ok(writeOff.includes("private place you write"));
+  assert.ok(writeOff.includes("private place for what your future runs need"));
   assert.ok(writeOff.includes("Task, State, and Memory"));
   assert.ok(!writeOff.includes("<capability"));
 });

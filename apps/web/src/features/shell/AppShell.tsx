@@ -3,6 +3,8 @@ import { Menu } from "lucide-react";
 import { Dialog as RadixDialog } from "radix-ui";
 import { useEffect, useState } from "react";
 import { useInboxStream } from "../../api/streams";
+import { ReturnButton } from "../../app/ReturnButton";
+import { placeOf, useReturnTrail } from "../../app/returnTrail";
 import { useSlots } from "../../app/slots";
 import { useStoredFlag } from "../../app/storage";
 import { IconButton, BrandMark, dialogScrim } from "@guildsrun/ui";
@@ -16,10 +18,13 @@ const retractedKey = "guilds-rail-retracted";
 /**
  * The workspace frame: navigation on the left, the current page on paper, and the model setup
  * gate over everything while the organisation has no provider connected. On a phone the
- * navigation opens as a drawer from a top bar and closes once a page is picked.
+ * navigation opens as a drawer from a top bar and closes once a page is picked. A link followed
+ * from a page's content leaves a way back; a guild or agent shows it in its tab row, any other
+ * page above itself.
  */
 export function AppShell() {
   useInboxStream();
+  useReturnTrail();
   const { shellBanners = [] } = useSlots();
   const [retracted, setRetracted] = useStoredFlag(retractedKey);
   const [drawer, setDrawer] = useState(false);
@@ -73,11 +78,15 @@ export function AppShell() {
           </RadixDialog.Overlay>
         </RadixDialog.Portal>
       </RadixDialog.Root>
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden contain-paint bg-paper md:rounded-2xl md:shadow-float">
+      <main
+        data-return-source=""
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden contain-paint bg-paper md:rounded-2xl md:shadow-float"
+      >
         {shellBanners.map((Notice, index) => (
           <Notice key={index} />
         ))}
         <ModelSetupGate />
+        {placeOf(location.pathname).container === null ? <ReturnButton /> : null}
         <Outlet />
       </main>
     </div>

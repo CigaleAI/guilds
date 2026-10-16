@@ -178,6 +178,29 @@ export type MachineInput = {
 /** The coding CLI a coding agent delegates code work to through `code_task`. */
 export type Harness = "claude-code" | "codex" | "cursor";
 
+/** The reasoning efforts a harness can run a model at, lowest first. */
+export type HarnessEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+
+/** One model a harness offers. */
+export type HarnessCatalogModel = {
+  /** What the agent's `harness_model` stores. */
+  id: string;
+  label: string;
+  /** The efforts the model runs at; empty when it takes none. */
+  efforts: HarnessEffort[];
+  /** The effort a run gets without one set; null leaves it to the harness. */
+  default_effort: HarnessEffort | null;
+};
+
+/** `GET /api/harnesses`: one harness's listed models, and the efforts any other model takes. */
+export type HarnessCatalog = {
+  harness: Harness;
+  label: string;
+  models: HarnessCatalogModel[];
+  /** The efforts for the subscription's default model or a custom one; empty when the model name carries it. */
+  unlisted_efforts: HarnessEffort[];
+};
+
 export type AgentConfig = {
   model: string;
   temperature: number;
@@ -198,6 +221,8 @@ export type AgentConfig = {
   harness: Harness | null;
   /** The model the harness runs; null leaves it to the harness's subscription. */
   harness_model: string | null;
+  /** The effort the harness runs its model at; null leaves it to the harness. */
+  harness_effort: HarnessEffort | null;
   /** Variable names the agent's commands see, each holding the value of the secret it names. */
   secret_aliases: Record<string, string>;
   scripting: boolean;
@@ -230,6 +255,8 @@ export type AgentHarness = {
   harness: Harness | null;
   /** The model the harness runs; null for its subscription's default. */
   harness_model: string | null;
+  /** The effort the harness runs its model at; null for the harness's default. */
+  harness_effort: HarnessEffort | null;
   harnesses: HarnessCredential[];
   /** The harness CLIs the agent's machine's image carries; null before the machine first started. */
   machine_harnesses: Harness[] | null;
@@ -382,7 +409,6 @@ export type Run = {
   config_snapshot: RunConfigSnapshot;
   errors: RunError[];
   generating: boolean;
-  memory_skipped: boolean;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -398,6 +424,21 @@ export type Run = {
 
 /** A run's or a code task's diff in one repository, cut at the server's limit. */
 export type RunDiff = { repository: string; diff: string; truncated: boolean };
+
+/** `GET /api/runs/:run_id/tasks/:call_id/log`: a code task's kept harness log, redacted. */
+export type HarnessLog = {
+  /** Its events as progress lines, the first 2000. */
+  lines: string[];
+  lines_truncated: boolean;
+  /** Its raw JSONL, whole lines from the start within 256 KiB. */
+  raw: string;
+  raw_truncated: boolean;
+  /** The log's whole size in bytes. */
+  bytes: number;
+  events: number;
+  /** Lines of the log that were not JSON. */
+  unparsed: number;
+};
 
 /** `tool.progress` on a run's stream: the lines a running tool call reported since the last event. */
 export type ToolProgressEvent = {
@@ -1119,7 +1160,7 @@ export type StudioAgent = {
   latest_run: { id: string; kind: RunKind; status: string; at: string } | null;
   draft_id: string | null;
   draft_status: StudioDraft["status"] | null;
-  warnings: ("empty_task" | "memory_skipped" | "generation_errors" | "stale_draft")[];
+  warnings: ("empty_task" | "generation_errors" | "stale_draft")[];
   publishable: boolean;
   /** Script tools and the Scripts tab; missing means on. */
   scripting: boolean;
@@ -1221,7 +1262,6 @@ export type StudioRun = {
   group_chat_through_seq: number | null;
   created_at: string;
   updated_at: string;
-  memory_skipped: boolean;
   error_count: number;
   last_error: RunError | null;
 };
@@ -1406,7 +1446,6 @@ export type ActivityWake = {
   reply: string | null;
   /** For a direct chat, the operator's first message inside the window. */
   opening: string | null;
-  memory_skipped: boolean;
   /** Sequence of the run's last stored message; null when it has none. */
   last_seq: number | null;
   /** Spend inside the window, 0 when none was recorded. */

@@ -1,12 +1,10 @@
-import { Check, ChevronDown } from "lucide-react";
+import { ArrowDown, CircleX, List, PenLine } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../../cn";
 import { Icon } from "../../primitives/Icon";
-import { SegmentStrip } from "../../primitives/Mark";
-import { Pill } from "../../primitives/Pill";
-import { Tag } from "../../primitives/Tag";
-import { FilterChip, toggleFilter, type GenerationFilter } from "./GenerationFilters";
-import { stepSegments, stepToneOnPaper, type StepSegment } from "./stepOutcome";
+import { Button } from "../actions/Button";
+import { Segmented } from "../controls/Segmented";
+import type { GenerationFilter } from "./GenerationFilters";
 
 /** Where a generation stands: its error count, still running, or completed cleanly. */
 export type GenerationStatus =
@@ -17,141 +15,190 @@ export type GenerationStat = {
   label: string;
   /** Breakdown on hover, such as "391,204 in · 8,113 out". */
   title?: string;
+  /** `failed` reads in plum, such as "1 failed". */
+  tone?: "failed";
 };
 
-export type GenerationHeaderProps = Omit<ComponentProps<"div">, "title"> & {
+/** How many calls each filter keeps. */
+export type GenerationCounts = { all: number; mutations: number; errors: number };
+
+export type GenerationHeaderProps = Omit<ComponentProps<"header">, "title"> & {
   /** "Generation 1", or "Tool trace" for calls outside any generation. */
   title: ReactNode;
   stats: GenerationStat[];
   status: GenerationStatus;
-  /** Calls that changed state; shown as a chip that toggles the Mutations filter. */
-  mutations?: number;
-  /** Calls that failed; with any, the errors chip toggles the Errors filter. */
-  failed?: number;
-  /** One segment per step, in order. */
-  steps?: StepSegment[];
-  filters?: GenerationFilter[];
-  /** Makes the mutation and error chips toggles that dim the other calls. */
-  onFiltersChange?: (filters: GenerationFilter[]) => void;
-  /** With `onOpenChange`, a chevron folds the generation's steps. */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  /** With `onFilterChange`, the toolbar offers All, Writes and Errors with these counts. */
+  counts?: GenerationCounts;
+  /** The calls kept in focus; null keeps every call. */
+  filter?: GenerationFilter | null;
+  onFilterChange?: (filter: GenerationFilter | null) => void;
+  /** With `onThinkingHiddenChange`, a toggle hides the reasoning lines. */
+  thinkingHidden?: boolean;
+  onThinkingHiddenChange?: (hidden: boolean) => void;
+  /** With `onExpandedChange`, **Expand all** unfolds every thought and group of calls and **Collapse all** folds them. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
+  /** Scrolls to the generation's last answer; without it there is no answer to jump to. */
+  onJumpToAnswer?: () => void;
   /** `sm` for narrow columns such as the Studio coach. */
   size?: "md" | "sm";
 };
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
+const statusLook = {
+  errors: { pill: "bg-t-plum text-plum-t", dot: "bg-plum" },
+  running: { pill: "bg-t-sig text-t-sig-fg", dot: "bg-signal motion-safe:animate-pulse" },
+  completed: { pill: "bg-t-tide text-t-tide-fg", dot: "bg-tide" },
+} as const;
+
 function StatusPill({ status }: { status: GenerationStatus }) {
-  if (status.kind === "errors") {
-    return (
-      <Pill fill="plum" size="xs" className="h-5 text-2xs font-bold">
-        {plural(status.count, "error")}
-      </Pill>
-    );
-  }
-  if (status.kind === "running") {
-    return (
-      <Pill fill="signal-tint" size="xs" className="h-5 text-2xs font-bold">
-        <span className="size-1.5 rounded-full bg-signal motion-safe:animate-pulse" aria-hidden />
-        running…
-      </Pill>
-    );
-  }
+  const look = statusLook[status.kind];
   return (
-    <Pill fill="tide-tint" size="xs" className="h-5 gap-1 text-2xs font-bold">
-      <Icon icon={Check} size={14} />
-      completed
-    </Pill>
+    <span
+      className={cn(
+        "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold",
+        look.pill,
+      )}
+    >
+      <span aria-hidden className={cn("size-1.5 rounded-full", look.dot)} />
+      {status.kind === "errors"
+        ? plural(status.count, "error")
+        : status.kind === "running"
+          ? "Running…"
+          : "Done"}
+    </span>
   );
 }
 
-/** The summary card over one generation of a run: its totals, how it ended, and a strip of its steps. */
+type FilterValue = "all" | GenerationFilter;
+
+/** The header over one generation of a run: what it is, how it ended, its totals, and how to read it. */
 export function GenerationHeader({
   title,
   stats,
   status,
-  mutations = 0,
-  failed = 0,
-  steps,
-  filters = [],
-  onFiltersChange,
-  open,
-  onOpenChange,
+  counts,
+  filter = null,
+  onFilterChange,
+  thinkingHidden = false,
+  onThinkingHiddenChange,
+  expanded = false,
+  onExpandedChange,
+  onJumpToAnswer,
   size = "md",
   className,
   ...props
 }: GenerationHeaderProps) {
-  const toggle = (filter: GenerationFilter) => () =>
-    onFiltersChange?.(toggleFilter(filters, filter));
+  const filters = counts && onFilterChange ? onFilterChange : null;
+  const toolbar = filters || onThinkingHiddenChange || onExpandedChange || onJumpToAnswer;
   return (
-    <div
+    <header
       className={cn(
-        "flex min-w-0 flex-col gap-2.5 rounded-lg bg-paper text-fg",
-        size === "md" ? "px-3.5 py-3" : "px-3.5 py-2.5",
+        "flex min-w-0 flex-col text-fg",
+        size === "md" ? "gap-2 px-4 pt-3.5 pb-3" : "gap-1.5 px-3.5 pt-3 pb-2.5",
         className,
       )}
       {...props}
     >
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        <span className={cn("font-bold", size === "md" ? "text-md" : "text-sm")}>{title}</span>
-        {stats.map((stat) => (
-          <Tag
-            key={stat.label}
-            tone="surface"
-            className={size === "md" ? "text-xs" : "px-1.5"}
-            title={stat.title}
-          >
-            {stat.label}
-          </Tag>
-        ))}
-        <span className="ml-auto flex items-center gap-2">
-          {status.kind === "errors" && failed > 0 && onFiltersChange ? (
-            <FilterChip
-              filter="errors"
-              pressed={filters.includes("errors")}
-              onPressedChange={toggle("errors")}
-            >
-              {plural(status.count, "error")}
-            </FilterChip>
-          ) : (
-            <StatusPill status={status} />
+      <div className="flex min-w-0 items-start gap-3">
+        <span
+          className={cn(
+            "min-w-0 flex-1 font-semibold",
+            size === "md" ? "text-lg leading-snug" : "text-md",
           )}
-          {mutations > 0 ? (
-            onFiltersChange ? (
-              <FilterChip
-                filter="mutations"
-                pressed={filters.includes("mutations")}
-                onPressedChange={toggle("mutations")}
-              >
-                {plural(mutations, "mutation")}
-              </FilterChip>
-            ) : (
-              <Pill fill="tide-tint" size="xs" className="h-5 text-2xs font-bold">
-                {plural(mutations, "mutation")}
-              </Pill>
-            )
-          ) : null}
-          {onOpenChange ? (
-            <button
-              type="button"
-              aria-expanded={open ?? false}
-              aria-label={open ? "Fold steps" : "Unfold steps"}
-              onClick={() => onOpenChange(!open)}
-              className="inline-flex size-6 cursor-pointer items-center justify-center rounded-sm text-fg transition-colors hover:bg-surface"
-            >
-              <Icon
-                icon={ChevronDown}
-                size={14}
-                className={cn("transition-transform", !open && "-rotate-90")}
-              />
-            </button>
-          ) : null}
+        >
+          {title}
         </span>
+        <StatusPill status={status} />
       </div>
-      {steps && steps.length ? (
-        <SegmentStrip segments={stepSegments(steps, stepToneOnPaper)} />
+      {stats.length ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-fg-2">
+          {stats.map((stat) => (
+            <span
+              key={stat.label}
+              title={stat.title}
+              className={cn(stat.tone === "failed" && "text-plum-t")}
+            >
+              {stat.label}
+            </span>
+          ))}
+        </div>
       ) : null}
-    </div>
+      {toolbar ? (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 pt-1">
+          {filters && counts ? (
+            <Segmented<FilterValue>
+              size="sm"
+              fill="paper"
+              label="Calls in focus"
+              value={filter ?? "all"}
+              onValueChange={(next) => filters(next === "all" ? null : next)}
+              options={[
+                {
+                  value: "all",
+                  label: (
+                    <>
+                      <Icon icon={List} size={14} />
+                      All
+                    </>
+                  ),
+                  count: counts.all,
+                },
+                {
+                  value: "mutations",
+                  label: (
+                    <>
+                      <Icon icon={PenLine} size={14} />
+                      Writes
+                    </>
+                  ),
+                  count: counts.mutations,
+                  disabled: counts.mutations === 0,
+                },
+                {
+                  value: "errors",
+                  label: (
+                    <>
+                      <Icon icon={CircleX} size={14} />
+                      Errors
+                    </>
+                  ),
+                  count: counts.errors,
+                  disabled: counts.errors === 0,
+                },
+              ]}
+            />
+          ) : null}
+          {onThinkingHiddenChange ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-pressed={thinkingHidden}
+              className="bg-well hover:bg-line-2"
+              onClick={() => onThinkingHiddenChange(!thinkingHidden)}
+            >
+              {thinkingHidden ? "Show thinking" : "Hide thinking"}
+            </Button>
+          ) : null}
+          {onExpandedChange ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-pressed={expanded}
+              onClick={() => onExpandedChange(!expanded)}
+            >
+              {expanded ? "Collapse all" : "Expand all"}
+            </Button>
+          ) : null}
+          {onJumpToAnswer ? (
+            <Button size="sm" variant="ghost" className="text-tide-t" onClick={onJumpToAnswer}>
+              Jump to answer
+              <Icon icon={ArrowDown} size={14} />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </header>
   );
 }

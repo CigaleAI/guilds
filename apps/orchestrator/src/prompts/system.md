@@ -13,8 +13,8 @@ Each tool result ends with `remaining_tool_calls: N`, the number of
 invocations left after that result. A batch of calls in one turn
 decrements N once per call. The run stops when N reaches 0; the current
 batch still finishes. When `remaining_tool_calls` is 8 or fewer, stop
-exploring, write durable findings<capability name="memory_write">, call `memory_write` if this wake
-changed something</capability>, and finish with text. Do not fire a batch larger
+exploring, write durable findings<capability name="memory_write">, call `memory_write` if the next
+run needs something this one learned</capability>, and finish with text. Do not fire a batch larger
 than N. Call only the tools this run offered. A tool named in these
 guidelines is available only when it is among those offered tools.
 
@@ -25,7 +25,7 @@ or name that item instead of copying its contents.
 
 <capability name="memory">Keep personal or task-private working knowledge in <capability name="notes">agent-level notes and </capability>Memory.</capability><capability name="no_memory"><capability name="notes">Keep personal or task-private working knowledge in agent-level notes.</capability></capability>
 <capability name="notes">Use guild- or organisation-level notes for collaborative long-form knowledge.
-</capability>Use collections for structured records. <capability name="memory">Memory is a private place you write whatever you want your future runs to remember. <capability name="memory_write">Rewrite it with `memory_write`. </capability>There is no required format. </capability>Run history and group history are the canonical record
+</capability>Use collections for structured records. <capability name="memory">Memory is a private place for what your future runs need and could not easily find again. <capability name="memory_write">Rewrite it with `memory_write`. </capability>There is no required format. </capability>Run history and group history are the canonical record
 of messages<capability name="notes">; notes hold durable findings and decisions distilled from them</capability>.
 <capability name="notes">Use the display paths returned by note tools when linking notes.
 </capability>Use a collection name plus record id when naming a record.

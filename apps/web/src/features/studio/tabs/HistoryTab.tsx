@@ -44,10 +44,9 @@ function runSummary(run: StudioRun, routines: StudioRoutine[] | undefined): stri
   return "Direct session";
 }
 
-/** What the run's list row notes after its time: memory skipped, or an older Task. */
+/** What the run's list row notes after its time: an older Task. */
 function runNotes(run: StudioRun, currentTask: string | undefined): string {
   const notes = [
-    ...(run.memory_skipped ? ["memory skipped"] : []),
     ...(currentTask && run.task_prompt_hash && run.task_prompt_hash !== currentTask
       ? ["older Task"]
       : []),

@@ -144,8 +144,8 @@ before **Next**.
    ([Machines](../machines.md)).
 3. **Harness**: "The harness writes the code, headless in the agent's
    sandbox, on your own subscription. The agent briefs it and checks
-   its work." Then the three harness buttons, the **Harness model**
-   field, and **Subscription**: how the harness gets its credential
+   its work." Then the three harness buttons, the **Harness model** and
+   **Effort** selects, and **Subscription**: how the harness gets its credential
    ([Harnesses, In the app](harnesses.md#in-the-app)).
 4. **Lead model**: "Two models work here. The lead model plans, talks
    to you, and reviews the work, on the organisation's key. The harness
@@ -213,19 +213,18 @@ link on an agent without coding opens **Model**.
 ### Coding strip
 
 On a coding agent, a coding strip sits under the tab strip on the
-**Chat** tab only. It is one line, with the code icon, of parts
-separated by "·". Each part links to the Settings section that sets it:
+**Chat** tab only. It is one line of three parts. Each part says more
+on hover and links to the Settings section that sets it:
 
-| Part | Reads | Opens |
-| --- | --- | --- |
-| Lead model | "`<lead model>` leads", the model as the catalog labels it, else its id | **Lead model** |
-| Harness | "`<Harness>` · `<harness model>` codes", or "default model" without one; "`<Harness>` is not in this machine's image" when the image lacks it | **Harness** |
-| Credential | "on `<secret>`, added by `<name>`" when the secret the harness reads reaches the agent; else "on its login as `<account>`, seen `<when>`" when a check found a login, without "as `<account>`" when the login does not say whose it is; else "no credential" | **Harness** |
-| Repositories | "repos `<names>`", or "no repositories" | **Repositories** |
+| Part | Reads | On hover | Opens |
+| --- | --- | --- | --- |
+| Harness | the harness's logo; "`<Harness>` is not in this machine's image" when the image lacks it | "`<Harness>` codes with `<harness model>`", or "its default model" without one, then "at `<effort>` effort" once an effort is set | **Harness** |
+| Credential | a dot, then "Token `<secret>`" when the secret the harness reads reaches the agent; else "Logged in" when a check found a login; else "Not logged in" | who added the secret, or whose the login is and when a check last saw it | **Harness** |
+| Repositories | "`<n>` repos", or "No repos" | the repositories' names | **Repositories** |
 
-With no harness picked, one part, "no harness picked", stands for the
-harness and the credential. A part that names a problem is bold, and
-the whole strip turns ochre.
+With no harness picked, one part, "No harness picked", stands for the
+harness and the credential. A part that names a problem is bold, its
+dot is ochre, and the whole strip turns ochre.
 
 The chat shows each `code_task` call with its live progress
 ([Code tools](code-tools.md#in-the-app)), and a **Changes** panel
@@ -255,7 +254,8 @@ The keys live in the agent's `config` ([Agents](../agents.md)).
 | --- | --- | --- |
 | `coding` | boolean, default `false` | Makes the agent a coding agent: the code tools and the `coding` section of the system prompt. It is not a binding. An update cannot turn it off on a coding agent: 422 `coding cannot be switched off on a coding agent` |
 | `harness` | `claude-code`, `codex`, `cursor`, or null | Only with `coding` on: 422 `harness is only for coding agents`. Any other value: 422 `harness must be one of: claude-code, codex, cursor`. Every create and update with `coding` on and no harness: 422 `coding agents need a harness: claude-code, codex, cursor` ([Harnesses](harnesses.md)) |
-| `harness_model` | a model name, or null | Needs a `harness` ([Harnesses](harnesses.md#model)) |
+| `harness_model` | a model name, or null | Needs a `harness` ([Harnesses](harnesses.md#model-and-effort)) |
+| `harness_effort` | an effort, or null | Needs a `harness`, and must be one the model runs at ([Harnesses](harnesses.md#model-and-effort)) |
 | `secret_aliases` | variable name to secret name | Points the harness's token variable at a secret of another name ([Secrets](../secrets.md)) |
 
 An agent created with `coding` on and no `max_steps` or

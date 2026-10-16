@@ -468,7 +468,8 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     ];
     mixed.roles[0]!.task.body += "\n\n![[guild/desk-rules.md]]";
     mixed.roles[0]!.task.embeds = ["guild/desk-rules.md"];
-    mixed.roles[1]!.task.body += "\n\n![[agent/writer/crm-map.md]]";
+    mixed.roles[1]!.task.body += "\n\n![[agent/writer/crm-map.md]]\n\nThen note_get guild/desk-rules.md.";
+    mixed.roles[1]!.schedules[0]!.instruction += " Read agent/writer/crm-map.md first.";
     mixed.roles[1]!.task.embeds = ["agent/writer/crm-map.md"];
     const mixedId = await importReady(mixed);
     const mixedApply = await applyRecipe(mixedId, "fixture-desk-mixed");
@@ -484,6 +485,9 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const mixedWriterTask = await repo.getAgentTask("org_home", String(mixedWriter.id));
     assert.ok(mixedReaderTask?.content_text.includes(`![[${rulesPath}]]`));
     assert.ok(mixedWriterTask?.content_text.includes(`![[${mapPath}]]`));
+    assert.ok(mixedWriterTask?.content_text.includes(`Then note_get ${rulesPath}.`));
+    const mixedWriterSchedules = await repo.listSchedules(String(mixedWriter.id));
+    assert.ok(mixedWriterSchedules.some((row) => String(row.instruction).includes(`Read ${mapPath} first.`)));
     const noteReader = artifacts.operatorContext("org_home", "user_operator", "operator", {
       guildId: mixedApply.guild_id,
       agentId: String(mixedWriter.id),

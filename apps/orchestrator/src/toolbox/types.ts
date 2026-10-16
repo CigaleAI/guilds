@@ -8,6 +8,7 @@ import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
 import type { Harness } from "../coding/harnesses.js";
+import type { Effort } from "../coding/harness-models.js";
 
 export type GroupChat = {
   publish?(guildId: string, event: string, data: Record<string, unknown>): Promise<void>;
@@ -162,6 +163,8 @@ export type ToolContext = {
   harness: Harness | null;
   /** The model the run's harness runs, from its snapshot; null for its subscription's default. */
   harness_model: string | null;
+  /** The effort the run's harness runs its model at, from its snapshot; null for the harness's default. */
+  harness_effort: Effort | null;
   /** The run's secret aliases, from its snapshot: which secret each aliased variable reads. */
   secret_aliases: Record<string, string>;
   /** The guild repositories a coding run works on, by their folder under `repos/`. */
@@ -215,6 +218,7 @@ export function createToolContext(
     before_command: null,
     harness: null,
     harness_model: null,
+    harness_effort: null,
     secret_aliases: {},
     code_repositories: [],
     publish_progress: null,

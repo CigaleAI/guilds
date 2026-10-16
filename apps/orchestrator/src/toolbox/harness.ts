@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { credentialFix, HARNESS_INFO, type Harness } from "../coding/harnesses.js";
+import { harnessLaunch } from "../coding/harness-models.js";
 import { writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 import { readArtifactText } from "./artifacts.js";
@@ -236,6 +237,55 @@ export type HarnessCheck = {
   account: string | null;
 };
 
+/** The raw event log the app reads of one `code_task` call, at most this much of it. */
+export const HARNESS_LOG_MAX_BYTES = 256 * 1024;
+
+/** One `code_task` call's kept event log: its progress lines, and its raw JSONL from the start. */
+export type HarnessLog = {
+  lines: string[];
+  lines_truncated: boolean;
+  raw: string;
+  raw_truncated: boolean;
+  /** The log's whole size in bytes. */
+  bytes: number;
+  events: number;
+  /** Lines of the log that were not JSON. */
+  unparsed: number;
+};
+
+/**
+ * Reads the kept log of call `callId` of `ctx`'s run with `guilds-harness log`, redacted with
+ * `secrets`; null once the agent's home no longer keeps it.
+ */
+export async function readHarnessLog(
+  ctx: ToolContext,
+  harness: Harness,
+  callId: string,
+  secrets: Record<string, string>,
+): Promise<HarnessLog | null> {
+  ctx.tool_call_id = callId;
+  const result = await runCodeHelper(
+    ctx,
+    "log",
+    { harness },
+    { helper: HARNESS_HELPER, timeoutSeconds: HARNESS_OP_TIMEOUT_SECONDS, maxBytes: HARNESS_LOG_MAX_BYTES },
+  );
+  const meta = result.meta;
+  if (meta.missing === true) {
+    return null;
+  }
+  const lines = Array.isArray(meta.lines) ? meta.lines.map(String) : [];
+  return {
+    lines: shownProgressLines(lines, secrets),
+    lines_truncated: meta.lines_truncated === true,
+    raw: redact(result.text, secrets),
+    raw_truncated: meta.raw_truncated === true,
+    bytes: Number(meta.bytes) || 0,
+    events: Number(meta.events) || 0,
+    unparsed: Number(meta.unparsed) || 0,
+  };
+}
+
 /** Runs `guilds-harness check` for `harness` under `ctx`, outside any tool call. */
 export async function checkHarnessOn(ctx: ToolContext, harness: Harness): Promise<HarnessCheck> {
   const check = await harnessOp(checkContext(ctx), "check", { harness });
@@ -371,13 +421,16 @@ async function rememberTurn(ctx: ToolContext, turn: HarnessTurn): Promise<void> 
 async function startHarness(ctx: ToolContext, turn: HarnessTurn): Promise<void> {
   const resume = turn.session ? { session_id: turn.session } : {};
   await ctx.before_command?.();
-  const model = ctx.harness_model ? { model: ctx.harness_model } : {};
+  const launch = harnessLaunch(turn.harness, ctx.harness_model, ctx.harness_effort);
+  const model = launch.model ? { model: launch.model } : {};
+  const effort = launch.effort ? { effort: launch.effort } : {};
   await harnessOp(turn.ops, "start", {
     harness: turn.harness,
     repository: turn.repository,
     prompt: turn.prompt,
     ...resume,
     ...model,
+    ...effort,
   });
   await rememberTurn(ctx, turn);
 }

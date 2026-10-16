@@ -23,7 +23,8 @@ export type RunWithTools = {
   } | null;
 };
 
-type ToolEntry = { kind: ToolKind; level?: ToolLevel };
+/** `mutates` marks a tool that changes tracked state: a note, memory, record, collection, script or source code. */
+type ToolEntry = { kind: ToolKind; level?: ToolLevel; mutates?: true };
 
 /** Every tool kind, in the order breakdowns list them. */
 export const TOOL_KINDS: readonly ToolKind[] = Object.freeze([
@@ -57,21 +58,21 @@ const LEVEL_LABELS: Readonly<Record<string, string>> = Object.freeze({
 const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   note_find: { kind: "read" },
   note_get: { kind: "read" },
-  note_write: { kind: "write" },
-  note_delete: { kind: "write" },
+  note_write: { kind: "write", mutates: true },
+  note_delete: { kind: "write", mutates: true },
   record_search: { kind: "read", level: "org" },
   record_list: { kind: "read", level: "org" },
-  record_add: { kind: "write", level: "org" },
-  record_update: { kind: "write", level: "org" },
-  record_remove: { kind: "write", level: "org" },
-  memory_write: { kind: "memory", level: "local" },
+  record_add: { kind: "write", level: "org", mutates: true },
+  record_update: { kind: "write", level: "org", mutates: true },
+  record_remove: { kind: "write", level: "org", mutates: true },
+  memory_write: { kind: "memory", level: "local", mutates: true },
   group_post: { kind: "post", level: "guild" },
   report_issue: { kind: "write", level: "guild" },
-  script_create: { kind: "write", level: "local" },
+  script_create: { kind: "write", level: "local", mutates: true },
   script_list: { kind: "read", level: "local" },
   script_read: { kind: "read", level: "local" },
   script_run: { kind: "execute", level: "local" },
-  script_delete: { kind: "write", level: "local" },
+  script_delete: { kind: "write", level: "local", mutates: true },
   schedule_create_cron: { kind: "write", level: "local" },
   schedule_create_window: { kind: "write", level: "local" },
   schedule_list: { kind: "read", level: "local" },
@@ -88,7 +89,7 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   browser_eval: { kind: "act" },
   shell: { kind: "execute", level: "local" },
   shell_status: { kind: "read", level: "local" },
-  code_task: { kind: "execute", level: "local" },
+  code_task: { kind: "execute", level: "local", mutates: true },
   file_read: { kind: "read", level: "local" },
   code_search: { kind: "read", level: "local" },
   secret_store: { kind: "write", level: "org" },
@@ -110,14 +111,14 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   studio_call_connection_tool: { kind: "connected" },
   studio_create_task_draft: { kind: "write", level: "local" },
   studio_get_guild: { kind: "read" },
-  studio_edit_memory: { kind: "memory", level: "local" },
-  studio_edit_artifact: { kind: "write" },
+  studio_edit_memory: { kind: "memory", level: "local", mutates: true },
+  studio_edit_artifact: { kind: "write", mutates: true },
   studio_edit_guild: { kind: "write" },
   studio_list_collections: { kind: "read", level: "org" },
   studio_get_collection: { kind: "read", level: "org" },
-  studio_create_collection: { kind: "write", level: "org" },
-  studio_edit_collection: { kind: "write", level: "org" },
-  studio_delete_collection: { kind: "write", level: "org" },
+  studio_create_collection: { kind: "write", level: "org", mutates: true },
+  studio_edit_collection: { kind: "write", level: "org", mutates: true },
+  studio_delete_collection: { kind: "write", level: "org", mutates: true },
   builder_list_capabilities: { kind: "read" },
   builder_search_capabilities: { kind: "read" },
   builder_describe_server: { kind: "read" },
@@ -220,6 +221,16 @@ export function classifyToolCall(
     return { name, kind: "execute", level: "local", server: null };
   }
   return { name, kind: "unknown", level: null, server: null };
+}
+
+/** Whether a call changes tracked state: a note, memory, record, collection, script or source code. */
+export function isMutation(info: ToolCallInfo): boolean {
+  return lookup(TABLE, info.name)?.mutates === true;
+}
+
+/** Whether a call runs one of the agent's scripts. */
+export function isScriptRun(info: ToolCallInfo): boolean {
+  return info.name === "script_run";
 }
 
 function isToolKind(value: unknown): value is ToolKind {

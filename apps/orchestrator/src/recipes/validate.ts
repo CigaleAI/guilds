@@ -1,13 +1,14 @@
 import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS, secretAliasesOf } from "../agents/validation.js";
 import { credentialFix, HARNESS_INFO, harnessModelOf, HARNESSES, isHarness } from "../coding/harnesses.js";
+import { EFFORTS, harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../db/seed/catalog.js";
 import type { CollectionColumn } from "../artifacts/columns.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { isDisplayPath } from "../artifacts/paths.js";
-import { recipeNotePath } from "./rewrite.js";
+import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
 import { operatorAccessCuts, type RecipeDocument } from "./schema.js";
 
 export type FindingSeverity = "error" | "warning" | "info";
@@ -104,6 +105,24 @@ function harnessModelFinding(role: RecipeRole): RecipeFinding | null {
   return null;
 }
 
+/** A harness effort apply cannot use: not an effort, on a role without a harness, or not one its model runs at. */
+function harnessEffortFinding(role: RecipeRole): RecipeFinding | null {
+  const effort = role.config.harness_effort;
+  const path = `roles.${role.role}.config.harness_effort`;
+  if (effort === undefined || effort === null) {
+    return null;
+  }
+  if (!isEffort(effort)) {
+    return finding("harness_effort.invalid", "warning", path, `config.harness_effort is not one of ${EFFORTS.join(", ")}; apply leaves it out`);
+  }
+  if (!isHarness(role.config.harness)) {
+    return finding("harness_effort.harness", "warning", path, "config.harness_effort needs config.harness; apply leaves it out");
+  }
+  return harnessEffortsFor(role.config.harness, harnessModelOf(role.config)).includes(effort)
+    ? null
+    : finding("harness_effort.model", "warning", path, "config.harness_model does not run at config.harness_effort; apply leaves it out");
+}
+
 /** Secret aliases apply cannot use: not a map of variable names to secret names. */
 function secretAliasesFinding(role: RecipeRole): RecipeFinding | null {
   const raw = role.config.secret_aliases;
@@ -127,7 +146,7 @@ function harnessFindings(role: RecipeRole): RecipeFinding[] {
   const choice = harnessChoiceFinding(role);
   const model = harnessModelFinding(role);
   const credential = role.config.coding === true ? harnessCredentialFinding(role) : null;
-  return [choice, model, credential, secretAliasesFinding(role)].filter((item): item is RecipeFinding => item !== null);
+  return [choice, model, harnessEffortFinding(role), credential, secretAliasesFinding(role)].filter((item): item is RecipeFinding => item !== null);
 }
 
 export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContext): RecipeFinding[] {
@@ -342,6 +361,28 @@ export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContex
           `unknown file link ${href}. Use the note's destination path (guild/…, org/…, agent/<role>/…) or ![[recipe:<note-id>]].`,
         ),
       );
+    }
+    const texts = [
+      { path: `roles.${role.role}.task`, text: role.task.body },
+      ...role.schedules.map((schedule) => ({
+        path: `roles.${role.role}.schedules.${schedule.key}`,
+        text: schedule.instruction,
+      })),
+    ];
+    for (const { path, text } of texts) {
+      for (const notePath of collectRecipeNotePaths(text)) {
+        if (notePaths.has(notePath)) {
+          continue;
+        }
+        findings.push(
+          finding(
+            "task.note_path",
+            "error",
+            path,
+            `unknown note path ${notePath}. Name a note from notes[] by its destination path (guild/…, org/…, agent/<role>/…).`,
+          ),
+        );
+      }
     }
   }
   if (!recipe.connections.length) {

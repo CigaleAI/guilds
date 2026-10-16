@@ -68,6 +68,7 @@ import type {
   RegistryRecipes,
   Run,
   RunDiff,
+  HarnessLog,
   RunMessage,
   Schedule,
   StudioAgent,
@@ -85,6 +86,7 @@ import type {
   AccessEditResult,
   AgentHarness,
   Harness,
+  HarnessCatalog,
   HarnessCheck,
   ApplyChoices,
   ApplyPreview,
@@ -125,6 +127,7 @@ export const keys = {
   agentRuns: (agentId: string) => ["agent", agentId, "runs"] as const,
   agentSchedules: (agentId: string) => ["agent", agentId, "schedules"] as const,
   agentHarness: (agentId: string) => ["agent", agentId, "harness"] as const,
+  harnesses: ["harnesses"] as const,
   /** Everything read from notes, memory, Tasks and tables; a file change in any guild refreshes it. */
   files: ["files"] as const,
   agentTask: (agentId: string) => ["files", "task", agentId] as const,
@@ -184,6 +187,7 @@ export const keys = {
   run: (runId: string) => ["run", runId] as const,
   runDiff: (runId: string, repository: string) => ["run", runId, "diff", repository] as const,
   taskDiff: (runId: string, callId: string) => ["run", runId, "task-diff", callId] as const,
+  taskLog: (runId: string, callId: string) => ["run", runId, "task-log", callId] as const,
   guildRepositories: (guildId: string) => ["guild", guildId, "repositories"] as const,
   githubRepositories: (connectionId: string) => ["github", connectionId, "repositories"] as const,
   runMessages: (runId: string) => ["run", runId, "messages"] as const,
@@ -250,6 +254,16 @@ export function useAgent(agentId: string) {
   return useQuery({
     queryKey: keys.agent(agentId),
     queryFn: () => api<AgentDetail>(`/api/agents/${encodeURIComponent(agentId)}`),
+  });
+}
+
+/** The models each harness offers, and the efforts they run at; fixed while the server runs. */
+export function useHarnessCatalog() {
+  return useQuery({
+    queryKey: keys.harnesses,
+    queryFn: () => api<{ harnesses: HarnessCatalog[] }>("/api/harnesses"),
+    select: (data) => data.harnesses,
+    staleTime: Infinity,
   });
 }
 
@@ -1234,6 +1248,18 @@ export function useTaskDiff(runId: string, callId: string | null) {
     enabled: Boolean(callId),
     staleTime: Infinity,
     queryFn: () => api<RunDiff>(`${runPath(runId)}/tasks/${encodeURIComponent(callId ?? "")}/diff`),
+  });
+}
+
+/** A code task's kept harness log, read from the agent's machine on demand. */
+export function useTaskLog(runId: string, callId: string | null) {
+  return useQuery({
+    queryKey: keys.taskLog(runId, callId ?? ""),
+    enabled: Boolean(callId),
+    staleTime: Infinity,
+    retry: false,
+    queryFn: () =>
+      api<HarnessLog>(`${runPath(runId)}/tasks/${encodeURIComponent(callId ?? "")}/log`),
   });
 }
 

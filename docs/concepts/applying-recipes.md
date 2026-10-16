@@ -270,7 +270,9 @@ the role's harness. The apply request carries `harnesses`
 `coding` is refused. Only a coding role keeps a harness. A role keeps
 the recipe's `harness_model` only when it applies with the harness the
 recipe names; with another harness, its model is the subscription's
-default. A role's `secret_aliases` apply as written when they
+default. It keeps the recipe's `harness_effort` under the same
+condition, and only when its model runs at that effort; otherwise the
+model runs at its default effort. A role's `secret_aliases` apply as written when they
 validate; otherwise apply leaves them out.
 
 Agents from roles with `config.coding: true` are created with coding

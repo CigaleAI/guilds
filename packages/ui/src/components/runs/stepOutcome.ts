@@ -2,10 +2,11 @@ import type { Segment } from "../../primitives/Mark";
 
 /**
  * How one model step ended, judged by the tool calls it requested together:
- * `ok` finished without changing anything, `wrote` finished and at least one call mutated state
- * (write, memory, execute, act or post), `failed` has a failed call, `running` still waits on a call.
+ * `ok` finished without changing anything, `wrote` finished and at least one call changed tracked
+ * state (a note, memory, record, collection, script or source code), `ran` finished and ran a script
+ * without changing tracked state, `failed` has a failed call, `running` still waits on a call.
  */
-export type StepOutcome = "ok" | "wrote" | "failed" | "running";
+export type StepOutcome = "ok" | "wrote" | "ran" | "failed" | "running";
 
 /** One step on a generation's strip; weight is usually the step's duration. */
 export type StepSegment = {
@@ -19,6 +20,7 @@ export type StepSegment = {
 export const stepToneOnPaper: Record<StepOutcome, Segment["tone"]> = {
   ok: "signal",
   wrote: "tide",
+  ran: "dusk",
   failed: "plum",
   running: "mauve",
 };
@@ -27,6 +29,7 @@ export const stepToneOnPaper: Record<StepOutcome, Segment["tone"]> = {
 export const stepToneOnPlum: Record<StepOutcome, Segment["tone"]> = {
   ok: "signal",
   wrote: "signal-2",
+  ran: "on-plum-track",
   failed: "plum-soft",
   running: "mauve",
 };

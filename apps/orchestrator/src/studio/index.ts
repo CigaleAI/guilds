@@ -383,9 +383,6 @@ export class StudioService {
     const member = hydrateStudioMember(row);
     const warnings: string[] = [];
     if (!content.trim()) warnings.push("empty_task");
-    const meta = row.latest_run_metadata as Record<string, unknown> | undefined;
-    const metadata = meta && typeof meta === "object" ? meta : {};
-    if (metadata.memory_skipped) warnings.push("memory_skipped");
     const errors = Array.isArray(row.latest_run_errors) ? row.latest_run_errors : [];
     if (errors.length) warnings.push("generation_errors");
     if (row.draft_id && Number(row.draft_base_version) !== Number(row.task_version)) {

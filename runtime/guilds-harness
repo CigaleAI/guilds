@@ -16,6 +16,8 @@ The orchestrator runs this once per op, each a short exec. A request names an `o
 - `result`: the final message, the session id, and how the turn ended, read from the log.
 - `stop`: SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the
   supervisor to record the exit.
+- `log`: a call's event log as it is kept in `.runs/`, for the app: every normalised progress
+  line, and the raw JSONL from its start, both within `max_bytes`.
 
 A large request arrives as a file under /run/guilds/requests, which this helper reads and
 deletes. The helper prints one base64 JSON envelope: {"ok": true, "text": ..., "meta":
@@ -38,7 +40,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, NamedTuple
 
 HOME = Path(os.environ["GUILDS_AGENT_HOME"]) if os.environ.get("GUILDS_AGENT_HOME") else Path.home()
 RUN_DIR = Path(os.environ.get("GUILDS_RUN_DIR", "/run/guilds"))
@@ -53,6 +55,7 @@ STOP_GRACE = 10.0
 EXIT_WAIT = 5.0
 POLL_MAX_BYTES = 256 * 1024
 POLL_MAX_LINES = 60
+LOG_MAX_LINES = 2000
 STDERR_TAIL_BYTES = 2000
 CHILD_ENV = {
     "PAGER": "cat",
@@ -64,12 +67,21 @@ CHILD_ENV = {
 }
 # A model name as the orchestrator validates it: an alias or full name, with bracketed parameters.
 MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/=,\[\]-]{0,119}")
+# The reasoning efforts the orchestrator validates.
+EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"})
 # Never in a harness's environment: the harness does not open pull requests.
 DROPPED_ENV = ("GUILDS_RUN_DIR", "GH_TOKEN", "GITHUB_TOKEN")
 
 
 class ToolError(Exception):
     pass
+
+
+class Launch(NamedTuple):
+    """The model and effort a call starts the CLI with; empty leaves each to the harness."""
+
+    model: str
+    effort: str
 
 
 # --- request and envelope -------------------------------------------------
@@ -146,9 +158,18 @@ class Driver:
                 removed.append(str(found.relative_to(HOME)))
         return removed
 
-    def command(self, session_id: str, prompt_path: Path, model: str) -> list[str]:
-        """The CLI's command line; an empty `model` leaves the model to the subscription."""
+    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
+        """The CLI's command line; an empty model leaves the model to the subscription."""
         raise NotImplementedError
+
+    def effort_args(self, effort: str) -> list[str]:
+        """The arguments that set the model's effort."""
+        raise ToolError(f"{self.name} takes its effort in the model name")
+
+    def model_args(self, launch: Launch) -> list[str]:
+        """`--model` with the model, then the effort's arguments; nothing for what is empty."""
+        argv = ["--model", launch.model] if launch.model else []
+        return argv + (self.effort_args(launch.effort) if launch.effort else [])
 
     def credential(self, env: dict[str, str]) -> str | None:
         """`secret` or `login` when the harness has a credential to run on, else None."""
@@ -223,7 +244,7 @@ class ClaudeCode(Driver):
         ".claude/projects/*/memory",
     )
 
-    def command(self, session_id: str, prompt_path: Path, model: str) -> list[str]:
+    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
         argv = [
             self.binary,
             "-p",
@@ -238,11 +259,13 @@ class ClaudeCode(Driver):
             "--settings",
             json.dumps(self.settings),
         ]
-        if model:
-            argv += ["--model", model]
+        argv += self.model_args(launch)
         if session_id:
             argv += ["--resume", session_id]
         return argv
+
+    def effort_args(self, effort: str) -> list[str]:
+        return ["--effort", effort]
 
     def credential(self, env: dict[str, str]) -> str | None:
         if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
@@ -341,18 +364,20 @@ class Codex(Driver):
         ".codex/hooks.json",
     )
 
-    def command(self, session_id: str, prompt_path: Path, model: str) -> list[str]:
+    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
         argv = [self.binary, "exec"]
         if session_id:
             argv.append("resume")
         argv += ["--json", "--dangerously-bypass-approvals-and-sandbox", *self.managed]
-        if model:
-            argv += ["--model", model]
+        argv += self.model_args(launch)
         if session_id:
             argv.append(session_id)
         # The prompt is read from stdin.
         argv.append("-")
         return argv
+
+    def effort_args(self, effort: str) -> list[str]:
+        return ["-c", f'model_reasoning_effort="{effort}"']
 
     def credential(self, env: dict[str, str]) -> str | None:
         """A ChatGPT login: auth.json holding tokens, not only an API key."""
@@ -443,10 +468,9 @@ class Cursor(Driver):
         ".cursor/plugins",
     )
 
-    def command(self, session_id: str, prompt_path: Path, model: str) -> list[str]:
+    def command(self, session_id: str, prompt_path: Path, launch: Launch) -> list[str]:
         argv = [self.binary, "-p", "--force", "--trust", "--output-format", "stream-json"]
-        if model:
-            argv += ["--model", model]
+        argv += self.model_args(launch)
         if session_id:
             argv.append(f"--resume={session_id}")
         argv.append(f"Read your task in {prompt_path} and follow it.")
@@ -693,12 +717,15 @@ def op_check(spec: dict[str, Any]) -> dict[str, Any]:
     return {"text": text, "meta": meta}
 
 
-def _model(spec: dict[str, Any]) -> str:
-    """The model the harness runs, empty for its subscription's default."""
+def _launch(spec: dict[str, Any]) -> Launch:
+    """The model the harness runs and its effort, each empty for the harness's default."""
     model = spec.get("model") or ""
     if not isinstance(model, str) or (model and not MODEL_RE.fullmatch(model)):
         raise ToolError("model is invalid")
-    return model
+    effort = spec.get("effort") or ""
+    if not isinstance(effort, str) or (effort and effort not in EFFORTS):
+        raise ToolError("effort is invalid")
+    return Launch(model, effort)
 
 
 def _start_request(spec: dict[str, Any]) -> tuple[Driver, str, str, Path, str, str]:
@@ -768,7 +795,9 @@ def _wait_for_pid(paths: dict[str, Path]) -> int | None:
 
 def op_start(spec: dict[str, Any]) -> dict[str, Any]:
     driver, call_id, run_id, cwd, prompt, session_id = _start_request(spec)
-    model = _model(spec)
+    launch = _launch(spec)
+    # Refuses an effort the harness cannot take before anything is claimed or reset.
+    driver.model_args(launch)
     if shutil.which(driver.binary) is None:
         raise ToolError(f"{driver.binary} is not installed in this image")
     paths = _claim_call(call_id)
@@ -782,7 +811,7 @@ def op_start(spec: dict[str, Any]) -> dict[str, Any]:
         "harness": driver.name,
         "repository": cwd.name,
         "cwd": str(cwd),
-        "argv": driver.command(session_id, prompt_path, model),
+        "argv": driver.command(session_id, prompt_path, launch),
         "stdin": str(prompt_path) if driver.prompt_on_stdin else None,
         "prompt_path": str(prompt_path),
         "log_path": str(run_dir / f"{call_id}.harness.jsonl"),
@@ -1024,12 +1053,46 @@ def op_stop(spec: dict[str, Any]) -> dict[str, Any]:
     return {"text": f"stopped {call_id}" if exited else f"{call_id} did not stop", "meta": meta}
 
 
+def _head_lines(data: bytes, max_bytes: int) -> tuple[str, bool]:
+    """The whole lines of `data` within `max_bytes`, and whether any were left out."""
+    if len(data) <= max_bytes:
+        return data.decode("utf-8", errors="replace"), False
+    head = data[:max_bytes]
+    cut = head.rfind(b"\n")
+    return head[: cut + 1 if cut >= 0 else max_bytes].decode("utf-8", errors="replace"), True
+
+
+def op_log(spec: dict[str, Any]) -> dict[str, Any]:
+    driver = _driver(spec)
+    run_id = _safe_segment(spec.get("run_id"), "run_id")
+    call_id = _safe_segment(spec.get("call_id"), "call_id")
+    path = RUNS / run_id / f"{call_id}.harness.jsonl"
+    if path.is_symlink() or not path.is_file():
+        return {"text": f"no log for {call_id}", "meta": {"missing": True}}
+    data = path.read_bytes()
+    events, unparsed = _parse_events(data)
+    lines = [" ".join(line.split()) for event in events for line in driver.progress(event) if line.strip()]
+    max_bytes = spec.get("max_bytes")
+    raw, raw_truncated = _head_lines(data, max_bytes if isinstance(max_bytes, int) and max_bytes > 0 else len(data))
+    meta = {
+        "missing": False,
+        "lines": lines[:LOG_MAX_LINES],
+        "lines_truncated": len(lines) > LOG_MAX_LINES,
+        "events": len(events),
+        "unparsed": unparsed,
+        "bytes": len(data),
+        "raw_truncated": raw_truncated,
+    }
+    return {"text": raw, "meta": meta}
+
+
 OPS = {
     "check": op_check,
     "start": op_start,
     "poll": op_poll,
     "result": op_result,
     "stop": op_stop,
+    "log": op_log,
 }
 
 

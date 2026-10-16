@@ -172,6 +172,27 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     });
     assert.equal(pinned.statusCode, 200, pinned.body);
     assert.equal(pinned.json().config.harness_model, "gpt-5-codex");
+    const effort = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...pinned.json().config, harness_model: "gpt-6-luna", harness_effort: "high" } },
+    });
+    assert.equal(effort.statusCode, 200, effort.body);
+    const withEffort = await app.inject({ method: "GET", url: `/api/agents/${coderId}/harness`, headers: AUTH });
+    assert.equal(withEffort.json().harness_effort, "high");
+    const unoffered = await app.inject({
+      method: "PUT",
+      url: `/api/agents/${coderId}/config`,
+      headers: JSON_AUTH,
+      payload: { config: { ...effort.json().config, harness_effort: "ultra" } },
+    });
+    assert.equal(unoffered.statusCode, 422, unoffered.body);
+    assert.match(unoffered.json().detail, /harness_effort must be one of low, medium, high, xhigh, max for gpt-6-luna/);
+    const catalog = await app.inject({ method: "GET", url: "/api/harnesses", headers: AUTH });
+    assert.equal(catalog.statusCode, 200, catalog.body);
+    const codex = catalog.json().harnesses.find((item: { harness: string }) => item.harness === "codex");
+    assert.ok(codex.models.some((item: { id: string }) => item.id === "gpt-6-luna"));
 
     // A coding agent stays one.
     const uncoded = await app.inject({

@@ -5,6 +5,7 @@ import {
   useState,
   type ComponentProps,
   type KeyboardEvent,
+  type MouseEvent,
   type SyntheticEvent,
 } from "react";
 import { cn } from "../../cn";
@@ -42,6 +43,7 @@ export type TaskEditorProps = Omit<ComponentProps<"div">, "onChange"> & {
   /** Marks embeds whose path no longer resolves. */
   isBrokenEmbed?: (path: string) => boolean;
   placeholder?: string;
+  /** The view the editor opens in. Double-clicking the preview switches to Edit. */
   defaultMode?: TaskEditorMode;
   /**
    * Identity of the text being shown. When it changes the editor returns to `defaultMode`, so a
@@ -99,6 +101,7 @@ export function TaskEditor({
   const selection = useRef<{ start: number; end: number } | null>(null);
   const latestValue = useRef(value);
   const pendingCaret = useRef<number | null>(null);
+  const pendingFocus = useRef(false);
 
   const dirty = value !== savedValue;
   const lines = value.split("\n");
@@ -112,6 +115,18 @@ export function TaskEditor({
     textarea.focus();
     textarea.setSelectionRange(caret, caret);
   }, [value]);
+
+  useLayoutEffect(() => {
+    if (mode !== "edit" || !pendingFocus.current) return;
+    pendingFocus.current = false;
+    textareaRef.current?.focus();
+  }, [mode]);
+
+  function editFromPreview(event: MouseEvent<HTMLDivElement>) {
+    if (event.target instanceof Element && event.target.closest("a, button")) return;
+    pendingFocus.current = true;
+    setMode("edit");
+  }
 
   function track(event: SyntheticEvent<HTMLTextAreaElement>) {
     const { selectionStart, selectionEnd, value: text } = event.currentTarget;
@@ -197,7 +212,10 @@ export function TaskEditor({
             "after:pointer-events-none after:absolute after:inset-0 focus-within:after:inset-ring-2 focus-within:after:inset-ring-focus",
         )}
       >
-        <div className="flex min-h-40 flex-1 flex-col overflow-auto">
+        <div
+          className="flex min-h-40 flex-1 flex-col overflow-auto"
+          {...(mode === "preview" ? { onDoubleClick: editFromPreview } : {})}
+        >
           {mode === "edit" ? (
             <div className="relative flex-1 py-2.5 font-mono text-sm leading-5.5">
               {lines.map((line, index) => {

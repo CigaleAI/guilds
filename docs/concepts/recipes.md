@@ -195,7 +195,8 @@ What capture writes:
 - `config.coding` travels. `config.harness` travels as it is; an agent
   without one leaves the key out. `config.harness_model` travels the
   same way; an agent on its harness's default model leaves the key
-  out. `config.secret_aliases` travels the same way; an agent without
+  out, and `config.harness_effort` likewise on the default effort.
+  `config.secret_aliases` travels the same way; an agent without
   an alias leaves the key out.
 - A harness subscription token stays behind. On a coding agent, the
   aliases of the harness token variables (`CLAUDE_CODE_OAUTH_TOKEN`,
@@ -241,8 +242,9 @@ What capture writes:
   in `include_notes` are captured too. Memory (`memory.md`) is never
   captured. Lived agent notes, organisation notes, Memory bodies, and
   collection records stay out unless the operator includes them.
-- Capture rewrites display-path embeds to recipe-local refs
-  (`![[guild/<key>]]`, `![[org/<key>]]`, `![[agent/<role>/<key>]]`).
+- Capture rewrites display paths of captured notes to recipe-local refs,
+  in embeds (`![[guild/<key>]]`, `![[org/<key>]]`,
+  `![[agent/<role>/<key>]]`) and as plain text (`guild/<key>`, …).
   It rewrites tags of source agent names to `@{role}` in Tasks,
   routine instructions, script sources, and notes. `@user` is never
   rewritten.

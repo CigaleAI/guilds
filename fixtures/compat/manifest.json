@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "7265213b9ec3a6dea88e22ac28dfd3e8c378caf958610433ddd6e5bbcf7632d3"
+      "sha256": "112e0b1249e4670c85a5e6b78ca38b87a0e4b0defd07b24f9ce8f9d7e4ba834c"
     },
     {
       "path": "ids/shape.json",
@@ -59,7 +59,7 @@
       "path": "memory/cases.json",
       "source": "src/memory parse and render",
       "generator_version": "1",
-      "sha256": "23cb4feca85e6349e1a5b100565efc655f62ec68e781839feac7abb38e85e7e1"
+      "sha256": "f9ef0cab665c4089b7669e556eb52da4cbba5154c27793d98ab0202ed6b4bd14"
     },
     {
       "path": "notes/confinement.json",
@@ -71,13 +71,13 @@
       "path": "prompts/compose.txt",
       "source": "src/prompts composeSystemPrompt",
       "generator_version": "1",
-      "sha256": "fcbc087b6b1494793971b80c0f8ff45399bdc3d0c1ed1b29deace42ce3d07a89"
+      "sha256": "db5180b34774f1accbacfd51b1b48f6a59cbb95dcadc8a6cc1e29f2d2376678e"
     },
     {
       "path": "prompts/hashes.json",
       "source": "src/prompts promptHash",
       "generator_version": "1",
-      "sha256": "e20fc0e9ab17090da78d51c42e38012572c4fe55180bd957ffc5284d1a9a85c8"
+      "sha256": "32acdb22ac7bd2ec687367cb4db4050e50dde473f66ab3af5877d844d71c2e78"
     },
     {
       "path": "prompts/hydrate.json",
@@ -143,7 +143,7 @@
       "path": "views/run-message.json",
       "source": "orchestrator.db:message_item",
       "generator_version": "1",
-      "sha256": "197ac1bf67af69679dd2c626ce4b0a7739593ac3b1551553e589982acd452580"
+      "sha256": "3141ec8c8cfc3dc6533a733a39ccd40d346e8f021c23ffb17bfc5627fa79a7a0"
     },
     {
       "path": "ws/browser.json",

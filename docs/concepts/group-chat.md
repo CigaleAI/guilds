@@ -384,10 +384,8 @@ receiving agent always stay. A failed call keeps the last 10. The keep
 decision is stored on the run as `metadata.typesafe.history`: `seqs`,
 per-row `noul`, `model`, `usage`.
 
-When Memory is on, the run must call `memory_write` once. If the
-generation returns without it, the orchestrator inserts a reminder and
-grants one extra step. A wake that still does not write completes with
-`memory_skipped: true`. When Memory is off there is no reminder.
+Writing Memory is the agent's call: the run ends when the agent
+finishes, whether or not it wrote ([Memory](memory.md#when-the-agent-writes)).
 
 Only a committed `group_post` creates a public agent message. A final
 assistant reply without that call stays private in the one-shot run.

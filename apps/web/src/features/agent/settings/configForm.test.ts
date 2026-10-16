@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Machine } from "../../../api/types";
-import { configErrors, configFormOf, configOf, defaultAgentConfig, withCoding } from "./configForm";
+import type { HarnessCatalog, Machine } from "../../../api/types";
+import {
+  configErrors,
+  configFormOf,
+  configOf,
+  defaultAgentConfig,
+  withCoding,
+  withHarnessModel,
+} from "./configForm";
 
 test("switching coding on moves default limits to the coding budgets and back", () => {
   const form = configFormOf(defaultAgentConfig);
@@ -178,6 +185,49 @@ test("a harness model reaches the form and back, trimmed; empty sends the subscr
     null,
     "no model without a harness",
   );
+});
+
+test("a harness effort reaches the form and back; empty sends the harness's default", () => {
+  const stored = {
+    ...defaultAgentConfig,
+    coding: true,
+    harness: "codex" as const,
+    harness_model: "gpt-6-luna",
+    harness_effort: "high" as const,
+  };
+  const form = configFormOf(stored);
+  assert.equal(form.harness_effort, "high");
+  assert.equal(configOf(form, undefined).harness_effort, "high");
+  assert.equal(configOf({ ...form, harness_effort: "" }, undefined).harness_effort, null);
+  assert.equal(configFormOf({ ...stored, harness_effort: null }).harness_effort, "");
+  assert.equal(configOf({ ...form, harness: "" }, undefined).harness_effort, null, "no effort without a harness");
+  assert.equal(withCoding(form, false).harness_effort, "");
+});
+
+const CODEX_CATALOG: HarnessCatalog[] = [
+  {
+    harness: "codex",
+    label: "Codex",
+    models: [
+      { id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" },
+      { id: "gpt-5.6-terra", label: "GPT-5.6-Terra", efforts: ["low", "ultra"], default_effort: "low" },
+    ],
+    unlisted_efforts: ["low", "high", "ultra"],
+  },
+];
+
+test("another harness model keeps the effort while it runs at it, else goes back to the default", () => {
+  const form = configFormOf({
+    ...defaultAgentConfig,
+    coding: true,
+    harness: "codex",
+    harness_model: "gpt-6-luna",
+    harness_effort: "high",
+  });
+  assert.equal(withHarnessModel(form, "gpt-5.6-terra", CODEX_CATALOG).harness_effort, "");
+  assert.equal(withHarnessModel(form, "gpt-custom", CODEX_CATALOG).harness_effort, "high");
+  assert.equal(withHarnessModel(form, "", CODEX_CATALOG).harness_model, "");
+  assert.equal(withHarnessModel(form, "gpt-5.6-terra", undefined).harness_effort, "high", "left to the server");
 });
 
 test("a harness model must be a model name, and turning coding off clears it", () => {

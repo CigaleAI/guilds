@@ -93,7 +93,6 @@ function wake(
     tool_call_count: 0,
     reply: null,
     opening: null,
-    memory_skipped: false,
     last_seq: null,
     cost_usd: 0,
     ...overrides,

@@ -404,6 +404,29 @@ test("captureGuild leaves a coding role's harness tokens and their aliases behin
   );
 });
 
+test("captureGuild keeps a coding role's harness model and effort, and leaves them out while unset", async () => {
+  const recipe = await captureGuild(
+    captureDeps({
+      agents: [
+        {
+          id: "a_coder",
+          name: "coder",
+          focus: "Code",
+          config: { model: TEST_MODEL, coding: true, harness: "codex", harness_model: "gpt-6-luna", harness_effort: "high" },
+        },
+        { id: "a_plain", name: "plain", focus: "Code", config: { model: TEST_MODEL, coding: true, harness: "codex" } },
+      ],
+    }),
+    { guild: GUILD, user: USER },
+  );
+  const coder = recipe.roles.find((role) => role.role === "coder");
+  assert.equal(coder?.config.harness_model, "gpt-6-luna");
+  assert.equal(coder?.config.harness_effort, "high");
+  const plain = recipe.roles.find((role) => role.role === "plain");
+  assert.equal("harness_model" in (plain?.config ?? {}), false);
+  assert.equal("harness_effort" in (plain?.config ?? {}), false);
+});
+
 test("captureGuild keeps a random window and labels its design cadence", async () => {
   const window = { timezone: "Europe/Paris", start: "08:00", end: "20:00", max_wakes: 6 };
   const recipe = await captureGuild(

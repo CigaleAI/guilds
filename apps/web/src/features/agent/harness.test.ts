@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentHarness, HarnessCredential } from "../../api/types";
+import type { AgentHarness, HarnessCatalog, HarnessCredential } from "../../api/types";
 import {
+  catalogFor,
   codingProblems,
   codingProblemsSentence,
   codingProblemsText,
   codingStrip,
+  defaultEffortLabel,
   freeTokenName,
   harnessCarried,
   harnessChoices,
+  harnessEffortsFor,
   harnessLabel,
+  listedHarnessModel,
   NO_TOKEN_ALIAS,
   showsHarnessImageNote,
   tokenOptions,
@@ -58,6 +62,7 @@ function status(patch: Partial<AgentHarness> = {}): AgentHarness {
   return {
     harness: "claude-code",
     harness_model: null,
+    harness_effort: null,
     machine_harnesses: ["codex", "claude-code"],
     repositories: ["shop"],
     harnesses: [
@@ -166,23 +171,29 @@ test("a new token takes the variable's name, or the agent's name on it when that
   );
 });
 
-test("the chat strip names the lead model, the harness and its model, what it runs on, and the repositories", () => {
+test("the chat strip shows the harness, whether it can sign in, and how many repositories it reaches", () => {
   const now = new Date("2026-05-01T12:00:00Z");
-  const ready = status({ harness_model: "opus" });
-  assert.deepEqual(
-    codingStrip({
-      status: ready,
-      leadModel: "DeepSeek Flash",
-      secrets: [added("CLAUDE_CODE_OAUTH_TOKEN")],
-      now,
-    }).map((segment) => [segment.text, segment.problem, segment.to]),
+  const parts = (state: ReturnType<typeof codingStrip>) =>
+    [state.harnessPart, state.credential, state.repositories].map((part) =>
+      part ? [part.text, part.detail, part.problem] : null,
+    );
+  const ready = status({ harness_model: "opus", repositories: ["shop", "site"] });
+  const onSecret = codingStrip({ status: ready, secrets: [added("CLAUDE_CODE_OAUTH_TOKEN")], now });
+  assert.equal(onSecret.harness, "claude-code");
+  assert.deepEqual(onSecret.repositories.names, ["shop", "site"]);
+  assert.deepEqual(parts(onSecret), [
+    ["Claude Code", "Claude Code codes with opus.", false],
     [
-      ["DeepSeek Flash leads", false, "model"],
-      ["Claude Code · opus codes", false, "harness"],
-      ["on CLAUDE_CODE_OAUTH_TOKEN, added by ada", false, "harness"],
-      ["repos shop", false, "repositories"],
+      "Token CLAUDE_CODE_OAUTH_TOKEN",
+      "Runs on the secret CLAUDE_CODE_OAUTH_TOKEN, added by ada.",
+      false,
     ],
-  );
+    ["2 repos", "shop, site", false],
+  ]);
+  const effort = codingStrip({ status: { ...ready, harness_effort: "xhigh" }, secrets: [], now });
+  assert.equal(effort.harnessPart?.detail, "Claude Code codes with opus at extra high effort.");
+  const plain = codingStrip({ status: status(), secrets: [], now });
+  assert.equal(plain.harnessPart?.detail, "Claude Code codes with its default model.");
   const login = status({
     harnesses: [
       credential("claude-code", {
@@ -191,35 +202,61 @@ test("the chat strip names the lead model, the harness and its model, what it ru
       }),
     ],
   });
-  assert.equal(
-    codingStrip({ status: login, leadModel: "x", secrets: [], now })[2]?.text,
-    "on its login as ada@example.com, seen 2h ago",
-  );
+  assert.deepEqual(codingStrip({ status: login, secrets: [], now }).credential, {
+    text: "Logged in",
+    detail: "Logged in as ada@example.com, seen 2h ago.",
+    problem: false,
+  });
   const bare = status({
     harnesses: [credential("claude-code")],
     machine_harnesses: ["codex"],
     repositories: [],
   });
   assert.deepEqual(
-    codingStrip({ status: bare, leadModel: "x", secrets: [], now }).map((segment) => [
-      segment.text,
-      segment.problem,
-    ]),
+    parts(codingStrip({ status: bare, secrets: [], now })).map((part) => [part?.[0], part?.[2]]),
     [
-      ["x leads", false],
       ["Claude Code is not in this machine's image", true],
-      ["no credential", true],
-      ["no repositories", true],
+      ["Not logged in", true],
+      ["No repos", true],
     ],
   );
+  const unpicked = codingStrip({ status: status({ harness: null }), secrets: [], now });
+  assert.equal(unpicked.harness, null);
+  assert.equal(unpicked.credential, null);
   assert.deepEqual(
-    codingStrip({ status: status({ harness: null }), leadModel: "x", secrets: [], now }).map(
-      (segment) => [segment.text, segment.problem, segment.to],
-    ),
-    [
-      ["x leads", false, "model"],
-      ["no harness picked", true, "harness"],
-      ["repos shop", false, "repositories"],
-    ],
+    [unpicked.harnessPart.text, unpicked.harnessPart.problem, unpicked.repositories.text],
+    ["No harness picked", true, "1 repo"],
   );
+});
+
+const CATALOG: HarnessCatalog[] = [
+  {
+    harness: "codex",
+    label: "Codex",
+    models: [{ id: "gpt-6-luna", label: "GPT-6-Luna", efforts: ["low", "high"], default_effort: "low" }],
+    unlisted_efforts: ["minimal", "low", "high"],
+  },
+  {
+    harness: "cursor",
+    label: "Cursor",
+    models: [{ id: "composer-2.5", label: "Composer 2.5", efforts: [], default_effort: null }],
+    unlisted_efforts: [],
+  },
+];
+
+test("a harness runs a listed model at its efforts, and any other at the efforts the harness takes", () => {
+  const codex = catalogFor(CATALOG, "codex");
+  assert.equal(listedHarnessModel(codex, "gpt-6-luna")?.label, "GPT-6-Luna");
+  assert.equal(listedHarnessModel(codex, "gpt-custom"), undefined);
+  assert.deepEqual(harnessEffortsFor(codex, "gpt-6-luna"), ["low", "high"]);
+  assert.deepEqual(harnessEffortsFor(codex, ""), ["minimal", "low", "high"]);
+  assert.deepEqual(harnessEffortsFor(catalogFor(CATALOG, "cursor"), "composer-2.5"), []);
+  assert.deepEqual(harnessEffortsFor(undefined, "gpt-6-luna"), [], "before the catalogue loads");
+  assert.equal(catalogFor(undefined, "codex"), undefined);
+});
+
+test("leaving the effort unset names the model's default effort, else the harness's", () => {
+  const codex = catalogFor(CATALOG, "codex");
+  assert.equal(defaultEffortLabel(listedHarnessModel(codex, "gpt-6-luna")), "Default (Low)");
+  assert.equal(defaultEffortLabel(undefined), "Harness default");
 });

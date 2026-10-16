@@ -172,7 +172,7 @@ const recipeDocumentParameter = {
           config: {
             type: "object",
             description:
-              "Agent configuration: model, run limits, browser, coding (true for a role that clones, edits, runs, and pushes code; see the coding capability), harness (a coding role's harness: claude-code, codex, or cursor; leave it out unless the operator named one), harness_model (the model that harness runs; leave it out unless the operator named one), secret_aliases (variable names the role's commands see beside its secrets, each holding the value of the secret it names; leave it out unless the operator asked), and memory (false to omit Memory and memory_write).",
+              "Agent configuration: model, run limits, browser, coding (true for a role that clones, edits, runs, and pushes code; see the coding capability), harness (a coding role's harness: claude-code, codex, or cursor; leave it out unless the operator named one), harness_model (the model that harness runs; leave it out unless the operator named one), harness_effort (the reasoning effort that model runs at: none, minimal, low, medium, high, xhigh, max, or ultra; leave it out unless the operator named one), secret_aliases (variable names the role's commands see beside its secrets, each holding the value of the secret it names; leave it out unless the operator asked), and memory (false to omit Memory and memory_write).",
           },
           task: {
             type: "object",

@@ -19,6 +19,7 @@ import {
 } from "../../api/queries";
 import { useGuildStream } from "../../api/streams";
 import { agentLook } from "../../app/agents";
+import { ReturnButton } from "../../app/ReturnButton";
 import { useMediaQuery, wideScreen } from "../../app/media";
 import { writeStored } from "../../app/storage";
 import {
@@ -223,6 +224,7 @@ export function GuildWorkspace() {
       {inspecting && guild.data ? (
         <GroupChat guild={guild.data} agents={agents.data ?? []} state={state.data} />
       ) : null}
+      {inspecting ? null : <ReturnButton />}
       <Outlet />
       <CreateAgentDialog
         guild={addingAgent && guild.data ? { id: guildId, name: guild.data.name } : null}

@@ -1,5 +1,6 @@
 import type { CallProgress } from "../../../api/toolProgress";
-import { harnessLabel } from "../harness";
+import type { Harness } from "../../../api/types";
+import { harnessLabel, isHarness } from "../harness";
 import type { FlowCall } from "../runs/runFlowModel";
 import {
   codeTaskChanges,
@@ -14,7 +15,7 @@ import {
 } from "../runs/toolFormat";
 
 /** The views of an opened tool call. */
-export type DetailView = "arguments" | "result" | "metadata" | "diff";
+export type DetailView = "arguments" | "result" | "metadata" | "diff" | "log";
 
 /** A label and its value in a call's Metadata view. */
 export type CallFact = [label: string, value: string];
@@ -48,9 +49,33 @@ export function callArguments(call: FlowCall): ToolArgsInfo {
   return formatToolArgs(record(record(call.call).function).arguments);
 }
 
-/** What a committed result returned, without the tool-call budget line the runtime appends. */
+/** A code task result's closing `log: <path>` line; the Metadata view names the log instead. */
+const TASK_LOG_LINE_RE = /\n*log: [^\n]*\s*$/;
+
+/**
+ * What a committed result returned, without the tool-call budget line the runtime appends, nor a
+ * code task's log line.
+ */
 export function returnedData(result: RunMessage): ReturnedDataInfo {
-  return formatReturnedData(stripRemainingToolCalls(record(result.payload).content));
+  const content = stripRemainingToolCalls(record(result.payload).content);
+  const task = record(result.metadata).tool_name === "code_task";
+  return formatReturnedData(
+    task && typeof content === "string" ? content.replace(TASK_LOG_LINE_RE, "") : content,
+  );
+}
+
+/**
+ * The harness a code task runs on: the one its result names, else the run's (the agent's harness
+ * while the call runs); null for any other tool, or when neither names a known harness.
+ */
+export function callHarness(
+  call: FlowCall,
+  runHarness: Harness | null | undefined,
+): Harness | null {
+  if (call.info.name !== "code_task") return null;
+  const named = callMetadata(call).harness;
+  if (isHarness(named)) return named;
+  return runHarness ?? null;
 }
 
 /** The view a call opens on: its result once it failed or has reported progress, else its arguments. */
@@ -62,6 +87,13 @@ export function openingView(call: FlowCall, progress: CallProgress | undefined):
 export function hasTaskDiff(call: FlowCall, runId: string | undefined): boolean {
   const endSha = callMetadata(call).end_sha;
   return call.info.name === "code_task" && Boolean(runId) && Boolean(text(endSha));
+}
+
+/** Whether a call is a code task of a known run whose result names the log it kept. */
+export function hasTaskLog(call: FlowCall, runId: string | undefined): boolean {
+  return (
+    call.info.name === "code_task" && Boolean(runId) && Boolean(text(callMetadata(call).log_path))
+  );
 }
 
 /** A code task's checkpoints, start → end, as short shas; empty without both. */

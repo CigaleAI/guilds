@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import type { GenerationFilter } from "./GenerationFilters";
 import { GenerationHero } from "./GenerationHero";
-import { StepRow } from "./StepRow";
+import { FlowCallGroup, FlowEntry, FlowThought, FlowTimeline } from "./FlowTimeline";
 import type { StepOutcome, StepSegment } from "./stepOutcome";
 import { ToolCall, ToolCallLink } from "./ToolCall";
 
@@ -15,7 +15,7 @@ const pattern: StepOutcome[] = [
   "failed",
   "ok",
   "ok",
-  "ok",
+  "ran",
   "wrote",
   "ok",
   "ok",
@@ -42,14 +42,6 @@ export default meta;
 
 type Story = StoryObj<typeof GenerationHero>;
 
-function Reasoning({ text }: { text: string }) {
-  return (
-    <div className="border-l-2 border-line py-0.5 pl-3">
-      <p className="text-sm whitespace-pre-wrap text-fg-2">{text}</p>
-    </div>
-  );
-}
-
 function Inspector() {
   const [filters, setFilters] = useState<GenerationFilter[]>([]);
   const dimReads = filters.includes("mutations");
@@ -66,27 +58,24 @@ function Inspector() {
       filters={filters}
       onFiltersChange={setFilters}
     >
-      <StepRow
-        outcome="ok"
-        title="Creating a 24‑hour schedule."
-        facts={[
-          { label: "3 calls", title: "read × 3" },
-          { label: "4.2s", title: "4.2s model · 35ms tools" },
-          { label: "14k tok" },
-        ]}
-        filters={filters}
-        onFiltersChange={setFilters}
-        dimmed={dimReads || dimOk}
-        defaultOpen
-      >
-        <div className="flex flex-col gap-2">
-          <Reasoning text="I need to create a new schedule every 24 hours. First, I should check the existing ones." />
-          <div className="flex flex-col gap-1.5">
+      <FlowTimeline>
+        <FlowEntry marker="thought" dimmed={dimReads || dimOk}>
+          <FlowThought
+            label="thinking"
+            summary="I need to create a new schedule every 24 hours. First, I should check the existing ones."
+            facts={[
+              { label: "3 calls", title: "read × 3" },
+              { label: "4.2s", title: "4.2s model · 35ms tools" },
+              { label: "14k tok" },
+            ]}
+          />
+        </FlowEntry>
+        <FlowEntry marker="call" dimmed={dimReads || dimOk}>
+          <FlowCallGroup names={["schedule_list", "note_find", "note_find"]} duration="35ms">
             <ToolCall
               index={1}
               name="schedule_list"
               kind="read"
-              level="local"
               hint="List schedules"
               status="ok"
               duration="6ms"
@@ -96,7 +85,6 @@ function Inspector() {
               index={2}
               name="note_find"
               kind="read"
-              level="guild"
               hint="Find notes…"
               status="ok"
               duration="14ms"
@@ -106,36 +94,36 @@ function Inspector() {
               index={3}
               name="note_find"
               kind="read"
-              level="local"
               hint="Find notes…"
               status="ok"
               duration="15ms"
               dimmed={dimReads || dimOk}
             />
-          </div>
-        </div>
-      </StepRow>
-      <StepRow
-        outcome="failed"
-        failed={1}
-        title="Creating a schedule for updates."
-        facts={[
-          { label: "2 calls", title: "write × 2" },
-          { label: "4.4s", title: "4.4s model · 212ms tools" },
-          { label: "15k tok" },
-        ]}
-        filters={filters}
-        onFiltersChange={setFilters}
-        defaultOpen
-      >
-        <div className="flex flex-col gap-2">
-          <Reasoning text="I need to set a recurring schedule for every 24 hours, considering the user’s retro request." />
-          <div className="flex flex-col gap-1.5">
+          </FlowCallGroup>
+        </FlowEntry>
+        <FlowEntry marker="thought">
+          <FlowThought
+            label="thinking"
+            summary="I need to set a recurring schedule for every 24 hours, considering the user’s retro request."
+            facts={[
+              { label: "2 calls", title: "write × 2" },
+              { label: "4.4s", title: "4.4s model · 212ms tools" },
+              { label: "15k tok" },
+            ]}
+          />
+        </FlowEntry>
+        <FlowEntry marker="call" tone="failed">
+          <FlowCallGroup
+            names={["schedule_create_cron", "note_write"]}
+            failed={1}
+            effect="wrote"
+            duration="212ms"
+            defaultOpen
+          >
             <ToolCall
               index={1}
               name="schedule_create_cron"
               kind="write"
-              level="local"
               hint="cron 0 0 * * *"
               status="failed"
               error="schedule already exists for this agent"
@@ -145,16 +133,16 @@ function Inspector() {
               index={2}
               name="note_write"
               kind="write"
-              level="guild"
               hint="Wrote retro_template.md"
+              effect="wrote"
               status="ok"
               duration="22ms"
               link={<ToolCallLink href="#">retro_template.md</ToolCallLink>}
               dimmed={dimOk}
             />
-          </div>
-        </div>
-      </StepRow>
+          </FlowCallGroup>
+        </FlowEntry>
+      </FlowTimeline>
     </GenerationHero>
   );
 }

@@ -80,31 +80,54 @@ first, then the matching lines.
 
 ## In the app
 
-Each call is a row in the run's flow on the **Chat** tab, with a
-summary of what it did:
+Each call other than `code_task` is a row in the run's flow on the
+**Chat** tab, with a summary of what it did:
 
 | Tool | Row reads |
 | --- | --- |
-| `code_task` | "Code task in `<repo>`", or "Resume code task" with a `session_id`; then its status unless completed, and its diffstat |
 | `shell` | "Run `<first line>`", or "Start `<first line>`" in the background; "timed out" or "exit N" when not 0 |
 | `shell_status` | "List background commands", "Check b1", or "Stop b1" |
 | `file_read` | "Read `<path>`", or "Read `<path>` from line N"; "unchanged since step N" for a repeated read |
 | `code_search` | "Search files" or "Search lines", with "in `<path>`" |
 
-While a `code_task` runs, its latest six progress lines show under its
-row. Progress lines are live only: they stream while the run view is
-open and are not kept, so a reload shows the row without them until
-the result lands.
+A `code_task` is its own block on the timeline, outside every stretch
+of calls, like an answer. It carries its harness's logo in place of
+the wrench, the one its result names, else the agent's harness, and
+reads:
 
-Opening a row shows **Arguments**, **Result**, and **Metadata**, and
-for a code task with an end checkpoint, **Diff**
-([Reviewing changes](reviewing-changes.md#in-the-app)). A running code
-task opens on **Result**, which shows its progress. **Metadata** lists
+- the harness's name, "coding task", and its status: **Running…**,
+  **Done**, **Failed**, or how it ended otherwise, such as **Timed
+  out**; a **wrote** tag; and its run time;
+- the brief it was given, clamped to two lines;
+- its repository and its diffstat;
+- the first line of its error, when it failed.
+
+While the call runs, the logo and the status pulse and its latest six
+progress lines show under the brief. Progress lines are live only:
+they stream while the run view is open and are not kept, so a reload
+shows the block without them until the result lands.
+
+Opening a row or a code task's block shows **Arguments**, **Result**, and **Metadata**; for a
+code task with an end checkpoint, **Diff**
+([Reviewing changes](reviewing-changes.md#in-the-app)); and for a code
+task whose result names its log, **Log**. A running code
+task opens on **Result**, which shows its progress. **Result** renders
+text as Markdown, with **Raw** for the text as returned, and JSON as a
+tree; a code task's result leaves out its closing `log:` line, which
+**Metadata** names as **Harness log**; clicking that path opens **Log**.
+**Metadata** lists
 the call, the tool, and for a code task its **Status**, **Harness**,
 **Repository**, **Session**, **Changes**, **Checkpoints** (start → end,
 as short commit ids), and **Harness log**; for other calls the exit
 code, **Full output** log, working directory, file, lines, and
 **Same as step** for a repeated read.
+
+**Log** reads the call's kept harness log from the agent's machine,
+waking it, once the view opens ([Harness log](#harness-log)). **Steps**
+shows each event as a progress line; **JSON** shows the raw JSONL
+events. "Loading the log from the agent's machine…" shows while it
+loads, and "Couldn't load the harness log" with the reason when it
+cannot be read, such as a log the agent's home no longer keeps.
 
 ## Rules and limits
 
@@ -312,7 +335,7 @@ call without a harness picked fails with `harness.missing`
    ([Managed configuration](harnesses.md#managed-configuration)),
    writes the brief to `.runs/<run id>/<call id>.prompt.md` in the home
    (mode 0600), starts the harness detached ([Process](#process)) on
-   the run's harness model, and returns at once. The brief reaches the
+   the run's harness model and effort, and returns at once. The brief reaches the
    CLI on stdin, or for Cursor through the prompt file, never on its
    command line.
 6. **Poll** every 3 seconds until the CLI exits, publishing its
@@ -384,6 +407,7 @@ to 300.
 | `poll` | The progress lines after a byte offset into the log, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
 | `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
 | `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |
+| `log` | A kept log of the run: every event as a progress line, the number of events and of lines that were not JSON, the log's size, and its raw JSONL as whole lines from the start within `max_bytes`; `missing` once the log is gone |
 
 The supervisor starts the CLI in its own process group in
 `repos/<repo>`, appends the CLI's raw events to the log, waits for it,
@@ -399,6 +423,26 @@ agent's home, is stored unredacted like a `shell` log, under the same
 retention: `.runs/` keeps the folders of the agent's 20 most recent
 runs, so the log of an older run is gone. Reading it back with
 `file_read` passes through redaction.
+
+#### Harness log
+
+```text
+GET /api/runs/:id/tasks/:call_id/log
+```
+
+Returns `{ lines, lines_truncated, raw, raw_truncated, bytes, events,
+unparsed }` from `guilds-harness log`, run on the agent's machine,
+waking it, as the task diff is read:
+
+- `lines` are the log's events as progress lines, at most the first
+  2000, each redacted then cut at 240 characters like live progress.
+- `raw` is the JSONL, whole lines from the start within 256 KiB;
+  `bytes` is the whole log's size.
+- Both are redacted with the agent's secret values. The run's GitHub
+  tokens are minted per run and are not in that set (SEC-32).
+- A call that is not a `code_task`, or whose result names no harness
+  and log, is 404 ("that call has no harness log"), and the machine is
+  not woken. A log the agent's home no longer keeps is 404 too.
 
 #### Harness environment
 

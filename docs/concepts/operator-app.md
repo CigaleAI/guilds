@@ -32,6 +32,22 @@ A view inside a page is a search parameter (`?tab=…`, `?run=…`,
 `/` opens the last guild visited, or the first. With none, it offers
 **Create a guild** or the **Builder**.
 
+### Back
+
+A link in a page's content that leads to another tab or page, such as
+a tool call's memory chip in an agent's chat or a link in guild
+settings, leaves a round back arrow floating over the top left of the
+page's body, just under the agent's or guild's tab row. It returns to
+the exact place the link was followed from, the open run and call
+included. Its tooltip names that place: its tab within the same agent
+or guild ("Back to Chat"), its full name from elsewhere ("Back to
+agent chat", "Back to guild settings").
+
+Moving within the new place keeps the button. Going back, or moving
+to another place by the tabs, the sidebar, or the browser, clears it.
+Links in tab rows and headers are the app's own navigation and leave
+no button.
+
 The [code map](../architecture/code-map.md) lists every route.
 
 ## How a page loads

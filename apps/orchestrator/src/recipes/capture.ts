@@ -54,6 +54,9 @@ function secretRecipeScope(secret: Record<string, unknown>, guildId: string): "o
   return secretGrants(secret).some((grant) => grant.guild_id === guildId) ? "guild" : "agent";
 }
 
+/** The harness keys a role leaves out while unset. */
+const HARNESS_KEYS = new Set(["harness", "harness_model", "harness_effort"]);
+
 /** The variables the harnesses read their subscription tokens from. */
 const HARNESS_TOKEN_VARIABLES = new Set(
   HARNESSES.flatMap((harness) => HARNESS_INFO[harness].secret ?? []),
@@ -105,8 +108,8 @@ export function portableRoleConfig(
     if (key === "box" || key === "cpu" || key === "memory_mib") {
       continue;
     }
-    // A role without a harness, or on its harness's default model, leaves the key out; apply settles it.
-    if ((key === "harness" || key === "harness_model") && filled[key] == null) {
+    // A role without a harness, or on its harness's default model or effort, leaves the key out; apply settles it.
+    if (HARNESS_KEYS.has(key) && filled[key] == null) {
       continue;
     }
     // A role left without secret aliases leaves the key out.

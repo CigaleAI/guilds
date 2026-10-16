@@ -221,8 +221,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     assert.equal((runE.metadata as Record<string, unknown>).continued_by_run_id, undefined);
     assert.equal((runE.errors as Array<Record<string, unknown>>).at(-1)?.operation, "generation.max_chain");
 
-    // A group delivery completes, and its cursor advances, when the chain ends; Memory is asked of
-    // the last run only.
+    // A group delivery completes, and its cursor advances, when the chain ends.
     live.streamCompletion = script((messages) => {
       const last = lastContent(messages);
       if (last === HANDOFF_REQUEST) {
@@ -256,8 +255,6 @@ test("a coding run near its input limit hands off and continues in a new run", {
     assert.equal(root.status, "completed");
     assert.equal(next.status, "completed");
     assert.equal(next.group_chat_through_seq, root.group_chat_through_seq);
-    assert.equal((root.metadata as Record<string, unknown>).memory_skipped, undefined);
-    assert.equal((next.metadata as Record<string, unknown>).memory_skipped, true);
     const cursor = await database.pool.query("SELECT group_chat_delivered_through FROM agents WHERE id = $1", [agentId]);
     assert.equal(Number(cursor.rows[0]?.group_chat_delivered_through), Number(root.group_chat_through_seq));
 

@@ -11,11 +11,9 @@ import {
   MemoryError,
   archiveFilename,
   archiveSourceToken,
-  hasMemoryWrite,
   isRelativeMemoryArchivePath,
   memoryUtcStamp,
   omitMemoryArchive,
-  offersMemoryWrite,
   readMemory,
   renderMemorySection,
   validateMemory,
@@ -101,26 +99,6 @@ test("validateMemory allows a body at the cap and rejects one over it", () => {
     () => validateMemory("x".repeat(MEMORY_LIMIT + 1)),
     (error: Error) => error instanceof MemoryError && error.message === `memory exceeds ${MEMORY_LIMIT} characters`,
   );
-});
-
-test("hasMemoryWrite is true only when a row's tool_name is memory_write", () => {
-  assert.equal(hasMemoryWrite([{ metadata: { tool_name: "memory_write" } }]), true);
-  assert.equal(hasMemoryWrite([{ metadata: { tool_name: "note_write" } }]), false);
-  assert.equal(hasMemoryWrite([{ metadata: [1] }]), false);
-  assert.equal(hasMemoryWrite([]), false);
-});
-
-test("offersMemoryWrite is true only when the snapshot lists that tool", () => {
-  assert.equal(
-    offersMemoryWrite({
-      tools: [{ function: { name: "memory_write" } }],
-    }),
-    true,
-  );
-  assert.equal(offersMemoryWrite({ tools: [{ function: { name: "note_write" } }] }), false);
-  assert.equal(offersMemoryWrite({ tools: [null, "x"] }), false);
-  assert.equal(offersMemoryWrite({ tools: "nope" }), false);
-  assert.equal(offersMemoryWrite({}), false);
 });
 
 test("create_agent writes empty memory", async () => {

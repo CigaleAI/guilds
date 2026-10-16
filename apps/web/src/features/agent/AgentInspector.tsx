@@ -20,6 +20,7 @@ import { useState } from "react";
 import { useFinishedChatIdleClose } from "./chat/chatLinger";
 import { useAgent, useBrokenEmbeds, useDeleteAgent } from "../../api/queries";
 import { agentLook } from "../../app/agents";
+import { ReturnButton } from "../../app/ReturnButton";
 import { useMediaQuery, wideScreen } from "../../app/media";
 import { readStored, writeStored } from "../../app/storage";
 import {
@@ -99,7 +100,7 @@ export function AgentInspector() {
 
   return (
     <Sheet open onOpenChange={(open) => !open && close()}>
-      <SheetContent expanded={full} aria-describedby={undefined}>
+      <SheetContent expanded={full} aria-describedby={undefined} data-return-source="">
         {agent.data ? (
           <>
             <SheetTitle className="sr-only">{agent.data.name}</SheetTitle>
@@ -182,6 +183,7 @@ export function AgentInspector() {
             {agent.data.config.browser ? (
               <BrowserLoginStrip guildId={guildId} agentId={agentId} />
             ) : null}
+            <ReturnButton />
             <Outlet />
           </>
         ) : agent.isError ? (

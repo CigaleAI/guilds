@@ -152,7 +152,7 @@ test("posts, writes, and errors inside the window decide the outcome", () => {
             { at: "2026-09-25T13:00:00Z", operation: "llm.complete", message: "old failure" },
             { at: "2026-09-25T14:02:00Z", operation: "generation.max_tool_calls", message: "Tool call limit reached." },
           ],
-          metadata: { memory_skipped: true },
+          metadata: {},
           group_chat_through_seq: null,
           previous_through_seq: null,
           created_at: ts("14:00:00"),
@@ -180,7 +180,6 @@ test("posts, writes, and errors inside the window decide the outcome", () => {
   ]);
   assert.equal(wake?.failed, true);
   assert.deepEqual(wake?.errors.map((error) => error.message), ["Tool call limit reached."]);
-  assert.equal(wake?.memory_skipped, true);
   assert.deepEqual(view.routines, [
     { id: "sch_1", agent_id: "a_scout", description: "Hunt", label: "Every hour (UTC)", instruction: "Hunt for leads." },
   ]);

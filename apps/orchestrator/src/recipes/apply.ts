@@ -22,6 +22,7 @@ import { coreModelCredentials } from "../llm/credentials.js";
 import { ModelsService } from "../llm/models.js";
 import { parseModelId } from "../llm/providers.js";
 import { HARNESSES, harnessModelOf, harnessOf, isHarness, type Harness } from "../coding/harnesses.js";
+import { harnessEffortOf, harnessEffortsFor, type Effort } from "../coding/harness-models.js";
 import { operatorActor } from "../artifacts/grants.js";
 import {
   ArtifactError,
@@ -71,7 +72,7 @@ import {
   type RecipeSchedule,
 } from "./schema.js";
 import { applyBlockingErrors, validateRecipe, type RecipeFinding, type ValidationContext } from "./validate.js";
-import { recipeNotePath, rewriteRecipeEmbedsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
+import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
 import type { RecipeStore } from "./store.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
@@ -673,7 +674,7 @@ export class RecipeApplyService {
         const agentId = roleToAgent.get(role.role);
         if (!agentId) continue;
         let task = withTrailingNewline(rewriteRolesToNames(roleTaskText(role, recipe), roleToName));
-        const rewritten = rewriteRecipeEmbedsToDisplayPaths(task, noteHref);
+        const rewritten = rewriteRecipePathsToDisplayPaths(task, noteHref);
         if (rewritten.unresolved.length) {
           throw new RecipeError(
             `${role.role} standing prompt has unresolved file links: ${rewritten.unresolved.join(", ")}`,
@@ -717,13 +718,20 @@ export class RecipeApplyService {
           );
         }
         for (const schedule of schedulesForRole(role, recipe)) {
+          const instruction = rewriteRecipePathsToDisplayPaths(
+            rewriteRolesToNames(schedule.instruction || roleTaskText(role, recipe), roleToName),
+            noteHref,
+          );
+          if (instruction.unresolved.length) {
+            throw new RecipeError(
+              `${role.role} schedule ${schedule.key} has unresolved file links: ${instruction.unresolved.join(", ")}`,
+            );
+          }
           await this.deps.schedules.create(
             agentId,
             { cron: schedule.cron, window: schedule.window },
             schedule.description,
-            clippedInstruction(
-              rewriteRolesToNames(schedule.instruction || roleTaskText(role, recipe), roleToName),
-            ),
+            clippedInstruction(instruction.text),
             { paused: true },
           );
         }
@@ -1630,15 +1638,30 @@ function roleModelMap(models: RoleModel[]): Map<string, string> {
   return new Map(models.flatMap((item) => (item.model ? [[item.role, item.model] as const] : [])));
 }
 
+/** The harness the recipe names, while the role applies with it; else null. */
+function keptRecipeHarness(roleConfig: Record<string, unknown>, applied: Harness | null): Harness | null {
+  return applied !== null && applied === harnessOf(roleConfig) ? applied : null;
+}
+
 /** The recipe's harness model, kept only while the role applies with the harness the recipe names. */
 function appliedHarnessModel(roleConfig: Record<string, unknown>, applied: Harness | null): string | null {
-  return applied !== null && applied === harnessOf(roleConfig) ? harnessModelOf(roleConfig) : null;
+  return keptRecipeHarness(roleConfig, applied) === null ? null : harnessModelOf(roleConfig);
+}
+
+/** The recipe's harness effort, kept only with the recipe's harness and when its model runs at it. */
+function appliedHarnessEffort(roleConfig: Record<string, unknown>, applied: Harness | null): Effort | null {
+  const kept = keptRecipeHarness(roleConfig, applied);
+  const effort = harnessEffortOf(roleConfig);
+  if (kept === null || effort === null) {
+    return null;
+  }
+  return harnessEffortsFor(kept, harnessModelOf(roleConfig)).includes(effort) ? effort : null;
 }
 
 /**
  * The agent config a role applies as: the role's, with the model and harness the operator chose
  * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
- * harness, and the recipe's harness model only with the recipe's harness. The machine the agent
+ * harness, and the recipe's harness model and effort only with the recipe's harness. The machine the agent
  * goes on is the apply's.
  */
 export function configFromRecipeRole(role: RecipeRole, model?: string, harness?: Harness): Record<string, unknown> {
@@ -1659,6 +1682,7 @@ export function configFromRecipeRole(role: RecipeRole, model?: string, harness?:
               coding,
               harness: applied,
               harness_model: appliedHarnessModel(roleConfig, applied),
+              harness_effort: appliedHarnessEffort(roleConfig, applied),
               secret_aliases: secretAliasesOf(roleConfig),
             }),
           ),

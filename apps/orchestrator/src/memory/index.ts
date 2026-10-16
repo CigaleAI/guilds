@@ -1,6 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
-import { jsonObj } from "../db/json.js";
 import { formatUtcNow } from "../lib/clock.js";
 
 export {
@@ -16,18 +15,26 @@ export const MEMORY_ARCHIVE_KEEP = 50;
 
 export const EMPTY_MEMORY = "";
 
-export const MEMORY_REMINDER =
-  "Memory: this wake has not called memory_write. Call it now.";
-
 export const MEMORY_INTRO = `
 ### Your Memory
-Memory is a private place you write whatever you want your future runs to
-remember. Rewrite it with memory_write. The Task above is the operator's
-standing purpose and stays as written.
+Memory is a private place for what your future runs should know and could not
+easily find again. Rewrite it with memory_write. The Task above is the
+operator's standing purpose and stays as written.
 
-There is no required format. Write what will help you next time. Before you
-finish, rewrite Memory when this run changed something you want to keep; a
-schedule wake-up always writes.
+Most runs do not need to write. Before you finish, ask whether the next run
+would make a mistake, repeat work, or waste steps without something this run
+learned. Write only when it would. What earns a place:
+- how to do the job better: an approach that worked or failed, a quirk of a
+  tool or source, a preference the operator stated
+- where to resume: unfinished work, a commitment you made, a position the
+  next run cannot recover from records or history
+- where things live: a pointer to the note, record, or collection that holds
+  the detail, never the detail itself
+
+Leave out a log of this run, anything the Task, State, notes, records, or
+history already hold, anything one tool call finds again, and secrets. A write
+replaces the whole file: keep what still holds, drop what is done or stale,
+and keep it short. There is no required format.
 `.trim();
 
 export const MEMORY_INTRO_READONLY = `
@@ -43,13 +50,6 @@ export class MemoryError extends Error {
     super(message);
     this.name = "MemoryError";
   }
-}
-
-function plainObject(value: unknown): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return null;
 }
 
 export function readMemory(agentDir: string): string {
@@ -111,39 +111,6 @@ export function archiveHeader(args: {
     `Current: ${memoryUtcIso(args.started)} → ${memoryUtcIso(args.ended)}\n` +
     `Replaced by: ${args.replacedBy}\n`
   );
-}
-
-export function memoryReminderMessage(generation: number): [
-  { role: string; content: string },
-  Record<string, unknown>,
-] {
-  return [{ role: "system", content: MEMORY_REMINDER }, { source: "memory", generation }];
-}
-
-function rowToolName(row: Record<string, unknown>): string | null {
-  const record = plainObject(jsonObj(row.metadata));
-  return typeof record?.tool_name === "string" ? record.tool_name : null;
-}
-
-export function hasMemoryWrite(rows: Array<Record<string, unknown>>): boolean {
-  return rows.some((row) => rowToolName(row) === "memory_write");
-}
-
-function snapshotToolName(tool: unknown): string {
-  const record = plainObject(tool);
-  if (!record) {
-    return "";
-  }
-  const fn = plainObject(record.function) ?? {};
-  return typeof fn.name === "string" ? fn.name : "";
-}
-
-export function offersMemoryWrite(snapshot: Record<string, unknown>): boolean {
-  const tools = snapshot.tools;
-  if (!Array.isArray(tools)) {
-    return false;
-  }
-  return tools.some((tool) => snapshotToolName(tool) === "memory_write");
 }
 
 export { MEMORY_DIR as historyArchiveDir, LEGACY_MEMORY_DIR as legacyMemoryDir } from "./archive.js";
