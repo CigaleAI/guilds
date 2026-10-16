@@ -280,10 +280,10 @@ machine that has it."
   `high`, `xhigh`, `max`, `ultra`, or null. A blank value saves as
   null. Otherwise 422 `harness_effort must be one of: none, minimal,
   …`. Without a harness: 422 `harness_effort needs a harness`. An
-  effort the model does not run at: 422 `harness_effort must be one of
-  <efforts> for <model>`, or `harness_effort: <model> takes no effort
-  on cursor` for a model that takes none. The default model reads as
-  "the default model".
+  effort the model does not run at: 422
+  `harness_effort must be one of <efforts> for <model>`, or
+  `harness_effort: <model> takes no effort on cursor` for a model
+  that takes none. The default model reads as "the default model".
 
 ### HTTP
 
