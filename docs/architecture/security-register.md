@@ -8,6 +8,8 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-35 | Evidence the Studio coach reads can steer a proposal to widen an agent's access | Open, accepted |
+| SEC-34 | A Studio session kept working after its user could no longer see the guild | Fixed 2026-10-17 |
 | SEC-33 | Any organisation owner or admin can find users by name and add them without their consent | Open |
 | SEC-32 | The harness log the app reads is redacted only with the agent's secret values | Open |
 | SEC-31 | Cursor runs a repository's hooks | Open, accepted |
@@ -41,6 +43,57 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-35 — Evidence the Studio coach reads can steer a proposal to widen an agent's access
+
+**Status:** open, accepted.
+
+**Found:** 2026-10-17, adding access requests to Prompt Studio.
+
+**Where:** `studio_edit_access` in `apps/orchestrator/src/studio/tools.ts`
+and `apps/orchestrator/src/studio/access.ts`.
+
+**Exposure:** the coach reads run transcripts, notes, Memory, group
+messages, and data from logins the operator granted to the session.
+Any of it can carry text written to steer a model. Steered text could
+lead the coach to propose turning on, for one agent, a native tool, a
+file level, a connection, or a connection tool that changes data in an
+external service.
+
+**Control in place:** the coach writes nothing. An access request is a
+card the operator applies or declines, and applying writes only that
+agent's own bindings, as the operator, after checking the agent's
+resolved access has not moved since the request. The card shows the
+access before and after, marks each connection tool that changes data,
+and names every such tool the request gives back. The Studio template
+treats everything it reads as evidence, never instructions.
+
+**Residual risk:** an operator who applies a request without reading it
+can give an agent a tool that changes data. Closing it fully takes
+refusing access widening from Studio and leaving it to the Access pane.
+
+## SEC-34 — A Studio session kept working after its user could no longer see the guild
+
+**Status:** fixed 2026-10-17.
+
+**Found:** 2026-10-17, checking who may apply a Studio access request.
+
+**Where:** `StudioService.getOwnedSession` and `listSessions` in
+`apps/orchestrator/src/studio/index.ts`.
+
+**Exposure:** Studio checked that its user could see the source guild
+only when a session was created. A user later removed from a private
+guild's operators, or whose guild became private, kept the sessions
+they had opened: they could read the guild's evidence through the
+coach, publish Task drafts, and apply edits to Memory, notes, tables,
+and access.
+
+**Fix:** every session request loads the source guild and answers 404
+when the user cannot see it, and the session list leaves out sessions
+on such guilds.
+
+**Residual risk:** none known. A session whose guild was deleted stays
+readable, as before; its live tools are off.
 
 ## SEC-33 — Any organisation owner or admin can find users by name and add them without their consent
 

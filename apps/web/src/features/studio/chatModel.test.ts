@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { StudioMessage } from "../../api/types";
-import { connectionLabel, editTargetLabel, focusOf, widgetOf } from "./chatModel";
+import {
+  applyLabel,
+  batchReply,
+  connectionLabel,
+  decisionOf,
+  editTargetLabel,
+  focusOf,
+  widgetOf,
+} from "./chatModel";
 
 function message(
   seq: number,
@@ -49,6 +57,10 @@ test("edit and access requests are read from tool results", () => {
     }),
     "leads · table",
   );
+  assert.equal(
+    editTargetLabel({ kind: "access", target: { agent_id: "a_1", agent_name: "wallet" } }),
+    "wallet · access",
+  );
   const access = message(5, {
     role: "tool",
     content: JSON.stringify({
@@ -78,4 +90,39 @@ test("a focused message names what it was pinned to", () => {
     },
   );
   assert.equal(focusOf(message(2, { role: "user" }, { source: "ui" })), null);
+});
+
+test("a turn's requests are answered by one reply once each is decided", () => {
+  const memory = {
+    kind: "edit" as const,
+    edit: { kind: "memory" as const, target: { agent_name: "wallet" } },
+  };
+  const note = {
+    kind: "edit" as const,
+    edit: { kind: "note" as const, target: { title: "Playbook" } },
+  };
+  const login = { kind: "access" as const, connection: { server: { display_name: "X" } } };
+  assert.equal(batchReply([]), null);
+  assert.equal(batchReply([decisionOf(memory, true), null]), null);
+  assert.equal(
+    batchReply([decisionOf(memory, true), decisionOf(note, true)]),
+    "Applied the edit to wallet · Memory. Applied the edit to Playbook. Continue.",
+  );
+  assert.equal(
+    batchReply([decisionOf(memory, true), decisionOf(note, false), decisionOf(login, true)]),
+    "Applied the edit to wallet · Memory. Declined the edit to Playbook. Granted read access to X. Continue without what I declined.",
+  );
+  assert.equal(
+    batchReply([decisionOf(login, false)]),
+    "Declined read access to X. Continue without it.",
+  );
+});
+
+test("the apply button names what a create or delete makes", () => {
+  assert.equal(applyLabel({ kind: "note", action: "create" }), "Create note");
+  assert.equal(applyLabel({ kind: "note", action: "delete" }), "Delete note");
+  assert.equal(applyLabel({ kind: "collection", action: "create" }), "Create table");
+  assert.equal(applyLabel({ kind: "collection", action: "delete" }), "Delete table");
+  assert.equal(applyLabel({ kind: "note" }), "Apply edit");
+  assert.equal(applyLabel({ kind: "access" }), "Apply edit");
 });

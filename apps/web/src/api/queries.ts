@@ -2191,10 +2191,13 @@ export function useDraftAction(sessionId: string) {
   });
 }
 
-export function useStudioEdit(id: string, seq: number) {
-  return useQuery({
-    queryKey: keys.studioEdit(id, seq),
-    queryFn: () => api<StudioEdit>(`${studioPath(id)}/edits/${seq}`),
+/** The coach edits at these tool message seqs, in the same order. */
+export function useStudioEdits(id: string, seqs: readonly number[]) {
+  return useQueries({
+    queries: seqs.map((seq) => ({
+      queryKey: keys.studioEdit(id, seq),
+      queryFn: () => api<StudioEdit>(`${studioPath(id)}/edits/${seq}`),
+    })),
   });
 }
 
@@ -2208,6 +2211,7 @@ export function useDecideEdit(id: string) {
     onSuccess: () => {
       refresh();
       void client.invalidateQueries({ queryKey: keys.databases });
+      void client.invalidateQueries({ queryKey: keys.accessAll });
     },
   });
 }

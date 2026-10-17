@@ -1,6 +1,9 @@
 import type { StudioMessage } from "../../api/types";
 
-/** What a coach edit changes: an agent's memory, a note, the guild's descriptions, or a table. */
+/**
+ * What a coach edit changes: an agent's memory or access, a note, the guild's descriptions, or a
+ * table.
+ */
 export type EditTarget = {
   agent_id?: string;
   agent_name?: string;
@@ -19,8 +22,8 @@ export type EditWidget = {
   title?: string;
   reason?: string;
   edit: {
-    kind?: "memory" | "note" | "guild" | "collection";
-    /** What a table edit does to its table. */
+    kind?: "memory" | "note" | "guild" | "collection" | "access";
+    /** What a table or note edit does to its target; a note edit without one changes its text. */
     action?: "create" | "edit" | "delete";
     target?: EditTarget;
     base_version?: number;
@@ -42,10 +45,14 @@ export type AccessWidget = {
   };
 };
 
-/** What an edit changes, in words: "wallet · Memory", a note's title, "degen · about", "leads · table". */
+/**
+ * What an edit changes, in words: "wallet · Memory", "wallet · access", a note's title, "degen ·
+ * about", "leads · table".
+ */
 export function editTargetLabel(edit: EditWidget["edit"]): string {
   const target = edit.target ?? {};
   if (edit.kind === "memory") return `${target.agent_name || target.agent_id || "agent"} · Memory`;
+  if (edit.kind === "access") return `${target.agent_name || target.agent_id || "agent"} · access`;
   if (edit.kind === "collection") return `${target.name || "table"} · table`;
   if (edit.kind === "note") {
     return target.title || target.display_path?.split("/").pop() || "note";
@@ -57,6 +64,48 @@ export function editTargetLabel(edit: EditWidget["edit"]): string {
 export function connectionLabel(connection: AccessWidget["connection"]): string {
   const name = connection.server?.display_name || connection.server?.slug || "this login";
   return connection.account_hint ? `${name} · ${connection.account_hint}` : name;
+}
+
+/** The operator's answer to one request, in the words the coach reads. */
+export type RequestDecision = { accepted: boolean; line: string };
+
+/** The apply button's words: what applying a create or delete makes, else "Apply edit". */
+export function applyLabel(edit: EditWidget["edit"]): string {
+  const noun = edit.kind === "note" ? "note" : "table";
+  if (edit.action === "create") return `Create ${noun}`;
+  if (edit.action === "delete") return `Delete ${noun}`;
+  return "Apply edit";
+}
+
+/** One request's answer: an edit applied or declined, a login granted or declined. */
+export function decisionOf(widget: EditWidget | AccessWidget, accepted: boolean): RequestDecision {
+  if (widget.kind === "edit") {
+    const target = editTargetLabel(widget.edit);
+    return {
+      accepted,
+      line: accepted ? `Applied the edit to ${target}.` : `Declined the edit to ${target}.`,
+    };
+  }
+  const label = connectionLabel(widget.connection);
+  return {
+    accepted,
+    line: accepted ? `Granted read access to ${label}.` : `Declined read access to ${label}.`,
+  };
+}
+
+/**
+ * The one reply that answers every request a turn made, so the coach continues once with all of
+ * them decided; null while any request is still open.
+ */
+export function batchReply(decisions: readonly (RequestDecision | null)[]): string | null {
+  if (!decisions.length || decisions.some((decision) => decision === null)) return null;
+  const all = decisions as RequestDecision[];
+  const next = all.some((decision) => !decision.accepted)
+    ? all.length === 1
+      ? "Continue without it."
+      : "Continue without what I declined."
+    : "Continue.";
+  return [...all.map((decision) => decision.line), next].join(" ");
 }
 
 /** A tool result that asks the operator to decide: an edit to apply, or a login to grant. */

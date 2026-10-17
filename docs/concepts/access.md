@@ -87,7 +87,10 @@ every one of its tools off.
 Out of the box, the instance switches on the note tools, the record
 tools, `memory_write`, the script tools, the routine tools, the two
 secret tools, and `group_post`. New agents inherit that set. An
-organisation, a guild, or an agent can turn any of them off.
+organisation, a guild, or an agent can turn any of them off. The
+coach in [Prompt Studio](prompt-studio.md) can propose an agent's own
+switches, for tools its work never calls; the operator applies or
+declines each proposal.
 
 Some tools have no switch:
 

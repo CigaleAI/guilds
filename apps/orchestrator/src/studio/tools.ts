@@ -24,6 +24,7 @@ import { wrapEvidence } from "./system.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { ScriptError } from "../scripts/validation.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
+import { NATIVE_TOOLS } from "../db/seed/catalog.js";
 import {
   STUDIO_CONNECTION_ACCESS_WIDGET,
   callConnectionTool,
@@ -43,7 +44,16 @@ import {
   STUDIO_TOTAL_RETURNED_BYTES,
 } from "./constants.js";
 import type { StudioDraftService } from "./drafts.js";
-import { editRequest, loadGuildBase, loadMemoryBase, loadNoteBase, tableEditRequest, type EditScope } from "./edits.js";
+import {
+  accessEditRequest,
+  editRequest,
+  loadGuildBase,
+  loadMemoryBase,
+  loadNoteBase,
+  noteEditRequest,
+  tableEditRequest,
+  type EditScope,
+} from "./edits.js";
 import { listTables, readTable } from "./tables.js";
 
 export type StudioToolContext = {
@@ -1116,7 +1126,7 @@ export const studioGetAgentAccess: StudioTool = {
   name: "studio_get_agent_access",
   schema: functionSchema(
     "studio_get_agent_access",
-    "Inspect what one source-guild agent is offered at run start: native tools, scripts, secret names, artifact levels, and MCP connections with their listed tools. Each connection says whether this Studio session may read through it (studio_granted).",
+    "Inspect what one source-guild agent is offered at run start: native tools, scripts, secret names, artifact levels, and MCP connections with their listed tools. Withheld lists name what the agent could be offered but is not. Each connection says whether this Studio session may read through it (studio_granted).",
     {
       agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
     },
@@ -1130,6 +1140,7 @@ export const studioGetAgentAccess: StudioTool = {
       agent_id: agent.id,
       name: agent.name,
       native_tools: access.native_tools,
+      withheld_native_tools: NATIVE_TOOLS.filter((name) => !access.native_tools.includes(name)),
       scripts: access.scripts,
       secrets: access.secrets,
       artifact_levels: access.artifact_levels,
@@ -1141,6 +1152,9 @@ export const studioGetAgentAccess: StudioTool = {
         status: connection.status,
         server_enabled: connection.server_enabled,
         offered_tools: connection.offered_tools,
+        withheld_tools: connection.tools
+          .map((tool) => tool.name)
+          .filter((name) => !connection.offered_tools.includes(name)),
         studio_granted: granted.has(connection.id),
         studio_readable_tools: connection.tools.filter((tool) => tool.read_only).map((tool) => tool.name),
       })),
@@ -1340,6 +1354,87 @@ export const studioEditArtifact: StudioTool = {
   async handler(ctx, args) {
     const base = await loadNoteBase(editScope(ctx), argString(args, "display_path"));
     return editRequest(base, args, baseVersionArg(args));
+  },
+};
+
+export const studioCreateNote: StudioTool = {
+  name: "studio_create_note",
+  schema: functionSchema(
+    "studio_create_note",
+    "Propose a new note: a playbook, a working file, or shared rules at the narrowest level that holds every reader. Nothing is written: the turn pauses and the operator applies or declines. Search with studio_find_artifacts first and edit a note that fits instead. The result's target carries the display path to embed or name in a Task draft.",
+    {
+      level: {
+        type: "string",
+        enum: ["agent", "guild", "org"],
+        description: "agent: one agent's own file. guild: read by the source guild's agents. org: read across the organisation. Required.",
+      },
+      agent_id: { type: "string", description: "Source-guild agent id or name. Required for level agent." },
+      key: { type: "string", description: "File name ending in .md, no folders, for example playbook.md. Required." },
+      title: { type: "string", description: "Short title shown in Files." },
+      content: { type: "string", description: "Complete note body. Required." },
+      reason: { type: "string", description: "Why this note, one or two sentences, citing evidence. Required." },
+    },
+    ["level", "key", "content", "reason"],
+  ),
+  async handler(ctx, args) {
+    const handle = studioAgentHandleFromArgs(args);
+    const agent = argString(args, "level") === "agent" && handle ? await resolveHandle(ctx, handle) : null;
+    return noteEditRequest(editScope(ctx), "studio_create_note", args, agent ? String(agent.id) : null);
+  },
+};
+
+export const studioDeleteNote: StudioTool = {
+  name: "studio_delete_note",
+  schema: functionSchema(
+    "studio_delete_note",
+    "Propose deleting one note of the source guild, one of its agents, or the organisation, by display path. Nothing is written: the turn pauses and the operator applies or declines. Applying fails while any Task embeds the note, so draft those Tasks first. Read the note with studio_get_artifact and pass its version as base_version.",
+    {
+      display_path: { type: "string", description: "Display path from studio_find_artifacts or studio_get_artifact. Required." },
+      base_version: { type: "integer", description: "Note version the request was built from. Required." },
+      reason: { type: "string", description: "Why delete it, one or two sentences, citing evidence. Required." },
+    },
+    ["display_path", "base_version", "reason"],
+  ),
+  async handler(ctx, args) {
+    return noteEditRequest(editScope(ctx), "studio_delete_note", args, null);
+  },
+};
+
+const ACCESS_SETTINGS = {
+  type: "object",
+  additionalProperties: { type: "string", enum: ["on", "off", "inherit"] },
+};
+
+export const studioEditAccess: StudioTool = {
+  name: "studio_edit_access",
+  schema: functionSchema(
+    "studio_edit_access",
+    "Propose what one source-guild agent is offered: native tools, file levels, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, coding, scripting, and memory switches are agent configuration, not access.",
+    {
+      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
+      native_tools: {
+        ...ACCESS_SETTINGS,
+        description: "Native tool name to setting, from native_tools or withheld_native_tools.",
+      },
+      artifact_grants: {
+        ...ACCESS_SETTINGS,
+        description: "File level to setting: read_guild, write_guild, read_org, write_org.",
+      },
+      connections: {
+        ...ACCESS_SETTINGS,
+        description: "Connection id from studio_get_agent_access to setting: the whole connection for this agent.",
+      },
+      connection_tools: {
+        ...ACCESS_SETTINGS,
+        description: "Connection tool name from offered_tools or withheld_tools to setting.",
+      },
+      reason: { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." },
+    },
+    ["agent_id", "reason"],
+  ),
+  async handler(ctx, args) {
+    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
+    return accessEditRequest(editScope(ctx), String(agent.id), args);
   },
 };
 
@@ -1545,7 +1640,10 @@ export const STUDIO_TOOLS: StudioTool[] = [
   studioGetCollection,
   studioEditMemory,
   studioEditArtifact,
+  studioCreateNote,
+  studioDeleteNote,
   studioEditGuild,
+  studioEditAccess,
   studioCreateCollection,
   studioEditCollection,
   studioDeleteCollection,

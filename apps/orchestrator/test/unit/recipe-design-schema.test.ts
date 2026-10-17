@@ -108,6 +108,40 @@ test("the builder example declares columns for every collection and its tasks na
   assert.equal("object_put" in scout.native_tools, false);
 });
 
+test("validation warns when a builder design loads roles with what their work does not use", () => {
+  const narrow = ["design.shared_note_roles", "access.broad_native", "access.broad_connection"];
+  const example = parseRecipe(readBuilderWriteExample());
+  assert.deepEqual(
+    validateRecipe(example, ctx).filter((item) => narrow.includes(item.code)),
+    [],
+  );
+
+  example.notes.push({
+    id: "roles",
+    level: "guild",
+    key: "roles.md",
+    body: "The scout finds candidates. The archivist writes them to Notion.",
+    kind: "seed",
+    author: { by: "builder", reviewed: false },
+  } as (typeof example.notes)[number]);
+  for (const role of example.roles) {
+    role.task.body = `${role.task.body}\n\n![[guild/roles.md]]`;
+  }
+  example.roles[0]!.native_tools = { note_get: true };
+  example.connections[1]!.roles.archivist!.tools = {};
+  const findings = validateRecipe(example, ctx).filter((item) => narrow.includes(item.code));
+  assert.deepEqual(
+    findings.map((item) => [item.code, item.path]),
+    [
+      ["design.shared_note_roles", "notes.roles"],
+      ["access.broad_native", "roles.scout.native_tools"],
+      ["access.broad_connection", "connections.notion.roles.archivist.tools"],
+    ],
+  );
+  assert.ok(findings.every((item) => item.severity === "warning"));
+  assert.match(findings[0]!.message, /scout, archivist/);
+});
+
 test("the builder prompt teaches column design and grants", () => {
   const text = readBuilderSystemTemplate();
   assert.match(text, /## Collections/);

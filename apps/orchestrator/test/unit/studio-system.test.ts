@@ -10,6 +10,7 @@ import {
 } from "../../src/studio/system.js";
 import { STUDIO_TOOLS, sliceStudioBytes, studioListAgents, studioToolMap, normalizeStudioListFilter, normalizeStudioListWarning, resolveSourceGuildAgent, studioAgentHandleFromArgs } from "../../src/studio/tools.js";
 import { STUDIO_DEFAULT_TEMPERATURE, STUDIO_TASK_EXCERPT_WORDS } from "../../src/studio/constants.js";
+import { STUDIO_EDIT_TOOLS } from "../../src/studio/edits.js";
 import { TEST_MODEL } from "../helpers/models.js";
 
 test("studio system template tells the coach to use the session UTC clock", () => {
@@ -136,6 +137,24 @@ test("studio tool registry writes only through operator-resolved drafts and edit
   assert.ok(!names.includes("note_write"));
   assert.ok(!names.includes("memory_write"));
   assert.ok(!names.some((name) => name.startsWith("browser")));
+  const writes = names.filter((name) => /^studio_(edit|create|delete)_/.test(name) && name !== "studio_create_task_draft");
+  assert.deepEqual(
+    writes.filter((name) => !(STUDIO_EDIT_TOOLS as readonly string[]).includes(name)),
+    [],
+  );
+  assert.ok(writes.includes("studio_create_note"));
+  assert.ok(writes.includes("studio_delete_note"));
+  assert.ok(writes.includes("studio_edit_access"));
+});
+
+test("studio system prompt makes keeping agents narrow part of the coach's job", () => {
+  const text = readStudioSystemTemplate();
+  assert.match(text, /## Narrow agents/);
+  assert.match(text, /No file describes every role/);
+  assert.match(text, /studio_create_note/);
+  assert.match(text, /studio_edit_access/);
+  assert.match(text, /Narrow is not isolated/);
+  assert.doesNotMatch(text, /You cannot create notes/);
 });
 
 test("studio_get_agent_context defaults to the standing task and can continue from a cursor", () => {

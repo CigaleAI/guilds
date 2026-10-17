@@ -285,11 +285,22 @@ Tasks name systems and outcomes, not namespaced tool ids.
 
 The coach is a system designer. It isolates each durable element into
 a named file or specialist so the guild can evolve and the operator
-can inspect Files.
+can inspect Files. Each role carries only the files and tools its own
+work uses, and roles meet only in the channels the design names: the
+collections they hand work through and the tagged messages their Tasks
+budget. Each Task names its own side of a hand-off, not the peer's job.
 
-Shared schema and field maps are one guild- or org-level note. A Task
-that must see them every wake embeds `![[guild/<key>]]` or
-`![[org/<key>]]` (see [Task](task.md)).
+A role's own rules and working files are agent-level notes. A guild- or
+org-level note holds only what every role that embeds it uses, and a
+Task that must see it every wake embeds `![[guild/<key>]]` or
+`![[org/<key>]]` (see [Task](task.md)). No note describes each role's
+job: agents see their peers' `focus` in State, and collection columns
+reach every agent that can read the collection.
+
+Every native tool is on unless a role's `native_tools` sets it `false`,
+and a connection role with `tools: {}` is offered every tool of that
+connection. The coach sets `false` for each tool a role does not call
+and turns `config.scripting` off for a role that writes no scripts.
 
 Working files the agent revises are named and read with `note_get`. A
 bare filename or "inlined from: …" is not an embed.
@@ -369,7 +380,14 @@ validation (every finding is listed in
 
 Advisory findings cover, among others, a consumer that shares its
 producer's cadence (`design.cadence_collision`), a browser site that
-failed a viability test, and a role with no routine.
+failed a viability test, and a role with no routine. In a builder
+recipe with two or more roles they also cover what loads a role with
+work it does not do:
+
+- a guild- or org-level note that a role reads and that names two or
+  more roles (`design.shared_note_roles`)
+- a role whose `native_tools` turns no tool off (`access.broad_native`)
+- a connection role that lists no tools (`access.broad_connection`)
 
 Operator tool and connector removals from the blueprint become
 `access.tool_removed` / `access.connector_removed` info findings so

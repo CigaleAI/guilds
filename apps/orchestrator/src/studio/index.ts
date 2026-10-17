@@ -34,6 +34,7 @@ import { studioToolSchemas } from "./tools.js";
 import { previewCurrentState, projectGuildConnections, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { grantedConnectionIds, reachableConnection, type StudioMcpClient } from "./connections.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocus } from "./focus.js";
+import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
 
 export type StudioServiceDeps = {
@@ -223,7 +224,14 @@ export class StudioService {
 
   async listSessions(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
     const rows = await this.store.listSessions(orgId, userId);
-    return rows.map((row) => this.viewSession(row));
+    const hidden = new Set<string>();
+    for (const guildId of new Set(rows.map((row) => String(row.source_guild_id ?? "")).filter(Boolean))) {
+      const guild = await this.deps.repo.getGuild(guildId);
+      if (guild && !canSeeGuild(guild, userId)) hidden.add(guildId);
+    }
+    return rows
+      .filter((row) => !hidden.has(String(row.source_guild_id ?? "")))
+      .map((row) => this.viewSession(row));
   }
 
   async getOwnedSession(sessionId: string, user: Record<string, unknown>, org: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -236,6 +244,14 @@ export class StudioService {
     }
     if (!session.created_by_user_id) {
       throw new StudioError(404, "studio session not found");
+    }
+    // Seeing the guild is checked on every request, not only at creation: a
+    // user who can no longer see a private guild loses its sessions too.
+    if (session.source_guild_id) {
+      const guild = await this.deps.repo.getGuild(String(session.source_guild_id));
+      if (guild && !canSeeGuild(guild, String(user.id))) {
+        throw new StudioError(404, "studio session not found");
+      }
     }
     if (!session.source_guild_id && session.status === "active") {
       await this.store.updateSession(sessionId, { status: "blocked", blocked_reason: "source_deleted" }, new Date());
@@ -858,7 +874,7 @@ export class StudioService {
         },
         new Date(),
       );
-    } else if (outcome.applied && this.deps.publishFilesChanged) {
+    } else if (outcome.applied && !isAccessTool(outcome.record.toolName) && this.deps.publishFilesChanged) {
       await this.deps.publishFilesChanged(String(session.source_guild_id));
     }
     const record = findEditRecord(await this.store.listMessages(String(session.id)), seq);

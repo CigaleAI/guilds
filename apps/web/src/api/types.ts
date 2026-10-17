@@ -1225,12 +1225,13 @@ export type StudioEdit = {
   stale: boolean;
   /**
    * The live text now: a note or memory, the guild's about and description, or a table's
-   * definition and access written out line by line (empty for a table not created yet).
+   * definition or an agent's access written out line by line (empty for a table or note not
+   * created yet).
    */
   live: string | { about: string; description: string } | null;
-  /** The text the edit writes, in the same shape as `live`; empty for a table it deletes. */
+  /** The text the edit writes, in the same shape as `live`; empty for a table or note it deletes. */
   proposed: string | { about: string; description: string } | null;
-  /** What applying a table edit does to its records and readers. */
+  /** What applying a table, note create or delete, or access edit does. */
   effects?: string[];
   error?: string;
   applied_version?: number;

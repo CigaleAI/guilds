@@ -7,7 +7,7 @@ import {
   useDecideEdit,
   useGrantStudioConnection,
   usePostStudioMessage,
-  useStudioEdit,
+  useStudioEdits,
 } from "../../api/queries";
 import type { LiveTurn } from "../../api/liveTurn";
 import type { StudioEdit, StudioMessage, StudioSession } from "../../api/types";
@@ -26,12 +26,16 @@ import type { FlowSegment } from "../agent/runs/runFlowModel";
 import { CoachLog, type CoachRow } from "../coach/CoachLog";
 import { answered } from "../coach/coachRows";
 import {
+  applyLabel,
+  batchReply,
   connectionLabel,
+  decisionOf,
   editTargetLabel,
   focusOf,
   widgetOf,
   type AccessWidget,
   type EditWidget,
+  type RequestDecision,
 } from "./chatModel";
 import type { StudioPin } from "./investigate";
 import { focusLocation } from "./location";
@@ -59,7 +63,8 @@ export function StudioChat({ session, messages, live, pin, onUnpin }: StudioChat
   const askElsewhere = useAskInNewSession(session);
   const cancel = useCancelStudio(session.id);
   const [fresh, setFresh] = useState(false);
-  const generating = session.generation_state !== "idle" || post.isPending || askElsewhere.isPending;
+  const generating =
+    session.generation_state !== "idle" || post.isPending || askElsewhere.isPending;
 
   const failed = (error: Error) =>
     toast({ kind: "error", title: "Couldn't message the coach", description: error.message });
@@ -99,35 +104,25 @@ export function StudioChat({ session, messages, live, pin, onUnpin }: StudioChat
       },
     );
 
-  const widgetsAfter = (segment: FlowSegment<CoachRow>, rows: readonly CoachRow[]) =>
-    segment.steps.flatMap((step) =>
+  const widgetsAfter = (segment: FlowSegment<CoachRow>, rows: readonly CoachRow[]) => {
+    const requests = segment.steps.flatMap((step) =>
       step.calls.flatMap((call) => {
         const widget = widgetOf(call.result);
-        if (!widget || !call.result) return [];
-        const seq = call.result.seq;
-        const done = answered(rows, seq);
-        return [
-          widget.kind === "edit" ? (
-            <EditCard
-              key={`edit-${seq}`}
-              session={session}
-              seq={seq}
-              widget={widget}
-              answered={done}
-              onDecided={carryOn}
-            />
-          ) : (
-            <AccessCard
-              key={`access-${seq}`}
-              session={session}
-              widget={widget}
-              answered={done}
-              onDecided={carryOn}
-            />
-          ),
-        ];
+        return widget && call.result ? [{ seq: call.result.seq, widget }] : [];
       }),
     );
+    if (!requests.length) return null;
+    return (
+      <RequestBatch
+        key={`requests-${requests[0]?.seq}`}
+        session={session}
+        requests={requests}
+        answered={requests.every((request) => answered(rows, request.seq))}
+        replying={post.isPending}
+        onReply={carryOn}
+      />
+    );
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -221,46 +216,199 @@ function RequestCard({
   );
 }
 
-function EditCard({
+type Request = { seq: number; widget: EditWidget | AccessWidget };
+
+/**
+ * The requests one coach turn made. Each is decided on its own card, or every pending edit at
+ * once; the coach continues with one reply only when every request is applied, granted, or
+ * declined.
+ */
+function RequestBatch({
   session,
-  seq,
-  widget,
+  requests,
   answered: done,
-  onDecided,
+  replying,
+  onReply,
 }: {
   session: StudioSession;
-  seq: number;
-  widget: EditWidget;
+  requests: Request[];
   answered: boolean;
-  onDecided: (message: string) => void;
+  /** Whether a reply to the coach is being sent. */
+  replying: boolean;
+  onReply: (content: string) => void;
 }) {
-  const view = useStudioEdit(session.id, seq);
+  const editSeqs = requests.filter((request) => request.widget.kind === "edit").map((r) => r.seq);
+  const views = useStudioEdits(session.id, editSeqs);
   const decide = useDecideEdit(session.id);
-  const target = editTargetLabel(widget.edit);
-  const lines = widget.edit.lines ?? {};
-  const status = view.data?.status ?? "pending";
+  const grant = useGrantStudioConnection(session.id);
+  const [decided, setDecided] = useState<Record<number, RequestDecision>>({});
+  const [settling, setSettling] = useState(false);
   const live = session.status === "active" && session.generation_state === "idle";
-  const action = widget.edit.kind === "collection" ? widget.edit.action : undefined;
-  const effects = status === "pending" ? (view.data?.effects ?? []) : [];
+  const busy = decide.isPending || grant.isPending || settling;
+  const viewOf = (seq: number) => views[editSeqs.indexOf(seq)]?.data;
+  const granted = (widget: AccessWidget) =>
+    Boolean(widget.connection.id && session.granted_connection_ids.includes(widget.connection.id));
 
-  const choose = (decision: "apply" | "decline") =>
+  /** A request's answer: what the server recorded, else what this page decided. */
+  const decisionFor = (request: Request, local: Record<number, RequestDecision>) => {
+    if (request.widget.kind === "edit") {
+      const status = viewOf(request.seq)?.status;
+      if (status === "applied" || status === "declined") {
+        return decisionOf(request.widget, status === "applied");
+      }
+    } else if (granted(request.widget)) {
+      return decisionOf(request.widget, true);
+    }
+    return local[request.seq] ?? null;
+  };
+  const replyFor = (local: Record<number, RequestDecision>) =>
+    batchReply(requests.map((request) => decisionFor(request, local)));
+
+  /** Records answers; the one that leaves no request open sends the reply. */
+  const record = (answers: Record<number, RequestDecision>) => {
+    const next = { ...decided, ...answers };
+    setDecided(next);
+    const content = replyFor(next);
+    if (content) onReply(content);
+  };
+
+  const failed = (title: string) => (error: Error) =>
+    toast({ kind: "error", title, description: error.message });
+
+  const chooseEdit = (request: Request & { widget: EditWidget }, decision: "apply" | "decline") =>
     decide.mutate(
-      { seq, decision },
+      { seq: request.seq, decision },
       {
         onSuccess: () =>
-          onDecided(
-            decision === "apply"
-              ? `Applied the edit to ${target}. Continue.`
-              : `Declined the edit to ${target}. Continue without it.`,
-          ),
-        onError: (error) =>
-          toast({
-            kind: "error",
-            title: "Couldn't record the decision",
-            description: error.message,
-          }),
+          record({ [request.seq]: decisionOf(request.widget, decision === "apply") }),
+        onError: failed("Couldn't record the decision"),
       },
     );
+
+  const openEdits = done
+    ? []
+    : requests.filter(
+        (request): request is Request & { widget: EditWidget } =>
+          request.widget.kind === "edit" && decisionFor(request, decided) === null,
+      );
+  const openCount = done ? 0 : requests.filter((r) => decisionFor(r, decided) === null).length;
+  const reply = done ? null : replyFor(decided);
+
+  /** Applies or declines every open edit in turn; a refused one stops the rest. */
+  const settleAll = async (decision: "apply" | "decline") => {
+    setSettling(true);
+    const answers: Record<number, RequestDecision> = {};
+    try {
+      for (const request of openEdits) {
+        await decide.mutateAsync({ seq: request.seq, decision });
+        answers[request.seq] = decisionOf(request.widget, decision === "apply");
+      }
+    } catch (error) {
+      failed("Couldn't record the decision")(error as Error);
+    } finally {
+      setSettling(false);
+      record(answers);
+    }
+  };
+  const applyBlocked = openEdits.some((request) => {
+    const view = viewOf(request.seq);
+    return !view || view.stale;
+  });
+
+  return (
+    <>
+      {requests.map(({ seq, widget }) =>
+        widget.kind === "edit" ? (
+          <EditCard
+            key={`edit-${seq}`}
+            widget={widget}
+            view={viewOf(seq)}
+            open={!done && decided[seq] === undefined}
+            disabled={!live || busy}
+            onChoose={(decision) => chooseEdit({ seq, widget }, decision)}
+          />
+        ) : (
+          <AccessCard
+            key={`access-${seq}`}
+            widget={widget}
+            granted={granted(widget)}
+            declined={decided[seq]?.accepted === false}
+            open={!done}
+            disabled={!live || busy}
+            onGrant={() =>
+              widget.connection.id &&
+              grant.mutate(
+                { connectionId: widget.connection.id, granted: true },
+                {
+                  onSuccess: () => record({ [seq]: decisionOf(widget, true) }),
+                  onError: failed("Couldn't grant access"),
+                },
+              )
+            }
+            onDecline={() => record({ [seq]: decisionOf(widget, false) })}
+          />
+        ),
+      )}
+      {openCount > 0 && requests.length > 1 ? (
+        <div className="flex flex-wrap items-center gap-2 self-start">
+          <span className="text-sm text-fg-2">
+            {openCount} of {requests.length} left to decide; the coach continues once each is
+            answered.
+          </span>
+          {openEdits.length > 1 ? (
+            <>
+              <Button
+                size="sm"
+                variant={
+                  openEdits.some((request) => request.widget.edit.action === "delete")
+                    ? "destructive"
+                    : "primary"
+                }
+                disabled={!live || busy || applyBlocked}
+                onClick={() => void settleAll("apply")}
+              >
+                Apply all {openEdits.length}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!live || busy}
+                onClick={() => void settleAll("decline")}
+              >
+                Decline all
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+      {reply && live && !busy && !replying ? (
+        <Button size="sm" className="self-start" onClick={() => onReply(reply)}>
+          Continue
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+function EditCard({
+  widget,
+  view,
+  open,
+  disabled,
+  onChoose,
+}: {
+  widget: EditWidget;
+  view: StudioEdit | undefined;
+  /** Whether the request still waits for this operator's answer. */
+  open: boolean;
+  disabled: boolean;
+  onChoose: (decision: "apply" | "decline") => void;
+}) {
+  const target = editTargetLabel(widget.edit);
+  const lines = widget.edit.lines ?? {};
+  const status = view?.status ?? "pending";
+  const action = widget.edit.action;
+  const effects = status === "pending" ? (view?.effects ?? []) : [];
 
   return (
     <RequestCard title={widget.title ?? `Edit ${target}`} reason={widget.reason}>
@@ -271,10 +419,10 @@ function EditCard({
       {status !== "pending" ? (
         <Tag tone={status === "applied" ? "tide" : "well"} font="sans" className="self-start">
           {status === "applied"
-            ? `Applied${view.data?.applied_version ? ` as v${view.data.applied_version}` : ""}`
+            ? `Applied${view?.applied_version ? ` as v${view.applied_version}` : ""}`
             : "Declined"}
         </Tag>
-      ) : view.data?.stale ? (
+      ) : view?.stale ? (
         <p className="text-sm text-plum-t">
           The live content changed since this proposal; ask the coach to rebuild it, or decline.
         </p>
@@ -286,27 +434,18 @@ function EditCard({
           ))}
         </ul>
       ) : null}
-      {status === "pending" && view.data ? <EditDiff view={view.data} /> : null}
-      {status === "pending" && !done ? (
+      {status === "pending" && view ? <EditDiff view={view} /> : null}
+      {status === "pending" && open ? (
         <div className="flex gap-2">
           <Button
             size="sm"
             variant={action === "delete" ? "destructive" : "primary"}
-            disabled={!live || decide.isPending || Boolean(view.data?.stale)}
-            onClick={() => choose("apply")}
+            disabled={disabled || Boolean(view?.stale)}
+            onClick={() => onChoose("apply")}
           >
-            {action === "create"
-              ? "Create table"
-              : action === "delete"
-                ? "Delete table"
-                : "Apply edit"}
+            {applyLabel(widget.edit)}
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!live || decide.isPending}
-            onClick={() => choose("decline")}
-          >
+          <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onChoose("decline")}>
             Decline
           </Button>
         </div>
@@ -351,21 +490,25 @@ function EditDiff({ view }: { view: StudioEdit }) {
 }
 
 function AccessCard({
-  session,
   widget,
-  answered: done,
-  onDecided,
+  granted,
+  declined,
+  open,
+  disabled,
+  onGrant,
+  onDecline,
 }: {
-  session: StudioSession;
   widget: AccessWidget;
-  answered: boolean;
-  onDecided: (message: string) => void;
+  granted: boolean;
+  declined: boolean;
+  /** Whether the request still waits for this operator's answer. */
+  open: boolean;
+  disabled: boolean;
+  onGrant: () => void;
+  onDecline: () => void;
 }) {
-  const grant = useGrantStudioConnection(session.id);
   const connection = widget.connection;
   const label = connectionLabel(connection);
-  const granted = Boolean(connection.id && session.granted_connection_ids.includes(connection.id));
-  const live = session.status === "active" && session.generation_state === "idle";
 
   return (
     <RequestCard title={widget.title ?? "Grant read access"} reason={widget.reason}>
@@ -377,39 +520,20 @@ function AccessCard({
         <Tag tone="tide" font="sans" className="self-start">
           Granted
         </Tag>
-      ) : done ? (
+      ) : declined ? (
+        <Tag tone="well" font="sans" className="self-start">
+          Declined
+        </Tag>
+      ) : !open ? (
         <Tag tone="well" font="sans" className="self-start">
           Answered
         </Tag>
       ) : (
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            disabled={!live || !connection.id || grant.isPending}
-            onClick={() =>
-              connection.id &&
-              grant.mutate(
-                { connectionId: connection.id, granted: true },
-                {
-                  onSuccess: () => onDecided(`Granted read access to ${label}. Continue.`),
-                  onError: (error) =>
-                    toast({
-                      kind: "error",
-                      title: "Couldn't grant access",
-                      description: error.message,
-                    }),
-                },
-              )
-            }
-          >
+          <Button size="sm" disabled={disabled || !connection.id} onClick={onGrant}>
             Grant read access
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!live}
-            onClick={() => onDecided(`Declined read access to ${label}. Continue without it.`)}
-          >
+          <Button variant="ghost" size="sm" disabled={disabled} onClick={onDecline}>
             Decline
           </Button>
         </div>

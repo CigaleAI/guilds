@@ -200,7 +200,7 @@ tokens, workspace paths.
 | `scripts` | `[{ name, description, parameters, source, secrets[], author }]`, at most 50. `source` is at most 256 KiB |
 | `schedules` | `[{ key, cron or window, description, instruction, author }]`, at most 50 |
 | `grants` | `{ read_guild, write_guild, read_org, write_org }`. Defaults `true`, `true`, `true`, `false` |
-| `native_tools` | `{ [tool]: boolean }` |
+| `native_tools` | `{ [tool]: boolean }`. Each entry overlays a catalog where every native tool is on, so a tool the map leaves out stays on |
 | `browser` | `{ required, instructions, author }`. `required` defaults to `config.browser` and must match it. `instructions` is at most 8 KiB |
 
 A role's `config` holds only [agent configuration keys](agents.md).
@@ -315,7 +315,7 @@ Agent tags are `@{role}` until apply. They appear in:
 | `recommended_role` | Optional; the role an `agent` scope binds to |
 | `hint` | At most 400 characters |
 | `setup` | At most 8 KiB |
-| `roles` | An object keyed by role, each `{ enabled, tools: { [namespaced tool]: boolean } }`. An array of role names is refused. A role that does not exist is the `connection.role` error |
+| `roles` | An object keyed by role, each `{ enabled, tools: { [namespaced tool]: boolean } }`. A tool `tools` leaves out stays on, so `{}` offers every tool of the connection. An array of role names is refused. A role that does not exist is the `connection.role` error |
 | `resources` | Optional, at most 50 |
 | `manifest` | Optional |
 | `author` | Provenance |
@@ -434,6 +434,8 @@ findings `collection.conflict` and `machine.*`
 | `server.organisation`, `server.registry`, `server.unknown` | error | The box lacks a connection's server (see [connections](#connections)) |
 | `connection.role` | error | A connection names an unknown role |
 | `access.tool_removed`, `access.connector_removed` | info | The operator cut a tool or a connector |
+| `access.broad_native` | warning | In a Builder recipe with two or more roles, a role's `native_tools` turns no tool off |
+| `access.broad_connection` | warning | In a Builder recipe with two or more roles, a connection role lists no tools, so it is offered every one |
 | `design.routine_missing` | error | A `design.routines` key is not on any role |
 | `design.poll_dedupe` | error | A routine has no dedupe collection or key |
 | `design.unknown_collection` | error | A routine or hand-off names a collection the recipe lacks |
@@ -446,6 +448,7 @@ findings `collection.conflict` and `machine.*`
 | `design.unused_access` | warning | A connection no role enables |
 | `design.cadence_collision` | warning | A hand-off consumer shares its producer's cadence |
 | `design.orphan_collection` | warning | A collection no hand-off or dedupe routine uses |
+| `design.shared_note_roles` | warning | In a Builder recipe with two or more roles, a guild or organisation note that a role embeds or names mentions two or more role handles |
 | `design.untyped_collection` | error | A collection declares no columns |
 | `design.handoff_state` | error | A hand-off collection has no required text column with `values` |
 | `design.collection_access` | error | A hand-off producer or consumer, or the role of a dedupe routine, cannot write the collection: `guild` is not `write` and the role is not in `writers` |

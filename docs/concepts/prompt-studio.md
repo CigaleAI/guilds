@@ -8,10 +8,14 @@ agent's [Task](task.md), [memory](memory.md), [runs](runs.md),
 evidence in an inspector and talks about it with a built-in coach.
 
 The coach is a system designer. It drafts standing Tasks and proposes
-edits. It keeps Tasks short, puts shared rules in files anyone can
-inspect, and links a file into the Task with an embed
-([Task](task.md)) when the file must enter every run. The coach changes nothing itself: the operator
-publishes each draft and applies or declines each edit.
+edits. It keeps Tasks short and keeps each agent narrow: an agent
+carries only the Task, files, and tools its own work uses, and reaches
+its peers through the tables and tagged messages its Task names. Rules
+live in files anyone can inspect, at the narrowest level that holds
+every reader, and the coach links a file into the Task with an embed
+([Task](task.md)) when the file must enter every run. The coach changes
+nothing itself: the operator publishes each draft and applies or
+declines each edit.
 
 Studio is not a guild agent, not a direct run, and not a tab of the
 agent inspector. Creating a guild is the job of the
@@ -24,6 +28,9 @@ tools never appear in the builder, and the reverse.
   run, see what it was told and what it did, and ask the coach.
 - A Task has grown long or vague and you want a tighter one, with the
   shared rules moved into a note.
+- Agents carry more than their work needs: one note that describes every
+  role, or tools they never call. The coach splits the note into one per
+  agent and proposes withdrawing the unused access.
 - Agents wake each other in ways you do not expect: the guild overview
   shows who woke whom, how often, and what each wake produced.
 - An agent reported an issue: **Investigate in Studio** opens a
@@ -38,7 +45,7 @@ flowchart LR
     C -->|Task draft| D[Draft]
     C -->|edit request| E[Edit card]
     D -->|operator publishes| T[Live Task]
-    E -->|operator applies| W[Memory, note, guild text, collection]
+    E -->|operator applies| W[Memory, note, guild text, collection, access]
     T --> R[New runs]
     W --> R
 ```
@@ -70,7 +77,7 @@ has a source and a set of things Studio may do with it:
 | Effective prompt | Shows what the next run would get, and what each past run got |
 | [Scripts](scripts.md) | Inspects source and provenance |
 | [File provenance](artifacts.md) | Shows who wrote a file and the run step that did it |
-| [Access](access.md) | Shows what each agent is offered |
+| [Access](access.md) | Shows what each agent is offered and withheld, and requests edits |
 | External data | Read-only, only through a login the operator grants to the session |
 
 The agent's focus stays the short summary the app shows. Publishing a
@@ -98,12 +105,13 @@ Publishing changes new runs only. Past runs stay exactly as they ran.
 
 ### Edit requests
 
-The coach can also propose changes to an agent's memory, a note, the
-guild's short description and description, or a collection. Each
-proposal is an edit request: a card in the chat with **Apply edit**
-and **Decline**. The coach writes nothing. When the operator applies,
+The coach can also propose changes to an agent's memory, a note (new,
+changed, or deleted), the guild's short description and description, a
+collection, or what one agent is offered. Each proposal is an edit
+request: a card in the chat with **Apply edit** and **Decline**. The coach writes nothing. When the operator applies,
 Studio writes as the operator, and only if the target has not changed
-since the coach read it.
+since the coach read it. When one turn proposes several changes, the
+coach waits until every one is applied or declined.
 
 ### Logins
 
@@ -301,8 +309,16 @@ An edit request shows in the chat as a card with the target, its
 added and removed line counts, and the base version. While it is
 pending, it shows the live text beside the proposal as a diff (one per
 changed field for the guild's short description and description).
-**Apply edit** and **Decline** both post a reply that lets the coach
-continue. A card whose target changed since shows as stale.
+**Apply edit** and **Decline** each resolve that one request. A card
+whose target changed since shows as stale.
+
+The cards a turn shows are answered together: the coach continues
+with one reply, listing each decision, only once every request of the
+turn is decided. While more than one is open, a line under the cards
+counts what is left, and **Apply all** and **Decline all** resolve
+every open edit in turn. **Apply all** is off while any open edit is
+stale; a refused apply stops the rest. If that reply fails to send,
+**Continue** sends it again.
 
 A collection request shows the collection before and after as text: a
 header with the owner, the purpose, one line per column, and one per
@@ -314,9 +330,23 @@ grant. It lists what applying does:
 - a renamed collection whose old name Tasks still carry
 - who outside the guild reaches it
 
+A note request that creates a note shows its full text as added lines
+and says who reads it: the one agent, the guild's agents, or the
+organisation's. Its button is **Create note**. A request that deletes a
+note shows its text as removed lines, names the agents whose Task
+embeds it (applying fails until none does) or names it, and its button
+is **Delete note**.
+
+An access request shows the agent's access before and after as text:
+one line per native tool and file level, and one per connection with a
+line per connection tool. Each line says on or off, whether the agent
+sets it itself, and whether a connection tool changes data. It lists
+what applying does: from which run it takes effect, and each connection
+tool it gives back that can change data.
+
 A login request shows a card naming the server (and its account) with
-**Grant read access** and **Decline**; either answer lets the coach
-continue. The **Logins** popover in the header lists every login
+**Grant read access** and **Decline**; it counts toward the turn's
+answers like an edit card. The **Logins** popover in the header lists every login
 reachable from the guild (platform, organisation, guild, and agent
 logins) and grants or revokes each one.
 
@@ -329,11 +359,13 @@ coach** row ([Usage](usage.md)).
 | Rule | Behaviour |
 |---|---|
 | Guild, coach model, temperature | Fixed for the life of a session |
+| Session reach | Checked on every request: a user who can no longer see the source guild gets 404 for its sessions, and the list leaves them out |
 | Coach model | Must be a marketplace model whose provider the organisation has connected |
 | Writes | None by the coach; the operator publishes drafts and applies edits |
 | Publishing a Task | Affects new runs only; refused when the Task changed since the draft's base |
 | Applying an edit | Refused when the target changed since the coach read it; a request resolves once |
-| Edit targets | Memory, notes, guild short description and description, collections; never Tasks (those are drafts), scripts, or records |
+| Edit targets | Memory, notes (create, change, delete), guild short description and description, collections, one agent's access; never Tasks (those are drafts), scripts, records, or agent configuration |
+| Access edits | Agent-level only; the guild's and the organisation's settings stay as they are |
 | Collections of another guild | Read-only in Studio |
 | Outside data | Only through a login granted to the session, only its read-only tools |
 | Agent's busy lock | Not taken; an organisation admission slot is |
@@ -354,13 +386,13 @@ coach** row ([Usage](usage.md)).
 | Standing task | `agents.task` | primary draft target |
 | State | run-creation projection | current preview + historical copy |
 | Memory | agent `memory` artifact and `memory_revisions` | timeline of versions; inspect, cite, edit request |
-| Notes | `note` artifacts in the source guild, its members, and the organisation | inspect, cite, edit request |
+| Notes | `note` artifacts in the source guild, its members, and the organisation | inspect, cite, create, edit, or delete request |
 | Guild about / description | `guilds.about`, `guilds.description` | inspect, edit request |
 | Routine instructions | `schedules.instruction` | inspect with the runs it produced |
 | Effective prompt | composed from current sources; run message sequence zero for history | current preview and immutable evidence |
 | Scripts | agent `script` artifacts | inspect source and provenance |
 | File provenance | `file_changes` | who wrote a file and the run step that did it |
-| Access | bindings, secret grants, MCP catalog | resolved offering per agent |
+| Access | bindings, secret grants, MCP catalog | resolved offering per agent; agent-level edit request |
 | External data | MCP connection tools | read-only, per-session grant |
 
 Focus is `agents.focus`. The current State preview uses a pure PostgreSQL
@@ -388,9 +420,11 @@ persist in `localStorage`. The pinned issue of a session started from
 
 ### Publishing
 
-The coach's template teaches it to keep Tasks short, put shared rules
-in inspectable files, and link a file with `![[display-path]]` when it
-must enter every run.
+The coach's template teaches it to keep Tasks short and agents narrow,
+put rules in inspectable files at the narrowest level that holds every
+reader, and link a file with `![[display-path]]` when it must enter
+every run. Publishing a draft that embeds a note not yet created is
+refused, so a note proposed in the same turn is applied first.
 
 The coach calls `studio_create_task_draft` with `agent_id`, the
 complete proposed content, rationale, and evidence references. Embed
@@ -495,7 +529,10 @@ draft with none has `verified_evidence: false`.
 - `studio_get_collection`
 - `studio_edit_memory`
 - `studio_edit_artifact`
+- `studio_create_note`
+- `studio_delete_note`
 - `studio_edit_guild`
+- `studio_edit_access`
 - `studio_create_collection`
 - `studio_edit_collection`
 - `studio_delete_collection`
@@ -520,15 +557,15 @@ readable by a member or embedded in a member task.
 | `studio_get_memory_version` | One version's text and its diff from the previous one, by `revision_id` or `version_index` (the live version when both are omitted) |
 | `studio_list_file_changes` | A file's recorded changes with the run and tool call that made each one |
 | `studio_get_guild` | The live about and description in full; the system message holds a capped copy |
-| `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools, scripts, secret names and descriptions, artifact levels, and each MCP connection with its listed tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
+| `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, artifact levels, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
 ### Connection grants
 
 The coach asks with
 `studio_request_connection_access(connection_id, reason)`. The tool
 result is a `studio_connection_access` widget with `await_operator`,
-so the generation pauses. Either answer on the card posts a
-continuation message. The **Logins** popover lists every login
+so the generation pauses. The card's answer goes into the turn's one
+continuation message, sent once every request of the turn is decided. The **Logins** popover lists every login
 reachable from the source guild: platform, organisation, guild, and
 live-member scope.
 
@@ -581,6 +618,48 @@ session lock:
 The resolution is stored on the tool message as `metadata.edit_status`
 (`applied` | `declined`), `edit_resolved_at`, and `edit_version`. A
 request resolves only once.
+
+### Note requests
+
+`studio_create_note(level, agent_id?, key, title?, content, reason)`
+and `studio_delete_note(display_path, base_version, reason)` return the
+same widget with `kind: "note"` and `action` (`create` or `delete`).
+
+- `level` is `agent` (with `agent_id`, a live member), `guild` (the
+  source guild), or `org`. `key` is a `.md` file name with no folders;
+  an agent note cannot take `task.md` or `memory.md`.
+- A create targets the display path the note will have and binds the
+  fact that no note is live there. A note already there is refused with
+  a pointer to `studio_edit_artifact`. Apply writes it as the operator
+  through `writeNote`, with an expected version no live note has, so a
+  note written meanwhile is a 409 rather than overwritten.
+- A delete takes notes of the source guild, its live members, and the
+  organisation, and binds the note's content hash. Apply deletes
+  through `deleteByDisplayPath`, which refuses with 409 while any Task
+  in the organisation embeds the note.
+
+### Access requests
+
+`studio_edit_access(agent_id, native_tools?, artifact_grants?,
+connections?, connection_tools?, reason)` returns the same widget with
+`kind: "access"`. Each map sets one entry to `on`, `off`, or `inherit`:
+
+- `native_tools`: a native tool name. `report_issue` and the browser
+  tools are not bindings.
+- `artifact_grants`: `read_guild`, `write_guild`, `read_org`, or
+  `write_org`.
+- `connections`: a connection id the agent resolves; the setting
+  applies to that connection's server.
+- `connection_tools`: a tool listed on one of the agent's connections.
+
+`on` and `off` write the agent-level binding, keeping the connection a
+server binding already names; `inherit` deletes it. A setting the agent
+already holds is not a change, and a request that changes nothing is
+refused. The widget binds a hash of the agent's resolved access
+rendered as text, so a binding moved at any scope since makes the
+request stale and apply a 409 (`apps/orchestrator/src/studio/access.ts`).
+The browser, coding, scripting, and memory switches are agent
+configuration, outside these requests.
 
 ### Collection requests
 

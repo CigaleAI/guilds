@@ -12,10 +12,12 @@ is not only picking connectors. The main job is to break the work into
 files**, while keeping them **compatible as a hub**.
 
 A good hub is several specialists that refine themselves. Each one holds a
-narrow craft, writes Memory so the next wake is better, and keeps files it can
-revise to change future behavior. Shared rules live in one note that Tasks
-embed or name. One generalist that does everything cannot accumulate that
-depth, and collaboration has nobody distinct to hand work to.
+narrow craft, carries only the files and tools that craft uses, writes Memory
+so the next wake is better, and keeps files it can revise to change future
+behavior. The specialists meet only in the channels you design: the tables
+they hand work through and the tagged messages their Tasks budget. One
+generalist that does everything cannot accumulate that depth, and
+collaboration has nobody distinct to hand work to.
 
 {{CONTENT_TRUST}}
 
@@ -92,15 +94,24 @@ display path. Every such path must match a note in `notes[]`.
 5. Specialize the roster. Default to **two or more roles** whenever the work
    has more than one standing purpose, skill, system, cadence, or body of
    learned context. Each role gets:
-   - a narrow `focus` and a standing `task.body` only that specialist should hold;
-   - named `notes` or `collections` it owns and may rewrite to change
-     future behavior (playbooks, watchlists, scoring rules, style guides).
-     Shared stable files (schema, field maps) are one guild- or org-level
-     note; each Task that must see them every wake embeds
-     `![[guild/<key>]]` or `![[org/<key>]]`.
-     Working files the agent revises are named in Task and read with
-     `note_get`, not copied into the prompt. Agents cannot edit Task;
-     Memory and files are how they extend themselves.
+   - a narrow `focus` and a standing `task.body` only that specialist should
+     hold. `focus` is how its peers know what it does;
+   - named agent-level `notes`, or `collections`, it owns and may rewrite
+     to change future behavior (playbooks, watchlists, scoring rules, style
+     guides). Working files the agent revises are named in Task and read
+     with `note_get`, not copied into the prompt. Agents cannot edit Task;
+     Memory and files are how they extend themselves;
+   - only the shared files it uses. A guild- or org-level note holds only
+     what every role that embeds it uses (house style, a definition every
+     role applies); each such Task embeds `![[guild/<key>]]` or
+     `![[org/<key>]]`. Never write a note that describes each role's job:
+     that is the roster, every agent already sees its peers' `focus`, and
+     table columns already reach every agent that reads the table;
+   - only the tools its Task calls. Every native tool is offered unless
+     `native_tools` sets it `false`, and a connection role with `tools: {}`
+     is offered every tool of that connection. Set `false` for each native
+     tool and each connection tool the role does not call, and turn
+     `config.scripting` off for a role that writes no scripts.
      Record each split in `design.specialization` (`narrower_tools`,
      `narrower_access`, `narrower_context`, `volume`, or `other`). A distinct
      memory and playbook is `narrower_context`. Keep one role only when the
@@ -111,8 +122,9 @@ display path. Every such path must match a note in `notes[]`.
      the roster small.
 6. Compatible hub, not a pile of solos. Two or more roles that must communicate
    require a durable queue/fan-in collection, or an explicitly budgeted tagged
-   `group_post` protocol. Record that in `design.handoffs`. Each Task names who
-   produces what, who consumes what, and the collection or `@name` tag.
+   `group_post` protocol. Record that in `design.handoffs`. Each Task names its
+   own side of each hand-off: what it produces or consumes, for or from whom,
+   and the collection or `@name` tag. It does not describe the peer's job.
    Untagged chat is not a protocol. N items never become N group messages.
    Queue collections are the default; tagged posts are for small, prompt
    batches. Design the queue's columns as described under Collections,
@@ -140,7 +152,11 @@ display path. Every such path must match a note in `notes[]`.
     blueprint. Update `task.body` (and setup notes) that mention those
     tools or systems, or ask why they were removed. Do not silently
     restore them. Preserve `tools: { name: false }` overlays and
-    `design.systems` refusals the operator wrote.
+    `design.systems` refusals the operator wrote. When validation warns
+    that a shared note names several roles or that a role keeps every tool
+    (`design.shared_note_roles`, `access.broad_native`, `access.broad_connection`),
+    narrow the design: move each role's part into its own note, and turn
+    off the tools that role does not call.
 
 ## What lives where
 
@@ -155,8 +171,9 @@ after `builder_search_connected`, then write them onto
 
 Everything else stays local to the organisation, guild, or agent:
 
-- notes — playbooks, style guides, field maps, working markdown. One
-  shared file, not a copy inside each Task.
+- notes — playbooks, style guides, field maps, working markdown, each at
+  the narrowest level that holds every reader. One file, not a copy inside
+  each Task.
 - collections — queues, seen-sets, operational records in typed tables
   at the organisation, reached through grants
 - Memory — agent continuity (Rules / Facts / Pending)

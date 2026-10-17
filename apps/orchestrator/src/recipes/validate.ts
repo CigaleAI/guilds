@@ -662,6 +662,80 @@ export function validateDesign(recipe: RecipeDocument, ctx: ValidationContext): 
   }
   void usedServers;
   void producerCron;
+  findings.push(...narrownessFindings(recipe));
+  return findings;
+}
+
+/** The roles whose Task or routines embed or name a note. */
+function noteReaders(recipe: RecipeDocument, note: RecipeDocument["notes"][number]): string[] {
+  const path = recipeNotePath(note);
+  const refs = new Set([path, note.id, `recipe:${note.id}`]);
+  return recipe.roles
+    .filter((role) => {
+      if (collectTaskEmbeds(role.task.body).some((href) => refs.has(href))) return true;
+      return [role.task.body, ...role.schedules.map((schedule) => schedule.instruction)].some((text) =>
+        collectRecipeNotePaths(text).includes(path),
+      );
+    })
+    .map((role) => role.role);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Builder designs that load roles with what their work does not use: a shared
+ * note that describes several roles, a role offered every native tool, and a
+ * connection role that lists none of its tools.
+ */
+function narrownessFindings(recipe: RecipeDocument): RecipeFinding[] {
+  if (recipe.meta.source.kind !== "builder" || recipe.roles.length < 2) {
+    return [];
+  }
+  const findings: RecipeFinding[] = [];
+  for (const note of recipe.notes) {
+    if (note.level === "agent" || !noteReaders(recipe, note).length) continue;
+    const named = recipe.roles
+      .map((role) => role.role)
+      .filter((role) => new RegExp(`(^|[^a-z0-9-])${escapeRegExp(role)}($|[^a-z0-9-])`, "i").test(note.body));
+    if (named.length >= 2) {
+      findings.push(
+        finding(
+          "design.shared_note_roles",
+          "warning",
+          `notes.${note.id}`,
+          `this shared note describes several roles (${named.join(", ")}), so every role that reads it carries the others' work on each wake. Keep only what every reader uses and move each role's part into its own agent note.`,
+        ),
+      );
+    }
+  }
+  for (const role of recipe.roles) {
+    if (!Object.values(role.native_tools).some((enabled) => enabled === false)) {
+      findings.push(
+        finding(
+          "access.broad_native",
+          "warning",
+          `roles.${role.role}.native_tools`,
+          "every native tool stays on for this role; set false for each tool its Task does not call",
+        ),
+      );
+    }
+  }
+  for (const connection of recipe.connections) {
+    for (const [role, spec] of Object.entries(connection.roles)) {
+      if (spec.enabled && !Object.keys(spec.tools).length) {
+        findings.push(
+          finding(
+            "access.broad_connection",
+            "warning",
+            `connections.${connection.server}.roles.${role}.tools`,
+            `${role} lists no ${connection.server} tools, so it is offered every one; set false for each tool its Task does not call`,
+          ),
+        );
+      }
+    }
+  }
   return findings;
 }
 

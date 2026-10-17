@@ -16,7 +16,10 @@ import { generationLive } from "../../src/studio/runner.js";
 import {
   studioCallConnectionTool,
   studioCreateCollection,
+  studioCreateNote,
   studioDeleteCollection,
+  studioDeleteNote,
+  studioEditAccess,
   studioEditArtifact,
   studioEditCollection,
   studioEditGuild,
@@ -68,6 +71,7 @@ const accessDbName = uniqueDbName("agent_platform_studio_access");
 const evidenceDbName = uniqueDbName("agent_platform_studio_evidence");
 const editsDbName = uniqueDbName("agent_platform_studio_edits");
 const tablesDbName = uniqueDbName("agent_platform_studio_tables");
+const narrowDbName = uniqueDbName("agent_platform_studio_narrow");
 const originalStream = generationLive.streamCompletion;
 
 after(async () => {
@@ -77,6 +81,7 @@ after(async () => {
   await dropIsolatedDatabase(evidenceDbName);
   await dropIsolatedDatabase(editsDbName);
   await dropIsolatedDatabase(tablesDbName);
+  await dropIsolatedDatabase(narrowDbName);
 });
 
 test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 }, async () => {
@@ -1330,6 +1335,252 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.match(String(deleteView.live), /shared · organisation table/);
     assert.equal((await resolve(deleteSeq, "apply")).statusCode, 200);
     assert.equal(await artifacts.describeCollection(operator, "shared"), null);
+  } finally {
+    await app.close();
+    await database.close();
+  }
+});
+
+test("studio proposes notes to create and delete and narrows an agent's access", { timeout: 60_000 }, async () => {
+  const databaseUrl = await createIsolatedDatabase(narrowDbName);
+  const database = await connect(databaseUrl);
+  const notes = new NotesStore(tempDir("guilds-studio-narrow-notes-"), templatesRoot(), "notes");
+  await notes.ensureSystemPrompt();
+  const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
+  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(repo);
+  const schedules = new Schedules(repo, notes);
+  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+
+  const now = new Date();
+  await repo.insertGuild("guild_nw", "narrow-guild", now, "org_home");
+  const operator = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_nw" });
+  const roles = await artifacts.writeNote(operator, {
+    level: "guild",
+    key: "roles.md",
+    content: "The scout finds candidates.\nThe archivist files them.\n",
+    title: "Roles",
+  });
+  const rolesPath = `${ownerPrefix("org_home", "guild", "guild_nw")}${roles.key}`;
+  for (const [agentId, name, task] of [
+    ["a_sc", "scout", `Find candidates.\n\n![[${rolesPath}]]\n`],
+    ["a_ar", "archivist", "File candidates."],
+  ] as const) {
+    await persistAgent(repo, notes, {
+      agentId,
+      guildId: "guild_nw",
+      guildName: "narrow-guild",
+      orgSlug: "home",
+      orgId: "org_home",
+      name,
+      focus: `The ${name}`,
+      task,
+      config: CONFIG,
+      now,
+      artifacts,
+    });
+  }
+  const server = await repo.getMcpServerBySlug("notion");
+  assert.ok(server, "seeded Notion catalog row");
+  const [ciphertext, nonce] = encryptPayload({ token: "notion-secret-token" }, Buffer.from(HEX_MASTER_KEY, "hex"));
+  const connection = await repo.connectMcp(
+    newId("conn"),
+    newId("bind"),
+    String(server.id),
+    "org",
+    "org_home",
+    ciphertext,
+    nonce,
+    now,
+    { status: "connected" },
+  );
+  await repo.replaceMcpTools(
+    String(connection.id),
+    [
+      { remote_name: "notion-search", namespaced_name: "notion_notion-search", description: "Search", input_schema: { type: "object" } },
+      { remote_name: "notion-create-pages", namespaced_name: "notion_notion-create-pages", description: "Create", input_schema: { type: "object" } },
+    ],
+    now,
+  );
+
+  try {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: { mode: "optimize", source_guild_id: "guild_nw", coach_config: { model: TEST_MODEL, temperature: 0.2 } },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    const session = created.json() as { id: string };
+    const ctx = async (): Promise<StudioToolContext> => ({
+      session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+      user: { id: "user_operator", name: "operator" },
+      orgId: "org_home",
+      sourceGuildId: "guild_nw",
+      targetAgentId: null,
+      generation: 1,
+      store: studio.store,
+      artifacts,
+      repo,
+      schedules,
+      drafts: studio.drafts,
+      preview: studio.previewDeps(),
+      notesSystemPath: notes.systemPath(),
+    });
+    const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
+      const seq = await studio.store.nextSeq(session.id);
+      const id = `call_${seq}`;
+      await studio.store.insertMessage(
+        session.id,
+        seq,
+        1,
+        { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
+        { generation: 1 },
+        new Date(),
+      );
+      await studio.store.insertMessage(
+        session.id,
+        seq + 1,
+        1,
+        { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
+        { generation: 1, tool_name: name },
+        new Date(),
+      );
+      return seq + 1;
+    };
+    const view = async (seq: number) =>
+      (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH })).json() as {
+        status: string;
+        stale: boolean;
+        live: string;
+        proposed: string;
+        effects: string[];
+        applied_version?: number;
+      };
+    const resolve = (seq: number, decision: string) =>
+      app.inject({ method: "POST", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH, payload: { decision } });
+
+    // Create: the scout's own playbook, at its level, written once the operator applies.
+    const playbookPath = `${ownerPrefix("org_home", "agent", "a_sc")}playbook.md`;
+    await assert.rejects(
+      studioCreateNote.handler(await ctx(), { level: "agent", key: "playbook.md", content: "x", reason: "r" }),
+      /agent_id/,
+    );
+    const createArgs = {
+      level: "agent",
+      agent_id: "scout",
+      key: "playbook.md",
+      title: "Playbook",
+      content: "A real candidate names its source.\n",
+      reason: "The shared roles note carries the scout's rules for every reader.",
+    };
+    const createWidget = (await studioCreateNote.handler(await ctx(), createArgs)) as {
+      widget: string;
+      edit: { kind: string; action: string; target: { display_path: string; agent_id: string } };
+    };
+    assert.equal(createWidget.widget, "studio_edit_request");
+    assert.equal(createWidget.edit.kind, "note");
+    assert.equal(createWidget.edit.action, "create");
+    assert.equal(createWidget.edit.target.display_path, playbookPath);
+    assert.equal(createWidget.edit.target.agent_id, "a_sc");
+    const createSeq = await commit("studio_create_note", createArgs, createWidget);
+    const createView = await view(createSeq);
+    assert.equal(createView.stale, false);
+    assert.equal(createView.live, "");
+    assert.equal(createView.proposed, "A real candidate names its source.\n");
+    assert.ok(createView.effects.some((effect) => /Only scout reads it/.test(effect)), createView.effects.join(" | "));
+    const createApplied = await resolve(createSeq, "apply");
+    assert.equal(createApplied.statusCode, 200, createApplied.body);
+    assert.equal((createApplied.json() as { applied_version: number }).applied_version, 1);
+    assert.equal((await artifacts.getByDisplayPath(operator, playbookPath)).row?.content_text, "A real candidate names its source.\n");
+    await assert.rejects(studioCreateNote.handler(await ctx(), createArgs), /already exists/);
+
+    // Delete: refused while a Task embeds the note, applied once none does.
+    await assert.rejects(studioDeleteNote.handler(await ctx(), { display_path: rolesPath, base_version: 0, reason: "r" }), /stale/);
+    const deleteArgs = { display_path: rolesPath, base_version: roles.version, reason: "Each role now has its own note." };
+    const deleteWidget = (await studioDeleteNote.handler(await ctx(), deleteArgs)) as { edit: { action: string; effects: string[] } };
+    assert.equal(deleteWidget.edit.action, "delete");
+    assert.ok(deleteWidget.edit.effects.some((effect) => /scout embed it/.test(effect)), deleteWidget.edit.effects.join(" | "));
+    const deleteSeq = await commit("studio_delete_note", deleteArgs, deleteWidget);
+    assert.equal((await resolve(deleteSeq, "apply")).statusCode, 409);
+    await repo.writeAgentTask(operator, "a_sc", `Find candidates.\n\nnote_get ${playbookPath}\n`);
+    const deleted = await resolve(deleteSeq, "apply");
+    assert.equal(deleted.statusCode, 200, deleted.body);
+    assert.equal((deleted.json() as { status: string }).status, "applied");
+    const gone = await artifacts.getByDisplayPath(operator, rolesPath).catch(() => null);
+    assert.ok(!gone?.row || gone.tombstone);
+
+    // Access: the archivist loses tools it never calls; the card shows what changes.
+    await assert.rejects(
+      studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { no_such_tool: "off" }, reason: "r" }),
+      /unknown native tool/,
+    );
+    await assert.rejects(
+      studioEditAccess.handler(await ctx(), { agent_id: "archivist", connection_tools: { "other_tool": "off" }, reason: "r" }),
+      /not a tool of archivist's connections/,
+    );
+    await assert.rejects(
+      studioEditAccess.handler(await ctx(), { agent_id: "archivist", native_tools: { note_get: "inherit" }, reason: "r" }),
+      /nothing to change/,
+    );
+    const accessArgs = {
+      agent_id: "archivist",
+      native_tools: { note_delete: "off", group_post: "off" },
+      connection_tools: { "notion_notion-create-pages": "off" },
+      reason: "The archivist's runs never call these.",
+    };
+    const accessWidget = (await studioEditAccess.handler(await ctx(), accessArgs)) as {
+      edit: { kind: string; target: { agent_id: string }; lines: { added: number; removed: number } };
+    };
+    assert.equal(accessWidget.edit.kind, "access");
+    assert.equal(accessWidget.edit.target.agent_id, "a_ar");
+    assert.deepEqual(accessWidget.edit.lines, { added: 3, removed: 3 });
+    const accessSeq = await commit("studio_edit_access", accessArgs, accessWidget);
+    const accessView = await view(accessSeq);
+    assert.equal(accessView.stale, false);
+    assert.match(accessView.live, /- note_delete: on\n/);
+    assert.match(accessView.proposed, /- note_delete: off, set on this agent/);
+    assert.match(accessView.proposed, /notion_notion-create-pages: off, set on this agent, changes data/);
+    const accessApplied = await resolve(accessSeq, "apply");
+    assert.equal(accessApplied.statusCode, 200, accessApplied.body);
+    const narrowed = (await studioGetAgentAccess.handler(await ctx(), { agent_id: "archivist" })) as {
+      native_tools: string[];
+      withheld_native_tools: string[];
+      connections: Array<{ id: string; offered_tools: string[]; withheld_tools: string[] }>;
+    };
+    assert.equal(narrowed.native_tools.includes("note_delete"), false);
+    assert.ok(narrowed.withheld_native_tools.includes("group_post"));
+    const notion = narrowed.connections.find((row) => row.id === String(connection.id));
+    assert.deepEqual(notion?.offered_tools, ["notion_notion-search"]);
+    assert.deepEqual(notion?.withheld_tools, ["notion_notion-create-pages"]);
+    const scout = (await studioGetAgentAccess.handler(await ctx(), { agent_id: "scout" })) as { native_tools: string[] };
+    assert.ok(scout.native_tools.includes("note_delete"));
+
+    // Giving a tool back that changes data says so; a binding moved since makes the request stale.
+    const widenArgs = { agent_id: "archivist", connection_tools: { "notion_notion-create-pages": "inherit" }, reason: "It files pages after all." };
+    const widenWidget = (await studioEditAccess.handler(await ctx(), widenArgs)) as { edit: { effects: string[] } };
+    assert.ok(
+      widenWidget.edit.effects.some((effect) => /call notion_notion-create-pages, which can change data/.test(effect)),
+      widenWidget.edit.effects.join(" | "),
+    );
+    const widenSeq = await commit("studio_edit_access", widenArgs, widenWidget);
+    await repo.upsertBinding(newId("bind"), "native_tool", "schedule_list", "guild", "guild_nw", false, null, new Date());
+    assert.equal((await view(widenSeq)).stale, true);
+    assert.equal((await resolve(widenSeq, "apply")).statusCode, 409);
+    assert.equal((await resolve(widenSeq, "decline")).statusCode, 200);
+
+    // A user who can no longer see the guild loses its sessions, edits included.
+    await repo.updateGuild("guild_nw", new Date(), { visibility: "private" });
+    assert.equal(
+      (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${widenSeq}`, headers: AUTH })).statusCode,
+      404,
+    );
+    assert.equal((await resolve(widenSeq, "apply")).statusCode, 404);
+    const listed = await app.inject({ method: "GET", url: "/api/studio/sessions", headers: AUTH });
+    assert.equal(listed.statusCode, 200, listed.body);
+    assert.equal(listed.body.includes(session.id), false);
   } finally {
     await app.close();
     await database.close();

@@ -9,7 +9,7 @@
   },
   "guild": {
     "name_suggestion": "example-desk",
-    "about": "Two specialists that hand off through a queue table.",
+    "about": "Two narrow specialists that hand off through a queue table.",
     "objective": "Scout candidates and archive them.",
     "group_agent_message_limit": 20
   },
@@ -18,10 +18,10 @@
       "role": "scout",
       "name_suggestion": "scout",
       "focus": "Find new candidates and write them to the queue.",
-      "config": { "browser": false },
+      "config": { "browser": false, "scripting": false },
       "task": {
-        "body": "Start of work: read Memory, then note_get agent/scout/playbook.md. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nBefore queueing a candidate, check seen-set with record_list where key is the candidate name in lower case. Add each new candidate to scout-queue with record_add (name, source_url, status new), then record_add its key and source to seen-set. The runtime assigns ids; never send one. Do not archive.",
-        "embeds": ["guild/field-map.md"]
+        "body": "Start of work: read Memory, then note_get agent/scout/playbook.md and apply it.\n\nBefore queueing a candidate, check seen-set with record_list where key is the candidate name in lower case. Add each new candidate to scout-queue with record_add (name, source_url, status new), then record_add its key and source to seen-set. The runtime assigns ids; never send one. The archivist drains scout-queue; do not archive. When a sweep shows what separates a real candidate from noise, revise the playbook with note_write.",
+        "embeds": []
       },
       "scripts": [],
       "schedules": [
@@ -33,17 +33,20 @@
         }
       ],
       "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
-      "native_tools": { "note_find": true, "note_get": true, "note_write": true, "record_list": true, "record_add": true },
+      "native_tools": {
+        "note_find": true, "note_get": true, "note_write": true, "record_list": true, "record_add": true, "record_update": false,
+        "note_delete": false, "record_search": false, "record_remove": false, "schedule_create_cron": false, "schedule_create_window": false, "schedule_list": false, "schedule_pause": false, "schedule_resume": false, "schedule_delete": false, "secret_store": false, "secret_request": false, "group_post": false
+      },
       "browser": { "required": false, "instructions": "" }
     },
     {
       "role": "archivist",
       "name_suggestion": "archivist",
       "focus": "Read the queue and write the durable record.",
-      "config": { "browser": false },
+      "config": { "browser": false, "scripting": false },
       "task": {
-        "body": "Start of work: read Memory, then note_get agent/archivist/notion-map.md. Shared field rules are embedded — do not copy them into this Task.\n\n![[guild/field-map.md]]\n\nFind scout-queue records with record_list where status new and archive each one, then record_update that record by id with status archived, or rejected with a reason. Do not scout.",
-        "embeds": ["guild/field-map.md"]
+        "body": "Start of work: read Memory. The map below says which Notion property each scout-queue column lands in.\n\n![[agent/archivist/notion-map.md]]\n\nFind scout-queue records with record_list where status new and archive each one, then record_update that record by id with status archived, or rejected with a reason. The scout fills scout-queue; do not scout.",
+        "embeds": ["agent/archivist/notion-map.md"]
       },
       "scripts": [],
       "schedules": [
@@ -55,7 +58,10 @@
         }
       ],
       "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
-      "native_tools": { "note_find": true, "note_get": true, "note_write": true, "record_list": true, "record_update": true },
+      "native_tools": {
+        "note_get": true, "record_list": true, "record_update": true, "note_find": false, "note_write": false, "record_add": false,
+        "note_delete": false, "record_search": false, "record_remove": false, "schedule_create_cron": false, "schedule_create_window": false, "schedule_list": false, "schedule_pause": false, "schedule_resume": false, "schedule_delete": false, "secret_store": false, "secret_request": false, "group_post": false
+      },
       "browser": { "required": false, "instructions": "" }
     }
   ],
@@ -92,18 +98,11 @@
   ],
   "notes": [
     {
-      "id": "field-map",
-      "level": "guild",
-      "key": "field-map.md",
-      "body": "Canonical fields and who writes them. Edit this file once; Tasks embed it.",
-      "kind": "seed"
-    },
-    {
       "id": "playbook",
       "level": "agent",
       "role": "scout",
       "key": "playbook.md",
-      "body": "What a real candidate looks like versus noise.",
+      "body": "What a real candidate looks like versus noise. The scout revises it as it learns.",
       "kind": "seed"
     },
     {
@@ -111,7 +110,7 @@
       "level": "agent",
       "role": "archivist",
       "key": "notion-map.md",
-      "body": "Which Notion database each queue column lands in.",
+      "body": "Which Notion database property each scout-queue column lands in. The operator edits it; the archivist reads it every wake.",
       "kind": "seed"
     }
   ],
@@ -141,7 +140,17 @@
         }
       ],
       "roles": {
-        "archivist": { "enabled": true, "tools": {} }
+        "archivist": {
+          "enabled": true,
+          "tools": {
+            "notion_notion-search": true,
+            "notion_notion-create-pages": true,
+            "notion_notion-update-page": false,
+            "notion_notion-move-pages": false,
+            "notion_notion-create-database": false,
+            "notion_notion-update-database": false
+          }
+        }
       }
     }
   ],
@@ -170,14 +179,14 @@
       {
         "role": "scout",
         "reason": "narrower_context",
-        "detail": "Owns the watchlist playbook.",
+        "detail": "Owns the candidate playbook it revises; needs web search, never Notion.",
         "proposed_by": "builder",
         "accepted": false
       },
       {
         "role": "archivist",
         "reason": "narrower_tools",
-        "detail": "Owns Notion write and the archive map.",
+        "detail": "Owns Notion page creation and the archive map; needs no web search.",
         "proposed_by": "builder",
         "accepted": false
       }
