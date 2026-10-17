@@ -14,6 +14,7 @@ import {
   AgentMessage,
   OperatorMessage,
   TypingIndicator,
+  TypingDots,
   Banner,
   personTone,
   Icon,
@@ -283,6 +284,9 @@ export function Transcript({
             <div className="flex flex-col gap-2">
               {live.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}
               {live.text ? <Markdown density="compact">{live.text}</Markdown> : null}
+              {run.generating ? (
+                <TypingDots role="status" aria-label="Still writing" className="py-1" />
+              ) : null}
             </div>
           </AgentMessage>
         ) : run.generating ? (

@@ -1,5 +1,5 @@
 import { cva } from "class-variance-authority";
-import { ArrowUpRight, ChevronDown, PenLine, Play } from "lucide-react";
+import { ArrowUpRight, ChevronDown, LoaderCircle, PenLine, Play } from "lucide-react";
 import { useId, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { cn } from "../../cn";
 import { ResultGlyph } from "../../primitives/Dot";
@@ -112,9 +112,9 @@ function Outcome({ status }: { status: ToolCallStatus }) {
       <span
         role="img"
         aria-label="Running"
-        className="inline-flex size-4.5 shrink-0 items-center justify-center"
+        className="inline-flex size-4.5 shrink-0 items-center justify-center text-signal"
       >
-        <span className="size-2 rounded-full bg-signal motion-safe:animate-pulse" />
+        <Icon icon={LoaderCircle} size={16} className="motion-safe:animate-spin" />
       </span>
     );
   }

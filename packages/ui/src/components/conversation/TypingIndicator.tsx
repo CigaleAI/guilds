@@ -18,6 +18,17 @@ export type TypingIndicatorProps = Omit<ComponentProps<"div">, "children"> & {
 
 const dots = ["bg-muted", "bg-faint", "bg-rule"] as const;
 
+/** Three pulsing dots: a reply still being written, such as after the text streamed so far. */
+export function TypingDots({ className, ...props }: Omit<ComponentProps<"span">, "children">) {
+  return (
+    <span className={cn("flex shrink-0 gap-1", className)} {...props}>
+      {dots.map((fill) => (
+        <span key={fill} className={cn("size-1.5 rounded-full motion-safe:animate-pulse", fill)} />
+      ))}
+    </span>
+  );
+}
+
 /** An agent working on a reply: its avatar and three pulsing dots. */
 export function TypingIndicator({
   name,
@@ -33,20 +44,10 @@ export function TypingIndicator({
   return (
     <div role="status" className={cn("flex min-w-0 items-center gap-3", className)} {...props}>
       <Avatar name={name} tone={tone} size={avatarSize} {...(src ? { src } : {})} aria-hidden />
-      <span
+      <TypingDots
         aria-hidden
-        className={cn(
-          "flex shrink-0 gap-1 rounded-full px-3.5 py-2.5",
-          bubble === "paper" ? "bg-paper" : "bg-surface",
-        )}
-      >
-        {dots.map((fill) => (
-          <span
-            key={fill}
-            className={cn("size-1.5 rounded-full motion-safe:animate-pulse", fill)}
-          />
-        ))}
-      </span>
+        className={cn("rounded-full px-3.5 py-2.5", bubble === "paper" ? "bg-paper" : "bg-surface")}
+      />
       <span className="min-w-0 truncate text-sm text-muted">{text}</span>
     </div>
   );

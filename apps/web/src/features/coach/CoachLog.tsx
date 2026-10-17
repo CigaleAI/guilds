@@ -8,6 +8,7 @@ import {
   AgentMessage,
   OperatorMessage,
   TypingIndicator,
+  TypingDots,
   SkeletonRows,
   personTone,
 } from "@guildsrun/ui";
@@ -138,6 +139,9 @@ export function CoachLog({
             <div className="flex flex-col gap-2">
               {live?.reasoning ? <Reasoning text={live.reasoning} streaming={!live.text} /> : null}
               {live?.text ? <Markdown density="compact">{live.text}</Markdown> : null}
+              {generating ? (
+                <TypingDots role="status" aria-label="Still writing" className="py-1" />
+              ) : null}
             </div>
           </AgentMessage>
         ) : generating ? (
