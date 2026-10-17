@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { orchestratorRoot } from "../lib/paths.js";
+import { reportPoolError } from "../observability/runtime.js";
 import { seedOperator } from "./seed/operator.js";
 import { seedSystem } from "./seed/system.js";
 import { installCodecs } from "./install-codecs.js";
@@ -27,13 +28,23 @@ export type DatabaseExtension = {
   seed?(pool: pg.Pool): Promise<void>;
 };
 
+const CONNECT_TIMEOUT_MS = 10_000;
+
+/**
+ * The pool: TCP keepalive on each connection, a connection that does not finish its handshake
+ * in 10 seconds fails, and one that fails while idle is reported instead of crashing the process.
+ */
 export async function createPool(databaseUrl: string): Promise<pg.Pool> {
   installCodecs();
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString: databaseUrl,
     min: 1,
     max: 5,
+    keepAlive: true,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
   });
+  pool.on("error", reportPoolError);
+  return pool;
 }
 
 /** Applies core's committed migrations; throws `MigrationsNotApplied` when one was skipped. */

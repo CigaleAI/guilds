@@ -2,7 +2,7 @@ import { jsonObj } from "../db/json.js";
 import { AgentMessageLimitReached, GroupChatCleared, GuildInactive } from "../db/errors.js";
 import { groupMessageItem } from "../db/views.js";
 import { guildOperators, type GuildOperator } from "../guilds/validation.js";
-import { EventQueue } from "../lib/event.js";
+import { AsyncEvent, EventQueue } from "../lib/event.js";
 import { writeLog } from "../observability/log.js";
 import {
   defaultGroupRouter,
@@ -306,17 +306,87 @@ export type GuildEventObserver = (
   data: Record<string, unknown>,
 ) => Promise<void>;
 
+/** One group run to start: the agent, the snapshot it sees, and why it was picked. */
+export type GroupDelivery = {
+  agentId: string;
+  throughSeq: number;
+  deliveredThrough: number;
+  recipients: Record<string, unknown> | null;
+};
+
 export type GroupRunner = {
   agent_is_busy(agentId: string): boolean;
   wait_lock_release(seen: number): Promise<void>;
-  deliver_group_run(agentId: string, throughSeq: number, deliveredThrough: number): Promise<void>;
+  deliver_group_run(delivery: GroupDelivery): Promise<void>;
+  /** Stops the run the agent is generating, if any. */
+  cancel_agent_run(agentId: string): Promise<void>;
   lock_generation: number;
 };
+
+/** A group run under way: its agent and the snapshot it was given. */
+export type ActiveDelivery = {
+  id: string;
+  name: string;
+  throughSeq: number;
+  task?: Promise<void>;
+};
+
+type RecipientPick = { decision: RecipientDecision; tagged: Set<string> };
 
 type DispatchHandle = {
   promise: Promise<void>;
   done(): boolean;
 };
+
+/**
+ * Pending agents as the dispatcher sees them: an agent in a group run has seen the chat through
+ * that run's snapshot, so it is pending only for what came after.
+ */
+export function withActiveCursors(
+  pending: Array<Record<string, unknown>>,
+  active: ReadonlyMap<string, ActiveDelivery>,
+  snapshot: number,
+): Array<Record<string, unknown>> {
+  return pending
+    .map((agent) => {
+      const delivery = active.get(String(agent.id));
+      const cursor = Number(agent.group_chat_delivered_through);
+      if (delivery === undefined) {
+        return agent;
+      }
+      return { ...agent, group_chat_delivered_through: Math.max(cursor, delivery.throughSeq) };
+    })
+    .filter((agent) => Number(agent.group_chat_delivered_through) < snapshot);
+}
+
+/**
+ * Which picked agents start a run now. A tagged agent starts as soon as it is free, alongside
+ * other group runs. An agent picked without a tag runs alone: it starts only when no other group
+ * run is under way or starting.
+ */
+export function deliveriesToStart(args: {
+  actionable: Array<Record<string, unknown>>;
+  tagged: ReadonlySet<string>;
+  active: ReadonlyMap<string, ActiveDelivery>;
+  isBusy: (agentId: string) => boolean;
+}): { start: Array<Record<string, unknown>>; waitsForRelease: boolean } {
+  const waiting = args.actionable.filter((agent) => !args.active.has(String(agent.id)));
+  const idle = waiting.filter((agent) => !args.isBusy(String(agent.id)));
+  const start = idle.filter((agent) => args.tagged.has(String(agent.name)));
+  const untagged = idle.find((agent) => !args.tagged.has(String(agent.name)));
+  if (untagged && args.active.size + start.length === 0) {
+    start.push(untagged);
+  }
+  return { start, waitsForRelease: idle.length < waiting.length };
+}
+
+/** The group runs an interrupting post stops: the tagged agents' runs, or every run when untagged. */
+export function interruptTargets(activeAgentIds: string[], taggedAgentIds: string[]): string[] {
+  if (!taggedAgentIds.length) {
+    return activeAgentIds;
+  }
+  return activeAgentIds.filter((agentId) => taggedAgentIds.includes(agentId));
+}
 
 export class GroupChat {
   db: GroupChatDatabase;
@@ -325,10 +395,18 @@ export class GroupChat {
   _subs = new Map<string, Set<EventQueue<[string, Record<string, unknown>]>>>();
   _observers: GuildEventObserver[] = [];
   _dispatch_tasks = new Map<string, DispatchHandle>();
-  _active_agent = new Map<string, { id: string; name: string }>();
+  /** Each guild's group runs under way, by agent id. */
+  _active = new Map<string, Map<string, ActiveDelivery>>();
+  /** Set when something may let a guild's dispatcher start another run. */
+  _kicks = new Map<string, AsyncEvent>();
   _router: GroupRouter;
   lastRecipientDecision: RecipientDecision | null = null;
-  _recipientCache: { guildId: string; snapshot: number; decision: RecipientDecision } | null = null;
+  _recipientCache: {
+    guildId: string;
+    snapshot: number;
+    decision: RecipientDecision;
+    tagged: Set<string>;
+  } | null = null;
 
   constructor(
     db: GroupChatDatabase,
@@ -394,6 +472,10 @@ export class GroupChat {
 
   async wake(guildId: string): Promise<void> {
     if (this._runner === null || this._is_deleting(guildId)) {
+      return;
+    }
+    if (this.is_dispatching(guildId)) {
+      this._kick(guildId).set();
       return;
     }
     const state = await this.state(guildId);
@@ -485,10 +567,14 @@ export class GroupChat {
     return this.list_messages(guildId);
   }
 
+  /**
+   * Posts an operator message. With `interrupt`, it then stops the group runs the message
+   * targets, so they start again with it in view.
+   */
   async post_user(
     guildId: string,
     content: string,
-    options: { author_name?: string } = {},
+    options: { author_name?: string; interrupt?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
@@ -519,13 +605,16 @@ export class GroupChat {
     }
     const message = groupMessageItem(row);
     await this._after_commit(guildId, message);
+    if (options.interrupt) {
+      await this._interrupt(guildId, tags.agentIds);
+    }
     return message;
   }
 
   async postUser(
     guildId: string,
     content: string,
-    options: { author_name?: string } = {},
+    options: { author_name?: string; interrupt?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     return this.post_user(guildId, content, options);
   }
@@ -596,6 +685,15 @@ export class GroupChat {
     return this.post_from_run(runId, agentId, guildId, agentName, content);
   }
 
+  async _interrupt(guildId: string, taggedAgentIds: string[]): Promise<void> {
+    const runner = this._runner;
+    if (runner === null) {
+      return;
+    }
+    const targets = interruptTargets([...this._active_for(guildId).keys()], taggedAgentIds);
+    await Promise.all(targets.map((agentId) => runner.cancel_agent_run(agentId)));
+  }
+
   async _tags(guildId: string, text: string): Promise<GroupTags> {
     const members = await this.db.listAgents(guildId);
     const guild = await this.db.getGuild(guildId);
@@ -627,28 +725,50 @@ export class GroupChat {
     this._dispatch_tasks.set(guildId, handle);
     handle.promise = this._dispatch(guildId).finally(() => {
       finished = true;
+      // A post that landed while the dispatcher was finishing found it still running.
+      if (this._kick(guildId).isSet()) {
+        void this.wake(guildId);
+      }
     });
   }
 
-  async _recipient_names(
+  _kick(guildId: string): AsyncEvent {
+    let kick = this._kicks.get(guildId);
+    if (kick === undefined) {
+      kick = new AsyncEvent();
+      this._kicks.set(guildId, kick);
+    }
+    return kick;
+  }
+
+  _active_for(guildId: string): Map<string, ActiveDelivery> {
+    let active = this._active.get(guildId);
+    if (active === undefined) {
+      active = new Map();
+      this._active.set(guildId, active);
+    }
+    return active;
+  }
+
+  async _recipients(
     guildId: string,
     pending: Array<Record<string, unknown>>,
     snapshot: number,
-  ): Promise<Set<string>> {
+  ): Promise<RecipientPick> {
     if (
       this._recipientCache &&
       this._recipientCache.guildId === guildId &&
       this._recipientCache.snapshot === snapshot
     ) {
       this.lastRecipientDecision = this._recipientCache.decision;
-      return this._recipientCache.decision.names;
+      return { decision: this._recipientCache.decision, tagged: this._recipientCache.tagged };
     }
     const rows = await this.db.listGroupMessages(guildId, { throughSeq: snapshot });
     if (!rows.length) {
       const empty: RecipientDecision = { source: "tags", names: new Set() };
       this.lastRecipientDecision = empty;
-      this._recipientCache = { guildId, snapshot, decision: empty };
-      return empty.names;
+      this._recipientCache = { guildId, snapshot, decision: empty, tagged: new Set() };
+      return { decision: empty, tagged: new Set() };
     }
     const members = await this.db.listAgents(guildId);
     const tagged = new Set<string>();
@@ -676,7 +796,7 @@ export class GroupChat {
       });
     }
     this.lastRecipientDecision = decision;
-    this._recipientCache = { guildId, snapshot, decision };
+    this._recipientCache = { guildId, snapshot, decision, tagged };
     // A `none` verdict creates no run, so this line is its only trace.
     const summary = serializeRecipientDecision(decision);
     writeLog(
@@ -686,92 +806,21 @@ export class GroupChat {
         ` names=${JSON.stringify(summary.names)}`,
       { guild_id: guildId, operation: "group.recipients" },
     );
-    return decision.names;
+    return { decision, tagged };
   }
 
-  recipientMetadata(): Record<string, unknown> | null {
-    return this.lastRecipientDecision
-      ? serializeRecipientDecision(this.lastRecipientDecision)
-      : null;
-  }
-
+  /**
+   * Starts a run for every pending agent that may start now, and waits until something changes:
+   * a post, a run ending, or a busy agent coming free. Each agent has at most one group run.
+   */
   async _dispatch(guildId: string): Promise<void> {
     const current = this._dispatch_tasks.get(guildId);
     try {
-      while (!this._is_deleting(guildId)) {
-        const runner = this._runner;
-        if (runner === null) {
-          return;
-        }
-        const state = await this.state(guildId);
-        const pending = await this.db.listPendingGroupAgents(guildId, Number(state.chat_seq));
-        if (!pending.length) {
-          await this.publish(guildId, "group.idle", await this.state(guildId));
-          return;
-        }
-        let snapshot = Number(state.chat_seq);
-        const recipients = await this._recipient_names(guildId, pending, snapshot);
-        const actionable = pending.filter((agent) => recipients.has(String(agent.name)));
-        for (const agent of pending) {
-          if (!recipients.has(String(agent.name))) {
-            await this.db.advanceGroupCursor(String(agent.id), snapshot);
-          }
-        }
-        if (!actionable.length) {
-          await this.publish(guildId, "group.idle", await this.state(guildId));
-          return;
-        }
-        const idle = actionable.filter((agent) => !runner.agent_is_busy(String(agent.id)));
-        if (!idle.length) {
-          const seen = runner.lock_generation;
-          await runner.wait_lock_release(seen);
-          continue;
-        }
-        const agent = idle[0];
-        if (!agent) {
-          return;
-        }
-        snapshot = Number((await this.state(guildId)).chat_seq);
-        const deliveredThrough = Number(agent.group_chat_delivered_through);
-        this._active_agent.set(guildId, { id: String(agent.id), name: String(agent.name) });
-        await this.publish(guildId, "group.delivery.started", {
-          agent_id: agent.id,
-          agent_name: agent.name,
-          through_seq: snapshot,
-        });
-        try {
-          await runner.deliver_group_run(String(agent.id), snapshot, deliveredThrough);
-          await this.db.advanceGroupCursor(String(agent.id), snapshot);
-          await this.publish(guildId, "group.delivery.finished", {
-            agent_id: agent.id,
-            through_seq: snapshot,
-          });
-        } catch (error) {
-          if (error instanceof DeliveryBusyError) {
-            const seen = runner.lock_generation;
-            await runner.wait_lock_release(seen);
-            continue;
-          }
-          if (error instanceof DeliveryCreateError) {
-            await this._delivery_failed(guildId, String(agent.id), snapshot, error);
-          } else {
-            writeLog(
-              "error",
-              "group delivery failed",
-              {
-                guild_id: guildId,
-                agent_id: String(agent.id),
-                operation: "group.delivery",
-                error_type: error instanceof Error ? error.name : "Error",
-              },
-              error,
-            );
-            await this._delivery_failed(guildId, String(agent.id), snapshot, error);
-          }
-        } finally {
-          this._active_agent.delete(guildId);
-        }
+      let more = true;
+      while (more && !this._is_deleting(guildId) && this._runner !== null) {
+        more = await this._dispatch_step(guildId, this._runner);
       }
+      await this.publish(guildId, "group.idle", await this.state(guildId));
     } catch (error) {
       writeLog(
         "error",
@@ -784,11 +833,140 @@ export class GroupChat {
         error,
       );
     } finally {
-      this._active_agent.delete(guildId);
+      await Promise.allSettled([...this._active_for(guildId).values()].map((item) => item.task));
+      this._active.delete(guildId);
       if (this._dispatch_tasks.get(guildId) === current) {
         this._dispatch_tasks.delete(guildId);
       }
     }
+  }
+
+  /** One pass of the dispatcher; false once nothing is pending, under way, or waiting on a lock. */
+  async _dispatch_step(guildId: string, runner: GroupRunner): Promise<boolean> {
+    const kick = this._kick(guildId);
+    kick.clear();
+    const seen = runner.lock_generation;
+    const active = this._active_for(guildId);
+    const snapshot = Number((await this.state(guildId)).chat_seq);
+    const pending = withActiveCursors(
+      await this.db.listPendingGroupAgents(guildId, snapshot),
+      active,
+      snapshot,
+    );
+    const plan = pending.length
+      ? await this._plan(guildId, pending, snapshot, runner)
+      : { start: [], waitsForRelease: false, pick: null };
+    for (const agent of plan.start) {
+      this._start_delivery(guildId, agent, { snapshot, pick: plan.pick });
+    }
+    if (!active.size && !plan.waitsForRelease) {
+      return false;
+    }
+    const release = plan.waitsForRelease ? [runner.wait_lock_release(seen)] : [];
+    await Promise.race([kick.wait(), ...release]);
+    return true;
+  }
+
+  /** Moves agents no unseen message picks past the snapshot, and says which picked ones start. */
+  async _plan(
+    guildId: string,
+    pending: Array<Record<string, unknown>>,
+    snapshot: number,
+    runner: GroupRunner,
+  ): Promise<{
+    start: Array<Record<string, unknown>>;
+    waitsForRelease: boolean;
+    pick: RecipientPick;
+  }> {
+    const pick = await this._recipients(guildId, pending, snapshot);
+    const actionable = pending.filter((agent) => pick.decision.names.has(String(agent.name)));
+    for (const agent of pending) {
+      if (!pick.decision.names.has(String(agent.name))) {
+        await this.db.advanceGroupCursor(String(agent.id), snapshot);
+      }
+    }
+    const plan = deliveriesToStart({
+      actionable,
+      tagged: pick.tagged,
+      active: this._active_for(guildId),
+      isBusy: (agentId) => runner.agent_is_busy(agentId),
+    });
+    return { ...plan, pick };
+  }
+
+  _start_delivery(
+    guildId: string,
+    agent: Record<string, unknown>,
+    through: { snapshot: number; pick: RecipientPick | null },
+  ): void {
+    const active = this._active_for(guildId);
+    const delivery: ActiveDelivery = {
+      id: String(agent.id),
+      name: String(agent.name),
+      throughSeq: through.snapshot,
+    };
+    active.set(delivery.id, delivery);
+    const recipients = through.pick ? serializeRecipientDecision(through.pick.decision) : null;
+    delivery.task = this._deliver(guildId, {
+      agentId: delivery.id,
+      throughSeq: through.snapshot,
+      deliveredThrough: Number(agent.group_chat_delivered_through),
+      recipients,
+    }).finally(() => {
+      active.delete(delivery.id);
+      this._kick(guildId).set();
+    });
+  }
+
+  async _deliver(guildId: string, delivery: GroupDelivery): Promise<void> {
+    const runner = this._runner;
+    if (runner === null) {
+      return;
+    }
+    const active = this._active_for(guildId).get(delivery.agentId);
+    await this.publish(guildId, "group.delivery.started", {
+      agent_id: delivery.agentId,
+      agent_name: active?.name ?? null,
+      through_seq: delivery.throughSeq,
+    });
+    const seen = runner.lock_generation;
+    try {
+      await runner.deliver_group_run(delivery);
+      await this.db.advanceGroupCursor(delivery.agentId, delivery.throughSeq);
+      await this.publish(guildId, "group.delivery.finished", {
+        agent_id: delivery.agentId,
+        through_seq: delivery.throughSeq,
+      });
+    } catch (error) {
+      await this._delivery_error(guildId, delivery, { error, seen });
+    }
+  }
+
+  /** A busy agent waits for a lock to come free; any other failure is recorded and moves on. */
+  async _delivery_error(
+    guildId: string,
+    delivery: GroupDelivery,
+    failure: { error: unknown; seen: number },
+  ): Promise<void> {
+    const { error, seen } = failure;
+    if (error instanceof DeliveryBusyError) {
+      await this._runner?.wait_lock_release(seen);
+      return;
+    }
+    if (!(error instanceof DeliveryCreateError)) {
+      writeLog(
+        "error",
+        "group delivery failed",
+        {
+          guild_id: guildId,
+          agent_id: delivery.agentId,
+          operation: "group.delivery",
+          error_type: error instanceof Error ? error.name : "Error",
+        },
+        error,
+      );
+    }
+    await this._delivery_failed(guildId, delivery.agentId, delivery.throughSeq, error);
   }
 
   async _delivery_failed(
@@ -815,7 +993,7 @@ export class GroupChat {
     const count = Number(row.agent_message_count);
     const limit = Number(row.agent_message_limit);
     const guildId = String(row.guild_id);
-    const active = this._active_agent.get(guildId);
+    const active = [...(this._active.get(guildId)?.values() ?? [])];
     return {
       guild_id: guildId,
       chat_seq: Number(row.chat_seq),
@@ -823,8 +1001,7 @@ export class GroupChat {
       agent_message_limit: limit,
       dispatching: this.is_dispatching(guildId),
       pending_agent_count: Number(row.pending_agent_count),
-      active_agent_id: active ? active.id : null,
-      active_agent_name: active ? active.name : null,
+      active_agents: active.map((delivery) => ({ id: delivery.id, name: delivery.name })),
       limit_reached: count >= limit,
       errors: Array.isArray(errors) ? errors : [],
       last_recipient_decision:

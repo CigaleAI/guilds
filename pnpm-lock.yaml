@@ -31,6 +31,9 @@ importers:
       '@sentry/node':
         specifier: ^10.75.0
         version: 10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
+      '@sentry/node-native':
+        specifier: ^10.75.0
+        version: 10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
       '@sentry/profiling-node':
         specifier: ^10.75.0
         version: 10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
@@ -2215,6 +2218,14 @@ packages:
 
   '@sentry/node-cpu-profiler@2.4.4':
     resolution: {integrity: sha512-FaYbFWxEyTTVqXLJccokJCkwx2cTuvTiRaM9kA+O4HbZVT49xYXqSV9cNLI5UqJhgdHiZDhelBd5LB4wj7IIRA==}
+    engines: {node: '>=18'}
+
+  '@sentry/node-native-stacktrace@0.5.2':
+    resolution: {integrity: sha512-p1Skk57ERpsLa/cUEFx9ePc/noCIoEXc3PnOy2bnl0r1Xkjla+hLzJKcvkVp+CuUX/4eMZ+/5AA4BJ3EJLrjZg==}
+    engines: {node: '>=18'}
+
+  '@sentry/node-native@10.75.0':
+    resolution: {integrity: sha512-Oe0aNJRFG/KCDPavobToNayzbOkpRVfvObigsOK+9OAd1duSiNs/tqrV8ogyQI9PqbnKWY1AkKyGSuOWy51JXg==}
     engines: {node: '>=18'}
 
   '@sentry/node@10.75.0':
@@ -6041,6 +6052,21 @@ snapshots:
     dependencies:
       detect-libc: 2.1.2
       node-abi: 3.96.0
+
+  '@sentry/node-native-stacktrace@0.5.2':
+    dependencies:
+      detect-libc: 2.1.2
+      node-abi: 3.96.0
+
+  '@sentry/node-native@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))':
+    dependencies:
+      '@sentry/core': 10.75.0
+      '@sentry/node': 10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
+      '@sentry/node-native-stacktrace': 0.5.2
+    transitivePeerDependencies:
+      - '@opentelemetry/core'
+      - '@opentelemetry/exporter-trace-otlp-http'
+      - supports-color
 
   '@sentry/node@10.75.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))':
     dependencies:

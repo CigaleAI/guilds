@@ -32,6 +32,7 @@ import {
   GroupChat,
   groupChatUserMessage,
   type GroupChatDatabase,
+  type GroupDelivery,
   type GroupRunner,
 } from "../groupchat/index.js";
 import { guildOperators } from "../guilds/validation.js";
@@ -1399,19 +1400,12 @@ export class GenerationLoop implements GroupRunner {
     return this.run_view(row);
   }
 
-  async deliver_group_run(
-    agentId: string,
-    throughSeq: number,
-    deliveredThrough: number,
-  ): Promise<void> {
-    return this.deliverGroupRun(agentId, throughSeq, deliveredThrough);
+  async deliver_group_run(delivery: GroupDelivery): Promise<void> {
+    return this.deliverGroupRun(delivery);
   }
 
-  async deliverGroupRun(
-    agentId: string,
-    throughSeq: number,
-    deliveredThrough: number,
-  ): Promise<void> {
+  async deliverGroupRun(delivery: GroupDelivery): Promise<void> {
+    const { agentId, throughSeq, deliveredThrough, recipients } = delivery;
     let prepared: PreparedRun;
     try {
       prepared = await this._prepare_run(agentId, { throughSeq });
@@ -1436,7 +1430,6 @@ export class GenerationLoop implements GroupRunner {
     const runId = newId("r");
     const now = new Date();
     const current = prepared.hashes;
-    const recipients = this.group_chat.recipientMetadata();
     const runMetadata = preparedRunMetadata(prepared, recipients ? { recipients } : null);
     const create = () =>
       this.db.createGroupRun(
@@ -1649,6 +1642,20 @@ export class GenerationLoop implements GroupRunner {
 
   agentIsBusy(agentId: string): boolean {
     return this.agent_is_busy(agentId);
+  }
+
+  async cancel_agent_run(agentId: string): Promise<void> {
+    const runIds = [...this._run_agent].filter(([, owner]) => owner === agentId).map(([runId]) => runId);
+    for (const runId of runIds) {
+      try {
+        await this.cancel(runId);
+      } catch (error) {
+        // The run ended before the cancel reached it.
+        if (!(error instanceof RunRequestError)) {
+          throw error;
+        }
+      }
+    }
   }
 
   async wait_lock_release(seen: number): Promise<void> {

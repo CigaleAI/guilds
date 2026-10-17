@@ -25,6 +25,7 @@ import { ModelsService } from "./llm/models.js";
 import { layOutAgentHomes } from "./machines/layout.js";
 import { McpPool, TOOLS_TTL_MS } from "./mcp/index.js";
 import { NotesStore } from "./notes/store.js";
+import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
 import { RecipeApplyService } from "./recipes/apply.js";
 import { RecipeStore } from "./recipes/store.js";
@@ -59,6 +60,7 @@ export async function createServer(
   installIntegrations(extensions.flatMap((extension) => [...(extension.integrations ?? [])]));
   installHarnessesOff(config.harnessesOff);
   const database = await connect(config.databaseUrl, extensions);
+  const stopRuntimeMetrics = startRuntimeMetrics(database.pool);
   if (config.operatorEmail) {
     await setOperatorEmail(database.pool, config.operatorEmail);
   }
@@ -183,6 +185,7 @@ export async function createServer(
       await app.close();
       await generation.close();
       await sandboxes.close();
+      stopRuntimeMetrics();
       await database.close();
     },
   };

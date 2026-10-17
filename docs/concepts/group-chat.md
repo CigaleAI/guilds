@@ -68,14 +68,23 @@ focus and the Task.
 Each agent keeps a cursor: the last message it has been shown. An
 agent is *pending* when new messages sit past its cursor.
 
-A dispatcher, one per guild, works through the pending agents one at a
-time. For each, it looks at the messages the agent has not seen. If
-any of them wakes the agent, the agent gets **one** run that shows the
-whole recent chat. If none does, the cursor just moves forward. So an
-agent that is behind by five messages gets one run, not five.
+A dispatcher, one per guild, watches the pending agents. For each, it
+looks at the messages the agent has not seen. If any of them wakes the
+agent, the agent gets **one** run that shows the whole recent chat. If
+none does, the cursor just moves forward. So an agent that is behind by
+five messages gets one run, not five.
 
-At most one group run executes per guild at a time. Different guilds
-run side by side.
+An agent has at most one group run at a time. Whether it may run beside
+other agents depends on how it was woken:
+
+- An agent woken by an explicit `@` tag starts as soon as it is free,
+  even while other agents are in their runs.
+- An agent woken without a tag, by an untagged operator message or by
+  the router, runs alone. It starts only when no other group run is
+  under way, so agents woken together by one untagged message take
+  turns and each sees the replies before it.
+
+Different guilds run side by side.
 
 ```mermaid
 sequenceDiagram
@@ -120,6 +129,18 @@ each guild has a limit on agent messages in a row: 200 for a new
 guild. When agents reach it, the next agent post is refused and the
 agents wait. The next operator message resets the count. This is a
 fixed budget, not loop detection.
+
+### Posting while agents work
+
+A message posted while an agent is in a run never reaches that run:
+the run keeps the chat as it was when it started. The agent stays
+pending and gets a fresh run with the new message once the current one
+ends.
+
+A post can ask to **interrupt**. The message is saved as usual, then
+the group runs it targets are cancelled: the runs of the agents it tags,
+or every group run when it tags no agent. The cancelled agents start
+again with the new message in view.
 
 ### Busy agents
 
@@ -178,8 +199,23 @@ The **Group chat** tab is the guild's home, at `/guilds/<id>`.
   messages** when unread ones arrived, otherwise **Jump to latest**.
 - `?seq=<n>` opens the chat at that message, lights it, and marks the
   chat read up to it. The inbox uses this for a tag.
-- A responding row names the agent generating and how many more wait,
-  and opens that agent.
+- A responding row names each agent in a group run and opens that
+  agent. The last row also says how many more agents wait.
+- A message waits in a **Queued** list above the composer when it
+  targets an agent in a group run: it tags that agent, or it tags no
+  agent while any agent is in a group run. A message that tags only
+  free agents is posted at once, and they start beside the running
+  ones.
+- Queued messages stack in the order they were written. The app posts
+  them oldest first, each once nothing it waits for is still running.
+  Each one says which agents it waits for.
+- **Send now** on a queued message posts it with interrupt, so the runs
+  it waits for stop and start again with it. The cross deletes it. A
+  queued message whose post fails stays in the list as **Couldn't
+  send** and holds the ones after it until it is sent or deleted.
+- The queue lives in the browser tab. It is kept while the operator
+  moves between the guild's pages, sends only while one of them is
+  open, and is lost on reload. Other operators do not see it.
 - A banner says when agents paused at the agent message limit.
 - When an admin clears the chat, every open view of it empties at
   once.
@@ -211,7 +247,9 @@ An agent's **Wake me when** field is in its Settings, under Identity
 | Operator tags | never wake an agent |
 | Untagged agent post | wakes nobody |
 | Runs per agent | one run covers every unseen message |
-| Group runs at a time | one per guild |
+| Group runs at a time | one per agent; an agent woken without a tag runs alone |
+| Interrupt | cancels the tagged agents' group runs, or every group run when untagged |
+| Queued messages | in the operator's browser tab; lost on reload |
 | History an agent sees | the last 10 public messages |
 | Router confidence floor | 0.5; below it the tag rules decide |
 | Agent messages in a row | 200 for a new guild; positive integer; an operator post resets it |
@@ -316,19 +354,27 @@ each agent's delivered-through cursor
 (`agents.group_chat_delivered_through`). An agent is pending when its
 cursor is behind. The system creates no job per message-agent pair.
 
-One in-process dispatcher runs per guild:
+One in-process dispatcher runs per guild. Each pass:
 
-1. find members whose cursor is behind;
-2. freeze the current sequence as the delivery snapshot;
-3. for each member, examine messages after its cursor through the
+1. freezes the current sequence as the delivery snapshot;
+2. finds members whose cursor is behind it. A member in a group run
+   counts as delivered through that run's snapshot;
+3. for each member, examines messages after its cursor through the
    snapshot;
-4. keep members selected by any message in that range; skip-advance
-   the rest;
-5. skip recipients that currently hold the per-agent lock;
-6. pick the furthest-behind idle recipient (tie: oldest agent);
-7. start one group-triggered run through the snapshot and wait;
-8. advance that agent's cursor through the snapshot;
-9. repeat until nobody is pending.
+4. keeps members selected by any message in that range and
+   skip-advances the rest;
+5. leaves out recipients in a group run or holding the per-agent lock;
+6. starts a group-triggered run through the snapshot for every
+   remaining recipient tagged in that range;
+7. when nothing started and no group run is under way, starts one run
+   for the furthest-behind recipient selected without a tag (tie:
+   oldest agent);
+8. waits for a new post, a run ending, or, when a recipient was busy,
+   a lock release (`waitForLockRelease`).
+
+When a run ends, that agent's cursor advances through its snapshot.
+The dispatcher stops when nobody is pending and no group run is under
+way.
 
 A direct run may run alongside dispatch when it uses a different
 agent. Starting a direct generation for an agent already in a group
@@ -336,9 +382,14 @@ run is a conflict. A message committed during a run leaves that run's
 snapshot unchanged: the agent stays pending and later gets a fresh run
 with the newer history.
 
-When every selected recipient is busy, including with a routine,
-dispatch waits (`waitForLockRelease`). The cursor does not advance
-until delivery succeeds or fails.
+When a selected recipient is busy, including with a routine, it waits
+for the lock. The cursor does not advance until delivery succeeds or
+fails.
+
+An interrupting post commits first, then cancels the targeted runs
+through `cancel_agent_run`. Each cancelled run ends like any other: the
+agent's cursor moves through that run's snapshot, and the agent is
+pending again for the new message.
 
 On startup, committed messages and cursors are enough to resume. A
 failure after a group run exists advances that agent's cursor and lets
@@ -488,10 +539,11 @@ no row.
 | `PUT /api/guilds/:id/group-chat/read` | advances the caller's cursor to `seen_through_seq` | 200 | 422 not a non-negative integer |
 | `GET /api/guilds/:id/group-chat/messages` | every public message | 200 | 404 |
 | `DELETE /api/guilds/:id/group-chat/messages` | clears the chat; returns the chat state | 200 | 403 not a guild admin; 409 guild archived or being deleted; 404 |
-| `POST /api/guilds/:id/group-chat/messages` | posts `content` as the caller | 202 | 422 empty content; 409 guild being deleted |
+| `POST /api/guilds/:id/group-chat/messages` | posts `content` as the caller; `interrupt: true` then cancels the group runs it targets | 202 | 422 empty content or `interrupt` not a boolean; 409 guild being deleted |
 | `GET /api/guilds/:id/group-chat/stream` | the guild's SSE stream | 200 | |
 
 The chat state carries `guild_id`, `chat_seq`, `agent_message_count`,
 `agent_message_limit`, `limit_reached`, `dispatching`,
-`pending_agent_count`, `active_agent_id`, `active_agent_name`,
-`errors`, and `last_recipient_decision` (with its `through_seq`).
+`pending_agent_count`, `active_agents` (`[{id, name}]`, the agents in
+a group run), `errors`, and `last_recipient_decision` (with its
+`through_seq`).

@@ -29,6 +29,8 @@ import {
   personTone,
 } from "@guildsrun/ui";
 import type { MentionCandidate } from "@guildsrun/ui";
+import { GroupQueue, useWaitsFor } from "./GroupQueue";
+import { queueGroupMessage } from "./messageQueue";
 type GroupChatProps = {
   guild: Guild;
   agents: readonly Agent[];
@@ -89,7 +91,7 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
   useLayoutEffect(() => {
     const el = log.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [messages.data?.length, state?.dispatching]);
+  }, [messages.data?.length, state?.dispatching, state?.active_agents.length]);
 
   // Opened at a message: bring it into view once, and count the chat read up to it.
   useLayoutEffect(() => {
@@ -135,21 +137,30 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
       search: run ? { run } : {},
     });
 
+  const waitsFor = useWaitsFor(agents, state);
+  /** Holds the message back while an agent it targets is in a group run; sends it otherwise. */
   const send = (content: string) => {
+    if (waitsFor(content).length) {
+      queueGroupMessage(guild.id, content);
+      return;
+    }
     atBottom.current = true;
-    post.mutate(content, {
-      onError: (error) =>
-        toast({ kind: "error", title: "Couldn't post to the guild", description: error.message }),
-    });
+    post.mutate(
+      { content },
+      {
+        onError: (error) =>
+          toast({ kind: "error", title: "Couldn't post to the guild", description: error.message }),
+      },
+    );
   };
 
   const latestError = state?.errors.at(-1);
   const errorKey = latestError ? `${latestError.at}-${latestError.agent_id}` : null;
-  const responding =
-    state?.dispatching && state.active_agent_name
-      ? agentByName.get(state.active_agent_name)
-      : undefined;
-  const waiting = Math.max(0, (state?.pending_agent_count ?? 0) - 1);
+  const responding = (state?.active_agents ?? []).flatMap((active) => {
+    const agent = agentByName.get(active.name);
+    return agent ? [agent] : [];
+  });
+  const waiting = Math.max(0, (state?.pending_agent_count ?? 0) - responding.length);
 
   const renderMessage = (message: GroupMessage) => (
     <div
@@ -278,21 +289,22 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
               )
             )}
 
-            {responding ? (
+            {responding.map((agent, index) => (
               <button
+                key={agent.id}
                 type="button"
-                title={`Open ${responding.name}`}
-                onClick={() => openAgent(responding.id)}
+                title={`Open ${agent.name}`}
+                onClick={() => openAgent(agent.id)}
                 className="cursor-pointer self-start rounded-2xl text-left"
               >
                 <TypingIndicator
-                  name={responding.name}
-                  {...agentLook(responding)}
-                  caption={`${responding.name} is responding…${waiting > 0 ? ` ${waiting} more waiting` : ""}`}
+                  name={agent.name}
+                  {...agentLook(agent)}
+                  caption={`${agent.name} is responding…${index === responding.length - 1 && waiting > 0 ? ` ${waiting} more waiting` : ""}`}
                   bubble="surface"
                 />
               </button>
-            ) : null}
+            ))}
           </div>
         </div>
         {away ? (
@@ -308,6 +320,9 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
         ) : null}
       </div>
       <div className="px-4 pb-3 md:px-10 md:pb-6">
+        <div className="mx-auto max-w-240">
+          <GroupQueue guildId={guild.id} agents={agents} state={state} />
+        </div>
         <Composer
           className="mx-auto max-w-240"
           variant="inline"

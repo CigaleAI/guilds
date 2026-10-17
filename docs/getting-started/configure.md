@@ -85,7 +85,7 @@ the shell does not reach the container.
 
 | Integration | Variables | Switches on | Without it |
 |---|---|---|---|
-| Error reporting | `SENTRY_DSN` | Errors and traces sent to Sentry | Structured logs only ([Operate](operate.md#logs)) |
+| Error reporting | `SENTRY_DSN` | Errors, traces, logs, and runtime metrics sent to Sentry ([Operate](operate.md#logs)) | Structured logs only ([Operate](operate.md#logs)) |
 | Registry | `REGISTRY_URL`, the guilds.run registry while unset. `REGISTRY_PUBLIC_KEY` to require a signed index | Installing connectors and recipes from a registry ([Registry](../tools-and-connectors/registry.md)) | Set empty, the box is offline. Nothing installs, and recipe apply names a missing connector unknown |
 | Connector code | `CONNECTORS_CODE_TIER=1`, and `CONNECTORS_ROOT` (`STATE_ROOT/connectors` on the Compose stack) | Registry connectors that carry adapter code, from an index `REGISTRY_PUBLIC_KEY` verifies ([Code tier](../tools-and-connectors/registry.md#code-tier)) | A code install is refused, and code already on disk is not loaded |
 

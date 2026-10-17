@@ -250,9 +250,29 @@ the server did.
 At boot the server logs `listening` once it accepts requests, and
 `sentry enabled` or `sentry disabled`.
 
-With `SENTRY_DSN` set, errors and traces go to Sentry under
-`SENTRY_ENVIRONMENT`, sampled at `SENTRY_TRACES_SAMPLE_RATE`. Sentry
-never receives:
+With `SENTRY_DSN` set, Sentry receives under `SENTRY_ENVIRONMENT`:
+
+- errors, as issues
+- traces, sampled at `SENTRY_TRACES_SAMPLE_RATE`
+- every `info`, `warn`, and `error` log line, as a Sentry log whose
+  attributes are the line's fields, already redacted
+- runtime metrics, every 10 seconds: `node.event_loop.delay_max` and
+  `node.event_loop.delay_p99` (ms), `node.memory.heap_used` and
+  `node.memory.rss` (bytes), and the database pool's `db.pool.total`,
+  `db.pool.idle`, and `db.pool.waiting`
+- a count of `node.event_loop.stall` for each 10 seconds in which the
+  event loop was held 1 second or more, and of `db.pool.error` for
+  each pooled connection lost while idle
+- an `EventLoopBlocked` event with the main thread's stack when the
+  event loop is held 1 second or more, at most 10 an hour
+
+A stall also logs `event loop stalled for <ms> ms` at `warn` with
+`operation: runtime.stall`. A pooled connection lost while idle logs
+`idle database connection lost: <reason>` at `warn` with
+`operation: db.pool`; the pool drops it and opens another on the next
+query.
+
+Sentry never receives:
 
 - user information
 - cookies

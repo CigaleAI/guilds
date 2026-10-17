@@ -137,3 +137,55 @@ test("error logs are forwarded to sentryCapture and warns are not", () => {
   assert.equal((fields as { operation?: string }).operation, "http.request");
   assert.ok(error instanceof Error);
 });
+
+test("info, warn, and error logs are sent to Sentry Logs with their fields and debug is not", () => {
+  const calls: unknown[][] = [];
+  const originalLog = sentryCapture.log;
+  const originalWrite = logWriter.write;
+  sentryCapture.log = ((...args) => {
+    calls.push(args);
+  }) as typeof sentryCapture.log;
+  logWriter.write = () => {};
+  try {
+    writeLog("debug", "skip", { operation: "mcp.call" });
+    writeLog("info", "listening", { operation: "http.listen" });
+    writeLog("warn", "slow", { operation: "db.pool", status: 503, path: "/health" });
+    writeLog("error", "boom", { operation: "http.request" }, new Error("boom"));
+  } finally {
+    sentryCapture.log = originalLog;
+    logWriter.write = originalWrite;
+  }
+  assert.deepEqual(
+    calls.map(([level, message]) => [level, message]),
+    [
+      ["info", "listening"],
+      ["warn", "slow"],
+      ["error", "boom"],
+    ],
+  );
+  assert.deepEqual(calls[1]?.[2], { operation: "db.pool", path: "/health", status: 503 });
+  const errorAttributes = calls[2]?.[2] as Record<string, unknown>;
+  assert.equal(errorAttributes.error_type, "Error");
+  assert.match(String(errorAttributes.traceback), /boom/);
+  assert.equal("message" in errorAttributes, false);
+});
+
+test("Sentry Logs attributes carry the redacted values", () => {
+  process.env.OPENROUTER_API_KEY = "sk-or-sentry-log-secret";
+  const calls: unknown[][] = [];
+  const originalLog = sentryCapture.log;
+  const originalWrite = logWriter.write;
+  sentryCapture.log = ((...args) => {
+    calls.push(args);
+  }) as typeof sentryCapture.log;
+  logWriter.write = () => {};
+  try {
+    writeLog("warn", "key sk-or-sentry-log-secret", { path: "/x/sk-or-sentry-log-secret" });
+  } finally {
+    sentryCapture.log = originalLog;
+    logWriter.write = originalWrite;
+  }
+  const [, message, attributes] = calls[0] ?? [];
+  assert.equal(message, "key [REDACTED:OPENROUTER_API_KEY]");
+  assert.deepEqual(attributes, { path: "/x/[REDACTED:OPENROUTER_API_KEY]" });
+});

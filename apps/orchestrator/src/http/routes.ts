@@ -1216,9 +1216,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     const body = bodyOf(request);
     const guildId = param(request, "guild_id");
+    if (body.interrupt !== undefined && typeof body.interrupt !== "boolean") {
+      throw new HttpError(422, "interrupt must be a boolean");
+    }
     try {
       const message = await generationOf(deps).group_chat.post_user(guildId, String(body.content ?? ""), {
         author_name: String(user.name),
+        interrupt: body.interrupt === true,
       });
       await repo.markGroupChatSeen(guildId, String(user.id), Number(message.seq), new Date());
       await notifications.ping([String(user.id)]);

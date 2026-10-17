@@ -1,5 +1,5 @@
 import { writeSync } from "node:fs";
-import { captureLogError } from "./sentry.js";
+import { captureLog, captureLogError, type LogAttributes } from "./sentry.js";
 
 const SECRET_NAME_RE = /(API_KEY|SECRET|TOKEN|PASSWORD|PASSWD)$/i;
 
@@ -201,7 +201,25 @@ export function writeLog(
     const fallback = `[error] log write failed: ${failed instanceof Error ? failed.message : String(failed)}\n[${level}] ${message}\n`;
     writeFd(2, fallback, process.stderr);
   }
+  captureLog(level, String(payload.message), logAttributes(ordered));
   captureLogError(level, String(payload.message), fields, error);
+}
+
+const NOT_ATTRIBUTES = new Set(["timestamp", "level", "message"]);
+
+function isAttributeValue(value: unknown): value is string | number {
+  return typeof value === "string" || typeof value === "number";
+}
+
+/** The fields of a written line, already redacted, without the ones Sentry Logs sets itself. */
+function logAttributes(ordered: Record<string, unknown>): LogAttributes {
+  const attributes: LogAttributes = {};
+  for (const [key, value] of Object.entries(ordered)) {
+    if (!NOT_ATTRIBUTES.has(key) && isAttributeValue(value)) {
+      attributes[key] = value;
+    }
+  }
+  return attributes;
 }
 
 export function createLogger(): Logger {

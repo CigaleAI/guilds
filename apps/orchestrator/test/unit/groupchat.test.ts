@@ -10,12 +10,17 @@ import {
   DeliveryCreateError,
   GroupChat,
   GroupChatError,
+  deliveriesToStart,
   groupChatHistory,
   groupChatUserMessage,
+  interruptTargets,
   limitError,
   parseTags,
   recognizedTags,
+  withActiveCursors,
+  type ActiveDelivery,
   type GroupChatDatabase,
+  type GroupDelivery,
   type GroupRunner,
 } from "../../src/groupchat/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
@@ -372,6 +377,10 @@ class FakeRunner implements GroupRunner {
   lock_generation = 0;
   private readonly lockEvent = new AsyncEvent();
   gate: AsyncEvent | null = null;
+  /** Holds one agent's runs open until set; a cancel sets it. */
+  gates = new Map<string, AsyncEvent>();
+  started: string[] = [];
+  cancelled: string[] = [];
 
   agent_is_busy(agentId: string): boolean {
     return this.busy.has(agentId);
@@ -392,20 +401,34 @@ class FakeRunner implements GroupRunner {
     this.lockEvent.set();
   }
 
-  async deliver_group_run(
-    agentId: string,
-    throughSeq: number,
-    deliveredThrough: number,
-  ): Promise<void> {
+  async deliver_group_run(delivery: GroupDelivery): Promise<void> {
+    const { agentId, throughSeq, deliveredThrough } = delivery;
     if (this.fail_agents.has(agentId)) {
       throw new DeliveryCreateError("invalid prompt files");
     }
-    if (this.gate) {
-      await this.gate.wait();
+    this.started.push(agentId);
+    const gate = this.gates.get(agentId) ?? this.gate;
+    if (gate) {
+      await gate.wait();
     }
     this.deliveries.push([agentId, throughSeq]);
     this.delivery_cursors.push(deliveredThrough);
   }
+
+  async cancel_agent_run(agentId: string): Promise<void> {
+    this.cancelled.push(agentId);
+    this.gates.get(agentId)?.set();
+  }
+}
+
+async function waitStarted(runner: FakeRunner, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 50 && runner.started.length < count; attempt += 1) {
+    await sleep(10);
+  }
+}
+
+function activeDelivery(id: string, throughSeq: number): ActiveDelivery {
+  return { id, name: id, throughSeq };
 }
 
 async function waitDispatch(chat: GroupChat, guildId = "guild_1"): Promise<void> {
@@ -1217,10 +1240,196 @@ describe("groupchat", { concurrency: 1 }, () => {
     chat.bind(runner);
     await chat.post_user("guild_1", "@writer handle this.");
     await waitDispatch(chat);
+    // The tagged writer goes first; the researcher, picked without a tag, runs after it.
     assert.deepEqual(runner.deliveries, [
-      ["a_1", 1],
       ["a_2", 1],
+      ["a_1", 1],
     ]);
     assert.equal(chat.lastRecipientDecision?.source, "fallback");
+  });
+  test("tagged_agent_starts_while_another_group_run_is_under_way", async () => {
+    const { chat } = seed();
+    const runner = new FakeRunner();
+    runner.gates.set("a_1", new AsyncEvent());
+    chat.bind(runner);
+    await chat.post_user("guild_1", "@researcher dig into this.");
+    await waitStarted(runner, 1);
+    await chat.post_user("guild_1", "@writer draft the intro.");
+    await waitStarted(runner, 2);
+    assert.deepEqual(runner.started, ["a_1", "a_2"]);
+    const state = await chat.state("guild_1");
+    assert.deepEqual(state.active_agents, [{ id: "a_1", name: "researcher" }]);
+    runner.gates.get("a_1")?.set();
+    await waitDispatch(chat);
+    assert.deepEqual(runner.deliveries, [
+      ["a_2", 2],
+      ["a_1", 1],
+    ]);
+  });
+
+  test("untagged_fanout_runs_one_agent_at_a_time", async () => {
+    const { chat } = seed();
+    const runner = new FakeRunner();
+    runner.gates.set("a_1", new AsyncEvent());
+    chat.bind(runner);
+    await chat.post_user("guild_1", "Plan the release.");
+    await waitStarted(runner, 1);
+    await sleep(30);
+    assert.deepEqual(runner.started, ["a_1"]);
+    runner.gates.get("a_1")?.set();
+    await waitDispatch(chat);
+    assert.deepEqual(runner.started, ["a_1", "a_2"]);
+  });
+
+  test("untagged_pick_waits_for_a_tagged_run", async () => {
+    const { chat } = seed();
+    const runner = new FakeRunner();
+    runner.gates.set("a_1", new AsyncEvent());
+    chat.bind(runner);
+    await chat.post_user("guild_1", "@researcher dig into this.");
+    await waitStarted(runner, 1);
+    await chat.post_user("guild_1", "Anyone free?");
+    await sleep(30);
+    assert.deepEqual(runner.started, ["a_1"]);
+    runner.gates.get("a_1")?.set();
+    await waitDispatch(chat);
+    assert.deepEqual(runner.deliveries, [
+      ["a_1", 1],
+      ["a_1", 2],
+      ["a_2", 2],
+    ]);
+  });
+
+  test("message_to_an_agent_in_a_run_waits_for_its_next_run", async () => {
+    const { db, chat } = seed();
+    const runner = new FakeRunner();
+    runner.gates.set("a_1", new AsyncEvent());
+    chat.bind(runner);
+    await chat.post_user("guild_1", "@researcher dig into this.");
+    await waitStarted(runner, 1);
+    await chat.post_user("guild_1", "@researcher also check the dates.");
+    await sleep(30);
+    assert.deepEqual(runner.started, ["a_1"]);
+    runner.gates.get("a_1")?.set();
+    await waitDispatch(chat);
+    assert.deepEqual(runner.deliveries, [
+      ["a_1", 1],
+      ["a_1", 2],
+    ]);
+    assert.equal(db.agents.a_1?.group_chat_delivered_through, 2);
+  });
+
+  test("interrupting_post_cancels_the_tagged_run_and_runs_it_again", async () => {
+    const { chat } = seed();
+    const runner = new FakeRunner();
+    runner.gates.set("a_1", new AsyncEvent());
+    chat.bind(runner);
+    await chat.post_user("guild_1", "@researcher dig into this.");
+    await waitStarted(runner, 1);
+    await chat.post_user("guild_1", "@researcher stop, use the new brief.", { interrupt: true });
+    await waitDispatch(chat);
+    assert.deepEqual(runner.cancelled, ["a_1"]);
+    assert.deepEqual(runner.deliveries.at(-1), ["a_1", 2]);
+  });
+
+  test("post_without_interrupt_cancels_nothing", async () => {
+    const { chat } = seed();
+    const runner = new FakeRunner();
+    runner.gates.set("a_1", new AsyncEvent());
+    chat.bind(runner);
+    await chat.post_user("guild_1", "@researcher dig into this.");
+    await waitStarted(runner, 1);
+    await chat.post_user("guild_1", "@researcher one more thing.");
+    runner.gates.get("a_1")?.set();
+    await waitDispatch(chat);
+    assert.deepEqual(runner.cancelled, []);
+  });
+
+  test("with_active_cursors_counts_a_run_snapshot_as_seen", () => {
+    const pending = [
+      { id: "a_1", name: "researcher", group_chat_delivered_through: 0 },
+      { id: "a_2", name: "writer", group_chat_delivered_through: 0 },
+    ];
+    const active = new Map([["a_1", activeDelivery("a_1", 2)]]);
+    assert.deepEqual(withActiveCursors(pending, active, 2), [pending[1]]);
+    assert.deepEqual(withActiveCursors(pending, active, 3), [
+      { id: "a_1", name: "researcher", group_chat_delivered_through: 2 },
+      pending[1],
+    ]);
+  });
+
+  test("deliveries_to_start_starts_every_free_tagged_agent", () => {
+    const actionable = [
+      { id: "a_1", name: "researcher" },
+      { id: "a_2", name: "writer" },
+    ];
+    const plan = deliveriesToStart({
+      actionable,
+      tagged: new Set(["researcher", "writer"]),
+      active: new Map([["a_3", activeDelivery("a_3", 1)]]),
+      isBusy: () => false,
+    });
+    assert.deepEqual(
+      plan.start.map((agent) => agent.id),
+      ["a_1", "a_2"],
+    );
+    assert.equal(plan.waitsForRelease, false);
+  });
+
+  test("deliveries_to_start_runs_an_untagged_agent_alone", () => {
+    const actionable = [
+      { id: "a_1", name: "researcher" },
+      { id: "a_2", name: "writer" },
+    ];
+    const free = deliveriesToStart({
+      actionable,
+      tagged: new Set(),
+      active: new Map(),
+      isBusy: () => false,
+    });
+    assert.deepEqual(
+      free.start.map((agent) => agent.id),
+      ["a_1"],
+    );
+    const underWay = deliveriesToStart({
+      actionable,
+      tagged: new Set(),
+      active: new Map([["a_3", activeDelivery("a_3", 1)]]),
+      isBusy: () => false,
+    });
+    assert.deepEqual(underWay.start, []);
+    const besideTagged = deliveriesToStart({
+      actionable,
+      tagged: new Set(["writer"]),
+      active: new Map(),
+      isBusy: () => false,
+    });
+    assert.deepEqual(
+      besideTagged.start.map((agent) => agent.id),
+      ["a_2"],
+    );
+  });
+
+  test("deliveries_to_start_waits_for_a_busy_agent", () => {
+    const plan = deliveriesToStart({
+      actionable: [{ id: "a_1", name: "researcher" }],
+      tagged: new Set(["researcher"]),
+      active: new Map(),
+      isBusy: () => true,
+    });
+    assert.deepEqual(plan.start, []);
+    assert.equal(plan.waitsForRelease, true);
+    const inRun = deliveriesToStart({
+      actionable: [{ id: "a_1", name: "researcher" }],
+      tagged: new Set(["researcher"]),
+      active: new Map([["a_1", activeDelivery("a_1", 1)]]),
+      isBusy: () => true,
+    });
+    assert.equal(inRun.waitsForRelease, false);
+  });
+
+  test("interrupt_targets_tagged_runs_or_every_run", () => {
+    assert.deepEqual(interruptTargets(["a_1", "a_2"], ["a_2", "a_3"]), ["a_2"]);
+    assert.deepEqual(interruptTargets(["a_1", "a_2"], []), ["a_1", "a_2"]);
   });
 });

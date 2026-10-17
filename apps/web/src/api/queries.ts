@@ -333,14 +333,17 @@ export function useMarkTagsRead() {
   });
 }
 
-/** Posts to the group chat; `@name` in the text tags agents and operators. */
+/**
+ * Posts to the group chat; `@name` in the text tags agents and operators. `interrupt` also stops
+ * the group runs the message targets.
+ */
 export function usePostGroupMessage(guildId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) =>
+    mutationFn: (message: { content: string; interrupt?: boolean }) =>
       api<GroupMessage>(`${guildPath(guildId)}/group-chat/messages`, {
         method: "POST",
-        body: { content },
+        body: message,
       }),
     onSuccess: (message) => {
       client.setQueryData<GroupMessage[]>(keys.chatMessages(guildId), (messages) =>

@@ -18,7 +18,8 @@ Where each module lives is the [Code map](code-map.md).
 - `openai` (official client) for OpenRouter and DeepInfra, `js-tiktoken`
   for input counting, `croner` for cron, `undici` for outbound HTTP,
   `esbuild` (development) to bundle a registry connector,
-  [`@dicebear/*`](https://www.dicebear.com/) for avatars, `@sentry/node`
+  [`@dicebear/*`](https://www.dicebear.com/) for avatars, `@sentry/node`,
+  `@sentry/node-native` for event loop stall stacks
 - Tests: `node:test` through `tsx`
 - OpenSandbox server commit `473ff611d93670a149ce6600f27ed194b18cce89`,
   `opensandbox/execd:v1.1.0`, runtime `agent-runtime:0.4` (every
@@ -81,7 +82,9 @@ Configurable only in tests:
 - `SCHEDULER_TICK` = 30 seconds
 - `CANCEL_GRACE` = 2 seconds
 - `SHUTDOWN_TIMEOUT` = 15 seconds
-- PostgreSQL pool = min 1, max 5
+- PostgreSQL pool = min 1, max 5, TCP keepalive, connection handshake
+  timeout 10 seconds
+- runtime metrics sample = 10 seconds; event loop stall = 1 second
 - OpenSandbox SDK `request_timeout` = 3 minutes
 - OpenSandbox list `page_size` = 100
 - model request timeout = 120 seconds

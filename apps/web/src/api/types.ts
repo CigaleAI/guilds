@@ -301,8 +301,8 @@ export type GroupChatState = {
   agent_message_limit: number;
   dispatching: boolean;
   pending_agent_count: number;
-  active_agent_id: string | null;
-  active_agent_name: string | null;
+  /** The agents in a group run right now; several when tags started them side by side. */
+  active_agents: { id: string; name: string }[];
   limit_reached: boolean;
   errors: DeliveryError[];
   /** The last message this operator has seen; null when they never opened the chat. */

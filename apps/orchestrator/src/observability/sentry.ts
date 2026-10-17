@@ -31,6 +31,8 @@ export function initSentry(): boolean {
     environment:
       (process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development").trim() || "development",
     tracesSampleRate: sampleRate("SENTRY_TRACES_SAMPLE_RATE", 1),
+    enableLogs: true,
+    enableMetrics: true,
     debug: process.env.SENTRY_DEBUG === "1",
     dataCollection: {
       userInfo: false,
@@ -95,7 +97,29 @@ export const sentryCapture = {
       Sentry.captureException(asError(message, error));
     });
   },
+  log(level: LogLevel, message: string, attributes: LogAttributes): void {
+    if (!Sentry.getClient()) {
+      return;
+    }
+    Sentry.logger[level](message, attributes);
+  },
 };
+
+export type LogAttributes = Record<string, string | number>;
+
+const SENTRY_LOG_LEVELS: ReadonlySet<LogLevel> = new Set(["info", "warn", "error"]);
+
+/** Sends an info, warn, or error line to Sentry Logs with its fields as attributes. */
+export function captureLog(level: LogLevel, message: string, attributes: LogAttributes): void {
+  if (!SENTRY_LOG_LEVELS.has(level)) {
+    return;
+  }
+  try {
+    sentryCapture.log(level, message, attributes);
+  } catch {
+    /* never break logging */
+  }
+}
 
 export function captureLogError(
   level: LogLevel,

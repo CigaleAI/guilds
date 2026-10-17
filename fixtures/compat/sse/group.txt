@@ -19,5 +19,5 @@ event: group.delivery.finished
 data: {"agent_id": "<id:a:1>", "through_seq": 1}
 
 event: group.idle
-data: {"guild_id": "<id:guild:3>", "chat_seq": 1, "agent_message_count": 0, "agent_message_limit": 8, "dispatching": true, "pending_agent_count": 0, "active_agent_id": null, "active_agent_name": null, "limit_reached": false, "errors": [], "last_recipient_decision": {"through_seq": 1, "source": "tags", "names": ["researcher"]}}
+data: {"guild_id": "<id:guild:3>", "chat_seq": 1, "agent_message_count": 0, "agent_message_limit": 8, "dispatching": true, "pending_agent_count": 0, "active_agents": [], "limit_reached": false, "errors": [], "last_recipient_decision": {"through_seq": 1, "source": "tags", "names": ["researcher"]}}
 

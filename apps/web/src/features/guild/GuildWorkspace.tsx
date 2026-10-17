@@ -18,6 +18,7 @@ import {
   useStudioSessions,
 } from "../../api/queries";
 import { useGuildStream } from "../../api/streams";
+import type { Agent } from "../../api/types";
 import { agentLook } from "../../app/agents";
 import { useIdentity } from "../../app/identity";
 import { ReturnButton } from "../../app/ReturnButton";
@@ -42,6 +43,7 @@ import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { OpenApplyStrip } from "../recipes/OpenApplyStrip";
 import { ClearGroupChatDialog } from "./ClearGroupChatDialog";
 import { GroupChat } from "./GroupChat";
+import { useSendQueuedMessages } from "./GroupQueue";
 import { MessageBudget } from "./MessageBudget";
 import { isGuildAdmin } from "./permissions";
 
@@ -58,6 +60,8 @@ const otherTabs = [
   { route: "/guilds/$guildId/secrets", label: "Secrets" },
   { route: "/guilds/$guildId/usage", label: "Usage" },
 ] as const;
+
+const noAgents: readonly Agent[] = [];
 
 /** One guild: who is in it, and its pages; an agent's inspector opens over the group chat. */
 export function GuildWorkspace() {
@@ -76,6 +80,7 @@ export function GuildWorkspace() {
   const agents = useGuildAgents(guildId);
   const state = useGroupChatState(guildId);
   const openIssues = useOpenIssues(guildId);
+  useSendQueuedMessages(guildId, agents.data ?? noAgents, state.data);
 
   useEffect(() => writeStored(lastGuildKey, guildId), [guildId]);
 
