@@ -175,6 +175,9 @@ The options menu offers:
 - **Save as recipe**: captures the guild as a draft recipe and opens
   it ([Recipes](recipes.md))
 - **Guild settings**
+- **Clear group chat**, for admins, after a separator: deletes every
+  message for everyone once confirmed
+  ([Group chat](group-chat.md#clearing-the-chat))
 
 While a recipe apply is still open, a strip under the tabs says the
 routines stay paused until its checklist is done, and links to it
@@ -230,7 +233,7 @@ app then returns to `/`.
 | Agents past the limit | Refused, by create and by recipe apply |
 | Visibility | Organisation or private; private in the create dialog |
 | First admin | The creator |
-| Visibility change and delete | Guild admins only |
+| Visibility change, clearing the group chat, and delete | Guild admins only |
 | Rename | Refused while being deleted or while an agent generates |
 | Delete | Refused while an agent generates or the group chat is delivering |
 | Guilds per organisation | No cap in core; an edition's policy may set one |

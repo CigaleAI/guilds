@@ -50,6 +50,18 @@ test("an issue change pings every operator of the guild", async () => {
   assert.equal(ada.size, 1, "other guild events leave the inbox alone");
 });
 
+test("a cleared group chat pings every operator of the guild", async () => {
+  const notifications = hub([
+    { user_id: "user_ada", name: "ada", role: "admin" },
+    { user_id: "user_bo", name: "bo", role: "operator" },
+  ]);
+  const ada = notifications.subscribe("user_ada");
+  const bo = notifications.subscribe("user_bo");
+  await notifications.observe("guild_1", "group.cleared", {});
+  assert.equal(ada.size, 1);
+  assert.equal(bo.size, 1);
+});
+
 test("an unsubscribed stream stops receiving pings", async () => {
   const notifications = hub([]);
   const queue = notifications.subscribe("user_ada");

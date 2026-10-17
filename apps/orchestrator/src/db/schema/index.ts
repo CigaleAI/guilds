@@ -103,6 +103,7 @@ export const guilds = pgTable(
     groupAgentMessageCount: integer("group_agent_message_count").notNull().default(0),
     groupAgentMessageLimit: integer("group_agent_message_limit").notNull().default(20),
     groupChatErrors: jsonb("group_chat_errors").notNull().default(sql`'[]'::jsonb`),
+    groupChatClearedAt: timestamptz("group_chat_cleared_at"),
     about: text("about").notNull().default(""),
     orgId: text("org_id").notNull(),
     visibility: text("visibility").notNull().default("org"),

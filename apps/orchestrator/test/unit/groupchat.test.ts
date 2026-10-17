@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { AgentMessageLimitReached, GuildInactive } from "../../src/db/errors.js";
+import { AgentMessageLimitReached, GroupChatCleared, GuildInactive } from "../../src/db/errors.js";
 import { groupMessageItem } from "../../src/db/views.js";
 import {
+  CLEARED_ERROR,
   CONTEXT_HISTORY_LIMIT,
   DeliveryCreateError,
   GroupChat,
@@ -44,6 +45,7 @@ class MemoryGroupDB implements GroupChatDatabase {
       group_agent_message_count: 0,
       group_agent_message_limit: options.limit ?? 20,
       group_chat_errors: [],
+      group_chat_cleared_at: null,
     };
   }
 
@@ -66,8 +68,14 @@ class MemoryGroupDB implements GroupChatDatabase {
     };
   }
 
-  addRun(runId: string, agentId: string): void {
-    this.runs[runId] = { id: runId, agent_id: agentId };
+  addRun(runId: string, agentId: string, createdAt = new Date(0)): void {
+    this.runs[runId] = { id: runId, agent_id: agentId, created_at: createdAt };
+  }
+
+  runPredatesClear(guildId: string, runId: string): boolean {
+    const cleared = this.guilds[guildId]?.group_chat_cleared_at as Date | null;
+    const started = this.runs[runId]?.created_at as Date | undefined;
+    return cleared !== null && started !== undefined && started < cleared;
   }
 
   async getGuild(guildId: string) {
@@ -114,6 +122,26 @@ class MemoryGroupDB implements GroupChatDatabase {
       return null;
     }
     guild.group_agent_message_limit = limit;
+    return this.getGroupChatState(guildId);
+  }
+
+  async clearGroupMessages(guildId: string, now: Date) {
+    const guild = this.guilds[guildId];
+    if (!guild) {
+      return null;
+    }
+    if (guild.archived_at !== null && guild.archived_at !== undefined) {
+      throw new GuildInactive();
+    }
+    this.messages = this.messages.filter((row) => row.guild_id !== guildId);
+    guild.group_agent_message_count = 0;
+    guild.group_chat_errors = [];
+    guild.group_chat_cleared_at = now;
+    for (const agent of Object.values(this.agents)) {
+      if (agent.guild_id === guildId) {
+        agent.group_chat_delivered_through = guild.group_chat_seq;
+      }
+    }
     return this.getGroupChatState(guildId);
   }
 
@@ -212,6 +240,9 @@ class MemoryGroupDB implements GroupChatDatabase {
         throw new GuildInactive();
       }
       const limit = Number(guild.group_agent_message_limit);
+      if (this.runPredatesClear(guildId, sourceRunId)) {
+        throw new GroupChatCleared();
+      }
       if (Number(guild.group_agent_message_count) >= limit) {
         throw new AgentMessageLimitReached(limit);
       }
@@ -559,6 +590,74 @@ describe("groupchat", { concurrency: 1 }, () => {
     );
     const state = await chat.set_limit("guild_1", 5);
     assert.equal(state.agent_message_limit, 5);
+  });
+
+  test("clear_deletes_messages_and_keeps_the_sequence", async () => {
+    const { chat } = seed();
+    await chat.post_user("guild_1", "first");
+    await chat.post_user("guild_1", "second");
+    const state = await chat.clear("guild_1");
+    assert.equal(state.chat_seq, 2);
+    assert.deepEqual(await chat.list_messages("guild_1"), []);
+    const next = await chat.post_user("guild_1", "after the clear");
+    assert.equal(next.seq, 3);
+    assert.deepEqual(
+      (await chat.list_messages("guild_1")).map((item) => item.content),
+      ["after the clear"],
+    );
+  });
+
+  test("clear_catches_up_members_and_resets_the_agent_budget", async () => {
+    const { db, chat } = seed(1);
+    await chat.post_user("guild_1", "start");
+    await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "one");
+    await db.appendGroupChatError("guild_1", { message: "boom" }, new Date());
+    const state = await chat.clear("guild_1");
+    assert.equal(state.pending_agent_count, 0);
+    assert.equal(state.agent_message_count, 0);
+    assert.equal(state.limit_reached, false);
+    assert.deepEqual(state.errors, []);
+    assert.equal(db.agents.a_2?.group_chat_delivered_through, 2);
+  });
+
+  test("clear_publishes_cleared_with_the_state", async () => {
+    const { chat } = seed();
+    await chat.post_user("guild_1", "start");
+    const queue = chat.subscribe("guild_1");
+    await chat.clear("guild_1");
+    const [name, data] = await queue.get();
+    assert.equal(name, "group.cleared");
+    assert.equal(data.chat_seq, 1);
+  });
+
+  test("clear_is_refused_while_deleting_or_archived", async () => {
+    const { db } = seed();
+    const refusedWith = (status: number) => (error: unknown) => {
+      assert.ok(error instanceof GroupChatError);
+      assert.equal(error.status, status);
+      return true;
+    };
+    await assert.rejects(() => chatFor(db, new Set(["guild_1"])).clear("guild_1"), refusedWith(409));
+    (db.guilds.guild_1 as Record<string, unknown>).archived_at = new Date();
+    await assert.rejects(() => chatFor(db).clear("guild_1"), refusedWith(409));
+    await assert.rejects(() => chatFor(db).clear("guild_missing"), refusedWith(404));
+  });
+
+  test("run_started_before_clear_cannot_post", async () => {
+    const { chat } = seed();
+    await chat.post_user("guild_1", "start");
+    await chat.clear("guild_1");
+    const refused = await chat.post_from_run("r_1", "a_1", "guild_1", "researcher", "stale reply");
+    assert.equal(refused, CLEARED_ERROR);
+    assert.deepEqual(await chat.list_messages("guild_1"), []);
+  });
+
+  test("run_started_after_clear_posts", async () => {
+    const { db, chat } = seed();
+    await chat.clear("guild_1");
+    db.addRun("r_3", "a_1", new Date(Date.now() + 1000));
+    const ack = await chat.post_from_run("r_3", "a_1", "guild_1", "researcher", "fresh start");
+    assert.equal(ack, "posted id=1 seq=1");
   });
 
   test("new_agent_cursor_starts_at_current_seq", async () => {

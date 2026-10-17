@@ -23,7 +23,7 @@ also decides who sees a private guild.
 
 | Role | Can |
 |---|---|
-| `admin` | Everything an operator can, plus add operators, change roles, remove operators, change visibility, and delete the guild |
+| `admin` | Everything an operator can, plus add operators, change roles, remove operators, change visibility, clear the group chat, and delete the guild |
 | `operator` | Every other guild action |
 
 Every other guild action is open to anyone who can see the guild:

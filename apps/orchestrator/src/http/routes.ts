@@ -1188,6 +1188,19 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
+  app.delete("/api/guilds/:guild_id/group-chat/messages", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    await administeredGuild(repo, param(request, "guild_id"), user);
+    try {
+      return await generationOf(deps).group_chat.clear(param(request, "guild_id"));
+    } catch (error) {
+      if (error instanceof GroupChatError) {
+        throw groupHttp(error);
+      }
+      throw error;
+    }
+  });
+
   app.post("/api/guilds/:guild_id/group-chat/messages", async (request, reply) => {
     const user = await currentUser(repo, request, deps);
     await ownedGuild(repo, param(request, "guild_id"), user);

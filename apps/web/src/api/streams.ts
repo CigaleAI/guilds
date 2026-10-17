@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { applyLiveDelta, type LiveTurn } from "./liveTurn";
-import { keys } from "./queries";
+import { keys, showClearedGroupChat } from "./queries";
 import { applyToolProgress, dropToolProgress, type ToolProgress } from "./toolProgress";
 import type {
   BuilderSession,
@@ -72,6 +72,7 @@ export function useEventStream(url: string | null, options: StreamOptions): void
 
 const guildEvents = [
   "group.message.committed",
+  "group.cleared",
   "group.limit_reached",
   "group.idle",
   "group.delivery.started",
@@ -85,7 +86,7 @@ const guildEvents = [
 
 /**
  * Keeps a guild's chat, agents, open issues, files and routines current: committed messages are
- * added to the cached history, chat state changes re-read the state and who is generating, a file
+ * added to the cached history, a cleared chat empties it, chat state changes re-read the state and who is generating, a file
  * change refreshes every file read, and a routine or script change refreshes that agent's.
  */
 export function useGuildStream(guildId: string): void {
@@ -106,6 +107,10 @@ export function useGuildStream(guildId: string): void {
             : messages,
         );
         void client.invalidateQueries({ queryKey: keys.chatState(guildId) });
+        return;
+      }
+      if (name === "group.cleared") {
+        showClearedGroupChat(client, guildId, data as GroupChatState);
         return;
       }
       if (name === "group.idle" || name === "group.limit_reached") {

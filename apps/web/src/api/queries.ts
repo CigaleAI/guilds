@@ -352,6 +352,29 @@ export function usePostGroupMessage(guildId: string) {
   });
 }
 
+/** Shows a cleared group chat: no messages, and the state the clear left, keeping the read marker. */
+export function showClearedGroupChat(
+  client: QueryClient,
+  guildId: string,
+  state: GroupChatState,
+): void {
+  client.setQueryData<GroupMessage[]>(keys.chatMessages(guildId), []);
+  client.setQueryData<GroupChatState>(keys.chatState(guildId), (previous) => ({
+    ...state,
+    seen_through_seq: previous?.seen_through_seq ?? null,
+  }));
+}
+
+/** Deletes every group chat message for everyone in the guild; for guild admins. */
+export function useClearGroupChat(guildId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<GroupChatState>(`${guildPath(guildId)}/group-chat/messages`, { method: "DELETE" }),
+    onSuccess: (state) => showClearedGroupChat(client, guildId, state),
+  });
+}
+
 /** Moves this operator's read marker forward; the server never moves it back. */
 export function useMarkGroupChatRead(guildId: string) {
   const client = useQueryClient();

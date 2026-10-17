@@ -1,5 +1,5 @@
 import { jsonObj } from "../db/json.js";
-import { AgentMessageLimitReached, GuildInactive } from "../db/errors.js";
+import { AgentMessageLimitReached, GroupChatCleared, GuildInactive } from "../db/errors.js";
 import { groupMessageItem } from "../db/views.js";
 import { guildOperators, type GuildOperator } from "../guilds/validation.js";
 import { EventQueue } from "../lib/event.js";
@@ -58,6 +58,9 @@ export function requireContent(content: string): string {
 export function limitError(limit: number): string {
   return `ERROR: group chat is waiting for a user message after ${limit} consecutive agent messages`;
 }
+
+export const CLEARED_ERROR =
+  "ERROR: the group chat was cleared after this run started; nothing was posted";
 
 export const USER_TAG = "user";
 export const TAG_RE = /(?<![A-Za-z0-9-])@([a-z][a-z0-9-]{0,62})\b/g;
@@ -258,6 +261,7 @@ export type GroupChatDatabase = {
     limit: number,
     now: Date,
   ): Promise<Record<string, unknown> | null>;
+  clearGroupMessages(guildId: string, now: Date): Promise<Record<string, unknown> | null>;
   getGuild(guildId: string): Promise<Record<string, unknown> | null>;
   listGroupMessages(
     guildId: string,
@@ -444,6 +448,31 @@ export class GroupChat {
     return this.set_limit(guildId, limit);
   }
 
+  /** Deletes the guild's public messages for everyone and tells open chats. */
+  async clear(guildId: string): Promise<Record<string, unknown>> {
+    if (this._is_deleting(guildId)) {
+      throw new GroupChatError(409, "guild is being deleted");
+    }
+    let row: Record<string, unknown> | null;
+    try {
+      row = await this.db.clearGroupMessages(guildId, new Date());
+    } catch (error) {
+      if (error instanceof GuildInactive) {
+        throw new GroupChatError(409, "guild is archived");
+      }
+      throw error;
+    }
+    if (row === null) {
+      throw new GroupChatError(404, "guild not found");
+    }
+    if (this._recipientCache?.guildId === guildId) {
+      this._recipientCache = null;
+    }
+    const state = this._state_view(row);
+    await this.publish(guildId, "group.cleared", state);
+    return state;
+  }
+
   async list_messages(guildId: string): Promise<Array<Record<string, unknown>>> {
     const guild = await this.db.getGuild(guildId);
     if (guild === null) {
@@ -543,6 +572,9 @@ export class GroupChat {
       }
       if (error instanceof AgentMessageLimitReached) {
         return limitError(error.limit);
+      }
+      if (error instanceof GroupChatCleared) {
+        return CLEARED_ERROR;
       }
       throw error;
     }

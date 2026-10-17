@@ -6,7 +6,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { BookmarkPlus, SearchX, Settings, Sparkles, UserPlus } from "lucide-react";
+import { BookmarkPlus, Eraser, SearchX, Settings, Sparkles, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError } from "../../api/client";
 import {
@@ -19,6 +19,7 @@ import {
 } from "../../api/queries";
 import { useGuildStream } from "../../api/streams";
 import { agentLook } from "../../app/agents";
+import { useIdentity } from "../../app/identity";
 import { ReturnButton } from "../../app/ReturnButton";
 import { useMediaQuery, wideScreen } from "../../app/media";
 import { writeStored } from "../../app/storage";
@@ -32,14 +33,17 @@ import {
   Menu,
   MenuContent,
   MenuItem,
+  MenuSeparator,
   MenuTrigger,
   toast,
   PillCount,
 } from "@guildsrun/ui";
 import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { OpenApplyStrip } from "../recipes/OpenApplyStrip";
+import { ClearGroupChatDialog } from "./ClearGroupChatDialog";
 import { GroupChat } from "./GroupChat";
 import { MessageBudget } from "./MessageBudget";
+import { isGuildAdmin } from "./permissions";
 
 /** The last guild opened, so the app can return to it. */
 export const lastGuildKey = "guilds-last-guild";
@@ -60,7 +64,9 @@ export function GuildWorkspace() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
   const matchRoute = useMatchRoute();
   const wide = useMediaQuery(wideScreen);
+  const { user } = useIdentity();
   const [addingAgent, setAddingAgent] = useState(false);
+  const [clearingChat, setClearingChat] = useState(false);
   const sessions = useStudioSessions();
   const capture = useCaptureRecipe();
   const navigate = useNavigate();
@@ -179,6 +185,14 @@ export function GuildWorkspace() {
                   >
                     Guild settings
                   </MenuItem>
+                  {isGuildAdmin(guild.data, user.id) ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem icon={Eraser} destructive onSelect={() => setClearingChat(true)}>
+                        Clear group chat
+                      </MenuItem>
+                    </>
+                  ) : null}
                 </MenuContent>
               </Menu>
             </>
@@ -230,6 +244,13 @@ export function GuildWorkspace() {
         guild={addingAgent && guild.data ? { id: guildId, name: guild.data.name } : null}
         onClose={() => setAddingAgent(false)}
       />
+      {guild.data ? (
+        <ClearGroupChatDialog
+          guild={guild.data}
+          open={clearingChat}
+          onOpenChange={setClearingChat}
+        />
+      ) : null}
     </>
   );
 }

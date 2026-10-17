@@ -15,6 +15,13 @@ export class AgentMessageLimitReached extends Error {
   }
 }
 
+export class GroupChatCleared extends Error {
+  constructor(message = "group chat was cleared after this run started") {
+    super(message);
+    this.name = "GroupChatCleared";
+  }
+}
+
 export class LastGuildAdmin extends Error {
   constructor(message = "a guild needs at least one admin") {
     super(message);

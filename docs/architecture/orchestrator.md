@@ -573,6 +573,7 @@ Cancellation is a `run.error` whose payload has
 Group events:
 
 - `group.message.committed`
+- `group.cleared`
 - `group.limit_reached`
 - `group.idle`
 - `group.delivery.started`

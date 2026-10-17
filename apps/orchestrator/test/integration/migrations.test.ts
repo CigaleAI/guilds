@@ -48,13 +48,15 @@ test("migrations are stamped in order and before now, so a database applies ever
   }
 });
 
-/** A copy of the migrations folder whose journal ends one migration early. */
-function chainWithoutLast(): string {
+/** A copy of the migrations folder whose journal ends just before `tag`, or one migration early without it. */
+function chainBefore(tag?: string): string {
   const folder = path.join(tempDir("migrations-"), "drizzle");
   cpSync(migrationsFolder, folder, { recursive: true });
   const journalPath = path.join(folder, "meta", "_journal.json");
-  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: unknown[] };
-  journal.entries.pop();
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: Array<{ tag: string }> };
+  const end = tag === undefined ? journal.entries.length - 1 : journal.entries.findIndex((entry) => entry.tag === tag);
+  assert.ok(end >= 0, `no migration ${tag}`);
+  journal.entries = journal.entries.slice(0, end);
   writeFileSync(journalPath, JSON.stringify(journal));
   return folder;
 }
@@ -63,7 +65,7 @@ test("a migration skipped behind a later recorded stamp fails boot by name, and 
   const pool = await createPool(await createIsolatedDatabase(driftDb));
   try {
     await migrate(drizzle(pool), {
-      migrationsFolder: chainWithoutLast(),
+      migrationsFolder: chainBefore(),
       migrationsSchema: "public",
       migrationsTable: "__drizzle_migrations",
     });
@@ -117,8 +119,7 @@ test("an edition's migrations run after core's and before any seed", { timeout: 
 test("the native CLI migration drops the cli flag from recipe roles, keeping their order", async () => {
   const pool = await createPool(await createIsolatedDatabase(cliDb));
   try {
-    const folder = chainWithoutLast();
-    assert.equal(committedMigrations(migrationsFolder).at(-1)?.tag, "0007_native_cli");
+    const folder = chainBefore("0007_native_cli");
     await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
     const now = new Date().toISOString();
     await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);

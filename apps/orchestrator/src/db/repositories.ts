@@ -4,6 +4,7 @@ import { newId } from "../lib/ids.js";
 import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, messageCostUsd, usageDelta, utcMonth } from "../usage.js";
 import {
   AgentMessageLimitReached,
+  GroupChatCleared,
   GuildInactive,
   GuildNameTaken,
   LastGuildAdmin,
@@ -3266,6 +3267,42 @@ export class Repositories {
     );
   }
 
+  // Deletes every public message of the guild. The sequence keeps counting, so
+  // agent and operator cursors stay valid; each member is caught up to it, the
+  // agent message count and delivery errors reset, and the clear time stops
+  // runs that started before it from posting.
+  async clearGroupMessages(guildId: string, now: Date): Promise<Record<string, unknown> | null> {
+    const cleared = await withTransaction(this.pool, async (client) => {
+      const guild = await client.query(`SELECT id, archived_at FROM guilds WHERE id = $1 FOR UPDATE`, [guildId]);
+      const row = firstRow(guild);
+      if (!row) {
+        return false;
+      }
+      if (row.archived_at !== null) {
+        throw new GuildInactive();
+      }
+      await client.query(`DELETE FROM group_messages WHERE guild_id = $1`, [guildId]);
+      await client.query(
+        `UPDATE guilds
+         SET group_agent_message_count = 0,
+             group_chat_errors = '[]'::jsonb,
+             group_chat_cleared_at = $2,
+             updated_at = $2
+         WHERE id = $1`,
+        [guildId, stamp(now)],
+      );
+      await client.query(
+        `UPDATE agents a
+         SET group_chat_delivered_through = g.group_chat_seq
+         FROM guilds g
+         WHERE g.id = $1 AND a.guild_id = g.id`,
+        [guildId],
+      );
+      return true;
+    });
+    return cleared ? this.getGroupChatState(guildId) : null;
+  }
+
   async getGroupChatSeenThrough(guildId: string, userId: string): Promise<number | null> {
     const result = await this.pool.query(
       `SELECT seen_through_seq FROM group_chat_reads WHERE guild_id = $1 AND user_id = $2`,
@@ -3429,9 +3466,13 @@ export class Repositories {
   ): Promise<Record<string, unknown> | null> {
     return withTransaction(this.pool, async (client) => {
       const guild = await client.query(
-        `SELECT id, archived_at, group_agent_message_count, group_agent_message_limit
-         FROM guilds WHERE id = $1 FOR UPDATE`,
-        [guildId],
+        `SELECT g.id, g.archived_at, g.group_agent_message_count, g.group_agent_message_limit,
+                COALESCE(r.created_at < g.group_chat_cleared_at, false) AS run_predates_clear
+         FROM guilds g
+         LEFT JOIN runs r ON r.id = $2
+         WHERE g.id = $1
+         FOR UPDATE OF g`,
+        [guildId, sourceRunId],
       );
       const row = firstRow(guild);
       if (!row) {
@@ -3439,6 +3480,9 @@ export class Repositories {
       }
       if (row.archived_at !== null) {
         throw new GuildInactive();
+      }
+      if (row.run_predates_clear === true) {
+        throw new GroupChatCleared();
       }
       const limit = Number(row.group_agent_message_limit);
       if (Number(row.group_agent_message_count) >= limit) {

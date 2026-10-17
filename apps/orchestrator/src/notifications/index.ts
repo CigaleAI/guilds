@@ -5,14 +5,16 @@ import { EventQueue } from "../lib/event.js";
 
 // An operator's inbox is a view over existing rows, not a table of its own:
 // open issues in the guilds they operate, and messages tagging them that are
-// past their group-chat read cursor. Resolving the issue or advancing that
-// guild's read cursor is what clears an entry. Marking tags as read advances
+// past their group-chat read cursor. Resolving the issue, advancing that
+// guild's read cursor, or clearing its group chat is what clears an entry. Marking tags as read advances
 // the cursor on every guild that currently has a tag in the inbox.
 
 export const NOTIFICATIONS_CHANGED = "notifications.changed";
 export const INBOX_ISSUE_LIMIT = 200;
 export const INBOX_MENTION_LIMIT = 100;
 const EVENT_QUEUE_LIMIT = 256;
+/** Guild events that change every operator's inbox: issues, and tags gone with a cleared chat. */
+const OPERATOR_INBOX_EVENTS = new Set(["guild.issues.changed", "group.cleared"]);
 
 export type NotificationsDatabase = {
   getGuild(guildId: string): Promise<Record<string, unknown> | null>;
@@ -108,7 +110,7 @@ export class Notifications {
       await this.ping(tagged);
       return;
     }
-    if (event === "guild.issues.changed" && this._subs.size) {
+    if (OPERATOR_INBOX_EVENTS.has(event) && this._subs.size) {
       const guild = await this.db.getGuild(guildId);
       await this.ping(guild ? guildOperators(guild).map((operator) => operator.user_id) : []);
     }
