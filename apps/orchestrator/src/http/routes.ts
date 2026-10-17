@@ -827,11 +827,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
-    const missing = missingBodyFields(request.body, ["user_id"]);
-    if (missing) {
-      throw missing;
-    }
     const body = bodyOf(request);
+    if (!("name" in body)) {
+      const missing = missingBodyFields(request.body, ["user_id"]);
+      if (missing) {
+        throw missing;
+      }
+    }
     let role;
     try {
       role = validateRole(String(body.role ?? "member"));
@@ -848,12 +850,16 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     } else if (!canManageMembers(String(membership.role))) {
       throw new HttpError(404, "organisation not found");
     }
-    const target = await repo.getUser(String(body.user_id));
+    const target =
+      "name" in body
+        ? await repo.getUserByName(String(body.name ?? "").trim().replace(/^@/, "").toLowerCase())
+        : await repo.getUser(String(body.user_id));
     if (target === null) {
       throw new HttpError(404, "user not found");
     }
+    const userId = String(target.id);
     try {
-      await repo.insertMember(orgId, String(body.user_id), role, new Date());
+      await repo.insertMember(orgId, userId, role, new Date());
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new HttpError(409, "member already exists");
@@ -861,7 +867,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw error;
     }
     const rows = await repo.listMembers(orgId);
-    const added = rows.find((row) => row.user_id === body.user_id);
+    const added = rows.find((row) => row.user_id === userId);
     await send(reply, 201, memberItem(added ?? {}));
   });
 

@@ -8,6 +8,7 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-33 | Any organisation owner or admin can find users by name and add them without their consent | Open |
 | SEC-32 | The harness log the app reads is redacted only with the agent's secret values | Open |
 | SEC-31 | Cursor runs a repository's hooks | Open, accepted |
 | SEC-30 | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
@@ -40,6 +41,40 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-33 — Any organisation owner or admin can find users by name and add them without their consent
+
+**Status:** open.
+
+**Found:** 2026-10-17, adding members by name from Settings, Members.
+
+**Where:** `POST /api/orgs/:id/members` in
+`apps/orchestrator/src/http/routes.ts`.
+
+**Exposure:** the route takes a user's `name` as well as their id.
+Names are short, readable, and unique on the box, so they can be
+guessed, unlike ids. A 404 for an unknown name and a 201 or 409 for a
+known one tell the caller whether that name holds an account. Every
+user owns their personal organisation, so on `trusted-header` every
+user can test names that the user directory would hide from them,
+and add the account they find to an organisation of theirs. The
+added user is not asked. The organisation then shows in their
+switcher, a guild admin there can make them an operator, and that
+guild's agents can tag them into their Inbox. On `compat-cookie`
+whoever reaches the box already reads the whole directory, so the
+route reveals nothing new there.
+
+**Control in place:** only an owner or admin of the organisation adds
+a member, and only an owner adds an owner. The added user can leave
+with `DELETE /api/orgs/:id/members/<their id>`; the app has no
+control for leaving. No data of theirs is shared with the
+organisation.
+
+**Residual risk:** on a box shared by several teams behind a proxy,
+anyone can list who has an account by trying names, and can place
+someone in an organisation they did not choose. Fixing it takes an
+invitation the user accepts before the membership exists, or keeping
+name lookups to the instance admin.
 
 ## SEC-32 — The harness log the app reads is redacted only with the agent's secret values
 

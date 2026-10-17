@@ -119,6 +119,7 @@ export const keys = {
   guildSchedules: (guildId: string) => ["guild", guildId, "schedules"] as const,
   guildUsage: (guildId: string) => ["guild", guildId, "usage"] as const,
   orgMembers: (orgId: string) => ["org", orgId, "members"] as const,
+  users: ["users"] as const,
   /** Machines and the agents on them; any agent placement, move or deletion refreshes it. */
   machinesAll: ["machines"] as const,
   orgMachines: (orgId: string) => ["machines", orgId] as const,
@@ -1662,6 +1663,44 @@ export function useSetAgentDatabaseAccess(agentId: string) {
         body: { collection_id: collectionId, mode },
       }),
     onSuccess: refresh,
+  });
+}
+
+/** Adds a user to the organisation by their @name; owners add owners, admins the rest. */
+export function useAddMember(orgId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, role }: { name: string; role: OrgRole }) =>
+      api<OrgMember>(`/api/orgs/${encodeURIComponent(orgId)}/members`, {
+        method: "POST",
+        body: { name, role },
+      }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.orgMembers(orgId) }),
+  });
+}
+
+/** Every account on the box: the user directory, for the instance admin. */
+export function useUsers() {
+  return useQuery({ queryKey: keys.users, queryFn: () => api<User[]>("/api/users") });
+}
+
+/** A new account, with its personal organisation. */
+export function useCreateUser() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; email: string | null }) =>
+      api<User>("/api/users", { method: "POST", body: input }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.users }),
+  });
+}
+
+/** Sets the email a user signs in with behind an authenticating proxy; null clears it. */
+export function useSetUserEmail() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, email }: { userId: string; email: string | null }) =>
+      api<User>(`/api/users/${encodeURIComponent(userId)}`, { method: "PATCH", body: { email } }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.users }),
   });
 }
 

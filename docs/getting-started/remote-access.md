@@ -86,18 +86,16 @@ An email that belongs to no user gets a 401. The proxy letting
 someone through is not enough. You give each person an account, by
 their email.
 
-There is no screen for this. It is one request through the proxy,
-signed in as you:
+**Admin**, **Users** does it. **New user** takes their name and
+email. It creates the user and a personal organisation they own. The
+pencil on a user's row changes their address, or removes it.
 
-```text
-POST /api/users   {"name": "ada", "email": "ada@example.com"}
-```
+To let them work in your organisation, add them by name in
+**Settings**, **Members**. A guild admin then adds them to the guild
+in its **Settings**, **Operators** ([Operators](../concepts/operators.md)).
 
-The request creates the user and a personal organisation they own.
-
-- `PATCH /api/users/<id>` with `{"email": …}` changes a user's
-  address. `null` removes it.
-- `DELETE /api/users/<id>` removes the user.
+`DELETE /api/users/<id>`, through the proxy signed in as you, removes
+a user. There is no control for it.
 
 In this mode the user directory answers the instance administrator
 only. That is an owner of the organisation `Home`. Anyone else gets a

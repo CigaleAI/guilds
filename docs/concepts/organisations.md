@@ -139,7 +139,9 @@ owners and admins change them.
 ### Members
 
 **Members** lists every member with their role. Owners and admins
-change roles from a picker. An admin never touches an owner. They
+add a member by the `@name` of their account on the box, with a role,
+and change roles from a picker. Owners give any role; admins give
+**Admin** or **Member**. An admin never touches an owner. They
 remove a member after a confirm, which says the member loses access
 to every guild in the organisation and that their messages and notes
 stay.
@@ -208,10 +210,12 @@ A route the caller's role does not allow is also 404.
   the new one does not exist yet.
 - `GET /api/orgs/:id/members`: every member with `user_id`, `name`,
   `image`, `color`, `role`, and `created_at`.
-- `POST /api/orgs/:id/members`: `user_id` and an optional `role`
-  (default `member`). Adding an owner takes an owner; adding anyone
-  else takes an owner or admin. 201. 422 for an unknown role. 404 for
-  an unknown user. 409 when the user is already a member.
+- `POST /api/orgs/:id/members`: `user_id`, or the user's `name`, and
+  an optional `role` (default `member`). The name is trimmed, may
+  start with `@`, and is matched in lower case. Adding an owner takes
+  an owner; adding anyone else takes an owner or admin. 201. 422 with
+  neither `user_id` nor `name`, or for an unknown role. 404 for an
+  unknown user. 409 when the user is already a member.
 - `PATCH /api/orgs/:id/members/:user_id`: `role`. Promoting to owner
   or changing an owner takes an owner. Other changes take an owner or
   admin. 409 `last owner cannot be demoted`. 404 for an unknown

@@ -147,6 +147,7 @@ as chips. Code blocks show their language and a copy button.
 | Settings › **Usage** | `/settings?tab=usage` | [Usage](usage.md) |
 | Admin › **Connector catalog** | `/admin` | [Users](users.md), [Registry](../tools-and-connectors/registry.md) |
 | Admin › **Platform keys** | `/admin?tab=instance` | [Users](users.md), [Configure](../getting-started/configure.md#platform-keys) |
+| Admin › **Users** | `/admin?tab=users` | [Users](users.md) |
 | **Studio** landing and workspace | `/studio`, `/studio/<session id>` | [Prompt Studio](prompt-studio.md) |
 | **Builder** landing and workspace | `/builder`, `/builder/<session id>` | [Guild builder](guild-builder.md) |
 | **Recipes** library and recipe page | `/recipes`, `/recipes/<id>` | [Recipes](recipes.md) |

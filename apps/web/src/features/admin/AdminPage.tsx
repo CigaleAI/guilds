@@ -25,6 +25,7 @@ import type {
   CatalogTool,
 } from "../../api/types";
 import type { TabSearch } from "../../app/router";
+import { useIdentity } from "../../app/identity";
 import { chosenTab, placeTabs, useSlots } from "../../app/slots";
 import {
   Button,
@@ -53,11 +54,15 @@ import { connectorLogo } from "../access/connectorLogo";
 import { integrationFor, setupSearch } from "../instance/instance";
 import { InstanceTab } from "./InstanceTab";
 import { RegistryDialog } from "./RegistryDialog";
+import { UsersTab } from "./UsersTab";
 
 const coreTabs = [
   { value: "catalog", label: "Connector catalog" },
   { value: "instance", label: "Platform keys" },
 ];
+
+/** The user directory's tab, on the modes whose server serves one. */
+const usersTab = { value: "users", label: "Users" };
 
 function Scroll({ children }: { children: ReactNode }) {
   return (
@@ -67,13 +72,15 @@ function Scroll({ children }: { children: ReactNode }) {
   );
 }
 
-/** Platform administration: the connector catalog, the platform's keys, and the tabs an edition adds. */
+/** Platform administration: the connector catalog, the platform's keys, the users, and the tabs an edition adds. */
 export function AdminPage() {
   const search = useSearch({ strict: false }) as TabSearch;
   const navigate = useNavigate();
   const catalog = useAdminCatalog();
   const { adminTabs = [] } = useSlots();
-  const tabs = placeTabs(coreTabs, adminTabs);
+  const { mode } = useIdentity();
+  const directory = mode === "compat-cookie" || mode === "trusted-header";
+  const tabs = placeTabs(directory ? [...coreTabs, usersTab] : coreTabs, adminTabs);
   const tab = chosenTab(tabs, search.tab);
   const added = adminTabs.find((item) => item.id === tab);
 
@@ -110,6 +117,8 @@ export function AdminPage() {
         added.render()
       ) : tab === "instance" ? (
         <InstanceTab />
+      ) : tab === "users" ? (
+        <UsersTab />
       ) : (
         <Catalog servers={catalog.data?.servers} />
       )}

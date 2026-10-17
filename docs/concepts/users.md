@@ -53,7 +53,7 @@ which one and remembers the choice in the browser.
 On `trusted-header`, the reverse proxy alone determines the email.
 The request's user is the one who holds that email. The proxy also
 proves itself with a shared secret. The operator gives anyone else
-an account through the user directory.
+an account through the user directory, from **Admin**, **Users**.
 
 An edition built on core may add a mode of its own by supplying an
 identity provider
@@ -117,7 +117,8 @@ The rest of the tab belongs to the organisation
 ### Admin
 
 The **Admin** page (`/admin`) is for the instance admin only. It has
-two tabs.
+three tabs: **Users** shows on `compat-cookie` and `trusted-header`
+alone, the modes with a user directory.
 
 **Connector catalog** lists every installed connector with its
 switch, its source, and its tools. An admin:
@@ -161,6 +162,13 @@ recipe's preview land on
 Platform keys with that integration preselected
 ([Configure](../getting-started/configure.md#platform-keys),
 [GitHub](../tools-and-connectors/github.md#step-1-create-the-app)).
+
+**Users** lists every account on the box with its email, or **No
+email**. **New user** takes a name and an optional email, and creates
+the user with their personal organisation. The pencil on a row sets
+or clears that user's email. To work in another organisation, the
+user is added to it by name in its **Settings**, **Members**
+([Organisations](organisations.md)).
 
 ## Rules and limits
 
@@ -310,8 +318,8 @@ The instance admin reaches:
 
 An instance admin route is 404 to anyone else.
 
-The Admin page's tabs are `?tab=catalog` (**Connector catalog**) and
-`?tab=instance` (**Platform keys**). Platform keys reads
+The Admin page's tabs are `?tab=catalog` (**Connector catalog**),
+`?tab=instance` (**Platform keys**), and `?tab=users` (**Users**). Platform keys reads
 `GET /api/instance`. `?integration=<id>` preselects one integration.
 
 ### Delete

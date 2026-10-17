@@ -334,6 +334,14 @@ export class Repositories {
     return firstRow(result);
   }
 
+  async getUserByName(name: string): Promise<Record<string, unknown> | null> {
+    const result = await this.pool.query(
+      `SELECT id, name, email, image, timezone, color, created_at, updated_at FROM users WHERE name = $1`,
+      [name],
+    );
+    return firstRow(result);
+  }
+
   /** Sets the fields given; a field left out keeps its value. */
   async updateUserProfile(
     userId: string,

@@ -1,12 +1,19 @@
 import { X } from "lucide-react";
-import { useState } from "react";
-import { useOrgMembers, useRemoveMember, useUpdateMemberRole } from "../../api/queries";
+import { useState, type FormEvent } from "react";
+import {
+  useAddMember,
+  useOrgMembers,
+  useRemoveMember,
+  useUpdateMemberRole,
+} from "../../api/queries";
 import type { OrgRole } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import { useSlots } from "../../app/slots";
 import {
+  Button,
   IconButton,
   Select,
+  TextField,
   Banner,
   SkeletonRows,
   Avatar,
@@ -17,7 +24,7 @@ import {
 } from "@guildsrun/ui";
 import { assignableRoles, canChangeMember, canManageMembers, roleLabel } from "./members";
 
-/** The organisation's members with their roles, and what an edition adds under them. */
+/** The organisation's members with their roles, adding people by name, and what an edition adds under them. */
 export function MembersTab() {
   const { user, org } = useIdentity();
   const manager = canManageMembers(org.role);
@@ -39,7 +46,9 @@ export function MembersTab() {
           <p className="text-sm text-fg-2">
             Everyone in {org.name}. Owners manage other owners; admins manage members, keys, and
             tools; members work in the guilds they operate.
-            {manager ? null : " Owners and admins change roles."}
+            {manager
+              ? " Add someone by the @name of their account on this box."
+              : " Owners and admins add people and change roles."}
           </p>
           {members.isPending ? (
             <SkeletonRows rows={3} label="Loading members" />
@@ -102,6 +111,7 @@ export function MembersTab() {
               })}
             </div>
           )}
+          {manager ? <AddMember /> : null}
         </section>
 
         {Panel ? <Panel /> : null}
@@ -130,5 +140,58 @@ export function MembersTab() {
         }
       />
     </div>
+  );
+}
+
+/** Adds an account on this box to the organisation by its @name, with a role the viewer may give. */
+function AddMember() {
+  const { org } = useIdentity();
+  const add = useAddMember(org.id);
+  const roles = assignableRoles(org.role);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState<OrgRole>("member");
+  const handle = name.trim().replace(/^@/, "");
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!handle) return;
+    add.mutate(
+      { name: handle, role },
+      {
+        onSuccess: (member) => {
+          setName("");
+          toast({ kind: "success", title: `@${member.name} joined ${org.name}` });
+        },
+        onError: (error) =>
+          toast({ kind: "error", title: `Couldn't add @${handle}`, description: error.message }),
+      },
+    );
+  };
+
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
+      <TextField
+        tone="surface"
+        label="Add a member"
+        className="min-w-56 flex-1"
+        placeholder="name"
+        lead="@"
+        mono
+        autoComplete="off"
+        value={name}
+        onChange={(event) => setName(event.currentTarget.value)}
+      />
+      <Select
+        tone="surface"
+        label="Role"
+        className="w-40"
+        value={role}
+        onValueChange={(next) => setRole(next as OrgRole)}
+        options={roles.map((value) => ({ value, label: roleLabel[value] }))}
+      />
+      <Button type="submit" variant="outline" size="xl" disabled={!handle || add.isPending}>
+        Add
+      </Button>
+    </form>
   );
 }

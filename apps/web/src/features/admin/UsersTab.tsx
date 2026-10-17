@@ -1,0 +1,188 @@
+import { Link } from "@tanstack/react-router";
+import { Pencil, Plus } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import {
+  Avatar,
+  Banner,
+  Button,
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  Icon,
+  IconButton,
+  SkeletonRows,
+  Tag,
+  TextField,
+  personTone,
+  toast,
+} from "@guildsrun/ui";
+import { useCreateUser, useSetUserEmail, useUsers } from "../../api/queries";
+import type { User } from "../../api/types";
+import { useIdentity } from "../../app/identity";
+
+/** Every account on the box, with a new one and the email each signs in with. */
+export function UsersTab() {
+  const { user: me, mode } = useIdentity();
+  const users = useUsers();
+  const [editing, setEditing] = useState<User | "new" | null>(null);
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 md:px-10">
+      <div className="mx-auto flex max-w-240 flex-col gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="type-label flex-1 text-muted">Users</h2>
+          <Button size="sm" onClick={() => setEditing("new")}>
+            <Icon icon={Plus} size={14} />
+            New user
+          </Button>
+        </div>
+        <p className="text-sm text-fg-2">
+          Every account on this box. A new user gets a personal organisation; an owner or admin of
+          another organisation adds them by name in{" "}
+          <Link to="/settings" search={{ tab: "members" }} className="underline">
+            Settings → Members
+          </Link>
+          .
+          {mode === "trusted-header"
+            ? " Each person signs in with the email your proxy sends for them."
+            : null}
+        </p>
+        {users.isPending ? (
+          <SkeletonRows rows={3} label="Loading users" />
+        ) : users.isError ? (
+          <Banner tone="error" title="Couldn't load users" meta={users.error.message} />
+        ) : (
+          <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
+            {users.data.map((user) => (
+              <div
+                key={user.id}
+                className="flex items-center gap-3 border-b border-line px-3.5 py-2.5 last:border-b-0"
+              >
+                <Avatar name={user.name} tone={personTone(user.color) ?? "dusk"} size={28} round />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  @{user.name}
+                  {user.id === me.id ? (
+                    <Tag tone="well" className="ml-2">
+                      you
+                    </Tag>
+                  ) : null}
+                </span>
+                <span className="min-w-0 truncate text-sm text-muted">
+                  {user.email ?? "No email"}
+                </span>
+                <IconButton
+                  icon={Pencil}
+                  label={`Edit ${user.name}'s email`}
+                  variant="ghost"
+                  size={28}
+                  onClick={() => setEditing(user)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {editing ? (
+        <UserDialog user={editing === "new" ? null : editing} onClose={() => setEditing(null)} />
+      ) : null}
+    </div>
+  );
+}
+
+/** Creates a user with a name and an optional email, or changes an existing user's email. */
+function UserDialog({ user, onClose }: { user: User | null; onClose: () => void }) {
+  const create = useCreateUser();
+  const setEmail = useSetUserEmail();
+  const [name, setName] = useState("");
+  const [email, setEmailText] = useState(user?.email ?? "");
+  const pending = create.isPending || setEmail.isPending;
+  const error = create.error ?? setEmail.error;
+  const typedEmail = email.trim() || null;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (user) {
+      setEmail.mutate(
+        { userId: user.id, email: typedEmail },
+        {
+          onSuccess: () => {
+            toast({ kind: "success", title: `@${user.name}'s email saved` });
+            onClose();
+          },
+        },
+      );
+      return;
+    }
+    create.mutate(
+      { name: name.trim(), email: typedEmail },
+      {
+        onSuccess: (created) => {
+          toast({ kind: "success", title: `@${created.name} created` });
+          onClose();
+        },
+      },
+    );
+  };
+
+  return (
+    <Dialog open onOpenChange={(next) => !next && onClose()}>
+      <DialogContent size="sm">
+        <form onSubmit={submit} className="flex min-h-0 flex-col">
+          <DialogHeader
+            title={user ? `@${user.name}` : "New user"}
+            description={
+              user
+                ? "The email this person signs in with behind an authenticating proxy."
+                : "An account on this box, with a personal organisation of its own."
+            }
+          />
+          <DialogBody>
+            {user ? null : (
+              <TextField
+                tone="surface"
+                label="Name"
+                hint="The @name others tag: a lowercase letter, then lowercase letters, digits, and hyphens."
+                lead="@"
+                mono
+                maxLength={63}
+                autoComplete="off"
+                autoFocus
+                value={name}
+                onChange={(event) => setName(event.currentTarget.value)}
+              />
+            )}
+            <TextField
+              tone="surface"
+              label="Email"
+              aside="Optional"
+              type="email"
+              autoComplete="off"
+              autoFocus={user !== null}
+              value={email}
+              onChange={(event) => setEmailText(event.currentTarget.value)}
+            />
+            {error ? (
+              <Banner
+                tone="error"
+                title={user ? "Couldn't save the email" : "Couldn't create the user"}
+              >
+                {error.message}
+              </Banner>
+            ) : null}
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="ghost">Cancel</Button>
+            </DialogClose>
+            <Button type="submit" disabled={pending || (!user && !name.trim())}>
+              {user ? "Save" : "Create user"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

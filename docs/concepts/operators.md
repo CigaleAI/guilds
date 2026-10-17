@@ -86,6 +86,12 @@ each operator with their role. An admin adds an organisation member
 with a role (**Operator** or **Admin**), changes roles, and removes
 operators. Others see the list read-only ([Guilds](guilds.md)).
 
+When every organisation member already operates the guild, the
+section says so and links to **Settings**, **Members**, where owners
+and admins add people to the organisation
+([Organisations](organisations.md)). Someone with no account yet gets
+one from **Admin**, **Users** ([Users](users.md)).
+
 ### Inbox
 
 **Inbox** (`/inbox`) sits in the sidebar footer, with a count badge.

@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Trash2, X } from "lucide-react";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
@@ -422,6 +422,14 @@ function Operators({ guild, admin }: { guild: Guild; admin: boolean }) {
             Add
           </Button>
         </div>
+      ) : admin && members.isSuccess ? (
+        <p className="text-sm text-muted">
+          Everyone in {org.name} already operates this guild. Add people to the organisation in{" "}
+          <Link to="/settings" search={{ tab: "members" }} className="underline">
+            Settings → Members
+          </Link>
+          .
+        </p>
       ) : null}
     </Group>
   );
