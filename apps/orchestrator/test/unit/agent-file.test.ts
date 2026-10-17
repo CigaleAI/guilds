@@ -127,7 +127,7 @@ test("readAgentFolder refuses a folder or a file outside the workspace, a folder
   await refused(() => readAgentFolder(workspace, "../host", limits), "outside", "a path out of the workspace");
   await refused(() => readAgentFolder(workspace, "/home/a_1", limits), "outside", "the home itself");
   await refused(() => readAgentFolder(workspace, "missing", limits), "missing", "a folder that is not there");
-  await refused(() => readAgentFolder(workspace, "notes.txt", limits), "not_folder", "a file");
+  await refused(() => readAgentFolder(workspace, "notes.txt", limits), "not_file", "a file");
   await refused(() => readAgentFolder(workspace, "site", { maxFiles: 1, maxBytes: 100 }), "too_large", "too many files");
   await refused(() => readAgentFolder(workspace, "site", { maxFiles: 10, maxBytes: 15 }), "too_large", "too many bytes");
   symlinkSync(hostDir, path.join(workspace, "host"));

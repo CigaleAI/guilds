@@ -14,10 +14,10 @@ export function homeOfDirectory(workspaceDir: string): string {
 
 /**
  * Why a path an agent named cannot be used: it leaves the workspace (lexically or through a
- * link), names nothing, names something other than a regular file or, for a folder, a folder,
- * or is too large.
+ * link), names nothing, names something other than a regular file (or, read as a folder, other
+ * than a folder), or is too large.
  */
-export type AgentFileProblem = "outside" | "missing" | "not_file" | "not_folder" | "too_large";
+export type AgentFileProblem = "outside" | "missing" | "not_file" | "too_large";
 
 export class AgentFileError extends Error {
   readonly problem: AgentFileProblem;
@@ -171,7 +171,7 @@ export async function readAgentFolder(
     throw new AgentFileError(`folder_path must be under ${homeOfDirectory(workspaceDir)}, not a link out of it`);
   }
   if (!(await lstat(real)).isDirectory()) {
-    throw new AgentFileError("folder_path must be a folder", "not_folder");
+    throw new AgentFileError("folder_path must be a folder", "not_file");
   }
   const names: string[] = [];
   const walk = async (dir: string, prefix: string): Promise<void> => {
