@@ -89,7 +89,10 @@ manifest's field names; settings as the login's stored settings.
 calls run inside the pool's auth retry and drop the session on
 error; on a connector with no endpoint it refuses), and
 `ctx.workspace_dir` the agent's home on the host when the call comes from a
-run. An adapter throws one `ConnectorError` with a status, which the
+run. An adapter reads what the agent names there through
+`lib/agent-file.ts`: `readAgentFile` one file, `readAgentFolder`
+every file under a folder, each refusing a path that leaves the
+home once links are followed. An adapter throws one `ConnectorError` with a status, which the
 pool answers as an `McpError`.
 
 For an OAuth connector the pool refreshes an expired access token
