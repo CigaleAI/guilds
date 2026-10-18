@@ -31,6 +31,9 @@ export function initSentry(): boolean {
     environment:
       (process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development").trim() || "development",
     tracesSampleRate: sampleRate("SENTRY_TRACES_SAMPLE_RATE", 1),
+    // The CPU profiler runs while a sampled trace is open.
+    profileSessionSampleRate: sampleRate("SENTRY_PROFILE_SESSION_SAMPLE_RATE", 1),
+    profileLifecycle: "trace",
     enableLogs: true,
     enableMetrics: true,
     debug: process.env.SENTRY_DEBUG === "1",

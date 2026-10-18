@@ -69,7 +69,7 @@ A few modules read their own optional variables:
 - `WORKSPACE_MAX_MIB` (host-wide cap on one agent's home, default
   10240; each agent also has `max_workspace_mib`, default the same,
   and each machine a `max_workspace_mib` over every home on it)
-- `SENTRY_ENVIRONMENT` / `SENTRY_TRACES_SAMPLE_RATE`
+- `SENTRY_ENVIRONMENT` / `SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_PROFILE_SESSION_SAMPLE_RATE`
 - `ADAPTER_PROXY_URL` (forward proxy for adapter and MCP HTTP)
 - `OPENSANDBOX_SDK_MODULE` (test substitution)
 

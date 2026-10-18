@@ -210,7 +210,7 @@ the first operator and the `Home` organisation again. `.env` and the
 images stay. On a development checkout, `make reset` does the same
 ([Development](../contributing/development.md#local-state)).
 
-## Logs
+## Logs and metrics
 
 The orchestrator writes one JSON line per event to stdout. Docker
 keeps them as `json-file` logs, five files of 10 MB each. Follow them
@@ -254,6 +254,8 @@ With `SENTRY_DSN` set, Sentry receives under `SENTRY_ENVIRONMENT`:
 
 - errors, as issues
 - traces, sampled at `SENTRY_TRACES_SAMPLE_RATE`
+- CPU profiles while a sampled trace is open, for a process sampled
+  at `SENTRY_PROFILE_SESSION_SAMPLE_RATE`
 - every `info`, `warn`, and `error` log line, as a Sentry log whose
   attributes are the line's fields, already redacted
 - runtime metrics, every 10 seconds:
@@ -273,6 +275,9 @@ With `SENTRY_DSN` set, Sentry receives under `SENTRY_ENVIRONMENT`:
   each pooled connection lost while idle
 - an `EventLoopBlocked` event with the main thread's stack when the
   event loop is held 1 second or more, at most 10 an hour
+
+The metrics chart under Explore → Metrics in Sentry; `host.disk.free`
+and `host.disk.used` split by their `mount` attribute.
 
 A stall also logs `event loop stalled for <ms> ms` at `warn` with
 `operation: runtime.stall`. A pooled connection lost while idle logs

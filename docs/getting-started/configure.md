@@ -85,7 +85,7 @@ the shell does not reach the container.
 
 | Integration | Variables | Switches on | Without it |
 |---|---|---|---|
-| Error reporting | `SENTRY_DSN` | Errors, traces, logs, and runtime metrics sent to Sentry ([Operate](operate.md#logs)) | Structured logs only ([Operate](operate.md#logs)) |
+| Error reporting | `SENTRY_DSN` | Errors, traces, logs, and runtime metrics sent to Sentry ([Operate](operate.md#logs-and-metrics)) | Structured logs only ([Operate](operate.md#logs-and-metrics)) |
 | Registry | `REGISTRY_URL`, the guilds.run registry while unset. `REGISTRY_PUBLIC_KEY` to require a signed index | Installing connectors and recipes from a registry ([Registry](../tools-and-connectors/registry.md)) | Set empty, the box is offline. Nothing installs, and recipe apply names a missing connector unknown |
 | Connector code | `CONNECTORS_CODE_TIER=1`, and `CONNECTORS_ROOT` (`STATE_ROOT/connectors` on the Compose stack) | Registry connectors that carry adapter code, from an index `REGISTRY_PUBLIC_KEY` verifies ([Code tier](../tools-and-connectors/registry.md#code-tier)) | A code install is refused, and code already on disk is not loaded |
 
@@ -143,6 +143,7 @@ machines, not by `.env`. Owners and admins create and size them under
 | `SENTRY_DSN` | | Switches Sentry on |
 | `SENTRY_ENVIRONMENT` | `development` | The environment tag on each event |
 | `SENTRY_TRACES_SAMPLE_RATE` | `1.0` | The share of requests traced, 0 to 1 |
+| `SENTRY_PROFILE_SESSION_SAMPLE_RATE` | `1.0` | The chance, 0 to 1, that a process profiles its CPU while a sampled trace is open; drawn once at start |
 
 ## Development
 
