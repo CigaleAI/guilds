@@ -135,8 +135,7 @@ the session stays readable, its draft stays in Recipes, and a new
 session continues the design.
 
 The coach's spend counts toward the organisation's usage. Settings ›
-**Usage** shows it in the **Deleted guilds and agents** row, because
-the **Studio coach** row sums Studio sessions only ([Usage](usage.md)).
+**Usage** shows it in the **Builder** row ([Usage](usage.md)).
 
 ## Rules and limits
 

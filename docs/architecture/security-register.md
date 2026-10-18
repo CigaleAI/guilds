@@ -9,8 +9,11 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-41](#sec-41--an-organisation-could-be-left-without-an-owner) | An organisation could be left without an owner | Fixed 2026-10-18 |
+| [SEC-40](#sec-40--a-tool-binding-written-before-a-server-listed-the-tool-turned-it-on) | A tool binding written before a server listed the tool turned it on | Fixed 2026-10-18 |
+| [SEC-39](#sec-39--an-operator-could-take-an-agents-name-in-a-guild-they-operate) | An operator could take an agent's name in a guild they operate | Fixed 2026-10-18 |
 | [SEC-38](#sec-38--the-antigravity-harness-loads-a-repositorys-customisations-and-runs-with-its-permission-prompts-off) | The Antigravity harness loads a repository's customisations and runs with its permission prompts off | Open |
-| [SEC-37](#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes) | Any organisation member can read and change a private guild's notes and databases through organisation-wide routes | Open |
+| [SEC-37](#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes) | Any organisation member can read and change a private guild's notes and databases through organisation-wide routes | Fixed 2026-10-18 |
 | [SEC-36](#sec-36--evidence-the-studio-coach-reads-can-steer-a-proposed-routine-that-wakes-an-agent-unattended) | Evidence the Studio coach reads can steer a proposed routine that wakes an agent unattended | Open, accepted |
 | [SEC-35](#sec-35--evidence-the-studio-coach-reads-can-steer-a-proposal-to-widen-an-agents-access) | Evidence the Studio coach reads can steer a proposal to widen an agent's access | Open, accepted |
 | [SEC-34](#sec-34--a-studio-session-kept-working-after-its-user-could-no-longer-see-the-guild) | A Studio session kept working after its user could no longer see the guild | Fixed 2026-10-17 |
@@ -48,6 +51,82 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
 
+## SEC-41 — An organisation could be left without an owner
+
+**Status:** fixed 2026-10-18.
+
+**Found:** 2026-10-18, reviewing organisation membership changes.
+
+**Where:** `DELETE /api/users/:id`, `PUT` and `DELETE
+/api/orgs/:id/members/:user_id` in
+`apps/orchestrator/src/http/routes.ts`; `deleteUser`,
+`updateMemberRole`, and `deleteMember` in
+`apps/orchestrator/src/db/repositories.ts`.
+
+**Exposure:** deleting a user refused the last owner only when the
+organisation had guilds. An organisation with other members and no
+guild lost its only owner, and no member left could name an owner,
+since only an owner manages owners. Demoting and leaving counted the
+owners and then wrote in a separate statement, so two owners demoted
+or leaving at the same moment could both pass the count.
+
+**Fix:** the repository refuses, with 409, to delete, demote, or
+remove the organisation's only owner while it has other members or
+guilds. Each change first locks the owner rows of the organisations it
+touches, so owner changes in one organisation run one at a time and
+each sees the owners the one before it left.
+
+**Residual risk:** an organisation already left without an owner stays
+without one.
+
+## SEC-40 — A tool binding written before a server listed the tool turned it on
+
+**Status:** fixed 2026-10-18.
+
+**Found:** 2026-10-18, reviewing tool switches.
+
+**Where:** `PUT /api/bindings` in
+`apps/orchestrator/src/http/routes.ts`; `isListedMcpTool` in
+`apps/orchestrator/src/db/repositories.ts`.
+
+**Exposure:** an `mcp_tool` binding took any non-empty `catalog_id`.
+A binding written On for a name no server listed took effect when a
+server later listed a tool by that name. The Off a destructive tool
+starts with is written only where no binding exists (SEC-16), so that
+tool started On.
+
+**Fix:** an `mcp_tool` binding needs the namespaced name of a tool a
+server visible to the organisation lists; any other name is 404.
+
+**Residual risk:** bindings written before the fix stay. A tool a
+server stops listing keeps its binding, and the binding applies again
+if the server lists the tool once more.
+
+## SEC-39 — An operator could take an agent's name in a guild they operate
+
+**Status:** fixed 2026-10-18.
+
+**Found:** 2026-10-18, reviewing the guild tag checks.
+
+**Where:** `PATCH /api/auth/me` in
+`apps/orchestrator/src/http/me-routes.ts`; `updateUserProfile` in
+`apps/orchestrator/src/db/repositories.ts`.
+
+**Exposure:** agents and operators share a guild's tags. Adding an
+operator, creating an agent, and renaming an agent refuse a name the
+other side holds, but a user renaming themselves did not. An operator
+could take the name of an agent in a guild they operate, so one tag
+named both: a mention meant for the agent could reach the operator,
+and the operator's group messages read as the agent's.
+
+**Fix:** renaming refuses, with 409, a name an agent holds in any
+guild the user operates. The check and the write run in one
+transaction.
+
+**Residual risk:** like the other tag checks, the check takes no lock,
+so an agent created with the same name at the same moment can still
+clash.
+
 ## SEC-38 — The Antigravity harness loads a repository's customisations and runs with its permission prompts off
 
 **Status:** open.
@@ -69,8 +148,9 @@ repository's own `.agents/`, `GEMINI.md`, and `AGENTS.md` load.
 Whoever can push to a repository an Antigravity agent works on can
 steer it, as with the instruction files of SEC-28. Whether a
 repository's `.agents/` can also carry code that runs on load, as
-Cursor's hooks do (SEC-31), is not checked. The Google sign-in is a
-file in the agent's home under `~/.gemini/antigravity-cli/`, readable
+Cursor's hooks do (SEC-31), is not checked. The Google sign-in is
+`~/.gemini/antigravity-cli/antigravity-oauth-token` in the agent's
+home, readable
 by every process on the machine (SEC-27), and everyone who starts the
 agent's runs uses that subscription (SEC-30).
 
@@ -92,7 +172,7 @@ reach the harness picks Claude Code or Codex for that agent.
 
 ## SEC-37 — Any organisation member can read and change a private guild's notes and databases through organisation-wide routes
 
-**Status:** open.
+**Status:** fixed 2026-10-18.
 
 **Found:** 2026-10-18, auditing the architecture documentation.
 
@@ -122,10 +202,20 @@ its operators (`canSeeGuild`), but through these routes any member:
 organisation. Guild-scoped routes use `ownedGuild`, which refuses a
 guild the user cannot see.
 
-**Fix to make:** build the operator actor with the guilds the user
-can see, and have the artifact store drop guild- and agent-level
-rows and guild-owned collections of any other guild. Check read
-access on the file-change routes.
+**Fix:** the operator actor of a request carries the private guilds of
+the organisation the user does not operate, with their agents
+(`operatorFor` and `hiddenGuildsFor`). The artifact store leaves their
+guild- and agent-level notes, Memory revisions, and own tables out of
+every read, listing, search, and write, refuses them as a table's
+guild or a grant's subject, and leaves them out of a table's grant
+listing. The file-change routes answer only for display paths the user
+can read.
+
+**Residual risk:** an organisation table a private guild is granted
+stays visible to every member, as every organisation table is; only
+the grant to that guild is hidden. The operator actors that recipe
+apply, capture, and generation build carry no hidden guilds; each acts
+for one guild its caller can see.
 
 ## SEC-36 — Evidence the Studio coach reads can steer a proposed routine that wakes an agent unattended
 

@@ -50,9 +50,8 @@ Every run's system prompt lists the collections its State catalog
 holds, with their columns ([System prompt](system-prompt.md)). The
 agent does not need to look them up. The catalog holds the agent's
 guild's own collections and the organisation collections its guild
-has a grant on, as the agent's own grant adjusts them. An
-organisation collection the agent reaches only through its own grant
-is not listed. The record tools still accept it by name.
+has a grant on, or the agent's own grant reaches, as the agent's own
+grant adjusts them.
 
 ### Records
 

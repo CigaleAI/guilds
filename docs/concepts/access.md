@@ -332,8 +332,9 @@ DELETE /api/bindings     ?catalog_kind=&catalog_id=&scope=&scope_id=
 - `PUT` writes the scope's row, replacing an existing one. Without a
   `connection_id` key, an `mcp` row keeps the connection it had.
   `catalog_kind=mcp` needs a server visible to the organisation as
-  `catalog_id`. `catalog_kind=mcp_tool` takes any non-empty
-  `catalog_id`; it is not checked against the listed tools.
+  `catalog_id`. `catalog_kind=mcp_tool` needs the namespaced name of
+  a tool that a server visible to the organisation lists; any other
+  name is 404 `mcp tool not found`.
 - `DELETE` removes the scope's row and is 204, or 404 when there is
   none.
 - Any other `catalog_kind`, an unknown native tool or grant, a bad

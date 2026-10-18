@@ -50,7 +50,7 @@ the organisation and instance totals keep them.
 Model calls of the [Prompt Studio](prompt-studio.md) coach and of the
 [Guild builder](guild-builder.md) belong to no agent. They count in the
 organisation, monthly, and instance totals only. The Studio coach
-shows as a row of its own.
+and the Builder each show as a row of their own.
 
 ### For editions
 
@@ -74,9 +74,10 @@ logged and never fails the run
   agent's Usage tab. A line says deleted agents' spend stays in the
   organisation's usage.
 - **Settings › Usage**: the organisation's totals, then each guild and
-  its agents with calls and cost. The Studio coach has a row, and so
-  does **Deleted guilds and agents**: what the organisation's total
-  holds beyond the rows listed.
+  its agents with calls and cost. The **Studio coach** and the
+  **Builder** each have a row, and so does **Deleted guilds and
+  agents**: what the organisation's total holds beyond the rows
+  listed.
 - The **run flow** in a run's transcript shows the tokens and cost of
   each step and of the whole generation ([Run transcript](run-transcript.md#run-flows)).
 
@@ -133,11 +134,12 @@ Parent totals stay.
 Studio coach and Builder calls increment the `org` and `global`
 counters and `org_monthly_usage`, not an agent or guild counter. The
 organisation listing's `studio` entry is summed from the
-organisation's Studio session messages. Its `archived` entry is the
-organisation total minus the listed guilds and `studio`, each figure
-floored at zero, and null when nothing is left. It therefore holds
-deleted guilds and agents, Builder calls, and guilds the caller cannot
-see.
+organisation's Studio session messages, and its `builder` entry from
+its Builder session messages, null when the Builder has spent
+nothing. Its `archived` entry is the organisation total minus the
+listed guilds, `studio`, and `builder`, each figure floored at zero,
+and null when nothing is left. It therefore holds deleted guilds and
+agents, and guilds the caller cannot see.
 
 ### HTTP
 

@@ -371,8 +371,9 @@ carries `proposed_by` (`operator` or `builder`), which is required, and
 `accepted` (default `false`).
 
 The lists below name the values the Builder and capture write for
-`resolution`, `reason`, and `kind`. The parser checks only that each is
-a string.
+`resolution`, `reason`, and `kind`. The parser refuses a `systems`
+`resolution` outside its list, and checks only that `reason` and
+`kind` are strings.
 
 | List | Entry |
 |---|---|
