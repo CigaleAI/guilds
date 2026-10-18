@@ -84,27 +84,28 @@ the agent's alias points the harness's variable at it
 ### What reaches a sandbox
 
 At the start of each generation, the orchestrator works out the
-agent's environment, decrypts the values, and passes them to every
-command it runs for the agent:
+agent's environment, decrypts the values, and passes them, with the
+agent's aliases, to every command it runs for the agent:
 
-- the agent's scripts
+- the agent's scripts ([Scripts](scripts.md))
 - a coding agent's `shell` commands and what they start
 - a coding agent's harness and the commands it runs, less a few
-  variables the harness driver removes
-- the browser tools
+  variables the harness driver removes ([Reference](#run-environment))
+- the browser tools ([Browser](browser.md))
 
-The agent's aliases sit beside the secrets.
+Each command also carries the agent's home and port variables
+([Agent home](agent-home.md#the-environment-of-every-command)). A
+`shell` command whose working folder is inside one of the guild's
+repositories also gets `GH_TOKEN`, set to that repository's
+installation token ([Repositories](coding/repositories.md)).
 
 The machine's container itself holds no secret. Secrets travel with
 each command. So adding, changing, or removing a secret never
 replaces a container.
 
-Some processes on the machine get no secret: the operator's
-terminal in the CLI tab, and the harness check that the agent's
-Settings runs outside a run. Any process on the machine can still
-read the environment of a command that is running, whichever agent
-the command belongs to. Agents on one machine trust each other
-([Machines](machines.md)).
+Two processes on the machine get no secret: the operator's terminal
+in the CLI tab, and the harness check that the agent's Settings runs
+outside a run.
 
 Only secrets enter the sandbox. Logins to connected services, the
 GitHub App's private key, and the instance's platform keys stay in
@@ -166,6 +167,30 @@ it is local to them: not organisation-wide, granted to at least one
 guild or agent, and granted only to guilds they can see or agents in
 them.
 
+### What an operator relies on
+
+- A secret reaches every agent its access names, and no other. An
+  alias grants nothing.
+- A value leaves the orchestrator only into the commands of the
+  agents it reaches.
+- While a command runs, any process on its machine can read that
+  command's environment and send its secrets out, whichever agent
+  the command belongs to. Agents on one machine trust each other, so
+  grant narrowly
+  ([SEC-24](../architecture/security-register.md#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions)).
+  An agent whose secrets must stay apart goes on a machine of its own
+  ([Machines](machines.md)).
+- The CLI tab is a root shell on the agent's machine. Any member who
+  can see the agent's guild can open it. It carries no secret values,
+  and it reaches the files and processes of every agent on that
+  machine, so it can read the environment of a running command
+  ([Agent home](agent-home.md#the-cli-tab)).
+- Connection credentials never enter a sandbox.
+- Redaction catches exact values only.
+
+The deployment assumptions these rest on are in
+[Deployment](../architecture/deployment.md).
+
 ## In the app
 
 The same **Secrets** view shows at three places:
@@ -212,8 +237,12 @@ is removed on save, or whitespace inside it, which is kept.
 When an agent calls `secret_request`, its chat shows a card with the
 variable name, the use, and the reason. The operator provides the
 value there, or grants an existing secret to the agent
-([Runs](runs.md)). An agent's **Settings** has a **Subscription
-token** select that writes the alias its coding harness reads
+([Run transcript](run-transcript.md)). The run view labels a
+`secret_store` call **Stored NAME** and a `secret_request` call
+**Asked for NAME**.
+
+An agent's **Settings** has a **Subscription token** select that
+writes the alias its coding harness reads
 ([Harnesses](coding/harnesses.md)).
 
 On the **Tools** view, `secret_store` and `secret_request` are
@@ -257,14 +286,9 @@ the orchestrator's environment. The `secrets` table holds:
 - `updated_at`
 - `rotated_at`
 
-`name` is the sandbox environment variable,
-`^[A-Za-z_][A-Za-z0-9_]*$`, and is unique in the organisation
-(`secrets_org_name_unique`). `description` is required and at most
-400 characters.
-
-The value is stored without the whitespace around it, which a paste
-picks up and no token carries. Whitespace inside it is kept. A value
-of only whitespace is refused with 422.
+`name` matches `^[A-Za-z_][A-Za-z0-9_]*$` and is unique in the
+organisation (`secrets_org_name_unique`). A value of only whitespace
+is 422.
 
 `secret_grants` holds one row per grant: `secret_id`, then exactly one
 of `guild_id` or `agent_id`, and `created_at`. A secret names a guild
@@ -274,7 +298,7 @@ setting `org_wide` clears them.
 
 An agent's environment resolves in one query: the organisation-wide
 secrets, the secrets granted to its guild, and the secrets granted to
-it. There are no secret bindings and no switches.
+it. There are no secret bindings.
 
 Deletion:
 
@@ -342,20 +366,7 @@ names, default `{}`:
 - The map is written to the run snapshot and stays fixed for the
   run.
 
-In the run's environment each alias is set to the value of the secret
-it names, when that secret reaches the agent. An alias whose secret
-does not reach the agent is absent. An alias wins over a secret of
-its own name.
-
-The aliased value is in the environment of every command the
-orchestrator runs for the agent, like the secret it copies, and the
-redaction set already holds it. The CLI tab carries no secrets, so no
-aliases either.
-
-The key is generic: any tool that reads a fixed variable can be
-pointed at a secret of another name. The **Subscription token**
-select in an agent's Settings writes the harness's variable
-([Harnesses](coding/harnesses.md)).
+The redaction set holds every aliased value.
 
 ### Run environment
 
@@ -366,56 +377,45 @@ Each generation:
 3. decrypts the values
 4. passes them as environment variables on every command it runs for
    the agent, each named after its secret, with the agent's aliases
-   beside them
+   applied
 
 A missing or undecryptable secret fails the generation at start with
 the run error `secrets.resolve`.
 
 The State snapshot's `environment` lists each secret's name and
-description ([System prompt](system-prompt.md)). The value is never
-in the prompt. It stays in the environment of the agent's commands.
+description ([System prompt](system-prompt.md)).
 
-The commands that carry the environment:
+The harness driver removes these variables before it starts a
+harness ([Code tools](coding/code-tools.md)):
 
-- user scripts ([Scripts](scripts.md))
-- a coding agent's `shell` commands and what they start
-- a coding agent's harness, started by `code_task`, and the commands
-  it runs, less the variables its driver removes: for Claude Code
-  `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`,
-  `CLAUDE_CODE_USE_BEDROCK`, and `CLAUDE_CODE_USE_VERTEX`; for Codex
-  `CODEX_API_KEY` and `OPENAI_API_KEY`, which would move it from the
-  subscription to metered API billing; and `GH_TOKEN` and
-  `GITHUB_TOKEN` for every harness
-  ([Code tools](coding/code-tools.md))
-- the browser tools ([Browser](browser.md))
+| Harness | Removed |
+| --- | --- |
+| every harness | `GH_TOKEN`, `GITHUB_TOKEN` |
+| Claude Code | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` |
+| Codex | `CODEX_API_KEY`, `OPENAI_API_KEY` |
+| Antigravity | `GEMINI_API_KEY`, `GOOGLE_GEMINI_BASE_URL`, `AGY_ADC_AUTH`, `AGY_LLM_GATEWAY_URL`, `AGY_ACCOUNT`, `GOOGLE_CLOUD_QUOTA_PROJECT`, `GOOGLE_CLOUD_LOCATION` |
 
-The operator's CLI tab, a root shell on the agent's machine, does not
-carry it ([Agent home](agent-home.md)). Nor does the harness check
-that Settings runs outside a run ([Harnesses](coding/harnesses.md)).
-Any process on the machine can still read the environment of a
-command that is running, whichever agent it belongs to
-([Machines](machines.md)).
+Each of those would move a harness off its subscription sign-in.
 
-Only secrets enter it. Connection credentials (OAuth tokens, API
-keys, signing keys), the GitHub App's private key, and the instance
-keys stay in the orchestrator. MCP token payloads never enter the
-environment; they only join run redaction. A coding agent's GitHub
-installation tokens sit in `/run/guilds/<agent id>/`, outside every
-home, for their hour ([Repositories](coding/repositories.md)).
+`shell` sets `GH_TOKEN` from `/run/guilds/<agent id>/git-tokens.json`
+when its working folder is inside a guild repository, replacing a
+secret of that name. MCP token payloads never enter the environment;
+they only join run redaction.
+
+Code: `apps/orchestrator/src/access/runtime.ts`, `runtime/guilds-harness`,
+`runtime/guilds-code`.
 
 ### Re-sync on change
 
-- A change of value, name, or description reaches the agents with an
-  active run snapshot that uses the secret.
-- A create, a delete, or an access change reaches the agents that
-  gain or lose the secret.
+- A change of value, name, or description re-syncs the agents with an
+  active run that uses the secret.
+- A create, a delete, or an access change re-syncs the agents with an
+  active run that gain or lose the secret.
+- A `secret_store` call takes the same path: a rotation as a change
+  of value, a new secret as an access change for the storing agent.
 
-Either re-syncs those agents' active run snapshots, replacing the
-snapshot's secret list. No container is replaced. A generating agent
-keeps the values it started with until its generation ends. Its next
-generation, including the next generation of an existing direct run,
-runs with the current ones. A `secret_store` call takes the same
-path. The container lifecycle is in [Machines](machines.md).
+A re-sync replaces the secret list in those runs' snapshots. It
+replaces no container.
 
 ### Redaction set
 
@@ -428,11 +428,8 @@ Redaction uses:
 - a coding run's GitHub installation tokens, once minted
 - a value `secret_store` saved during the generation
 
-It is exact-value. Every tool result, log line, and repository diff
-has those strings replaced with `[REDACTED:<name>]`, the longest
-values first. Transformed, encoded, or split forms remain inside the
-agent trust boundary. A value the model already saw stays in earlier
-history.
+Every tool result, log line, and repository diff has those strings
+replaced with `[REDACTED:<name>]`, the longest values first.
 
 The full `shell` logs and harness event logs that the code tools keep
 in the agent's home are stored unredacted. Reading one back with
@@ -441,53 +438,40 @@ in the agent's home are stored unredacted. Reading one back with
 
 ### `secret_store`
 
-`secret_store { name, description, file }` saves a value the agent
-produced as a secret granted to that agent, without the value passing
-through the model. The orchestrator reads `file` from the agent's
-home, `/home/<agent id>`, under the home file rules
-([Agent home](agent-home.md)).
+`secret_store { name, description, file }`. The orchestrator reads
+`file` from the agent's home, `/home/<agent id>`, under the home file
+rules ([Agent home](agent-home.md)). It is offered on every run kind.
 
-It refuses:
+| Case | Answer |
+| --- | --- |
+| a path outside the home, or a link out of it | `file must be a path under <home>, not a link out of it` |
+| no such file | `file not found: <file>` |
+| not a regular file | `file must be a regular file` |
+| over 16 KiB | `file is larger than 16 KiB` |
+| invalid UTF-8 | `file must be UTF-8 text` |
+| a NUL byte | `file must not contain a NUL byte` |
+| only whitespace | `file is empty` |
+| a name the organisation holds, not created by this agent alone | `NAME is taken in this organisation; choose another name` |
+| a 21st new secret | `this agent already stored 20 secrets; an operator must delete one first` |
 
-- a file over 16 KiB
-- invalid UTF-8
-- a NUL byte
-- a value of only whitespace
+A taken name is rotated, with its new description, when this agent
+created that secret and is its only grant. Otherwise the tool writes
+a new row with the agent as creator and one grant to it. It then
+deletes the file and adds the value to the running generation's
+redaction set.
 
-The whitespace around the value is stripped. A name the organisation
-already holds is rotated, with its new description, when this agent
-created that secret and is its only grant. Otherwise it is refused
-with `NAME is taken in this organisation; choose another name`.
-
-An agent that already created 20 secrets is refused a new one.
-Rotating is not a new secret.
-
-The tool writes the row with the agent as creator and its one grant.
-It deletes the file. It adds the value to the running generation's
-redaction set, so later tool results in that generation are redacted.
-A value the model already saw stays in earlier history.
-
-It returns `{"stored": NAME, "rotated": bool}` plus a line that the
-variable is in the environment from the next generation.
-
-It is offered on every run kind. An agent cannot read a value back,
-delete a secret, or change its access.
+It returns `{"stored": NAME, "rotated": bool}` plus the line
+`NAME is in your environment from the next generation.`
 
 ### `secret_request`
 
-`secret_request { name, description, reason }`, with `reason` at most
-400 characters, is offered on direct runs only. A group or schedule
-run asks with `group_post` ([Group chat](group-chat.md)). The
-operator adds the secret from a Secrets view or from the card.
+`secret_request { name, description, reason }`. `reason` is at most
+400 characters. It is offered on direct runs only. A group or
+schedule run asks with `group_post` ([Group chat](group-chat.md)).
 
 It writes nothing. The result is `{"status":"available"}` when the
 name is already in this generation's environment. Otherwise it is
 `{"widget":"secret_request","name":NAME,"status":"asked"}` plus a line
 telling the agent it asked the operator in this chat and to end its
-turn.
-
-The operator answers from a card in the transcript ([Runs](runs.md)).
-The value goes to the secrets API, never into the transcript.
-
-The run view labels a `secret_store` call **Stored NAME** and a
-`secret_request` call **Asked for NAME**.
+turn. The value the operator types goes to the secrets API, never
+into the transcript.

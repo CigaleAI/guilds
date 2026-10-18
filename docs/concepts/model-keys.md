@@ -8,14 +8,14 @@ the organisation goes through one of those keys.
 
 The box has no key of its own. Nothing in `.env` names a model, and
 no integration serves one. Until an organisation connects a provider,
-none of its agents can run, and the app waits on the welcome dialog.
+none of its agents can run, and the app shows that organisation the
+welcome dialog.
 
 ## Why it exists
 
 The organisation pays for its own models. The provider bills the
 account the key belongs to, so each organisation chooses its
-providers, its models, and its spend. The key stays with the
-orchestrator. An agent never sees it.
+providers, its models, and its spend.
 
 ## How it works
 
@@ -24,7 +24,8 @@ orchestrator. An agent never sees it.
 A run is one provider, that provider's key, and one of the models the
 organisation chose. Every provider is called through its
 OpenAI-compatible Chat Completions endpoint, by the orchestrator
-alone. The key is sent to that provider and nowhere else.
+alone. The key is sent to that provider and nowhere else. An agent
+never sees it.
 
 ```mermaid
 flowchart LR
@@ -45,7 +46,7 @@ flowchart LR
 | OpenRouter | Hundreds of models behind one key, Claude and Gemini included | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | Marketplace | Yes |
 | xAI | Grok models | [console.x.ai](https://console.x.ai/) | Marketplace | Yes |
 | DeepInfra | Open-weight models, priced low | [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys) | Marketplace | Yes |
-| Local endpoint | Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run | None required | Marketplace | No |
+| Local endpoint | Ollama, LM Studio, vLLM, or any OpenAI-compatible server you run ([details](#the-local-endpoint)) | None required | Marketplace | No |
 | Kimi Code | Kimi models on a Kimi Code plan, for coding agents | [kimi.com/code](https://www.kimi.com/code) | Coding API | No |
 
 A **Marketplace** provider serves agents, [Prompt
@@ -85,24 +86,17 @@ Three kinds of key reach the box. Only the first is a model key.
 |---|---|---|
 | Model key | The organisation, for its agents' runs | **Settings**, **Model keys** |
 | Secret | The organisation, handed to the agents it names as an environment variable | **Secrets** ([Secrets](secrets.md)) |
-| Platform key | The box, for everyone on it: web search, group routing, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](../getting-started/configure.md#platform-keys)). Sentry and the registry are `.env` settings |
+| Platform key | The box, for everyone on it: web search, group routing, the GitHub App, Google | **Admin**, **Platform keys** ([Configure](../operations/configure.md#platform-keys)). Sentry and the registry are `.env` settings |
 
-An agent never sees a model key. Its commands get secrets only.
-
-### The local endpoint
-
-**Local endpoint** is any server that speaks the OpenAI Chat
-Completions API: Ollama, LM Studio, vLLM, or one of your own. It
-takes a base URL and an optional key. Its catalog is whatever the
-server lists. It records no cost.
+An agent's commands get secrets only.
 
 ## In the app
 
 ### The welcome dialog
 
-A box with no provider connected opens on a welcome dialog over every
-page. It cannot be dismissed. An owner or admin walks through one
-provider in four steps.
+An organisation with no provider connected opens on **Welcome to
+guilds.run**, a dialog over every page. It cannot be dismissed. An
+owner or admin walks through one provider in four steps.
 [Connect a model](../getting-started/model-keys.md) is that walk.
 
 1. **Pick a provider.** One tile per provider, with its logo and a
@@ -113,10 +107,9 @@ provider in four steps.
    the provider before saving it. A rejected key is not saved, and
    the dialog says why. The local endpoint takes a **Base URL** and
    an optional key.
-3. **Choose models.** The provider's catalog, with a search over
-   name and id. At least one model must be ticked. These are the
-   models every picker in the app offers, and nothing else.
-   **Continue** saves the list.
+3. **Choose models.** The provider's catalog
+   ([Choose models](#choose-models)). At least one model must be
+   ticked. **Continue** saves the list.
 4. **Pick a default.** One of the ticked models. New agents, Studio,
    and the Builder start on it. **Finish** saves it. **Skip for now**
    leaves none, and the create-agent form then waits for a choice. A
@@ -127,8 +120,8 @@ so the pickers are not left empty. Then it closes. On a box with no
 guild, the page says **No guilds yet** and offers **Create a guild**
 or the Builder.
 
-A member who is not an owner or admin sees the dialog with a note to
-ask an owner or admin to connect the first provider. The page opens
+A member who is not an owner or admin sees **Almost ready**, with a
+note to ask an owner or admin to connect a provider. The page opens
 on its own once a provider is connected.
 
 ### Settings, Model keys
@@ -144,14 +137,19 @@ every picker starts empty until one is marked.
 Each provider has a card:
 
 - its state: **Not connected**, or **Connected · key ends in** and
-  the key's last characters. The local endpoint shows its URL. A key
-  is never shown again in full.
+  the key's last characters. The local endpoint shows its URL, and
+  the key's last characters when it has a key. A key is never shown
+  again in full.
 - a key field, and a base URL field for the local endpoint, with
-  **Connect**, or **Replace** once connected
-- **Choose models**, which opens the provider's catalog
+  **Connect**, or **Replace** once connected. A successful
+  **Connect** opens the catalog at once.
+- **Choose models**, which opens the provider's catalog and reads
+  **Done choosing** while it is open
 - **Remove**
 - the chosen models, each with its id, what it takes (thinking,
-  images), its context window, and its price per million tokens
+  images), its context window, and its price per million tokens.
+  With none, the card says nothing from that provider is offered
+  until some are chosen.
 
 Owners and admins connect, replace, remove, choose models, and set
 the default. Every member can read the page.
@@ -161,7 +159,9 @@ the default. Every member can read the page.
 **Choose models** opens the provider's catalog with a search over
 name and id. Each row shows the model's id, whether it thinks and
 takes images, its context window, and its price. Ticked rows are the
-organisation's chosen models. **Save models** writes the list.
+organisation's chosen models. **Save models** writes the list. Saving
+checks the key with the provider again, so a key the provider no
+longer accepts blocks the save.
 
 Unticking a model removes it from every picker. An agent already on
 it keeps running. Its picker shows the model under **Not offered**.
@@ -244,7 +244,7 @@ unavailable`. Providers live in `apps/orchestrator/src/llm/providers.ts`
 Per connected provider, the organisation holds one
 `org_model_providers` row:
 
-- the credentials, encrypted as every credential is: `api_key`, and
+- the credentials, encrypted: `api_key`, and
   `base_url` for the local endpoint
 - `key_hint`, the key's last four characters, or the whole key when
   it has four or fewer; none on a local endpoint saved without a key
@@ -268,12 +268,12 @@ last four characters are kept in the clear, for the card.
 
 - `.env` never carries a model key. The `MODEL_CONTRACT_*` variables
   are for the development stack's contract tests, not the running
-  stack ([Configure](../getting-started/configure.md#development)).
+  stack ([Configure](../operations/configure.md#development)).
 - A key never enters an agent's sandbox. An agent that needs an API
   key in its own scripts gets it as a [secret](secrets.md).
 - A backup of `STATE_ROOT` holds the keys. It decrypts only with the
   `.env` it was made under
-  ([Operate](../getting-started/operate.md#back-up)).
+  ([Maintain](../operations/maintain.md#back-up)).
 
 ### HTTP
 
@@ -299,12 +299,14 @@ provider is 422.
   deduplicated, in the order given. The key is probed before the row
   is written; a rejected key answers 422. It returns the provider
   item. Other 422s: `api_key is required`, `base_url is required`,
-  `base_url must start with http:// or https://`, `models must
-  be <provider>/{model} ids`, `at most 500 models per provider`.
+  `base_url must start with http:// or https://`, `models must be a
+  list of model ids`, `models must be <provider>/{model} ids`, `at
+  most 500 models per provider`.
 - `PUT /api/orgs/:id/default-model`, for owners and admins. The body
   takes `model`: one of the chosen models on a connected marketplace
   provider, or null (an empty string also clears). It returns
-  `{ default }`. 422 when the id is not `{provider}/{model}`, when
+  `{ default }`. 422 `model must be a string or null`. 422 `model
+  must be {provider}/{model}` when the id has no provider. 422 when
   the provider is a coding one (`the default must be a marketplace
   model`), or when the model is not chosen (`choose <id>
   under <Provider> on Model keys first`).
@@ -317,24 +319,28 @@ tab is `/settings?tab=keys`.
 
 ### The key check
 
-**Connect** and **Replace** send one request to the provider:
+**Connect**, **Replace**, and **Save models** send one request to
+the provider:
 `GET {base URL}/models` with the key as a bearer token. They wait up
 to ten seconds. The key is saved when that request succeeds.
 
 A `401` or `403` reads `<Provider> rejected the key`. Another status
 reads `<Provider> did not accept the key (<status>)`. A connection
 failure gives the connection error. Nothing is written on failure,
-so a failed Replace leaves the previous key in place.
+so a failed Replace leaves the previous key and models in place.
 
 ### The catalog
 
 The catalog is [models.dev](https://models.dev). The box fetches it
 once an hour and keeps a snapshot for a box without network
-([Configure](../getting-started/configure.md#model-catalog)). A model
+([Configure](../operations/configure.md#model-catalog)). A model
 is listed when it calls tools, is not deprecated, and takes and
 returns text.
 
 ### The local endpoint
+
+**Local endpoint** is any server that speaks the OpenAI Chat
+Completions API: Ollama, LM Studio, vLLM, or one of your own.
 
 - **Base URL** is required. It starts with `http://` or `https://`.
   It is the API root, with `/v1` included where the server uses it.
@@ -346,11 +352,10 @@ returns text.
 - No cost is recorded.
 
 The orchestrator calls the URL from inside its container. There,
-`127.0.0.1` is the container, not your machine. On Docker Desktop, a
-server on the host is `http://host.docker.internal:<port>/v1`. On a
-Linux host the orchestrator has no `host.docker.internal`. Use the
-host's address on the Compose network's bridge, and have the server
-listen on that interface rather than on loopback alone.
+`127.0.0.1` is the container, not your machine. A server on the host
+is `http://host.docker.internal:<port>/v1`: Compose maps that name to
+the host on every platform. The server must listen on an address the
+Docker bridge reaches, not on loopback alone.
 
 ### Editions
 

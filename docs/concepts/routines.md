@@ -20,8 +20,11 @@ A routine can be set up four ways: the operator adds it on the
 agent's **Routine** tab, asks the agent to set one up in a direct
 chat or in the group chat (the agent then uses its schedule tools),
 or applies a [Prompt Studio](prompt-studio.md) coach's proposal to
-create one. The coach can also propose changing a routine's timing,
-description, instruction, or pause, and deleting it.
+create one ([Studio proposals](studio-proposals.md)).
+
+Only a coach proposal changes a routine's timing, description, or
+instruction. The Routine tab, the agent's schedule tools, and the
+HTTP routes create, pause, resume, and delete.
 
 ## How it works
 
@@ -30,8 +33,8 @@ description, instruction, or pause, and deleting it.
 A routine has one of two timings:
 
 - **Cron**: a five-field expression (minute, hour, day, month,
-  weekday), always in UTC. Wake-ups must be at least five minutes
-  apart.
+  weekday), always in UTC. When it is saved, its next two wake-ups
+  must be at least five minutes apart.
 - **Random window**: every day between two times of day, in a chosen
   timezone, the agent wakes at random moments, up to a number of
   times a day. The timezone follows daylight saving. A window whose
@@ -56,9 +59,10 @@ delivery, the routine is skipped for this tick and stays due. The next
 tick tries again. Nothing piles up: a due routine is one due routine,
 however long it waits.
 
-If a run cannot even be created (broken prompts, an unusable agent),
-the routine moves on to its next planned wake-up, so one broken agent
-does not retry in a tight loop.
+Every other outcome moves the routine on to its next planned wake-up
+and records the fire as its last wake, even when no run could be
+created (broken prompts, an unusable agent). So one broken agent does
+not retry in a tight loop.
 
 ### Pausing
 
@@ -76,15 +80,15 @@ checklist is open, the guild says so ([Applying recipes](applying-recipes.md)).
 ### What the agent receives
 
 The run opens with the agent's usual system prompt, then one
-**Schedule wake-up** message. It names the routine, its timing, its
-instruction, and when the routine last fired. A routine that reads
+**Schedule wake-up** message. It carries the routine's id, its timing,
+its instruction, and when the routine last fired. A routine that reads
 new records can pass that last time as `since` to `record_list`, so
 each wake-up handles only what is new ([Collections](collections.md)).
 
-With Memory on, the agent must update its [Memory](memory.md) once
-before the run ends, as in a group-chat wake-up. The run then
-completes and takes no further messages, unless the operator resumes
-it.
+With Memory on, the agent may update its
+[Memory](memory.md#when-the-agent-writes) before the run ends. The run
+then completes and takes no further messages, unless the operator
+resumes it ([Runs](runs.md#cancel-interrupt-resume)).
 
 ## In the app
 
@@ -101,7 +105,7 @@ wake-ups run in UTC and random windows run in their own timezone.
   when it was added, and the instruction.
 - A switch on each row pauses and resumes it.
 - **Delete routine** asks first. Past wake-ups stay in the Chat tab's
-  session drawer.
+  **History**.
 - **New routine** opens a form: **Timing** is **Cron** (UTC) or
   **Random window** (**From**, **To**, **Most wake-ups a day**, and a
   **Timezone** pre-filled from the operator's profile). Then
@@ -113,18 +117,20 @@ wake-ups run in UTC and random windows run in their own timezone.
   are held and links to the guild's Routines tab. Routines that are
   not paused on their own show as held and do not fire.
 
-The session drawer of the Chat tab lists each routine run as a
-schedule wake-up ([Runs](runs.md#in-the-app)).
+The Chat tab's **History** lists each routine run as a schedule
+wake-up ([Runs](runs.md#in-the-app)), and its
+[transcript](run-transcript.md) shows the wake-up message.
 
 ### Guild Routines tab
 
 The guild's **Routines** tab lists every routine in the guild, grouped
-by agent, soonest first. Each agent's name opens its Routine tab.
+by agent. Within an agent, running routines come first, soonest wake
+first, then paused ones. Each agent's name opens its Routine tab.
 
 - A switch, **Routines on** or **Routines off**, holds every wake-up
   in the guild. Its line says that turning it back on plans missed
   ones from now. A count beside it reads, for example, "3 active · 1
-  paused".
+  paused", or "3 held · 1 paused" while the switch is off.
 - Each routine row has its own pause switch.
 - Routines are added and deleted from the agent's Routine tab.
 
@@ -137,14 +143,15 @@ chip. The guild **Settings** tab edits the same switch
 | Rule | Value or behaviour |
 | --- | --- |
 | Timing | exactly one of cron or random window |
-| Cron | five fields, UTC, at least 5 minutes between wake-ups |
+| Cron | five fields, UTC; at save, the next two wake-ups at least 5 minutes apart |
 | Window times | 24-hour `HH:MM`; start and end must differ |
 | Window timezone | an IANA name, such as `Europe/Paris` |
 | Wake-ups a day | positive; must leave at least 5 minutes per wake-up |
-| Description | non-empty, at most 400 characters |
-| Instruction | non-empty markdown, at most 2000 characters |
+| Description | non-empty, collapsed to one line, at most 400 characters |
+| Instruction | non-empty Markdown, trimmed, at most 2000 characters |
 | Ticker | every 30 seconds |
 | Busy agent | skipped this tick, stays due |
+| Any other outcome, a failed create included | moves to the next planned wake-up and sets the last wake |
 | Guild switch | on by default; off holds every routine |
 | Missed wake-ups | never replayed |
 | Run | one-shot; completes after its generation |
@@ -162,7 +169,7 @@ A routine is a row of `schedules`:
 | `cron` | the 5-field UTC expression, or null |
 | `wake_window` | the random window, or null; exactly one of `cron` and `wake_window` is set |
 | `description` | the one-line description |
-| `instruction` | the markdown instruction |
+| `instruction` | the Markdown instruction |
 | `paused` | the routine's own pause |
 | `next_run_at` | the planned wake-up |
 | `last_run_at` | the last fire, or null |
@@ -209,8 +216,9 @@ fired with.
 `fireDueSchedules` (`apps/orchestrator/src/generation/index.ts`) runs
 on the 30-second tick (`SCHEDULER_TICK_MS`). It skips a busy agent and
 does not advance `next_run_at`, so the routine is delayed, not queued
-as a second job and not skipped forever. A failed create (bad prompts,
-archived agent) advances `next_run_at` to the next planned wake-up.
+as a second job and not skipped forever. Every other outcome, a failed
+create (bad prompts, bad config) included, sets `last_run_at` to the
+tick and `next_run_at` to the next planned wake-up.
 
 A schedule-triggered run uses the composed system row, then one user
 message:
@@ -221,7 +229,7 @@ Schedule wake-up: {
 }
 ```
 
-`instruction` is the markdown on the schedule row. `previous_run_at`
+`instruction` is the Markdown on the schedule row. `previous_run_at`
 is the schedule's `last_run_at` at the moment it fires, null on the
 first wake.
 
@@ -242,12 +250,18 @@ Direct and group-chat runs offer six schedule tools:
 `schedule_pause`, `schedule_resume`, and `schedule_delete`
 ([Native tools](../tools-and-connectors/native.md)).
 
+The Studio coach reads routines with `studio_list_routines` and
+proposes changes with `studio_create_routine` (which can create a
+routine paused), `studio_edit_routine`, and `studio_delete_routine`.
+A proposal writes nothing until the operator applies it
+([Studio proposals](studio-proposals.md)).
+
 ### HTTP
 
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
-| `GET /api/agents/:id/schedules` | the agent's schedules | 200 | |
-| `POST /api/agents/:id/schedules` | creates one from `cron` or `window`, `description`, `instruction` | 201 | 422 invalid timing, description, or instruction |
+| `GET /api/agents/:id/schedules` | the agent's schedules | 200 | 404 |
+| `POST /api/agents/:id/schedules` | creates one from `cron` or `window`, `description`, `instruction` | 201 | 422 missing `description` or `instruction`, or an invalid timing, description, or instruction; 404 |
 | `PATCH /api/agents/:id/schedules/:schedule_id` | sets `paused` | 200 | 404 |
 | `DELETE /api/agents/:id/schedules/:schedule_id` | deletes one | 204 | 404 |
 | `GET /api/guilds/:id/schedules` | every schedule in the guild, with its agent | 200 | |

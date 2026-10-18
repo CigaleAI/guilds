@@ -50,12 +50,15 @@ The coach follows a design method:
 
 - **Ground every system.** The coach looks up what the organisation
   can actually use. It never names a connector that is not in the
-  catalog. Each system you name becomes a catalog connector, a native
-  substitute, a browser role, a narrower scope, or a refusal.
+  catalog. Each system you name gets one
+  [resolution](#named-systems).
 - **Specialise.** Work with more than one standing purpose becomes two
   or more agents. One agent stays one only when the whole job is one
   skill, one cadence, one login, and one playbook, and the coach
   records why.
+- **Keep each agent narrow.** An agent carries only the Task, notes,
+  and tools its own work uses. Agents meet only in the collections and
+  tagged messages their Tasks name.
 - **Hand off through a collection.** Agents pass work through a queue
   [collection](collections.md) by default. Tagged messages in
   [group chat](group-chat.md) are only for small, budgeted batches.
@@ -63,8 +66,8 @@ The coach follows a design method:
   for new items keeps the items it has seen in a collection with a
   unique key, not in Memory.
 - **Ask, do not guess.** Interview questions come as option cards. A
-  login the organisation can make now comes as a connect card. Both
-  pause the coach until you answer.
+  login comes as a connect card. Both pause the coach until you
+  answer.
 
 ### Reviewing what the coach wrote
 
@@ -113,7 +116,7 @@ The header shows the recipe's name, its body version, and a status:
 - **Builder**, back to the landing
 - **Approve**, on a draft: it moves the recipe to ready so it can be
   applied. A later Builder write returns it to draft.
-- **Deploy guild**: it approves when needed and opens the
+- **Deploy guild**: it approves a draft first, then opens the
   [apply preview](applying-recipes.md#in-the-app)
 
 The blueprint is the same plan as a [recipe's page](recipes.md#a-recipes-page).
@@ -130,6 +133,10 @@ box. While a card waits for an answer, the message box is disabled.
 When the session reaches the coach's input limit, a banner says so:
 the session stays readable, its draft stays in Recipes, and a new
 session continues the design.
+
+The coach's spend counts toward the organisation's usage. Settings ›
+**Usage** shows it in the **Deleted guilds and agents** row, because
+the **Studio coach** row sums Studio sessions only ([Usage](usage.md)).
 
 ## Rules and limits
 
@@ -148,78 +155,79 @@ session continues the design.
 | Coach writes | Refused when every role has an empty Task, or when they drop roles from a roster of two or more |
 | Connectors | Only those in the catalog; never invented |
 | Credentials | The coach never holds one |
-| Logins in chat | Organisation logins only; guild and agent logins wait for the apply checklist; browser logins happen on the live agent after apply |
+| Logins in chat | An organisation login connects in the chat. A guild or agent login is chosen in the chat and connected on the apply checklist. Browser logins happen on the live agent after apply |
 
 ## Reference
 
-### Contract
+### Design rules
 
-A Builder session creates and owns one draft recipe immediately.
+The coach's system message is
+`apps/orchestrator/src/builder/system.md`. Prompt placement is the
+shared block in
+`apps/orchestrator/src/conversation/prompt-placement.md`. The rules
+below are the ones the [checks](recipe-format.md#findings) enforce or
+the recipe records.
 
-Optional non-runtime `design` metadata records specialisation, keyed
-routines, hand-offs, browser viability, and how each named system was
-resolved (see [Recipe format](recipe-format.md#design)). Decisions
-keep `proposed_by: operator | builder` and an independent `accepted`
-flag.
+- **Grounding.** `builder_list_capabilities` is the grounding tool.
+  The coach may not name a server that is not in that result.
+- **Specialisation.** Any of these justifies a split: narrower tools,
+  narrower access, narrower context (a distinct memory or playbook),
+  volume, browser against non-browser work, coding against non-coding
+  work, and failure isolation. A single role records its reason in
+  `design.specialization`.
+- **Hand-offs.** Two or more roles need a queue collection or a
+  tagged protocol with a budget, recorded in `design.handoffs`. Each
+  Task names its own side of a hand-off, not the peer's job. N items
+  never produce N group messages.
+- **Routines.** Each trigger is a `schedules` row, recorded under the
+  same `key` in `design.routines` with a cadence and a dedupe
+  collection whose unique column carries the identity.
+- **Narrow roles.** A role's own rules and working files are
+  agent-level notes. A guild- or organisation-level note holds only
+  what every role that embeds it uses. No note describes each role's
+  job: agents see their peers' `focus` in State. The coach sets
+  `false` in `native_tools` and in each connection role's `tools` for
+  every tool a role does not call, and turns `config.scripting` off
+  for a role that writes no scripts.
+- **Working files.** A file the agent revises is named in the Task and
+  read with `note_get`. A file that must enter every run is embedded
+  with `![[guild/<key>]]`, `![[org/<key>]]`, or
+  `![[agent/<role>/<key>]]` ([Task](task.md)). Tasks name systems and
+  outcomes, not namespaced tool ids.
+- **Coding.** A role that reads, changes, runs, and ships code sets
+  `config.coding`. Its code tools (`code_task`, `shell`,
+  `shell_status`, `file_read`, `code_search`) come with the flag (see
+  [Code tools](coding/code-tools.md)). The coach sets
+  `config.harness`, `config.harness_model`, `config.harness_effort`,
+  and `config.secret_aliases` only when the operator named them;
+  otherwise apply asks for the harness. The recipe lists the
+  repositories by name and purpose, never a URL or credential. Each
+  coding role's Task names its repositories, the checks it runs, and
+  how work reaches its reviewer.
+- **Scripts.** Builder-written scripts are documents. They cannot run
+  in the Builder.
 
-Default to two or more specialised roles whenever the work has more
-than one standing purpose. One role needs that reason recorded in
-`design.specialization`. A durable queue collection or an explicitly
-budgeted tagged protocol is required when there are multiple roles.
+### Named systems
 
-Routine keys are stable. Validation enforces structural facts.
-Prose checks are out of scope.
+Each system the operator names becomes one `design.systems` entry. The
+coach tries a published catalog connector first (`resolution:
+"catalog"`). Otherwise it falls back, in order, to:
 
-Capability fallback, in order:
+1. a native capability (`native`)
+2. a reviewed script adapter plus a named secret (`script`)
+3. a browser role plus an operator login after apply (`browser`)
+4. a narrowed composition of available capabilities (`composition`)
+5. an explicit operator decision (`decision`), or a refusal
+   (`refused`)
 
-1. published connector
-2. native capability
-3. reviewed script adapter plus named secret
-4. browser role plus operator login
-5. narrowed composition
-6. an explicit refusal
+An entry whose fact is still unknown records `accepted: false` and a
+`reason` that starts with `OPEN QUESTION.`, and the coach asks with
+`builder_ask_question`.
 
-Builder-written scripts are documents and cannot run in the Builder.
-
-A role that reads, changes, runs, and ships code sets `config.coding`.
-Its code tools (`code_task`, `shell`, `shell_status`, `file_read`,
-`code_search`) come with the flag (see
-[Code tools](coding/code-tools.md)). The coach sets `config.harness`
-(`claude-code`, `codex`, or `cursor`) only when the operator named
-one; otherwise apply asks for it. It sets `config.harness_model` only
-when the operator named a model for that harness,
-`config.harness_effort` only when the operator named an effort, and
-`config.secret_aliases` only when the operator asked for one.
-
-The recipe lists the repositories the guild works in by name and
-purpose, never a URL or credential. Each coding role's Task names its
-repositories, the checks it runs, and how work reaches its reviewer.
-
-Deploy is enabled only for a `ready` recipe. It creates the same apply
-row as recipe apply.
-
-### Design method
-
-`builder_list_capabilities` is the grounding tool. The coach may not
-name a server that is not in that result.
-
-Every named system resolves to one of:
-
-- catalog server
-- native substitute
-- browser role
-- narrowed scope
-- refusal
-
-Triggers become a routine plus a cadence plus a dedupe key. Dedupe is
-a collection whose unique column carries the identity, not Memory.
-
-Hand-off defaults to a queue collection. Tagged `group_post` is only
-for small, budgeted batches. N items never produce N group messages.
+### Collections
 
 Every collection the Builder declares carries typed columns designed
-from how the records are used
-(`apps/orchestrator/src/builder/system.md`):
+from how the records are used:
 
 - a queue or hand-off collection has one required `text` column with
   `values`, the closed list of states whose first value is what the
@@ -238,81 +246,13 @@ from how the records are used
 
 Both Tasks name the state column. The producer writes every required
 column with `record_add`. The consumer finds work with `record_list`
-and `where` on it. The consumer moves the record to the next state
-with `record_update` by id.
+and `where` on it, and moves the record to the next state with
+`record_update` by id.
 
-`scope` decides who owns the collection. `guild` is for the guild
-being built, whose agents all read and write it. `org` is for a
-collection other guilds can share. On an organisation collection,
-access is a grant, never a default: `guild` is the mode every member
-gets, and `writers` is the roles that get their own `write` grant.
-
-A column that breaks a rule is refused at write
-(`collections[i].columns: column "x": …`).
-
-Validation errors on:
-
-- a collection without columns (`design.untyped_collection`)
-- a hand-off collection without a required text column with `values`
-  (`design.handoff_state`)
-- a role that must write a collection it cannot
-  (`design.collection_access`: a hand-off producer or consumer, or the
-  role of a dedupe routine, when `guild` is not `write` and the role is
-  not in `writers`)
-- a writer that is not a role (`collection.writer`)
-
-Apply preview adds `collection.conflict` when a live collection of the
-same name has different columns.
-
-Specialise when any of these requires it:
-
-- craft
-- capability (`browser`, `coding`)
-- access
-- throughput (one generation per agent; a due schedule on a busy agent
-  is skipped)
-- failure isolation
-- volume
-
-Keep one role only when the entire job is:
-
-- one skill
-- one cadence
-- one login
-- one playbook
-
-Tasks name systems and outcomes, not namespaced tool ids.
-
-The coach is a system designer. It isolates each durable element into
-a named file or specialist so the guild can evolve and the operator
-can inspect Files. Each role carries only the files and tools its own
-work uses, and roles meet only in the channels the design names: the
-collections they hand work through and the tagged messages their Tasks
-budget. Each Task names its own side of a hand-off, not the peer's job.
-
-A role's own rules and working files are agent-level notes. A guild- or
-org-level note holds only what every role that embeds it uses, and a
-Task that must see it every wake embeds `![[guild/<key>]]` or
-`![[org/<key>]]` (see [Task](task.md)). No note describes each role's
-job: agents see their peers' `focus` in State, and collection columns
-reach every agent that can read the collection.
-
-Every native tool is on unless a role's `native_tools` sets it `false`,
-and a connection role with `tools: {}` is offered every tool of that
-connection. The coach sets `false` for each tool a role does not call
-and turns `config.scripting` off for a role that writes no scripts.
-
-Working files the agent revises are named and read with `note_get`. A
-bare filename or "inlined from: …" is not an embed.
-
-Prompt placement is the shared block in
-`apps/orchestrator/src/conversation/prompt-placement.md`.
-
-Setup text lands as `author: { by: "builder", reviewed: false }`.
-That is provenance.
-
-The operator previews, edits or asks the coach to revise, then
-validates. Per-field confirm is not required.
+`scope: "guild"` is for the guild being built, whose agents all read
+and write it. `scope: "org"` is for a collection other guilds can
+share; its access is a grant (see
+[Recipe format](recipe-format.md#collections)).
 
 ### Writes
 
@@ -320,7 +260,9 @@ validates. Per-field confirm is not required.
 `expected_body_version` it last saw; a stale one returns
 `recipe body_version conflict` with the current `body_version`. A
 write is refused when every role has an empty `task.body`, and when it
-would drop roles from a roster of two or more. Each accepted write:
+would drop roles from a roster of two or more. A column that breaks a
+rule is refused (`collections[i].columns: column "x": …`). Each
+accepted write:
 
 - recommends the coach's model on every role without `config.model`
 - keeps a reviewed field's author when its content did not change, and
@@ -340,17 +282,20 @@ Approve assigns looks too when a role still lacks one.
 | `builder_describe_server` | One published connector's catalog record |
 | `builder_search_connected` | Search an organisation-connected workspace (Notion databases and pages) |
 | `builder_ask_org_connection` | Chat widget: connect one published connector to the organisation now |
-| `builder_ask_connection` | Chat widget: connect any published connector at org, guild, or agent scope |
-| `builder_ask_question` | Chat widget: option card that pauses until the operator submits an answer |
+| `builder_ask_connection` | Chat widget: pick a connector and its scope. An organisation login connects now; a guild or agent login is confirmed and created at apply |
+| `builder_ask_question` | Chat widget: option card, plus **Other**, that pauses until the operator submits an answer |
 | `builder_validate_recipe` | Mechanical and design findings against the current blueprint |
 | `builder_write_recipe` | Create or revise the draft, sending `body_version` |
+
+A connect or question widget pauses the coach until the operator
+answers, connects, or skips.
 
 The coach uses the shared conversation runner
 (`apps/orchestrator/src/conversation/`). Studio tools are absent.
 
 Catalog copy (`description`, `limitations`, `setup_hint`) comes from
 each connector's manifest, with the instance admin's overrides applied
-(see [Catalog](../tools-and-connectors/catalog.md)). Platform admins
+(see [The catalog in Admin](../tools-and-connectors/connectors.md#the-catalog-in-admin)). Platform admins
 edit it at **Admin → Connector catalog** (`/admin`). The Builder names
 the enabled connectors' manifest tools, and the tools the
 organisation's own logins have listed.
@@ -367,31 +312,11 @@ shows the connector as **Not set up** with Connect disabled.
 ### Validation
 
 `builder_validate_recipe` runs the same checks as a recipe's
-validation (every finding is listed in
-[Recipe format](recipe-format.md#findings)). Errors block
-`status=ready`, among them:
-
-- no dedupe store on a watch role (`design.poll_dedupe`)
-- an invented connector (`server.unknown`)
-- browser or coding roles beyond the organisation's remaining browser
-  or coding capacity (`capacity.browser`, `capacity.coding`)
-- a browser role without a login-failure policy
-  (`design.browser_login_policy`)
-
-Advisory findings cover, among others, a consumer that shares its
-producer's cadence (`design.cadence_collision`), a browser site that
-failed a viability test, and a role with no routine. In a builder
-recipe with two or more roles they also cover what loads a role with
-work it does not do:
-
-- a guild- or org-level note that a role reads and that names two or
-  more roles (`design.shared_note_roles`)
-- a role whose `native_tools` turns no tool off (`access.broad_native`)
-- a connection role that lists no tools (`access.broad_connection`)
-
-Operator tool and connector removals from the blueprint become
-`access.tool_removed` / `access.connector_removed` info findings so
-the coach can update standing prompts or ask why they were cut.
+validation. Every finding is listed in
+[Recipe format](recipe-format.md#findings). Operator tool and
+connector removals from the blueprint become `access.tool_removed` /
+`access.connector_removed` info findings, so the coach can update
+standing prompts or ask why they were cut.
 
 ### Connected workspaces
 
@@ -401,18 +326,7 @@ records. Confirmed ones land on `connections[].resources` and a local
 map note.
 
 Queues, seen-sets, drafts, playbooks, and Memory stay in local notes at
-organisation, guild, or agent scope, or in organisation collections.
-
-Organisation logins can happen in the Builder chat. Guild and agent
-connector logins stay on the apply checklist.
-
-A connect widget pauses the coach until the operator authenticates or
-skips.
-
-Interview questions use `builder_ask_question`. It is an option card
-(plus Other) that pauses until the operator submits.
-
-Browser logins happen on the live agent after apply.
+organisation, guild, or agent scope, or in collections.
 
 ### Stream
 
@@ -443,8 +357,12 @@ One session owns one `recipes` row, with `source_kind=builder` and
 `source_builder_session_id` pointing back at it. The recipe cannot be
 deleted while its session exists. `config_snapshot` holds the coach's
 model, temperature, run limits, system prompt hash, and tool schemas.
-The first message (`seq` 0) is the system prompt. Usage joins
-Studio's non-agent bucket.
+The first message (`seq` 0) is the system prompt.
+
+The schema allows `status=archived` and `archived_at`. No route sets
+them: a Builder session is `active`, or `blocked` at the input limit.
+
+Usage is charged to the organisation, global, and monthly counters.
 
 ### HTTP
 
@@ -480,7 +398,9 @@ GET    /api/builder/servers/:server_ref
   `publish` is 422 with the blocking errors.
 - `deploy` takes the apply choices and creates the apply, exactly like
   `POST /api/recipes/:id/apply` (see
-  [Applying recipes](applying-recipes.md#create)).
+  [Applying recipes](applying-recipes.md#create)), so it needs a ready
+  recipe. The app does not call it: **Deploy guild** approves and opens
+  the apply preview, which applies through the recipe route.
 
 ### Screens
 

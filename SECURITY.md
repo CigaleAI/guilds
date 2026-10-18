@@ -16,4 +16,4 @@ its history in the
 [security register](docs/architecture/security-register.md).
 
 What the system assumes about its deployment is the trust
-boundary in [System](docs/architecture/system.md).
+boundary in [Deployment](docs/architecture/deployment.md#trust-boundary).

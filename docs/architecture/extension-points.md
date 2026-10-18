@@ -30,7 +30,7 @@ its own repository.
    operator. The stack listens on loopback. A box reached from
    elsewhere sits behind the operator's own proxy, and that proxy
    decides who gets through ([Remote
-   access](../getting-started/remote-access.md)).
+   access](../operations/remote-access.md)).
 5. **Core runs every guild on one host.** The control plane and
    every organisation's machines run on the Docker host of the
    Compose stack. Core never assumes every machine shares one host:
@@ -61,21 +61,86 @@ an edition identifies requests in, beside core's `compat-cookie`
 and `trusted-header`. Paths below are under
 `apps/orchestrator/src/` unless they say `apps/web`.
 
-| Extension point | Interface | Core's default |
-|---|---|---|
-| Identity | `IdentityProvider` (`http/identity.ts`): `currentUser(request)`, an optional `onSend` for a provider that renews a credential, and `describe()` for what its sign-in page needs; supplied by `ServerExtension.identity` | The request's user from the `X-Guilds-User` header or `guilds_user` cookie (`compat-cookie`), or from the proxy's email header (`trusted-header`). A mode core does not implement, with no provider for it, signs no one in. `GET /api/auth/config` and `GET /api/auth/me` are core's (`http/me-routes.ts`); a provider's `describe()` adds to the first |
-| Organisation policy | `OrgPolicy` (`policy/index.ts`): `standing(orgId)` returns the organisation's `OrgLimits` (agent, browser-agent, coding-agent, guild, machine (`maxMachines`), agents-per-machine (`maxAgentsPerMachine`, never above core's 32), and concurrent-run caps, the monthly Studio and Builder quota, and their generation budgets, the organisation's own MCP servers, and monthly calls on a connector's platform login by slug) and whether it is blocked; supplied by `ServerExtension.policy` | `OPEN_POLICY`: no cap, and every organisation may run, under the instance's own ceiling (`MAX_CONCURRENT_GENERATIONS`). Core checks every cap against the policy it is given, and a refusal names the limits' `source` (`<source> limit reached: agents`) |
-| Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`): `modelCredentials(orgId, provider)` returns the `apiKey`, an optional `baseURL`, and an optional `onUsage` callback core calls once per completion with the run id, model, token usage, and cost; null while the provider is not connected; may throw a `PolicyError`, which core shows and does not start the run on; supplied by `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys, decrypted, with no callback. Who pays, whether a budget exists, and what the callback does are the implementation's; core keeps no spend gate ([Orchestrator](orchestrator.md#credentials)) |
-| Organisation created | `OrgCreatedHook` (`db/repositories.ts`), run inside the transaction that creates an organisation; supplied by `ServerExtension.orgCreated` | Nothing. Hooks from several extensions run in order, and a hook passed for one creation replaces them |
-| Sandbox provider | `SandboxProvider` (`extension.ts`): `GenerationSandboxes` (`generation/index.ts`), keyed by machine: `ensure(machine)`, `connectRunning`, `destroy`, and `listRunningMachineIds` by machine id; `startBrowser`, `stopBrowser`, `stopAgent`, `novncTarget`, `startCli`, and `cliTarget` on an agent's seat (agent id, machine id, slot, browser language); an optional `machineHost(machineId)` giving the host, workspace root, and proxy URL a machine runs with; plus `start`, `close`, and an optional `destroyAgentSandboxes` the boot layout step calls; supplied by `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) on `OPENSANDBOX_URL` and `WORKSPACE_ROOT`, every machine on this host. Moving an agent between machines whose workspace roots differ is refused |
-| Blob store | `BlobStore` (`attachments/`); supplied by `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT`, which is `STATE_ROOT/attachments` on the Compose stack; `MemoryBlobStore` without one, which the tests use |
-| Instance admin | `InstanceAdmin` (`http/instance-admin.ts`): who administers the instance; supplied by `ServerExtension.instanceAdmin` | An owner of the seed organisation `org_home` |
-| Instance integrations | `Integration[]` (`instance/integrations.ts`), each declaring its `source` (`store` or `env`) and its `fields`; `ServerExtension.integrations` | The registry below; an edition's are listed with core's in `GET /api/instance`, and its store integrations are written through the same admin routes |
-| Connectors | `ConnectorEntry[]` (`connectors/registry.ts`), each built from a connector folder with `folderEntry(manifest, adapter, folder, { publisher })`; `ServerExtension.connectors` | Core's folders under `src/connectors/`. An edition's are installed after core's before the seed runs, listed and seeded like core's, and a slug core already has fails boot |
-| Database | `ServerExtension.migrate(pool)` and `seed(pool)` | Core's chain and seeds; an extension's run after them, on every boot |
-| Routes | `ServerExtension.routes(app, deps)` | Registered on the Fastify app before core's routes |
-| Operator app slots | `AppSlots` (`apps/web/src/app/slots.ts`): `publicPage` (a page for a path the edition owns, shown before anyone is identified), `signInPath`, `signOut`, `settingsTabs`, `adminTabs` (each tab with the core tab it follows), `shellBanners` (notices above every page), `membersPanel` (under the member list); passed to `mount(slots)` (`apps/web/src/mount.tsx`) | None filled: the app is whole without a slot. Core's entry passes none. The app reads `GET /api/instance` for the integrations |
-| Operator app build | `ServerExtension.webApp`, the directory of the build the server serves | `apps/web/dist` |
+| Extension point | Interface | Supplied by | Core's default |
+|---|---|---|---|
+| Identity | `IdentityProvider` (`http/identity.ts`) | `ServerExtension.identity` | `compat-cookie` or `trusted-header` |
+| Organisation policy | `OrgPolicy` (`policy/index.ts`) | `ServerExtension.policy` | `OPEN_POLICY`: no cap |
+| Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`) | `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys |
+| Organisation created | `OrgCreatedHook` (`db/repositories.ts`) | `ServerExtension.orgCreated` | Nothing |
+| Sandbox provider | `SandboxProvider` (`extension.ts`) | `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) |
+| Blob store | `BlobStore` (`attachments/`) | `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT` |
+| Instance admin | `InstanceAdmin` (`http/instance-admin.ts`) | `ServerExtension.instanceAdmin` | An owner of the seed organisation `org_home` |
+| Instance integrations | `Integration[]` (`instance/integrations.ts`) | `ServerExtension.integrations` | Core's registry ([Instance keys](#instance-keys)) |
+| Connectors | `ConnectorEntry[]` (`connectors/registry.ts`) | `ServerExtension.connectors` | Core's folders under `src/connectors/` |
+| Database | `migrate(pool)`, `seed(pool)` | `ServerExtension.migrate`, `.seed` | Core's chain and seeds ([Data](#data)) |
+| Routes | `routes(app, deps)` | `ServerExtension.routes` | Core's routes |
+| Operator app slots | `AppSlots` (`apps/web/src/app/slots.ts`) | `mount(slots)` (`apps/web/src/mount.tsx`) | None filled ([Web app](web-app.md#extension-slots)) |
+| Operator app build | the build directory | `ServerExtension.webApp` | `apps/web/dist` |
+
+### What each point takes
+
+- **Identity.** `currentUser(request)` returns the request's user or
+  a 401. An optional `onSend` renews a credential as each response
+  is sent. An optional `describe()` adds what its sign-in page needs
+  to `GET /api/auth/config`. Core's modes read the `X-Guilds-User`
+  header or `guilds_user` cookie (`compat-cookie`), or the proxy's
+  email header (`trusted-header`). A mode core does not implement,
+  with no provider for it, signs no one in. `GET /api/auth/config`
+  and `GET /api/auth/me` are core's (`http/me-routes.ts`).
+- **Organisation policy.** `standing(orgId)` returns the
+  organisation's `OrgLimits` and whether it is blocked. The limits
+  are the agent, browser-agent, coding-agent, guild, machine
+  (`maxMachines`), agents-per-machine (`maxAgentsPerMachine`, never
+  above core's 32), and concurrent-run caps; the monthly Studio and
+  Builder quota and their generation budgets; the organisation's own
+  MCP servers; and monthly calls on a connector's platform login by
+  slug. `OPEN_POLICY` caps nothing, and every organisation runs
+  under the instance's own ceiling (`MAX_CONCURRENT_GENERATIONS`).
+  Core checks every cap against the policy it is given. A refusal
+  names the limits' `source` (`<source> limit reached: agents`).
+- **Model credentials.** `modelCredentials(orgId, provider)` returns
+  the `apiKey`, an optional `baseURL`, and an optional `onUsage`
+  callback core calls once per completion with the run id, model,
+  token usage, and cost. It returns null while the provider is not
+  connected. It may throw a `PolicyError`, which core shows and does
+  not start the run on. Core's default decrypts the organisation's
+  row and has no callback. Who pays, whether a budget exists, and
+  what the callback does are the implementation's
+  ([Orchestrator](orchestrator.md#credentials)).
+- **Organisation created.** The hook runs inside the transaction that
+  creates an organisation. Hooks from several extensions run in
+  order. A hook passed for one creation replaces them.
+- **Sandbox provider.** `GenerationSandboxes`
+  (`generation/index.ts`), keyed by machine: `ensure(machine)`,
+  `connectRunning`, `destroy`, `listRunningMachineIds`, and an
+  optional `harnessesOf(machineId)` (the harness CLIs the machine's
+  container carries). On an agent's seat (agent id, machine id, slot,
+  browser language): `startBrowser`, `stopBrowser`, `stopAgent`,
+  `novncTarget`, `startCli`, and `cliTarget`. An optional
+  `machineHost(machineId)` gives the host, workspace root, and proxy
+  URL a machine runs with. `SandboxProvider` adds `start`, `close`,
+  and an optional `destroyAgentSandboxes` the boot layout step calls.
+  Core's `RunSandboxes` runs on `OPENSANDBOX_URL` and
+  `WORKSPACE_ROOT`, every machine on this host. Moving an agent
+  between machines whose workspace roots differ is refused.
+- **Blob store.** `ATTACHMENTS_ROOT` is `STATE_ROOT/attachments` on
+  the Compose stack. Without it, core uses `MemoryBlobStore`, which
+  the tests use.
+- **Instance integrations.** Each declares its `source` (`store` or
+  `env`) and its `fields`. An edition's are listed with core's in
+  `GET /api/instance`, and its store integrations are written through
+  the same admin routes.
+- **Connectors.** Each is built from a connector folder with
+  `folderEntry(manifest, adapter, folder, { publisher })`. An
+  edition's are installed after core's, before the seed runs, and are
+  listed and seeded like core's. A slug core already has fails boot.
+- **Database.** An extension's migrations and seeds run after core's,
+  on every boot.
+- **Routes.** An extension's routes are registered on the Fastify app
+  before core's.
+- **Operator app slots.** Core's entry passes none: the app is whole
+  without a slot. The app reads `GET /api/instance` for the
+  integrations.
 
 ## How an edition's repository holds core
 
@@ -163,7 +228,7 @@ does; an optional field tunes it and never switches it off.
   confirms with the count. No route returns a value.
 - An `env` integration's values are read from the orchestrator's
   environment at start. The operator writes them in `.env`
-  ([Configure](../getting-started/configure.md)). The Compose files
+  ([Configure](../operations/configure.md)). The Compose files
   name no instance key; `.env` reaches the container through
   `env_file`, so a variable set in the shell alone does not.
   Platform keys shows them read-only.
@@ -188,7 +253,7 @@ does; an optional field tunes it and never switches it off.
   client (`oauth.provider`), and the GitHub App are for connectors
   the box ships, core or an edition: a connector installed at
   runtime may not name them
-  ([Registry](../tools-and-connectors/registry.md)).
+  ([Registry](../tools-and-connectors/connector-registry.md)).
 - The instance descriptor (`GET /api/instance`, any signed-in
   user) reports each integration's `source`, its state, which
   fields are set (for an env field, whether the variable itself is

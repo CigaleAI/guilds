@@ -81,8 +81,8 @@ their files will live. It uses placeholders instead:
 Text the Builder can write (a Task, login notes, a script, a routine,
 a note, a connector's setup, an external step) carries an `author`:
 who wrote it (`operator` or `builder`) and whether it was reviewed.
-That is provenance only. An unreviewed field does not block export,
-share, or apply.
+That is provenance only. An unreviewed field does not block export or
+apply.
 
 ### Access is resolved, not a matrix
 
@@ -121,7 +121,7 @@ See [Recipes](recipes.md#in-the-app).
 | Setup text, login instructions, routine instruction | 8 KiB each |
 | Connection hint, repository purpose, collection purpose | 400 characters each |
 | Recipe name | 1 to 80 characters |
-| Credentials, ciphertext, tokens, workspace paths | Never in a recipe |
+| Credentials | A document that looks like it holds one is refused at import and export |
 
 ## Reference
 
@@ -156,8 +156,10 @@ The document is stored in PostgreSQL and downloads as JSON.
 }
 ```
 
-The document has none of: `connection_id`, `secret_id`, ciphertext,
-tokens, workspace paths.
+No object has a key for a `connection_id` or a `secret_id`, so the
+closed key lists refuse them. Import and export refuse a document whose
+text looks like a credential (see
+[Recipes](recipes.md#import-and-export)).
 
 ### Parsing
 
@@ -196,8 +198,8 @@ tokens, workspace paths.
 | `wake_triggers` | At most 500 characters |
 | `avatar_shape`, `avatar_color` | Default `teardrop` and `#7c5cff` |
 | `config` | Agent configuration keys only (see below) |
-| `task` | `{ body, embeds[], author }`. `body` is at most 256 KiB |
-| `scripts` | `[{ name, description, parameters, source, secrets[], author }]`, at most 50. `source` is at most 256 KiB |
+| `task` | `{ body, embeds[], author }`. `body` is at most 256 KiB. `embeds` lists the embeds of `body`; it is informational, since checks and apply read the embeds from `body` itself |
+| `scripts` | `[{ name, description, parameters, source, secrets[], author }]`, at most 50. `source` is at most 256 KiB. `secrets` is informational: apply does not grant it, and capture writes it empty |
 | `schedules` | `[{ key, cron or window, description, instruction, author }]`, at most 50 |
 | `grants` | `{ read_guild, write_guild, read_org, write_org }`. Defaults `true`, `true`, `true`, `false` |
 | `native_tools` | `{ [tool]: boolean }`. Each entry overlays a catalog where every native tool is on, so a tool the map leaves out stays on |
@@ -210,8 +212,8 @@ Validation errors with `config.unknown` on any other key.
   type is the `coding.flag` error. See
   [Coding agents](coding/index.md).
 - `config.harness` names a coding role's
-  [harness](coding/harnesses.md): `claude-code`, `codex`, or `cursor`.
-  It is optional; apply asks for it.
+  [harness](coding/harnesses.md): `claude-code`, `codex`, `cursor`, or
+  `antigravity`. It is optional; apply asks for it.
 - `config.harness_model` names the model that harness runs, under the
   agent configuration's rule. It is optional; without it the harness
   runs its subscription's default.
@@ -365,8 +367,12 @@ work in, by `name` and a one-line `purpose`.
 ### design
 
 `design` is optional builder metadata. It never runs. Each entry
-carries `proposed_by` (`operator` or `builder`) and `accepted`
-(default `false`).
+carries `proposed_by` (`operator` or `builder`), which is required, and
+`accepted` (default `false`).
+
+The lists below name the values the Builder and capture write for
+`resolution`, `reason`, and `kind`. The parser checks only that each is
+a string.
 
 | List | Entry |
 |---|---|
@@ -391,7 +397,7 @@ to the operator on a note.
   did not change; otherwise the field becomes
   `{ by: "builder", reviewed: false }`.
 - A file import resets every field to `reviewed: false`.
-- `reviewed: false` does not block export, share, or apply.
+- `reviewed: false` does not block export or apply.
 
 ### Findings
 
@@ -409,7 +415,8 @@ findings `collection.conflict` and `machine.*`
 | `model.unknown` | warning | `config.model` is not a known model; apply asks for one |
 | `model.coding` | warning | A coding-API model on a role without `coding`; apply asks for another |
 | `model.not_connected` | warning | The model's provider is not connected for the organisation; apply asks for another |
-| `harness.unknown` | warning | `config.harness` is not one of the three; apply asks for one |
+| `harness.unknown` | warning | `config.harness` is not one of the four harnesses; apply asks for one |
+| `harness.off` | warning | `config.harness` names a harness the box turns off; apply asks for another |
 | `harness.coding` | warning | A role without `coding` names a harness; apply leaves it out |
 | `harness.credential` | warning | On every coding role: the harness runs on a subscription credential that cannot be known before apply. It names the fix after apply: the secret to grant, or the login to run in the agent's CLI tab |
 | `harness_model.invalid` | warning | `config.harness_model` is not a model name; apply leaves it out |
@@ -422,6 +429,7 @@ findings `collection.conflict` and `machine.*`
 | `task.empty` | error | A role has no Task, no focus, and the guild has no objective or about text |
 | `task.derived` | warning | A role has no Task; apply uses its focus and the guild's objective |
 | `task.embed` | error | A Task embeds a file the recipe does not know |
+| `task.note_path` | error | A Task or routine instruction names a plain-text note path that matches no note in `notes[]` |
 | `schedule.missing` | warning | A role has no routine and no `design.routines` entry |
 | `schedule.invalid` | error | A routine's timing is invalid |
 | `native.unknown` | error | A native tool switch names an unknown tool |
@@ -437,7 +445,7 @@ findings `collection.conflict` and `machine.*`
 | `access.broad_native` | warning | In a Builder recipe with two or more roles, a role's `native_tools` turns no tool off |
 | `access.broad_connection` | warning | In a Builder recipe with two or more roles, a connection role lists no tools, so it is offered every one |
 | `design.routine_missing` | error | A `design.routines` key is not on any role |
-| `design.poll_dedupe` | error | A routine has no dedupe collection or key |
+| `design.poll_dedupe` | error | A `design.routines` entry has no dedupe collection or key, or a role has routines and no `design.routines` entry names that role |
 | `design.unknown_collection` | error | A routine or hand-off names a collection the recipe lacks |
 | `design.specialization_role` | error | A specialization entry names an unknown role |
 | `design.single_role` | warning | A Builder recipe has one role and no recorded reason |

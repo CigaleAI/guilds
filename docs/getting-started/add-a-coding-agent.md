@@ -1,19 +1,19 @@
 # Add a coding agent
 
-![Create your own coding agents with Claude Code, Codex, or Cursor](../images/coding-agents.png)
+![Create your own coding agents with Claude Code, Codex, Cursor, or Antigravity](../images/coding-agents.png)
 
 This page adds an agent that changes code in one of your repositories.
 
 A coding agent hands the code work to a harness. A harness is a coding
-tool such as Claude Code, Codex, or Cursor. It runs on the agent's
+tool: Claude Code, Codex, Cursor, or Antigravity. It runs on the agent's
 machine, on your own subscription. The agent writes the brief, checks
 the result, and reports back.
 
 You need:
 
-- the guild from [Your first guild](first-guild.md);
-- a public repository on GitHub, or any public git repository;
-- a Claude Code subscription. Codex and Cursor work too, with the
+- the guild from [Your first guild](first-guild.md)
+- a public repository on GitHub, or any public git repository
+- a Claude Code subscription. The other harnesses work too, with the
   differences listed at the end.
 
 ## 1. Give the machine room to code
@@ -100,8 +100,9 @@ project locally. Check that the file still reads well. Do not push.
 Send it.
 
 You should see the run's steps appear one by one. A **Code task** row
-shows the harness's progress lines under it while it works. The harness can take a few minutes. Then the agent replies with
-what it changed and what it checked.
+shows the harness's progress lines under it while it works. The
+harness can take a few minutes. Then the agent replies with what it
+changed and what it checked.
 
 ## 6. Review the diff
 
@@ -128,10 +129,12 @@ the change of that one harness turn.
   `codex login --device-auth` in the **CLI** tab.
 - Cursor runs on an API key. Pick **Cursor** in step 3, then click
   **Paste API key** and paste it.
+- Antigravity runs on a Google login. Pick **Antigravity** in step 3,
+  then type `agy` in the **CLI** tab and sign in with Google.
 - The agent works on its own branch, named after itself and the
   topic. It pushes and opens pull requests itself, never the harness.
 - A harness marked **Not on machine** is missing from the machine's
-  image. The image built by the setup script carries all three.
+  image. The image built by the setup script carries all four.
 
 [Coding agents](../concepts/coding/index.md) explains how the agent,
 the harness, and the repositories fit together.

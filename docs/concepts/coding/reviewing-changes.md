@@ -3,7 +3,7 @@
 Every change a [coding agent](index.md) makes to a repository can be
 reviewed from its run. The platform takes **checkpoints**: snapshots of
 each working tree, uncommitted files included, at the start and end of
-a run and around every [`code_task`](code-tools.md#code_task). The
+a run and around every [code task](code-tasks.md). The
 difference between two checkpoints is the diff the operator reviews:
 what the whole run changed, or what one harness turn changed.
 
@@ -37,9 +37,11 @@ flowchart LR
     ts -. task diff .-> te
 ```
 
-- **Run checkpoints.** At a run's first generation, every repository
-  in the agent's home gets a `start` checkpoint, once. At the end of
-  every generation, each gets an `end` checkpoint, replaced each time.
+- **Run checkpoints.** At the start of every generation, each
+  repository in the agent's home that has no `start` checkpoint for the
+  run gets one. So a repository gets its `start` once, at the first
+  generation that finds it. At the end of every generation, each gets
+  an `end` checkpoint, replaced each time.
   The run records, per repository, its branch, its head commit, and the
   diffstat from start to end.
 - **Task checkpoints.** Each `code_task` call takes its own `start`
@@ -82,11 +84,10 @@ machine, and **Hide diff** folds it. It is disabled with no changes.
 
 ### The Diff of a code task
 
-A `code_task` row in the run flow opens on its details. Once the task
-has an end checkpoint, its views include **Diff**: the change that one
-harness turn made. **Metadata** gives its status, harness, repository,
-session, diffstat, and its checkpoints as short commit ids, start →
-end.
+Once a code task has an end checkpoint, its block in the run flow
+opens a **Diff** view: the change that one harness turn made. Its
+**Metadata** gives its checkpoints as short commit ids, start → end
+([Code tasks](code-tasks.md#in-the-app)).
 
 ### Reading a diff
 
@@ -96,12 +97,12 @@ from the agent's machine…" shows while it loads. A diff past the cap
 ends with "The diff is cut at 256 KiB." A diff that cannot be loaded
 shows "Couldn't load the diff" with the reason.
 
-### A review routine
+### Reviewing a run, step by step
 
 1. Read the agent's final reply: what it changed, what it ran, and what
    failed.
 2. Open the **Changes** panel and **Show diff** for each repository.
-3. For a surprising change, open the `code_task` row that made it and
+3. For a surprising change, open the code task block that made it and
    read its **Result** and **Diff**.
 4. Review the pull request the agent opened on the git host, where the
    project's own checks run.
@@ -110,7 +111,7 @@ shows "Couldn't load the diff" with the reason.
 
 | Rule | Value or behaviour |
 | --- | --- |
-| Run checkpoints | `start` once per run, `end` after every generation |
+| Run checkpoints | `start` once per run and repository, `end` after every generation |
 | Task checkpoints | `start` and `end` around each `code_task` |
 | What is captured | Committed, uncommitted, and untracked files; not ignored ones |
 | Where | Local refs in the agent's clone, never pushed, never deleted |
@@ -124,7 +125,7 @@ shows "Couldn't load the diff" with the reason.
 
 | Ref | Written |
 | --- | --- |
-| `refs/guild/runs/<run id>/start` | Once, at the run's first generation, in every repository under `repos/` |
+| `refs/guild/runs/<run id>/start` | Once per repository under `repos/`, at the first generation that finds it |
 | `refs/guild/runs/<run id>/end` | At the end of every generation, in every repository |
 | `refs/guild/runs/<run id>/tasks/<call id>/start` | Before the harness starts, in the call's repository |
 | `refs/guild/runs/<run id>/tasks/<call id>/end` | After the harness ends, in the call's repository |
@@ -138,7 +139,7 @@ generation cut short by an orchestrator restart has no end checkpoint:
 the working tree is intact, and the change is attributed to the run
 that checkpoints next. A `code_task` the restart cut short gets its own
 end checkpoint at startup when its machine is running, so its task diff
-is available ([Lifecycle](code-tools.md#lifecycle)).
+is available ([Lifecycle](code-tasks.md#lifecycle)).
 
 The run stores `metadata.repos`:
 `[{ name, branch, head_sha, start_sha, end_sha, files_changed, insertions, deletions }]`.

@@ -29,7 +29,6 @@ flowchart TD
   guild --> notes[Guild-level notes]
   guild --> tables[The guild's own collections]
   guild --> repos[Repositories]
-  guild --> routines[Routines switch]
 ```
 
 - **Agents.** Zero or more, up to the guild's agent limit. Each one
@@ -38,8 +37,8 @@ flowchart TD
   ([Group chat](group-chat.md)).
 - **Operators.** The people the guild works for
   ([Operators](operators.md)).
-- **Guild-level artifacts.** Notes at guild level, read and written
-  by its agents ([Notes](notes.md)).
+- **Guild-level notes.** Read and written by its agents
+  ([Notes](notes.md)).
 - **Its own collections.** A collection that belongs to the guild is
   written by every member and reached by nobody else. An
   organisation collection is reached through a read or write grant
@@ -47,9 +46,8 @@ flowchart TD
 - **Repositories** its coding agents work in
   ([Repositories](coding/repositories.md)).
 
-Every organisation has one artifact store. Notes exist at agent,
-guild, and organisation level. How far an agent reaches over them is
-set by four grants on the agent ([Access](access.md)).
+How far an agent reaches over notes and collections is set by grants
+on the agent ([Access](access.md)).
 
 ### Purpose: short description and description
 
@@ -65,7 +63,8 @@ description also shows in the guild header.
 The agent limit (default 15) is how many agents the guild can hold.
 Creating another agent is refused when that would pass the limit.
 Applying a recipe that would pass it is also refused
-([Applying recipes](applying-recipes.md)).
+([Applying recipes](applying-recipes.md)). The limit can be set below
+the current number of agents. The agents stay, and no new one fits.
 
 ### Visibility
 
@@ -83,9 +82,10 @@ visibility.
   ([Routines](routines.md)).
 - **Agent turns in a row** is how many agent messages the group chat
   takes before an operator must post
-  ([Group chat](group-chat.md)).
+  ([Group chat](group-chat.md#the-agent-message-limit)).
 - **Commit author email** is the address coding agents put on
-  commits ([Repositories](coding/repositories.md)).
+  commits. Empty, each agent uses its own platform address
+  ([Repositories](coding/repositories.md)).
 
 ### Renaming
 
@@ -98,15 +98,12 @@ they do not change.
 ### Deleting
 
 Deleting a guild is an admin action. It is refused while an agent of
-the guild is generating or while the group chat is delivering. It
-then removes, for each agent, its Chrome, terminal, and home on its
-machine. The machines stay up for the other agents on them.
-
-The guild takes with it its agents, their runs, its group chat, its
-operators, its issues, its notes, its own collections, its
-repositories, and the secrets and grants that only it or its agents
-held. Organisation collections, organisation-wide secrets, and
-secrets granted elsewhere stay. The name can be reused.
+the guild is generating or while the group chat is delivering. The
+guild takes with it its agents and everything they own, its group
+chat, operators, issues, notes, own collections, repositories, and
+the secrets that only it or its agents held. Organisation collections
+and secrets granted elsewhere stay, and so do the machines
+([Delete](#delete) has the full list).
 
 ## In the app
 
@@ -114,27 +111,22 @@ secrets granted elsewhere stay. The name can be reused.
 
 The sidebar lists the current organisation's guilds.
 
-- A guild row shows its name, a lock when private, and a count of
-  the group chat messages the operator has not read
-  ([Group chat](group-chat.md)).
-- It folds open to its agents and an **Add agent** row, disabled once
-  the guild is full ([Agents](agents.md)).
+- A guild row shows its name, a lock when private, and its unread
+  count ([Group chat](group-chat.md#what-the-operator-has-read)).
+- It folds open to its agents and an **Add agent** row
+  ([Agents](agents.md#sidebar)).
 - **+** on the **Guilds** header opens the create-guild dialog.
 
-The footer holds compact title-only links:
+The footer links to **Inbox** ([Inbox and issues](inbox.md)),
+**Builder** ([Guild builder](guild-builder.md)), **Recipes**
+([Recipes](recipes.md)), and **Databases**
+([Collections](collections.md)). The account button sits below them
+([Users](users.md#the-account-menu)).
 
-- **Inbox** (`/inbox`, with a count badge, [Operators](operators.md))
-- **Builder** (`/builder`, [Guild builder](guild-builder.md))
-- **Recipes** (`/recipes`, [Recipes](recipes.md))
-- **Databases** (`/databases`, [Collections](collections.md))
-
-Then the account button with the user's name and organisation
-([Users](users.md)).
-
-The sidebar retracts to a rail of guild initials and tool icons; a
-guild's unread count sits on its tile.
-⌘B, or Ctrl+B, folds it and opens it again. On a phone it opens as a
-drawer from a top bar. Folded guilds and the retracted state are
+The sidebar retracts to a rail of guild initials, the footer's tool
+icons, and a **Settings** icon. A guild's unread count sits on its
+tile. ⌘B, or Ctrl+B, folds it and opens it again. On a phone it opens
+as a drawer from a top bar. Folded guilds and the retracted state are
 remembered in the browser.
 
 ### Create a guild
@@ -162,19 +154,16 @@ A guild opens at `/guilds/<id>` under its header. The header shows:
 - a **Routines off** chip while the guild's routines are held
 - an **N agents active** pill while agents generate
 - on a wide screen, the short description
-
-The message-budget button shows the agent messages posted in a row
-since an operator last posted, against the limit at which agents
-pause, as a ring gauge and `count/limit`. It opens a popover that
-sets the limit to 25, 50, 100, 200, or a custom value
-([Group chat](group-chat.md)).
+- the message-budget button
+  ([Group chat](group-chat.md#the-message-budget-button))
 
 The options menu offers:
 
 - **Open in Studio**: the guild's live Studio session if there is
   one, otherwise the Studio landing for the guild
   ([Prompt Studio](prompt-studio.md))
-- **New agent**, disabled once the guild is full
+- **New agent**, which reads **New agent (full at N)** and is
+  disabled once the guild is full
 - **Save as recipe**: captures the guild as a draft recipe and opens
   it ([Recipes](recipes.md))
 - **Guild settings**
@@ -194,7 +183,7 @@ The tabs, one route each:
 | **Settings** | Below |
 | **State** (Files, Databases, Artifact scope) | [Notes](notes.md), [Collections](collections.md), [Access](access.md) |
 | **Routines** | [Routines](routines.md) |
-| **Issues** | [Operators](operators.md) |
+| **Issues** | [Inbox and issues](inbox.md) |
 | **Tools**, **Secrets** | [Access](access.md) |
 | **Usage** | [Usage](usage.md) |
 
@@ -210,7 +199,8 @@ The guild's **Settings** tab, in this order:
 - **Behaviour**: **Routines fire on schedule**. Turning it off holds
   every routine; paused routines stay paused. For admins, **Private**.
 - **Operators**: the roster ([Operators](operators.md)).
-- **Git**: **Commit author email**.
+- **Git**: **Commit author email**, with a hint that empty uses each
+  agent's platform address.
 - **Repositories**: the guild's repositories
   ([Repositories](coding/repositories.md)).
 - **Delete**, for admins.
@@ -232,7 +222,8 @@ app then returns to `/`.
 | Name in the organisation | Unique |
 | Short description | At most 200 characters |
 | Description | At most 8000 characters |
-| Agent limit | Default 15; a whole number of at least 1 |
+| Commit author email | Empty, or one address with a dotted domain; at most 254 characters; no `.invalid` domain |
+| Agent limit | Default 15; a whole number of at least 1; may sit below the current count |
 | Agents past the limit | Refused, by create and by recipe apply |
 | Visibility | Organisation or private; private in the create dialog |
 | First admin | The creator |
@@ -255,11 +246,11 @@ The `guilds` table:
 | `about` | The short description, trimmed, at most 200 characters |
 | `description` | The description, trimmed, at most 8000 characters |
 | `max_agents` | The agent limit, default 15, positive |
-| `visibility` | `org` or `private`; default `org` |
+| `visibility` | `org` or `private`; default `org`. An empty value or `null` also means `org` |
 | `routines_enabled` | Whether routines fire, default true ([Routines](routines.md)) |
 | `git_author_email` | The commit author email, empty for none ([Repositories](coding/repositories.md)) |
-| `group_chat_seq`, `group_agent_message_count`, `group_agent_message_limit`, `group_chat_errors` | Group-chat state ([Group chat](group-chat.md)) |
-| `archived_at` | Exists and stays unused |
+| `group_chat_seq`, `group_agent_message_count`, `group_agent_message_limit`, `group_chat_errors`, `group_chat_cleared_at` | Group-chat state ([Group chat](group-chat.md)). Every create path sets `group_agent_message_limit` to 200 |
+| `archived_at` | Unused |
 | `created_at`, `updated_at` | Timestamps |
 
 About and description reach the State snapshot as `group.about` and
@@ -297,7 +288,9 @@ guild.
 
 - 422 for an invalid value: `max_agents must be a positive integer`,
   `routines_enabled must be a boolean`, `visibility must be org or
-  private`, and the name, about, description, and email rules.
+  private`, `git_author_email must be a single email address`,
+  `git_author_email must not use a .invalid domain`, and the name,
+  about, description, and email length rules.
 - A visibility change takes a guild admin (403 otherwise).
 - 409 `guild name already exists`.
 - 409 `guild is being deleted` on a rename during deletion.

@@ -1,18 +1,16 @@
-# Artifacts
+# Artifact store
 
-The artifact store is where an organisation keeps what its agents
-read and write from one run to the next. It holds four kinds of
-things: [notes](notes.md) (Markdown files), [collection](collections.md)
-records (typed rows), each agent's [Memory](memory.md), and each
-agent's [scripts](scripts.md). Every organisation has one store.
+The artifact store is the storage layer under an organisation's
+[notes](notes.md), [collection](collections.md) records, each agent's
+[Memory](memory.md), and each agent's [scripts](scripts.md). Every
+organisation has one store. Agents read and write it with tools, and
+operators read and edit it in the app.
 
 Each item has a level: the organisation, one guild, or one agent.
-The level says who owns it and who can reach it. Each item also has
-a display path, a text address that names it exactly. Agents and
-operators use display paths to point at an item.
-
-The agent's [Task](task.md) is not in the store. It lives on the
-agent itself, and only the operator writes it.
+The level says who owns it. Each item also has a display path, a
+text address that names it exactly. The app's **Artifact scope**
+switches set how far an agent reaches into notes at the guild and
+organisation levels ([Notes](notes.md)).
 
 ## Why it exists
 
@@ -26,7 +24,7 @@ and where to write:
 
 | What | Home |
 |---|---|
-| The operator's standing purpose | the [Task](task.md), on the agent |
+| The operator's standing purpose | the [Task](task.md), on the agent, outside the store |
 | What the agent wants its future runs to remember | its [Memory](memory.md) |
 | Long-form knowledge for one agent's work | agent-level [notes](notes.md) |
 | Long-form knowledge shared by a team | guild- and organisation-level [notes](notes.md) |
@@ -49,14 +47,10 @@ flowchart TD
   O --> G --> A
 ```
 
-- **Notes** exist at all three levels. Four grant switches on the
-  agent decide how far it reaches beyond its own notes
-  ([Notes](notes.md)).
-- **Collections** live at the organisation. A collection is either
-  an organisation collection, reached through a read or write grant
-  the operator sets, or a guild's own collection, written by every
-  member of that guild and reached by nobody else
-  ([Collections](collections.md)).
+- **Notes** exist at all three levels. Four grants decide how far an
+  agent reaches beyond its own ([Notes](notes.md#how-far-an-agent-reaches)).
+- **Collections** live at the organisation. Some belong to one guild.
+  Collection grants decide who reaches them ([Collections](collections.md#who-reaches-a-collection)).
 - **Memory** and **scripts** belong to one agent.
 
 ### Agents use tools, never files
@@ -97,11 +91,14 @@ sends the collection name and the record id.
 
 ### Every change is recorded
 
-Every successful write to a note, Memory, a record, a script, or the
-Task records a change: which item, what operation, the version it
-produced, who did it, and when. A change made by a run also records
-the run and the exact tool call. This record is the file's
-provenance.
+A write to a note, Memory, a record, a script, or the Task records a
+change: which item, what operation, the version it produced, who did
+it, and when. A change made by a run also records the run and the
+exact tool call. This record is the file's provenance.
+
+Three operator actions change records and record no change:
+**Delete all** on a collection, deleting a collection, and renaming
+or removing a column.
 
 ## In the app
 
@@ -126,11 +123,11 @@ in the agent's Chat tab, or in Studio's History tab inside Studio.
 | Rule | Value or behaviour |
 |---|---|
 | Size of one write | 256 KB |
-| Live artifacts per owner | 10 000 (collection records are counted per collection instead) |
+| Live notes, Memory, and scripts per owner | 10 000 |
+| Live records per collection | 10 000 ([Collections](collections.md)) |
 | `task.md` and `memory.md` | reserved names at the agent root; neither can be deleted |
 | Previous Memory versions | read only, and only by the operator |
 | Paths | built from ids, never names |
-| Who checks access | the application: the four note grants and the collection grants. The database has no row-level security on these tables |
 
 ## Reference
 
@@ -147,6 +144,10 @@ One PostgreSQL table, `artifacts`, holds every item. Its `kind` is:
 
 A collection itself is an `artifact_collections` row, not an
 artifact kind. The live Task is `agents.task`.
+
+Access is checked in the application: the four note grants and the
+collection grants. The database has no row-level security on these
+tables.
 
 ### Display paths
 
@@ -176,7 +177,7 @@ org/<org_id>/<note>.md
   agent's `memory` artifact. Neither is deletable (422
   `cannot delete this file`).
 - `history-archive/<stamp>-<source>.md` names a previous Memory
-  version. Only the operator resolves it; it is read only (422
+  version. Only the operator resolves it. It is read only (422
   `history-archive is read-only` on delete) ([Memory](memory.md)).
 - A path that does not parse is 404 `unknown artifact path`.
 
@@ -184,11 +185,15 @@ Code: `apps/orchestrator/src/artifacts/paths.ts`.
 
 ### File provenance
 
-Every successful note, memory, record, script, or task mutation
-appends a `file_changes` row in the same transaction as the write.
+Every note, memory, record, script, or task create, update, or
+delete appends a `file_changes` row in the same transaction as the
+write. **Delete all** (`DELETE /api/collections/:id/records`),
+deleting a collection, and a column rename or removal write no row.
 
 | Column | Meaning |
 |---|---|
+| `id` | the change id |
+| `org_id` | the organisation |
 | `display_path` | the canonical display path |
 | `artifact_id` or `task_agent_id` | the item changed; exactly one is set (`task_agent_id` for a Task) |
 | `operation` | `create`, `update`, or `delete` |
@@ -219,21 +224,17 @@ version, and the time. A Task falls back to its version and time.
 Code: `apps/orchestrator/src/artifacts/file-changes.ts`,
 `apps/orchestrator/src/http/artifact-files.ts`.
 
-### What is not an artifact
+### Kept outside the store
 
-- Routines stay on `schedules.instruction` ([Routines](routines.md)).
-- The live Task stays on `agents.task`. Previous Task saves stay on
-  `task_revisions` (cap 50) ([Task](task.md)).
-- Previous Memory versions stay on `memory_revisions` (cap 50)
+- Routines: `schedules.instruction` ([Routines](routines.md)).
+- The live Task: `agents.task`. Previous Task saves: `task_revisions`,
+  50 kept ([Task](task.md)).
+- Previous Memory versions: `memory_revisions`, 50 kept
   ([Memory](memory.md)).
-- Collection grants are `collection_access` rows
+- Collection grants: `collection_access` rows
   ([Collections](collections.md)).
-- Run transcripts are run rows. There is no search over runs
-  ([Runs](runs.md)).
+- Run transcripts: run rows ([Runs](runs.md)).
 
-None of those are kinds. None appear in `note_find` or
-`record_search`.
-
-Scripts are an artifact kind (`script`, agent only) with their own
-tools. They do not appear in note or record search, and the Notes
-view does not list them ([Scripts](scripts.md)).
+`note_find` and `record_search` search the store only. Scripts are
+an artifact kind with their own tools. Note and record search skip
+them, and the notes browser does not list them ([Scripts](scripts.md)).

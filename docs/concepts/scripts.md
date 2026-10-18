@@ -120,7 +120,7 @@ has no scripting**.
 In chat, a `script_create` call carries a chip naming the script it
 wrote, which opens it.
 
-**Settings**, Model section (**Lead model** on a coding agent): the **scripting** button under **Agent
+**Settings**, Model section (**Lead model** on a coding agent): the **Scripting** button under **Agent
 capabilities** turns it on and off, and **Max scripts** under **Run
 limits** sets the cap. The create dialog offers both, with scripting
 on by default.
@@ -143,23 +143,11 @@ on by default.
 
 ### Config keys
 
-- `scripting` is whether this agent may keep and run Python scripts.
-  Default true. It selects the State's Scripts view and the five
-  script tools. Those tools remain bindings when the flag is on. When
-  it is off they are not offered, whatever the bindings say. It is not
-  itself a binding.
-- `max_scripts` is how many reusable Python scripts the agent may
-  keep, a positive integer, default 10. `script_create` and pane
-  writes of a new name past that count are refused
-  (`this agent is limited to N scripts`). A replace of an existing
-  name is not. Lowering the cap below the current count is allowed
-  and only blocks further creates. Applying a recipe that would pass
-  the count is refused.
-
-For an agent without `coding`, `script_run` is the one path that
-executes in the sandbox. Turning scripting off removes code
-execution. A coding agent keeps its scripts for reusable code, and
-turning scripting off does not remove its `shell`.
+- `scripting`, default true, selects the State's Scripts view and the
+  five script tools ([Five tools](#five-tools)).
+- `max_scripts`, a positive integer, default 10, is the script cap
+  ([The script cap](#the-script-cap)). A refused create answers
+  `this agent is limited to N scripts`.
 
 ### Storage
 
@@ -191,9 +179,8 @@ Each write publishes `agent.scripts.changed` to the guild, with the
 `agent_id`, the `action` (`create`, `delete`, or `clear`), and the
 `name` when there is one.
 
-The Scripts pane and `script_list` / `script_read` read the live
+The Scripts view and `script_list` / `script_read` read the live
 catalog. `script_create` writes a row and `script_delete` deletes it.
-Live catalog edits affect new runs.
 
 ### Snapshot
 
@@ -216,25 +203,15 @@ from the live catalog
    `move_files` refuses to overwrite, and a direct upload truncates in
    place);
 2. write live catalog rows whose names are absent from the snapshot
-   the same way, so a script created during this run remains callable
+   the same way, so a script created during this run is callable
    through `script_run`;
 3. remove managed files whose names are in neither set.
 
-A snapshotted name always executes the snapshotted source, even when
-the live row has since changed. `script_delete` during this run drops
-that name from the snapshot and removes `scripts/<name>.py` from the
-agent's home. `script_run` and its first-class tool then stop.
-
-A name created after run creation has no frozen schema. It is invoked
-only through `script_run`, using the live source.
-
-`script_create` and pane writes update PostgreSQL immediately. They
-write through to a running sandbox only for names absent from the
-current run's snapshot.
-
-When `script_create` replaces a snapshotted name, its result tells the
-model that this run keeps the snapshotted version and the new one runs
-from the next run.
+`script_create` and Scripts view writes update PostgreSQL
+immediately. They write through to a running machine only for names
+absent from the current run's snapshot. The run-time effects of an
+edit, a create, and a delete are in
+[Each run keeps its own copy](#each-run-keeps-its-own-copy).
 
 ### Execution
 
@@ -246,13 +223,14 @@ on new runs.
 Both paths run the file through `guilds-script-run`, in the agent's
 home, with a 120-second timeout. The arguments (the optional
 `arguments` object of `script_run`, or the first-class tool's
-arguments) are serialised as JSON into `GUILDS_SCRIPT_ARGS`. An
-`arguments` value that is not a JSON object is refused.
+arguments) are serialised as JSON into `GUILDS_SCRIPT_ARGS`, on top of
+the command's usual environment. An `arguments` string is parsed as
+JSON. A value that is not a JSON object is refused
+(`arguments must be a JSON object`).
 
 The launcher writes that value to the script's stdin, `{}` when
 `script_run` has no `arguments`. Stdout and stderr pass through the
 standard tool output pipeline.
 
 The command carries the agent's environment like every other command
-([Agent home](agent-home.md#environment)). MCP token payloads never
-enter it.
+([Agent home](agent-home.md#environment)).

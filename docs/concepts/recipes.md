@@ -70,11 +70,10 @@ you to connect logins, add secret values, and add repositories again.
 ### Capture
 
 Capturing a guild reads it as it is today and writes a new draft. The
-agents' names become role handles. A tag such as `@scout` in a Task
-becomes `@{scout}`, so apply can point it at the new agent's name.
-Notes a Task embeds come along as seed notes, and the embed points at
-the note inside the recipe. Secrets come along by name, with the roles
-that use them, never their values.
+agents' names become role handles, and tags and note links become the
+recipe's [placeholders](recipe-format.md#placeholders-that-apply-resolves).
+Notes a Task embeds come along as seed notes. Secrets come along by
+name, with the roles that use them.
 
 ### Access cuts
 
@@ -151,7 +150,7 @@ the agent's own setup act on it. The issues list leaves out
 
 | Rule | Behaviour |
 |---|---|
-| New recipes | Start as a private draft |
+| New recipes | Start as a draft |
 | Approve | Allowed only when the checks find no blocking error |
 | A change to the content | Returns the recipe to draft |
 | Export | Refused while the recipe is a draft |
@@ -255,9 +254,6 @@ What capture writes:
   each browser role gets a login-failure policy ("pause the routine and
   ask the operator to log in again").
 
-Capture never includes credentials, memory, collection records,
-browser profiles, repository URLs, or local ids.
-
 ### Approve, edit, and review
 
 - **Approve** (`POST /api/recipes/:id/publish`, or the Builder's
@@ -265,8 +261,8 @@ browser profiles, repository URLs, or local ids.
   no finding is an error. Otherwise it answers 422 with the error
   messages joined by `; `.
 - Every write of the body returns the recipe to `draft`. Those writes
-  are Builder chat, edit, access, review, and `PUT`. Apply cannot run
-  mid-construction.
+  are Builder chat, edit, access, review, and `PUT`. Apply reads only
+  an approved body.
 - `POST /api/recipes/:id/review` edits provenance. Its body is
   `{ path, action, value? }`. `action: "confirm"` marks the field
   reviewed. `action: "edit"` sets `value` and marks the field
@@ -295,7 +291,7 @@ The blueprint is a preview: nothing live changes until apply.
 - A file import (`POST /api/recipes/import`, body the recipe or
   `{ recipe }`) parses the document, refuses it with 422 when it holds
   anything that looks like a credential (`recipe must not contain
-  secrets or ciphertext`), and adds it to the library as a private
+  secrets or ciphertext`), and adds it to the library as a
   draft with `source_kind=file`. It resets every field's review state
   (`reviewed: false`, `by` kept) and sets `meta.source` to
   `{ kind: "file" }`. It answers 201.
@@ -309,9 +305,11 @@ The blueprint is a preview: nothing live changes until apply.
   JSON. It is 409 while `status=draft`, and 422 when the document holds
   anything that looks like a credential.
 
-A document "looks like a credential" when its JSON text contains
-`ciphertext`, `oauth_client`, `refresh_token`, `access_token`, or
-`private_key`.
+A document "looks like a credential" when its JSON text, in any case,
+contains `ciphertext`, `oauth_client`, `refresh_token`, `access_token`,
+or `private_key`. The check reads every string, so a Task or script
+that only names one of these words, for example an `access_token`
+parameter, also blocks import and export.
 
 ### Screens
 
@@ -319,8 +317,9 @@ A document "looks like a credential" when its JSON text contains
 |---|---|
 | Library | `/recipes` |
 | A recipe's page | `/recipes/<id>` |
-| Apply preview | `/recipes/<id>/apply` |
-| Apply checklist | `/applies/<apply id>` |
+
+The apply screens are in
+[Applying recipes](applying-recipes.md#screens).
 
 ### Storage
 
@@ -336,10 +335,14 @@ recipes (
 )
 ```
 
-Every route creates a recipe with `visibility=private`. Any member of
-the organisation can open, edit, apply, and delete any recipe of the
-organisation. File import is the cross-organisation path. Reading
-another organisation's recipe is 404.
+Every route writes `visibility=private`, and no route changes it.
+Visibility does not limit access: any member of the organisation can
+open, edit, apply, and delete any recipe of the organisation. File
+import is the cross-organisation path. Reading another organisation's
+recipe is 404.
+
+The app has no button to delete a recipe. `DELETE /api/recipes/:id`
+deletes one.
 
 A recipe drafted by the Builder is owned by its Builder session; see
 [Guild builder](guild-builder.md#storage).

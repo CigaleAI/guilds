@@ -1,7 +1,7 @@
 # The core stack: PostgreSQL, OpenSandbox, and the orchestrator serving the operator app on
 # http://127.0.0.1:8080. ./setup.sh writes the secrets and the state path it needs into .env and
-# builds the three images no registry publishes; then `docker compose up --detach` starts it. Only
-# the orchestrator is published, and only on loopback.
+# builds the OpenSandbox server and agent runtime images; then `docker compose up --detach` builds
+# the orchestrator image and starts it. Only the orchestrator is published, and only on loopback.
 name: guilds
 
 configs:

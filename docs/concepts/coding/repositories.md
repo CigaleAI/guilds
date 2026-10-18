@@ -2,9 +2,9 @@
 
 A guild's repositories are the git repositories its
 [coding agents](index.md) work in. Every coding agent of the guild
-clones each one into its own [home](../agent-home.md), under
-`repos/<name>`, and the [harness](harnesses.md) runs there. A guild
-needs at least one before its coding agents can run.
+clones each one into its own [home](../agent-home.md), and the
+[harness](harnesses.md) runs there. A guild needs at least one before
+its coding agents can run.
 
 A repository comes from one of two places. It is picked on a
 [GitHub](../../tools-and-connectors/github.md) login, under **Tools**,
@@ -18,7 +18,8 @@ which clones a public repository and gives no credential.
 The repositories belong to the guild, not to one agent, so every
 coding agent of the guild works on the same code. Each still has its
 own clone, so agents never edit each other's files. Work moves between
-them as branches on the remote ([Teams](teams.md)).
+them as branches on the remote
+([Several coding agents in one guild](index.md#several-coding-agents-in-one-guild)).
 
 ## How it works
 
@@ -29,9 +30,8 @@ The list a coding run clones is:
 1. the repositories picked on the agent's effective GitHub login: the
    agent's own login, else its guild's, else its organisation's, the
    first that is connected;
-2. plus the guild's other git URLs: anonymous ones, and ones added
-   with a GitHub login that is not that effective login. A name already
-   in the first list wins.
+2. plus the guild's other repositories, anonymous or added with any
+   GitHub login. A name already in the first list wins.
 
 A narrower scope inherits the wider login's repositories until it
 connects its own login and picks a different set
@@ -58,10 +58,7 @@ After that the agent fetches, branches, commits, and pushes itself.
 The orchestrator never runs git in its own process: a repository's
 hooks and configuration are the agent's.
 
-The run's working directory starts in the repository when the guild
-has exactly one, and in the home otherwise. Before each `shell`
-command and each harness start and poll, a token close to expiry is
-replaced.
+The tokens are refreshed while the run goes on ([Tokens](#tokens)).
 
 ### Git identity
 
@@ -132,8 +129,7 @@ create dialog, "No repository yet. You can create the agent and add
 one later in the guild's Settings."; in Settings, "No repository yet,
 so this agent's coding runs fail at start."
 
-The coding strip counts the repositories, "`<n>` repos" with their
-names on hover, or reads "No repos" in bold
+The coding strip counts the repositories
 ([Coding agents](index.md#coding-strip)).
 
 ## Rules and limits
@@ -143,7 +139,7 @@ names on hover, or reads "No repos" in bold
 | Name | `^[a-z][a-z0-9_-]{0,62}$`, unique in the guild; also the folder under `repos/` |
 | URL | `https`, without credentials, query, or fragment |
 | With a GitHub login | `https://github.com/<owner>/<repository>`, reachable by that login's installation |
-| Default branch | GitHub's for a login-backed repository, else `main` |
+| Default branch | The one given; without one, GitHub's for a login-backed repository, else `main` |
 | Anonymous repository | Cloned without credentials: only a public one clones |
 | Who may change them | Any operator who sees the guild |
 | Clone timeout | 600 seconds per repository |
@@ -236,13 +232,25 @@ login's selection.
 The tokens are written through the sandbox file API to
 `/run/guilds/<agent id>/git-tokens.json`, outside every home, as
 `{ repositories: { <name>: { token, expires_at, host, path } } }`. Each
-joins the generation's redaction set. git reads its repository's token
-through the credential helper; `shell` exports the token of the
-repository that holds the working directory as `GH_TOKEN` for `gh`
-([GitHub](../../tools-and-connectors/github.md)). A harness's
-environment has neither `GH_TOKEN` nor `GITHUB_TOKEN`.
+joins the generation's redaction set.
 
-Before each `shell` command and each `code_task` start and poll, a
+git reads its repository's token through the credential helper,
+`/usr/local/bin/guilds-git-credential`. The image sets it for
+`https://github.com` with `credential.useHttpPath`, so git asks with
+the repository's path and each repository gets its own token. The
+image also sets the helper through `GIT_CONFIG_*` environment
+variables, which git reads after every configuration file: an empty
+helper first drops any helper set before it, such as the one
+`gh auth setup-git` writes into the agent's home, then the guild
+helper follows. The agent's own git configuration cannot replace it.
+
+`shell` exports the token of the repository that holds the working
+directory as `GH_TOKEN` for `gh`
+([GitHub](../../tools-and-connectors/github.md)). A harness gets no
+GitHub token in its environment
+([Harness environment](code-tasks.md#harness-environment)).
+
+Before each `shell` command and each code task start and poll, a
 token within 10 minutes of expiry is replaced and rewritten.
 
 The generation-start error `repository.token` covers:
@@ -251,7 +259,7 @@ The generation-start error `repository.token` covers:
   disconnected";
 - GitHub refusing the installation: "GitHub refused the installation
   for `<account>`; the connection is now disconnected";
-- an installation that no longer reaches a repository: "the GitHub App
+- an installation that does not reach a repository: "the GitHub App
   installed for `<account>` does not reach `<name>` (`<owner>`/`<repository>`):
   give the App access to it on GitHub, or pick it again on the GitHub
   integration".

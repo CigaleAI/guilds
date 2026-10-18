@@ -44,7 +44,7 @@ own guild.
 ### How far an agent reaches
 
 An agent can always read and write its own agent-level notes. Four
-grant switches decide the rest:
+grants decide the rest:
 
 | Grant | Lets the agent | Default |
 |---|---|---|
@@ -74,50 +74,61 @@ agent which levels it may read and write
 `note_write` returns the note's display path. That path is how the
 agent links to the note elsewhere, for example from its Memory.
 
-An operator can embed a note in an agent's Task with
+### Embeds
+
+An operator embeds a note in an agent's Task with
 `![[display-path]]`. Each run then carries the note's text in its
-system prompt ([Task](task.md)). A note that a live Task embeds
-cannot be deleted.
+system prompt. A note can embed other notes and collections the same
+way. A Task's embeds expand two levels deep: the Task's own embeds,
+and the embeds inside those notes. All embedded text in one run
+shares a 64 KB budget ([Task](task.md#embeds)).
+
+A note that a live Task embeds cannot be deleted.
 
 ## In the app
 
 The agent's **State** tab and the guild's **State** tab share one
-notes browser. Each State tab has sub-tabs, each with an icon and a
-route of its own. The guild's opens at `/guilds/<id>/state`, which
-shows **Files**. The agent's opens at `/guilds/<id>/agents/<id>/state`,
-which shows **Memory** ([Memory](memory.md)).
+notes browser. The agent's view is **State › Notes**. The guild's
+view is **State › Files**.
 
-- The agent's **State › Notes** view shows three scopes: the
-  agent's notes, its guild's, and the organisation's.
-- The guild's **State › Files** view shows the guild's and the
-  organisation's notes.
+- The agent's **Notes** view shows three scopes: **Agent**, **Guild**,
+  and **Org**.
+- The guild's **Files** view shows **Guild** and **Org**.
 
 In both:
 
 - Each scope lists its notes side by side, with no folders.
-- A new note's name cannot hold a `/`. It gets `.md` added. At the
-  agent level it cannot be `task.md` or `memory.md`.
-- A note opens in a Markdown editor. Save, or Cmd/Ctrl+S, writes it.
+- **New note** takes a name. The name cannot hold a `/`, and it gets
+  `.md` added. At the agent level it cannot be `task.md` or
+  `memory.md`.
+- A note opens in the same Markdown editor as the Task. Its embed
+  picker inserts other notes and collections.
+- Unsaved edits are kept per note while the operator moves between
+  notes. Leaving the page with unsaved edits asks **Leave without
+  saving?**, with **Discard changes**.
+- Save, or Cmd/Ctrl+S, writes the note.
 - A provenance strip under the file header says who saved it last.
   **Open step** opens the run that wrote it in its agent's Chat tab
-  at the tool call (`?run=…&call=…`). **History** lists every recorded change, each
-  with its own **Open step** ([Artifacts](artifacts.md#every-change-is-recorded)).
-- A link with `?path=<display path>` opens that note first. A
-  `note_write` chip in the chat leads there.
+  at that tool call. **History** lists every recorded change
+  ([Artifact store](artifacts.md#every-change-is-recorded)).
+- A link with a display path opens that note first. A `note_write`
+  chip in the chat leads there.
 - Notes can be created and deleted.
-- It works the same on a laptop or a phone and always shows the
-  current Markdown.
 
 The notes browser lists notes only. The agent's Task and Memory have
 their own tabs ([Task](task.md), [Memory](memory.md)). Scripts appear
 on the agent's **State › Scripts** view ([Scripts](scripts.md)).
 
-The **Artifact scope** sub-tab, on both the guild's and the agent's
+The **Artifact scope** view, on both the guild's and the agent's
 **State** tab, holds the four grants as on/off switches. Each switch
 is captioned with where its state comes from, as on the Tools view
 ([Access](access.md)). On the guild it sets how far the guild's
 agents reach beyond their own notes. On the agent it sets how far
-this agent reaches; it can always read and write its own.
+this agent reaches.
+
+The Prompt Studio coach can propose a new note, an edit to a note,
+or a note's deletion. The operator applies or declines each one
+([Studio proposals](studio-proposals.md)).
 
 ## Rules and limits
 
@@ -126,11 +137,12 @@ this agent reaches; it can always read and write its own.
 | Note name | one `.md` file name, no `/`, no folders |
 | Reserved at the agent level | `task.md`, `memory.md` |
 | Size of one write | 256 KB |
-| Live notes per owner | 10 000 (shared with Memory and scripts) |
+| Live notes per owner | 10 000, counted with Memory and scripts |
 | `note_find` results | 20 by default, 100 at most |
 | Reading another guild's notes | never |
 | Deleting a note a live Task embeds | refused (409) |
-| Default grants | guild read, guild write, and org read on; org write off |
+| Embed depth | two levels from the Task |
+| Embedded text per run | 64 KB in total |
 
 ## Reference
 
@@ -188,15 +200,24 @@ Other errors:
 
 The four grants are `artifact_grant` bindings with ids `read_guild`,
 `read_org`, `write_guild`, and `write_org`. Each resolves like any
-binding across the organisation, guild, and agent scopes
-([Access](access.md)). With no binding set, all are on except
-`write_org`. The agent level is always readable and writable for its
-own agent.
+binding across the instance, organisation, guild, and agent scopes
+([Access](access.md#bindings)). A grant with no binding at any scope
+takes its default from the table above.
 
 State carries the result as `readable_levels` and `writable_levels`,
 each a list starting with `agent`.
 
 Code: `apps/orchestrator/src/artifacts/grants.ts`.
+
+### App routes
+
+| View | Route |
+|---|---|
+| Agent's notes | `/guilds/<guild_id>/agents/<agent_id>/state/notes?path=<display path>` |
+| Guild's notes | `/guilds/<guild_id>/state/files?path=<display path>` |
+| Open step | the agent's Chat tab with `?run=<run_id>&call=<tool_call_id>` |
+
+`?path=` is optional. It opens that note and its scope first.
 
 ### HTTP
 
@@ -226,9 +247,15 @@ or missing note is 404. The agent route also serves `task.md` and
 checks `expected_version`. Agent and guild writes and deletes
 publish `guild.files.changed`.
 
+The guild and agent routes need a guild the caller can see. The
+`/api/org/…` routes need only organisation membership.
+`/api/org/embeddable-notes` lists and returns notes of every guild
+and agent, private guilds included
+([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).
+
 ### Storage
 
-Display paths ([Artifacts](artifacts.md)):
+Display paths ([Artifact store](artifacts.md#display-paths)):
 
 ```text
 org/<org_id>/agents/<agent_id>/<note>.md

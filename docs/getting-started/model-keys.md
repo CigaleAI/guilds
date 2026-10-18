@@ -36,12 +36,12 @@ Pick **Local endpoint**. Type the server's address into **Base URL**.
 Include `/v1` when your server uses it. Leave **API key** empty when
 your server needs none.
 
-guilds.run runs inside Docker. So `127.0.0.1` means the container,
-not your machine. On Docker Desktop, use
-`http://host.docker.internal:<port>/v1`. On Linux, use your
-machine's address on the Docker network, and make the server listen
-on it. [Model keys](../concepts/model-keys.md#the-local-endpoint)
-has the details.
+guilds.run runs inside Docker. So `127.0.0.1` names the container.
+Use `http://host.docker.internal:<port>/v1` to reach your machine.
+On Linux, make the model server listen on an address Docker can
+reach, such as `0.0.0.0`.
+[Model keys](../concepts/model-keys.md#the-local-endpoint) has the
+details.
 
 ## The welcome dialog
 

@@ -89,12 +89,18 @@ bindings say. The Memory tab stays.
 keeps the `<memory>` section in the prompt, without write rules or
 the tool's name. The operator then manages Memory alone.
 
-### One run, one Memory
+### Memory in an open chat
 
 An agent is busy only while it generates. A routine can wake it and
 rewrite its Memory between two turns of an open direct run. Later
 turns of that direct run keep the `<memory>` section they started
 with.
+
+### Memory and other knowledge
+
+- Records that need querying go in a [collection](collections.md).
+- Run transcripts are not artifacts. No agent tool searches runs or
+  earlier Memory versions. `note_find` searches notes.
 
 ## In the app
 
@@ -117,13 +123,15 @@ version. It is the first view of the agent's **State** tab:
 
 Agents never see the earlier versions. The version list is the
 operator's view of what the agent chose to keep or drop between
-wakes. To see exactly what was said in a run, use the history drawer
-in the agent's Chat tab ([Runs](runs.md)).
+wakes. To see exactly what was said in a run, use the **History**
+drawer in the agent's Chat tab ([Runs](runs.md#chat-tab)).
 
 Prompt Studio reads the same versions, and its list can be filtered
 by author ([Prompt Studio](prompt-studio.md)).
 
-The `memory` switch is in the agent's Settings ([Agents](agents.md)).
+The **Memory** button under **Agent capabilities**, in the Model
+section of the agent's Settings, is the `memory` switch
+([Agents](agents.md)).
 The `memory_write` binding is in the **Memory** group of the agent's
 Tools view ([Access](access.md)).
 
@@ -179,24 +187,15 @@ and may call `memory_write`. When it is `false`:
 
 The Memory tab stays. Missing means on. It is not itself a binding.
 
-### The `<memory>` section
+### The Memory section
 
-With `memory_write` offered, the section opens with `### Your Memory`
-and these rules:
-
-- Memory is a private place for what future runs should know and
-  could not easily find again. Rewrite it with `memory_write`. The
-  Task above is the operator's standing purpose and stays as written.
-- Most runs do not need to write. Write only when the next run would
-  make a mistake, repeat work, or waste steps without something this
-  run learned.
-- What earns a place: how to do the job better, where to resume, and
-  pointers to where details live.
-- What stays out: a log of the run, anything the Task, State, notes,
-  records, or history already hold, anything one tool call finds
-  again, and secrets.
-- A write replaces the whole file: keep what still holds, drop what is
-  done or stale, keep it short. There is no required format.
+With `memory_write` offered, the `<memory>` section opens with
+`### Your Memory`. Its text says that Memory is private, that
+`memory_write` rewrites it, and that the Task stays as written. It
+then states the test and the lists of
+[When the agent writes](#when-the-agent-writes), and that a write
+replaces the whole file. The text is `MEMORY_INTRO` in
+`apps/orchestrator/src/memory/index.ts`.
 
 With `memory_write` resolved off, the section says only that Memory
 is a private place for whatever future runs should remember, that
@@ -209,7 +208,7 @@ never mentions earlier versions.
 
 Memory is an `artifacts` row of `kind` `memory`, at the agent level,
 with key `memory.md`. Agent create inserts an empty row. A missing
-row is recreated empty at hydrate and by the next write. Its display
+row hydrates as empty, and the next write recreates it. Its display
 path is `org/<org_id>/agents/<agent_id>/memory.md`. It is not
 deletable (422 `cannot delete this file`).
 

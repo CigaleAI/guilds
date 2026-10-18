@@ -17,7 +17,7 @@ Open the account menu at the bottom of the sidebar. Click **Admin**.
 Open **Platform keys**. Find **Web search**. Paste the key into
 **Tavily API key** and click **Save**.
 
-The key takes effect at once. No restart is needed.
+The key takes effect at once.
 
 ## 3. Check the agent has it
 
@@ -44,7 +44,7 @@ results it got back.
 - An organisation can connect a Tavily key of its own instead, under
   **Settings**, **Tools**. Its agents then run on that key.
 - Web search is one of several platform keys.
-  [Configure](configure.md#platform-keys) lists them all.
+  [Configure](../operations/configure.md#platform-keys) lists them all.
 
-[Catalog](../tools-and-connectors/catalog.md) explains how tools
-reach a run.
+[Tools in a run](../tools-and-connectors/tools-in-a-run.md) explains
+how tools reach a run.

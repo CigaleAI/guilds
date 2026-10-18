@@ -14,28 +14,16 @@ guild, a member who works with its agents is an
 ## Why it exists
 
 An organisation keeps one team's work, credentials, and bills apart
-from another's on the same box. Its members decide together which
-models it pays for, which machines it runs, and which secrets its
-agents receive. Its owners and admins decide who else joins.
+from another's on the same box. Its owners and admins decide which
+models it pays for, which machines it runs, which secrets its agents
+receive, and who else joins.
 
 ## How it works
 
-### The hierarchy
-
-```mermaid
-flowchart TD
-  instance[Instance: the box] --> org[Organisation]
-  org --> members[Members: owner, admin, member]
-  org --> guild[Guilds]
-  org --> machine[Machines]
-  org --> keys[Model keys, secrets, connector logins]
-  guild --> agent[Agents]
-  agent -. sits on .-> machine
-```
-
-Guild names are unique within an organisation. Agent names are
-unique on the whole box. Every agent sits on one machine of its own
-organisation. A machine is never shared with another organisation.
+[How it fits together](how-it-fits.md#the-hierarchy) draws what an
+organisation holds. Guild names are unique within an organisation.
+Agent names are unique on the whole box. Every agent sits on one
+machine of its own organisation.
 
 ### Members and roles
 
@@ -47,20 +35,18 @@ Each member has one role:
 | `admin` | Change the organisation's name and slug, add and remove members and admins, change their roles, manage machines, model keys, and every secret |
 | `member` | Read the organisation's settings, use every guild they can see, and manage secrets granted inside guilds they can see |
 
-Every member lists every secret of the organisation, as metadata,
-never a value. Owners and admins manage any secret and decide who
-gets it. A member manages only secrets granted inside guilds they
-can see ([Secrets](secrets.md)).
+Every member lists every secret of the organisation as metadata,
+never a value ([Secrets](secrets.md)).
 
-An organisation always keeps one owner. The last owner cannot be
-demoted and cannot leave. A member who is the only admin of a guild
-cannot be removed until that guild has another admin.
+The last owner cannot be demoted and cannot leave. A member who is
+the only admin of a guild cannot be removed until that guild has
+another admin.
 
 ### The personal organisation
 
 A new user gets a personal organisation with themselves as owner. It
-takes the user's name. It stays visually implicit while it is the
-user's only membership.
+takes the user's name. While it is the user's only membership, the
+app shows no organisation switcher.
 
 Every new organisation, whichever path creates it, starts with one
 `standard` machine named `default`.
@@ -79,30 +65,21 @@ Anything in another organisation answers as if it did not exist.
 
 ### Limits
 
-An organisation's limits come from the organisation policy:
-
-- how many agents, browser agents, coding agents, and guilds it may
-  hold
-- how many machines it may hold, and how many agents one machine
-  takes (never above 32)
-- how many generations run at once
-
-Core's policy sets none of them. The box-wide ceiling on concurrent
-generations is `MAX_CONCURRENT_GENERATIONS`
-([Configure](../getting-started/configure.md)). An edition may supply
-a policy of its own
+The organisation policy can cap agents, guilds, machines, agents per
+machine, concurrent generations, and more ([Policy](#policy)). It can
+also block an organisation, which then creates no agent and runs no
+generation. Core's policy caps nothing and blocks no one. The
+box-wide ceiling on concurrent generations is
+`MAX_CONCURRENT_GENERATIONS` ([Configure](../operations/configure.md)).
+An edition may supply a policy of its own
 ([Extension points](../architecture/extension-points.md)).
 
 ### Deleting an organisation
 
 There is no delete control and no delete route. An organisation is
-deleted when [deleting a user](users.md) leaves it with no member and
-no guild. An organisation that still has guilds keeps at least one
-owner, since the last owner of an organisation with guilds cannot be
-deleted.
-
-A deleted organisation's usage appears in no listing. The box-wide
-total keeps it.
+deleted when [deleting a user](users.md#deleting-a-user) leaves it
+with no member and no guild. Its usage then appears in no listing.
+The box-wide total keeps it.
 
 ## In the app
 
@@ -112,6 +89,10 @@ The account menu switches organisation when the user has several
 memberships. The page reloads at that organisation's home. The
 **General** tab of **Settings** offers the same choice as **Working
 in**.
+
+The app has no control to create an organisation or to leave one.
+Both are API routes. In the app, a new organisation comes only with a
+new user, from **Admin**, **Users**.
 
 ### The Settings page
 
@@ -141,10 +122,10 @@ owners and admins change them.
 **Members** lists every member with their role. Owners and admins
 add a member by the `@name` of their account on the box, with a role,
 and change roles from a picker. Owners give any role; admins give
-**Admin** or **Member**. An admin never touches an owner. They
-remove a member after a confirm, which says the member loses access
-to every guild in the organisation and that their messages and notes
-stay.
+**Admin** or **Member**. An admin never touches an owner. No one
+changes or removes themselves here. Removing a member asks first: the
+member loses access to every guild in the organisation, and their
+messages and notes stay.
 
 ## Rules and limits
 
@@ -152,7 +133,7 @@ stay.
 |---|---|
 | Organisation name | Required, at most 80 characters, no control characters |
 | Slug | Lowercase letter first, then lowercase letters, digits, and hyphens; 63 characters at most; unique on the box |
-| Who creates an organisation | Anyone on `compat-cookie`; the instance admin otherwise |
+| Who creates an organisation | Anyone on `compat-cookie`; the instance admin otherwise; API only |
 | First machine | One `standard` machine named `default` |
 | Guild names | Unique in the organisation |
 | Agent names | Unique on the box |
@@ -172,7 +153,7 @@ The `orgs` table:
 |---|---|
 | `id` | The organisation id |
 | `name` | At most 80 characters |
-| `slug` | Matches `^[a-z][a-z0-9-]{0,62}$`, unique (`orgs_slug_key`) |
+| `slug` | Unique (`orgs_slug_key`). The server checks `^[a-z][a-z0-9-]{0,62}$` |
 | `default_model` | The default model, `{provider}/{model}`, or null ([Model keys](model-keys.md)) |
 | `created_at`, `updated_at` | Timestamps |
 
@@ -237,7 +218,8 @@ A route the caller's role does not allow is also 404.
 ### Policy
 
 The organisation policy (`apps/orchestrator/src/policy/index.ts`)
-returns one cap per key, or none:
+returns a standing: the organisation's limits, and whether it is
+blocked. Each limit is one cap, or none:
 
 | Key | Caps |
 |---|---|
@@ -251,9 +233,12 @@ returns one cap per key, or none:
 | `monthlyCoachRuns` | Studio and Builder generations a month, counted together |
 | `maxMcpServers` | Remote MCP servers the organisation adds of its own |
 | `monthlyConnectorCalls` | Calls a month on a connector's platform login, by connector slug |
+| `coach` | Max output tokens, max tool calls, and max input tokens of one Studio or one Builder generation |
 
-A refusal is 409 `<source> limit reached: <cap>`. Core's policy caps
-nothing.
+A refusal is 409 `<source> limit reached: <cap>`. A blocked
+organisation gets the policy's own refusal on creating an agent or
+starting a generation. Core's policy caps nothing, blocks no one, and
+gives `coach` the Studio and Builder defaults.
 
 ### Deletion
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds the images the core stack runs that no registry publishes: the OpenSandbox server, from
-# its pinned commit, and the agent runtime every machine runs, from runtime/.
+# Builds two images the core stack runs, locally: the OpenSandbox server, from its pinned commit,
+# and the agent runtime every machine runs, from runtime/. Compose builds the orchestrator.
 #
 #   scripts/images.sh [opensandbox] [runtime]    both when none is named
 #

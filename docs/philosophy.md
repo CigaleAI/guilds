@@ -12,9 +12,6 @@ software. With LLMs it is available to anyone with a need or an
 interest. The level of abstraction changed. The need to see and
 steer the system did not.
 
-The [index](README.md) is the short form of this page and the map
-of the rest of the docs.
-
 ## Deeply inspectable
 
 What the model sees is what you see.
@@ -32,8 +29,8 @@ can be inspected and traced back.
 Each connection, each tool available to an agent, and the model
 that agent uses is chosen for that job.
 
-The same guild can mix open-weight and hosted models. A run needs
-one key: the instance's or the organisation's.
+The same guild can mix open-weight and hosted models. A run uses
+the organisation's key for its agent's provider.
 
 ## Iterate till perfection
 

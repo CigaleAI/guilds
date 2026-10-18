@@ -46,11 +46,9 @@ anything:
   already taken on the box is a collision, and the agent must be
   renamed.
 - **Models.** A role's model in the recipe is a recommendation. Each
-  agent gets the model the operator picks. The picker starts on the
-  recommendation when the organisation has its provider, else on the
-  organisation's default.
+  agent gets the model the operator picks.
 - **Harnesses.** Each coding role needs a [harness](coding/harnesses.md).
-  The picker starts on the recipe's harness. There is no default.
+  There is no default.
 - **Machine.** Every agent of the apply goes on one
   [machine](machines.md). The machine must be big enough for the
   largest agent and have room for all of them.
@@ -66,12 +64,16 @@ anything:
 - **Limits.** The organisation must have room for all the agents,
   browser agents, and coding agents at once.
 
+[Models and harnesses](#models-and-harnesses) says where each picker
+starts.
+
 ### Creating the guild
 
 **Create guild** builds the guild in an order that never leaves a
 broken state. Notes come before Tasks, because a Task that embeds a
 missing note cannot be written. Routines are created paused. If any
-step fails, everything the apply created so far is removed.
+step fails, everything the apply created so far is removed. The
+[steps](#create) are listed under Reference.
 
 ### The checklist
 
@@ -202,30 +204,18 @@ created, and returns to the library.
 
 ## Reference
 
-### Contract
+### Scope of what apply writes
 
-Apply may reuse existing organisation or platform connections, and the
-organisation's secrets.
+Apply reuses existing organisation or platform connections, and the
+organisation's secrets. It creates new connections only at guild or
+agent scope. Tool overlays are upserted at the resolved connection's
+owner scope: right away for a reused login, after Connect for a new
+one. A namespaced tool the destination does not list is left out, and
+the apply goes on.
 
-It creates new connections only at guild or agent scope. It writes
-overlays only at guild or agent scope after tool listing.
-
-Apply never writes a secret value. It never makes a secret
-organisation-wide. The operator adds each secret the apply plan
-creates from the guild's Secrets view.
-
-Apply never writes an org-scope or platform-scope **binding**. It may
-reuse an org login. The grant lands on the new guild or one of its
-agents.
-
-Overlays are upserted at the resolved connection's owner scope: right
-away for a reused login, after Connect for a new one. A namespaced
-tool the destination does not list is left out, not a failure.
-
-Destination is a guild apply creates, or an **empty** guild (no live
-agents) named by `guild_id`. A guild with agents is refused
-(`destination guild is not empty`). In-place restore onto a live
-roster is out of scope. Live Task edits stay in Prompt Studio.
+The destination is a guild apply creates, or an **empty** guild (no
+live agents) named by `guild_id`. A guild with agents is refused
+(`destination guild is not empty`).
 
 ### Choices
 
@@ -254,7 +244,8 @@ Validation warns about one that is unknown, not connected for the
 organisation, or a coding-API model on a role without `coding`, and
 never refuses a recipe for a model reason. The apply preview shows a
 picker per role, preselected with the recommendation when the
-organisation has it, else the organisation's default, else nothing.
+organisation has its provider, else the organisation's default, else
+nothing.
 The apply request carries `models`, the model chosen for each role,
 and nothing is created while a role has none (`choose a model for …`).
 A chosen model must be `{provider}/{model}` and offered to that role,
@@ -264,10 +255,10 @@ model.
 
 A coding role's `config.harness` works the same way, with no default.
 The preview shows a harness picker per coding role, preselected with
-the role's harness. The apply request carries `harnesses`
-(`[{ role, harness }]`), and apply refuses with `choose a harness for
-…` while a coding role has none. A harness for a role without
-`coding` is refused. Only a coding role keeps a harness. A role keeps
+the role's harness unless the box turns that harness off. The apply
+request carries `harnesses` (`[{ role, harness }]`), and apply refuses
+with `choose a harness for …` while a coding role has none. A harness
+for a role without `coding`, or one the box turns off, is refused. Only a coding role keeps a harness. A role keeps
 the recipe's `harness_model` only when it applies with the harness the
 recipe names; with another harness, its model is the subscription's
 default. It keeps the recipe's `harness_effort` under the same
@@ -287,12 +278,10 @@ on.
 - each role's name: the operator's, else `name_suggestion`, against the
   charset and reserved `user`. A name any agent on the box already
   holds is listed in `collisions`
-- each role's model: the operator's choice, else the role's
-  recommendation when the organisation has its provider, else the
-  organisation's default, else none. The preview's `models` lists each
-  role's `recommended` and resolved `model`
-- each coding role's harness: the operator's choice, else the role's.
-  The preview's `harnesses` lists each coding role's `recommended` and
+- each role's model and each coding role's harness, as
+  [Models and harnesses](#models-and-harnesses) describes. The
+  preview's `models` lists each role's `recommended` and resolved
+  `model`; its `harnesses` lists each coding role's `recommended` and
   resolved `harness`
 - the organisation's remaining capacity for the whole batch: agents,
   browser agents, and coding agents (roles with `config.coding: true`),
@@ -326,7 +315,7 @@ on.
   `integration`, `label`). The apply goes on; those connections cannot
   connect until the integration is filled under **Admin**,
   **Platform keys** (see
-  [Configure](../getting-started/configure.md#platform-keys))
+  [Configure](../operations/configure.md#platform-keys))
 - existing destination organisation connections that can satisfy a
   server: each `connections` entry lists `reusable` logins (connected,
   owned by the organisation or the platform), and defaults to `reuse`
@@ -350,8 +339,9 @@ collections, notes, scripts, routines, connections, secrets, and
 repositories.
 
 A role without a Task gets one made of its focus, the guild's
-objective, and its about text. A role without routines gets the ones
-its `design.routines` entries describe with a valid cron.
+objective, and its about text. A role without routines gets one per
+`design.routines` entry whose `cadence` is a valid cron; its
+instruction is the role's Task.
 
 ### Collections
 
@@ -388,26 +378,26 @@ broken:
 4. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
 5. create agent-level seed notes (a note without a role goes to the
-   first agent), then rewrite destination-file embeds (`guild/…`,
-   `org/…`, `agent/<role>/…`, leftover `recipe:<id>`) to live display
-   paths. Unresolved links fail the apply
-6. write each Task again, now with embeds final, over the first one
-7. insert scripts; more scripts than the role's `max_scripts` fail the
-   apply
-8. insert routines paused, their instruction tags rewritten the same
-   way
-9. write grant and native-tool bindings at agent scope
-10. create each `create` collection with the recipe's columns. A
-    collection that appeared under that name since preview is a
-    conflict: preview again (409). A `scope: "guild"` collection is
-    created for the new guild. It takes no grant. An `org` collection
-    is granted the recipe's `guild` mode, and each `writers` role's
-    agent `write`, on every created or reused collection
-11. write the tool overlays of each reused login
-12. save the apply row with its checklist
-
-Notes precede Tasks because embed hydration throws on a missing
-target.
+   first agent)
+6. for each role in turn:
+   - rewrite the Task's note links
+     ([embeds and note paths](recipe-format.md#embeds-and-tags)) to
+     live display paths, and write the Task again over the first one.
+     An unresolved link fails the apply. An empty Task is not written
+   - insert its scripts; more scripts than the role's `max_scripts`
+     fail the apply
+   - insert its routines paused, with tags and note paths rewritten the
+     same way. An empty instruction takes the role's Task. Each
+     instruction is cut to 2,000 characters, the routine limit
+   - write its grant and native-tool bindings at agent scope
+7. create each `create` collection with the recipe's columns. A
+   collection that appeared under that name since preview is a
+   conflict: preview again (409). A `scope: "guild"` collection is
+   created for the new guild. It takes no grant. An `org` collection
+   is granted the recipe's `guild` mode, and each `writers` role's
+   agent `write`, on every created or reused collection
+8. write the tool overlays of each reused login
+9. save the apply row with its checklist
 
 Failure deletes the agents the apply created, a guild apply created
 (`created_guild`), and the collections this apply created. Reused
@@ -530,8 +520,8 @@ POST   /api/applies/:id/abort
 | `POST /api/applies/:id/activate` | The apply at `ready`; 422 while a step is open |
 | `POST /api/applies/:id/abort` | The apply at `aborted`; 422 once ready |
 
-`GET /api/guilds/:guild_id/apply` returns `{ apply, browser_logins }`.
-`apply` is the open checklist, or null once it is done or aborted.
+In `GET /api/guilds/:guild_id/apply`, `apply` is the open checklist,
+or null once it is done or aborted.
 `browser_logins` is the agent ids a ready apply still asks to log in
 by hand.
 

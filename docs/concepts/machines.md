@@ -119,10 +119,8 @@ their own Chrome and terminal, and generate at the same time.
 
 ### Moving an agent
 
-An agent can move to another machine of its organisation. Its
-processes stop on the machine it leaves, its home moves with it, and
-it takes the lowest free slot on the other machine. An agent cannot
-move while it generates.
+An agent can move to another machine of its organisation. Its home
+moves with it ([Move rules](#move-rules)).
 
 ### The container's lifecycle
 
@@ -140,15 +138,12 @@ stateDiagram-v2
   Idle --> Down: 5 minutes with no agent generating
 ```
 
-The container is created on the first generation of any agent on the
-machine, when the operator opens the Browser tab of an agent with a
-browser, or when the operator starts the CLI tab. After a generation
-ends, or after one of those tabs starts the container, a 5-minute idle
-timer starts for the machine. A generation of any agent on the machine
-cancels the timer. Operator input in the Browser or CLI tab restarts
-it, at most once every 30 seconds. When the timer fires and no agent
-on the machine is generating, the container is destroyed. The next
-work on the machine creates a new one.
+The container starts on the first generation of any agent on the
+machine, or when the operator opens an agent's Browser tab or starts
+its CLI tab. It stops 5 minutes after the last generation on the
+machine ends, or after the last operator input in those tabs. The
+next work on the machine starts a new one
+([Idle timer](#idle-timer)).
 
 So:
 
@@ -162,11 +157,10 @@ So:
 - packages installed outside the home and live processes end when
   the container stops
 
-Changing a machine's tier or size replaces its container. An idle
-container goes at once. A busy one goes when its last generation
-ends. The next work on the machine starts a container of the new
-size. Nothing else replaces a container: not a secret change, not an
-agent's configuration.
+Changing a machine's tier or size replaces its container. The next
+work on the machine starts a container of the new size. Nothing else
+replaces a container: not a secret change, not an agent's
+configuration.
 
 ### Trust between agents
 
@@ -278,9 +272,9 @@ Every path that creates an organisation (user creation,
 `default` with it.
 
 Every machine runs the one runtime image (`SANDBOX_IMAGE`), an
-OpenSandbox container at its tier's size: 1 CPU and 2Gi for
-`standard`, 2 CPU and 4Gi for `code`, and the machine's `cpu` and
-`memory_mib` for `custom`. Its directory on the host is
+OpenSandbox container at its tier's size, with memory in `Mi`: CPU
+`1` and `2048Mi` for `standard`, CPU `2` and `4096Mi` for `code`, and
+the machine's `cpu` and `memory_mib` for `custom`. Its directory on the host is
 `WORKSPACE_ROOT/<machine id>`, mounted at `/home` in the container
 ([Agent home](agent-home.md)).
 
@@ -366,7 +360,7 @@ container:
 | ttyd | `7700+s` |
 | The agent's own servers | `20000+100·s` to `20000+100·s+99` |
 
-### Moving an agent
+### Move rules
 
 `PUT /api/agents/:id/machine` moves an agent. The move:
 
@@ -403,10 +397,9 @@ another tier, size, or image is replaced. The helpers the tools call
 are part of that image.
 
 At generation start the orchestrator ensures the agent's machine,
-then the agent's home. A new run is a new conversation on the same
-machine; the container may already have been stopped.
+then the agent's home.
 
-Idle timer:
+### Idle timer
 
 - After a generation ends, or after the Browser or CLI tab starts the
   machine's container, an idle timer of 5 minutes starts for the
@@ -422,6 +415,5 @@ Idle timer:
 - A change of the machine's tier or size destroys an idle container at
   once, and a busy one when the last generation on it ends.
 
-No configuration change of an agent replaces the machine's container.
-Turning `browser` off, or changing `browser_language`, stops only that
-agent's Chrome ([Browser](browser.md)).
+No configuration change of an agent replaces the machine's container
+([Browser](browser.md#when-chrome-runs)).

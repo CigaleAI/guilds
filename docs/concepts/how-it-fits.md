@@ -23,7 +23,7 @@ flowchart TD
   members -. become .-> operators
 ```
 
-- The **instance** is one box. Its instance admin manages what every
+- The **instance** is one box. Its [instance admin](instance-admin.md) manages what every
   organisation shares: the connector catalog and the platform keys.
 - An **organisation** owns everything else: its guilds, its
   machines, its model keys, its secrets, its connector logins, and
@@ -43,7 +43,7 @@ A **user** is an account. A user is a **member** of one or more
 organisations, as owner, admin, or member. Inside a guild, the
 members it works for are its **operators**: they talk with the
 agents in the group chat, get tagged, and receive the issues agents
-report in their Inbox.
+report in their [Inbox](inbox.md).
 
 ### A run
 
@@ -82,27 +82,34 @@ Each kind of knowledge has one home:
 | Long-form knowledge | Notes at agent, guild, or organisation level | Agents and operators |
 | Structured records | Collections at guild or organisation level | Agents and operators, through grants |
 | Reusable code | The agent's scripts | The agent |
-| What was said | Run history and group-chat history | The box, kept exactly and never rewritten |
-| Credentials | Secrets, handed to the agents an operator names | The organisation |
+| What was said in a run | Run history, kept exactly and never rewritten | The box |
+| What was said in the guild | Group-chat history, until a guild admin clears it | The box |
+| Credentials | Model keys, secrets, and connector logins | The organisation |
 
-## The concepts
+## Reference
+
+Each concept has a page of its own.
 
 ### People
 
-- [Users](users.md): accounts, authentication modes, the instance
-  admin.
+- [Users](users.md): accounts, sign-in modes, the instance admin
+  role.
+- [Instance admin](instance-admin.md): the **Admin** page, for the
+  box itself.
 - [Organisations](organisations.md): members, roles, what an
   organisation owns, its Settings page.
-- [Operators](operators.md): the people a guild works for, and the
-  Inbox.
+- [Operators](operators.md): the people a guild works for, and their
+  roles.
+- [Inbox and issues](inbox.md): the issues agents report and the tags
+  that reach each operator.
 
 ### Teams
 
 - [Guilds](guilds.md): what a guild owns, visibility, its settings.
 - [Agents](agents.md): name, focus, model, run limits, capabilities,
   the agent inspector.
-- [Group chat](group-chat.md): tags, recipients, wake triggers,
-  delivery.
+- [Group chat](group-chat.md): tags, recipients, delivery, unread
+  counts.
 - [Routines](routines.md): schedules that wake an agent.
 
 ### Where agents run
@@ -120,6 +127,7 @@ Each kind of knowledge has one home:
   default.
 - [Runs](runs.md): direct, group, and schedule runs, and what each
   stores.
+- [Run transcript](run-transcript.md): how the operator reads a run.
 - [System prompt](system-prompt.md): the composed system message.
 - [Task](task.md): the operator's standing instruction.
 - [Memory](memory.md): what the agent keeps for its next runs.
@@ -145,25 +153,32 @@ Each kind of knowledge has one home:
 ### Coding agents
 
 - [Coding agents](coding/index.md): an agent that leads code work
-  through a coding harness.
-- [Harnesses](coding/harnesses.md): Claude Code, Codex, and Cursor.
+  through a coding harness, alone or with others in one guild.
+- [Harnesses](coding/harnesses.md): Claude Code, Codex, Cursor, and
+  Antigravity.
 - [Repositories](coding/repositories.md): the guild's git
   repositories.
-- [Code tools](coding/code-tools.md): `code_task`, `shell`, file
-  reads, and search.
+- [Code tools](coding/code-tools.md): `shell`, file reads, and
+  search.
+- [Code tasks](coding/code-tasks.md): `code_task`, one delegated
+  piece of code work.
 - [Reviewing changes](coding/reviewing-changes.md): checkpoints and
   diffs.
-- [Coding teams](coding/teams.md): several coding agents in one
-  guild.
 
 ### Workspaces
 
-- [Operator app](operator-app.md): a map of every screen.
 - [Prompt Studio](prompt-studio.md): improve the Tasks of a live
   guild.
+- [Studio activity](studio-activity.md): the guild overview and its
+  activity ledger.
+- [Studio proposals](studio-proposals.md): the coach's proposal
+  cards.
 - [Guild builder](guild-builder.md): design a guild from a
   conversation.
 - [Recipes](recipes.md): a guild's configuration as one file.
 - [Recipe format](recipe-format.md): the shape of a recipe document.
 - [Applying recipes](applying-recipes.md): turn a recipe into a live
   guild.
+
+The [screen map](../architecture/screen-map.md) lists every screen of
+the app and the page that explains it.

@@ -20,70 +20,98 @@ product stack (`docker-compose.yml`) with the development overlay
 (`docker-compose.watch.yml`).
 
 The overlay publishes PostgreSQL on `127.0.0.1:5432`. It
-bind-mounts `src/`, `scripts/`, and `drizzle/` into the
-orchestrator container. `tsx watch` restarts the orchestrator
-when a source file or a migration changes. Boot applies new
-migrations, so the database keeps its data and gains the new
-schema.
+bind-mounts the orchestrator's `src/`, `scripts/`, and `drizzle/`
+into its container. `tsx watch` restarts the orchestrator when a
+source file or a migration changes. Boot applies new migrations,
+so the database keeps its data and gains the new schema.
 
 The operator app is served at `http://127.0.0.1:8080/` as built
 into the image at the last `make up`.
 
 `make dev` brings that stack up and runs the operator app's Vite
 server in the foreground at `http://127.0.0.1:5173/`. The Vite
-server reloads in place on every edit. It proxies `/api`,
-`/avatars`, and `/health` to the orchestrator.
+server reloads in place on every edit. It proxies `/api/*`,
+`/avatars/*`, and `/health` to the orchestrator.
 
 The Makefile gives a development stack its secrets:
 
-- the all-zero master key (which the overlay accepts with
-  `ALLOW_ZERO_MASTER_KEY=1`)
+- the all-zero master key, which the overlay accepts with
+  `ALLOW_ZERO_MASTER_KEY=1`
 - the PostgreSQL password `agent_platform`
 - the OpenSandbox key `guilds-dev`
 
-The box's first user is `user_operator`, owner of the
-organisation `home`. `make verify` and `make soak` act as that
-user.
+The box's first user has the id `user_operator`. It owns the
+organisation with the slug `home`. `make verify` and `make soak` act
+as that user.
+
+## Make targets
+
+`make` alone runs `make contract`, the default goal.
 
 | Target | Does |
 | --- | --- |
+| `make contract` | `contract-opensandbox`, then `contract-model` |
+| `make contract-opensandbox` | The OpenSandbox and coding contract tests with `RUN_OPENSANDBOX_CONTRACT=1` ([Tests](#tests)) |
+| `make contract-model` | The model contract test with `RUN_MODEL_CONTRACT=1`. Reads `MODEL_CONTRACT_MODEL` and `MODEL_CONTRACT_API_KEY` from `.env`, and fails when either is empty |
 | `make state` | Creates the `STATE_ROOT` trees (`.state/` in the checkout) |
-| `make build` | Builds the OpenSandbox server, `agent-runtime:0.4`, and the development stack's images |
-| `make up` | The development stack, detached, after the images |
+| `make opensandbox-image` | `scripts/images.sh opensandbox`: builds `guilds-opensandbox-server:<commit>` from the pinned commit, once |
+| `make runtime-image` | `scripts/images.sh runtime`: builds `agent-runtime:0.4` from `runtime/`, every time, from Docker's cache |
+| `make core-image` | Builds `guilds-orchestrator:local` from `apps/orchestrator/Dockerfile` |
+| `make build` | `state`, both images, then builds the development stack's images |
+| `make up` | `state`, both images, then the development stack, built, detached, and healthy |
 | `make dev` | `make up`, then the Vite server |
-| `make down` | Stops every service of the stack |
-| `make reset` | `make down`, removes the local state trees, `make up` |
+| `make down` | Stops every service of the product stack and an edition's Compose files |
+| `make reset` | `make down`, removes the local state trees, `make up` ([Resetting](#resetting)) |
 | `make migrate` | Gives each recorded migration its committed stamp, applies the migrations it was hiding, and restarts the orchestrator. The data stays ([Schema changes](#schema-changes)) |
-| `make verify` | Health, the guild list as the seed user, the app page, typecheck, lint, the orchestrator tests, the fixture digests, against a running stack |
+| `make verify` | Against a running stack: health, the guild list as the seed user, the app page, typecheck, lint, the orchestrator tests, an edition's test packages, the fixture digests |
 | `make soak` | Creates and deletes a guild, restarts the orchestrator, and reads the migration, seed, binding, and run tables |
-| `make contract` | The OpenSandbox and model contract tests (`RUN_OPENSANDBOX_CONTRACT`, `RUN_MODEL_CONTRACT` with `MODEL_CONTRACT_MODEL`, a `{provider}/{model}` id, and `MODEL_CONTRACT_API_KEY` in `.env`; `MODEL_CONTRACT_BASE_URL` for a local endpoint) |
-| `make check` | `scripts/check.sh`: what CI runs |
+| `make check` | `scripts/check.sh`: what CI runs ([Check](#check)) |
+| `make compat-verify` | The fixture digests alone |
 
-One package runs alone with pnpm:
+An edition sets the variables the Makefile reads
+([Extension points](../architecture/extension-points.md)).
 
-- `pnpm --filter @guildsrun/web dev` serves the operator app
-- `pnpm --filter @guildsrun/ui storybook` serves the design
-  system's Storybook on port 6006. A running instance and the
-  documentation site serve the built catalogue at `/storybook`
-- `pnpm --filter @guildsrun/orchestrator start` serves the
-  orchestrator outside Docker, against the `.env` it reads
+## Package scripts
+
+At the repository root:
+
+| Script | Does |
+| --- | --- |
+| `pnpm check` | `scripts/check.sh` |
+| `pnpm typecheck`, `pnpm lint` | Every package's typecheck or lint |
+| `pnpm test:orchestrator`, `pnpm test:web`, `pnpm test:ui` | One package's tests |
+| `pnpm compat:verify` | The fixture digests |
+| `pnpm storybook` | The design system's Storybook on port 6006 |
+| `pnpm build:storybook` | Builds the Storybook into `packages/ui/storybook-static` |
+| `pnpm design-system-doc` | Writes `packages/ui/design-system.md` ([Design system](../architecture/design-system.md)) |
+
+In `apps/orchestrator`, run as `pnpm --filter @guildsrun/orchestrator <script>`:
+
+| Script | Does |
+| --- | --- |
+| `start` | Serves the orchestrator outside Docker. It reads its settings from its environment, not from `.env` |
+| `migrate` | Re-stamps the recorded migrations, then applies the committed ones (`make migrate` runs it) |
+| `seed:system`, `seed:operator` | Seeds the platform's connector catalog and its bindings, or the first user and the organisation they own on a box with no user |
+| `connector` | `install`, `update`, `remove`, or `list` registry connectors ([Connector registry](../tools-and-connectors/connector-registry.md)) |
+| `build:connector` | Bundles a connector folder into a registry package |
+| `models:snapshot` | Rewrites the bundled models.dev snapshot, `src/llm/models-dev.snapshot.json` |
+| `sweep:workspaces` | Lists, or with `--apply` removes, orphan machine directories and agent homes ([Maintain](../operations/maintain.md#free-disk-space)) |
+| `typesafe:replay` | Replays the group-chat recipient choice for one message ([Group chat](../concepts/group-chat.md)) |
+| `compat:verify`, `compat:digest` | Checks, or rewrites, the fixture digests ([Tests](#tests)) |
+| `format` | Prettier over the package |
+
+`pnpm --filter @guildsrun/web dev` serves the operator app's Vite
+server alone. A running instance serves the built Storybook at
+`/storybook`.
 
 ## Local state
 
-Everything the stack keeps lives under `STATE_ROOT`, the absolute
-path `.env` names (`.state/` in the checkout). Each tree is
-bind-mounted into the container that uses it. The stack creates no
-named Docker volume, so `docker volume ls` shows nothing of it and
-`docker compose down -v` removes nothing.
-
-| Tree | Holds |
-| --- | --- |
-| `postgres/` | The PostgreSQL data directory: every table |
-| `opensandbox/` | The OpenSandbox server's SQLite lifecycle store |
-| `workspaces/` | One directory per machine, with one home per agent on it: scripts, the browser profile, a coding agent's repositories |
-| `notes/` | The Obsidian vault: system prompt, guild and agent notes |
-| `attachments/` | Chat images, one file per attachment |
-| `connectors/` | Connector packages installed from a registry |
+Everything the stack keeps lives under `STATE_ROOT`, `.state/` in
+the checkout. Each tree is bind-mounted into the container that
+uses it, and the stack creates no named Docker volume. So
+`docker volume ls` shows nothing of it, and `docker compose down -v`
+removes nothing. [Maintain](../operations/maintain.md#where-the-state-lives)
+lists the trees.
 
 ### Resetting
 
@@ -107,17 +135,16 @@ make up
 ```
 
 The other trees then hold notes, workspaces, and attachments of
-guilds and agents the database no longer knows. They are inert; the
+guilds and agents the database does not know. They are inert. The
 next `make reset` removes them.
 
 A reset leaves `.env`, the built images, and `node_modules` as they
 are. Running `./setup.sh` afterwards keeps every value `.env` already
 has.
 
-The code in the checkout is what the reset stack runs: the
-orchestrator from its bind-mounted source, the operator app as built
-into the image by `make up` (which rebuilds it) or served live by
-`make dev`.
+The reset stack runs the code in the checkout: the orchestrator from
+its bind-mounted source, and the operator app as built into the image
+by `make up`, or served live by `make dev`.
 
 ## Check
 
@@ -130,7 +157,7 @@ log.
 | --- | --- |
 | orchestrator | `typecheck`, `lint`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `build-web`, `build-storybook` |
-| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory, checking that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
+| core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
 
 `scripts/check.sh <commit>` (or `make check COMMIT=<rev>`)
 checks that commit the way CI does: a clean worktree of it and
@@ -142,15 +169,6 @@ The pre-push hook (`.githooks/pre-push`) runs that check on the
 tip of every pushed ref and stops the push when it fails.
 `git push --no-verify` skips it.
 
-CI is `.github/workflows/verify.yml`. On every push and pull
-request, one job installs with the frozen lockfile and runs
-`scripts/check.sh`.
-
-`.github/workflows/images.yml` publishes the orchestrator,
-`agent-runtime`, and OpenSandbox server images to `ghcr.io` when a
-`vMAJOR.MINOR.PATCH` tag is pushed. That tag is the version in the
-[changelog](../../CHANGELOG.md).
-
 An edition built on core runs the same script from its own root
 with `EDITION_ROOT` set. It adds its steps through a
 `check.steps` file
@@ -161,17 +179,45 @@ in either root links each core package's `node_modules` to that
 root's store. Before a working-tree check, install from the root
 the check runs in.
 
+## CI
+
+`.github/workflows/verify.yml` runs on every push and pull request.
+One job installs with the frozen lockfile and runs
+`scripts/check.sh`.
+
+`.github/workflows/images.yml` runs when a `v*` tag is pushed, or
+by hand. It publishes three images to `ghcr.io`, under the
+repository owner, tagged with the ref name and `latest`:
+
+| Image | Built from |
+| --- | --- |
+| `guilds-orchestrator` | `apps/orchestrator/Dockerfile` |
+| `guilds-agent-runtime` | `runtime/`, with `BROWSER=chromium` and `HARNESSES=` empty: Chromium and Codex only |
+| `guilds-opensandbox-server` | The pinned OpenSandbox commit, tagged by its first 8 characters |
+
+The release tag is the version in the
+[changelog](../../CHANGELOG.md).
+
 ## Tests
 
 The orchestrator's tests run on Node's test runner through `tsx`
-(`pnpm --filter @guildsrun/orchestrator test`):
+(`pnpm --filter @guildsrun/orchestrator test`), with
+`MODELS_DEV_URL` set empty:
 
 | Directory | Covers |
 | --- | --- |
 | `test/unit` | Domain logic without Docker; the generation tests drive `GenerationLoop` against the file-backed `NotesStore` and fakes |
 | `test/integration` | HTTP and PostgreSQL: the recorded routes and SSE and WebSocket fixtures replayed against a database on `127.0.0.1:5432` (`R1_ADMIN_DATABASE_URL` names another) |
-| `test/contract` | Live OpenSandbox, model, and routing calls, each gated by its `RUN_*_CONTRACT=1` variable and key |
+| `test/contract` | Live calls, each skipped until its variables are set (below) |
 | `test/helpers` | The environment, fixtures, HTTP, OpenSandbox stub, and PostgreSQL helpers, which the package also exports for an edition's tests |
+
+| Contract test | Runs when |
+| --- | --- |
+| `opensandbox.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1`. It builds the pinned OpenSandbox server image when it is missing |
+| `coding.test.ts` | `RUN_OPENSANDBOX_CONTRACT=1`, and the runtime image exists: `CONTRACT_RUNTIME_IMAGE`, `agent-runtime:0.4` by default (`make runtime-image`) |
+| `model.test.ts` | `RUN_MODEL_CONTRACT=1`, `MODEL_CONTRACT_MODEL` (a `{provider}/{model}` id), and `MODEL_CONTRACT_API_KEY`. `MODEL_CONTRACT_BASE_URL` points it at a local endpoint |
+| `typesafe.test.ts` | `RUN_TYPESAFE_CONTRACT=1` or `RUN_MODEL_CONTRACT=1`, and `TYPESAFE_API_KEY` |
+| `harness.test.ts` | One live turn per harness whose credential is set: `CLAUDE_CODE_OAUTH_TOKEN`, `CURSOR_API_KEY`, or `CODEX_AUTH_JSON` (the path of a Codex `auth.json`). It needs the runtime image too |
 
 The operator app's and the design system's tests sit beside their
 modules as `src/**/*.test.ts` (`pnpm test:web`, `pnpm test:ui`).
@@ -183,18 +229,18 @@ They cover the pure models:
 - the activity ledger
 - the recipe plan and apply steps
 
-`fixtures/compat/` holds the frozen HTTP, SSE, schema, crypto,
-and adapter contracts, with a sha256 digest of each in
-`manifest.json`.
+`fixtures/compat/` holds the frozen contracts, one directory per
+surface: HTTP routes, SSE and WebSocket frames, crypto, adapters,
+prompts, seed rows, and more. `manifest.json` holds a sha256 digest
+of each file.
 
-`pnpm --filter @guildsrun/orchestrator compat:verify` fails when
-a fixture differs from its digest or is missing from the
-manifest. After a change made on purpose, `compat:digest` in the
-same package rewrites the digests of the changed fixtures. It
+`compat:verify` fails when a fixture differs from its digest or is
+missing from the manifest. After a change made on purpose,
+`compat:digest` rewrites the digests of the changed fixtures. It
 never adds or removes an entry.
 
-`scripts/patch-http-mcp-catalog` rewrites the HTTP fixture when
-the catalog's shapes change.
+`apps/orchestrator/scripts/patch-http-mcp-catalog.ts` rewrites the
+HTTP fixture when the catalog's shapes change.
 
 ## Schema changes
 
@@ -226,16 +272,17 @@ after it was applied is a different migration to the database.
 `make reset` starts that database over.
 
 `0001_baseline.sql` is a schema-only snapshot.
-`drizzle/0001.notes.md` says how it is regenerated
-(`scripts/dump-baseline-schema`). The optional
-`test/integration/schema-diff.test.ts` compares a boot migration
-against applying the SQL files directly.
+`drizzle/0001.notes.md` says what it holds and how
+`apps/orchestrator/scripts/dump-baseline-schema.ts` regenerates it.
+The optional `test/integration/schema-diff.test.ts` compares a boot
+migration against applying the SQL files directly.
 
 ## Lint and format
 
-Every package runs ESLint (`pnpm -r lint`) on the recommended
-and typescript-eslint rules. Unused names are allowed when they
-start with `_`.
+Every package runs ESLint (`pnpm -r lint`) on the recommended and
+typescript-eslint rules. Unused names are allowed when they start
+with `_`. The operator app and the design system also run the
+recommended React Hooks rules.
 
 The orchestrator and the operator app also run the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
@@ -246,7 +293,8 @@ commas, and a width of 100 (`pnpm --filter <package> format`).
 
 ## Documentation
 
-The documentation is Markdown under `docs/`.
-`docs/README.md` is the index and the one place the structure is
-kept. GitHub shows it on the repository page.
-`docs/philosophy.md` is the motivation and the principles.
+The documentation is Markdown under `docs/`, published at
+[docs.guilds.run](https://docs.guilds.run). `docs/README.md` is the
+index and the one place the structure is kept. GitHub shows it on
+the repository page. `docs/philosophy.md` is the motivation and the
+principles.

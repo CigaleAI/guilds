@@ -98,8 +98,8 @@ agent has no browser** with **Open Settings**.
 
 Sidebar agents with the browser on show a marker.
 
-**Settings**, Model section (**Lead model** on a coding agent): the **Browser** button under **Agent
-capabilities** turns it on and off. The create dialog offers the same
+**Settings**, Model section (**Lead model** on a coding agent): the
+**Browser** button under **Agent capabilities** turns it on and off. The create dialog offers the same
 button. **Browser language** shows while the browser is on; changing
 it restarts the browser. The button is greyed out while off on a
 machine below the browser minimum, with a line naming both sizes.
@@ -133,13 +133,10 @@ show it.
 ### Config keys
 
 - `browser` is whether this agent has its own Chrome on its machine.
-  Default false. It selects the Browser pane, a live 1280×720
-  Chromium/noVNC session on the agent's display, and the eight
-  Playwright tools on that agent's runs: `browser_navigate`,
-  `browser_snapshot`, `browser_click`, `browser_type`, `browser_fill`,
-  `browser_scroll`, `browser_screenshot`, and `browser_eval`. It is not
-  a binding. The runtime image is instance-wide: a toolchain the flags
-  leave off stays in the image and is not offered.
+  Default false. It selects the Browser tab and the eight browser
+  tools: `browser_navigate`, `browser_snapshot`, `browser_click`,
+  `browser_type`, `browser_fill`, `browser_scroll`,
+  `browser_screenshot`, and `browser_eval`.
 - `browser_language` is Chrome's UI and Accept-Language when `browser`
   is on. Stored default `en-US`. It is one of these tags, else 422
   (`browser_language must be a supported Chrome language`): `ar`,
@@ -149,10 +146,6 @@ show it.
   `ro`, `ru`, `sk`, `sl`, `sr`, `sv`, `th`, `tr`, `uk`, `vi`, `zh-CN`,
   `zh-TW`. A stored config with a missing or unknown tag runs Chrome in
   `en-US`.
-
-Turning `browser` off, or changing `browser_language` while it is on,
-stops this agent's Chrome. Other agents on the machine keep theirs. No
-configuration change replaces the machine's container.
 
 Turning `browser` on, on create or on update, is 422 when the agent's
 machine is below the browser minimum

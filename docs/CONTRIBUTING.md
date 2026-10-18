@@ -15,8 +15,9 @@ submitting it. There is no separate contributor agreement.
 - Understand the system before changing it: start at the
   [index](README.md) and [Philosophy](philosophy.md), then the
   [Architecture](README.md#architecture) pages.
-- Talk with other operators and contributors:
-  [Community](contributing/community.md).
+- Talk with other operators and contributors on
+  [Discord](https://discord.gg/aqp5aPq9Uh) or
+  [X](https://x.com/guildsrun).
 
 A change is a branch and a pull request against `main`.
 
@@ -52,21 +53,23 @@ top of the [changelog](../CHANGELOG.md).
 
 Move one digit. It names the effect on a running box:
 
-- **Patch** (`1.2.4`): no impact. Docs, tooling, or anything the
-  images do not run. A running box stays as it is.
-- **Minor** (`1.3.0`): rebuild. The images change. State, `.env`,
-  recipes, and the API stay valid. Migrations apply at boot.
-- **Major** (`2.0.0`): breaking. The previous major cannot run
-  this tree unchanged. The entry leads with the steps.
+| Digit | Effect | The box |
+|---|---|---|
+| Patch (`1.2.3` to `1.2.4`) | `no impact` | Stays as it is. Docs, tooling, or anything the images do not run changed |
+| Minor (`1.2.3` to `1.3.0`) | `rebuild` | Rebuilds its images. State, `.env`, recipes, and the API stay valid. Migrations apply at boot |
+| Major (`1.2.3` to `2.0.0`) | `breaking` | Cannot run this tree unchanged. The entry leads with the steps |
 
 A fix that changes an image is a minor version. Several changes
 in one release take the highest digit.
 
-The entry is the version, the effect (`no impact`, `rebuild`, or
-`breaking`), and what an operator can see.
+The entry is the version, the effect, and what an operator can
+see. Changes not yet tagged sit under **Unreleased** at the top.
+
+The commands a box runs for each effect are in
+[Maintain](operations/maintain.md#update).
 
 Pushing the tag publishes the images
-([Development](contributing/development.md#check)).
+([Development](contributing/development.md#ci)).
 
 ## Security
 

@@ -1,21 +1,23 @@
 # Orchestrator
 
 The control plane is a strict TypeScript service in
-`apps/orchestrator`. Python remains in `runtime/` for user scripts,
-browser automation, the code tools, and the coding harness drivers.
+`apps/orchestrator`. The Python in `runtime/` runs inside agent
+sandboxes: user scripts, browser automation, the code tools, and the
+coding harness drivers.
 
-The process model and the trust boundary are [System](system.md).
-Where each module lives is the [Code map](code-map.md).
+The process model, the Compose stack, and the trust boundary are
+[Deployment and trust boundary](deployment.md). Where each module
+lives is the [Code map](code-map.md).
 
 ## Stack
 
-- Node.js 24 LTS, image `node:24-bookworm-slim` (pinned by digest in
-  the Dockerfile), `engines.node` `^24`
+- Node.js 24 LTS, image `node:24.21.0-bookworm-slim` (pinned by
+  digest in the Dockerfile), `engines.node` `^24`
 - pnpm 10 (`packageManager` pin), workspace `apps/*` and `packages/*`
 - Fastify 5, TypeBox, `@fastify/type-provider-typebox`,
   `@fastify/static`, `@fastify/websocket`
 - Drizzle ORM with `node-postgres` on `postgres:17`
-- `openai` (official client) for OpenRouter and DeepInfra, `js-tiktoken`
+- `openai` (official client) for every model provider, `js-tiktoken`
   for input counting, `croner` for cron, `undici` for outbound HTTP,
   `esbuild` (development) to bundle a registry connector,
   [`@dicebear/*`](https://www.dicebear.com/) for avatars, `@sentry/node`,
@@ -33,6 +35,8 @@ Where each module lives is the [Code map](code-map.md).
   `cache_read_tokens` is a subset of `input_tokens`. A message records
   the catalog's fetch date as `pricing_version`
 
+## Configuration
+
 `src/config/index.ts` validates the environment once into a typed
 `AppConfig`:
 
@@ -44,16 +48,20 @@ Where each module lives is the [Code map](code-map.md).
 - `OPENSANDBOX_URL`
 - `OPENSANDBOX_API_KEY`
 - `SANDBOX_IMAGE` (the image every machine runs)
-- `SECRETS_MASTER_KEY`
+- `SECRETS_MASTER_KEY`, and `ALLOW_ZERO_MASTER_KEY` on a development
+  stack
 - `AUTH_MODE` with the `trusted-header` settings (`PUBLIC_BASE_URL`,
   `TRUSTED_HEADER_EMAIL`, `TRUSTED_PROXY_SECRET`, `OPERATOR_EMAIL`)
 - `MAX_CONCURRENT_GENERATIONS`
 - `TOOL_RESULT_MAX_BYTES`
+- `HARNESSES_OFF` (coding harnesses this box does not offer)
+- `OBSIDIAN_VAULT_NAME`
 - `HOST`
 - `PORT`
 
-The model catalog reads `MODELS_DEV_URL` on its own
-([Configure](../getting-started/configure.md#model-catalog)).
+[Configure](../operations/configure.md) explains each one. The model
+catalog reads `MODELS_DEV_URL` on its own
+([Configure](../operations/configure.md#model-catalog)).
 
 `loadConfig` accepts the modes an edition identifies requests in
 beside core's two. The instance keys are read through the registry
@@ -69,7 +77,8 @@ A few modules read their own optional variables:
 - `WORKSPACE_MAX_MIB` (host-wide cap on one agent's home, default
   10240; each agent also has `max_workspace_mib`, default the same,
   and each machine a `max_workspace_mib` over every home on it)
-- `SENTRY_ENVIRONMENT` / `SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_PROFILE_SESSION_SAMPLE_RATE`
+- `SENTRY_ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE`,
+  `SENTRY_PROFILE_SESSION_SAMPLE_RATE`, `SENTRY_DEBUG`
 - `ADAPTER_PROXY_URL` (forward proxy for adapter and MCP HTTP)
 - `OPENSANDBOX_SDK_MODULE` (test substitution)
 
@@ -87,7 +96,8 @@ Configurable only in tests:
 - runtime metrics sample = 10 seconds; event loop stall = 1 second
 - OpenSandbox SDK `request_timeout` = 3 minutes
 - OpenSandbox list `page_size` = 100
-- model request timeout = 120 seconds
+- model request timeout = 25 ms per `max_tokens`, at least 2 and at
+  most 10 minutes
 - script command timeout = 120 seconds
 - browser tool timeout = 60 seconds
 - browser ready wait = 60 seconds
@@ -119,7 +129,193 @@ Configurable only in tests:
 Compose `stop_grace_period` on the orchestrator is 20 seconds so
 Docker does not SIGKILL during `SHUTDOWN_TIMEOUT`.
 
+## Startup and shutdown
+
+From `apps/orchestrator`, `pnpm start` (or
+`pnpm --filter @guildsrun/orchestrator start` from the repo root)
+runs `node --import tsx --import ./src/observability/instrument.ts src/server.ts`.
+Local Compose uses `make up` or `make dev`.
+
+`server.ts` is core's process entry. It loads `AppConfig` and calls
+`runServer` (`src/run.ts`). `runServer` builds the server with
+`createServer` (`src/compose.ts`), listens, and shuts it down on a
+signal or a fatal error. An edition has an entry of its own, which
+passes its extensions with its configuration loaded beside core's
+([Extension points](extension-points.md)). Core passes none.
+
+```mermaid
+sequenceDiagram
+  participant S as createServer
+  participant PG as PostgreSQL
+  participant SB as sandbox provider
+  participant G as GenerationLoop
+  participant W as Studio / Builder
+  participant H as Fastify
+
+  S->>PG: connect (migrate + core seeds + extension seeds)
+  S->>SB: start, lay out agent homes
+  S->>G: reconcile interrupted runs
+  S->>G: startScheduler (30s tick)
+  S->>W: reconcile sessions
+  S->>H: buildApp (extension routes, then core routes)
+```
+
+`createServer` runs these steps in order:
+
+1. install the extensions' connectors and integrations, and the
+   `HARNESSES_OFF` list
+2. connect to PostgreSQL: core's migrations, then each extension's;
+   then seed the system catalog, then each extension's seed, then
+   the operator and its organisation on a box that still has no user;
+   start the runtime metrics; with `OPERATOR_EMAIL` set, give
+   `user_operator` that address
+3. construct `NotesStore` and check that `system.md` exists in
+   `TEMPLATES_ROOT`
+4. load the registry connectors' code (`registry/code.ts`), derive
+   the connector-declared integrations (`instance/connectors.ts`),
+   load the instance keys into their snapshot (`instance/keys.ts`),
+   and sync the platform logins (`connectors/instance.ts`)
+5. construct `ArtifactStore`, `Scripts`, `Schedules`, the model
+   service, and `McpPool`
+6. start the sandbox provider: one `RunSandboxes` manager on
+   `OPENSANDBOX_URL`, or the one an extension supplies; then lay out
+   agent homes by machine (`machines/layout.ts`): destroy every
+   sandbox labelled with an `agent_id`, and move each
+   `WORKSPACE_ROOT/<agent id>` that exists to
+   `WORKSPACE_ROOT/<machine id>/<agent id>` when the target does not
+7. construct the attachment service and `GenerationLoop`; reconcile
+   active runs; start the scheduler
+8. construct Studio and reconcile its sessions; construct recipes,
+   capabilities, apply, and Builder; reconcile Builder sessions
+9. build the Fastify app, each extension's routes first
+
+`runServer` then listens.
+
+Run reconciliation:
+
+1. list every active run
+2. append interruption tool results for unresolved committed tool
+   calls; an unresolved `code_task` first gets `guilds-harness stop`
+   on its machine when the machine is running, its state is cleared
+   once the harness has exited, and the task's end checkpoint is
+   taken; its result is `interrupted`, naming the session and log
+   from the run's `metadata.harness_task`
+3. leave direct runs active and reusable
+4. append a `generation.interrupted` run error to group and
+   schedule runs
+5. complete group delivery through the run's snapshotted sequence
+   or complete the schedule run
+6. resume pending group dispatch
+7. schedule idle teardown for running machines on which no agent
+   generates
+
+Studio and Builder reconciliation repairs abandoned coach
+generations.
+
+Graceful shutdown (SIGTERM / SIGINT): close HTTP, stop the
+scheduler and dispatchers, cooperative-cancel in-flight generations
+with `CANCEL_GRACE`, wait up to `SHUTDOWN_TIMEOUT`, close sandboxes
+and the pool, flush Sentry.
+
+An unhandled rejection or uncaught exception logs, flushes, stops,
+and exits 1.
+
+## Request path
+
+```mermaid
+flowchart TD
+  UI["React app"] --> API["/api/*"]
+  API --> ID["identity: cookie / trusted-header / an edition's provider"]
+  ID --> R["http/routes.ts and siblings"]
+  R --> CRUD["guilds / agents / artifacts / secrets / MCP"]
+  R --> Run["POST /api/agents/:agent_id/runs"]
+  R --> Group["POST .../group-chat/messages"]
+  R --> Studio["/api/studio/*"]
+  R --> Builder["/api/builder/*"]
+  R --> Recipes["/api/recipes/* /api/applies/*"]
+  Run --> GL["GenerationLoop"]
+  Group --> GC["GroupChat.dispatch"]
+  GC --> GL
+  Cron["scheduler tick"] --> GL
+  Studio --> CR["ConversationRunner"]
+  Builder --> CR
+```
+
+CRUD writes PostgreSQL and returns JSON. Runs go through
+`GenerationLoop`. The UI follows on `GET /api/runs/:id/stream`
+(SSE). Studio and Builder use the shared conversation runner and
+their own streams.
+
 ## Generation
+
+### Work queuing
+
+An agent runs at most one generation at a time (`GenerationLoop`
+busy registry). Direct, group, and schedule work all take that same
+lock. Work waits in that registry, in group dispatch, and in the
+schedule's `next_run_at`, never in a job table.
+
+| Incoming work | If the agent is already generating |
+| --- | --- |
+| Direct chat (message) | HTTP **409**; the operator retries |
+| Group delivery | **Wait** for lock release, then retry |
+| Due schedule | **Skip** this tick; `next_run_at` stays due |
+
+Studio and Builder take an **organisation** admission slot, not the
+agent lock. They do not make a target agent busy.
+
+Group chat **coalesces**. Several unseen messages become **one** run
+with a snapshot through the current `chat_seq`. Schedules do not
+coalesce: two due routines for the same agent fire on successive
+ticks.
+
+### A run
+
+Three ways in: direct message, group-chat delivery, or a due
+schedule.
+
+```mermaid
+flowchart TD
+  Start["createRun / deliverGroupRun / schedule wake"] --> Prep["PreparedRun"]
+  Prep --> Snap["Snapshot: prompts, tools, secrets, scripts"]
+  Snap --> Persist["Insert run + messages in Postgres"]
+  Persist --> Loop["_generate"]
+  Loop --> WS["prepareWorkspace: the agent's home"]
+  WS --> Box["sandboxes.ensure(machine)"]
+  Box --> Step["streamCompletion"]
+  Step -->|assistant text| Save["append messages"]
+  Step -->|tool_calls| Tools["toolbox / MCP / adapters"]
+  Tools --> Step
+  Step -->|stop / limit / cancel| Done["publish generation.finished"]
+  Step -->|coding, 70% of input limit| Handoff["hand-off step, next run of the chain"]
+  Handoff --> Loop
+  Save --> SSE["SSE subscribers"]
+```
+
+`PreparedRun` hydrates `task` + `memory`. It builds the State JSON.
+It resolves bindings and the agent's secrets. It hashes the opening
+system prompt.
+
+That prompt and the ordered message rows are the stored history.
+Each model call projects tool results from those rows
+(`conversation/projection.ts`).
+
+Tools:
+
+- **Native** (`toolbox/`): artifacts, memory, scripts, schedules,
+  browser, code tools, `code_task`, group post, report issue,
+  secrets
+- **Connectors** (`connectors/`, dispatched by `mcp/`): a remote MCP
+  endpoint (Notion, Sentry, Cigale, Etherscan), adapter code
+  (CoinGecko, Alchemy, X, TwitterAPI.io, Qonto, DexPaprika, Gmail,
+  Tavily web search on the instance key), or both (Drive, OpenSea);
+  one catalog shape
+
+Scripts and Chromium run on the agent's machine. Notes and
+collections stay in PostgreSQL. The sandbox never mounts a notes
+tree.
+
+### Concurrency rules
 
 - A registry maps each active agent to at most one generation.
 - One mutex protects ownership check, controller insertion,
@@ -137,7 +333,6 @@ Docker does not SIGKILL during `SHUTDOWN_TIMEOUT`.
 - Group dispatch waits on a generation lock-release counter when
   every actionable agent is busy. Schedule retry does **not** wait:
   a busy agent is skipped and the 30-second ticker retries.
-- Artifact writes use PostgreSQL transactions.
 - Guild deletion sets a deleting-guild guard, refuses new runs and
   group actions with 409, and releases the guard in `finally`.
 - Secret changes re-resolve the active-run secret snapshots of the
@@ -166,99 +361,58 @@ share one slot count under the organisation policy's
 
 ## Events
 
-**Durable events** may be treated as commit notifications.
-Subscribers that miss them recover by re-reading PostgreSQL.
+One in-process bus carries every event. Each SSE stream sends
+`: connected\n\n`, then live events only.
 
-This class includes:
+| Event | Stream | Class | What it says |
+|---|---|---|---|
+| `message.committed` | run, Studio, Builder | durable | A message row committed |
+| `generation.started` | run, Studio, Builder | durable | A generation began |
+| `generation.finished` | run, Studio, Builder | durable | A generation ended |
+| `run.error` | run | durable | A run error; cancellation has `operation: "generation.cancelled"` |
+| `run.continued` | run | durable | A coding run continued in the run named by `run_id` |
+| `assistant.delta` | run, Studio, Builder | ephemeral | Text being written |
+| `assistant.reasoning.delta` | run, Studio, Builder | ephemeral | Reasoning being written |
+| `tool.progress` | run | ephemeral | `{run_id, tool_call_id, lines, session_id}`: a running `code_task`'s redacted progress lines |
+| `session.error` | Studio, Builder | durable | A coach session error |
+| `draft.changed` | Studio | durable | A Task draft changed |
+| `recipe.changed` | Builder | durable | The draft recipe changed |
+| `group.message.committed` | guild | durable | A group message committed |
+| `group.cleared` | guild | durable | An operator cleared the group chat |
+| `group.limit_reached` | guild | durable | The guild's message budget is spent |
+| `group.idle` | guild | durable | Group dispatch has nothing left to deliver |
+| `group.delivery.started`, `group.delivery.finished`, `group.delivery.failed` | guild | durable | A delivery run's progress |
+| `guild.files.changed` | guild | invalidation | Re-read the guild's files |
+| `guild.issues.changed` | guild | invalidation | Re-read the guild's issues |
+| `agent.scripts.changed` | guild | invalidation | Re-read an agent's scripts |
+| `agent.routines.changed` | guild | invalidation | Re-read an agent's routines |
+| `notifications.changed` | inbox | invalidation | Re-read the inbox |
+| `notifications.message` | inbox | durable | A message posted in a guild the user sees, with its author's look |
 
-- `message.committed`
-- `run.error`
-- `generation.started`
-- `generation.finished`
-- `run.continued`
-- all `group.*` events
-- invalidation events (`guild.files.changed`,
-  `agent.scripts.changed`, `agent.routines.changed`)
+The streams:
 
-**Ephemeral events** cannot be reconstructed.
-`assistant.delta`, `assistant.reasoning.delta`, and `tool.progress`
-are live-only.
-The UI recovers by re-fetching committed messages, whose metadata
-carries the full reasoning text, and whose `code_task` result carries
-the harness's final message and log path.
+- run: `/api/runs/:id/stream`
+- guild: `/api/guilds/:id/group-chat/stream`
+- inbox: `/api/notifications/stream`, one per user
+- Studio: `/api/studio/sessions/:session_id/stream`
+- Builder: `/api/builder/sessions/:session_id/stream`
 
 Delivery rules:
 
-- SSE streams send `: connected\n\n` then live events only. There
-  is no historical replay. After reconnect the client polls REST.
-- Run SSE carries run events. Group SSE carries group and
-  invalidation events. Studio and Builder have their own streams.
-- Headers remain `Content-Type: text/event-stream`,
+- A durable or invalidation event is a commit notification. It is
+  published only after its transaction commits. A subscriber that
+  misses one recovers by re-reading PostgreSQL over REST.
+- An ephemeral event cannot be reconstructed. The UI recovers by
+  re-fetching committed messages. Their metadata carries the full
+  reasoning text, and a `code_task` result carries the harness's
+  final message and log path.
+- There is no historical replay. After a reconnect the client
+  re-reads over REST.
+- Headers are `Content-Type: text/event-stream`,
   `Cache-Control: no-cache`, `Connection: keep-alive`, and
   `X-Accel-Buffering: no`.
-- Slow subscribers must not stall generation. A disconnected or
-  stalled subscriber is dropped. Durable events are recovered by
-  REST.
-- Committed rows and invalidation events are published only after
-  their transaction commits.
-
-## Startup and shutdown
-
-From `apps/orchestrator`, `pnpm start` runs
-`node --import tsx --import ./src/observability/instrument.ts src/server.ts`.
-
-`server.ts` is core's process entry. It loads `AppConfig` and calls
-`runServer` (`src/run.ts`). `runServer` builds the server, listens,
-and shuts it down.
-
-`createServer` in `src/compose.ts` wires the services and takes the
-edition's extensions ([Extension points](extension-points.md)).
-Core passes none. An edition's own entry passes its extension with
-its configuration loaded beside core's.
-
-1. load Sentry instrumentation, then `AppConfig`; configure logging
-2. connect to PostgreSQL: core's migrations, then each extension's;
-   then seed the system catalog, then each extension's seed, then
-   the operator and its organisation on a box that still has no user
-3. construct `NotesStore` (verifies `system.md` exists),
-   `ArtifactStore`, `Scripts`, `Schedules`, `McpPool`
-4. start the sandbox provider: one `RunSandboxes` manager on
-   `OPENSANDBOX_URL`, or the one an extension supplies; then lay out
-   agent homes by machine (`machines/layout.ts`): destroy every
-   sandbox labelled with an `agent_id`, and move each
-   `WORKSPACE_ROOT/<agent id>` that exists to
-   `WORKSPACE_ROOT/<machine id>/<agent id>` when the target does not
-5. construct `GenerationLoop`; reconcile active runs; start the
-   scheduler
-6. construct Studio, recipes, capabilities, apply, and Builder;
-   reconcile Studio and Builder sessions
-7. build the Fastify app, each extension's routes first, and listen
-
-On startup reconciliation:
-
-1. list every active run
-2. append interruption tool results for unresolved committed tool
-   calls; an unresolved `code_task` first gets `guilds-harness stop`
-   on its machine when the machine is running, its state is cleared
-   once the harness has exited, and the task's end checkpoint is
-   taken; its result is `interrupted`, naming the session and log
-   from the run's `metadata.harness_task`
-3. leave direct runs active and reusable
-4. append a `generation.interrupted` run error to group and
-   schedule runs
-5. complete group delivery through the run's snapshotted sequence
-   or complete the schedule run
-6. resume pending group dispatch
-7. schedule idle teardown for running machines on which no agent
-   generates
-
-Graceful shutdown (SIGTERM / SIGINT): close HTTP, stop the
-scheduler and dispatchers, cooperative-cancel in-flight generations
-with `CANCEL_GRACE`, wait up to `SHUTDOWN_TIMEOUT`, close sandboxes
-and the pool, flush Sentry.
-
-An unhandled rejection or uncaught exception logs, flushes, stops,
-and exits 1.
+- Slow subscribers do not stall generation. A disconnected or
+  stalled subscriber is dropped.
 
 ## PostgreSQL
 
@@ -279,21 +433,25 @@ New core schema lands as the next numbered SQL file in
 `apps/orchestrator/drizzle/`. It is mirrored in
 `src/db/schema/index.ts` and stamped after the migration before it.
 
-Core has thirty-seven tables:
+Core's tables:
 
 - users
 - orgs
 - org_members
+- org_model_providers
+- org_monthly_usage
+- instance_keys
+- machines
 - guilds
 - guild_operators
 - guild_repositories
+- guild_issues
 - agents
 - runs
 - messages
 - group_messages
 - group_chat_reads
 - schedules
-- guild_issues
 - secrets
 - secret_grants
 - connectors
@@ -302,12 +460,10 @@ Core has thirty-seven tables:
 - mcp_tools
 - bindings
 - usage_counters
-- org_monthly_usage
-- org_model_providers
 - artifacts
-- attachments
 - artifact_collections
 - collection_access
+- attachments
 - file_changes
 - memory_revisions
 - task_revisions
@@ -331,8 +487,13 @@ table, `artifact_collections.guild_id`, takes no guild row and is
 written by every member; rows deleted with the collection, the
 guild, or the agent).
 
-The standing task lives on `agents.task`. Agent names remain
-globally unique.
+The standing task lives on `agents.task`. Agent names are globally
+unique.
+
+The host-side trees beside PostgreSQL are in
+[Deployment](deployment.md#state-on-disk). OpenSandbox keeps its
+container lifecycle in its own SQLite store, which holds no
+application data.
 
 Seeds stay separate from schema (`src/db/seed/`):
 
@@ -345,11 +506,9 @@ test.ts           deterministic fixtures
 ```
 
 Boot runs the system seed, each extension's seed, and the operator
-seed. Each is idempotent.
-
-With `OPERATOR_EMAIL` set, boot then gives `user_operator` that
-address. `POST /api/users` creates a personal organisation for the
-user it creates. The baseline contains no application data insert.
+seed. Each is idempotent. `POST /api/users` creates a personal
+organisation for the user it creates. The baseline contains no
+application data insert.
 
 ### Codecs
 
@@ -445,7 +604,7 @@ fetch date, or the snapshot's, is the `pricing_version` a message
 records.
 
 A model id that is well-formed for a known provider but missing from
-the last fetch stays valid, with the default capacities: thinking on,
+the last fetch is valid, with the default capacities: thinking on,
 temperature on, attachments off. The local endpoint is not in
 models.dev; once its URL is saved, `GET {baseURL}/models` lists it,
 and its models take those same capacities.
@@ -507,6 +666,7 @@ A manager's work:
 - ensure one matching container per machine, labelled with its
   `machine_id`, tier, size, and image fingerprint, with the
   machine's directory mounted at `/home`
+- read the harness CLIs a new container's image carries
 - execute and interrupt commands
 - start and stop an agent's browser (`agent-browser-start`,
   `agent-stop`) and terminal (`agent-cli-start`) on its slot's ports
@@ -545,7 +705,7 @@ Tool output: custom filter, exact-value secret redaction, byte cap,
 then `remaining_tool_calls: N`. Official tool HTTP clients go
 through `ADAPTER_PROXY_URL` when it is set and direct otherwise.
 
-## HTTP, SSE, and WebSocket
+## HTTP and WebSocket
 
 The React app (`apps/web`) is the black-box client. Route paths,
 JSON names, status codes, and stable `detail` strings are the
@@ -556,38 +716,6 @@ checks their digests. `pnpm compat:digest <path>` in
 `apps/orchestrator` (or
 `pnpm --filter @guildsrun/orchestrator compat:digest <path>` from
 the root) refreshes a digest after a deliberate change.
-
-Run events:
-
-- `message.committed`
-- `assistant.delta`
-- `assistant.reasoning.delta`
-- `generation.started`
-- `generation.finished`
-- `run.error`
-- `run.continued` (a coding run continued in the run named by
-  `run_id`)
-- `tool.progress` (`{run_id, tool_call_id, lines, session_id}`: a
-  running `code_task`'s redacted progress lines)
-
-Cancellation is a `run.error` whose payload has
-`operation: "generation.cancelled"`.
-
-Group events:
-
-- `group.message.committed`
-- `group.cleared`
-- `group.limit_reached`
-- `group.idle`
-- `group.delivery.started`
-- `group.delivery.finished`
-- `group.delivery.failed`
-
-Invalidation:
-
-- `guild.files.changed`
-- `agent.scripts.changed`
-- `agent.routines.changed`
 
 Every request passes the host and origin check in
 `src/http/origin.ts`. A request is served only for a loopback host
@@ -642,10 +770,10 @@ Compose json-file rotation is `max-size: 10m`, `max-file: 5`.
 
 | Layer | Role |
 |---|---|
-| `test/unit` | Domain without Docker |
-| `test/integration` | HTTP + Postgres: a database per test on the server named by `R1_ADMIN_DATABASE_URL` (default the Compose Postgres on `127.0.0.1:5432`) |
+| `test/unit` | Domain without Docker; generation tests drive `GenerationLoop` against `NotesStore` and fakes |
+| `test/integration` | HTTP + Postgres: a database per test on the server named by `R1_ADMIN_DATABASE_URL` (default the Compose Postgres on `127.0.0.1:5432`); `http-r2`, `http-r3`, `http-r6` replay the recorded routes and SSE/WS fixtures |
 | `test/contract` | Live OpenSandbox / model / Jev routing, gated by `RUN_*_CONTRACT=1` plus a key |
-| `fixtures/compat` | Frozen HTTP, SSE, schema, crypto, and adapter contracts |
+| `fixtures/compat` | Frozen HTTP, SSE, schema, crypto, and adapter contracts (`manifest.json` digests) |
 
 `make contract` runs the OpenSandbox and model contracts
 (`RUN_OPENSANDBOX_CONTRACT`, `RUN_MODEL_CONTRACT` with

@@ -4,46 +4,128 @@ Security issues found in guilds.run, fixed or still open. Unlike
 the other chapters, this one keeps history. Each entry says what
 was exposed, how it was fixed or what fixing it takes, and what
 risk remains. Entries are not removed once fixed. Newest first.
-Ids are never reused.
+Ids are never reused. A status is **Open**, **Open, accepted** (the
+risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
-| SEC-36 | Evidence the Studio coach reads can steer a proposed routine that wakes an agent unattended | Open, accepted |
-| SEC-35 | Evidence the Studio coach reads can steer a proposal to widen an agent's access | Open, accepted |
-| SEC-34 | A Studio session kept working after its user could no longer see the guild | Fixed 2026-10-17 |
-| SEC-33 | Any organisation owner or admin can find users by name and add them without their consent | Open |
-| SEC-32 | The harness log the app reads is redacted only with the agent's secret values | Open |
-| SEC-31 | Cursor runs a repository's hooks | Open, accepted |
-| SEC-30 | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
-| SEC-29 | A repository can carry configuration its coding harness loads | Open |
-| SEC-28 | A coding harness runs with its permission prompts off | Open |
-| SEC-27 | Harness subscription tokens and logins are readable on the agent's machine | Open |
-| SEC-26 | A member could place an agent beside a private guild's agents | Fixed 2026-10-13 |
-| SEC-25 | The machine list named the agents and guilds of private guilds | Fixed 2026-10-13 |
-| SEC-24 | Agents on one machine can read each other's homes, tokens, and sessions | Open, accepted |
-| SEC-23 | A runtime connector may declare an instance key of its own | Fixed 2026-10-10 |
-| SEC-22 | The GitHub App manifest callback takes a creation code from the browser | Fixed 2026-10-10 |
-| SEC-21 | Platform keys are written through the API | Fixed 2026-10-10 |
-| SEC-20 | Connector code installed at runtime runs inside the orchestrator | Open |
-| SEC-19 | A registry's index is unsigned, so `verified` is only that registry's word | Fixed 2026-10-09 where `REGISTRY_PUBLIC_KEY` is set |
-| SEC-18 | A connector installed at runtime could claim the box's credentials | Fixed 2026-10-09 |
-| SEC-17 | An organisation's own MCP server makes the orchestrator call a URL it chose | Open |
-| SEC-16 | A listed tool whose name reads as harmless now starts On | Open |
-| SEC-15 | Outside `session` mode the API answers requests from any web origin | Fixed 2026-10-06 |
-| SEC-14 | A box outside the GCP cut encrypts under the all-zero development key | Fixed 2026-10-06 |
-| SEC-13 | Chat image uploads could persist unsanitized bytes or leak across organisations | Fixed 2026-10-03 |
-| SEC-12 | The GitHub App's private key mints tokens for every installation | Open |
-| SEC-11 | A GitHub install callback could name another account's installation | Fixed 2026-09-30 |
-| SEC-10 | A coding agent's repository token is readable by any process in its sandbox | Open |
-| SEC-9 | Graft's hosted features can send repository history to its vendor | Fixed 2026-10-13 |
-| SEC-8 | Content a coding agent reads can steer its commands | Open |
-| SEC-7 | A coding agent's workspace can fill the shared disk | Open |
-| SEC-6 | Coding agents run commands as root in the container | Open |
-| SEC-5 | Background commands make the SEC-3 race practical | Open |
-| SEC-4 | Package installs run third-party code beside the agent's secrets | Open |
-| SEC-3 | Check-then-open race on agent workspace paths | Open |
-| SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
-| SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+| [SEC-38](#sec-38--the-antigravity-harness-loads-a-repositorys-customisations-and-runs-with-its-permission-prompts-off) | The Antigravity harness loads a repository's customisations and runs with its permission prompts off | Open |
+| [SEC-37](#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes) | Any organisation member can read and change a private guild's notes and databases through organisation-wide routes | Open |
+| [SEC-36](#sec-36--evidence-the-studio-coach-reads-can-steer-a-proposed-routine-that-wakes-an-agent-unattended) | Evidence the Studio coach reads can steer a proposed routine that wakes an agent unattended | Open, accepted |
+| [SEC-35](#sec-35--evidence-the-studio-coach-reads-can-steer-a-proposal-to-widen-an-agents-access) | Evidence the Studio coach reads can steer a proposal to widen an agent's access | Open, accepted |
+| [SEC-34](#sec-34--a-studio-session-kept-working-after-its-user-could-no-longer-see-the-guild) | A Studio session kept working after its user could no longer see the guild | Fixed 2026-10-17 |
+| [SEC-33](#sec-33--any-organisation-owner-or-admin-can-find-users-by-name-and-add-them-without-their-consent) | Any organisation owner or admin can find users by name and add them without their consent | Open |
+| [SEC-32](#sec-32--the-harness-log-the-app-reads-is-redacted-only-with-the-agents-secret-values) | The harness log the app reads is redacted only with the agent's secret values | Open |
+| [SEC-31](#sec-31--cursor-runs-a-repositorys-hooks) | Cursor runs a repository's hooks | Open, accepted |
+| [SEC-30](#sec-30--personal-harness-subscriptions-used-inside-a-shared-organisation-may-fall-outside-the-vendors-terms) | Personal harness subscriptions used inside a shared organisation may fall outside the vendor's terms | Open |
+| [SEC-29](#sec-29--a-repository-can-carry-configuration-its-coding-harness-loads) | A repository can carry configuration its coding harness loads | Open |
+| [SEC-28](#sec-28--a-coding-harness-runs-with-its-permission-prompts-off) | A coding harness runs with its permission prompts off | Open |
+| [SEC-27](#sec-27--harness-subscription-tokens-and-logins-are-readable-on-the-agents-machine) | Harness subscription tokens and logins are readable on the agent's machine | Open |
+| [SEC-26](#sec-26--a-member-could-place-an-agent-beside-a-private-guilds-agents) | A member could place an agent beside a private guild's agents | Fixed 2026-10-13 |
+| [SEC-25](#sec-25--the-machine-list-named-the-agents-and-guilds-of-private-guilds) | The machine list named the agents and guilds of private guilds | Fixed 2026-10-13 |
+| [SEC-24](#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions) | Agents on one machine can read each other's homes, tokens, and sessions | Open, accepted |
+| [SEC-23](#sec-23--a-runtime-connector-may-declare-an-instance-key-of-its-own) | A runtime connector may declare an instance key of its own | Fixed 2026-10-10 |
+| [SEC-22](#sec-22--the-github-app-manifest-callback-takes-a-creation-code-from-the-browser) | The GitHub App manifest callback takes a creation code from the browser | Fixed 2026-10-10 |
+| [SEC-21](#sec-21--platform-keys-are-written-through-the-api) | Platform keys are written through the API | Fixed 2026-10-10 |
+| [SEC-20](#sec-20--connector-code-installed-at-runtime-runs-inside-the-orchestrator) | Connector code installed at runtime runs inside the orchestrator | Open, accepted |
+| [SEC-19](#sec-19--a-registrys-index-is-unsigned-so-verified-is-only-that-registrys-word) | A registry's index is unsigned, so `verified` is only that registry's word | Fixed 2026-10-09 where `REGISTRY_PUBLIC_KEY` is set |
+| [SEC-18](#sec-18--a-connector-installed-at-runtime-could-claim-the-boxs-credentials) | A connector installed at runtime could claim the box's credentials | Fixed 2026-10-09 |
+| [SEC-17](#sec-17--an-organisations-own-mcp-server-makes-the-orchestrator-call-a-url-it-chose) | An organisation's own MCP server makes the orchestrator call a URL it chose | Open, accepted |
+| [SEC-16](#sec-16--a-listed-tool-whose-name-reads-as-harmless-now-starts-on) | A listed tool whose name reads as harmless now starts On | Open, accepted |
+| [SEC-15](#sec-15--outside-session-mode-the-api-answers-requests-from-any-web-origin) | Outside `session` mode the API answers requests from any web origin | Fixed 2026-10-06 |
+| [SEC-14](#sec-14--a-box-outside-the-gcp-cut-encrypts-under-the-all-zero-development-key) | A box outside the GCP cut encrypts under the all-zero development key | Fixed 2026-10-06 |
+| [SEC-13](#sec-13--chat-image-uploads-could-persist-unsanitized-bytes-or-leak-across-organisations) | Chat image uploads could persist unsanitized bytes or leak across organisations | Fixed 2026-10-03 |
+| [SEC-12](#sec-12--the-github-apps-private-key-mints-tokens-for-every-installation) | The GitHub App's private key mints tokens for every installation | Open |
+| [SEC-11](#sec-11--a-github-install-callback-could-name-another-accounts-installation) | A GitHub install callback could name another account's installation | Fixed 2026-09-30 |
+| [SEC-10](#sec-10--a-coding-agents-repository-token-is-readable-by-any-process-in-its-sandbox) | A coding agent's repository token is readable by any process in its sandbox | Open |
+| [SEC-9](#sec-9--grafts-hosted-features-can-send-repository-history-to-its-vendor) | Graft's hosted features can send repository history to its vendor | Fixed 2026-10-13 |
+| [SEC-8](#sec-8--content-a-coding-agent-reads-can-steer-its-commands) | Content a coding agent reads can steer its commands | Open |
+| [SEC-7](#sec-7--a-coding-agents-workspace-can-fill-the-shared-disk) | A coding agent's workspace can fill the shared disk | Open |
+| [SEC-6](#sec-6--coding-agents-run-commands-as-root-in-the-container) | Coding agents run commands as root in the container | Open |
+| [SEC-5](#sec-5--background-commands-make-the-sec-3-race-practical) | Background commands make the SEC-3 race practical | Open |
+| [SEC-4](#sec-4--package-installs-run-third-party-code-beside-the-agents-secrets) | Package installs run third-party code beside the agent's secrets | Open |
+| [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
+| [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
+| [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-38 — The Antigravity harness loads a repository's customisations and runs with its permission prompts off
+
+**Status:** open.
+
+**Found:** 2026-10-18, auditing the architecture documentation.
+
+**Where:** the Antigravity driver in `runtime/guilds-harness`, pinned
+to the Antigravity CLI `ANTIGRAVITY_VERSION` in `runtime/Dockerfile`
+and started through `runtime/agy`.
+
+**Exposure:** every call runs `agy` with
+`--dangerously-skip-permissions`, and the driver writes the CLI's
+settings with `toolPermission` and `artifactReviewPolicy` set to
+`always-proceed`. The harness runs every command and edit it decides
+on, as root (SEC-6), with the agent's granted secrets in its
+environment, and through the machine with every agent on it
+(SEC-24). The CLI has no switch to ignore customisations: a
+repository's own `.agents/`, `GEMINI.md`, and `AGENTS.md` load.
+Whoever can push to a repository an Antigravity agent works on can
+steer it, as with the instruction files of SEC-28. Whether a
+repository's `.agents/` can also carry code that runs on load, as
+Cursor's hooks do (SEC-31), is not checked. The Google sign-in is a
+file in the agent's home under `~/.gemini/antigravity-cli/`, readable
+by every process on the machine (SEC-27), and everyone who starts the
+agent's runs uses that subscription (SEC-30).
+
+**Control in place:** before every call the driver removes the
+user-level customisations in `~/.gemini/` (`GEMINI.md`, `AGENTS.md`,
+hooks, MCP configuration, skills, plugins, workflows, and sidecars)
+and rewrites the CLI's settings. It passes `--disable-slash-commands`.
+It removes from the harness's environment the variables that would
+move it off the Google sign-in (`GEMINI_API_KEY`,
+`GOOGLE_GEMINI_BASE_URL`, `AGY_ADC_AUTH`, `AGY_LLM_GATEWAY_URL`,
+`AGY_ACCOUNT`, and the Google Cloud project variables), and
+`GH_TOKEN` and `GITHUB_TOKEN` like every harness. The settings never
+spend paid credits past the plan and turn telemetry off. The image
+the release workflow publishes carries no Antigravity CLI.
+
+**Fix to make:** establish what a repository's `.agents/` can run on
+load. Until then an operator who wants no repository customisation to
+reach the harness picks Claude Code or Codex for that agent.
+
+## SEC-37 — Any organisation member can read and change a private guild's notes and databases through organisation-wide routes
+
+**Status:** open.
+
+**Found:** 2026-10-18, auditing the architecture documentation.
+
+**Where:** `GET /api/org/embeddable-notes`, `/api/collections` and
+its record routes, and `GET /api/file-changes` in
+`apps/orchestrator/src/http/routes.ts`; `operatorFor` in
+`apps/orchestrator/src/http/artifact-files.ts`; `canReadLevel`,
+`accessibleCollections`, and `readableCollectionsSql` in
+`apps/orchestrator/src/artifacts/store.ts`.
+
+**Exposure:** these routes check only that the user is a member of
+the organisation. They then act as an operator actor, which reads
+every level in the organisation. A private guild is visible only to
+its operators (`canSeeGuild`), but through these routes any member:
+
+- lists up to 500 notes of the organisation with their content,
+  agent and guild notes of private guilds included, and reads any
+  note by its display path (`/api/org/embeddable-notes`)
+- lists every collection of the organisation, a private guild's own
+  tables included, and reads, writes, and deletes their records,
+  columns, and the tables themselves (`/api/collections…`)
+- reads the change history of any display path in the organisation:
+  who wrote it, when, and from which run and tool call
+  (`/api/file-changes`, which checks no read access at all)
+
+**Control in place:** every query is limited to the caller's
+organisation. Guild-scoped routes use `ownedGuild`, which refuses a
+guild the user cannot see.
+
+**Fix to make:** build the operator actor with the guilds the user
+can see, and have the artifact store drop guild- and agent-level
+rows and guild-owned collections of any other guild. Check read
+access on the file-change routes.
 
 ## SEC-36 — Evidence the Studio coach reads can steer a proposed routine that wakes an agent unattended
 
@@ -234,7 +316,8 @@ Codex for that agent.
 **Where:** a coding agent's harness credential: the secret its
 harness's token variable reads (`CLAUDE_CODE_OAUTH_TOKEN` or
 `CURSOR_API_KEY`, or the secret `secret_aliases` maps it to) granted
-to it, or a login stored in its home (`runtime/guilds-harness`), the
+to it, or a login stored in its home (`runtime/guilds-harness`;
+Antigravity has only the login, SEC-38), the
 **Harness** select on Create agent and agent Settings
 (`apps/web/src/features/agent/settings/configForm.tsx`), and the
 **Subscription token** select under it
@@ -359,7 +442,8 @@ names or through the agent's secret aliases
 (`apps/orchestrator/src/access/runtime.ts`), in the environment of
 the agent's commands, and the logins stored in the agent's home
 (`~/.claude/.credentials.json`, `~/.codex/auth.json`,
-`~/.config/cursor/auth.json`).
+`~/.config/cursor/auth.json`, and the Antigravity Google sign-in
+under `~/.gemini/antigravity-cli/`, SEC-38).
 
 **Exposure:** a subscription token granted as a secret is in the
 environment of every command the agent runs, its harness included.
@@ -434,7 +518,7 @@ cannot see, and how many.
 
 ## SEC-24 — Agents on one machine can read each other's homes, tokens, and sessions
 
-**Status:** open, by design since 2026-10-13; accepted. A machine
+**Status:** open, accepted, by design since 2026-10-13. A machine
 is one trust boundary inside an organisation.
 
 **Found:** 2026-10-13, building machines.
@@ -489,7 +573,7 @@ namespace, per agent.
 
 ## SEC-23 — A runtime connector may declare an instance key of its own
 
-**Status:** fixed by design 2026-10-10, as connector-declared
+**Status:** fixed 2026-10-10, by design, as connector-declared
 integrations shipped.
 
 **Where:** `boxWiringProblem` (`src/connectors/manifest.ts`), applied
@@ -522,7 +606,7 @@ names receives what the login sends (SEC-17).
 
 ## SEC-22 — The GitHub App manifest callback takes a creation code from the browser
 
-**Status:** fixed by design 2026-10-10, as the manifest flow
+**Status:** fixed 2026-10-10, by design, as the manifest flow
 shipped.
 
 **Where:** `GET /api/admin/instance/keys/github-app/manifest/callback`
@@ -553,7 +637,7 @@ is trusted to post the manifest it was given.
 
 ## SEC-21 — Platform keys are written through the API
 
-**Status:** fixed by design 2026-10-10, when the platform keys
+**Status:** fixed 2026-10-10, by design, when the platform keys
 moved from the environment into the store.
 
 **Where:** `PUT` and `DELETE /api/admin/instance/keys/:integration`
@@ -588,7 +672,7 @@ login's; the master key stays in `.env`.
 
 ## SEC-20 — Connector code installed at runtime runs inside the orchestrator
 
-**Status:** open, by design since 2026-10-09; opt-in.
+**Status:** open, accepted, by design since 2026-10-09; opt-in.
 
 **Where:** the code tier (`src/registry/code.ts`), which imports each
 installed code connector's `adapter.js` into the running server.
@@ -621,8 +705,8 @@ a separate process or isolate with only the context crossing over.
 
 ## SEC-19 — A registry's index is unsigned, so `verified` is only that registry's word
 
-**Status:** open since 2026-10-09; fixed the same day on a box that
-sets `REGISTRY_PUBLIC_KEY`.
+**Status:** fixed 2026-10-09 where `REGISTRY_PUBLIC_KEY` is set; open
+on a box that does not set it.
 
 **Where:** the registry client (`src/registry/client.ts`) and its
 installs (`src/registry/install.ts`, `pnpm connector install`,
@@ -679,7 +763,7 @@ SEC-17's exposure: the orchestrator calls the URL the manifest names.
 
 ## SEC-17 — An organisation's own MCP server makes the orchestrator call a URL it chose
 
-**Status:** open, by design since 2026-10-09; mitigated.
+**Status:** open, accepted, by design since 2026-10-09; mitigated.
 
 **Where:** `POST /api/orgs/{id}/mcp/servers` (`src/http/org-connector-routes.ts`)
 and the MCP sessions the pool opens (`src/mcp/index.ts`).
@@ -714,7 +798,7 @@ are not resolved this way.
 
 ## SEC-16 — A listed tool whose name reads as harmless now starts On
 
-**Status:** open, by design since 2026-10-09; mitigated.
+**Status:** open, accepted, by design since 2026-10-09; mitigated.
 
 **Where:** `toolStartsOff` (`src/connectors/load.ts`), applied when
 a login's tools are listed (`McpPool.syncTools`).

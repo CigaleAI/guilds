@@ -1,8 +1,8 @@
-# Operate
+# Maintain
 
 This page is for the box in day-to-day use. It covers what runs,
-where the state lives, updates, backups, logs, and what each error
-message means.
+where the state lives, updates, backups, disk space, logs, and what
+each error message means.
 
 ## What runs
 
@@ -20,25 +20,29 @@ sandbox container per machine, shared by every agent placed on it
 ([Machines](../concepts/machines.md)). Sandboxes
 can reach the public internet.
 
-Every machine runs `agent-runtime:0.4`. It has a browser and the
-coding toolchains. The image installs Google Chrome on amd64 and
-Debian's Chromium on arm64. To use Chromium on every platform, build
-the image with:
+## The agent image
+
+Every machine runs `agent-runtime:0.4` (`SANDBOX_IMAGE`). It has a
+browser and the coding toolchains. `./setup.sh` builds it from
+`runtime/` with two build arguments at their defaults:
+
+| Argument | Default | Other value |
+|---|---|---|
+| `BROWSER` | `chrome`: Google Chrome on amd64, Debian's Chromium on arm64 | `chromium`: Debian's Chromium on every platform |
+| `HARNESSES` | `claude-code cursor antigravity` | Any subset of those three. Codex is always installed. Empty leaves Codex as the one harness |
+
+To build it another way, run `docker build` yourself:
 
 ```text
-docker build --build-arg BROWSER=chromium --tag agent-runtime:0.4 runtime/
+docker build --build-arg BROWSER=chromium --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
 ```
 
-A coding harness is the coding tool an agent hands its code work
-to. The image you build carries three: Codex, Claude Code, and the
-Cursor CLI. To build it with Codex as its one harness, run:
+`./setup.sh` rebuilds `agent-runtime:0.4` with the defaults on every
+run, the update included. After it, build your own image again, or
+give it another tag and name that tag in `SANDBOX_IMAGE`.
 
-```text
-docker build --build-arg HARNESSES= --tag agent-runtime:0.4 runtime/
-```
-
-A coding run of an agent on Claude Code or Cursor then fails at
-start with an error that names its missing harness.
+A coding run of an agent on a harness the image lacks fails at
+start with an error that names the missing harness.
 [Harnesses](../concepts/coding/harnesses.md#harnesses-in-the-image)
 explains which harnesses an image carries.
 
@@ -48,14 +52,14 @@ explains which harnesses an image carries.
 stack keeps everything under it. Each directory is mounted into the
 container that uses it. The stack creates no named Docker volume.
 
-- `postgres/` is the database
-- `workspaces/` holds each machine's directory, mounted at `/home`
-  in the machine's container, with one home per agent on it
-  (`workspaces/<machine id>/<agent id>`, `/home/<agent id>` inside)
-- `attachments/` holds images uploaded in chat
-- `notes/` is the notes vault
-- `opensandbox/` is the sandbox server's store
-- `connectors/` holds connector packages installed from a registry
+| Tree | Holds |
+|---|---|
+| `postgres/` | The PostgreSQL data directory: every table |
+| `opensandbox/` | The sandbox server's SQLite lifecycle store |
+| `workspaces/` | One directory per machine, mounted at `/home` in the machine's container, with one home per agent on it: `workspaces/<machine id>/<agent id>`, `/home/<agent id>` inside. Scripts, the browser profile, and a coding agent's repositories live there |
+| `notes/` | The notes vault |
+| `attachments/` | Chat images, one file per attachment |
+| `connectors/` | Connector packages installed from a registry |
 
 The path must be absolute because the sandbox server mounts each
 machine's directory by that same path.
@@ -64,16 +68,16 @@ Everything the box knows is this tree plus `.env`.
 
 ## Update
 
-Read the [changelog](../../CHANGELOG.md). The digit that changed
-says what this box does.
+Read the [changelog](../../CHANGELOG.md). Each version names its
+effect ([Versions](../CONTRIBUTING.md#versions)).
 
-| Change | Do |
+| Effect | Do |
 | --- | --- |
-| Patch (`1.2.3` to `1.2.4`) | Nothing. The images this box runs did not change |
-| Minor (`1.2.3` to `1.3.0`) | Rebuild, below. State, `.env`, recipes, and the API stay valid |
-| Major (`1.2.3` to `2.0.0`) | [Back up](#back-up), then follow the steps in that version. The commands below are not enough |
+| `no impact` | Nothing |
+| `rebuild` | The commands below |
+| `breaking` | [Back up](#back-up), then follow the steps in that version's entry |
 
-A minor version:
+To rebuild:
 
 ```text
 git pull
@@ -83,59 +87,13 @@ docker compose up --detach --wait --build
 
 `./setup.sh` keeps every value already in `.env`. It rebuilds the
 agent image, so a change under `runtime/` reaches the next machine
-container.
-
-`--build` rebuilds the orchestrator image from the checkout.
+container. `--build` rebuilds the orchestrator image from the
+checkout.
 
 The server applies new database migrations at boot, before it
 listens ([Orchestrator](../architecture/orchestrator.md)).
 
-### Upgrade a box whose agents run in sandboxes of their own
-
-Upgrading such a box places its agents on machines. The upgrade is
-not backward compatible. [Back up](#back-up) first, then:
-
-1. Pull and run `./setup.sh`. It builds `agent-runtime:0.4`. A
-   `.env` that sets `SANDBOX_IMAGE` must name `agent-runtime:0.4`
-   or an image built from this `runtime/`. Nothing reads
-   `SANDBOX_IMAGE_LITE`; remove it from `.env`.
-2. Start the stack with `--build`. Migration 0004 places every
-   agent on a machine:
-   - Each organisation gets a `standard` machine named `default`.
-     It holds every agent with neither browser nor coding, 32 at
-     most per machine (`default-2`, `default-3`… for the rest).
-   - Every other agent gets a machine of its own, named after it,
-     with the tier and size its configuration held.
-   - A machine's disk cap is 10240 MiB, or its agents' measured
-     use plus 1024 MiB when that is larger.
-   - It removes the tier and size from agent configurations and
-     active run snapshots.
-3. Before generation starts, the server destroys every sandbox
-   labelled with an `agent_id`. It moves each
-   `WORKSPACE_ROOT/<agent id>` into
-   `WORKSPACE_ROOT/<machine id>/<agent id>`. Repositories, scripts,
-   and the `.browser` profile with its logins move with it.
-4. Reinstall the tools an agent installed in its home with
-   `/home/agent` written into them: Python virtualenvs, mise
-   installs, and npm installs. The home is `/home/<agent id>`. Run
-   the install again from the agent's CLI tab, or let the agent run
-   it.
-5. Update API clients and editions to the machine API. Agent create
-   takes `machine_id`, required when the organisation has more than
-   one machine. Agent payloads carry `machine_id` and `machine`. A
-   machine holds the tier and size
-   ([Machines](../concepts/machines.md)). An
-   edition's `SandboxProvider`, `GenerationSandboxes`, and
-   `machineHost` are keyed by machine
-   ([Extension points](../architecture/extension-points.md)).
-
-To share machines, move agents onto one under each agent's
-**Settings**, **Machine**, and delete the machines left empty under
-**Settings**, **Machines**.
-
 ## Back up
-
-Everything the box knows is `STATE_ROOT` and `.env`.
 
 PostgreSQL holds notes, records, memory, scripts, runs, and every
 credential. Credentials are encrypted with the key in `.env`.
@@ -191,6 +149,22 @@ builds no image.
 The stack does not start without `.env`. Each missing value says
 `run ./setup.sh first, which writes it into .env`.
 
+## Free disk space
+
+A deleted machine or agent can leave its directory under
+`workspaces/`. The sweep lists the directories no live machine or
+agent owns, and that nothing changed in for a number of days:
+
+```text
+docker compose exec orchestrator pnpm sweep:workspaces --age-days 7
+```
+
+It prints each path it would remove. Add `--apply` to remove them.
+
+An agent's home is also bounded by its `max_workspace_mib`, and a
+machine's directory by the machine's cap
+([Agent home](../concepts/agent-home.md)).
+
 ## Start over
 
 To go back to an empty box, stop the stack, remove the state
@@ -208,7 +182,7 @@ it differs.
 The server applies its migrations to the empty database and creates
 the first operator and the `Home` organisation again. `.env` and the
 images stay. On a development checkout, `make reset` does the same
-([Development](../contributing/development.md#local-state)).
+([Development](../contributing/development.md#resetting)).
 
 ## Logs and metrics
 
@@ -220,22 +194,11 @@ with:
 docker compose logs --follow orchestrator
 ```
 
-Each line carries:
-
-- `timestamp`
-- `level`
-- `run_id`
-- `guild_id`
-- `agent_id`
-- `operation`
-- `error_type`
-- `message`
-- `traceback`
-
-A line also carries `source`, `request_id`, `session_id`, `path`,
-`method`, and `status` when they apply.
-
-Warnings and errors are also written to stderr as one readable line.
+Each line carries `timestamp`, `level`, `run_id`, `guild_id`,
+`agent_id`, `operation`, `error_type`, `message`, and `traceback`.
+It also carries `source`, `request_id`, `session_id`, `path`,
+`method`, and `status` when they apply. Warnings and errors are also
+written to stderr as one readable line.
 
 Secrets never reach the log. Every value of an environment variable
 whose name ends in `API_KEY`, `SECRET`, `TOKEN`, `PASSWORD`, or
@@ -250,7 +213,15 @@ the server did.
 At boot the server logs `listening` once it accepts requests, and
 `sentry enabled` or `sentry disabled`.
 
-With `SENTRY_DSN` set, Sentry receives under `SENTRY_ENVIRONMENT`:
+The event loop counts as stalled when it is held 1 second or more.
+A stall logs `event loop stalled for <ms> ms` at `warn`, with
+`operation: runtime.stall`. A pooled database connection lost while
+idle logs `idle database connection lost: <reason>` at `warn`, with
+`operation: db.pool`. The pool drops it and opens another on the
+next query.
+
+With `SENTRY_DSN` set, Sentry receives, under `SENTRY_ENVIRONMENT`
+([Configure](configure.md#error-reporting)):
 
 - errors, as issues
 - traces, sampled at `SENTRY_TRACES_SAMPLE_RATE`
@@ -258,40 +229,25 @@ With `SENTRY_DSN` set, Sentry receives under `SENTRY_ENVIRONMENT`:
   at `SENTRY_PROFILE_SESSION_SAMPLE_RATE`
 - every `info`, `warn`, and `error` log line, as a Sentry log whose
   attributes are the line's fields, already redacted
-- runtime metrics, every 10 seconds:
-  - the server process: `node.event_loop.delay_max` and
-    `node.event_loop.delay_p99` (ms), `node.cpu` (percent of one core,
-    so two busy cores read 200), `node.memory.heap_used` and
-    `node.memory.rss` (bytes)
-  - the host it runs on: `host.load_1m`, `host.memory.used` (percent),
-    and for the filesystem under `/` (`mount: root`) and under
-    `WORKSPACE_ROOT` (`mount: workspace`), `host.disk.free` (bytes) and
-    `host.disk.used` (percent)
-  - the database: the pool's `db.pool.total`, `db.pool.idle`, and
-    `db.pool.waiting`, and the server's client connections
-    `db.server.connections` against `db.server.max_connections`
-- a count of `node.event_loop.stall` for each 10 seconds in which the
-  event loop was held 1 second or more, and of `db.pool.error` for
-  each pooled connection lost while idle
-- an `EventLoopBlocked` event with the main thread's stack when the
-  event loop is held 1 second or more, at most 10 an hour
+- an `EventLoopBlocked` event with the main thread's stack for each
+  stall, at most 10 an hour
+- runtime metrics every 10 seconds, under Explore, Metrics:
 
-The metrics chart under Explore → Metrics in Sentry; `host.disk.free`
-and `host.disk.used` split by their `mount` attribute.
+| Metric | Unit | Measures |
+|---|---|---|
+| `node.event_loop.delay_max`, `node.event_loop.delay_p99` | ms | Event loop delay |
+| `node.cpu` | percent of one core | Server CPU. Two busy cores read 200 |
+| `node.memory.heap_used`, `node.memory.rss` | bytes | Server memory |
+| `host.load_1m` | | Host load average |
+| `host.memory.used` | percent | Host memory |
+| `host.disk.free`, `host.disk.used` | bytes, percent | The filesystem under `/` (`mount: root`) and under `WORKSPACE_ROOT` (`mount: workspace`) |
+| `db.pool.total`, `db.pool.idle`, `db.pool.waiting` | | The connection pool |
+| `db.server.connections`, `db.server.max_connections` | | PostgreSQL client connections |
+| `node.event_loop.stall` | count | Each 10 seconds with a stall |
+| `db.pool.error` | count | Each idle connection lost |
 
-A stall also logs `event loop stalled for <ms> ms` at `warn` with
-`operation: runtime.stall`. A pooled connection lost while idle logs
-`idle database connection lost: <reason>` at `warn` with
-`operation: db.pool`; the pool drops it and opens another on the next
-query.
-
-Sentry never receives:
-
-- user information
-- cookies
-- request bodies
-- model inputs and outputs
-- query data
+Sentry never receives user information, cookies, request bodies,
+model inputs and outputs, or query data.
 
 `GET /health` answers `{"status":"ok"}` after a database ping. A
 monitor outside the box can poll it.
@@ -301,7 +257,7 @@ monitor outside the box can poll it.
 | Message | Cause |
 |---|---|
 | `run ./setup.sh first, which writes it into .env` | `docker compose` found no `.env`, or one without `STATE_ROOT`, `SECRETS_MASTER_KEY`, `POSTGRES_PASSWORD`, or `OPENSANDBOX_API_KEY` |
-| `STATE_ROOT must be an absolute path` | `.env` names a relative path. The sandbox server mounts machine directories by the absolute one |
+| `STATE_ROOT must be an absolute path` | `./setup.sh` found a relative path in `.env`. The sandbox server mounts machine directories by the absolute one |
 | `… already holds a database, and .env has no …` | `./setup.sh` would generate a secret over a database created with another one. Put that database's values into `.env`, or point `STATE_ROOT` at an empty directory |
 | `SECRETS_MASTER_KEY is the all-zero development key: set 32 random bytes` | The server refuses the development key outside the development stack ([Security register](../architecture/security-register.md), SEC-14) |
 | `SECRETS_MASTER_KEY must be 32 bytes (base64 or hex)` | The key is not 32 bytes |
@@ -311,10 +267,9 @@ monitor outside the box can poll it.
 | Create agent, Studio, the Builder, or recipe apply shows `Connect a model provider first` | The organisation has no provider connected. Connect one under **Settings**, **Model keys** ([Model keys](../concepts/model-keys.md#without-a-key)) |
 | A run ends with `connect a … key on Model keys` | The organisation has no key for that agent's model provider, or removed it. Connect one under **Settings**, **Model keys** ([Model keys](../concepts/model-keys.md#replace-or-remove-a-key)) |
 | Model keys answers `<Provider> rejected the key` or `did not accept the key` | The provider refused `GET /models` with that key. Nothing was saved ([Model keys](../concepts/model-keys.md#the-key-check)) |
-| The picker lists a model under `Not offered` | The agent's stored model is no longer among the organisation's chosen models. It still runs while the provider's key is connected ([Model keys](../concepts/model-keys.md#choose-models)) |
+| The picker lists a model under `Not offered` | The agent's stored model is not among the organisation's chosen models. It still runs while the provider's key is connected ([Model keys](../concepts/model-keys.md#choose-models)) |
 | Model keys cannot browse a provider's catalog, or lists stale models | The box could not fetch models.dev. It serves its last catalog or the snapshot it ships with ([Configure](configure.md#model-catalog)) |
 | A run fails at start with `workspace.full` | The agent's home is over its `max_workspace_mib` (or `WORKSPACE_MAX_MIB`), or its machine's directory is over the machine's cap. The message names which. Free space from the CLI tab, or raise the cap in the agent's Settings or under **Settings**, **Machines** |
-| `coding needs a code or custom machine` | Coding is on for an agent placed on a `standard` machine. Resize the machine under **Settings**, **Machines**, or move the agent |
 | `machine_id is required: the organisation has more than one machine` | An agent create named no machine while the organisation has several |
 | `machine … is full` | The machine already holds 32 agents, or the policy's agents-per-machine cap |
 | Stored credentials fail to decrypt after a restore | The restore runs under a different `SECRETS_MASTER_KEY` than the one the data was written with |

@@ -89,7 +89,7 @@ The agent's **Prompt** tab edits the Task.
   the chosen note or collection at the cursor as `![[display-path]]`.
   A collection chip shows the collection's name. Clicking an embed
   opens a preview of it.
-- An embed that no longer resolves is marked. A banner,
+- An embed that does not resolve is marked. A banner,
   **Runs can't start: the Task links to something that no longer
   exists**, names each broken link.
 - The **Version** picker lists the live version and every earlier one,
@@ -108,8 +108,9 @@ in the agent inspector's header (**Broken file link in the Task**).
 Prompt Studio drafts Task changes for the operator to review and
 publish ([Prompt Studio](prompt-studio.md)).
 
-The run's Chat tab shows the composed system message, with the Task
-as it was at run creation ([Runs](runs.md)).
+The **System** tab of a run's transcript shows the Task as it was at
+run creation, embeds inlined
+([Run transcript](run-transcript.md#three-tabs)).
 
 ## Rules and limits
 

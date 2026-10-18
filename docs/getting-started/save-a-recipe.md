@@ -4,8 +4,8 @@ This page saves your guild as a recipe, then creates a second guild
 from it.
 
 A recipe is a guild's configuration as one file. It holds the agents,
-their Tasks, their routines, and the tools they need. It holds no
-keys, no secret values, and no chat history.
+their Tasks, their routines, and the tools they need. Keys, secret
+values, and chat history stay on your box.
 
 ## 1. Save the guild
 
@@ -46,8 +46,8 @@ and the same routine.
   one afterwards.
 - **From a guild** on the Recipes page captures any guild, not only
   the one you are in.
-- The **Builder** drafts a recipe from a conversation instead
-  ([Guild builder](../concepts/guild-builder.md)).
+- The **Builder** drafts a recipe from a conversation instead.
+  [Guild builder](../concepts/guild-builder.md) shows how.
 
 [Recipes](../concepts/recipes.md) describes the file format and
 every apply step.

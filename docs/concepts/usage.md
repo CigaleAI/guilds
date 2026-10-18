@@ -25,8 +25,9 @@ Each model reply stores its token counts: input, output, and cache
 reads (the part of the input the provider served from its cache). Its
 cost comes from the provider when the provider reports one. Otherwise
 it is computed from the model catalog's prices, with cache reads at
-the cache-read rate. A provider that is not billed, such as a local
-endpoint, records no cost.
+the cache-read rate. A model with no catalog price records a cost of
+0, marked unavailable. A provider that is not billed, such as a local
+endpoint or Kimi Code, has no catalog price.
 
 ### Running totals
 
@@ -77,14 +78,14 @@ logged and never fails the run
   does **Deleted guilds and agents**: what the organisation's total
   holds beyond the rows listed.
 - The **run flow** in a run's transcript shows the tokens and cost of
-  each step and of the whole generation ([Runs](runs.md#the-transcript)).
+  each step and of the whole generation ([Run transcript](run-transcript.md#run-flows)).
 
 ## Rules and limits
 
 | Rule | Value or behaviour |
 | --- | --- |
 | Spend gate in core | none |
-| Cost source | the provider's reported cost, else the catalog price, else none |
+| Cost source | the provider's reported cost, else the catalog price, else 0 marked `unavailable` |
 | Cache reads | priced at the cache-read rate; part of input tokens |
 | Total tokens | input plus output |
 | Counted from | each scope's creation |
@@ -103,7 +104,8 @@ Each assistant row with usage stores:
   `cache_read_tokens`;
 - `metadata.cost_usd`;
 - `metadata.cost_source`: `provider`, `catalog`, or `unavailable`;
-- `metadata.pricing_version` when the cost came from the catalog;
+- `metadata.pricing_version`, the catalog's date, whenever the
+  provider reported no cost;
 - `messages.cost_usd`, a column for accounting queries. It is NULL on
   system, user, and tool rows.
 

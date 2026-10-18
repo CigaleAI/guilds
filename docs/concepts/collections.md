@@ -12,8 +12,9 @@ guild. Agents read and write records with record tools. They never
 create, change, or delete a collection itself. Long-form text belongs
 in a [note](notes.md) instead.
 
-The app calls a collection a **database**: the **Databases** page,
-the **New database** button.
+The app names it three ways: a **database** on the **Databases** page
+and the **New database** button, **Tables** for the record tools on the
+Tools view, and **Insert › Table** in the Task and note editor.
 
 ## When you use it
 
@@ -39,15 +40,19 @@ flowchart LR
 ```
 
 The operator creates a collection on the **Databases** page, or
-applies a Prompt Studio coach's proposal to create, change, or delete
-one ([Prompt Studio](prompt-studio.md)). A collection has a name, a
+applies a Prompt Studio coach's proposal
+([Studio proposals](studio-proposals.md)). A collection has a name, a
 purpose, and columns. Each column has a type (text, number, boolean,
 date and time, or a list of strings) and a description. The agent
 reads the purpose and the descriptions to know what goes where.
 
-Every run's system prompt lists the collections the agent can read,
-with their columns ([System prompt](system-prompt.md)). The agent
-does not need to look them up.
+Every run's system prompt lists the collections its State catalog
+holds, with their columns ([System prompt](system-prompt.md)). The
+agent does not need to look them up. The catalog holds the agent's
+guild's own collections and the organisation collections its guild
+has a grant on, as the agent's own grant adjusts them. An
+organisation collection the agent reaches only through its own grant
+is not listed. The record tools still accept it by name.
 
 ### Records
 
@@ -106,15 +111,17 @@ So one member can be held back or raised:
 - `write` raises it above a guild that only reads
 
 On a guild's own collection, every agent of that guild starts at
-`write`. An agent grant still overrides it, so a single member can
-be held back.
+`write`. The guild takes no grant on it. An agent grant still
+overrides it, so a single member can be held back.
 
 A collection the agent cannot read behaves as if it did not exist. A
 write to a collection the agent can only read is refused and names
 the collection.
 
-Organisation members reach every collection with `write` through the
-**Databases** page and the HTTP API.
+Every organisation member reaches every collection with `write`
+through the **Databases** page and the HTTP API. That includes the
+own collections of private guilds the member cannot see
+([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).
 
 ## In the app
 
@@ -144,13 +151,13 @@ its own `?tab=`:
     dates.
   - **Add record**, or clicking a row, opens the record dialog: a
     field per column (a list as comma-separated items) and the
-    provenance strip ([Artifacts](artifacts.md#every-change-is-recorded)).
+    provenance strip ([Artifact store](artifacts.md#every-change-is-recorded)).
     When the server rejects the record, the dialog shows its answer
     verbatim, including a multi-line `record rejected` list.
   - After a save, a notice says when the record merged into an
     existing one (`Merged into record #N`) and which values still do
     not fit their columns.
-  - A stored value that no longer fits its column shows as a marked
+  - A stored value that does not fit its column shows as a marked
     chip in the grid.
   - **Delete record**, in the dialog or on the row after a confirm,
     removes the record.
@@ -192,7 +199,11 @@ counts, and the purpose. It also has:
 Records re-read after every write and when the window regains focus.
 
 The Prompt Studio inspector shows the same records under its
-**Databases** tab ([Prompt Studio](prompt-studio.md)).
+**Databases** tab ([Prompt Studio](prompt-studio.md)). The coach can
+propose to create, change, or delete the source guild's own
+collections and the organisation's. A proposal can also change the
+grants of the source guild and its agents
+([Studio proposals](studio-proposals.md)).
 
 ### The guild's State › Databases tab
 
@@ -241,19 +252,12 @@ name; records are not inlined ([Task](task.md)).
 | Indexed text per record | 32 KB; text past it is not searched |
 | Ids | start at 1, never reused |
 | Who creates, changes, deletes a collection | the operator only |
-| Collection listed in State | 50 at most |
+| Size of one record | 256 KB of JSON |
+| Column values | text, number, boolean, datetime, or a list of strings; a many-to-many of records is a second collection |
+| Agent queries | the record tools only; a script reads records only from a tool result |
+| Collections listed in State | 50 at most |
 | Unknown or unreadable collection | 404, as if it did not exist |
 | Write with `read` access | 403, naming the collection |
-
-Not built:
-
-- SQL for agents
-- aggregation beyond `record_list`'s `total`
-- nested object columns (a many-to-many of records is a second
-  collection)
-- deny grants and per-column permissions
-- sharing a collection across organisations
-- sandbox scripts reading the store
 
 ## Reference
 
@@ -463,12 +467,9 @@ The result is `{ total, records }`. `total` counts every record
 matching `where` and `since`, regardless of paging. `where` with `id`
 reads one record.
 
-Similar spelling is scoped to one text or open array column. Against
-a whole record's text a short token matches too many neighbours. A
-term with a digit (dates, hashes, addresses, versions) has neighbours
-that look alike. Both stay substring-only. The 0.5 floor means a
-transposition in a five-letter word still hits; two six-letter words
-that merely share a prefix do not.
+Similar spelling applies to one text or open array column at a time,
+never to a whole record or to a term with a digit. At the 0.5 floor a
+transposition in a five-letter word still matches.
 
 A narrowed `record_list` (`where` or `since`) that matches nothing
 returns a `hint` that explains:
@@ -487,18 +488,11 @@ values.
 
 A grant is one `collection_access` row: `subject_type` `guild` or
 `agent`, `subject_id`, and `mode`, one row per subject and
-collection.
-
-- A guild row is the base mode for its members: `read` or `write`.
-- An agent row is that agent's override: `none`, `read`, or `write`.
-  `none` is the explicit refusal and exists only on agent rows.
-
-The effective mode is the agent's row when it has one, otherwise its
-guild's base. `none`, or no base and no row, is no access.
+collection. A guild row's mode is `read` or `write`. An agent row's
+mode is `none`, `read`, or `write`.
 
 On a guild's own collection:
 
-- every agent in that guild has `write` as its base
 - a guild row is refused with 422 (`<name> belongs to <guild>: it is
   written by that guild and takes no guild grant`)
 - an agent row is accepted only for an agent of that guild (422
@@ -520,10 +514,17 @@ A tool call on a collection the agent cannot read fails with 404
 
 ### In State
 
-State lists every collection the agent is granted, capped at 50. Each
-entry has `name`, `purpose`, `access` (`read` or `write`), `scope`
-(`guild` or `org`), `display_path`, and `columns`. Past the cap, one
-more entry carries `truncated: true`.
+State lists, in name order and capped at 50, the agent's guild's own
+collections and the organisation collections with a grant row for
+its guild, each at its effective mode. An entry whose effective mode
+is no access is left out. Each entry has `name`, `purpose`, `access`
+(`read` or `write`), `scope` (`guild` or `org`), `display_path`, and
+`columns`. Past the cap, one more entry carries `truncated: true`.
+
+An organisation collection with only an agent row for this agent is
+not in State. `record_list`, `record_add`, `record_update`,
+`record_remove`, and `record_search` with or without `collection`
+still reach it at that row's mode.
 
 ### HTTP
 
@@ -555,6 +556,14 @@ PUT    /api/agents/:id/collection-access         { collection_id, mode }; mode n
   then the number of hits.
 - Records carry `display_path`, so the provenance strip can look them
   up.
+- The routes act as the operator for any organisation member. They
+  list and change every collection of the organisation, private
+  guilds' own collections included. The `access_list` of
+  `GET /api/collections/:id` names every guild and agent the
+  collection reaches, private guilds included.
+- **Delete all**, deleting a collection, and a column rename or
+  removal record no file change
+  ([Artifact store](artifacts.md#file-provenance)).
 
 Code: `apps/orchestrator/src/http/routes.ts`,
 `apps/orchestrator/src/http/artifact-files.ts`,

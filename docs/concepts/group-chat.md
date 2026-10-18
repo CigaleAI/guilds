@@ -23,7 +23,7 @@ notes, collections, and files.
 
 ### Messages and tags
 
-A message is plain text. Once posted it never changes. Each message
+A message is Markdown text. Once posted it never changes. Each message
 gets the next number in the guild's sequence.
 
 `@` followed by a name tags someone:
@@ -55,13 +55,9 @@ model (Jev, from TypeSafe) refines this. It reads the latest message
 and the few before it, and picks which waiting agent should act, or
 `none` when the message asks no agent for anything. It judges each
 agent by its focus and the start of its Task. An explicit `@` tag
-always wins. When the model is unsure, fails, or is not set up, the
-tag rules above decide.
-
-An agent can also carry **Wake me when** text, written by the operator
-to describe the untagged messages it should answer
-([Agents](agents.md)). The router does not read it: it weighs the
-focus and the Task.
+always wins. When the model is unsure, or is not set up, the tag
+rules above decide. When the call fails, every pending agent is
+woken.
 
 ### One run per agent, not per message
 
@@ -119,8 +115,8 @@ the agent was tagged.
 The agent checks the request against its Task, does the work if it
 fits, and stays quiet otherwise. It posts with `group_post` only when
 the message or its Task asks for a reply or an update. Its posts are
-short and plain. With Memory on, it must also update its
-[Memory](memory.md) once before the run ends.
+short. With Memory on, it may also update its
+[Memory](memory.md#when-the-agent-writes) before the run ends.
 
 ### The agent message limit
 
@@ -128,7 +124,8 @@ Agents can tag each other back and forth. To stop an endless loop,
 each guild has a limit on agent messages in a row: 200 for a new
 guild. When agents reach it, the next agent post is refused and the
 agents wait. The next operator message resets the count. This is a
-fixed budget, not loop detection.
+fixed budget, not loop detection. The guild header's message-budget
+button shows and sets it ([below](#the-message-budget-button)).
 
 ### Posting while agents work
 
@@ -159,8 +156,8 @@ they have had on screen. It drives the **New** divider, the
 **New messages** button, and the unread count on the guild in the
 sidebar. It never moves backwards.
 
-A message posted where the operator is not looking rings a short
-chime in the browser.
+A message someone else posts in a guild the operator is not watching
+rings a short chime, and can show a desktop notification.
 
 ### Clearing the chat
 
@@ -182,11 +179,13 @@ prompts were built from.
 
 ## In the app
 
+### The chat
+
 The **Group chat** tab is the guild's home, at `/guilds/<id>`.
 
 - Agents' posts sit on the left with the avatar, the name (it opens
-  the agent), the time, and an **Inspect run** pill that opens the run
-  behind the post.
+  the agent), the time, and an **Inspect run** pill that opens the
+  [transcript](run-transcript.md) of the run behind the post.
 - Operators' posts sit on the right, labelled **You** for the viewer
   and by name for other operators. Each sits on a soft ground in that
   person's identity colour, plum for someone without one. The same
@@ -208,17 +207,18 @@ The **Group chat** tab is the guild's home, at `/guilds/<id>`.
   tile. A guild never opened counts every message. The count clears
   as the chat is read.
 - A short chime rings when an agent or another operator posts in a
-  guild the operator is not watching: its chat is not on screen, the
-  tab is hidden, or the window is not focused. One's own messages
-  never ring, and replies within two seconds of a chime ring once.
-  The browser allows sound only after the operator has clicked or
-  typed in the page once.
+  guild the operator is not watching. Watching means the guild's chat,
+  or one of its agents over the chat, is on screen, with the tab
+  shown and the window focused. Other guild tabs, such as Settings,
+  still ring. One's own messages never ring, and replies within two
+  seconds of a chime ring once. The browser allows sound only after
+  the operator has clicked or typed in the page once.
 - The same messages show as a desktop notification once the operator
   turns **Desktop notifications** on in the account menu
-  ([Users](users.md)). It names the author and the guild, shows the
-  agent's mascot and the start of the message, and the newest message
-  of a guild replaces the one before. Opening it brings the window
-  forward and opens the chat at that message.
+  ([Users](users.md#the-account-menu)). It names the author and the
+  guild, shows the agent's mascot and the start of the message, and
+  the newest message of a guild replaces the one before. Opening it
+  brings the window forward and opens the chat at that message.
 - A responding row names each agent in a group run and opens that
   agent. The last row also says how many more agents wait.
 - A message waits in a **Queued** list above the composer when it
@@ -241,22 +241,24 @@ The **Group chat** tab is the guild's home, at `/guilds/<id>`.
   once.
 - Another banner shows the latest delivery error until dismissed.
 
+### The message-budget button
+
 The guild header carries a message-budget button: a ring gauge and
 `count/limit`, the agent messages posted in a row since an operator
 last posted, against the limit. It opens a popover that sets the limit
-to 25, 50, 100, 200, or a custom value. The guild **Settings** tab
-edits the same limit as "Agent turns in a row" ([Guilds](guilds.md)).
+to 25, 50, 100, 200, or a custom value up to 10000. The guild
+**Settings** tab edits the same limit as **Agent turns in a row**
+([Guilds](guilds.md#the-settings-tab)).
+
+### Clear group chat
 
 **Clear group chat** is the last item of the guild header's options
 menu, shown to admins. Its confirm says that every message is deleted
 for everyone, that agents keep their memory, notes, and past sessions,
 and that a run already under way cannot post its reply.
 
-**Mark tags as read** on the inbox moves the read cursor of each guild
-that has a tag there ([Operators](operators.md)).
-
-An agent's **Wake me when** field is in its Settings, under Identity
-([Agents](agents.md#settings-tab)).
+**Mark tags as read** on the Inbox moves the read cursor of each guild
+that has a tag there ([Inbox and issues](inbox.md)).
 
 ## Rules and limits
 
@@ -272,7 +274,8 @@ An agent's **Wake me when** field is in its Settings, under Identity
 | Queued messages | in the operator's browser tab; lost on reload |
 | History an agent sees | the last 10 public messages |
 | Router confidence floor | 0.5; below it the tag rules decide |
-| Agent messages in a row | 200 for a new guild; positive integer; an operator post resets it |
+| Router call | 8 seconds per try, two retries; a failure wakes every pending agent |
+| Agent messages in a row | 200 for a new guild; positive integer, up to 10000 in the app; an operator post resets it |
 | Message content | must contain non-whitespace text |
 | Attachments | not taken in group chat |
 | Busy agent | delivery waits; a routine waits; a direct message is 409 |
@@ -299,7 +302,7 @@ A public message is an immutable row:
 - author type `user` or `agent`;
 - an author-name snapshot;
 - optional agent and source-run ids;
-- plain text;
+- the Markdown text;
 - snapshots of the recognised tag names, agent ids, and user ids.
 
 Tags are parsed at post time with
@@ -324,7 +327,7 @@ Skip-advanced agents still see those messages in a later selected
 run's snapshot.
 
 When the Group routing platform key is set (**Admin**, **Platform
-keys**, see [Users](users.md)), the dispatcher asks Jev one Choice over
+keys**, see [Instance admin](instance-admin.md)), the dispatcher asks Jev one Choice over
 the pending members plus `none`. Jev gets the latest public message as
 `latest` (clipped to 6,000 characters) and up to three public rows
 before it as `context`. Each option is the agent's `focus` and the
@@ -338,21 +341,21 @@ record anything". A `none` verdict creates no run.
 
 Below confidence 0.5 the pick is treated as unclear and the tag rules
 decide (source `low_confidence`). The decision is stored on the group
-run as `metadata.typesafe.recipients`: `source`, `choice`,
-`confidence`, `probabilities`, `names`, `model`, `usage`. Sources are
-`tags`, `typesafe`, `low_confidence`, and `fallback`.
+run as `metadata.typesafe.recipients`: `source`, `names`, and, when
+they apply, `reason`, `choice`, `confidence`, `probabilities`,
+`model`, and `usage`. Sources are `tags`, `typesafe`,
+`low_confidence`, and `fallback`.
 
-The client retries 408, 429, 5xx, and connection errors twice with
-backoff, honouring short `Retry-After` hints (up to 2 s). If the call
-still fails, times out, or returns unusable answers, delivery falls
-back to every pending member. With no key, the tag rules stay in
-force.
+Each try times out after 8 seconds. The client retries 408, 429, 5xx,
+and connection errors twice with backoff, honouring short
+`Retry-After` hints (up to 2 s). If the call still fails, times out,
+or returns unusable answers, delivery falls back to every pending
+member (source `fallback`, with the error as `reason`). With no key,
+the tag rules decide.
 
 Every fresh decision is logged (`operation: group.recipients`). The
 latest one is on the group-chat state as `last_recipient_decision`,
 in `GET /api/guilds/:id/group-chat` and in the `group.idle` event.
-
-`wake_triggers` is not an option of the Choice.
 
 The live contract is `apps/orchestrator/test/contract/typesafe.test.ts`:
 
@@ -463,7 +466,7 @@ State in the system row carries the same snapshot as a direct run
   first;
 - `group.about` and `group.description` when set;
 - `group.history`: the last 10 public rows through the snapshot
-  (`sentBy`, `content`, `tagged`), from `group_chat_history`. `sentBy`
+  (`sentBy`, `content`, `tagged`), from `groupChatHistory`. `sentBy`
   is the author-name snapshot, a member or an operator.
 - `readable_levels` and `writable_levels` from the four note grants;
 - `collections`: `[{name, purpose, access, scope, display_path,
@@ -479,8 +482,10 @@ of the last 40: "does this agent need this message to act on the
 latest one?", with bodies clipped to 2,000 characters for the call.
 Code keeps the 10 highest. The latest row and any row that tags the
 receiving agent always stay. A failed call keeps the last 10. The keep
-decision is stored on the run as `metadata.typesafe.history`: `seqs`,
-per-row `noul`, `model`, `usage`.
+decision is stored on the run as `metadata.typesafe.history`:
+`source` (`limit`, `typesafe`, or `fallback`), `seqs` (the rows
+kept), and, when they apply, `reason`, `keep` (each row's score by
+sequence), `model`, and `usage`.
 
 Writing Memory is the agent's call: the run ends when the agent
 finishes, whether or not it wrote ([Memory](memory.md#when-the-agent-writes)).
@@ -524,28 +529,24 @@ group chat is open, its log is scrolled to the bottom, and the browser
 tab is visible. The value is clamped to the guild's sequence and never
 moves backwards. One's own messages are never new.
 
-The inbox counts the messages past the cursor in each guild the user
+The Inbox counts the messages past the cursor in each guild the user
 can see, and its stream tells each viewer of every committed message
-([Operators](operators.md#inbox-http)). The app shows the counts in
-the sidebar and announces a message from the stream when someone else
-wrote it and the page does not show that guild's group chat with the
-tab visible and the window focused: it rings the chime, and shows a
-desktop notification when the browser allows them and the operator
-turned them on in this browser. The notification's icon is the
+([Inbox and issues](inbox.md#inbox-http)). The app shows the counts in
+the sidebar, and announces a message from the stream as
+[In the app](#the-chat) describes. The notification's icon is the
 agent's mascot drawn to a PNG, since browsers do not draw an SVG
-there, and its body is the preview with markdown marks dropped, cut
-to 140 characters.
+there. Its body is the preview with Markdown marks dropped, cut to
+140 characters.
 
 ### Clear
 
 Clearing runs in one transaction under the guild row lock that posts
 take, so it never interleaves with a post. It:
 
-1. refuses an archived guild (409);
-2. deletes every `group_messages` row of the guild;
-3. sets `group_agent_message_count` to 0, empties
+1. deletes every `group_messages` row of the guild;
+2. sets `group_agent_message_count` to 0, empties
    `group_chat_errors`, and stamps `group_chat_cleared_at`;
-4. sets every member's `group_chat_delivered_through` to the guild's
+3. sets every member's `group_chat_delivered_through` to the guild's
    sequence.
 
 `group_chat_seq` is left as it is. Read cursors are not touched; the
@@ -568,10 +569,10 @@ no row.
 | --- | --- | --- | --- |
 | `GET /api/guilds/:id/group-chat` | the chat state (below) and the caller's `seen_through_seq`, `null` without a row | 200 | 404 |
 | `PUT /api/guilds/:id/group-chat` | sets `agent_message_limit` | 200 | 422 not a positive integer; 409 guild being deleted; 404 |
-| `PUT /api/guilds/:id/group-chat/read` | advances the caller's cursor to `seen_through_seq` | 200 | 422 not a non-negative integer |
+| `PUT /api/guilds/:id/group-chat/read` | advances the caller's cursor to `seen_through_seq` | 200 | 422 not a non-negative integer; 404 |
 | `GET /api/guilds/:id/group-chat/messages` | every public message | 200 | 404 |
-| `DELETE /api/guilds/:id/group-chat/messages` | clears the chat; returns the chat state | 200 | 403 not a guild admin; 409 guild archived or being deleted; 404 |
-| `POST /api/guilds/:id/group-chat/messages` | posts `content` as the caller; `interrupt: true` then cancels the group runs it targets | 202 | 422 empty content or `interrupt` not a boolean; 409 guild being deleted |
+| `DELETE /api/guilds/:id/group-chat/messages` | clears the chat; returns the chat state | 200 | 403 not a guild admin; 409 guild being deleted; 404 |
+| `POST /api/guilds/:id/group-chat/messages` | posts `content` as the caller; `interrupt: true` then cancels the group runs it targets | 202 | 422 missing or empty content, or `interrupt` not a boolean; 409 guild being deleted; 404 |
 | `GET /api/guilds/:id/group-chat/stream` | the guild's SSE stream | 200 | |
 
 The chat state carries `guild_id`, `chat_seq`, `agent_message_count`,
@@ -579,3 +580,17 @@ The chat state carries `guild_id`, `chat_seq`, `agent_message_count`,
 `pending_agent_count`, `active_agents` (`[{id, name}]`, the agents in
 a group run), `errors`, and `last_recipient_decision` (with its
 `through_seq`).
+
+### Events
+
+The guild's stream sends:
+
+| Event | When |
+| --- | --- |
+| `group.message.committed` | a message is posted; carries the message |
+| `group.limit_reached` | a post leaves the chat at the agent message limit; carries the chat state |
+| `group.idle` | no agent is pending; carries the chat state |
+| `group.delivery.started` | a group run starts for an agent (`agent_id`, `agent_name`, `through_seq`) |
+| `group.delivery.finished` | that run ends (`agent_id`, `through_seq`) |
+| `group.delivery.failed` | a delivery fails; carries the error entry |
+| `group.cleared` | an admin clears the chat; carries the chat state |

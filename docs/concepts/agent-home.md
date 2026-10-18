@@ -13,9 +13,10 @@ grow.
 
 ## Why it exists
 
-An agent needs a place that survives between runs. A container that
-stops after 5 idle minutes cannot hold that, so each agent's files
-live in a folder on the host that the container mounts. When the next
+An agent needs a place that survives between runs. The machine's
+container stops when it is idle ([Machines](machines.md#the-containers-lifecycle)),
+so each agent's files live in a folder on the host that the container
+mounts. When the next
 run starts a new container, the agent finds its files where it left
 them.
 
@@ -37,7 +38,7 @@ The home holds:
 - `.browser/`, its Chrome profile, with its logins
   ([Browser](browser.md))
 - `repos/`, a coding agent's clones ([Coding agents](coding/index.md))
-- `.runs/`, the logs of its commands
+- `.runs/`, the logs of its code and harness calls
 - `.gitconfig`, caches, and toolchains
 
 Runtime files that must stay out of every home, such as git tokens,
@@ -52,27 +53,18 @@ each other ([Machines](machines.md#trust-between-agents)).
 ### The environment of every command
 
 Every command the orchestrator runs for an agent runs in the agent's
-home. That covers `shell`, the code and harness helpers,
-`script_run`, the browser tools, and maintenance. Each command gets
-its own environment:
-
-- the agent's home, as `HOME` and `GUILDS_AGENT_HOME`
-- the agent's ports: the first port of its block as `PORT`, and the
-  whole block as `GUILDS_PORTS`
-- every secret that reaches the agent, as a variable named after the
-  secret, and each of the agent's secret aliases, holding the value of
-  the secret it names ([Secrets](secrets.md))
-
-The container's own environment carries no secret. Commands run as
-root in the container, for every agent.
+home. Each command gets its own environment: the agent's home, its
+ports, and every secret that reaches the agent
+([Environment](#environment)). The container's own environment
+carries no secret. Commands run as root in the container, for every
+agent.
 
 The secrets are resolved at the start of each generation, from the
 run's snapshot. A secret change reaches the agent's next generation.
 A generation in progress keeps the values it started with. The agent
 sees each secret's name and description in its
 [State snapshot](system-prompt.md); the value stays in its commands'
-environment. MCP token payloads never enter that environment. They
-only join run redaction.
+environment.
 
 ### The disk cap
 
@@ -94,27 +86,18 @@ cap ([Machine sizing](machines.md#machine-sizing)).
 
 ### The CLI tab
 
-Every agent has a CLI tab: a terminal on its machine, a bash session
-in its home, as root. It is not a capability, and no setting turns it
-off. The shell has the agent's home and port block set, and no secret
-values. It reaches the files of every agent on the machine.
-
-Starting the terminal wakes the agent's machine. The machine stays up
-for 5 minutes after the last input on it. This is where the operator
-frees disk space, or logs a coding harness in
+Every agent has a CLI tab: a root bash session in its home, on its
+machine. It is not a capability, and no setting turns it off. This is
+where the operator frees disk space, or logs a coding harness in
 ([Harnesses](coding/harnesses.md)).
 
 ### Files the orchestrator reads and writes
 
 Some tools take a path in the home: Drive `create_file` and
 `download_file_content`, Qonto `upload_invoice`, and `secret_store`.
-For those, the orchestrator opens the folder on the host directly, so
-a link there would resolve against the host's own files. The
-orchestrator guards that access: a path must stay inside the home,
-and a link cannot lead out of it ([Reference](#agent-home-files)).
-
-The code tools never take this path. They run inside the container,
-so a link resolves there ([Code tools](coding/code-tools.md)).
+For those, the orchestrator opens the folder on the host directly.
+It guards that access: a path must stay inside the home, and a link
+cannot lead out of it ([Agent home files](#agent-home-files)).
 
 ## In the app
 
@@ -189,8 +172,8 @@ environment:
   secret, and each of the agent's secret aliases, holding the value
   of the secret it names ([Secrets](secrets.md))
 
-The container's own environment carries no secret. Commands run as
-root in the container, for every agent
+MCP token payloads never enter that environment. They only join run
+redaction. Commands run as root in the container, for every agent
 ([Security register](../architecture/security-register.md#sec-24--agents-on-one-machine-can-read-each-others-homes-tokens-and-sessions)).
 
 ### `max_workspace_mib`
@@ -222,10 +205,8 @@ home may grow, in MiB. It is a positive integer. The stored default is
 | `POST /api/agents/:id/cli` | wakes the agent's machine and starts its terminal; `{ "status": "ready" }` |
 | `/api/agents/:id/cli/tty` and `/api/agents/:id/cli/tty/*` | proxies ttyd's page and WebSocket, every HTTP method |
 
-The CLI tab wakes the agent's machine. A machine on which an agent
-generates is used as is.
-
-The orchestrator runs
+A machine on which an agent generates is used as is. The orchestrator
+runs
 `agent-cli-start <agent id> <terminal port> <first port> <last port>`
 in it. The helper starts ttyd on port `7700+slot` with bash in the
 agent's home, or finds it already answering, and prints the secret
@@ -245,11 +226,8 @@ machine's idle timer, at most once every 30 seconds
 ([Machines](machines.md#the-container)).
 
 The shell runs as root with `HOME`, `GUILDS_AGENT_HOME`, `PORT`, and
-`GUILDS_PORTS` set for the agent, and no secret values.
-
-Every agent has the CLI tab and the CLI API. They are served by the
-runtime image's ttyd. It is not a capability, and no config key turns
-it off.
+`GUILDS_PORTS` set for the agent, and no secret values. Every agent
+has the CLI tab and the CLI API; no config key turns them off.
 
 ### Agent home files
 

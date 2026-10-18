@@ -3,7 +3,8 @@
 This page builds a guild with one agent. You talk to the agent, read
 what it did, and see it remember.
 
-You need a model connected first ([Connect a model](model-keys.md)).
+You need a model connected first. [Connect a model](model-keys.md)
+shows how.
 
 ## Six words
 
@@ -37,13 +38,14 @@ only.
 ## 2. Add an agent
 
 In the sidebar, click **Add agent** under the guild. A dialog offers
-two kinds of agent. Click **Agent**. A form opens. Fill in:
+two kinds of agent. Click **Agent**. The dialog **Create an agent**
+opens on three steps.
 
-- **Name**: `researcher`
-- **Focus**: `Answers the guild's questions and remembers what it was asked`
-
-Leave the other fields as they are. They give the agent your default
-model, a small machine, and memory. Click **Create agent**.
+1. **Identity**: type `researcher` as the **Name**. Type
+   `Answers the guild's questions and remembers what it was asked`
+   as the **Focus**. Click **Next**.
+2. **Model**: the step offers your default model. Click **Next**.
+3. **Machine**: the step names your machine. Click **Create agent**.
 
 You should see the agent under the guild in the sidebar. A panel
 opens over the chat, on the agent's **Prompt** tab. This panel is the
@@ -131,3 +133,5 @@ Keep going, one page each:
 - [Give it web search](web-search.md): let agents search the web.
 - [Save a recipe](save-a-recipe.md): save the guild as one file and
   apply it again.
+- [Add a coding agent](add-a-coding-agent.md): add an agent that
+  changes code in one of your repositories.

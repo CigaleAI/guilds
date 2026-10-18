@@ -40,11 +40,12 @@ There are two kinds of agent:
   system prompt, so the agents know each other's role. A new agent's
   Task starts from its focus.
 - **Wake triggers**: an optional text, up to 500 characters, that
-  completes "Wake me when…". The operator writes in it the untagged
-  group-chat messages the agent should answer; the field shows the
-  focus while it is empty. Wake triggers are stored and carried in
-  recipes. They are not part of the system prompt, and the group-chat
-  router does not read them ([Group chat](group-chat.md)).
+  completes "Wake me when…". It describes the untagged group-chat
+  messages the agent should answer. The field shows the focus while
+  it is empty. The operator or the Guild builder writes it, and
+  recipes carry it. Nothing reads it at run time: it is not in the
+  system prompt, and the group-chat router does not weigh it
+  ([Group chat](group-chat.md#who-wakes-up)).
 - **Avatar**: a mascot and an identity colour. They only change how
   the agent looks in the app. The agent never sees them.
 
@@ -78,6 +79,7 @@ Run limits stop a run that goes on too long:
 | Max steps | model calls in one generation | 30 |
 | Max tool calls | tool calls in one run | 50 |
 | Max input tokens | the size of the prompt sent to the model | 100000 |
+| Keep tool results | how many user turns keep full tool output in the prompt; older large results are stubbed | 1 |
 
 A coding agent starts at 200 steps and 200 tool calls. What happens
 at each limit is on [Runs](runs.md).
@@ -134,9 +136,6 @@ is disabled once the guild is full. Each agent row shows:
 - a broken-link marker naming the notes or collections its Task embeds
   that no longer exist ([Task](task.md)).
 
-The guild header stacks the first member avatars. A click on one opens
-that agent.
-
 ### Create an agent
 
 **Add agent** opens **Create an agent** on two cards, one per kind:
@@ -164,8 +163,7 @@ that agent.
    capabilities**, three buttons: Browser, scripting, and Memory.
    Scripting and Memory start on; Browser starts off. The browser
    language shows while Browser is on. **Run limits** sit folded under
-   a disclosure: max output tokens, max steps, max tool calls, max
-   input tokens, and **Max scripts**.
+   a disclosure: the five run limits and **Max scripts**.
 3. **Machine**: which machine the agent goes on, and **Disk** under
    it. With one machine the step names it in place of the picker. See
    [Machines](machines.md) and [Agent home](agent-home.md).
@@ -200,9 +198,9 @@ sideways when they do not fit.
 
 | Tab | What it holds | Explained in |
 | --- | --- | --- |
-| **Chat** | sessions with the agent, and the session drawer | [Runs](runs.md) |
+| **Chat** | sessions with the agent, their transcripts, and **History** | [Runs](runs.md), [Run transcript](run-transcript.md) |
 | **Prompt** | the standing Task | [Task](task.md) |
-| **State** | Memory, Notes, Databases, Scripts, Artifact scope | [Memory](memory.md), [Notes](notes.md), [Collections](collections.md), [Scripts](scripts.md), [Access](access.md) |
+| **State** | Memory, Notes, Databases, Scripts (with scripting on), Artifact scope | [Memory](memory.md), [Notes](notes.md), [Collections](collections.md), [Scripts](scripts.md), [Access](access.md) |
 | **Routine** | the agent's routines | [Routines](routines.md) |
 | **Browser** | the agent's live Chrome, only with Browser on | [Browser](browser.md) |
 | **CLI** | a terminal on the agent's machine | [Agent home](agent-home.md) |
@@ -224,8 +222,8 @@ An agent has **Identity**, **Model**, and **Machine**. A coding agent
 has **Identity**, **Machine**, **Harness**, **Lead model**, and
 **Repositories**. The sections follow the form's Coding button, so
 turning Coding on changes them before the save. A step whose fields
-have an error, or where a coding-readiness problem is fixed, carries a
-warning in place of its number. One **Save** and one **Discard** at
+have an error, or that holds a coding-readiness problem to fix,
+carries a warning in place of its number. One **Save** and one **Discard** at
 the bottom cover every section. Enter in a field saves.
 
 - **Identity**: the name, the focus, the avatar picker, and **Wake me
@@ -234,11 +232,16 @@ the bottom cover every section. Enter in a field saves.
 - **Model** (**Lead model** on a coding agent): the model, thinking,
   and temperature. **Agent capabilities** has four buttons: Browser,
   Coding, scripting, and Memory. **Run limits** sits under a
-  disclosure, with the four run limits and **Max scripts**. Browser
+  disclosure, with the five run limits and **Max scripts**. Browser
   and Coding are greyed out while off on a machine below the minimum
   they need, with a line naming both sizes. Coding is greyed out on a
   saved coding agent, which stays one. The browser language shows
   while Browser is on.
+- Turning **Coding** on before the first save turns scripting on, and
+  moves max steps and max tool calls from 30 and 50 to 200 each when
+  they are still at their defaults. Turning it off again moves them
+  back, clears the harness, and swaps a Kimi Code model for the
+  organisation's default.
 - **Machine**: the machine picker and **Disk**
   ([Machines](machines.md), [Agent home](agent-home.md)).
 - **Harness** and **Repositories**, on a coding agent:
@@ -253,6 +256,8 @@ the bottom cover every section. Enter in a field saves.
 | Name uniqueness | unique across the instance; never `user`; never the name of an operator of the guild |
 | Focus | at most 150 characters |
 | Wake triggers | at most 500 characters |
+| Secret aliases | at most 32 |
+| Coding agent | needs a harness |
 | Agents per guild | the guild's `max_agents` ([Guilds](guilds.md)) |
 | Model | its provider must be connected for the organisation |
 | Kimi Code models | only on a coding agent |
@@ -265,10 +270,11 @@ the bottom cover every section. Enter in a field saves.
 
 ### Configuration keys
 
-Agent configuration is a JSON object of eighteen required keys.
-Unknown keys are rejected. A missing key takes its default before the
-check. The tier, CPU, and memory belong to the machine, not to the
-agent.
+Agent configuration is a JSON object of nineteen keys. A missing key
+takes its default, then the check runs. `model` has no default, so a
+configuration without it is 422 `missing keys: model`. Unknown keys
+are rejected. The tier, CPU, and memory belong to the machine, not to
+the agent.
 
 | Key | Type | Default | Explained in |
 | --- | --- | --- | --- |
@@ -285,19 +291,21 @@ agent.
 | `browser` | boolean | `false` | [Browser](browser.md) |
 | `browser_language` | Chrome language tag | `en-US` | [Browser](browser.md) |
 | `coding` | boolean | `false` | [Coding agents](coding/index.md) |
-| `harness` | `claude-code`, `codex`, `cursor`, or null | `null` | [Harnesses](coding/harnesses.md) |
-| `harness_model` | model name or null | `null` | [Harnesses](coding/harnesses.md) |
-| `harness_effort` | effort or null | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
-| `secret_aliases` | map of variable name to secret name | `{}` | [Secrets](secrets.md#aliases) |
+| `harness` | `claude-code`, `codex`, `cursor`, `antigravity`, or null | `null` | [Harnesses](coding/harnesses.md) |
+| `harness_model` | model name of at most 120 characters, or null; needs a harness | `null` | [Harnesses](coding/harnesses.md) |
+| `harness_effort` | effort or null; needs a harness | `null` | [Harnesses](coding/harnesses.md#model-and-effort) |
+| `secret_aliases` | map of variable name to secret name, at most 32 entries | `{}` | [Secrets](secrets.md#aliases) |
 | `scripting` | boolean | `true` | [Scripts](scripts.md) |
 | `memory` | boolean | `true` | [Memory](memory.md) |
 
 An agent created with `coding` on and no `max_steps` or
-`max_tool_calls` starts with 200 of each instead of the defaults.
+`max_tool_calls` starts with 200 of each instead of the defaults. An
+agent with `coding` on and no `harness` is 422 `coding agents need a
+harness: claude-code, codex, cursor, antigravity`.
 
 Validation errors are 422 with the message, for example
 `name must match ^[a-z][a-z0-9-]{0,62}$`, `max_steps must be a
-positive integer`, or `unknown keys: …`.
+positive integer`, `missing keys: …`, or `unknown keys: …`.
 
 Native tools come from bindings (instance → organisation → guild →
 agent) and sandbox environment values from secret grants, not from
@@ -382,23 +390,28 @@ of the State snapshot's `group.members`
 at create, and it is part of each option the group-chat router weighs
 ([Group chat](group-chat.md#recipient-routing)).
 
-`wake_triggers` (at most 500 characters) is stored on the agent and
-carried in recipes. It is not hydrated into the system prompt, and it
-is not an option of the recipient Choice.
+`wake_triggers` (at most 500 characters) is stored on the agent,
+written by the Guild builder, and carried in recipes. It is not
+hydrated into the system prompt, and it is not part of the recipient
+Choice.
 
 ### HTTP
 
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
 | `GET /api/guilds/:id/agents` | lists the guild's agents with their busy state | 200 | |
-| `POST /api/guilds/:id/agents` | creates an agent from `name`, `config`, and optional `focus`, `wake_triggers`, `avatar_shape`, `avatar_color`, `machine_id` | 201 | 422 validation or model not connected; 409 guild archived, guild being deleted, guild full, name taken, or an operator of that name; an edition's policy limit |
+| `POST /api/guilds/:id/agents` | creates an agent from `name`, `config`, and optional `focus`, `wake_triggers`, `avatar_shape`, `avatar_color`, `machine_id` | 201 | 422 validation or model not connected; 409 guild being deleted, `this guild is limited to N agents`, name taken, or an operator of that name; a placement refusal; an edition's policy limit |
 | `GET /api/agents/:id` | the agent | 200 | 404 |
-| `PUT /api/agents/:id/config` | saves `config` plus optional `name`, `avatar_shape`, `avatar_color`, `focus`, `wake_triggers`, `machine_id` | 200 | 422 validation; 409 rename while generating or while the guild is being deleted, name taken; an edition's policy limit |
+| `PUT /api/agents/:id/config` | saves `config` plus optional `name`, `avatar_shape`, `avatar_color`, `focus`, `wake_triggers`, `machine_id` | 200 | 422 validation; 409 rename while generating or while the guild is being deleted, name taken; a placement refusal; an edition's policy limit |
+| `PUT /api/agents/:id/machine` | moves the agent to `machine_id` ([Machines](machines.md#move-rules)) | 200 | a placement refusal |
 | `DELETE /api/agents/:id` | deletes the agent | 204 | 409 generating; 404 |
 | `GET /api/guilds/:id/embed-status` | each agent's `broken_embeds` | 200 | |
 
 `machine_id` on create or update places or moves the agent
-([Machines](machines.md)). The organisation policy of an edition may
+([Machines](machines.md)). Placement refuses a full machine (409
+`machine <name> is full`) and a machine below what the agent needs
+(`<what> needs a machine with at least <size>; <machine> has
+<size>`). The organisation policy of an edition may
 cap agents, browser agents, and coding agents per organisation; core
 sets no cap. A policy refusal is 409 `<source> limit reached: <cap>`.
 
@@ -426,8 +439,8 @@ on the id. Host notes folders that still use the name move with it.
 
 ### Delete
 
-Deletion is the lifecycle surface. The `archived_at` columns exist and
-stay unused.
+Deletion is the only way to retire an agent. The `archived_at`
+column is unused.
 
 Deleting an agent refuses while it is generating (409 `agent is
 already generating`). It then:

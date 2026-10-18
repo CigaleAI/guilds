@@ -8,11 +8,10 @@ Tokens live in CSS. Components are the barrel at
 `packages/ui/src/index.ts`. Theme is `data-theme="light"` or
 `data-theme="dark"` on `<html>`, never a `dark` class.
 
-The catalogue is Storybook at
-[`/storybook`](/storybook) on the documentation site and on a
-running instance. `pnpm storybook` at the repo root also serves
-`http://127.0.0.1:6006/`. Open Foundations before inventing a
-colour or type size. Off-token colours have no Tailwind utilities.
+The catalogue is Storybook. A running instance serves it at
+`/storybook` when the image built it. `pnpm storybook` at the repo
+root serves it at `http://127.0.0.1:6006/`. Open Foundations before
+inventing a colour or type size. Off-token colours have no Tailwind utilities.
 The theme clears the default palette.
 
 ## Package
@@ -153,9 +152,6 @@ stylesheet. Do not deep-import package internals.
 
 ## Storybook and Claude Design
 
-The built catalogue is at
-[`/storybook`](/storybook).
-
 `pnpm storybook` starts the review surface. The sidebar is
 Foundations, then Primitives, then Components. The toolbar
 switches light and dark (`data-theme`).
@@ -180,6 +176,6 @@ should use the current system.
 `apps/web/claude-design-export/` holds the first Claude Design
 export. Those files are not the live library.
 
-The operator surface that consumes this kit is
-[Operator app](../concepts/operator-app.md). The package on disk
-is [Code map](code-map.md#packagesui).
+The screens that consume this kit are in the
+[Screen map](screen-map.md). The package on disk is in the
+[Code map](code-map.md#packagesui).

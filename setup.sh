@@ -4,7 +4,7 @@
 # It writes into .env what the stack cannot start without and nobody should pick by hand: the
 # absolute path the stack keeps its state under, the master key that encrypts stored credentials,
 # the PostgreSQL password, and the OpenSandbox key. It creates the state directories and builds
-# the two images no registry publishes.
+# the two images the stack runs under local tags: the OpenSandbox server and the agent runtime.
 #
 #   ./setup.sh               everything
 #   ./setup.sh --env-only    .env and the state directories; no image is built

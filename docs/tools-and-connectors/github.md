@@ -16,7 +16,7 @@ App per box. You set it up in three steps:
   `PUBLIC_BASE_URL` is empty, that is the address you reach the box
   at, such as `http://localhost:8080`. To reach the box from
   elsewhere, set the address first
-  ([Remote access](../getting-started/remote-access.md)).
+  ([Remote access](../operations/remote-access.md)).
 
 ## Step 1: Create the App
 
@@ -77,6 +77,7 @@ Instead of step 1, you can register the App yourself on GitHub
    - **Request user authorization (OAuth) during installation**
      checked. Without it, GitHub never sends you back to the box
      after an install, and Connect never completes.
+   - **Redirect on update** checked
    - Webhook inactive
    - Repository permissions: Contents and Pull requests read and
      write, Metadata read
@@ -101,7 +102,7 @@ account and click **Connect** again.
 **GitHub sends you to a page that is not the box.** The App's
 callback URL is not the box's address. Set `PUBLIC_BASE_URL`, and
 make `<PUBLIC_BASE_URL>/api/mcp/oauth/callback` the App's first
-callback URL ([Remote access](../getting-started/remote-access.md)).
+callback URL ([Remote access](../operations/remote-access.md)).
 
 ## Replacing the App
 
@@ -118,7 +119,7 @@ The **GitHub App** integration stores `app_id`, `slug`,
 `private_key`, `client_id`, and `client_secret`. Until all five are
 set, Tools marks the connector **Not set up** with the missing fields
 and disables Connect. A Connect sent anyway is a 422 with
-`setup_state: unsupported` ([Integrations](catalog.md#integrations)).
+`setup_state: unsupported` ([Platform keys](platform-keys.md)).
 A replacing write without `confirm_replace` is a 409 with
 `replaces_app: true` and `connections`. The private key accepts one
 line with `\n` escapes too.
@@ -131,10 +132,13 @@ and sets the `guilds_github_manifest` cookie (HttpOnly, SameSite=Lax,
 20 minutes, path = the callback). The browser posts the manifest to
 `action`.
 
-The manifest carries the settings above, with `url` = the box's
-address and callback URLs `<PUBLIC_BASE_URL>/api/mcp/oauth/callback`
-plus, when the admin reached the box at another address, that
-address's callback too. A box on the public internet also names an
+The manifest carries the settings above: `public: false`,
+`request_oauth_on_install: true`, `setup_on_update: true`, and the
+permissions `contents: write`, `pull_requests: write`, and
+`metadata: read`. It sets no setup URL. Its `url` is the box's
+address. Its callback URLs are
+`<PUBLIC_BASE_URL>/api/mcp/oauth/callback` and, when the admin
+reached the box at another address, that address's callback too. A box on the public internet also names an
 inactive webhook at `<address>/api/github/webhook`. A loopback or
 private address omits it: GitHub refuses a hook URL it cannot reach.
 
@@ -151,25 +155,27 @@ there with `setup_error=state|conversion|store` and stores nothing
 
 ### Connect flow
 
-Connect follows the pending-connection path of the browser logins
-([Connectors](connectors.md#browser-oauth)).
+Connect follows the pending-login path of the browser logins
+([OAuth](connectors.md#oauth)). GitHub connects at the organisation, a
+guild, or an agent; any other scope is a 422.
 
 1. Connect creates a pending connection with its `oauth_state` and
    answers with user authorization at `/login/oauth/authorize`, with
-   the callback URL and the state. A short-lived cookie keeps the
-   state in case GitHub omits it after a later hop. Connect never
-   starts on the install page: GitHub sends nobody back from editing
-   an existing installation, since the App has no setup URL.
+   the callback URL and the state. The cookie `guilds_github_oauth`
+   (HttpOnly, SameSite=Lax, 20 minutes, path
+   `/api/mcp/oauth/callback`) keeps the state in case GitHub omits it
+   after a later hop. Connect always starts with user authorization,
+   never on the install page.
 2. The orchestrator trades the `code` for a user token and keeps an
    installation only when that user reaches it: the callback's
    `installation_id` when present, else the App's only installation
    on the token. Several open a picker
-   (`/api/mcp/oauth/github-installation`). None redirects to
+   ([Installation picker](#installation-picker)). None redirects to
    `https://github.com/apps/<slug>/installations/new?state=…`, whose
    own authorization hop returns a new `code` with the
    `installation_id`, traded without `redirect_uri`. A setup redirect
-   with `installation_id` and no `code` starts user authorization with
-   the same `state`. An id in the URL alone proves nothing. The user
+   (`setup_action` `install` or `update`) with `installation_id` and
+   no `code` starts user authorization with the same `state`. An id in the URL alone proves nothing. The user
    token is discarded. A refused callback deletes a new pending
    connection.
 3. The connection stores the installation id, takes the account's
@@ -177,7 +183,23 @@ Connect follows the pending-connection path of the browser logins
    enabled binding.
 
 An install awaiting an organisation admin returns
-`setup_action=request`.
+`setup_action=request`. The box then shows **Approval Required**,
+deletes a new pending login, and asks to connect again once the admin
+approves.
+
+### Installation picker
+
+When the user reaches several installations, the callback redirects
+to the picker page. Its `state` is the pending login's.
+
+| Route | Does |
+| --- | --- |
+| `GET /api/mcp/oauth/github-installation?state=` | The picker page |
+| `GET /api/mcp/oauth/github-installations?state=` | `{ installations: [{ id, account }], install_url }`: the App's installations the user reaches, and the install page to add another |
+| `POST /api/mcp/oauth/github-installation` | `{ state, installation_id }`: connects the login to that installation. Answers `{ ok, account }` |
+
+An expired or finished sign-in is a 404. An installation the user
+does not reach is a 400.
 
 The connection lists no model tools: agents use `git` and `gh` in the
 sandbox. Tools shows it without an On/Off switch.

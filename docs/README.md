@@ -43,30 +43,19 @@ Then one short page each:
 - [Save a recipe](getting-started/save-a-recipe.md) saves the guild
   as one file and applies it again.
 - [Add a coding agent](getting-started/add-a-coding-agent.md) gives
-  the guild an agent that writes code with Claude Code, Codex, or
-  Cursor.
+  the guild an agent that writes code with Claude Code, Codex,
+  Cursor, or Antigravity.
 
 ## Why guilds.run
 
-Agent-to-agent work opens uses of LLMs a single agent cannot cover.
-It also makes the ways those models fail harder to see. guilds.run
-is the framework Cigale AI built so that collaboration stays
-tractable.
-
-- **Deeply inspectable.** What the model sees is what you see.
-- **Deeply customizable.** Each connection, each tool, and the model
-  for each agent is chosen for the job.
-- **Iterate till perfection.** A long-running multi-agent system is
-  refined in place.
-- **Share the love.** Recipes carry a working guild to someone who
-  does not want to design one from scratch.
-
-[Philosophy](philosophy.md) says why the product is shaped this way.
+guilds.run keeps a long-running team of agents inspectable,
+customizable, and shareable as one file.
+[Philosophy](philosophy.md) says why.
 
 ## Find your way
 
-Each page describes what the code does today. The security register
-is the one page that keeps history.
+These pages are also published at
+[docs.guilds.run](https://docs.guilds.run).
 
 | You want to | Read |
 |---|---|
@@ -75,18 +64,17 @@ is the one page that keeps history.
 | Reach Gmail, Drive, or GitHub from an agent | [Tools and connectors](#tools-and-connectors) |
 | Ask for a feature | [Feature requests](CONTRIBUTING.md#feature-requests) |
 | Change the code | [Architecture](#architecture), then [Contributing](#contributing) |
-| Meet the people around it | [Community](contributing/community.md) |
 
 ## Run the box
 
-- [Configure](getting-started/configure.md) — `.env`, platform keys,
-  limits, the model catalog
-- [Remote access](getting-started/remote-access.md) — reach the box
-  from another computer
-- [Operate](getting-started/operate.md) — update, back up, restore,
-  logs, error messages
-- [Changelog](../CHANGELOG.md) — each version, and whether a running
-  box stays, rebuilds, or breaks
+- [Configure](operations/configure.md) — `.env`, images, how the box
+  is reached, limits, error reporting
+- [Remote access](operations/remote-access.md) — reach the box from
+  another computer
+- [Maintain](operations/maintain.md) — what runs, update, back up,
+  restore, logs, error messages
+- [Changelog](../CHANGELOG.md) — each version, and what a running box
+  does with it
 
 ## Concepts
 
@@ -95,11 +83,12 @@ How the product works, for the operator. Start with
 
 **People**
 
-- [Users](concepts/users.md) — accounts, sign-in, the instance admin
+- [Users](concepts/users.md) — accounts, sign-in
+- [Instance admin](concepts/instance-admin.md) — the Admin page
 - [Organisations](concepts/organisations.md) — members, roles, what
   an organisation owns
-- [Operators](concepts/operators.md) — the people a guild works for,
-  the Inbox
+- [Operators](concepts/operators.md) — the people a guild works for
+- [Inbox](concepts/inbox.md) — issues agents raise for an operator
 - [Model keys](concepts/model-keys.md) — providers, the welcome
   dialog, which models an organisation offers
 
@@ -125,6 +114,8 @@ How the product works, for the operator. Start with
 
 - [Runs](concepts/runs.md) — direct, group, and schedule runs;
   what each run records
+- [Run transcript](concepts/run-transcript.md) — reading a run in
+  the app
 - [System prompt](concepts/system-prompt.md) — Guidelines and the
   State snapshot
 - [Task](concepts/task.md) — the operator's standing instructions
@@ -149,17 +140,17 @@ How the product works, for the operator. Start with
 **Coding agents**
 
 - [Coding agents](concepts/coding/index.md) — an agent that leads
-  code work with Claude Code, Codex, or Cursor
-- [Harnesses](concepts/coding/harnesses.md) — the coding CLI and
-  your subscription
+  code work with a coding CLI, alone or with other coding agents
+- [Harnesses](concepts/coding/harnesses.md) — Claude Code, Codex,
+  Cursor, Antigravity, and your subscription
 - [Repositories](concepts/coding/repositories.md) — the guild's git
   repositories
-- [Code tools](concepts/coding/code-tools.md) — `code_task`, shell,
-  file reads, search
+- [Code tools](concepts/coding/code-tools.md) — shell, file reads,
+  search
+- [Code tasks](concepts/coding/code-tasks.md) — `code_task`, the
+  harness turn
 - [Reviewing changes](concepts/coding/reviewing-changes.md) —
   checkpoints, diffs, commit trailers
-- [Coding teams](concepts/coding/teams.md) — several coding agents
-  in one guild
 
 **Workspaces**
 
@@ -169,54 +160,60 @@ How the product works, for the operator. Start with
   to a running guild
 - [Prompt Studio](concepts/prompt-studio.md) — improve Tasks on a
   live guild
+- [Studio activity](concepts/studio-activity.md) — the guild
+  overview and its activity ledger
+- [Studio proposals](concepts/studio-proposals.md) — the coach's
+  proposal cards
 - [Guild builder](concepts/guild-builder.md) — design a recipe from a
   conversation
-- [Operator app](concepts/operator-app.md) — a map of every screen
 
 ## Tools and connectors
 
-- [Catalog](tools-and-connectors/catalog.md) — native and MCP tools,
-  what a run offers
-- [Native tools](tools-and-connectors/native.md) — notes, collections,
-  memory, browser, scripts, routines, secrets
+- [Tools in a run](tools-and-connectors/tools-in-a-run.md) — native
+  and MCP tools, what a run offers
+- [Platform keys](tools-and-connectors/platform-keys.md) — the
+  integrations a platform admin sets up for the whole box
 - [Connectors](tools-and-connectors/connectors.md) — token logins
   and remote MCP
+- [Connector list](tools-and-connectors/connector-list.md) — each
+  connector the image carries
 - [Gmail and Drive](tools-and-connectors/google.md) — the Google
   OAuth client
 - [GitHub](tools-and-connectors/github.md) — the GitHub App
-- [Registry](tools-and-connectors/registry.md) — connectors beyond
-  the image
-
-The code tools are in [Coding agents](concepts/coding/code-tools.md).
+- [Connector registry](tools-and-connectors/connector-registry.md) —
+  connectors beyond the image
+- [Native tools](tools-and-connectors/native.md) — notes, collections,
+  memory, browser, scripts, routines, secrets
 
 ## Architecture
 
 For the people who change the code.
 
-- [System](architecture/system.md) — processes, state on disk,
-  images, the trust boundary
+- [Deployment](architecture/deployment.md) — processes, state on
+  disk, images, the trust boundary
+- [Orchestrator](architecture/orchestrator.md) — startup, events,
+  PostgreSQL, the model client, the sandbox manager
 - [Web app](architecture/web-app.md) — the operator app: stack,
   extension slots, state and events
 - [Code map](architecture/code-map.md) — repository layout, boot,
   the request path, the run flow
-- [Orchestrator](architecture/orchestrator.md) — startup, events,
-  PostgreSQL, the model client, the sandbox manager
+- [Screen map](architecture/screen-map.md) — every screen of the
+  operator app
 - [Extension points](architecture/extension-points.md) — what an
   edition built on core may replace
 - [Design system](architecture/design-system.md) — `@guildsrun/ui`:
-  tokens, components, [Storybook](/storybook)
+  tokens, components, Storybook
 - [Security register](architecture/security-register.md) — issues
   fixed and still open, with their history
 
 ## Contributing
 
 - [Contributing](CONTRIBUTING.md) — licence, feature requests,
-  versions, pull requests, the check
+  versions, pull requests
 - [Development](contributing/development.md) — the development
-  stack, verify, check, CI, fixtures
+  stack, Make targets, tests, the check, CI
 - [Code guidelines](contributing/code-guidelines.md) — names,
   functions, boundaries, docs
-- [Community](contributing/community.md) — X, Discord, Product Hunt
 
 ## Licence
 

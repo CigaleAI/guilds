@@ -1,29 +1,29 @@
 # Code tools
 
-
 A [coding agent](index.md)'s runs offer five tools. `code_task` hands
-code work to the agent's [harness](harnesses.md). The other four check
-that work and do what the harness never does: run the project's
-checks, read files, search the code, push a branch, and open a pull
-request.
+code work to the agent's [harness](harnesses.md), and has its own page:
+[Code tasks](code-tasks.md). The other four check that work and do what
+the harness never does: run the project's checks, read files, search
+the code, push a branch, and open a pull request.
 
 | Tool | What it is for |
 | --- | --- |
-| `code_task` | Delegate a change to the harness, or resume its session |
+| `code_task` | Delegate a change to the harness, or resume its session ([Code tasks](code-tasks.md)) |
 | `shell` | Run a bash command: tests, builds, git, `gh` |
 | `shell_status` | Follow or stop a command started in the background |
 | `file_read` | Read numbered lines of a file |
 | `code_search` | Find text in the code, paths first, then lines |
 
-Like the [browser](../browser.md) tools, they follow the agent's
-`coding` switch and are not [bindings](../access.md). Every call runs
-inside the agent's sandbox, in its [home](../agent-home.md).
+Like the [browser](../browser.md) tools, they are offered while the
+agent's Coding capability is on, and are not [bindings](../access.md).
+Every call runs inside the agent's sandbox, in its
+[home](../agent-home.md).
 
 ## When you use it
 
 The agent uses these tools, not the operator. The operator sees each
-call in the chat, with its arguments, its result, and for a code task
-its live progress and its diff ([In the app](#in-the-app)).
+call in the chat, with its arguments and its result
+([In the app](#in-the-app)).
 
 ## How it works
 
@@ -47,24 +47,6 @@ the home. A `cd` in `shell` carries over to the next call.
 Environment changes do not. `file_read` and `code_search` refuse a path
 that resolves, links followed, outside the home.
 
-### Delegating with `code_task`
-
-One `code_task` call is one turn of the harness. The agent passes a
-self-contained `brief`, because the harness sees nothing of the
-conversation, notes, or Memory. `notes` appends notes or records to the
-brief. The harness works in one repository, may commit on the current
-branch, and never pushes or opens pull requests.
-
-The call blocks the agent until the harness exits, at most 60 minutes.
-Meanwhile its progress streams to the chat. The result gives how the
-turn ended, the files it changed, and the harness's final message.
-
-A question from the harness is not an error. It is the final message.
-The agent answers it by calling `code_task` again with the
-`session_id` from the result, which resumes the same session. A session
-lives in the agent's home, so a later run can resume it too when the
-agent kept the id, in Memory or a note.
-
 ### Checking the work
 
 `shell` runs a command and returns its output, shaped to fit: a long
@@ -81,7 +63,8 @@ first, then the matching lines.
 ## In the app
 
 Each call other than `code_task` is a row in the run's flow on the
-**Chat** tab, with a summary of what it did:
+**Chat** tab, with a summary of what it did. A `code_task` is a block
+of its own ([Code tasks](code-tasks.md#in-the-app)).
 
 | Tool | Row reads |
 | --- | --- |
@@ -90,56 +73,21 @@ Each call other than `code_task` is a row in the run's flow on the
 | `file_read` | "Read `<path>`", or "Read `<path>` from line N"; "unchanged since step N" for a repeated read |
 | `code_search` | "Search files" or "Search lines", with "in `<path>`" |
 
-A `code_task` is its own block in its step on the timeline, shown even
-while the step is folded. Its step carries the
-harness's logo on the rail in place of the dot, the one its result
-names, else the agent's harness. The block reads:
+Opening a row shows these views:
 
-- the harness's name, "coding task", and its status: **Running…**,
-  **Done**, **Failed**, or how it ended otherwise, such as **Timed
-  out**; a **wrote** tag; and its run time;
-- the brief it was given, clamped to two lines;
-- its repository and its diffstat;
-- the first line of its error, when it failed.
-
-While the call runs, the logo and the status pulse and its latest six
-progress lines show under the brief. Progress lines are live only:
-they stream while the run view is open and are not kept, so a reload
-shows the block without them until the result lands.
-
-Opening a row or a code task's block shows **Arguments**, **Result**, and **Metadata**; for a
-code task with an end checkpoint, **Diff**
-([Reviewing changes](reviewing-changes.md#in-the-app)); and for a code
-task whose result names its log, **Log**. A running code
-task opens on **Result**, which shows its progress. **Result** renders
-text as Markdown, with **Raw** for the text as returned, and JSON as a
-tree; a code task's result leaves out its closing `log:` line, which
-**Metadata** names as **Harness log**; clicking that path opens **Log**.
-**Metadata** lists
-the call, the tool, and for a code task its **Status**, **Harness**,
-**Repository**, **Session**, **Changes**, **Checkpoints** (start → end,
-as short commit ids), and **Harness log**; for other calls the exit
-code, **Full output** log, working directory, file, lines, and
-**Same as step** for a repeated read.
-
-**Log** reads the call's kept harness log from the agent's machine,
-waking it, once the view opens ([Harness log](#harness-log)). **Steps**
-shows each event as a progress line; **JSON** shows the raw JSONL
-events. "Loading the log from the agent's machine…" shows while it
-loads, and "Couldn't load the harness log" with the reason when it
-cannot be read, such as a log the agent's home no longer keeps.
+| View | Shows |
+| --- | --- |
+| **Arguments** | The call's arguments |
+| **Result** | Text as Markdown, with **Raw** for the text as returned; JSON as a tree |
+| **Metadata** | The call and the tool, then the exit code, the **Full output** log, the working directory, the file and its lines, and **Same as step** for a repeated read |
 
 ## Rules and limits
 
 | Rule | Value or behaviour |
 | --- | --- |
-| `code_task` timeout | 30 minutes by default, 1 to 60 |
-| `code_task` notes | At most 64 KiB together; a note past the cap is named, not included |
-| One harness at a time | Tool calls in a generation run in sequence |
-| `code_task` budget | One tool call against `max_tool_calls` |
 | `shell` timeout | 120 seconds by default, 1 to 600 |
 | `file_read` | 200 lines by default, at most 500; lines over 400 characters clipped |
-| `code_search` | 30 files or 40 lines at most; 10 matches per file |
+| `code_search` | 30 files or 40 lines at most; 10 matches per file; 60 seconds |
 | Result size | `CODE_RESULT_MAX_BYTES`, default 8192 bytes, then the platform's 64 KiB cap |
 | Logs | Kept for the agent's 20 most recent runs |
 | Background commands | End with the machine's idle stop |
@@ -151,11 +99,14 @@ cannot be read, such as a log the agent's home no longer keeps.
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `code_task` | `brief` (required), `repo`, `session_id`, `notes`, `timeout_minutes` | The harness's status, diffstat, final message, and log path ([`code_task`](#code_task)) |
+| `code_task` | `brief` (required), `repo`, `session_id`, `notes`, `timeout_minutes` | The harness's status, diffstat, final message, and log path ([Code tasks](code-tasks.md#result)) |
 | `shell` | `command` (required), `timeout_seconds` (default 120, 1 to 600), `background` | Combined stdout and stderr, shaped; `exit_code: N` when not 0 |
 | `shell_status` | `id`, `stop` | Without `id`, the background commands with their state; with it, that command's state, exit code, and the last 40 lines of its log; `stop` ends it |
 | `file_read` | `path` (required), `offset` (first line, default 1), `limit` (default 200, at most 500) | Numbered lines under a `path · lines a–b of n` header |
 | `code_search` | `pattern` (required), `path`, `glob`, `mode`, `fixed`, `ignore_case`, `context`, `limit` | Text search ([`code_search`](#code_search)) |
+
+The tools follow the agent's live `coding` flag at each generation, as
+the browser tools follow `browser`, not the flag in the run's snapshot.
 
 ### Transport
 
@@ -288,246 +239,11 @@ Beside the fields every tool call records:
 - `path`, `range`, `content_hash`, and `lines` on `file_read`, and
   `repeat_of` on a repeated read
 - `matches` and `files` on `code_search`
-- the fields under [`code_task`](#code_task) on `code_task`
-
-### `code_task`
-
-`code_task` is offered when the run's snapshot has `coding: true`. A
-call without a harness picked fails with `harness.missing`
-([Coding agents](index.md#generation-start-checks)).
-
-| Argument | Meaning |
-| --- | --- |
-| `brief` | Required. The whole task, self-contained |
-| `repo` | Repository name under `repos/`. Optional when the guild has one |
-| `session_id` | Resumes that harness session; `brief` is its next turn |
-| `notes` | Display paths of notes or collection records whose content is appended to the brief |
-| `timeout_minutes` | Default 30, 1 to 60 |
-
-#### Steps
-
-1. **Repository.** `repo`, else the guild's only repository. A guild
-   without repositories, an unknown name, or a missing `repo` with
-   several repositories is an error naming the guild's repositories.
-   With `session_id`, the agent passes the repository the session
-   started in; the orchestrator does not check the pair
-   ([Sessions](#sessions)).
-2. **Check.** `guilds-harness check` reports whether the CLI is in the
-   image, its version, and the credential it would run on, as at the
-   generation's start. A CLI missing from the image, or no credential,
-   is an error ([Credentials and errors](harnesses.md#credentials-and-errors)).
-3. **Brief.** A fixed preamble, then the brief under `# Task`, then
-   each note under `# <display path>`. The preamble says the harness
-   cannot reach the operator, stops and asks in its final message when
-   it is blocked or needs a decision, may commit on the current branch,
-   never pushes or opens pull requests, and ends with what it changed
-   and ran. Notes are read with the agent's access, as `note_get` reads
-   them. A record is its JSON view. A collection or a script is
-   refused, and a note that does not load fails the call. The notes take
-   at most 64 KiB together. A note past the cap is named on a closing
-   line, not included.
-4. **Start checkpoint** of the repository at
-   `refs/guild/runs/<run id>/tasks/<call id>/start`
-   ([Reviewing changes](reviewing-changes.md)).
-5. **Start.** A generation cancelled before this step never starts the
-   harness. A GitHub token close to expiry is replaced first.
-   `guilds-harness start` removes the harness's local configuration
-   ([Managed configuration](harnesses.md#managed-configuration)),
-   writes the brief to `.runs/<run id>/<call id>.prompt.md` in the home
-   (mode 0600), starts the harness detached ([Process](#process)) on
-   the run's harness model and effort, and returns at once. The brief reaches the
-   CLI on stdin, or for Cursor through the prompt file, never on its
-   command line.
-6. **Poll** every 3 seconds until the CLI exits, publishing its
-   progress ([Progress](#progress)).
-7. **Stop.** Once `start` has been sent, every way out of the call
-   sends `stop`: a cancel, a timeout, three failed polls in a row, or
-   an error. The two exceptions are a poll that saw the CLI exit and a
-   poll that found the call's state gone.
-8. **Result.** Once the CLI has exited, by itself or after `stop`,
-   `guilds-harness result` reads the final message, the session id,
-   and how the turn ended from the log, then removes the prompt file
-   and the call's state files.
-9. **End checkpoint** at `…/tasks/<call id>/end`, with the diffstat
-   since the start and the changed files, at most 30.
-
-#### Result
-
-```text
-<status> · <harness> · <repository> · session <session id> · <duration>
-<n> files changed, +<a> −<d>
-<path> (+a −d), at most 30, a binary file as (binary)
-<detail, when there is one>
-
-<final message>
-
-log: .runs/<run id>/<call id>.harness.jsonl
-```
-
-With nothing changed, the second line reads `no files changed`. Past 30
-files, a line `… N more files` follows. The session reads `none` when
-the harness reported none, and an empty final message reads
-`(no final message)`.
-
-The final message gives way so the whole result fits
-`CODE_RESULT_MAX_BYTES`. The cut keeps its end, where questions and
-summaries are, and says how many bytes it removed from the start. The
-platform pipeline then runs unchanged.
-
-| Status | When | Detail |
-| --- | --- | --- |
-| `completed` | The CLI exited 0 and its turn did not end in error | none |
-| `failed` | The CLI exited otherwise, or its turn ended in error | A driver that parses none of the CLI's output says so with the CLI's version. A CLI that printed no event, such as one refusing to start without a login, gives the last 5 lines of its stderr, else the harness's error. Otherwise the first line of the harness's error, else its stderr. Else its exit code |
-| `timed_out` | `timeout_minutes` passed; the harness got `stop` | `Stopped after N minutes. Resume the session to continue.` |
-| `cancelled` | The generation was cancelled; a started harness got `stop` | `Stopped: the generation was cancelled.`, or `The generation was cancelled before the harness started.` |
-| `interrupted` | Three polls in a row failed; the harness got `stop` | `The harness stopped answering, so it was stopped. Resume the session to continue.` |
-| `interrupted` | A poll found the call's state gone | `The harness's state is gone: the machine restarted or its container was recreated.` |
-| `interrupted` | The CLI exited and `result` could not be read | `The harness exited, and its result could not be read.` |
-
-When `stop` reports that the harness did not exit, the detail reads
-`The harness did not stop and may still be running; its log is <path>.`
-The call's state then stays under `/run/guilds/<agent id>/harness/`
-until the container goes.
-
-**Metadata.** Beside the fields every tool call records: `harness`,
-`status`, `session_id`, `repository`, `exit_code`, `duration_ms`,
-`files_changed`, `insertions`, `deletions`, `start_sha`, `end_sha`,
-and `log_path`.
-
-#### Process
-
-`guilds-harness` runs one short exec per op, with the same transport as
-`guilds-code`. Each op waits up to 60 seconds; each task checkpoint up
-to 300.
-
-| Op | Does |
-| --- | --- |
-| `check` | Whether the harness's CLI is installed, its version, its credential (`secret`, `login`, or none), and with a login its `account` |
-| `start` | Refuses a call id still running, removes the harness's local configuration, writes the prompt file, forks a supervisor in its own session, and returns |
-| `poll` | The progress lines after a byte offset into the log, the new offset, the session id once the harness has reported one, and whether the CLI has exited and its log is read through |
-| `result` | The final message, the session id, the exit code, whether the turn ended in error, the error, the tail of the CLI's stderr, and the duration |
-| `stop` | SIGTERM to the CLI's process group, SIGKILL ten seconds later, then waits for the supervisor to record the exit |
-| `log` | A kept log of the run: every event as a progress line, the number of events and of lines that were not JSON, the log's size, and its raw JSONL as whole lines from the start within `max_bytes`; `missing` once the log is gone |
-
-The supervisor starts the CLI in its own process group in
-`repos/<repo>`, appends the CLI's raw events to the log, waits for it,
-and records its exit code.
-
-A call's state is under `/run/guilds/<agent id>/harness/` (mode 0700),
-which goes with the container: `<call id>.json` (what was started),
-`.pid` (the CLI's process group), `.exit`, `.session`, and `.stderr`.
-`result` removes them and the prompt file once the CLI has exited.
-
-The raw event log, `.runs/<run id>/<call id>.harness.jsonl` in the
-agent's home, is stored unredacted like a `shell` log, under the same
-retention: `.runs/` keeps the folders of the agent's 20 most recent
-runs, so the log of an older run is gone. Reading it back with
-`file_read` passes through redaction.
-
-#### Harness log
-
-```text
-GET /api/runs/:id/tasks/:call_id/log
-```
-
-Returns `{ lines, lines_truncated, raw, raw_truncated, bytes, events,
-unparsed }` from `guilds-harness log`, run on the agent's machine,
-waking it, as the task diff is read:
-
-- `lines` are the log's events as progress lines, at most the first
-  2000, each redacted then cut at 240 characters like live progress.
-- `raw` is the JSONL, whole lines from the start within 256 KiB;
-  `bytes` is the whole log's size.
-- Both are redacted with the agent's secret values. The run's GitHub
-  tokens are minted per run and are not in that set (SEC-32).
-- A call that is not a `code_task`, or whose result names no harness
-  and log, is 404 ("that call has no harness log"), and the machine is
-  not woken. A log the agent's home no longer keeps is 404 too.
-
-#### Harness environment
-
-The harness gets the environment of every command the orchestrator
-runs for the agent: `HOME`, `GUILDS_AGENT_HOME`, `PORT`,
-`GUILDS_PORTS`, the agent's secrets, and its secret aliases
-([Agent home](../agent-home.md)). It also gets `PAGER=cat`,
-`GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`, `NO_COLOR=1`, `TERM=dumb`,
-`DEBIAN_FRONTEND=noninteractive`, `GUILD_RUN_ID`, and
-`GUILD_AGENT_ID`, so commit trailers work
-([Reviewing changes](reviewing-changes.md#commit-trailers)).
-
-`GH_TOKEN` and `GITHUB_TOKEN` are never in a harness's environment:
-the harness does not open pull requests. git still reads its token
-through the credential helper. Each driver also sets its own variables
-and removes those that would move the harness to metered API billing
-([Drivers](harnesses.md#drivers)).
-
-#### Progress
-
-Each poll reads at most 256 KiB of the log. A progress line is one
-normalised event: the harness starting, with its model when it says,
-the first line of each assistant message, and each tool use or file
-change as `<tool>: <first line of its command, path, pattern, URL,
-description, or query>`. A poll returns at most 60 lines, the earlier
-ones counted as `… N more steps`.
-
-Each line passes redaction with the run's secret values, GitHub tokens
-included, and is then cut at 240 characters. The orchestrator
-publishes them on the run's SSE stream as `tool.progress`
-(`{ run_id, tool_call_id, lines, session_id }`). Progress is not
-stored: the call's result and its log are. The app keeps a call's
-latest 200 lines until its result lands.
-
-The orchestrator keeps the running call in the run's
-`metadata.harness_task` (`call_id`, `harness`, `repository`,
-`session_id`, `log_path`), updated once `poll` reports the session id,
-so a call that ends without a result still names its session.
-
-#### Sessions
-
-Session ids are the harness's own ([Drivers](harnesses.md#drivers)).
-Each harness keeps its session state in the agent's home (`~/.claude`,
-`~/.codex`, `~/.cursor`), so a session survives container recreation
-and counts against `max_workspace_mib`. A session from an earlier run
-can be resumed when the agent kept its id. A resumed session whose
-state is gone fails with the harness's error, and the agent starts a
-new session with a full brief. A `session_id` holds letters, digits,
-and `_ . : -`, at most 200 characters.
-
-The agent is trusted to pass a `session_id` together with the
-repository the session started in. The orchestrator keeps no session
-registry and does not check that the session belongs to `repo`: the
-harness owns its session state.
-
-#### Lifecycle
-
-- `code_task` blocks the generation for the length of the harness
-  turn. The generation stays open, so the machine's idle timer does
-  not run.
-- A `code_task` is one tool call against `max_tool_calls`. Tool calls
-  in a generation run in sequence: an agent runs one harness at a time.
-- Before the start and each poll, a GitHub token within 10 minutes of
-  expiry is replaced, as before a `shell` command.
-- An orchestrator restart cuts the generation short. On startup, each
-  `code_task` left unresolved in an active run gets `stop` on its
-  machine when the machine is running. Once the harness has exited, its
-  state is cleared, and the task's end checkpoint is taken in its
-  repository, so the task diff is available. Its result is
-  `interrupted`, naming its session id and log when known, and the
-  start checkpoint to come back to. When the harness did not stop, the
-  result says it may still be running. When the machine is not running,
-  there is nothing left to stop and no end checkpoint is taken.
-- A machine restart or container recreation ends the harness with
-  everything else in the container. The next poll finds no state and
-  the call ends `interrupted`, with the session id when known.
-- After an interruption, the working tree holds whatever the harness
-  wrote, and the task's start checkpoint stays in the repository. The
-  agent can resume the session to finish the work.
-- Harness calls record no usage or cost.
+- the fields under [Code tasks](code-tasks.md#result) on `code_task`
 
 ### Code
 
 `apps/orchestrator/src/toolbox/code.ts` (the four check tools and the
-transport), `apps/orchestrator/src/toolbox/harness.ts` (`code_task`),
-`runtime/guilds-code`, `runtime/guilds-harness`, and in the app
+transport), `runtime/guilds-code`, and in the app
 `apps/web/src/features/agent/chat/ToolCallDetail.tsx` and
 `apps/web/src/features/agent/runs/toolFormat.ts`.

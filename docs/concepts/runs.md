@@ -3,7 +3,8 @@
 A run is one session of work by one [agent](agents.md). It is a
 transcript: the system prompt the agent started from, the messages it
 received, every model reply, and every tool call with its result. The
-operator can open any run and read exactly what happened.
+operator can open any run and read exactly what happened
+([Run transcript](run-transcript.md)).
 
 A run starts in one of three ways: an operator chats with the agent,
 the [group chat](group-chat.md) wakes it, or a [routine](routines.md)
@@ -25,21 +26,20 @@ and pick a conversation back up later.
 
 | Kind | Started by | Shape |
 | --- | --- | --- |
-| **Direct** | an operator, from the Chat tab | a persistent chat; stays open after each reply and takes later messages for as long as the agent exists |
-| **Group** | the group chat | one-shot: one generation that shows the agent the recent chat, then the run completes |
-| **Schedule** | a routine | one-shot: one generation that hands the agent the routine's instruction, then the run completes |
+| **Direct** | an operator, from the Chat tab | a persistent chat: it stays open after each reply and takes later messages |
+| **Group chat** | the group chat | one-shot: one generation that shows the agent the recent chat, then the run completes |
+| **Routine** | a routine | one-shot: one generation that hands the agent the routine's instruction, then the run completes |
 
-A one-shot run stays visible, so the operator can inspect the exact
-prompts it was given (Memory included), the message that woke it, and
-its private tool trace. It refuses later messages. The operator can **Resume** it
-to turn it into a conversation. A direct run created without a message
-waits idle with its system prompt.
+A one-shot run stays visible. The operator can read the exact prompt
+it was given, the message that woke it, and its tool calls. It refuses
+later messages until the operator **Resume**s it into a conversation.
+A direct run created without a message waits idle with its system
+prompt.
 
 An agent runs one thing at a time, whatever the kind. While it
 generates, a new direct message is refused, a group delivery waits,
 and a due routine waits for a later tick. Different agents generate at
-the same time, on one machine or on several, each with its own
-history, files, home, and lock.
+the same time, on one machine or on several.
 
 ### Generations
 
@@ -62,42 +62,46 @@ Each row holds two things:
 - the **metadata**: what the operator sees and the model never does,
   such as tokens, cost, timings, and the model's reasoning.
 
-The run also stores a frozen **snapshot** of the agent at the start:
-its model settings, its switches, and the exact tools it was offered.
-Changing the agent later affects new runs only. Secrets are the
-exception: they are looked up again at every generation, so a new
-grant reaches an open chat ([Secrets](secrets.md)).
-
-### Exactness
-
 Rows are only ever appended, and a stored payload never changes. What
 the model was sent can always be rebuilt from the stored rows and the
-snapshot. The orchestrator never retries a provider call by itself.
+run's snapshot. The orchestrator never retries a provider call by
+itself.
+
+The **snapshot** freezes the agent at run creation: its model
+settings, its switches, and the exact tools it was offered. Changing
+the agent later affects new runs only. Secrets are the exception: they
+are looked up again at every generation, so a new grant reaches an
+open chat ([Secrets](secrets.md)).
 
 ### Limits that end a run
 
 Three limits from the agent's settings stop a run that goes on too
 long:
 
-- **Max steps**: model calls in one generation. Past it the loop stops
-  with an error.
+- **Max steps**: model calls in one generation. Past it the generation
+  stops with an error. The run stays open.
 - **Max tool calls**: tool calls in the whole run. Near the end, each
   tool result says how many calls are left and asks the agent to wrap
   up. At the limit the run completes.
-- **Max input tokens**: the size of the prompt sent to the model. Above
-  it the model is not called and the run completes.
+- **Max input tokens**: the size of the prompt sent to the model.
+  Above it the model is not called and the run completes.
 
-A run that hit its tool-call or input-token limit cannot be resumed or
-continued. Start a new one.
+A run that hit its tool-call or input-token limit cannot be resumed.
+Start a new one.
+
+A run also completes when its model cannot be called: the model's
+provider is not connected for the organisation, or an edition refuses
+the model credentials or blocks the organisation. That run can be
+resumed once the cause is fixed.
 
 ### Tool-result stubbing
 
-Tool results can be large: a page of a website, a long file. Old ones
-rarely matter. Before each model call, large tool results from earlier
-turns are replaced, in what is sent only, by a short stub that says
-which tool produced it and how to fetch it again. The stored run keeps
-the full results. By default only the current turn keeps its full
-tool results; the agent's settings can keep more.
+Tool results can be large: a web page, a long file. Old ones rarely
+matter. Before each model call, large tool results from earlier turns
+are replaced by a short stub, in what is sent only. The stub says
+which tool produced the result and how to fetch it again. The stored
+run keeps the full results. By default only the current turn keeps
+its full tool results. The agent's settings can keep more.
 
 ### Run chains
 
@@ -128,27 +132,31 @@ first run. It holds at most five runs.
 
 ### Chat tab
 
-The agent's **Chat** tab shows sessions with the agent.
+The agent's **Chat** tab shows sessions with the agent. A session is a
+run. The body of the tab is the
+[run transcript](run-transcript.md).
 
 - Without `?run=`, it shows the run that is generating, keeps showing
   that run when the generation finishes, or opens a new session when
   none is generating.
 - After three minutes with no action on a finished generation, the
   next time the window is focused the inspector closes.
-- The tab strip carries a clock that opens the session drawer
-  (`?history=true`) and a plus that starts a new session. A new
-  session opened with the plus stays open while another run is
+- The tab strip carries a clock, **Session history**, that opens the
+  **History** drawer (`?history=true`), and a plus, **New session**. A
+  new session opened with the plus stays open while another run is
   generating.
 - On a coding agent, a coding strip sits under the tab strip
   ([Coding agents](coding/index.md)).
 
-The **session drawer** lists every direct, group, and schedule run,
-newest first by day, filterable by kind, 50 at a time. Each row shows
-the kind, the time, the message a group run read up to, and the
-status. A row opens that run in Chat. On a phone the
-drawer covers the transcript until it is dismissed.
-`/guilds/<id>/agents/<id>/history` opens Chat with the drawer
-expanded.
+The **History** drawer lists every run of the agent, newest first,
+grouped by day, 50 at a time. It filters by kind: **Direct**,
+**Group chat**, or **Routine**. Each row shows its title, the time,
+the message a group chat run read up to, and the status. The title is
+**Direct session**, **Group chat**, or the routine's description, and
+**Routine wake-up** for a routine without one. A row opens that
+run in Chat. On a phone the drawer covers the transcript until it is
+dismissed. `/guilds/<id>/agents/<id>/history` opens Chat with the
+drawer expanded.
 
 The **composer** always shows a paperclip. When the agent's model
 accepts images, it adds JPEG, PNG, GIF, or WebP images, at most four,
@@ -157,158 +165,15 @@ does not accept images, or is not among the organisation's chosen
 models, the paperclip is disabled and a tooltip says so. The
 transcript shows the images on the operator's bubble.
 
-`?run=<run id>` opens that run's exact history, streaming while it
-generates. `&call=<tool call id>` or `&seq=<n>` also opens that step,
-lit, and scrolls to it.
+An ended run shows a banner under the transcript:
 
-An ended run that did not hit its tool-call, input-token, or chain cap
-offers **Resume**: the same transcript reopens and the next message
-continues it. A capped run offers a new session. A continued run offers
-**Open it** instead of Resume. A run that is open while it continues
-switches to the new run.
-
-### The transcript
-
-The transcript has three tabs. **Conversation**, open first, holds the
-messages and run flows below. **System** shows the composed system
-prompt (`<guidelines>`, `<task>`, `<state>`, `<memory>`) as sections
-([System prompt](system-prompt.md)), and **Tools** the tools the run
-was offered, with their count on the tab. A run without a system
-message or offered tools has no tab for it.
-Note embeds show as their hydrated bodies, including the nested hop.
-Each section shows its tagged parts as nested cards: JSON as a folding
-tree, the rest as Markdown, with a copy button per section and per
-part.
-
-- Operator messages and final replies are bubbles. A run woken by the
-  group chat or a routine says so.
-- A reply whose metadata carries reasoning shows it as a collapsed
-  block above the text. While generating, reasoning streams into that
-  block, which collapses when the reply starts.
-- A reply cut by `finish_reason: length` says the output token limit
-  was reached.
-
-Consecutive model steps that called tools render as one **run flow**
-per generation. Its header shows:
-
-- the title, which names the model on hover, and how the generation
-  ended: **Done**, **Running…**, or its error count;
-- its time (model and tool time on hover), steps, tool calls, failed
-  calls, tokens, and cost;
-- a toolbar.
-
-Below the header, the generation reads down a rail as one block per
-model step, on a dot: plum when a call failed, pulsing while one runs,
-or the harness's logo for a step that ran a code task. Every step is
-reasoning, then calls, and sometimes text the model wrote alongside
-them. The model's final reply has no calls, so it is a bubble after
-the flow, not a step.
-
-A step's header names what its calls did, one short line per call
-such as **Read** and a path or **Run** and a command. Calls in a row
-that open with the same verb share it: **Read a.md, b.md · Run ls**.
-After it come cues on those calls: the kinds they were (read, write,
-execute, …), a **wrote** or **ran script** tag, an **N failed** tag
-when any failed, a wrench with the call count, and the step's time
-(model and tool time on hover). Hovering it adds its tokens and cost.
-A step cut by `finish_reason: length` carries **max tokens**; any
-finish reason other than stopping or calling tools is tagged too.
-
-Under the header sits the text the model wrote alongside the calls,
-as muted lines: two lines of plain text while the step is folded, the
-whole Markdown while it is open. Folded, a step also shows its code
-tasks. Open, its header adds its name, **Step N**, and it shows in
-order:
-
-- a **thinking** line for its reasoning, folded to its opening line;
-  **more** unfolds a longer one onto the whole text, with a copy
-  button;
-- the calls it requested. A single call is its card. Several calls
-  requested in the same model turn are a batch: their cards, numbered
-  in the order they ran, held by one bracket. The calls of a batch
-  run one after another, with no model turn between them;
-- its code tasks.
-
-Two or more steps in a row with no text and no code task compact
-into one block on a stack: **N steps**, with the same cues over all
-their calls. Opening it frames them, on a rail of their own, as the
-same step blocks.
-
-A step or compacted block holding a running call, or a call the view
-was opened on, starts open. The toolbar changes what is open:
-
-- **Writes** and **Errors** open the blocks holding calls that changed
-  tracked state, or failed calls, and dim everything else; each
-  carries its count, as does **All**, which keeps every call.
-  Tracked state is a note, memory, record, collection, or script
-  created, edited, or deleted, or source code changed through
-  `code_task`; commands, script runs, posts, schedules, and browser
-  actions are not writes.
-- **Expand all** opens every block and unfolds every reasoning line.
-  **Collapse all** folds them back and returns to **All**.
-- **Hide thinking** drops the reasoning from open steps.
-- **Jump to answer** scrolls to the last text the model wrote in the
-  flow.
-
-A call that changed tracked state carries a tide **wrote** tag,
-and a `script_run` call a **ran script** tag. Filters dim the entries
-outside them.
-
-Tool calls are coloured by kind: memory, read, write, execute, act,
-post, connected.
-
-- A `note_write`, `memory_write`, or `script_create` call carries a chip
-  naming the note, memory, or script it wrote, which opens it in the
-  agent's State tab.
-- A `shell` call reads **Run** (or **Start** for a background command)
-  and the command's first line, then its exit code when not 0.
-- A `file_read` call reads **Read** and the path; a repeated read names
-  the step it points to.
-- A `secret_store` call reads **Stored NAME**. A `secret_request` call
-  reads **Asked for NAME**.
-
-Opening a call expands its card onto its arguments and result, each as
-a folding JSON tree or raw text with a copy button, and its metadata:
-call id, duration, output filter, exit code, the full-output log path,
-the working directory, the file and its lines, the step a repeated
-read points to, stored bytes, and tool calls left. The call's kind and
-level sit beside the views.
-
-A `code_task` call is its own block in its step, shown even while the
-step is folded ([Code tools](coding/code-tools.md#in-the-app)).
-While it runs, its latest progress lines show under its brief. Opening
-it shows its result, its
-metadata (status, harness, repository, session, diffstat, and log
-path), and its **Diff** ([Code tools](coding/code-tools.md#in-the-app)).
-Progress lines are live only: they stream while the run view is open
-and are not kept, so a reload shows the row without them until the
-result lands. A run with repository changes ends with a **Changes**
-panel: each repository with its branch and diffstat, and **Show
-diff**, which fetches the run's diff from the agent's machine
-([Reviewing changes](coding/reviewing-changes.md)).
-
-Each `secret_request` call whose result asked the operator renders a
-card after its run flow. It shows the agent, the variable name, the
-use, the reason, and "Written by the agent. The value reaches this
-agent's commands, and other agents on the same machine can read it."
-The card keeps no state: it looks the name up in the organisation and
-in the agent's environment, so a card in any session shows the name's
-current state.
-
-- A name the organisation lacks gets the description (prefilled from
-  the request), a password field, and **Provide**, which creates the
-  secret granted to this agent. An owner or admin may pick its guild or
-  the organisation instead.
-- A name that exists but does not reach the agent shows who has it,
-  with **Grant to this agent** for an owner or admin, or a note that an
-  organisation owner or admin can grant it.
-- A name in the environment reads **NAME is set**.
-
-After **Provide** or **Grant**, when the run is active and not
-generating, the card sends the chat message `Secret NAME is set.`,
-which starts a generation with the new variable. The value never
-enters the transcript. The operator declines by replying in the chat
-([Secrets](secrets.md)).
+- **This session has ended**, with **Resume**, when it can be resumed.
+  The same transcript reopens and the next message continues it.
+- **This session reached its limit**, with **New session**, after a
+  tool-call, input-token, or chain cap.
+- **This session continued in a new run**, with **Open it**, after a
+  hand-off. A run that is open while it continues switches to the new
+  run.
 
 ## Rules and limits
 
@@ -338,40 +203,21 @@ enters the transcript. The operator declines by replying in the chat
 `errors`, `metadata`, `group_chat_through_seq` (group runs),
 `schedule_id` (schedule runs), the system, task, and memory prompt
 hashes, `created_at`, `updated_at`, and `archived_at`. Deleting the
-agent deletes its runs.
+agent deletes its runs. The app labels `group` **Group chat** and
+`schedule` **Routine**.
 
-The run stays `active` (direct, or any kind the operator has resumed)
-or becomes `completed` (group or schedule) after its generation.
+A direct run, or any run the operator has resumed, stays `active`
+after its generation. A group or schedule run becomes `completed`. Any
+run becomes `completed` when it ends on a limit, a hand-off, or a
+model it cannot call ([Generation](#generation)).
 
 ### Opening rows
 
-At creation a direct run begins:
-
-```text
-0  system   composed prompt (<guidelines>, <task>, <state>, <memory>)
-1  user     submitted message, if any
-```
-
-Created without a user message, it keeps that system row. Later user
+Row 0 is the composed system prompt. A direct run created with a
+message adds it as row 1. A group run adds one Group Chat info user
+message, and a schedule run one Schedule wake-up user message
+([System prompt](system-prompt.md#the-runs-own-messages)). Later user
 messages append operator text only.
-
-Memory stays the opening `<memory>` section. The opening State
-snapshot keeps the group chat, notes, scripts, environment, and the
-UTC clock. The agent refreshes catalogs with tools.
-
-A group-triggered run uses the same composed system row, then one
-Group Chat info user message (`latestMessage`, `youWereTagged`) for the
-snapshot sequence. History through that snapshot is already in State
-as the last 10 public rows ([Group chat](group-chat.md#delivery)).
-
-A schedule-triggered run uses the same composed system row, then one
-Schedule wake-up user message (`id`, `cron` or `window`,
-`instruction`, `previous_run_at`) ([Routines](routines.md#firing)).
-History lists it as a schedule wake-up.
-
-No run kind is required to write Memory. The agent writes it when
-the next run needs something this one learned
-([Memory](memory.md#when-the-agent-writes)).
 
 ### Attachments
 
@@ -399,10 +245,6 @@ unknown ref (404). `GET /api/attachments/:id` serves the bytes to the
 same organisation.
 
 ### Metadata
-
-The ordered stored payloads are the complete history. The model client
-receives a projection of those payloads
-([Tool-result stubbing](#stubbing-rules)).
 
 Metadata sits beside the payload and is never sent to the model:
 
@@ -448,8 +290,8 @@ Flags: `browser`, `coding`, `scripting`, and `memory`. Beside them,
 `harness` is a coding agent's harness or null, `harness_model` the
 model that harness runs or null for its subscription's default,
 `harness_effort` the effort it runs that model at or null for the
-model's default ([Harnesses](coding/harnesses.md)), and `secret_aliases` the agent's
-secret aliases ([Secrets](secrets.md)).
+model's default ([Harnesses](coding/harnesses.md)), and
+`secret_aliases` the agent's secret aliases ([Secrets](secrets.md)).
 
 The complete tool schemas offered to the model:
 
@@ -458,7 +300,7 @@ The complete tool schemas offered to the model:
 - `secret_store`;
 - `secret_request` on direct runs;
 - `report_issue`, always;
-- the six schedule tools on direct and group-chat runs;
+- the six schedule tools, when bound, on direct and group chat runs;
 - `group_post` when that binding is on;
 - the eight browser tools when `browser` is true;
 - the five code tools when `coding` is true;
@@ -474,55 +316,56 @@ Each generation re-resolves the agent's secrets (organisation-wide,
 granted to its guild, granted to it), writes them onto the snapshot,
 and decrypts their values. A later grant, removal, or rotation reaches
 an existing direct run. A deleted, missing, or undecryptable secret is
-a generation-start error. Changing agent configuration or tool
-bindings affects new runs only.
+a generation-start error.
 
 ### Generation
 
-One generation at a time per agent. Concurrent requests to the same
-agent return a conflict.
-
 At start, the loop ensures the agent's machine is up and checks the
-disk caps; a home or machine over its cap fails the generation with
-`workspace.full` ([Agent home](agent-home.md)). After the generation it
-measures and stores both sizes. A coding run is checked further before
-the model is called: harness picked, guild repositories, harness
-installed and credentialed, repositories prepared
-([Coding agents](coding/index.md)).
+disk caps. A home or machine over its cap fails the generation with
+`workspace.full` ([Agent home](agent-home.md#the-disk-cap)). After the
+generation it measures and stores both sizes. A coding run is checked
+further before the model is called: harness picked, guild
+repositories, harness installed and credentialed, repositories
+prepared ([Coding agents](coding/index.md)).
 
-It loads every payload in order and repeats up to `max_steps`:
+It loads every payload in order and repeats the loop up to
+`max_steps` times. Each step filters every tool result through the
+output pipeline before it appends one tool message. If the last
+allowed step still has tool calls, those tools run, then the loop
+records `generation.max_steps`. The run stays active.
 
-1. call the model;
-2. append the assistant row;
-3. if there are tool calls, execute them sequentially, filter each
-   result, and append one tool message.
-
-A final assistant row without tool calls ends the generation. If the
-last allowed call still has tool calls, those tools still run, then
-the loop stops and records an operational error.
-
-The snapshotted `max_tool_calls` (default 50) counts every tool result
-on the run. State carries that starting budget. After the output
+`max_tool_calls` counts every tool result on the run. After the output
 pipeline, each stored tool result ends with `remaining_tool_calls: N`,
 the count left after that result. When N is 8 or fewer, a wrap-up line
 sits above that trailer: write durable findings and finish with text;
 a batch costs one call each. When the count reaches the cap, the
 current batch still finishes. Then the run records
-`generation.max_tool_calls` and becomes completed. Later user messages
-are refused, and so is Resume.
+`generation.max_tool_calls` and completes.
 
 Before each model call the orchestrator projects the stored history,
 then counts that prompt (messages and offered tools) with
-`js-tiktoken` against `max_input_tokens` (default 100000). Above that
-cap it does not call the model. It records
-`generation.max_input_tokens` with a message to start a new run, and
-completes the run. Resume is refused.
+`js-tiktoken` against `max_input_tokens`. Above that cap it does not
+call the model. It records `generation.max_input_tokens` with a
+message to start a new run, and completes the run.
+
+Before each model call the orchestrator also resolves the model's
+credentials. Each of these records its operation and completes the
+run:
+
+| Operation | Cause |
+| --- | --- |
+| `generation.model_key` | the model's provider is not connected for the organisation |
+| `generation.model_credentials` | the edition's model credentials refuse the call |
+| `generation.subscription` | the edition's policy blocks the organisation; core never blocks |
+
+Resume is refused after `generation.max_tool_calls`,
+`generation.max_input_tokens`, and `generation.max_chain`, and allowed
+after the three above.
 
 ### Stubbing rules
 
-The stored transcript is unchanged. For the provider request only,
-large tool **results** outside the keep window are replaced with a
-short stub:
+For the provider request only, large tool **results** outside the keep
+window are replaced with a short stub:
 
 - `tool_name`;
 - `source_seq`;
@@ -536,8 +379,7 @@ a run in a chain. `keep_tool_result_generations` (default 1,
 snapshotted) is how many generations stay live, including the current
 one:
 
-- `1`: stub every previous generation (the last finished user turn and
-  earlier). This is the default.
+- `1`: stub every previous generation. This is the default.
 - `2`: also keep the previous user turn's tool results; stub older.
 
 A result under 2048 bytes is never stubbed. When the projected prompt
@@ -545,14 +387,11 @@ is still over `max_input_tokens`, the oldest live results above that
 floor are stubbed until four remain or the count fits. Policy version
 `1`.
 
-Studio and Builder use the same projector with a keep of 1 and no size
-floor (`apps/orchestrator/src/conversation/projection.ts`).
-
 ### Chain rules
 
 A run whose snapshot has `coding` on continues in a new run when its
 projected prompt grows. History stays append-only; each run's rows
-remain the store the projection was built from. Runs without `coding`
+are the store the projection was built from. Runs without `coding`
 keep the input cap above.
 
 1. When the count before a model call reaches 70% of
@@ -580,8 +419,7 @@ A schedule continuation keeps the routine's `schedule_id` and
 `instruction_hash`. A group continuation keeps the delivery's
 `group_chat_through_seq` and completes itself. The group delivery
 waits for the whole chain, then completes the chain's first run and
-advances the agent's cursor. The Memory step of group and schedule
-runs happens in the last run only.
+advances the agent's cursor.
 
 A chain holds at most 5 runs. The fifth run, at the hand-off point,
 records `generation.max_chain` and completes. If the hand-off request
@@ -604,7 +442,7 @@ history, then consumes new events.
 ### Cancellation and restart
 
 Cancellation stops the current model call or tool command. It records
-`generation.cancelled` and leaves a direct run active. The sandbox
+`generation.cancelled` and leaves a direct run active. The machine
 stays.
 
 If an assistant row with tool calls is already in history,
@@ -637,11 +475,23 @@ set, a schedule generation leaves the run active.
 
 ### Errors and logs
 
-A provider failure before any assistant row creates no message. It
-appends to `runs.errors` and to structured logs.
+Every failure the loop records appends one entry to `runs.errors`:
 
-Logs carry the run, guild, agent, operation, and traceback. They
-redact known secret values. They omit prompts, payloads, and tool
+| Field | Content |
+| --- | --- |
+| `at` | when it failed, ISO 8601 |
+| `generation` | the generation number |
+| `operation` | what failed, such as `llm.complete`, `workspace.full`, or a `generation.*` operation above |
+| `error_type` | the error's class name |
+| `message` | the error message, with known secret values redacted |
+
+The same entry is published on the run's stream as `run.error`
+([Run transcript](run-transcript.md#errors-outside-a-flow)). A
+provider failure before any assistant row creates no message row.
+
+Logs carry the run, guild, agent, operation, error type, and
+`traceback`.
+They redact known secret values. They omit prompts, payloads, and tool
 results.
 
 ### HTTP
@@ -664,4 +514,4 @@ results.
 - `apps/orchestrator/src/conversation/projection.ts`: tool-result
   stubbing
 - `apps/orchestrator/src/attachments/`: uploads and image hydration
-- `apps/web/src/features/agent/chat/`: the Chat tab and transcript
+- `apps/web/src/features/agent/chat/`: the Chat tab

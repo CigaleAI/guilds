@@ -1,178 +1,221 @@
 # Native tools
 
-Notes, collections, memory, and scripts share one artifact store.
-They keep separate tool families.
+Native tools ship in the box. The orchestrator runs each one, some
+through a helper in the agent's sandbox. Notes, collections, memory,
+and scripts share one artifact store, but each keeps its own tool
+family.
 
-- `note_find` / `note_get` / `note_write` / `note_delete`: Markdown
-  notes in the artifact store.
+Which of these a run offers is
+[What a run offers](tools-in-a-run.md#what-a-run-offers). Every result
+goes through the [result pipeline](tools-in-a-run.md#results).
 
-  Find searches or lists notes the agent may read, optionally at one
-  level. Get reads one display path. `note_write` takes `level`
-  (`agent`, `guild`, or `org`) and `key` (the `.md` file name).
+Web search is a connector, not a native tool: the Web search
+connector's `tavily_search`
+([Web search](connector-list.md#web-search)).
 
-  Notes have no folders. The memory archive is not reachable from
-  these tools.
+## Notes
 
-- `record_search` / `record_list` / `record_add` / `record_update` /
-  `record_remove`: records of the organisation's collections, the typed
-  stores of records the operator defines and grants.
+Markdown notes in the artifact store, at agent, guild, or organisation
+level ([Notes](../concepts/notes.md)). Notes have no folders. These
+tools do not reach the memory archive.
 
-  Every tool names the collection by `collection`. No tool creates, alters,
-  or deletes one.
+| Tool | Parameters | Does |
+|---|---|---|
+| `note_find` | `query`, `level`, `limit` (default 20) | Searches the notes the agent may read. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ notes }` |
+| `note_get` | `path` (required) | Reads one note by its display path. A soft-deleted note returns a tombstone |
+| `note_write` | `level`, `key`, `content` (all required) | Creates or replaces a note. `key` is the `.md` file name. Returns the display path |
+| `note_delete` | `path` (required) | Soft-deletes a note. `task.md` and `memory.md` cannot be deleted |
 
-  `record_search` takes:
+A collection or record path is refused with a pointer to the record
+tools. A script is refused with a pointer to the script tools.
 
-  - `query` (words in any column, `websearch` grammar, substring for
-    a single token, never fuzzy)
-  - an optional `collection`
-  - `where` (with `collection` only)
+Four grant bindings decide note reach:
 
-  Results are `{ records }`, each with its `collection` and `id`.
+| Grant | Default |
+|---|---|
+| `read_guild` | On |
+| `read_org` | On |
+| `write_guild` | On |
+| `write_org` | Off |
 
-  `record_list` takes:
+## Records
 
-  - `collection`
-  - `where` (`{ column: term }`, at most 8: text and an open array
-    item by substring or similar spelling, a column with `values`
-    exactly, number and datetime exactly or by `{ gte, lte }`,
-    boolean and `id` exactly, `null` for a missing value)
-  - `since` (an ISO timestamp, oldest change first)
-  - `order` (`{ column, direction }` over a declared column (not an
-    array), `id`, `created_at`, or `updated_at`)
-  - `limit` (default 20, at most 100)
-  - `offset`
+Records of the organisation's collections: typed tables the operator
+defines and grants ([Collections](../concepts/collections.md)). Every
+tool names the collection by `collection`. No tool creates, alters, or
+deletes a collection.
 
-  Results are `{ total, records }`. An empty narrowed result carries
-  a `hint` with the collection's size, newest change, and columns.
+| Tool | Parameters | Does |
+|---|---|---|
+| `record_search` | `query` (required), `collection`, `where`, `limit` | Text search across every readable collection, or one. Returns `{ records }`, each with its `collection` and `id` |
+| `record_list` | `collection` (required), `where`, `since`, `order`, `limit`, `offset` | Lists one collection. Returns `{ total, records }` |
+| `record_add` | `collection`, `body` (required) | Adds a record. Returns `{ record }` |
+| `record_update` | `collection`, `id`, `body` (required) | Merges `body` into one record. Returns `{ record, warnings? }` |
+| `record_remove` | `collection`, `id` (required) | Soft-deletes one record. Returns `{ removed }` |
 
-  `record_add` takes `body` (declared columns only). It validates
-  every value and rejects with every problem at once
-  (422 `record rejected`). It assigns the id and returns `{ record }`
-  plus `note: merged into existing record <id>` when the unique column
-  matched a live record.
+- **`query`** matches whole words in any column, in `websearch`
+  grammar: terms are ANDed, `OR` widens, quotes keep a phrase, `-`
+  excludes. A single token also matches partially. Search is never
+  fuzzy.
+- **`where`** is `{ column: term }`, at most 8 columns, each term at
+  most 200 characters. Text and an open array item match by substring
+  or similar spelling. A column with `values` matches exactly. Number
+  and datetime match exactly or by `{ gte, lte }`. Boolean and `id`
+  match exactly. `null` matches a missing value. On `record_search`,
+  `where` needs `collection`.
+- **`since`** is an ISO timestamp. It keeps records created or updated
+  at or after it, oldest change first.
+- **`order`** is `{ column, direction }` over a declared column that
+  is not an array, `id`, `created_at`, or `updated_at`. The default is
+  `id`.
+- **`limit`** defaults to 20, at most 100.
+- **`body`** holds declared columns only. `record_add` validates every
+  value and rejects with every problem at once (422 `record rejected`).
+  When the unique column matches a live record, the body merges into
+  it and the result adds `note: merged into existing record <id>`. On
+  `record_update`, `null` clears an optional column.
 
-  `record_update` takes `id` and a `body` of the columns that change
-  (`null` clears an optional column). It returns `{ record, warnings? }`.
+An empty `record_list` result that was narrowed carries a `hint`: the
+collection's size, its newest change, and its columns.
 
-  `record_remove` soft-deletes by `id` and returns `{ removed }`.
+Reach is the collection grant:
 
-  Reach is the collection grant:
+- the agent's own grant row when it has one (`none` keeps it out)
+- otherwise its guild's `read` or `write` on an organisation collection
+- or `write` on the agent's guild's own collection
 
-  - the agent's own row when it has one (`none` keeps it out)
-  - otherwise its guild's `read` or `write` on an organisation collection
-  - or `write` on the agent's guild's own collection
+An ungranted collection is a 404. A write on `read` is a 403.
 
-  An ungranted collection is 404. A write on `read` is 403.
+## Memory
 
-  The four grant bindings decide note reach only:
+`memory_write` takes one required `content` string. It replaces the
+agent's whole Memory ([Memory](../concepts/memory.md)).
 
-  - `read_guild`
-  - `read_org`
-  - `write_guild`
-  - `write_org`
+- `content` is at most 12,000 characters.
+- The previous version goes to `memory_revisions`. The newest 50 are
+  kept.
+- When the binding is off, the prompt does not name the tool.
 
-  Defaults: guild read/write and org read on; org write off.
+## Browser
 
-- `memory_write`: orchestrator, full replacement of the agent's
-  `memory` row with one `content` string.
+Eight tools drive the agent's own Chrome through Playwright in its
+sandbox ([Browser](../concepts/browser.md)). Each call has a 60-second
+timeout.
 
-  It archives the previous version in `memory_revisions` (cap 50).
-  The whole file is at most 12 000 characters. It is offered on
-  direct, group-triggered, and schedule-triggered runs when the
-  binding is on and `config.memory` is not false. When the binding
-  is off the prompt does not name the tool.
+| Tool | Parameters | Does |
+|---|---|---|
+| `browser_navigate` | `url` | Opens a URL |
+| `browser_snapshot` | none | Returns the URL, title, and accessibility tree |
+| `browser_click` | `target` | Clicks a locator |
+| `browser_type` | `target`, `text` | Types into a locator |
+| `browser_fill` | `target`, `value` | Replaces a field's value |
+| `browser_scroll` | `direction` (`up`, `down`, `left`, `right`), optional `target` | Scrolls one viewport |
+| `browser_screenshot` | none | Writes `screenshots/latest.jpg` in the agent's home and returns that path |
+| `browser_eval` | `expression` | Runs JavaScript in the page |
 
-- `browser_navigate` / `browser_snapshot` / `browser_click` /
-  `browser_type` / `browser_fill` / `browser_scroll` /
-  `browser_screenshot` / `browser_eval`: sandbox Playwright against
-  the live Chromium CDP endpoint, offered when the run snapshot has
-  `browser: true`.
+A locator comes from the latest snapshot: CSS, `role=...`, or
+`text=...`.
 
-  Snapshot returns the accessibility tree. Click, type, and fill
-  take locators from that tree.
+`browser_scroll` scrolls a visible overflow panel when the page has
+one, otherwise the window. `target` picks the panel. The result names
+the container and how much remains.
 
-  `browser_scroll` moves one viewport up, down, left, or right in a
-  visible overflow panel when the page has one, otherwise the
-  window. An optional `target` locator picks the panel. Screenshot
-  writes `screenshots/latest.jpg` in the agent's home.
+`browser_eval` runs `expression` as the body of an async function and
+returns a JSON-serializable value. `console.log` is not captured. To
+reuse a snippet, the agent writes it to a note and reads it back with
+`note_get`.
 
-  `browser_eval` runs JavaScript in the current page as an async
-  function body and returns a JSON-serializable value. Reuse a
-  snippet by writing it to an agent note and reading it back with
-  `note_get`. Each call has a 60-second timeout.
+## Code
 
-- `code_task` / `shell` / `shell_status` / `file_read` /
-  `code_search`: the code tools, offered when the run snapshot has
-  `coding: true` ([Code tools](../concepts/coding/code-tools.md)). `code_task` runs in the
-  sandbox through `guilds-harness` and delegates code work to the
-  agent's coding harness; the other four run through `guilds-code`.
+`code_task`, `shell`, `shell_status`, `file_read`, and `code_search`
+are the code tools ([Code tools](../concepts/coding/code-tools.md),
+[Code tasks](../concepts/coding/code-tasks.md)). `code_task` runs
+through `guilds-harness` and hands code work to the agent's coding
+harness. The other four run through `guilds-code`.
 
-- `group_post`: orchestrator, offered when the binding is on
-  ([Group chat](../concepts/group-chat.md)).
+## Group chat
 
-- `report_issue`: orchestrator, always offered. Agents file a tooling
-  problem onto the guild:
+`group_post` takes one required `content` string with non-whitespace
+text. It posts to the guild's chat. `@name` asks that agent to reply.
+`@user` asks the operator. An untagged post asks nobody
+([Group chat](../concepts/group-chat.md)).
 
-  - `tool_failure`
-  - `truncated`
-  - `api`
-  - `other`
+## Issues
 
-  The guild's operators see those rows in their inbox and on the
-  guild Issues tab. They resolve them (one, or every open row at
-  once) or investigate them in Studio.
+`report_issue` files a tooling problem on the guild. The guild's
+operators see it in their inbox and on the guild's **Issues** tab
+([Inbox and issues](../concepts/inbox.md)).
 
-- `schedule_create_cron` / `schedule_create_window` / `schedule_list` /
-  `schedule_pause` / `schedule_resume` / `schedule_delete`:
-  orchestrator, offered on direct and group-chat runs.
+| Parameter | Required | Meaning |
+|---|---|---|
+| `summary` | Yes | One line, at most 200 characters |
+| `detail` | Yes | What failed, with the tool name and error text |
+| `kind` | Yes | `tool_failure`, `truncated`, `api`, or `other` |
+| `severity` | No | `low`, `medium`, or `high`; default `medium` |
+| `tool_name` | No | The tool that failed |
 
-  `schedule_create_cron` takes `cron`, a 5-field UTC expression
-  (minute hour day month weekday). Consecutive wake-ups must be at
-  least 5 minutes apart. `schedule_create_window` takes `timezone`,
-  `start`, `end`, and `max_wakes`, a daily random window described
-  in [Routines](../concepts/routines.md).
+## Routines
 
-  `description` is a required one-line label at most 400 characters.
-  `instruction` is markdown at most 2000 characters, stored as
-  `instruction` on the schedule row. Pause stops firing. Resume
-  recomputes `next_run_at` from now.
+Six tools manage the agent's own schedules
+([Routines](../concepts/routines.md)). They refuse a schedule run.
 
-- `script_create` / `script_list` / `script_read` / `script_run` /
-  `script_delete`: orchestrator plus sandbox.
+| Tool | Parameters | Does |
+|---|---|---|
+| `schedule_create_cron` | `cron`, `description`, `instruction` | A repeating wake-up on a UTC clock |
+| `schedule_create_window` | `timezone`, `start`, `end`, `max_wakes`, `description`, `instruction` | Random wake-ups inside a daily local-time window |
+| `schedule_list` | none | Lists the agent's schedules and when each fires next, in UTC |
+| `schedule_pause` | `schedule_id` | Stops a schedule firing |
+| `schedule_resume` | `schedule_id` | Resumes it. The next fire is recomputed from now |
+| `schedule_delete` | `schedule_id` | Deletes it |
 
-  `name` matches `^[a-z][a-z0-9_-]{0,62}$`. `manifest` is reserved.
-  `description` is required and at most 400 characters.
+- `cron` is a 5-field UTC expression: minute, hour, day, month,
+  weekday.
+- `timezone` is an IANA name. `start` and `end` are `HH:MM` local
+  times. An `end` before `start` spans midnight. `max_wakes` is the
+  most wake-ups per window.
+- Consecutive wake-ups are at least 5 minutes apart.
+- `description` is a one-line label, at most 400 characters.
+- `instruction` is markdown, at most 2,000 characters. It is stored on
+  the schedule and passed on the wake-up message.
 
-  Scripts are agent-level artifacts (`kind` `script`). `script_create`
-  of a new name is refused when the agent already has its
-  `max_scripts` (default 10).
+## Scripts
 
-  A run snapshots source and hash, then materialises
-  `/home/<agent id>/scripts/<name>.py`. `script_run` executes that
-  file on the agent's machine (in its home, 120-second timeout) through
-  `guilds-script-run`. The launcher writes the optional `arguments`
-  object to the script's stdin as JSON (`{}` without one). For an
-  agent without `coding` it is the only tool that runs a command
-  there.
+Five tools manage the agent's Python scripts
+([Scripts](../concepts/scripts.md)).
 
-  `script_delete` removes the catalog row, the sandbox file, and the
-  name from this run's snapshot. A row with `parameters` is also a
-  first-class tool on **new** runs. Its arguments reach stdin the
-  same way. The five tools are omitted when `config.scripting` is
-  false ([Scripts](../concepts/scripts.md)).
+| Tool | Parameters | Does |
+|---|---|---|
+| `script_create` | `name`, `description`, `source` (required), `parameters` | Creates or replaces a script |
+| `script_list` | none | Lists the scripts and why each exists |
+| `script_read` | `name` | Returns a script's name, description, and source |
+| `script_run` | `name`, optional `arguments` | Runs a script |
+| `script_delete` | `name` | Deletes a script |
 
-- `secret_store` / `secret_request`: orchestrator. `secret_store`
-  saves a value the agent produced as a secret granted to that
-  agent. `secret_request` asks the operator in a direct chat for
-  one. Both are described in
-  [Secrets](../concepts/secrets.md#agents-storing-and-asking-for-secrets).
+- `name` matches `^[a-z][a-z0-9_-]{0,62}$`. `manifest` is reserved. A
+  name equal to a native tool name or to one of the agent's connector
+  tool names is refused.
+- `description` is required, at most 400 characters.
+- `parameters` is a JSON Schema object. A script with `parameters` is
+  also offered as a tool under its own name, from the next run.
+- A new name is refused once the agent holds `max_scripts` scripts
+  (default 10). Replacing a name does not count.
 
-Web search is not a native tool: it is the Tavily connector's
-`tavily_search`, served on the Web search platform key a platform
-admin enters under **Admin**, **Platform keys**
-([Instance keys](connectors.md#instance-keys)). A native tool that
-waits on a platform key has no switch in Tools and says it is offered
-once a platform admin sets up its integration there.
+A run snapshots each script's source and hash and writes it to
+`/home/<agent id>/scripts/<name>.py`. A script replaced during a run
+takes effect from the next run.
 
-Whether a run offers a native tool is
-[What a run offers](catalog.md#what-a-run-offers).
+`script_run` runs that file on the agent's machine, in its home,
+through `guilds-script-run`, with a 120-second timeout. The launcher
+writes `arguments` to the script's stdin as JSON, `{}` without one.
+For an agent without `coding`, it is the only tool that runs a command
+there.
+
+`script_delete` removes the stored script, the sandbox file, and the
+name from this run's snapshot.
+
+## Secrets
+
+`secret_store` saves a value the agent produced, from a file in its
+home, as a secret granted to that agent. `secret_request` asks the
+operator for one in a direct chat. Both are described in
+[Secrets](../concepts/secrets.md#agents-storing-and-asking-for-secrets).

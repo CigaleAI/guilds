@@ -6,9 +6,9 @@ agents alike.
 The goal is simple code. We write small, clear functions. We
 combine them to build bigger behaviour.
 
-If a tool can check a rule, a tool checks it. Reviewers focus on
-the rest. The lint, format, and check tooling is in
-[Development](development.md).
+ESLint, Prettier, the boundary rule, and the check enforce what
+they cover. No lint rule enforces the function limits below; review
+checks them. The tooling is in [Development](development.md).
 
 ---
 
@@ -86,23 +86,30 @@ that domain named for what they hold (`service.ts`, `timing.ts`,
 sub-domain of its own.
 
 In the operator app each screen is a directory under
-`src/features/`. There is no `utils/`, `helpers/`, or `common/`.
+`src/features/`. Code the screens share lives in two directories:
+`src/api/` (the HTTP client, queries, streams, and the API types) and
+`src/app/` (the app root, the router, extension slots, and formatting).
+There is no `utils/`, `helpers/`, or `common/`.
 
 ```
 src/
+  api/
+    ...
+  app/
+    ...
   features/
     recipes/
       ...
     studio/
       ...
-  lib/
-    ...
 ```
 
 - Each feature lives in its own folder.
 - Folders stay flat: `features/<name>/<file>`. A sub-folder is a
   sub-domain, not a type (`components/`, `hooks/`).
-- Code two domains share goes in `lib/` and says which two.
+- Code two domains share goes in the shared directory (`lib/` in the
+  orchestrator, `api/` or `app/` in the operator app) and says which
+  two.
 
 HTTP stays thin in `http/`. The domain module owns the logic and
 the validation. A feature's tests are named for the feature.
@@ -112,28 +119,29 @@ through what that feature exports.
 
 ## Shared code
 
-`lib/` holds code shared across features. It must stay clean, or
-it becomes a junk drawer.
+A shared directory (`lib/` in the orchestrator, `api/` and `app/` in
+the operator app) holds code shared across features. It must stay
+clean, or it becomes a junk drawer.
 
-Code belongs in `lib/` only if:
+Code belongs there only if:
 
 - It is used by **at least two features**.
 - It contains **no feature-specific knowledge**.
 - It does one very specific thing.
 - It is a **pure function** where possible.
 - Every branch has a test.
-- The function name perfectly describe what it does and is easy to find by search
+- Its name says exactly what it does and is easy to find by search.
 
-`lib/` never imports from a feature.
+A shared directory never imports from a feature.
 
 ## Boundaries
 
 A module reaches another through what that module exports. A
 package is reached through its `exports` list.
 
-A feature may import from `lib/`. Prefer not to import from
-another feature; when two features must share behaviour, move
-that behaviour to `lib/` or keep a thin call at the composition
+A feature may import from a shared directory. Prefer not to import
+from another feature; when two features must share behaviour, move
+that behaviour to a shared directory or keep a thin call at the composition
 root (`compose.ts`, the router, a page that mounts both).
 
 Core imports nothing from an edition built on it.
@@ -194,9 +202,9 @@ same commit.
 Write in **simple, short sentences**. Explain it like you would
 to a beginner.
 
-A page listed under **Get started** in the
-[index](../README.md#get-started) is a tutorial. It is written
-for someone who has never seen the product:
+A page under `docs/getting-started/`, listed under **Get started**
+in the [index](../README.md#get-started), is a tutorial. It is
+written for someone who has never seen the product:
 
 - The subject comes first, then the verb. One action per sentence.
 - Steps are in the imperative: open, click, paste, type.
@@ -226,8 +234,9 @@ under these headings, in this order:
 A heading with nothing to say is left out. Everything above
 **Reference** reads on its own.
 
-Every other page is reference. It is complete and exact, and it
-follows the same sentence rules where they do not cost precision.
+Every other page is reference, `docs/operations/` included. It is
+complete and exact, and it follows the same sentence rules where
+they do not cost precision.
 
 ## Changes
 
@@ -235,8 +244,8 @@ One change does one thing. The commit message is one sentence in
 the imperative that states the outcome for the reader of
 `git log`. A short body is used only when the why is not obvious.
 
-Before you call a task done, run lint, tests, and the check in
-[Development](development.md#check).
+Before you call a task done, run `make check`
+([Development](development.md#check)). It runs lint and the tests.
 
 If a rule seems to block the task, ask. Do not work around the
 rule.
@@ -254,7 +263,7 @@ Before you submit a change, check:
 - [ ] Every new branch has a test.
 - [ ] I searched for existing code before writing new code.
 - [ ] Names are clear and do not overlap with existing names.
-- [ ] Shared code in `lib/` meets the shared-code rules.
+- [ ] Shared code meets the shared-code rules.
 - [ ] Side effects are at the edges.
 - [ ] Docs are updated in the same change.
 - [ ] Lint and tests pass.

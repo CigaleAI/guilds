@@ -33,14 +33,13 @@ A request with no `Origin` does not come from a browser, and passes
 ([Security register](../architecture/security-register.md), SEC-15).
 
 Connector sign-ins return to
-`<PUBLIC_BASE_URL>/api/mcp/oauth/callback`. Register that address on
-the Google Cloud client. **Create the GitHub App** registers it on
-the App itself. A GitHub App registered by hand needs it too
+`<PUBLIC_BASE_URL>/api/mcp/oauth/callback`. **Create the GitHub App**
+registers that address on the App itself. Register it yourself on
+the Google Cloud client and on a GitHub App registered by hand
 ([Gmail and Drive](../tools-and-connectors/google.md),
-[GitHub](../tools-and-connectors/github.md)).
-
-The provider does not need a path to the box. Only the operator's
-browser does.
+[GitHub](../tools-and-connectors/github.md#registering-the-app-by-hand)).
+The provider needs no path to the box. Only the operator's browser
+does.
 
 ## A tailnet
 
@@ -50,6 +49,8 @@ on the machine:
 ```text
 tailscale serve --bg localhost:8080
 ```
+
+Use the `ORCHESTRATOR_PORT` value when it is not `8080`.
 
 The app is now at `https://<machine>.<tailnet>.ts.net`. Members of
 the tailnet can open it. No one else can.
@@ -86,8 +87,9 @@ An email that belongs to no user gets a 401. The proxy letting
 someone through is not enough. You give each person an account, by
 their email.
 
-**Admin**, **Users** does it. **New user** takes their name and
-email. It creates the user and a personal organisation they own. The
+**Admin**, **Users** does it
+([Instance admin](../concepts/instance-admin.md)). **New user** takes
+their name and email. It creates the user and a personal organisation they own. The
 pencil on a user's row changes their address, or removes it.
 
 To let them work in your organisation, add them by name in
