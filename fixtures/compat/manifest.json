@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "48e0244c25975277e69de6c1b8cb7a8442a6b2def21e35d950f8c9f9b8eb92ab"
+      "sha256": "f6717571a3df1af452a9a5bd20e4efcc611050be5fdf46523a56f7b0f3aadd81"
     },
     {
       "path": "ids/shape.json",
@@ -143,7 +143,7 @@
       "path": "views/run-message.json",
       "source": "orchestrator.db:message_item",
       "generator_version": "1",
-      "sha256": "3141ec8c8cfc3dc6533a733a39ccd40d346e8f021c23ffb17bfc5627fa79a7a0"
+      "sha256": "7dac43fc5078f512f766a7bb9bba3ccd57e5f6eed6784e7e9bb4e86d6c8df6f4"
     },
     {
       "path": "ws/browser.json",

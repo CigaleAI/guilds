@@ -18,7 +18,7 @@ its own repository.
    module imports an edition's, reads its settings, queries its
    tables, or branches on the edition that is running.
 2. **Core is the whole product.** Guilds, agents, runs, tools,
-   connectors, coding agents, Studio, Builder, recipes, databases,
+   connectors, coding agents, Studio, Builder, recipes, collections,
    and usage are core. An edition adds no agent feature.
 3. **Core starts on Docker alone.** No cloud account, email
    provider, payment provider, or object store. Every instance key

@@ -28,7 +28,6 @@ export type ActivityAgent = {
   name: string;
   avatar_color: string;
   avatar_shape: string;
-  archived: boolean;
 };
 
 // `label` is the timing in words; `instruction` is what each firing tells the agent.
@@ -482,7 +481,6 @@ export function projectActivity(input: ActivityInput): ActivityView {
       name: String(agent.name),
       avatar_color: String(agent.avatar_color ?? ""),
       avatar_shape: String(agent.avatar_shape ?? ""),
-      archived: agent.archived_at !== null && agent.archived_at !== undefined,
     })),
     routines: input.schedules.map((row) => ({
       id: String(row.id),

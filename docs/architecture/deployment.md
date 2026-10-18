@@ -55,10 +55,9 @@ unless `.env` says otherwise). It holds the host-side trees:
 - `postgres/`: the Compose Postgres data directory.
 - `opensandbox/`: the OpenSandbox server's SQLite lifecycle store.
 - `notes/`: `NOTES_ROOT`. The file-backed `NotesStore`
-  (`src/notes/store.ts`) shadow-writes per-agent
-  `routines/<schedule-id>.md` on schedule writes. Nothing reads
-  those files: the artifact store and `schedules.instruction` are
-  canonical. The tree is required to exist at boot.
+  (`src/notes/store.ts`) resolves `system.md` here. The artifact
+  store and `schedules.instruction` are canonical. The tree is
+  required to exist at boot.
 - `attachments/`: `ATTACHMENTS_ROOT`. Chat images, one file per
   attachment under its organisation's directory.
 - `connectors/`: `CONNECTORS_ROOT`. The code of registry connectors
@@ -88,7 +87,7 @@ org/<org_id>/<note>.md
 
 The Host Finder lists notes over HTTP. A laptop or phone sees
 current Markdown. Scripts appear on the agent's State Scripts view,
-not in Files. Collection records appear on the Databases page.
+not in Files. Collection records appear on the Tables page.
 Agents never mount artifact rows. Orchestrator tools read and write
 them.
 

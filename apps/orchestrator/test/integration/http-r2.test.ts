@@ -14,7 +14,6 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 
 const R2_CASES = [
   "health-ok",
-  "system-prompt",
   "list-users",
   "org-models-auth",
   "org-models-single-user-no-header",
@@ -93,12 +92,12 @@ test("R2 feature HTTP recordings replay against an isolated database", async () 
   const databaseUrl = await createIsolatedDatabase(dbName);
   const env = testEnv(databaseUrl);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
+  const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const app = await buildApp(database, { repo, notes, scripts, schedules });
   const placeholders = new PlaceholderMap();
   const byName = new Map(recordings.cases.map((item) => [item.name, item]));

@@ -202,8 +202,8 @@ An ended run shows a banner under the transcript:
 `schedule`), `status` (`active` or `completed`), `config_snapshot`,
 `errors`, `metadata`, `group_chat_through_seq` (group runs),
 `schedule_id` (schedule runs), the system, task, and memory prompt
-hashes, `created_at`, `updated_at`, and `archived_at`. Deleting the
-agent deletes its runs. The app labels `group` **Group chat** and
+hashes, `created_at`, and `updated_at`. Deleting the agent deletes
+its runs. The app labels `group` **Group chat** and
 `schedule` **Routine**.
 
 A direct run, or any run the operator has resumed, stays `active`
@@ -462,8 +462,8 @@ is marked completed. A resumed run stays active.
 
 ### Resume
 
-`POST /api/runs/:id/resume` reopens a completed run that is not
-archived, has no continuation, and did not hit
+`POST /api/runs/:id/resume` reopens a completed run that has no
+continuation and did not hit
 `generation.max_tool_calls`, `generation.max_input_tokens`, or
 `generation.max_chain`. It sets `status` back to `active` and stores
 `metadata.resumed_at`. An active run is returned unchanged.
@@ -499,11 +499,11 @@ results.
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
 | `GET /api/agents/:id/runs` | the agent's runs | 200 | |
-| `POST /api/agents/:id/runs` | creates a direct run, with optional `message` and attachment ids | 201 idle, 202 generating | 422 empty message; 409 agent generating, agent or guild archived, guild being deleted |
+| `POST /api/agents/:id/runs` | creates a direct run, with optional `message` and attachment ids | 201 idle, 202 generating | 422 empty message; 409 agent generating, guild being deleted |
 | `GET /api/runs/:id` | the run | 200 | 404 |
 | `GET /api/runs/:id/messages` | its rows in order | 200 | 404 |
-| `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty; 409 one-shot not resumed, archived, continued, ended, or generating |
-| `POST /api/runs/:id/resume` | reopens a completed run | 200 | 409 archived, continued, or capped |
+| `POST /api/runs/:id/messages` | appends `content`, with optional attachment ids, and starts a generation | 202 | 422 empty; 409 one-shot not resumed, continued, ended, or generating |
+| `POST /api/runs/:id/resume` | reopens a completed run | 200 | 409 continued or capped |
 | `POST /api/runs/:id/cancel` | cancels the current generation | 202, or 204 with nothing to cancel | |
 | `GET /api/runs/:id/stream` | the run's SSE stream | 200 | |
 

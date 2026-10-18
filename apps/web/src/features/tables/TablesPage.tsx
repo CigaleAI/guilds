@@ -36,34 +36,34 @@ import {
   Tag,
 } from "@guildsrun/ui";
 import { ColumnsEditor } from "./ColumnsEditor";
-import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
+import { CreateTableDialog } from "./CreateTableDialog";
 import { RecordsPanel } from "./RecordsPanel";
-import { columnErrors, columnsForSave, databaseName, describeChanges } from "./values";
+import { columnErrors, columnsForSave, tableName, describeChanges } from "./values";
 
-export type DatabaseTab = "records" | "columns" | "access";
+export type TableTab = "records" | "columns" | "access";
 
 function scopeLabel(collection: Collection): string {
   return collection.guild ? `Guild · ${collection.guild.name}` : "Organisation";
 }
 
 /**
- * The organisation's databases: the list by owner, and the open one's records, columns and who
- * reaches it. Guilds and agents grant access from State → Databases.
+ * The organisation's tables: the list by owner, and the open one's records, columns and who
+ * reaches it. Guilds and agents grant access from State → Tables.
  */
-export function DatabasesPage() {
+export function TablesPage() {
   const params = useParams({ strict: false });
   const search = useSearch({ strict: false });
   const navigate = useNavigate();
   const wide = useMediaQuery(wideScreen);
-  const databases = useDatabases();
+  const tables = useDatabases();
   const [creating, setCreating] = useState(false);
 
-  const list = databases.data ?? [];
+  const list = tables.data ?? [];
   const selectedId = params.collectionId ?? (wide ? list[0]?.id : undefined);
   const showingList = wide || !params.collectionId;
   const showingDetail = Boolean(selectedId) && (wide || Boolean(params.collectionId));
   const showingSection =
-    showingDetail || (wide && !selectedId) || (!wide && !list.length && !databases.isPending);
+    showingDetail || (wide && !selectedId) || (!wide && !list.length && !tables.isPending);
   const groups = [
     { label: "Organisation", items: list.filter((item) => !item.guild) },
     ...[...new Set(list.flatMap((item) => (item.guild ? [item.guild.name] : [])))]
@@ -80,22 +80,22 @@ export function DatabasesPage() {
         )}
       >
         <div className="flex items-center justify-between gap-2">
-          <h1 className="type-h2">Databases</h1>
+          <h1 className="type-h2">Tables</h1>
           <IconButton
             icon={Plus}
-            label="New database"
+            label="New table"
             variant="surface"
             onClick={() => setCreating(true)}
           />
         </div>
         <div className="-mx-2 min-h-0 flex-1 overflow-y-auto">
-          {databases.isPending ? (
-            <SkeletonRows rows={5} label="Loading databases" />
-          ) : databases.isError ? (
+          {tables.isPending ? (
+            <SkeletonRows rows={5} label="Loading tables" />
+          ) : tables.isError ? (
             <Banner
               tone="error"
-              title="Couldn't load the databases"
-              meta={databases.error.message}
+              title="Couldn't load the tables"
+              meta={tables.error.message}
             />
           ) : (
             groups.map((group) => (
@@ -111,7 +111,7 @@ export function DatabasesPage() {
                     selected={item.id === selectedId}
                     onClick={() =>
                       void navigate({
-                        to: "/databases/$collectionId",
+                        to: "/tables/$collectionId",
                         params: { collectionId: item.id },
                       })
                     }
@@ -126,73 +126,73 @@ export function DatabasesPage() {
         className={cn("min-h-0 min-w-0 flex-1 flex-col", showingSection ? "flex" : "hidden")}
       >
         {selectedId ? (
-          <DatabaseDetail
+          <TableDetail
             key={selectedId}
             id={selectedId}
-            tab={(search as { tab?: DatabaseTab }).tab ?? "records"}
+            tab={(search as { tab?: TableTab }).tab ?? "records"}
             onTab={(tab) =>
               void navigate({
-                to: "/databases/$collectionId",
+                to: "/tables/$collectionId",
                 params: { collectionId: selectedId },
                 search: tab === "records" ? {} : { tab },
               })
             }
             {...(!wide && params.collectionId
-              ? { onBack: () => void navigate({ to: "/databases" }) }
+              ? { onBack: () => void navigate({ to: "/tables" }) }
               : {})}
           />
-        ) : databases.isPending ? null : (
+        ) : tables.isPending ? null : (
           <div className="grid flex-1 place-items-center p-6">
             <EmptyState
               icon={Database}
-              title="No databases yet"
-              description="Databases hold records with typed columns that agents search and write."
+              title="No tables yet"
+              description="Tables hold records with typed columns that agents search and write."
               action={
                 <Button size="sm" onClick={() => setCreating(true)}>
-                  New database
+                  New table
                 </Button>
               }
             />
           </div>
         )}
       </section>
-      <CreateDatabaseDialog open={creating} onOpenChange={setCreating} />
+      <CreateTableDialog open={creating} onOpenChange={setCreating} />
     </div>
   );
 }
 
-function DatabaseDetail({
+function TableDetail({
   id,
   tab,
   onTab,
   onBack,
 }: {
   id: string;
-  tab: DatabaseTab;
-  onTab: (tab: DatabaseTab) => void;
+  tab: TableTab;
+  onTab: (tab: TableTab) => void;
   onBack?: () => void;
 }) {
   const navigate = useNavigate();
-  const database = useDatabase(id);
+  const table = useDatabase(id);
   const remove = useDeleteDatabase();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  if (database.isPending) {
+  if (table.isPending) {
     return (
       <div className="p-6">
-        <SkeletonRows rows={6} label="Loading the database" />
+        <SkeletonRows rows={6} label="Loading the table" />
       </div>
     );
   }
-  if (database.isError) {
+  if (table.isError) {
     return (
       <div className="p-6">
-        <Banner tone="error" title="Couldn't load the database" meta={database.error.message} />
+        <Banner tone="error" title="Couldn't load the table" meta={table.error.message} />
       </div>
     );
   }
-  const collection = database.data;
+  const collection = table.data;
   const reach = collection.access_list.guilds.length + collection.access_list.agents.length;
 
   return (
@@ -202,7 +202,7 @@ function DatabaseDetail({
           {onBack ? (
             <IconButton
               icon={ArrowLeft}
-              label="Back to databases"
+              label="Back to tables"
               variant="ghost"
               size={28}
               onClick={onBack}
@@ -239,7 +239,7 @@ function DatabaseDetail({
         <p className="line-clamp-2 text-sm text-fg-2 md:line-clamp-none">{collection.purpose}</p>
         <Segmented
           size="sm"
-          label="Database view"
+          label="Table view"
           value={tab}
           onValueChange={onTab}
           options={[
@@ -263,25 +263,25 @@ function DatabaseDetail({
           <AccessPanel collection={collection} access={collection.access_list} />
         )}
       </div>
-      <EditDatabaseDialog collection={collection} open={editing} onOpenChange={setEditing} />
+      <EditTableDialog collection={collection} open={editing} onOpenChange={setEditing} />
       <ConfirmDialog
         kind="destructive"
         open={deleting}
         onOpenChange={setDeleting}
         title={`Delete ${collection.name}?`}
-        description={`The database and its ${collection.count ?? 0} records are removed; every guild and agent loses it at once.`}
-        confirmLabel="Delete database"
+        description={`The table and its ${collection.count ?? 0} records are removed; every guild and agent loses it at once.`}
+        confirmLabel="Delete table"
         confirmText={collection.name}
         onConfirm={() =>
           remove.mutateAsync(id).then(
             () => {
               toast({ kind: "success", title: `${collection.name} deleted` });
-              void navigate({ to: "/databases" });
+              void navigate({ to: "/tables" });
             },
             (error: Error) => {
               toast({
                 kind: "error",
-                title: "Couldn't delete the database",
+                title: "Couldn't delete the table",
                 description: error.message,
               });
               throw error;
@@ -376,8 +376,8 @@ function AccessPanel({
     <div className="flex flex-col gap-5">
       <p className="text-sm text-fg-2">
         {collection.guild
-          ? `Only ${collection.guild.name}'s agents reach this database; the guild writes it. An agent can narrow its own access from State → Databases.`
-          : "Guilds reach this database by a grant from State → Databases; each agent can narrow or widen its own."}
+          ? `Only ${collection.guild.name}'s agents reach this table; the guild writes it. An agent can narrow its own access from State → Tables.`
+          : "Guilds reach this table by a grant from State → Tables; each agent can narrow or widen its own."}
       </p>
       <section className="flex flex-col gap-1.5">
         <h3 className="type-label text-muted">Guilds</h3>
@@ -388,7 +388,7 @@ function AccessPanel({
               className="flex items-center gap-3 rounded-lg bg-surface px-4 py-2.5"
             >
               <Link
-                to="/guilds/$guildId/state/databases"
+                to="/guilds/$guildId/state/tables"
                 params={{ guildId: guild.id }}
                 className="flex-1 font-medium hover:underline"
               >
@@ -412,7 +412,7 @@ function AccessPanel({
               className="flex flex-wrap items-center gap-3 rounded-lg bg-surface px-4 py-2.5"
             >
               <Link
-                to="/guilds/$guildId/agents/$agentId/state/databases"
+                to="/guilds/$guildId/agents/$agentId/state/tables"
                 params={{ guildId: agent.guild_id, agentId: agent.id }}
                 className="font-mono font-medium hover:underline"
               >
@@ -440,7 +440,7 @@ function AccessPanel({
 
 const orgScope = "org";
 
-function EditDatabaseDialog({
+function EditTableDialog({
   collection,
   open,
   onOpenChange,
@@ -455,7 +455,7 @@ function EditDatabaseDialog({
   const [purpose, setPurpose] = useState(collection.purpose);
   const [scope, setScope] = useState(collection.guild?.id ?? orgScope);
   const moving = scope !== (collection.guild?.id ?? orgScope);
-  const nameError = databaseName.test(name.trim())
+  const nameError = tableName.test(name.trim())
     ? undefined
     : "Lowercase letters, digits, _ and -, starting with a letter.";
   const target = guilds.data?.find((guild) => guild.id === scope)?.name;
@@ -471,7 +471,7 @@ function EditDatabaseDialog({
       },
       {
         onSuccess: () => {
-          toast({ kind: "success", title: "Database saved" });
+          toast({ kind: "success", title: "Table saved" });
           onOpenChange(false);
         },
       },
@@ -527,7 +527,7 @@ function EditDatabaseDialog({
               </Banner>
             ) : null}
             {update.isError ? (
-              <Banner tone="error" title="Couldn't save the database">
+              <Banner tone="error" title="Couldn't save the table">
                 {update.error.message}
               </Banner>
             ) : null}

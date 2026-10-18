@@ -131,9 +131,7 @@ export async function resolveSourceGuildAgent(
   const members = await ctx.repo.listAgents(ctx.sourceGuildId);
   const lower = needle.toLowerCase();
   const normalized = normalizeAgentHandle(needle);
-  const live = members.filter(
-    (row) => String(row.guild_id) === String(ctx.sourceGuildId) && !row.archived_at,
-  );
+  const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
   const match =
     live.find((row) => String(row.id) === needle || String(row.name).toLowerCase() === lower) ??
     live.find((row) => normalizeAgentHandle(String(row.name)) === normalized) ??
@@ -259,7 +257,7 @@ export const studioListAgents: StudioTool = {
   name: "studio_list_agents",
   schema: functionSchema(
     "studio_list_agents",
-    "Return every active agent in the source guild with task hashes, routines, latest run headers, and draft status. Omit filter and warning unless you need a substring match on name/focus or one of empty_task, generation_errors, stale_draft. The hydrated system roster is authoritative if this list looks empty.",
+    "Return every agent in the source guild with task hashes, routines, latest run headers, and draft status. Omit filter and warning unless you need a substring match on name/focus or one of empty_task, generation_errors, stale_draft. The hydrated system roster is authoritative if this list looks empty.",
     {
       filter: {
         type: "string",
@@ -269,12 +267,10 @@ export const studioListAgents: StudioTool = {
         type: "string",
         description: "Optional warning code: empty_task, generation_errors, or stale_draft. Omit this field to list every source-guild agent.",
       },
-      include_archived: { type: "boolean", description: "Include archived agents. Defaults to false." },
     },
     [],
   ),
   async handler(ctx, args) {
-    const includeArchived = args.include_archived === true;
     const requestedFilter = argString(args, "filter").trim();
     const requestedWarning = argString(args, "warning").trim();
     const filter = normalizeStudioListFilter(requestedFilter);
@@ -282,9 +278,6 @@ export const studioListAgents: StudioTool = {
     const rows = await ctx.store.inventory(ctx.sourceGuildId, String(ctx.session.id));
     const mapped = [];
     for (const row of rows) {
-      if (!includeArchived && row.archived_at) {
-        continue;
-      }
       const name = String(row.name ?? "");
       const focus = String(row.focus ?? "");
       const content = String(row.task_content ?? "");
@@ -301,7 +294,6 @@ export const studioListAgents: StudioTool = {
         focus,
         avatar_shape: row.avatar_shape,
         avatar_color: row.avatar_color,
-        archived: Boolean(row.archived_at),
         task_version: row.task_version,
         task_hash: row.task_hash,
         has_embeds: collectTaskEmbeds(content).length > 0,
@@ -318,7 +310,6 @@ export const studioListAgents: StudioTool = {
           : null,
         draft_id: row.draft_id ?? null,
         warnings,
-        publishable: !row.archived_at,
       });
     }
     let agents = mapped;
@@ -406,7 +397,6 @@ export const studioGetAgentContext: StudioTool = {
       agent_id: agent.id,
       name: agent.name,
       focus: agent.focus,
-      archived: Boolean(agent.archived_at),
     };
     if (want.has("task") && task) {
       const sliced = sliceStudioBytes(task.content_text ?? "", cursor);

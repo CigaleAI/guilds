@@ -56,7 +56,7 @@ function RailDemo() {
           />
           <RailItem label="Builder" tone="signal" icon={Sparkles} />
           <RailItem label="Recipes" tone="plum-tint" icon={BookOpen} />
-          <RailItem label="Databases" tone="signal-tint" icon={Database} />
+          <RailItem label="Tables" tone="signal-tint" icon={Database} />
         </>
       }
       footer={

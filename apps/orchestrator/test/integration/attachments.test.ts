@@ -36,7 +36,7 @@ test("operators upload images, attach them to a run, and cannot read another org
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-attachments-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-attachments-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra", {
@@ -55,7 +55,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     notes,
     artifacts,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     attachments,
     generation,
   });

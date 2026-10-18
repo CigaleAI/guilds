@@ -25,10 +25,10 @@ after(async () => {
 test("an edition's build of the operator app is served in place of core's", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-web-app-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-web-app-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
-  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo, notes) };
+  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
   const app = await buildApp(database, deps, [{ name: "edition", webApp: dist }]);
   try {
     for (const url of ["/", "/settings", "/login"]) {

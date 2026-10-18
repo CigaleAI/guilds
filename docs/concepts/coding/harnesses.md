@@ -380,7 +380,7 @@ The account is read from the agent's home:
 | Claude Code | `~/.claude/.credentials.json` | `oauthAccount.emailAddress` in `~/.claude.json` |
 | Codex | `~/.codex/auth.json` holding `tokens`, or `$CODEX_HOME/auth.json` | The `email` claim of `tokens.id_token`, decoded without checking its signature |
 | Cursor | `~/.config/cursor/auth.json`, or under `$XDG_CONFIG_HOME` | `email` in that file |
-| Antigravity | A sign-in token file under `~/.gemini/antigravity-cli/` | Not read: always null |
+| Antigravity | `~/.gemini/antigravity-cli/antigravity-oauth-token` | Not read: always null |
 
 The account is null when the file does not say.
 

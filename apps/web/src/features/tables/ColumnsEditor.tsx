@@ -26,7 +26,7 @@ type ColumnsEditorProps = {
   errors: Map<number, string>;
 };
 
-/** A database's columns: name, type, description, required, unique and allowed values, in order. */
+/** A table's columns: name, type, description, required, unique and allowed values, in order. */
 export function ColumnsEditor({ columns, onChange, errors }: ColumnsEditorProps) {
   const update = (index: number, patch: Partial<ColumnInput>) =>
     onChange(columns.map((column, at) => (at === index ? { ...column, ...patch } : column)));

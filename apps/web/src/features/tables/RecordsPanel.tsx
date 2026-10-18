@@ -114,7 +114,7 @@ function FilterInput({
 }
 
 /**
- * A database's records: a ranked search, or filters with a sortable, paged table. A row opens the
+ * A table's records: a ranked search, or filters with sortable, paged rows. A row opens the
  * record to edit; new records and clearing them all start here.
  */
 export function RecordsPanel({ collection }: { collection: Collection }) {
@@ -323,7 +323,7 @@ export function RecordsPanel({ collection }: { collection: Collection }) {
         open={removing !== null}
         onOpenChange={(value) => !value && setRemoving(null)}
         title={`Delete record #${removing?.id ?? ""}?`}
-        description="The record goes for every agent that reads this database; its id is not reused."
+        description="The record goes for every agent that reads this table; its id is not reused."
         confirmLabel="Delete record"
         onConfirm={() =>
           removing
@@ -346,7 +346,7 @@ export function RecordsPanel({ collection }: { collection: Collection }) {
         open={clearing}
         onOpenChange={setClearing}
         title={`Delete every record from ${collection.name}?`}
-        description={`All ${collection.count ?? 0} records go, whatever the search or filters show. The database, its columns and its grants stay; new ids carry on.`}
+        description={`All ${collection.count ?? 0} records go, whatever the search or filters show. The table, its columns and its grants stay; new ids carry on.`}
         confirmLabel="Delete all records"
         confirmText={collection.name}
         onConfirm={() =>

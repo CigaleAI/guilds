@@ -58,7 +58,7 @@ export const Tools: Story = {
       <UtilityLink
         icon={Database}
         tone="signal-tint"
-        title="Databases"
+        title="Tables"
         subtitle="Tables agents share"
         selected
       />
@@ -78,7 +78,7 @@ export const Compact: Story = {
         density="compact"
         icon={Database}
         tone="signal-tint"
-        title="Databases"
+        title="Tables"
         selected
       />
     </div>

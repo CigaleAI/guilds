@@ -14,7 +14,6 @@ function run(overrides: Partial<Run> = {}): Run {
     generating: false,
     created_at: "2026-09-26T09:00:00+00:00",
     updated_at: "2026-09-26T09:05:00+00:00",
-    archived_at: null,
     group_chat_through_seq: null,
     ...overrides,
   };
@@ -30,12 +29,11 @@ function error(operation: string, message = "stopped"): RunError {
   };
 }
 
-test("generating and archived come before anything the run recorded", () => {
+test("generating comes before anything the run recorded", () => {
   assert.equal(
     runState(run({ generating: true, errors: [error("llm.complete")] })).label,
     "Generating",
   );
-  assert.equal(runState(run({ archived_at: "2026-09-26T10:00:00+00:00" })).label, "Archived");
 });
 
 test("an open run stays open after an error", () => {

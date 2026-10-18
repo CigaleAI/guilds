@@ -134,12 +134,21 @@ function hasUsage(fields: Record<string, unknown>): boolean {
   );
 }
 
+/** The usage row an organisation has in a per-organisation map, when the map was given. */
+function usageOfOrg(byOrg: Map<string, unknown> | Record<string, unknown> | undefined, orgId: string): unknown {
+  if (!byOrg) {
+    return null;
+  }
+  return byOrg instanceof Map ? byOrg.get(orgId) : byOrg[orgId];
+}
+
 export function usageTree(args: {
   orgs: unknown[];
   guilds: unknown[];
   agents: unknown[];
   counters: Map<string, unknown> | Record<string, unknown>;
   studioByOrg?: Map<string, unknown> | Record<string, unknown>;
+  builderByOrg?: Map<string, unknown> | Record<string, unknown>;
 }): Record<string, unknown> {
   const lookup = (scope: string, scopeId: string): unknown => {
     const key = usageCounterKey(scope, scopeId);
@@ -148,15 +157,8 @@ export function usageTree(args: {
     }
     return args.counters[key];
   };
-  const lookupStudio = (orgId: string): unknown => {
-    if (!args.studioByOrg) {
-      return null;
-    }
-    if (args.studioByOrg instanceof Map) {
-      return args.studioByOrg.get(orgId);
-    }
-    return args.studioByOrg[orgId];
-  };
+  const lookupStudio = (orgId: string): unknown => usageOfOrg(args.studioByOrg, orgId);
+  const lookupBuilder = (orgId: string): unknown => usageOfOrg(args.builderByOrg, orgId);
   const agentsByGuild = new Map<string, unknown[]>();
   for (const agent of args.agents) {
     const guildId = String(rowGet(agent, "guild_id") ?? "");
@@ -192,14 +194,16 @@ export function usageTree(args: {
     }
     const orgFields = usageFields(lookup("org", orgId));
     const studio = usageFields(lookupStudio(orgId));
+    const builder = usageFields(lookupBuilder(orgId));
     const liveGuilds = orgGuilds.reduce((acc, guild) => addUsageFields(acc, usageFields(guild)), usageFields(null));
-    const archived = subtractUsageFields(orgFields, [liveGuilds, studio]);
+    const archived = subtractUsageFields(orgFields, [liveGuilds, studio, builder]);
     organisations.push({
       id: orgId,
       name: rowGet(org, "name"),
       slug: rowGet(org, "slug"),
       ...orgFields,
       studio,
+      builder: hasUsage(builder) ? builder : null,
       archived: hasUsage(archived) ? archived : null,
       guilds: orgGuilds,
     });

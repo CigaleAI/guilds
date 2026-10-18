@@ -143,9 +143,9 @@ is disabled once the guild is full. Each agent row shows:
 - **Agent**: "Talks, researches, and works with tools and connectors
   on one of the organisation's models."
 - **Coding agent**: "Leads code work in the guild's repositories,
-  delegated to a coding harness (Claude Code, Codex, or Cursor) on
-  your own subscription." This card opens its own dialog, described
-  on [Coding agents](coding/index.md).
+  delegated to a coding harness (Claude Code, Codex, Cursor, or
+  Antigravity) on your own subscription." This card opens its own
+  dialog, described on [Coding agents](coding/index.md).
 
 **Agent** opens three steps on a stepper. The header reads
 "Step n of 3 · `<step>`". **Back** and **Next** move between steps, and
@@ -200,7 +200,7 @@ sideways when they do not fit.
 | --- | --- | --- |
 | **Chat** | sessions with the agent, their transcripts, and **History** | [Runs](runs.md), [Run transcript](run-transcript.md) |
 | **Prompt** | the standing Task | [Task](task.md) |
-| **State** | Memory, Notes, Databases, Scripts (with scripting on), Artifact scope | [Memory](memory.md), [Notes](notes.md), [Collections](collections.md), [Scripts](scripts.md), [Access](access.md) |
+| **State** | Memory, Notes, Tables, Scripts (with scripting on), Artifact scope | [Memory](memory.md), [Notes](notes.md), [Collections](collections.md), [Scripts](scripts.md), [Access](access.md) |
 | **Routine** | the agent's routines | [Routines](routines.md) |
 | **Browser** | the agent's live Chrome, only with Browser on | [Browser](browser.md) |
 | **CLI** | a terminal on the agent's machine | [Agent home](agent-home.md) |
@@ -439,8 +439,7 @@ on the id. Host notes folders that still use the name move with it.
 
 ### Delete
 
-Deletion is the only way to retire an agent. The `archived_at`
-column is unused.
+Deletion is the only way to retire an agent.
 
 Deleting an agent refuses while it is generating (409 `agent is
 already generating`). It then:

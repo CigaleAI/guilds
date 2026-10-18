@@ -86,14 +86,8 @@ function stateItem(row: Record<string, unknown>, max: number) {
   return { ...item, content: clipContent(item.content, max) };
 }
 
-function activeMembers(members: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  return members.filter(
-    (member) => member.archived_at === null || member.archived_at === undefined,
-  );
-}
-
-function activeMemberNames(members: Array<Record<string, unknown>>): string[] {
-  return activeMembers(members).map((member) => String(member.name));
+function memberNames(members: Array<Record<string, unknown>>): string[] {
+  return members.map((member) => String(member.name));
 }
 
 // Choice option for one agent: labelled fields, as the docs recommend for
@@ -177,7 +171,7 @@ export async function classifyGroupRecipients(args: {
   // Only agents whose cursor is behind can act on this snapshot. The author of
   // the latest message is never pending, so it never appears as an option.
   const pending = new Set(args.pendingNames);
-  const roster = activeMembers(args.members).filter((member) => pending.has(String(member.name)));
+  const roster = args.members.filter((member) => pending.has(String(member.name)));
   const window = recentGroupRows(args.rows, RECIPIENT_WINDOW);
   const latestRow = window[window.length - 1];
   if (!roster.length || !latestRow) {
@@ -386,7 +380,7 @@ export function createGroupRouter(
         return {
           source: "fallback",
           reason,
-          names: new Set(pendingNames.length ? pendingNames : activeMemberNames(args.members)),
+          names: new Set(pendingNames.length ? pendingNames : memberNames(args.members)),
         };
       }
     },

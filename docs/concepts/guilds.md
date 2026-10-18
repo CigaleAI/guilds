@@ -119,7 +119,7 @@ The sidebar lists the current organisation's guilds.
 
 The footer links to **Inbox** ([Inbox and issues](inbox.md)),
 **Builder** ([Guild builder](guild-builder.md)), **Recipes**
-([Recipes](recipes.md)), and **Databases**
+([Recipes](recipes.md)), and **Tables**
 ([Collections](collections.md)). The account button sits below them
 ([Users](users.md#the-account-menu)).
 
@@ -181,7 +181,7 @@ The tabs, one route each:
 |---|---|
 | **Group chat** | [Group chat](group-chat.md) |
 | **Settings** | Below |
-| **State** (Files, Databases, Artifact scope) | [Notes](notes.md), [Collections](collections.md), [Access](access.md) |
+| **State** (Files, Tables, Artifact scope) | [Notes](notes.md), [Collections](collections.md), [Access](access.md) |
 | **Routines** | [Routines](routines.md) |
 | **Issues** | [Inbox and issues](inbox.md) |
 | **Tools**, **Secrets** | [Access](access.md) |
@@ -250,7 +250,6 @@ The `guilds` table:
 | `routines_enabled` | Whether routines fire, default true ([Routines](routines.md)) |
 | `git_author_email` | The commit author email, empty for none ([Repositories](coding/repositories.md)) |
 | `group_chat_seq`, `group_agent_message_count`, `group_agent_message_limit`, `group_chat_errors`, `group_chat_cleared_at` | Group-chat state ([Group chat](group-chat.md)). Every create path sets `group_agent_message_limit` to 200 |
-| `archived_at` | Unused |
 | `created_at`, `updated_at` | Timestamps |
 
 About and description reach the State snapshot as `group.about` and

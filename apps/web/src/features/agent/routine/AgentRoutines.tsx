@@ -72,7 +72,7 @@ export function AgentRoutines() {
 
   const agentName = agent.data?.name ?? "the agent";
   const newRoutine = (
-    <Button size="sm" onClick={() => setAdding(true)} disabled={Boolean(agent.data?.archived_at)}>
+    <Button size="sm" onClick={() => setAdding(true)}>
       <Icon icon={Plus} size={14} />
       New routine
     </Button>

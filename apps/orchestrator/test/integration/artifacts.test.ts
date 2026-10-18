@@ -48,7 +48,7 @@ after(async () => {
 
 async function seedAgent(agentId: string, guildId: string, guildName: string, name: string, tag: string) {
   const now = new Date();
-  const notes = new NotesStore(tempDir(`guilds-${tag}-notes-`), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir(`guilds-${tag}-notes-`), templatesRoot());
   await persistAgent(repo, notes, {
     agentId,
     guildId,
@@ -247,6 +247,12 @@ describe("artifact store", { concurrency: 1 }, () => {
       },
     ]);
     assert.equal(await store.describeCollection(beta, "papers"), null);
+
+    // An agent's own grant reaches an organisation table its guild was never given, and the catalog lists it.
+    await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_beta", mode: "read" });
+    assert.equal((await store.describeCollection(beta, "papers"))?.access, "read");
+    assert.deepEqual((await store.catalog(beta)).map((item) => [item.name, item.access]), [["papers", "read"]]);
+    await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_beta", mode: null });
 
     // An agent grant raises the guild's mode; the operator sees both.
     await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_alpha", mode: "write" });
@@ -967,7 +973,7 @@ describe("artifact store", { concurrency: 1 }, () => {
   test("task writes archive previous versions for restore", async () => {
     const now = new Date();
     await repo.insertGuild("guild_taskver", "taskver", now, "org_home", "");
-    const notes = new NotesStore(tempDir("guilds-art-notes-taskver-"), templatesRoot(), "notes");
+    const notes = new NotesStore(tempDir("guilds-art-notes-taskver-"), templatesRoot());
     await persistAgent(repo, notes, {
       agentId: "a_taskver",
       guildId: "guild_taskver",

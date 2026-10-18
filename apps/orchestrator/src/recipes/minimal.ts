@@ -1,3 +1,4 @@
+import { DEFAULT_AGENT_MESSAGE_LIMIT } from "../guilds/validation.js";
 import { RECIPE_FORMAT, RECIPE_VERSION, type RecipeDocument } from "./schema.js";
 
 export function emptyRecipe(args: {
@@ -18,7 +19,7 @@ export function emptyRecipe(args: {
       name_suggestion: "untitled",
       about: "",
       objective: "",
-      group_agent_message_limit: 20,
+      group_agent_message_limit: DEFAULT_AGENT_MESSAGE_LIMIT,
     },
     roles: [],
     collections: [],

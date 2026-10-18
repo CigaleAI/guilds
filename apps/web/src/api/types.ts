@@ -98,7 +98,6 @@ export type Guild = {
   max_agents: number;
   /** Verified GitHub email for coding-agent commits; empty uses `<agent id>@agents.guilds.run`. */
   git_author_email: string;
-  archived_at: string | null;
   visibility: "org" | "private";
   operators: GuildOperator[];
   routines_enabled: boolean;
@@ -119,7 +118,6 @@ export type Agent = {
   /** The organisation's machine it runs on. */
   machine_id: string;
   machine: MachineRef;
-  archived_at: string | null;
   /** A run is generating for this agent right now. */
   generating: boolean;
 };
@@ -433,7 +431,6 @@ export type Run = {
   generating: boolean;
   created_at: string;
   updated_at: string;
-  archived_at: string | null;
   group_chat_through_seq: number | null;
   schedule_id?: string;
   /** What a coding run changed in each repository, between its checkpoints. */
@@ -1018,6 +1015,7 @@ export type OrgUsage = UsageTotals & {
   name: string;
   slug: string;
   studio: UsageTotals | null;
+  builder: UsageTotals | null;
   archived: UsageTotals | null;
   guilds: (UsageTotals & { id: string; name: string; agents: (UsageTotals & AgentBrief)[] })[];
 };
@@ -1174,7 +1172,6 @@ export type StudioAgent = {
   focus: string;
   avatar_shape: string;
   avatar_color: string;
-  archived: boolean;
   task_version: number | null;
   task_excerpt: string;
   has_embeds: boolean;
@@ -1183,14 +1180,13 @@ export type StudioAgent = {
   draft_id: string | null;
   draft_status: StudioDraft["status"] | null;
   warnings: ("empty_task" | "generation_errors" | "stale_draft")[];
-  publishable: boolean;
   /** Script tools and the Scripts tab; missing means on. */
   scripting: boolean;
 };
 
 /** One agent's prompt as Studio inspects it: its Task and the system prompt a run would get. */
 export type StudioInspector = {
-  agent: { id: string; name: string; focus: string; archived: boolean };
+  agent: { id: string; name: string; focus: string };
   task: {
     display_path: string | null;
     version: number | null;
@@ -1342,13 +1338,12 @@ export type MemoryTimeline = {
  * Timestamps are ISO-8601 in UTC.
  */
 
-/** A member of the source guild; archived members stay listed so older wakes resolve. */
+/** A member of the source guild. */
 export type ActivityAgent = {
   id: string;
   name: string;
   avatar_color: string;
   avatar_shape: string;
-  archived: boolean;
 };
 
 /**

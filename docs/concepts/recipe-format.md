@@ -245,7 +245,7 @@ guild: `{ name, purpose, columns, scope, guild, writers }`.
 - `purpose` is required and at most 400 characters.
 - `columns` is the typed column list (`name`, `type`, `description`,
   `required`, `unique`, `values`). It is parsed by the same rules as
-  the **Databases** page (see [Collections](collections.md)). A column
+  the **Tables** page (see [Collections](collections.md)). A column
   that breaks a rule is refused with `collections[i].columns: …`.
   Every collection declares one; an empty list is the
   `design.untyped_collection` error.

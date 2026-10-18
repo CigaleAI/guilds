@@ -35,14 +35,14 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-catalog-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-catalog-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const app = await buildApp(database, {
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     policy: limitedPolicy({ maxAgents: 25, maxBrowserAgents: 10, maxCodingAgents: 10 }),
   });
 

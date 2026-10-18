@@ -27,13 +27,13 @@ after(async () => {
 test("apply reuses a secret by granting it to the new guild and waits for the ones to create", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-apply-secrets-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-apply-secrets-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const recipes = new RecipeStore(repo.pool);
   const app = await buildApp(database, {
     repo,

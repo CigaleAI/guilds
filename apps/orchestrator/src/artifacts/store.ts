@@ -41,11 +41,13 @@ import {
   collectionDisplayPath,
   displayPathFor,
   HISTORY_ARCHIVE_SEGMENT,
+  isDisplayPath,
   MEMORY_KEY,
   normalizeNoteKey,
   parseDisplayPath,
   revisionDisplayPath,
   TASK_KEY,
+  type ParsedDisplayPath,
 } from "./paths.js";
 import {
   COLLECTION_NAME_RE,
@@ -341,7 +343,7 @@ export class ArtifactStore {
     const name = validateCollectionName(args.name);
     const purpose = validatePurpose(args.purpose);
     const columns = parseColumns(args.columns ?? []);
-    const guildId = args.guildId ? await this.requireGuild(actor.orgId, args.guildId) : null;
+    const guildId = args.guildId ? await this.requireGuild(actor, args.guildId) : null;
     const count = await this.pool.query(
       `SELECT COUNT(*)::int AS n FROM artifact_collections WHERE org_id = $1 AND deleted_at IS NULL`,
       [actor.orgId],
@@ -383,7 +385,7 @@ export class ArtifactStore {
     args: { name?: string; purpose?: string; columns?: unknown; guildId?: string | null },
   ): Promise<CollectionView> {
     this.assertOperator(actor);
-    const current = await this.loadCollectionById(actor.orgId, collectionId);
+    const current = await this.loadCollectionById(actor, collectionId);
     if (!current) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -392,7 +394,7 @@ export class ArtifactStore {
     const change = args.columns === undefined ? null : parseColumnChange(current.columns, args.columns);
     const columns = change ? change.columns : current.columns;
     const guildId =
-      args.guildId === undefined ? current.guild_id : args.guildId ? await this.requireGuild(actor.orgId, args.guildId) : null;
+      args.guildId === undefined ? current.guild_id : args.guildId ? await this.requireGuild(actor, args.guildId) : null;
     const now = stamp(new Date());
     await withTransaction(this.pool, async (client) => {
       await client.query(`SELECT id FROM artifact_collections WHERE id = $1 FOR UPDATE`, [current.id]);
@@ -464,7 +466,7 @@ export class ArtifactStore {
         throw error;
       }
     });
-    const updated = await this.loadCollectionById(actor.orgId, current.id);
+    const updated = await this.loadCollectionById(actor, current.id);
     if (!updated) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -474,7 +476,7 @@ export class ArtifactStore {
   /** Soft-deletes a collection with every record in it and drops its grants. */
   async deleteCollection(actor: ArtifactActor, collectionId: string): Promise<void> {
     this.assertOperator(actor);
-    const collection = await this.loadCollectionById(actor.orgId, collectionId);
+    const collection = await this.loadCollectionById(actor, collectionId);
     if (!collection) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -499,7 +501,7 @@ export class ArtifactStore {
    */
   async clearRecords(actor: ArtifactActor, collectionId: string): Promise<number> {
     this.assertOperator(actor);
-    const collection = await this.loadCollectionById(actor.orgId, collectionId);
+    const collection = await this.loadCollectionById(actor, collectionId);
     if (!collection) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -552,7 +554,7 @@ export class ArtifactStore {
   }
 
   async getCollection(actor: ArtifactActor, collectionId: string): Promise<CollectionView> {
-    const collection = await this.loadCollectionById(actor.orgId, collectionId);
+    const collection = await this.loadCollectionById(actor, collectionId);
     if (!collection) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -571,7 +573,7 @@ export class ArtifactStore {
     } catch {
       return null;
     }
-    const collection = await this.loadCollectionByName(actor.orgId, collectionName);
+    const collection = await this.loadCollectionByName(actor, collectionName);
     if (!collection) {
       return null;
     }
@@ -640,7 +642,7 @@ export class ArtifactStore {
     }>;
   }> {
     this.assertOperator(actor);
-    const collection = await this.loadCollectionById(actor.orgId, collectionId);
+    const collection = await this.loadCollectionById(actor, collectionId);
     if (!collection) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -692,12 +694,15 @@ export class ArtifactStore {
       [collection.id, actor.orgId],
     );
     return {
-      guilds: (guilds.rows as Array<Record<string, unknown>>).map((row) => ({
-        id: String(row.id),
-        name: String(row.name),
-        mode: String(row.mode) as AccessMode,
-      })),
-      agents: (agents.rows as Array<Record<string, unknown>>).map((row) => {
+      guilds: visibleGrants(
+        actor,
+        (guilds.rows as Array<Record<string, unknown>>).map((row) => ({
+          id: String(row.id),
+          name: String(row.name),
+          mode: String(row.mode) as AccessMode,
+        })),
+      ),
+      agents: visibleGrants(actor, (agents.rows as Array<Record<string, unknown>>).map((row) => {
         const guildMode = (row.guild_mode as AccessMode | null) ?? null;
         const agentMode = (row.agent_mode as AgentAccessMode | null) ?? null;
         return {
@@ -709,7 +714,7 @@ export class ArtifactStore {
           agent_mode: agentMode,
           effective: resolveAccess(guildMode, agentMode),
         };
-      }),
+      })),
     };
   }
 
@@ -723,7 +728,7 @@ export class ArtifactStore {
     args: { collectionId: string; subjectType: unknown; subjectId: string; mode: unknown },
   ): Promise<void> {
     this.assertOperator(actor);
-    const collection = await this.loadCollectionById(actor.orgId, args.collectionId);
+    const collection = await this.loadCollectionById(actor, args.collectionId);
     if (!collection) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -751,7 +756,8 @@ export class ArtifactStore {
         : `SELECT id, guild_id FROM agents WHERE id = $1 AND org_id = $2`,
       [subjectId, actor.orgId],
     );
-    if (!owner.rows[0]) {
+    const ownerRow = owner.rows[0] as { id: string; guild_id?: string } | undefined;
+    if (!ownerRow || visibleGrants(actor, [ownerRow]).length === 0) {
       throw new ArtifactError(`unknown ${subjectType}`, 404);
     }
     if (collection.guild_id && String((owner.rows[0] as { guild_id?: string }).guild_id ?? "") !== collection.guild_id) {
@@ -1160,7 +1166,7 @@ export class ArtifactStore {
 
   /** Every live record of a collection, in id order, for an export. */
   async exportRecords(actor: ArtifactActor, collectionId: string): Promise<{ name: string; records: RecordView[] }> {
-    const collection = await this.loadCollectionById(actor.orgId, collectionId);
+    const collection = await this.loadCollectionById(actor, collectionId);
     if (!collection || !(await this.accessMode(actor, collection))) {
       throw new ArtifactError("unknown collection", 404);
     }
@@ -1191,7 +1197,7 @@ export class ArtifactStore {
       if (parsed.orgId !== actor.orgId) {
         throw new ArtifactError("artifact not found", 404);
       }
-      const collection = await this.loadCollectionByName(actor.orgId, parsed.collectionName);
+      const collection = await this.loadCollectionByName(actor, parsed.collectionName);
       if (!collection) {
         throw new ArtifactError("unknown collection", 404);
       }
@@ -1248,7 +1254,7 @@ export class ArtifactStore {
   ): Promise<{ row?: ArtifactRow; revision?: { content: string; display_path: string }; tombstone?: boolean }> {
     const parsed = parseDisplayPath(displayPath);
     if (parsed.kind === "revision") {
-      if (!actor.operator) {
+      if (!actor.operator || !this.canReadLevel(actor, "agent", parsed.agentId)) {
         throw new ArtifactError("artifact not found", 404);
       }
       const result = await this.pool.query(
@@ -1301,6 +1307,19 @@ export class ArtifactStore {
     return { row: includingDeleted };
   }
 
+  /** Whether the actor may read what a display path names, so its change history may be shown. */
+  async canReadDisplayPath(actor: ArtifactActor, displayPath: string): Promise<boolean> {
+    const parsed = isDisplayPath(displayPath) ? parseDisplayPath(displayPath) : null;
+    if (parsed?.orgId !== actor.orgId) {
+      return false;
+    }
+    if ("collectionName" in parsed) {
+      return (await this.describeCollection(actor, parsed.collectionName)) !== null;
+    }
+    const owner = fileOwner(parsed);
+    return this.canReadLevel(actor, owner.level, owner.ownerId);
+  }
+
   /** Notes the actor may read, searched by `query` or listed, optionally at one level. */
   async find(
     actor: ArtifactActor,
@@ -1339,7 +1358,7 @@ export class ArtifactStore {
 
   /** Previous memory versions, newest first. Only the operator reads them; agents never see the archive. */
   async listRevisions(actor: ArtifactActor, agentId: string): Promise<MemoryRevisionRow[]> {
-    if (!actor.operator) {
+    if (!actor.operator || !this.canReadLevel(actor, "agent", agentId)) {
       return [];
     }
     const result = await this.pool.query(
@@ -1436,7 +1455,7 @@ export class ArtifactStore {
       return false;
     }
     if (actor.operator) {
-      return true;
+      return !isHiddenOwner(actor, level, ownerId);
     }
     if (level === "org") {
       return actor.grants.readOrg;
@@ -1506,8 +1525,9 @@ export class ArtifactStore {
       const result = await this.pool.query(
         `SELECT ${COLLECTION_SELECT} FROM artifact_collections
           WHERE org_id = $1 AND deleted_at IS NULL
+            AND (guild_id IS NULL OR guild_id <> ALL($2::text[]))
           ORDER BY name`,
-        [actor.orgId],
+        [actor.orgId, actor.hidden.guildIds],
       );
       return (result.rows as Array<Record<string, unknown>>).map((row) => ({ row: mapCollection(row), mode: "write" }));
     }
@@ -1519,7 +1539,8 @@ export class ArtifactStore {
          LEFT JOIN collection_access gg ON gg.collection_id = artifact_collections.id
           AND gg.subject_type = 'guild' AND gg.subject_id = $3
         WHERE artifact_collections.org_id = $1 AND artifact_collections.deleted_at IS NULL
-          AND (artifact_collections.guild_id = $3 OR (artifact_collections.guild_id IS NULL AND gg.id IS NOT NULL))
+          AND (artifact_collections.guild_id = $3
+               OR (artifact_collections.guild_id IS NULL AND (gg.id IS NOT NULL OR ag.id IS NOT NULL)))
         ORDER BY artifact_collections.name`,
       [actor.orgId, actor.agentId ?? "", actor.guildId ?? ""],
     );
@@ -1537,7 +1558,8 @@ export class ArtifactStore {
     values.push(actor.orgId);
     const org = values.length;
     if (actor.operator) {
-      return `c.org_id = $${org}`;
+      values.push(actor.hidden.guildIds);
+      return `c.org_id = $${org} AND (c.guild_id IS NULL OR c.guild_id <> ALL($${values.length}::text[]))`;
     }
     values.push(actor.agentId ?? "");
     const agent = values.length;
@@ -1552,10 +1574,10 @@ export class ArtifactStore {
       AND COALESCE(${override}, 'inherit') <> 'none'`;
   }
 
-  private async requireGuild(orgId: string, guildId: string): Promise<string> {
+  private async requireGuild(actor: ArtifactActor, guildId: string): Promise<string> {
     const id = String(guildId ?? "").trim();
-    const result = await this.pool.query(`SELECT id FROM guilds WHERE id = $1 AND org_id = $2`, [id, orgId]);
-    if (!result.rows[0]) {
+    const result = await this.pool.query(`SELECT id FROM guilds WHERE id = $1 AND org_id = $2`, [id, actor.orgId]);
+    if (!result.rows[0] || actor.hidden.guildIds.includes(id)) {
       throw new ArtifactError("unknown guild", 404);
     }
     return id;
@@ -1602,22 +1624,20 @@ export class ArtifactStore {
     return counts;
   }
 
-  private async loadCollectionById(orgId: string, collectionId: string): Promise<CollectionRow | null> {
+  private async loadCollectionById(actor: ArtifactActor, collectionId: string): Promise<CollectionRow | null> {
     const result = await this.pool.query(
       `SELECT ${COLLECTION_SELECT} FROM artifact_collections WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
-      [orgId, collectionId],
+      [actor.orgId, collectionId],
     );
-    const row = result.rows[0] as Record<string, unknown> | undefined;
-    return row ? mapCollection(row) : null;
+    return visibleCollection(actor, result.rows[0] as Record<string, unknown> | undefined);
   }
 
-  private async loadCollectionByName(orgId: string, name: string): Promise<CollectionRow | null> {
+  private async loadCollectionByName(actor: ArtifactActor, name: string): Promise<CollectionRow | null> {
     const result = await this.pool.query(
       `SELECT ${COLLECTION_SELECT} FROM artifact_collections WHERE org_id = $1 AND name = $2 AND deleted_at IS NULL`,
-      [orgId, name],
+      [actor.orgId, name],
     );
-    const row = result.rows[0] as Record<string, unknown> | undefined;
-    return row ? mapCollection(row) : null;
+    return visibleCollection(actor, result.rows[0] as Record<string, unknown> | undefined);
   }
 
   /** Recomputes `identity` for every live record; refuses when values repeat. */
@@ -2029,7 +2049,9 @@ export class ArtifactStore {
    */
   private readScope(actor: ArtifactActor, values: unknown[]): string {
     if (actor.operator) {
-      return "TRUE";
+      values.push(actor.hidden.guildIds, actor.hidden.agentIds);
+      return `NOT ((a.level = 'guild' AND a.owner_id = ANY($${values.length - 1}::text[]))
+                OR (a.level = 'agent' AND a.owner_id = ANY($${values.length}::text[])))`;
     }
     values.push(actor.agentId ?? "");
     const parts = [`(a.level = 'agent' AND a.agent_id = $${values.length})`];
@@ -2113,6 +2135,35 @@ const COLLECTION_SELECT = `
   artifact_collections.purpose, artifact_collections.columns, artifact_collections.next_id,
   artifact_collections.created_by_name, artifact_collections.created_at, artifact_collections.updated_at
 `;
+
+/** The owner of a note or file path; a Memory revision belongs to its agent. */
+function fileOwner(
+  parsed: Extract<ParsedDisplayPath, { kind: "artifact" | "revision" }>,
+): { level: ArtifactLevel; ownerId: string } {
+  return parsed.kind === "revision" ? { level: "agent", ownerId: parsed.agentId } : parsed;
+}
+
+/** Whether a guild- or agent-level owner sits in a private guild the operator actor cannot see. */
+function isHiddenOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
+  if (level === "guild") {
+    return actor.hidden.guildIds.includes(ownerId);
+  }
+  return level === "agent" && actor.hidden.agentIds.includes(ownerId);
+}
+
+/** The collection row, or null when there is none or it is the own table of a guild the actor cannot see. */
+function visibleCollection(actor: ArtifactActor, row: Record<string, unknown> | undefined): CollectionRow | null {
+  if (!row) {
+    return null;
+  }
+  const collection = mapCollection(row);
+  return collection.guild_id && actor.hidden.guildIds.includes(collection.guild_id) ? null : collection;
+}
+
+/** A grant listing without the guilds and agents the actor cannot see. */
+function visibleGrants<T extends { id: string; guild_id?: string }>(actor: ArtifactActor, rows: T[]): T[] {
+  return rows.filter((row) => !actor.hidden.guildIds.includes(row.guild_id ?? row.id));
+}
 
 function mapCollection(row: Record<string, unknown>): CollectionRow {
   return {

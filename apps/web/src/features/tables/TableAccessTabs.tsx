@@ -18,7 +18,7 @@ import {
   Icon,
   Tag,
 } from "@guildsrun/ui";
-import { CreateDatabaseDialog } from "./CreateDatabaseDialog";
+import { CreateTableDialog } from "./CreateTableDialog";
 
 const modeLabel: Record<AccessMode | "none", string> = {
   none: "None",
@@ -48,11 +48,11 @@ function Page({
   );
 }
 
-function DatabaseName({ id, name, purpose }: { id: string; name: string; purpose: string }) {
+function TableName({ id, name, purpose }: { id: string; name: string; purpose: string }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <Link
-        to="/databases/$collectionId"
+        to="/tables/$collectionId"
         params={{ collectionId: id }}
         className="w-fit font-mono text-sm font-medium hover:underline"
       >
@@ -67,10 +67,10 @@ const failed = (error: Error) =>
   toast({ kind: "error", title: "Couldn't change the access", description: error.message });
 
 /**
- * The databases a guild reaches: its own, which its agents write, and organisation databases by
+ * The tables a guild reaches: its own, which its agents write, and organisation tables by
  * the grant set here. Each agent can still narrow or widen its own access.
  */
-export function GuildDatabasesTab() {
+export function GuildTablesTab() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
   const rows = useGuildDatabases(guildId);
   const setAccess = useSetGuildDatabaseAccess(guildId);
@@ -78,22 +78,22 @@ export function GuildDatabasesTab() {
 
   return (
     <Page
-      intro="Databases this guild's agents reach. Its own are always read and written; organisation databases take a grant."
+      intro="Tables this guild's agents reach. Its own are always read and written; organisation tables take a grant."
       action={
         <Button size="sm" onClick={() => setCreating(true)}>
           <Icon icon={Plus} size={14} />
-          New database
+          New table
         </Button>
       }
     >
       {rows.isPending ? (
-        <SkeletonRows rows={4} label="Loading databases" />
+        <SkeletonRows rows={4} label="Loading tables" />
       ) : rows.isError ? (
-        <Banner tone="error" title="Couldn't load the databases" meta={rows.error.message} />
+        <Banner tone="error" title="Couldn't load the tables" meta={rows.error.message} />
       ) : rows.data.length === 0 ? (
         <EmptyState
           icon={Database}
-          title="No databases yet"
+          title="No tables yet"
           description="Create one for this guild or the organisation."
         />
       ) : (
@@ -103,7 +103,7 @@ export function GuildDatabasesTab() {
               key={row.collection_id}
               className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-b-0"
             >
-              <DatabaseName id={row.collection_id} name={row.name} purpose={row.purpose} />
+              <TableName id={row.collection_id} name={row.name} purpose={row.purpose} />
               {row.scope === "guild" ? (
                 <Tag tone="tide" font="sans">
                   Guild only · Read & write
@@ -130,16 +130,16 @@ export function GuildDatabasesTab() {
           ))}
         </div>
       )}
-      <CreateDatabaseDialog open={creating} onOpenChange={setCreating} guildId={guildId} />
+      <CreateTableDialog open={creating} onOpenChange={setCreating} guildId={guildId} />
     </Page>
   );
 }
 
 /**
- * The databases an agent reaches: what its guild grants, the agent's own choice over it, and the
+ * The tables an agent reaches: what its guild grants, the agent's own choice over it, and the
  * access that results.
  */
-export function AgentDatabasesTab() {
+export function AgentTablesTab() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const rows = useAgentDatabases(agentId);
   const setAgent = useSetAgentDatabaseAccess(agentId);
@@ -147,16 +147,16 @@ export function AgentDatabasesTab() {
   const busy = setAgent.isPending || setGuild.isPending;
 
   return (
-    <Page intro="Databases this agent reaches. The guild column applies to every agent in the guild; this agent's own choice overrides it.">
+    <Page intro="Tables this agent reaches. The guild column applies to every agent in the guild; this agent's own choice overrides it.">
       {rows.isPending ? (
-        <SkeletonRows rows={4} label="Loading databases" />
+        <SkeletonRows rows={4} label="Loading tables" />
       ) : rows.isError ? (
-        <Banner tone="error" title="Couldn't load the databases" meta={rows.error.message} />
+        <Banner tone="error" title="Couldn't load the tables" meta={rows.error.message} />
       ) : rows.data.length === 0 ? (
         <EmptyState
           icon={Database}
-          title="No databases yet"
-          description="Databases are created on the Databases page."
+          title="No tables yet"
+          description="Tables are created on the Tables page."
         />
       ) : (
         <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
@@ -165,7 +165,7 @@ export function AgentDatabasesTab() {
               key={row.collection_id}
               className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line px-4 py-3 last:border-b-0"
             >
-              <DatabaseName id={row.collection_id} name={row.name} purpose={row.purpose} />
+              <TableName id={row.collection_id} name={row.name} purpose={row.purpose} />
               <div className="flex flex-col gap-1">
                 <span className="type-label text-muted">Guild</span>
                 {row.scope === "guild" ? (

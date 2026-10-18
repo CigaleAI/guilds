@@ -37,7 +37,7 @@ test(
     Object.assign(process.env, env);
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
     const database = await connect(databaseUrl);
-    const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
+    const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
     await notes.ensureSystemPrompt();
     const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
@@ -56,7 +56,7 @@ test(
       notes,
       artifacts,
       scripts: new Scripts(repo),
-      schedules: new Schedules(repo, notes),
+      schedules: new Schedules(repo),
       masterKey: decodeMasterKey(HEX_MASTER_KEY),
       mcp: new McpPool(),
       generation,

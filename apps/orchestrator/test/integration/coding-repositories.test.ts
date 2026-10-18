@@ -100,7 +100,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     github(String(url), init)) as typeof fetch;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-repositories-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-repositories-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
@@ -108,7 +108,7 @@ test("guild repositories, the GitHub connection, and its repository picker", { t
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {
@@ -366,7 +366,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   const extraDb = uniqueDbName("agent_platform_coding_guilds");
   const databaseUrl = await createIsolatedDatabase(extraDb);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-repositories-guilds-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-repositories-guilds-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
@@ -374,7 +374,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {
@@ -552,7 +552,7 @@ test("several GitHub installations open a picker so a guild can choose the accou
   const extraDb = uniqueDbName("agent_platform_coding_picker");
   const databaseUrl = await createIsolatedDatabase(extraDb);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-repositories-picker-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-repositories-picker-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
@@ -560,7 +560,7 @@ test("several GitHub installations open a picker so a guild can choose the accou
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
   try {

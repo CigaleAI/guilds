@@ -160,9 +160,7 @@ async function tableContext(scope: EditScope): Promise<TableContext> {
       },
     ),
     guildName: String(guild?.name ?? "this guild"),
-    members: agents
-      .filter((row) => !row.archived_at)
-      .map((row) => ({ id: String(row.id), name: String(row.name) })),
+    members: agents.map((row) => ({ id: String(row.id), name: String(row.name) })),
   };
 }
 
@@ -229,7 +227,7 @@ function changeable(tc: TableContext, table: Table): boolean {
 function assertChangeable(tc: TableContext, table: Table): void {
   if (!changeable(tc, table)) {
     throw new StudioUnprocessableError(
-      `${table.name} belongs to guild ${table.guildName}; change it from that guild's Studio or the Databases page`,
+      `${table.name} belongs to guild ${table.guildName}; change it from that guild's Studio or the Tables page`,
     );
   }
 }

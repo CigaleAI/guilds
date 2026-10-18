@@ -53,9 +53,6 @@ export class StudioDrafts implements StudioDraftService {
       throw new StudioUnprocessableError(await missingDraftAgentMessage(ctx, handle));
     }
     const targetId = String(agent.id);
-    if (agent.archived_at) {
-      throw new StudioUnprocessableError("archived agents cannot receive drafts");
-    }
     const proposed = argString(args, "proposed_content");
     const rationale = argString(args, "rationale");
     if (!proposed.trim() || !rationale.trim()) {
@@ -217,7 +214,7 @@ export class StudioDrafts implements StudioDraftService {
         throw new StudioUnprocessableError("draft target is no longer live");
       }
       const agent = await args.repo.getAgent(String(draft.target_agent_id));
-      if (!agent || agent.archived_at) {
+      if (!agent) {
         throw new StudioUnprocessableError("target is not a publishable agent");
       }
       const currentHash = JSON.stringify(agent.config ?? {});
@@ -461,7 +458,7 @@ async function missingDraftAgentMessage(
   let known = "";
   try {
     const members = await ctx.repo.listAgents(ctx.sourceGuildId);
-    const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId) && !row.archived_at);
+    const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
     if (live.length) {
       known = ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.`;
     }

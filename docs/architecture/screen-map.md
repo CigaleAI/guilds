@@ -37,7 +37,7 @@ as chips. Code blocks show their language and a copy button.
 | Welcome dialog | over every page | [Model keys](../concepts/model-keys.md) |
 | Home: opens the last guild visited, or the first; with none, **Create a guild** or **Use Builder** | `/` | [Guilds](../concepts/guilds.md), [Guild builder](../concepts/guild-builder.md) |
 | Not-found page: **Nothing lives at this address**, with **Back to your guilds** | any unknown path | this page |
-| Sidebar: **Inbox**, **Builder**, **Recipes**, **Databases** | every page | [Inbox and issues](../concepts/inbox.md), [Guild builder](../concepts/guild-builder.md), [Recipes](../concepts/recipes.md), [Collections](../concepts/collections.md) |
+| Sidebar: **Inbox**, **Builder**, **Recipes**, **Tables** | every page | [Inbox and issues](../concepts/inbox.md), [Guild builder](../concepts/guild-builder.md), [Recipes](../concepts/recipes.md), [Collections](../concepts/collections.md) |
 | Sidebar: guild rows, each with its unread message count | every page | [Guilds](../concepts/guilds.md), [Inbox and issues](../concepts/inbox.md) |
 | Sidebar: agent rows and **Add agent** | every page | [Agents](../concepts/agents.md) |
 | Collapsed rail (⌘B / Ctrl+B): the same entries, guild unread badges, and **Settings** | every page | [Guilds](../concepts/guilds.md) |
@@ -54,7 +54,7 @@ as chips. Code blocks show their language and a copy button.
 | Guild Settings: **Operators** | `/guilds/<id>/settings` | [Operators](../concepts/operators.md) |
 | Guild Settings: **Commit author email**, **Repositories** | `/guilds/<id>/settings` | [Repositories](../concepts/coding/repositories.md) |
 | Guild **State › Files** | `/guilds/<id>/state/files` | [Notes](../concepts/notes.md) |
-| Guild **State › Databases** | `/guilds/<id>/state/databases` | [Collections](../concepts/collections.md) |
+| Guild **State › Tables** | `/guilds/<id>/state/tables` | [Collections](../concepts/collections.md) |
 | Guild **State › Artifact scope** | `/guilds/<id>/state/artifacts` | [Notes](../concepts/notes.md), [Access](../concepts/access.md) |
 | Guild **Routines** tab | `/guilds/<id>/routines` | [Routines](../concepts/routines.md) |
 | Guild **Issues** tab | `/guilds/<id>/issues` | [Inbox and issues](../concepts/inbox.md) |
@@ -72,7 +72,7 @@ as chips. Code blocks show their language and a copy button.
 | Agent **Prompt** tab | `/guilds/<id>/agents/<id>/prompt` | [Task](../concepts/task.md) |
 | Agent **State › Memory** | `/guilds/<id>/agents/<id>/state/memory` | [Memory](../concepts/memory.md) |
 | Agent **State › Notes** | `/guilds/<id>/agents/<id>/state/notes` | [Notes](../concepts/notes.md) |
-| Agent **State › Databases** | `/guilds/<id>/agents/<id>/state/databases` | [Collections](../concepts/collections.md) |
+| Agent **State › Tables** | `/guilds/<id>/agents/<id>/state/tables` | [Collections](../concepts/collections.md) |
 | Agent **State › Scripts** | `/guilds/<id>/agents/<id>/state/scripts` | [Scripts](../concepts/scripts.md) |
 | Agent **State › Artifact scope** | `/guilds/<id>/agents/<id>/state/artifacts` | [Notes](../concepts/notes.md), [Access](../concepts/access.md) |
 | Agent **Routine** tab | `/guilds/<id>/agents/<id>/routine` | [Routines](../concepts/routines.md) |
@@ -87,7 +87,7 @@ as chips. Code blocks show their language and a copy button.
 | Agent Settings: **Repositories** | `?section=repositories` | [Repositories](../concepts/coding/repositories.md) |
 | Access view (Tools and Secrets, at organisation, guild, and agent) | Settings, guild, and agent tabs | [Access](../concepts/access.md), [Secrets](../concepts/secrets.md) |
 | **Inbox** | `/inbox` | [Inbox and issues](../concepts/inbox.md) |
-| **Databases**: records, **Columns**, **Access** | `/databases`, `/databases/<collection id>` (`?tab=columns`, `access`) | [Collections](../concepts/collections.md) |
+| **Tables**: records, **Columns**, **Access** | `/tables`, `/tables/<collection id>` (`?tab=columns`, `access`) | [Collections](../concepts/collections.md) |
 | Settings › **General** | `/settings` | [Organisations](../concepts/organisations.md) |
 | Settings › **Members** | `/settings?tab=members` | [Organisations](../concepts/organisations.md) |
 | Settings › **Machines** | `/settings?tab=machines` | [Machines](../concepts/machines.md) |

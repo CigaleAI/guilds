@@ -98,10 +98,9 @@ export const guilds = pgTable(
     name: text("name").notNull(),
     createdAt: timestamptz("created_at").notNull(),
     updatedAt: timestamptz("updated_at").notNull(),
-    archivedAt: timestamptz("archived_at"),
     groupChatSeq: bigint("group_chat_seq", { mode: "number" }).notNull().default(0),
     groupAgentMessageCount: integer("group_agent_message_count").notNull().default(0),
-    groupAgentMessageLimit: integer("group_agent_message_limit").notNull().default(20),
+    groupAgentMessageLimit: integer("group_agent_message_limit").notNull().default(200),
     groupChatErrors: jsonb("group_chat_errors").notNull().default(sql`'[]'::jsonb`),
     groupChatClearedAt: timestamptz("group_chat_cleared_at"),
     about: text("about").notNull().default(""),
@@ -194,7 +193,6 @@ export const agents = pgTable(
     config: jsonb("config").notNull(),
     createdAt: timestamptz("created_at").notNull(),
     updatedAt: timestamptz("updated_at").notNull(),
-    archivedAt: timestamptz("archived_at"),
     groupChatDeliveredThrough: bigint("group_chat_delivered_through", {
       mode: "number",
     })
@@ -254,7 +252,6 @@ export const runs = pgTable(
     errors: jsonb("errors").notNull().default(sql`'[]'::jsonb`),
     createdAt: timestamptz("created_at").notNull(),
     updatedAt: timestamptz("updated_at").notNull(),
-    archivedAt: timestamptz("archived_at"),
     systemPromptHash: text("system_prompt_hash"),
     taskPromptHash: text("task_prompt_hash"),
     kind: text("kind").notNull().default("direct"),

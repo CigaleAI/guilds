@@ -430,6 +430,9 @@ function Usage() {
           {organisation.studio ? (
             <UsageLine name="Studio coach" totals={organisation.studio} />
           ) : null}
+          {organisation.builder ? (
+            <UsageLine name="Builder" totals={organisation.builder} />
+          ) : null}
           {organisation.archived ? (
             <UsageLine name="Deleted guilds and agents" totals={organisation.archived} />
           ) : null}

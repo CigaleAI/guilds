@@ -15,7 +15,6 @@ import {
 import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";
 import { AccountMenu } from "./AccountMenu";
-import { listedGuilds } from "./guilds";
 import { useInboxCount, useUnreadByGuild } from "./inbox";
 
 /** Guild ids the operator folded in the sidebar. */
@@ -35,7 +34,7 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
   const navigate = useNavigate();
   const { guildId, agentId } = useParams({ strict: false });
   const guilds = useGuilds();
-  const listed = listedGuilds(guilds.data);
+  const listed = guilds.data ?? [];
   const agentsByGuild = useAgentsByGuild(listed.map((guild) => guild.id));
   const brokenEmbeds = useBrokenEmbeds(listed.map((guild) => guild.id));
   const [creatingGuild, setCreatingGuild] = useState(false);
@@ -86,9 +85,9 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
               density="compact"
               icon={Database}
               tone="signal-tint"
-              title="Databases"
+              title="Tables"
             >
-              <Link to="/databases" />
+              <Link to="/tables" />
             </UtilityLink>
             <AccountMenu />
           </>
@@ -98,9 +97,7 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
           <SkeletonRows rows={4} label="Loading guilds" />
         ) : (
           listed.map((guild) => {
-            const agents = (agentsByGuild.get(guild.id) ?? []).filter(
-              (agent) => !agent.archived_at,
-            );
+            const agents = agentsByGuild.get(guild.id) ?? [];
             return (
               <GuildRow
                 key={guild.id}

@@ -105,7 +105,7 @@ export function GuildWorkspace() {
     );
   }
 
-  const members = (agents.data ?? []).filter((agent) => !agent.archived_at);
+  const members = agents.data ?? [];
 
   /** Studio resumes the guild's latest live session, or starts one. */
   const openStudio = () => {

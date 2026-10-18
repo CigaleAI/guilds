@@ -117,7 +117,7 @@ function Workspace() {
             density="compact"
             icon={Database}
             tone="signal-tint"
-            title="Databases"
+            title="Tables"
           />
         </>
       }

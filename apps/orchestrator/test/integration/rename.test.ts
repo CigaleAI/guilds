@@ -33,7 +33,7 @@ test("guild and agent names can be updated, with uniqueness and notes folders", 
   const notesRoot = tempDir("guilds-rename-notes-");
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(notesRoot, templatesRoot(), "notes");
+  const notes = new NotesStore(notesRoot, templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
@@ -41,7 +41,7 @@ test("guild and agent names can be updated, with uniqueness and notes folders", 
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
   });
 
   try {

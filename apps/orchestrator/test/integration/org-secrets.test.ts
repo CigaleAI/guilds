@@ -39,7 +39,7 @@ before(async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
   closeDb = () => database.close();
-  const notes = new NotesStore(tempDir("guilds-secrets-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-secrets-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   repo = new Repositories(database.pool);
   const generation = {
@@ -56,7 +56,7 @@ before(async () => {
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     generation: generation as never,
   });

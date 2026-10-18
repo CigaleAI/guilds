@@ -30,11 +30,11 @@ test("random-window routines persist, plan inside the window, and users keep a t
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-random-routines-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-random-routines-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const app = await buildApp(database, { repo, notes, scripts: new Scripts(repo), schedules });
   const json = { ...OWNER, "content-type": "application/json" };
 

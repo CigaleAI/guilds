@@ -49,7 +49,7 @@ const pages: Record<string, string> = {
   recipes: "Recipes",
   builder: "Builder",
   studio: "Studio",
-  databases: "Databases",
+  tables: "Tables",
   applies: "Recipes",
 };
 

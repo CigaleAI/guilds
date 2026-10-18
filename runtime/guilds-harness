@@ -70,7 +70,7 @@ MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/=,\[\]-]{0,119}")
 # The reasoning efforts the orchestrator validates.
 EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"})
 # Where Antigravity keeps its Google sign-in in the home, when no system keyring is reachable.
-ANTIGRAVITY_TOKEN = Path(".gemini/antigravity-cli/TODO-token-file")
+ANTIGRAVITY_TOKEN = Path(".gemini/antigravity-cli/antigravity-oauth-token")
 # Never in a harness's environment: the harness does not open pull requests.
 DROPPED_ENV = ("GUILDS_RUN_DIR", "GH_TOKEN", "GITHUB_TOKEN")
 

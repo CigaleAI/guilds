@@ -4,7 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 
 /**
- * Lead · body · trail. The base of guild and agent rows, tool rows, database and file items,
+ * Lead · body · trail. The base of guild and agent rows, tool rows, table and file items,
  * select rows, utility links, step rows, tool calls and table rows.
  *
  * Selected rows fill plum and are the only plum row in their list. Rows set `data-selected`, so

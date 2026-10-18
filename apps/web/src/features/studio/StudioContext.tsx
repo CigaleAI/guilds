@@ -16,7 +16,7 @@ export type StudioStep = {
 
 export type StudioView = {
   session: StudioSession;
-  /** The guild's agents that are not archived. */
+  /** The guild's agents. */
   agents: StudioAgent[];
   search: StudioSearch;
   /** Points the inspector somewhere else; `replace` keeps the current history entry. */

@@ -371,7 +371,7 @@ function nodeKind(id: string): MapNodeKind {
 
 /**
  * Who woke whom: every routine of the agents on the map (fired or not), the operator's messages
- * and direct chats when they started a chain, and every agent that is not archived or took part.
+ * and direct chats when they started a chain, and every agent.
  */
 export function buildActivityMap(view: ActivityView, chains: readonly Chain[]): ActivityMap {
   const links = new Map<string, MapLink>();
@@ -402,12 +402,10 @@ export function buildActivityMap(view: ActivityView, chains: readonly Chain[]): 
       wakes.set(item.wake.agent_id, counts);
     }
   }
-  const agents: MapNode[] = view.agents
-    .filter((agent) => !agent.archived || wakes.has(agent.id) || started.has(agent.id))
-    .map((agent) => {
-      const counts = wakes.get(agent.id) ?? emptyCounts();
-      return { id: agent.id, kind: "agent", count: countTotal(counts), counts, agentId: agent.id };
-    });
+  const agents: MapNode[] = view.agents.map((agent) => {
+    const counts = wakes.get(agent.id) ?? emptyCounts();
+    return { id: agent.id, kind: "agent", count: countTotal(counts), counts, agentId: agent.id };
+  });
   const onMap = new Set(agents.map((agent) => agent.id));
   const sources: MapNode[] = [];
   const addSource = (id: string, agentId: string | null) =>

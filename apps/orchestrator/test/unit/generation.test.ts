@@ -754,7 +754,6 @@ describe("generation", { concurrency: 1 }, () => {
       agent_id: "a_1",
       status: "active",
       kind: "group",
-      archived_at: null,
       config_snapshot: {},
       errors: [],
       created_at: new Date(),
@@ -775,7 +774,6 @@ describe("generation", { concurrency: 1 }, () => {
       agent_id: "a_1",
       status: "active",
       kind: "schedule",
-      archived_at: null,
       config_snapshot: {},
       errors: [],
       created_at: new Date(),
@@ -898,8 +896,6 @@ describe("generation", { concurrency: 1 }, () => {
       guild_name: "research",
       org_id: "org_1",
       org_slug: "acme",
-      archived_at: null,
-      guild_archived_at: null,
       config: {},
     });
     const notes = guildNotes();
@@ -925,7 +921,7 @@ describe("generation", { concurrency: 1 }, () => {
     const tmp = tempDir("guilds-gen-");
     const root = path.join(tmp, "notes");
     mkdirSync(root);
-    const notes = new NotesStore(root, templatesRoot(), "notes");
+    const notes = new NotesStore(root, templatesRoot());
     await notes.createGuild("acme", "research");
     await notes.createAgent("acme", "research", "researcher");
     const snapshot = {

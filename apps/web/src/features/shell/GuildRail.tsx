@@ -3,13 +3,13 @@ import { BookOpen, Database, Inbox, Settings, Sparkles } from "lucide-react";
 import { useGuilds } from "../../api/queries";
 import { cappedCount, RingCount, CollapsedRail, RailItem } from "@guildsrun/ui";
 import { AccountMenu } from "./AccountMenu";
-import { guildInitials, listedGuilds } from "./guilds";
+import { guildInitials } from "./guilds";
 import { useInboxCount, useUnreadByGuild } from "./inbox";
 
 /** The retracted sidebar: guild tiles, workspace tools and the account. */
 export function GuildRail({ onExpand }: { onExpand: () => void }) {
   const { guildId } = useParams({ strict: false });
-  const guilds = listedGuilds(useGuilds().data);
+  const guilds = useGuilds().data ?? [];
   const inboxCount = useInboxCount();
   const unread = useUnreadByGuild();
 
@@ -57,8 +57,8 @@ export function GuildRail({ onExpand }: { onExpand: () => void }) {
           <RailItem asChild tone="plum-tint" icon={BookOpen} label="Recipes">
             <Link to="/recipes" />
           </RailItem>
-          <RailItem asChild tone="signal-tint" icon={Database} label="Databases">
-            <Link to="/databases" />
+          <RailItem asChild tone="signal-tint" icon={Database} label="Tables">
+            <Link to="/tables" />
           </RailItem>
         </>
       }

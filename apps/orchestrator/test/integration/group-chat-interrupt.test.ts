@@ -28,7 +28,7 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-group-interrupt-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-group-interrupt-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const workspaceRoot = tempDir("guilds-group-interrupt-workspaces-");
@@ -42,7 +42,7 @@ test("an operator post may ask to interrupt the runs it targets", { timeout: 60_
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     generation,
   });
 

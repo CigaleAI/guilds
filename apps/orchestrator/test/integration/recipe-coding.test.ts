@@ -27,14 +27,14 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-recipe-coding-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-recipe-coding-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const recipes = new RecipeStore(repo.pool);
   const apply = new RecipeApplyService({ repo, recipes, artifacts, notes, scripts, schedules, registry: null });
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, recipes, apply });

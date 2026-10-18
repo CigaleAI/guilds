@@ -43,7 +43,7 @@ export type UtilityLinkProps = Omit<ComponentProps<"button">, "title" | "childre
   };
 
 /**
- * A workspace tool in the sidebar footer: Inbox, Studio, Builder, Recipes, Databases.
+ * A workspace tool in the sidebar footer: Inbox, Studio, Builder, Recipes, Tables.
  * `default` is the roomy card with an optional subtitle; `compact` is the title-only row
  * the sidebar uses.
  */

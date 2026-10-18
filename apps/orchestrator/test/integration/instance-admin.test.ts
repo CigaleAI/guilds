@@ -23,12 +23,12 @@ after(async () => {
 test("the instance is administered by the seed organisation's owners, or by whom an edition says", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-instance-admin-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-instance-admin-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
   await repo.insertMember("org_home", String(member.id), "member", new Date());
-  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo, notes) };
+  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
   const core = await buildApp(database, deps);
   const overridden = await buildApp(database, {
     ...deps,

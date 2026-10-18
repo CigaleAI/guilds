@@ -312,6 +312,9 @@ export function reviewLabel(author: AuthorDraft | null | undefined): string | nu
   return author.by;
 }
 
+/** The group messages per agent a guild allows when its recipe names no limit, as the orchestrator applies it. */
+const DEFAULT_GROUP_LIMIT = 200;
+
 const GRANT_LABELS = new Map([
   ["read_guild", "Read guild artifacts"],
   ["read_org", "Read org artifacts"],
@@ -431,7 +434,6 @@ export function isPendingQuestion(system: SystemDraft | null | undefined): boole
   return (
     resolution === "decision" ||
     resolution === "composition" ||
-    resolution === "narrowed_composition" ||
     kind === "decision" ||
     kind === "composition"
   );
@@ -913,7 +915,7 @@ export function planFromRecipe(recipe: RecipeSource, overlay: PlanOverlay = {}):
       name: meta.name || guild.name_suggestion || creates.guild?.name || "Untitled guild",
       about: guild.about || creates.guild?.about || meta.description || "",
       objective: guild.objective || creates.guild?.objective || "",
-      groupLimit: guild.group_agent_message_limit ?? 20,
+      groupLimit: guild.group_agent_message_limit ?? DEFAULT_GROUP_LIMIT,
     },
     agents,
     collections,
@@ -953,7 +955,7 @@ export type PlanSectionId =
 
 /** One count tile above the plan and the section it opens. */
 export type PlanTallyItem = {
-  label: "Agents" | "Connectors" | "Routines" | "Collections" | "Secrets";
+  label: "Agents" | "Connectors" | "Routines" | "Tables" | "Secrets";
   count: number;
   section: PlanSectionId;
 };
@@ -963,13 +965,13 @@ export function planMachineMinimum(plan: Pick<RecipePlan, "agents">): string | n
   return plan.agents.length ? machineSizeLabel(agentsMinimum(plan.agents)) : null;
 }
 
-/** The count tiles above the plan: agents always, then connectors, routines, collections, and secrets when non-zero. */
+/** The count tiles above the plan: agents always, then connectors, routines, tables, and secrets when non-zero. */
 export function planTally(plan: RecipePlan): PlanTallyItem[] {
   const items: PlanTallyItem[] = [
     { label: "Agents", count: plan.counts.agents, section: "agents" },
     { label: "Connectors", count: plan.counts.connections, section: "connectors" },
     { label: "Routines", count: plan.counts.routines, section: "routines" },
-    { label: "Collections", count: plan.counts.collections, section: "collections" },
+    { label: "Tables", count: plan.counts.collections, section: "collections" },
     { label: "Secrets", count: plan.counts.secrets, section: "connectors" },
   ];
   return items.filter((item) => item.count > 0 || item.label === "Agents");
@@ -1057,7 +1059,7 @@ export function planSections(
   if (plan.collections.length || !hideEmpty) {
     sections.push({
       id: "collections",
-      title: "Collections",
+      title: "Tables",
       count: plan.collections.length ? plan.collections.length : null,
       empty: !plan.collections.length,
       open: false,
@@ -1572,7 +1574,7 @@ export type CollectionView = {
 /** The apply decision chip of a collection; null when there is no decision. */
 export function collectionActionChip(item: PlanCollection): CollectionView["chip"] {
   if (item.action === "create") {
-    return { label: item.scope === "guild" ? "new guild database" : "new table", tone: "action" };
+    return { label: item.scope === "guild" ? "new guild table" : "new table", tone: "action" };
   }
   if (item.action === "reuse") return { label: "reuses existing table", tone: "ok" };
   if (item.action === "conflict") return { label: "conflict", tone: "warn" };
@@ -1604,14 +1606,14 @@ export function collectionView(item: PlanCollection): CollectionView {
     snippet: item.purpose || "Typed table",
     meta:
       item.scope === "guild"
-        ? "The guild's own database · every agent in the guild reads and writes it · no other guild reaches it"
+        ? "The guild's own table · every agent in the guild reads and writes it · no other guild reaches it"
         : `Organisation table · every agent in the guild gets ${item.guild} · ${writers}`,
     conflict:
       item.action === "conflict"
         ? {
             headline:
               item.scope === "guild"
-                ? `The organisation already has a database named ${item.name}.`
+                ? `The organisation already has a table named ${item.name}.`
                 : `A table named ${item.name} already exists with different columns.`,
             differences: item.differences,
           }
@@ -1687,7 +1689,7 @@ function handoffActor(
 
 function handoffVia(item: HandoffDraft): HandoffVia {
   if (item.kind === "collection") {
-    return { kind: "collection", label: item.collection || "collection" };
+    return { kind: "collection", label: item.collection || "table" };
   }
   return { kind: "tagged", label: `tagged${item.budget ? ` · ${item.budget}` : ""}` };
 }

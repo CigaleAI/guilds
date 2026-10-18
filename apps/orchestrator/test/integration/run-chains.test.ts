@@ -66,7 +66,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-chain-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-chain-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
@@ -97,7 +97,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     notes,
     artifacts,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     generation: loop,
   });
   const headers = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home", "content-type": "application/json" };

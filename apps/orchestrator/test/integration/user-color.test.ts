@@ -25,14 +25,14 @@ test("a person sets, keeps and clears their identity colour", { timeout: 60_000 
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-user-color-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-user-color-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const app = await buildApp(database, {
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
   });
   const json = { ...OWNER, "content-type": "application/json" };
   const patch = (payload: Record<string, unknown>) =>

@@ -55,13 +55,11 @@ function resolved(value: string): string {
 export class NotesStore {
   root: string;
   templates: string;
-  obsidianName: string;
   private readonly lock = new AsyncLock();
 
-  constructor(root: string, templates: string, obsidianName: string) {
+  constructor(root: string, templates: string) {
     this.root = existsSync(root) ? realpathSync(root) : path.resolve(root);
     this.templates = existsSync(templates) ? realpathSync(templates) : path.resolve(templates);
-    this.obsidianName = obsidianName;
   }
 
   async createGuild(orgSlug: string, name: string): Promise<void> {
@@ -128,15 +126,6 @@ export class NotesStore {
 
   systemPath(): string {
     return resolved(path.join(this.templates, SYSTEM_PROMPT));
-  }
-
-  readSystemPrompt(): { path: string; obsidian: string; content: string } {
-    const filePath = this.systemPath();
-    if (!statIfFile(filePath)) {
-      throw new NotesError("system.md not found");
-    }
-    const item = this.fileItem(filePath, SYSTEM_PROMPT);
-    return { ...item, content: readFileSync(filePath, "utf8") };
   }
 
   notesRoot(scope: string, orgSlug: string, guildName: string, agentName: string): string {
@@ -523,54 +512,6 @@ export class NotesStore {
     return readFileSync(filePath, "utf8");
   }
 
-  routineRel(scheduleId: string): string {
-    return `${ROUTINES_DIR}/${this.routineId(scheduleId)}.md`;
-  }
-
-  readRoutineNote(
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    scheduleId: string,
-  ): string | null {
-    const filePath = this.routineFile(orgSlug, guildName, agentName, scheduleId);
-    if (!statIfFile(filePath)) {
-      return null;
-    }
-    return readFileSync(filePath, "utf8");
-  }
-
-  async writeRoutineNote(
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    scheduleId: string,
-    content: string,
-  ): Promise<string> {
-    return this.lock.run(() => {
-      const filePath = this.routineFile(orgSlug, guildName, agentName, scheduleId);
-      return this.writeFile(filePath, content);
-    });
-  }
-
-  async deleteRoutineNote(
-    orgSlug: string,
-    guildName: string,
-    agentName: string,
-    scheduleId: string,
-  ): Promise<void> {
-    await this.lock.run(() => {
-      const filePath = this.routineFile(orgSlug, guildName, agentName, scheduleId);
-      if (statIfFile(filePath)) {
-        unlinkSync(filePath);
-      }
-      const parent = path.dirname(filePath);
-      if (isDir(parent) && readdirSync(parent).length === 0) {
-        rmdirSync(parent);
-      }
-    });
-  }
-
   agentDir(orgSlug: string, guildName: string, name: string): string {
     return resolved(path.join(this.guildDir(orgSlug, guildName), "agents", name));
   }
@@ -776,20 +717,6 @@ export class NotesStore {
     if (isDir(source) && readdirSync(source).length === 0) {
       rmdirSync(source);
     }
-  }
-
-  private routineId(scheduleId: string): string {
-    const token = (scheduleId || "").trim();
-    if (!token || token.includes("/") || token === "." || token === "..") {
-      throw new NotesError("invalid path");
-    }
-    return token;
-  }
-
-  private routineFile(orgSlug: string, guildName: string, agentName: string, scheduleId: string): string {
-    return resolved(
-      path.join(this.agentDir(orgSlug, guildName, agentName), ROUTINES_DIR, `${this.routineId(scheduleId)}.md`),
-    );
   }
 
   private isRoutineNote(

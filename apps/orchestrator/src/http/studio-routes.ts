@@ -161,7 +161,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const guild = await ownedGuild(repo, param(request, "guild_id"), user);
     const studio = studioOf(deps);
     const rows = await studio.store.inventory(String(guild.id), null);
-    return rows.filter((row) => !row.archived_at).map((row) => studio.inventoryItem(row));
+    return rows.map((row) => studio.inventoryItem(row));
   });
 
   app.get("/api/studio/sessions/:session_id/inventory", async (request) => {
@@ -170,7 +170,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const studio = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
-      return await studio.inventory(session, String((request.query as { include_archived?: string }).include_archived) === "1");
+      return await studio.inventory(session);
     } catch (error) {
       mapStudioError(error);
     }

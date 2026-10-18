@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
-import { AgentMessageLimitReached, GroupChatCleared, GuildInactive } from "../../src/db/errors.js";
+import { AgentMessageLimitReached, GroupChatCleared } from "../../src/db/errors.js";
 import { groupMessageItem } from "../../src/db/views.js";
 import {
   CLEARED_ERROR,
@@ -45,7 +45,6 @@ class MemoryGroupDB implements GroupChatDatabase {
   addGuild(guildId: string, options: { seq?: number; limit?: number } = {}): void {
     this.guilds[guildId] = {
       id: guildId,
-      archived_at: null,
       group_chat_seq: options.seq ?? 0,
       group_agent_message_count: 0,
       group_agent_message_limit: options.limit ?? 20,
@@ -66,7 +65,6 @@ class MemoryGroupDB implements GroupChatDatabase {
       id: agentId,
       guild_id: guildId,
       name,
-      archived_at: null,
       created_at: this.created,
       group_chat_delivered_through:
         options.deliveredThrough === undefined ? seq : options.deliveredThrough,
@@ -108,7 +106,6 @@ class MemoryGroupDB implements GroupChatDatabase {
     const pending = Object.values(this.agents).filter(
       (agent) =>
         agent.guild_id === guildId &&
-        (agent.archived_at === null || agent.archived_at === undefined) &&
         Number(agent.group_chat_delivered_through) < seq,
     ).length;
     return {
@@ -135,9 +132,6 @@ class MemoryGroupDB implements GroupChatDatabase {
     if (!guild) {
       return null;
     }
-    if (guild.archived_at !== null && guild.archived_at !== undefined) {
-      throw new GuildInactive();
-    }
     this.messages = this.messages.filter((row) => row.guild_id !== guildId);
     guild.group_agent_message_count = 0;
     guild.group_chat_errors = [];
@@ -162,7 +156,6 @@ class MemoryGroupDB implements GroupChatDatabase {
     const pending = Object.values(this.agents).filter(
       (agent) =>
         agent.guild_id === guildId &&
-        (agent.archived_at === null || agent.archived_at === undefined) &&
         Number(agent.group_chat_delivered_through) < chatSeq,
     );
     pending.sort(
@@ -204,9 +197,6 @@ class MemoryGroupDB implements GroupChatDatabase {
       if (!guild) {
         return null;
       }
-      if (guild.archived_at !== null && guild.archived_at !== undefined) {
-        throw new GuildInactive();
-      }
       guild.group_chat_seq = Number(guild.group_chat_seq) + 1;
       guild.group_agent_message_count = 0;
       return this.insert(
@@ -240,9 +230,6 @@ class MemoryGroupDB implements GroupChatDatabase {
       const guild = this.guilds[guildId];
       if (!guild) {
         return null;
-      }
-      if (guild.archived_at !== null && guild.archived_at !== undefined) {
-        throw new GuildInactive();
       }
       const limit = Number(guild.group_agent_message_limit);
       if (this.runPredatesClear(guildId, sourceRunId)) {
@@ -653,7 +640,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     assert.equal(data.chat_seq, 1);
   });
 
-  test("clear_is_refused_while_deleting_or_archived", async () => {
+  test("clear_is_refused_while_deleting_or_missing", async () => {
     const { db } = seed();
     const refusedWith = (status: number) => (error: unknown) => {
       assert.ok(error instanceof GroupChatError);
@@ -661,8 +648,6 @@ describe("groupchat", { concurrency: 1 }, () => {
       return true;
     };
     await assert.rejects(() => chatFor(db, new Set(["guild_1"])).clear("guild_1"), refusedWith(409));
-    (db.guilds.guild_1 as Record<string, unknown>).archived_at = new Date();
-    await assert.rejects(() => chatFor(db).clear("guild_1"), refusedWith(409));
     await assert.rejects(() => chatFor(db).clear("guild_missing"), refusedWith(404));
   });
 
@@ -697,9 +682,7 @@ describe("groupchat", { concurrency: 1 }, () => {
     const message = await chat.post_user("guild_1", "@writer handle this.");
     assert.deepEqual(message.tagged, ["writer"]);
     assert.deepEqual(message.tagged_agent_ids, ["a_2"]);
-    if (db.agents.a_2) {
-      db.agents.a_2.archived_at = new Date();
-    }
+    delete db.agents.a_2;
     db.addAgent("a_3", "guild_1", "writer", { deliveredThrough: 0 });
     const listed = await chat.list_messages("guild_1");
     assert.deepEqual(listed[0]?.tagged, ["writer"]);
@@ -903,8 +886,8 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("recognized_tags_resolve_agents_and_operators", () => {
     const members = [
-      { id: "a_1", name: "researcher", archived_at: null },
-      { id: "a_2", name: "writer", archived_at: null },
+      { id: "a_1", name: "researcher" },
+      { id: "a_2", name: "writer" },
     ];
     const operators = [
       { user_id: "user_ada", name: "ada", role: "admin" as const },
@@ -937,7 +920,7 @@ describe("groupchat", { concurrency: 1 }, () => {
   test("group_chat_user_message_flags_viewer_tag", () => {
     const [payload, meta] = groupChatUserMessage({
       members: [
-        { id: "a_1", name: "researcher", archived_at: null },
+        { id: "a_1", name: "researcher" },
         { id: "a_2", name: "writer" },
       ],
       rows: [

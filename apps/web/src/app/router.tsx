@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { GuildChatPage, GuildWorkspace } from "../features/guild/GuildWorkspace";
 import { Home } from "../features/home/Home";
-import type { DatabaseTab } from "../features/databases/DatabasesPage";
+import type { TableTab } from "../features/tables/TablesPage";
 import { parseStudioSearch } from "../features/studio/location";
 import { NotFound } from "../features/home/NotFound";
 import { AppShell } from "../features/shell/AppShell";
@@ -112,31 +112,31 @@ const studioSessionRoute = createRoute({
   validateSearch: parseStudioSearch,
 });
 
-const databaseTabs: DatabaseTab[] = ["records", "columns", "access"];
+const tableTabs: TableTab[] = ["records", "columns", "access"];
 
-const validateDatabaseTab = (search: Record<string, unknown>): { tab?: DatabaseTab } =>
-  databaseTabs.includes(search.tab as DatabaseTab) && search.tab !== "records"
-    ? { tab: search.tab as DatabaseTab }
+const validateTableTab = (search: Record<string, unknown>): { tab?: TableTab } =>
+  tableTabs.includes(search.tab as TableTab) && search.tab !== "records"
+    ? { tab: search.tab as TableTab }
     : {};
 
-const databasesRoute = createRoute({
+const tablesRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/databases",
+  path: "/tables",
   component: lazyRouteComponent(
-    () => import("../features/databases/DatabasesPage"),
-    "DatabasesPage",
+    () => import("../features/tables/TablesPage"),
+    "TablesPage",
   ),
-  validateSearch: validateDatabaseTab,
+  validateSearch: validateTableTab,
 });
 
-const databaseRoute = createRoute({
+const tableRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/databases/$collectionId",
+  path: "/tables/$collectionId",
   component: lazyRouteComponent(
-    () => import("../features/databases/DatabasesPage"),
-    "DatabasesPage",
+    () => import("../features/tables/TablesPage"),
+    "TablesPage",
   ),
-  validateSearch: validateDatabaseTab,
+  validateSearch: validateTableTab,
 });
 
 const guildRoute = createRoute({
@@ -186,7 +186,7 @@ const guildUsageRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/guild/pages/GuildUsage"), "GuildUsage"),
 });
 
-/** The State tab: files, databases and artifact scope as sub-tabs, one route each. */
+/** The State tab: files, tables and artifact scope as sub-tabs, one route each. */
 const guildStateRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "state",
@@ -199,21 +199,21 @@ const guildStateIndexRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/guild/GuildState"), "GuildStateIndex"),
 });
 
-const guildDatabasesRoute = createRoute({
+const guildTablesRoute = createRoute({
   getParentRoute: () => guildStateRoute,
-  path: "databases",
+  path: "tables",
   component: lazyRouteComponent(
-    () => import("../features/databases/DatabaseAccessTabs"),
-    "GuildDatabasesTab",
+    () => import("../features/tables/TableAccessTabs"),
+    "GuildTablesTab",
   ),
 });
 
-const agentDatabasesRoute = createRoute({
+const agentTablesRoute = createRoute({
   getParentRoute: () => agentStateRoute,
-  path: "databases",
+  path: "tables",
   component: lazyRouteComponent(
-    () => import("../features/databases/DatabaseAccessTabs"),
-    "AgentDatabasesTab",
+    () => import("../features/tables/TableAccessTabs"),
+    "AgentTablesTab",
   ),
 });
 
@@ -335,7 +335,7 @@ const agentPromptRoute = createRoute({
   ),
 });
 
-/** The State tab: memory, notes, databases, scripts and artifact scope as sub-tabs, one route each. */
+/** The State tab: memory, notes, tables, scripts and artifact scope as sub-tabs, one route each. */
 const agentStateRoute = createRoute({
   getParentRoute: () => agentRoute,
   path: "state",
@@ -425,15 +425,15 @@ export const router = createRouter({
     applyRoute,
     studioRoute,
     studioSessionRoute,
-    databasesRoute,
-    databaseRoute,
+    tablesRoute,
+    tableRoute,
     guildRoute.addChildren([
       guildChatRoute,
       guildSettingsRoute,
       guildStateRoute.addChildren([
         guildStateIndexRoute,
         guildFilesRoute,
-        guildDatabasesRoute,
+        guildTablesRoute,
         guildArtifactsRoute,
       ]),
       guildRoutinesRoute,
@@ -448,7 +448,7 @@ export const router = createRouter({
           agentStateIndexRoute,
           agentMemoryRoute,
           agentNotesRoute,
-          agentDatabasesRoute,
+          agentTablesRoute,
           agentScriptsRoute,
           agentArtifactsRoute,
         ]),

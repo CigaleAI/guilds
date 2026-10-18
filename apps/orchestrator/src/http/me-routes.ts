@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { GuildNameTaken } from "../db/errors.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { validateTimezone } from "../schedules/window.js";
 import { UserValidationError, userItem, validateUserColor, validateUserName } from "../users/index.js";
@@ -67,6 +68,9 @@ export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Pro
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "23505") {
         throw new HttpError(409, "that name is taken");
+      }
+      if (error instanceof GuildNameTaken) {
+        throw new HttpError(409, `${profile.name} is already an agent in a guild you operate`);
       }
       throw error;
     }

@@ -102,9 +102,7 @@ async function routineContext(scope: EditScope): Promise<RoutineContext> {
     scope,
     guildName: String(guild?.name ?? "this guild"),
     routinesEnabled: guild?.routines_enabled !== false,
-    members: agents
-      .filter((row) => !row.archived_at)
-      .map((row) => ({ id: String(row.id), name: String(row.name) })),
+    members: agents.map((row) => ({ id: String(row.id), name: String(row.name) })),
   };
 }
 
@@ -126,7 +124,7 @@ async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Rout
   }
   const agent = rc.members.find((member) => member.id === String(row.agent_id));
   if (!agent) {
-    throw new StudioUnprocessableError("the routine's agent is archived");
+    throw new StudioUnprocessableError("the routine's agent is not in the source guild");
   }
   return { id: scheduleId, agent, definition: changedFields(row, {}) };
 }

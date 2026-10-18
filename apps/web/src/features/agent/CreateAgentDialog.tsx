@@ -12,10 +12,15 @@ import {
 } from "@guildsrun/ui";
 import { CodingAgentForm } from "./CreateCodingAgent";
 import { StandardAgentForm } from "./CreateStandardAgent";
+import { harnessLabels } from "./harness";
 
 export type CreateAgentGuild = { id: string; name: string };
 
 type Kind = "standard" | "coding";
+
+const harnessNames = new Intl.ListFormat("en", { style: "long", type: "disjunction" }).format(
+  Object.values(harnessLabels),
+);
 
 type CreateAgentDialogProps = {
   guild: CreateAgentGuild | null;
@@ -64,7 +69,7 @@ function KindChooser({ guild, onPick }: { guild: CreateAgentGuild; onPick: (kind
           <KindCard
             icon={Code2}
             title="Coding agent"
-            hint="Leads code work in the guild's repositories, delegated to a coding harness (Claude Code, Codex, or Cursor) on your own subscription."
+            hint={`Leads code work in the guild's repositories, delegated to a coding harness (${harnessNames}) on your own subscription.`}
             onPick={() => onPick("coding")}
           />
         </div>

@@ -16,12 +16,12 @@ import {
   DialogHeader,
 } from "@guildsrun/ui";
 import { blankColumn, ColumnsEditor } from "./ColumnsEditor";
-import { columnErrors, columnsForSave, databaseName } from "./values";
+import { columnErrors, columnsForSave, tableName } from "./values";
 
 const orgScope = "org";
 
-/** A new database: its name, purpose, whether one guild owns it, and its columns. */
-export function CreateDatabaseDialog({
+/** A new table: its name, purpose, whether one guild owns it, and its columns. */
+export function CreateTableDialog({
   open,
   onOpenChange,
   guildId,
@@ -41,7 +41,7 @@ export function CreateDatabaseDialog({
   const [tried, setTried] = useState(false);
 
   const nameError =
-    name.trim() && !databaseName.test(name.trim())
+    name.trim() && !tableName.test(name.trim())
       ? "Lowercase letters, digits, _ and -, starting with a letter."
       : undefined;
   const errors = columnErrors(columns);
@@ -77,7 +77,7 @@ export function CreateDatabaseDialog({
         onSuccess: (collection) => {
           close();
           void navigate({
-            to: "/databases/$collectionId",
+            to: "/tables/$collectionId",
             params: { collectionId: collection.id },
           });
         },
@@ -90,7 +90,7 @@ export function CreateDatabaseDialog({
       <DialogContent size="lg">
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
-            title="New database"
+            title="New table"
             description="Records with typed columns that agents search and write."
           />
           <DialogBody>
@@ -131,7 +131,7 @@ export function CreateDatabaseDialog({
               rows={2}
               maxLength={400}
               showCount
-              placeholder="What this database tracks, for the agents that use it"
+              placeholder="What this table tracks, for the agents that use it"
               value={purpose}
               onChange={(event) => setPurpose(event.currentTarget.value)}
             />
@@ -145,11 +145,11 @@ export function CreateDatabaseDialog({
             </div>
             {tried && invalid && !create.isError ? (
               <Banner tone="warning" title="Some fields need attention">
-                Give the database a name, a purpose and at least one complete column.
+                Give the table a name, a purpose and at least one complete column.
               </Banner>
             ) : null}
             {create.isError ? (
-              <Banner tone="error" title="Couldn't create the database">
+              <Banner tone="error" title="Couldn't create the table">
                 <span className="whitespace-pre-wrap">{create.error.message}</span>
               </Banner>
             ) : null}
@@ -159,7 +159,7 @@ export function CreateDatabaseDialog({
               <Button variant="ghost">Cancel</Button>
             </DialogClose>
             <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Creating…" : "Create database"}
+              {create.isPending ? "Creating…" : "Create table"}
             </Button>
           </DialogFooter>
         </form>

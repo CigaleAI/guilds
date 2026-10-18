@@ -81,13 +81,13 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   Object.assign(process.env, env);
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
+  const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const upstream = await startSandboxUpstream();
   const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
   sandboxes.novncBase = upstream.base;

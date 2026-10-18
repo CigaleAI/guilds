@@ -158,9 +158,7 @@ export function composeGenerationContext(args: {
   target: Record<string, unknown> | null;
   draft: Record<string, unknown> | null;
 }): string {
-  const members = args.roster
-    .filter((agent) => !agent.archived && !agent.archived_at)
-    .map((agent) => hydrateStudioMember(agent));
+  const members = args.roster.map((agent) => hydrateStudioMember(agent));
   const rosterLines = args.roster.map((agent) => {
     const name = wrapUntrustedText("agent.name", String(agent.name ?? ""));
     const focus = String(agent.focus ?? "").trim();

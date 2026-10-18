@@ -226,7 +226,7 @@ test("planFromRecipe shapes agents with defaults, enabled tools, grants, and rou
     name: "Desk",
     about: "Watches posts",
     objective: "Draft replies",
-    groupLimit: 20,
+    groupLimit: 200,
   });
 });
 
@@ -497,7 +497,7 @@ test("collectionView labels access, the apply decision, conflicts, and column ru
   assert.deepEqual(conflict.chip, { label: "conflict", tone: "warn" });
   assert.equal(conflict.access, "the guild's own");
   assert.deepEqual(conflict.conflict, {
-    headline: "The organisation already has a database named post-queue.",
+    headline: "The organisation already has a table named post-queue.",
     differences: ["taken"],
   });
   assert.deepEqual(collectionView({ ...queue, action: "create" }).chip, {
@@ -853,7 +853,7 @@ test("planTally, planSections, accessSection, and guildHero summarise the plan",
       ["Agents", 2, "agents"],
       ["Connectors", 1, "connectors"],
       ["Routines", 1, "routines"],
-      ["Collections", 1, "collections"],
+      ["Tables", 1, "collections"],
       ["Secrets", 1, "connectors"],
     ],
   );
@@ -896,7 +896,7 @@ test("planTally, planSections, accessSection, and guildHero summarise the plan",
   assert.deepEqual(guildHero(same), {
     name: "Untitled guild",
     about: "Same",
-    groupLimit: 20,
+    groupLimit: 200,
     goal: null,
   });
 });

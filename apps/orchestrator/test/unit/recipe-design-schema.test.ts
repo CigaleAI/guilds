@@ -158,3 +158,11 @@ test("the builder prompt teaches column design and grants", () => {
   assert.match(text, /Agents never create or\s+alter a table/);
   assert.doesNotMatch(text, /observed_at|object_put|object_find|JSON Schema/);
 });
+
+test("a design system resolution outside the known kinds is refused", () => {
+  const recipe = linkedInNotionRecipe();
+  recipe.design.systems = [{ name: "venues", resolution: "narrowed" as never, reason: "OPEN QUESTION. which venue?", proposed_by: "builder", accepted: false }];
+  assert.throws(() => parseRecipe(recipe), /design\.systems\[0\]\.resolution must be one of: catalog, native/);
+  recipe.design.systems = [{ name: "venues", resolution: "composition", reason: "OPEN QUESTION. which venue?", proposed_by: "builder", accepted: false }];
+  assert.equal(parseRecipe(recipe).design.systems[0]?.resolution, "composition");
+});

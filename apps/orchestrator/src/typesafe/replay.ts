@@ -17,7 +17,7 @@ export type RecipientReplay = {
 };
 
 // Re-run the recipient Choice for one public message as the dispatcher would
-// have seen it: every active member except the author is offered (a user post
+// have seen it: every member except the author is offered (a user post
 // makes everyone pending; an agent post everyone but the author), and the tag
 // rules for just that message stand in for the low-confidence fallback.
 export async function replayRecipients(args: {
@@ -49,10 +49,7 @@ export async function replayRecipients(args: {
     through.push(latest);
   }
   const row = latest as Record<string, unknown>;
-  const active = args.members.filter(
-    (member) => member.archived_at === null || member.archived_at === undefined,
-  );
-  const pending = active.filter(
+  const pending = args.members.filter(
     (member) => !(row.author_type === "agent" && String(member.id) === String(row.author_agent_id)),
   );
   const deliveredThrough = Number(row.seq) - 1;

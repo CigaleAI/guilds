@@ -141,7 +141,7 @@ Each concept has a page of its own.
 - [Notes](notes.md): Markdown at agent, guild, and organisation
   level.
 - [Collections](collections.md): structured records, and the
-  **Databases** page.
+  **Tables** page.
 
 ### Access
 

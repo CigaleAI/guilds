@@ -247,7 +247,7 @@ export const connectReplies = {
   planned: (name: string, scope: ConnectScope) =>
     `Use ${name} at ${scopeWords[scope]} scope. I will connect it during apply.`,
   declined: (name: string, scope: ConnectScope) =>
-    `I declined connecting ${name} at ${scopeWords[scope]} scope. Continue without that login; keep working data in local notes and collections.`,
+    `I declined connecting ${name} at ${scopeWords[scope]} scope. Continue without that login; keep working data in local notes and tables.`,
 };
 
 /** What the operator tells the coach after cutting access in the blueprint; null when nothing was removed. */

@@ -49,7 +49,7 @@ export const Tools: Story = {
       />
       <RailItem label="Builder" tone="signal" icon={Sparkles} />
       <RailItem label="Recipes" tone="plum-tint" icon={BookOpen} />
-      <RailItem label="Databases" tone="signal-tint" icon={Database} selected />
+      <RailItem label="Tables" tone="signal-tint" icon={Database} selected />
       <RailItem label="Settings" tone="well" icon={Settings} />
     </>
   ),

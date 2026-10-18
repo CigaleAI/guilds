@@ -1145,12 +1145,6 @@ export type GenerationNotes = Partial<DirectoryNotes> &
     ensureSystemPrompt?(): Promise<void>;
     createGuild?(orgSlug: string, name: string): Promise<void>;
     createAgent?(orgSlug: string, guildName: string, name: string, task?: string): Promise<void>;
-    readRoutineNote?(
-      orgSlug: string,
-      guildName: string,
-      agentName: string,
-      scheduleId: string,
-    ): string | null;
   };
 
 /**
@@ -1307,7 +1301,7 @@ export class GenerationLoop implements GroupRunner {
     this.group_chat.bind(this);
     this._group_router = groupRouter;
     this.issues = new Issues(db as IssuesDatabase);
-    this.schedules = new Schedules(db as ScheduleDatabase, notes as NotesStore);
+    this.schedules = new Schedules(db as ScheduleDatabase);
     this.scripts = new Scripts(db);
   }
 
@@ -1786,7 +1780,7 @@ export class GenerationLoop implements GroupRunner {
     const refs = await agentSecrets(this.db, agent);
     const now = new Date();
     for (const run of await this.db.listRuns(String(agent.id))) {
-      if (run.status !== "active" || (run.archived_at !== null && run.archived_at !== undefined)) {
+      if (run.status !== "active") {
         continue;
       }
       const snapshot = asObj(run.config_snapshot);
@@ -2321,9 +2315,6 @@ export class GenerationLoop implements GroupRunner {
     if (run === null) {
       throw new RunRequestError(404, "run not found");
     }
-    if (run.archived_at !== null && run.archived_at !== undefined) {
-      throw new RunRequestError(409, "run is archived");
-    }
     if (run.status === "active") {
       return this.run_view(run);
     }
@@ -2338,8 +2329,8 @@ export class GenerationLoop implements GroupRunner {
       throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
     }
     const agent = await this.db.getAgent(String(run.agent_id));
-    if (agent === null || (agent.archived_at !== null && agent.archived_at !== undefined)) {
-      throw new RunRequestError(409, "agent is archived");
+    if (agent === null) {
+      throw new RunRequestError(404, "agent not found");
     }
     const now = new Date();
     await this.db.reopenRun(runId, now);
@@ -2362,9 +2353,6 @@ export class GenerationLoop implements GroupRunner {
     const kind = runKind(run);
     if ((kind === "group" || kind === "schedule") && !runWasResumed(run)) {
       throw new RunRequestError(409, `${kind}-triggered runs do not accept later messages`);
-    }
-    if (run.archived_at !== null && run.archived_at !== undefined) {
-      throw new RunRequestError(409, "run is archived");
     }
     const next = continuedBy(run);
     if (next !== null) {
@@ -2414,8 +2402,8 @@ export class GenerationLoop implements GroupRunner {
     if (run === null) {
       throw new RunRequestError(404, "run not found");
     }
-    if (run.status !== "active" || (run.archived_at !== null && run.archived_at !== undefined)) {
-      throw new RunRequestError(409, "run is archived");
+    if (run.status !== "active") {
+      throw new RunRequestError(409, "run is not active");
     }
     if (!this._busy.has(runId)) {
       return null;
@@ -2509,22 +2497,10 @@ export class GenerationLoop implements GroupRunner {
     if (agent === null) {
       throw new RunRequestError(404, "agent not found");
     }
-    if (agent.archived_at !== null && agent.archived_at !== undefined) {
-      throw new RunRequestError(409, "agent is archived");
-    }
-    if (agent.guild_archived_at !== null && agent.guild_archived_at !== undefined) {
-      throw new RunRequestError(409, "guild is archived");
-    }
     if (this._deleting_guilds.has(String(agent.guild_id))) {
       throw new RunRequestError(409, "guild is being deleted");
     }
     return agent;
-  }
-
-  async _active_members(guildId: string): Promise<Array<Record<string, unknown>>> {
-    return (await this.db.listAgents(guildId)).filter(
-      (member) => member.archived_at === null || member.archived_at === undefined,
-    );
   }
 
   async _hydrate(agent: Record<string, unknown>): Promise<[string, string, string]> {
@@ -2608,7 +2584,7 @@ export class GenerationLoop implements GroupRunner {
       }
       throw error;
     }
-    const members = await this._active_members(String(agent.guild_id));
+    const members = await this.db.listAgents(String(agent.guild_id));
     const [rawStanding, task, memory] = await this._hydrate(agent);
     const caps = {
       scripts: config.scripting && hasScriptTools(access.tools),

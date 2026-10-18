@@ -92,13 +92,13 @@ after(async () => {
 test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const studio = new StudioService({
     repo,
     artifacts,
@@ -332,13 +332,13 @@ test("studio reads agent access, script source, and granted connections", { time
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(accessDbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-access-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-access-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const calls: Array<{ remote: string; args: Record<string, unknown> }> = [];
   const mcp = {
     async call(
@@ -583,13 +583,13 @@ test("studio reads agent access, script source, and granted connections", { time
 test("studio inspects the effective prompt, memory timeline, routine runs, file changes, and focus pins", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(evidenceDbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-evidence-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-evidence-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const studio = new StudioService({
     repo,
     artifacts,
@@ -905,13 +905,13 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
 test("studio proposes memory, note, and guild edits that the operator applies or declines", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(editsDbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-edits-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-edits-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 
@@ -1087,13 +1087,13 @@ test("studio proposes memory, note, and guild edits that the operator applies or
 test("studio proposes tables to create, change, and delete that the operator applies or declines", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(tablesDbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-tables-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-tables-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 
@@ -1313,11 +1313,11 @@ test("studio proposes tables to create, change, and delete that the operator app
     const purposeArgs = { collection: "leads", base_updated_at: current.updated_at, purpose: "Leads worth a call.", reason: "Sharper." };
     const purposeWidget = (await studioEditCollection.handler(await ctx(), purposeArgs)) as Record<string, unknown>;
     const purposeSeq = await commit("studio_edit_collection", purposeArgs, purposeWidget);
-    await artifacts.updateCollection(operator, String(leads?.id), { purpose: "Changed on the Databases page." });
+    await artifacts.updateCollection(operator, String(leads?.id), { purpose: "Changed on the Tables page." });
     assert.equal((await view(purposeSeq)).stale, true);
     assert.equal((await resolve(purposeSeq, "apply")).statusCode, 409);
     assert.equal((await resolve(purposeSeq, "decline")).statusCode, 200);
-    assert.equal((await artifacts.describeCollection(operator, "leads"))?.purpose, "Changed on the Databases page.");
+    assert.equal((await artifacts.describeCollection(operator, "leads"))?.purpose, "Changed on the Tables page.");
 
     // An organisation table: the guild's grant changes; grants outside the guild are shown, never changed.
     const sharedRead = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string; outside: string[] };
@@ -1349,13 +1349,13 @@ test("studio proposes tables to create, change, and delete that the operator app
 test("studio proposes notes to create and delete and narrows an agent's access", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(narrowDbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-narrow-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-narrow-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 
@@ -1595,13 +1595,13 @@ test("studio proposes notes to create and delete and narrows an agent's access",
 test("studio proposes routines to create, change, and delete that the operator applies or declines", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(routinesDbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-routines-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-routines-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const published: Array<{ guildId: string; action: string; scheduleId: string }> = [];
   const studio = new StudioService({
     repo,

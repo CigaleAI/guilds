@@ -25,7 +25,7 @@ after(async () => {
 test("an organisation connects providers, chooses models, and names a default", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-model-keys-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-model-keys-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
@@ -47,7 +47,7 @@ test("an organisation connects providers, chooses models, and names a default", 
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     masterKey: TEST_MASTER_KEY,
     modelCredentials: credentials,
     models: new ModelsService({ repo, credentials, fetch: fetchFn, masterKey: TEST_MASTER_KEY }),

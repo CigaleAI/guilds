@@ -52,13 +52,13 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const crmFx = await startMcpPingFixture();
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-apply-stubs-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-apply-stubs-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const recipes = new RecipeStore(repo.pool);
   const apply = new RecipeApplyService({ repo, recipes, artifacts, notes, scripts, schedules, registry: null });
   const mcp = new McpPool();

@@ -43,13 +43,13 @@ after(async () => {
 test("studio activity lists each wake with what started it and what it produced", { timeout: 60_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-studio-activity-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-studio-activity-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 

@@ -30,7 +30,7 @@ export default meta;
 
 type Story = StoryObj<typeof SheetContent>;
 
-const tabs = ["Chat", "Prompt", "History", "Routine", "Scripts", "Notes", "Databases", "Tools", "Secrets", "Usage"];
+const tabs = ["Chat", "Prompt", "History", "Routine", "Scripts", "Notes", "Tables", "Tools", "Secrets", "Usage"];
 const tools = ["note_find", "note_get", "note_write", "note_delete", "schedule_list"];
 
 function AgentInspector({ defaultExpanded = false }: { defaultExpanded?: boolean }) {

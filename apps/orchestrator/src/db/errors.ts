@@ -1,10 +1,3 @@
-export class GuildInactive extends Error {
-  constructor(message = "guild is archived") {
-    super(message);
-    this.name = "GuildInactive";
-  }
-}
-
 export class AgentMessageLimitReached extends Error {
   limit: number;
 
@@ -26,6 +19,14 @@ export class LastGuildAdmin extends Error {
   constructor(message = "a guild needs at least one admin") {
     super(message);
     this.name = "LastGuildAdmin";
+  }
+}
+
+// An organisation keeps an owner while it has other members or guilds.
+export class LastOrgOwner extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LastOrgOwner";
   }
 }
 

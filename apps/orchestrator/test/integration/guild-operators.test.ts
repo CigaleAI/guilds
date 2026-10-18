@@ -30,7 +30,7 @@ test("guild admins manage operators, and private guilds show only to operators",
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-operators-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-operators-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
@@ -38,7 +38,7 @@ test("guild admins manage operators, and private guilds show only to operators",
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
   });
 
   const teammate = await repo.insertUser("user_teammate_ops", "teammate-ops", new Date(), null, "teammate-ops@example.com");
@@ -185,6 +185,14 @@ test("guild admins manage operators, and private guilds show only to operators",
       payload: { name: "outsider-ops", config: { model: TEST_MODEL, browser: false } },
     });
     assert.equal(agent.statusCode, 201, agent.body);
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: "/api/auth/me",
+      headers: { ...OWNER, ...json },
+      payload: { name: "outsider-ops" },
+    });
+    assert.equal(renamed.statusCode, 409, renamed.body);
+    assert.equal(renamed.json().detail, "outsider-ops is already an agent in a guild you operate");
     await repo.insertMember("org_home", String(outsider.id), "member", new Date());
     const operatorClash = await app.inject({
       method: "PUT",

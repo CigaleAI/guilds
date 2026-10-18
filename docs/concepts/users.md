@@ -79,8 +79,8 @@ In core, an instance admin is an owner of the seed organisation
 
 A user is deleted from the user directory. The app has no delete
 control. Deleting refuses the seed user, a user who is the last owner
-of an organisation that still has guilds, and a user who is the only
-admin of a guild.
+of an organisation that still has other members or guilds, and a user
+who is the only admin of a guild.
 
 Deleting a user removes their memberships, and any organisation left
 with no member and no guild. Data the organisations own stays.
@@ -140,7 +140,7 @@ user is added to it by name in its **Settings**, **Members**
 | Default mode | `compat-cookie` |
 | Seed user | Created only on a box with no user; cannot be deleted |
 | Instance admin in core | An owner of **Home** |
-| Delete | Refused for the seed user, the last owner of an organisation with guilds, and the only admin of a guild |
+| Delete | Refused for the seed user, the last owner of an organisation with other members or guilds, and the only admin of a guild |
 
 ## Reference
 
@@ -222,7 +222,7 @@ On `trusted-header`:
   A body without `email` is 422. 404 for an unknown user.
 - `DELETE /api/users/:id`: 204. 404 for an unknown user. 400 for the
   seed user. 409 for the last owner of an organisation that still has
-  guilds. 409 for the only admin of a guild.
+  other members or guilds. 409 for the only admin of a guild.
 
 Who reaches the directory:
 

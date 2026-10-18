@@ -38,7 +38,10 @@ Each member has one role:
 Every member lists every secret of the organisation as metadata,
 never a value ([Secrets](secrets.md)).
 
-The last owner cannot be demoted and cannot leave. A member who is
+The last owner cannot be demoted, cannot leave, and cannot be deleted
+while the organisation has other members or guilds. Owner changes in
+one organisation run one at a time, so two at once cannot leave it
+without an owner. A member who is
 the only admin of a guild cannot be removed until that guild has
 another admin.
 

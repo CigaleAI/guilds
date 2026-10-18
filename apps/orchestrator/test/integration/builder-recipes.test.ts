@@ -52,13 +52,13 @@ after(async () => {
 test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-builder-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-builder-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const recipes = new RecipeStore(repo.pool);
   const caps = { maxAgents: 25 };
   const policy = limitedPolicy(caps);

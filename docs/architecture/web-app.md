@@ -122,16 +122,16 @@ not-found page (`features/home/NotFound.tsx`).
 | `/applies/$applyId` | Apply checklist | |
 | `/studio` | Studio landing | `guild` |
 | `/studio/$sessionId` | Studio workspace | `agent`, `tab`, `item`, `call`, `seq`: the inspected agent, its tab, the item selected in it, and the run step to reveal |
-| `/databases`, `/databases/$collectionId` | Databases | `tab`: `columns` or `access` (records without it) |
+| `/tables`, `/tables/$collectionId` | Tables | `tab`: `columns` or `access` (records without it) |
 | `/guilds/$guildId` | Guild group chat | `seq`: open at that message |
 | `/guilds/$guildId/settings` | Guild settings | |
 | `/guilds/$guildId/state/files` | Guild State › Files | `path`: open that note |
-| `/guilds/$guildId/state/databases` | Guild State › Databases | |
+| `/guilds/$guildId/state/tables` | Guild State › Tables | |
 | `/guilds/$guildId/state/artifacts` | Guild State › Artifact scope | |
 | `/guilds/$guildId/routines`, `…/issues`, `…/usage`, `…/tools`, `…/secrets` | Guild tabs | |
 | `/guilds/$guildId/agents/$agentId` | Agent inspector, Chat tab | `run`: one session; with it `call` or `seq` for a step; `history=true` opens the History drawer |
 | `…/agents/$agentId/prompt` | Agent Prompt tab | |
-| `…/agents/$agentId/state/memory`, `…/state/notes`, `…/state/databases`, `…/state/scripts`, `…/state/artifacts` | Agent State sub-tabs | `path` on notes |
+| `…/agents/$agentId/state/memory`, `…/state/notes`, `…/state/tables`, `…/state/scripts`, `…/state/artifacts` | Agent State sub-tabs | `path` on notes |
 | `…/agents/$agentId/history` | Opens Chat with the History drawer | |
 | `…/agents/$agentId/routine`, `…/browser`, `…/cli`, `…/tools`, `…/secrets`, `…/usage` | Agent tabs | |
 | `…/agents/$agentId/settings` | Agent Settings | `section`: the open section (Identity without it) |

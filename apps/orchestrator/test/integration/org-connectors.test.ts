@@ -22,14 +22,14 @@ after(async () => {
 test("an organisation adds remote servers of its own that no other organisation sees", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-org-connectors-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-org-connectors-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const app = await buildApp(database, {
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     policy: limitedPolicy({ maxMcpServers: 2 }),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
@@ -120,6 +120,14 @@ test("an organisation adds remote servers of its own that no other organisation 
       payload: { catalog_kind: "mcp", catalog_id: crmId, scope: "org", scope_id: "org_other", enabled: true },
     });
     assert.equal(foreignBinding.statusCode, 404);
+    const unlistedTool = await app.inject({
+      method: "PUT",
+      url: "/api/bindings",
+      headers: { ...HOME, ...JSON_HEADERS },
+      payload: { catalog_kind: "mcp_tool", catalog_id: "crm__no_such_tool", scope: "org", scope_id: "org_home", enabled: true },
+    });
+    assert.equal(unlistedTool.statusCode, 404);
+    assert.equal(unlistedTool.json().detail, "mcp tool not found");
 
     const renamed = await app.inject({
       method: "PATCH",

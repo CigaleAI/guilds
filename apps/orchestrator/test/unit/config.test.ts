@@ -14,7 +14,6 @@ test("loadConfig requires env, existing dirs, and a 32-byte master key", () => {
   assert.equal(config.databaseUrl, env.DATABASE_URL);
   assert.equal(config.authMode, "compat-cookie");
   assert.ok(config.templatesRoot.endsWith("src/prompts"));
-  assert.equal(config.obsidianVaultName, "notes");
   assert.equal(config.toolResultMaxBytes, 65536);
 });
 

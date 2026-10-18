@@ -5,7 +5,7 @@ export const columnTypes: ColumnType[] = ["text", "number", "boolean", "datetime
 /** Fields every record has, which no column may be named. */
 const reservedColumns = ["id", "created_at", "updated_at", "created_by", "updated_by"];
 const columnName = /^[a-z][a-z0-9_]{0,63}$/;
-export const databaseName = /^[a-z][a-z0-9_-]{0,62}$/;
+export const tableName = /^[a-z][a-z0-9_-]{0,62}$/;
 const maxColumns = 64;
 export const maxValues = 50;
 

@@ -120,7 +120,7 @@ export function EmbedPicker({ kind, noteGroups, collections, orgId, onPick }: Em
                     query
                       ? "Try another name."
                       : kind === "table"
-                        ? "Tables are created on the Databases page."
+                        ? "Tables are created on the Tables page."
                         : "Notes of this agent, its guild and the organisation appear here."
                   }
                 />

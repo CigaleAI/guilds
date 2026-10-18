@@ -19,7 +19,7 @@ export function useWaitsFor(
 ): (content: string) => string[] {
   const activeAgents = state?.active_agents;
   return useMemo(() => {
-    const names = new Set(agents.filter((agent) => !agent.archived_at).map((agent) => agent.name));
+    const names = new Set(agents.map((agent) => agent.name));
     const active = (activeAgents ?? []).map((agent) => agent.name);
     return (content: string) => blockingAgents(content, names, active);
   }, [agents, activeAgents]);

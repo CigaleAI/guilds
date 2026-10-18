@@ -34,17 +34,17 @@ export const NoRoutines: Story = {
   ),
 };
 
-export const NoDatabases: Story = {
+export const NoTables: Story = {
   render: () => (
     <div className="max-w-xl rounded-xl bg-surface p-5">
       <EmptyState
         icon={Database}
-        title="No databases in Degen-capital"
+        title="No tables in Degen-capital"
         description="Agents keep records here — orders, leads, scores. Create one here; agents fill it with record_add."
         action={
           <Button>
             <Icon icon={Plus} size={14} />
-            New database
+            New table
           </Button>
         }
       />

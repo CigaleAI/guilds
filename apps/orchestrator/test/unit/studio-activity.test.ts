@@ -14,8 +14,8 @@ function input(overrides: Partial<ActivityInput> = {}): ActivityInput {
     until: NOW,
     now: NOW,
     agents: [
-      { id: "a_scout", name: "scout", avatar_color: "#ff4d8d", avatar_shape: "critters", archived_at: null },
-      { id: "a_desk", name: "desk", avatar_color: "#fbbf24", avatar_shape: "critters", archived_at: null },
+      { id: "a_scout", name: "scout", avatar_color: "#ff4d8d", avatar_shape: "critters" },
+      { id: "a_desk", name: "desk", avatar_color: "#fbbf24", avatar_shape: "critters" },
     ],
     runs: [],
     stats: [],

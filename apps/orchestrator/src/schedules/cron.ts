@@ -3,6 +3,9 @@ import { Cron } from "croner";
 export const INSTRUCTION_MAX = 2000;
 export const DESCRIPTION_MAX = 400;
 export const MIN_GAP_MS = 5 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Any UTC day: a routine wakes at the same times of day on every day it fires.
+const PATTERN_DAY_MS = Date.UTC(2000, 0, 3);
 
 export class ScheduleError extends Error {
   constructor(message: string) {
@@ -37,13 +40,34 @@ export function validateCron(value: unknown): string {
     }
     throw new ScheduleError("cron is invalid");
   }
-  const now = new Date();
-  const first = nextRunAt(now, text);
-  const second = nextRunAt(first, text);
-  if (second.getTime() - first.getTime() < MIN_GAP_MS) {
+  if (shortestGapMs(text) < MIN_GAP_MS) {
     throw new ScheduleError("cron must wait at least 5 minutes between wake-ups");
   }
   return text;
+}
+
+/**
+ * The shortest wait between two wake-ups of a 5-field cron. It reads the times of day the
+ * minute and hour fields name, and counts the wait from a day's last wake-up to the first of
+ * the next day as though the next day fires too.
+ */
+export function shortestGapMs(cron: string): number {
+  const [minute, hour] = cron.split(" ");
+  const fires = timesOfDay(`${minute} ${hour} * * *`);
+  const first = fires[0] ?? PATTERN_DAY_MS;
+  const gaps = fires.slice(1).map((at, index) => at - (fires[index] ?? at));
+  return Math.min(first + DAY_MS - (fires[fires.length - 1] ?? first), ...gaps);
+}
+
+function timesOfDay(cron: string): number[] {
+  const job = new Cron(cron, { timezone: "UTC" });
+  const fires: number[] = [];
+  let next = job.nextRun(new Date(PATTERN_DAY_MS - 1000));
+  while (next && next.getTime() < PATTERN_DAY_MS + DAY_MS) {
+    fires.push(next.getTime());
+    next = job.nextRun(next);
+  }
+  return fires;
 }
 
 export function validateScheduleDescription(description: unknown): string {

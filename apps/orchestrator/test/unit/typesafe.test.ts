@@ -313,10 +313,9 @@ test("classifyGroupRecipients offers only pending agents, with focus and task pr
     members: [
       { id: "a_1", name: "researcher", focus: "papers" },
       { id: "a_2", name: "writer", focus: "notes", task: longTask },
-      { id: "a_3", name: "archived", archived_at: "2026-01-01" },
       { id: "a_4", name: "poster", focus: "posts" },
     ],
-    pendingNames: ["researcher", "writer", "archived"],
+    pendingNames: ["researcher", "writer"],
     evaluate: async ({ state, questions }) => {
       assert.deepEqual(Object.keys(state as object), ["latest", "context"]);
       assert.deepEqual((state as { context: unknown[] }).context, []);

@@ -114,14 +114,11 @@ function artifactFailure(error: unknown): never {
 
 async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
   const agents = await scope.repo.listAgents(scope.sourceGuildId);
-  return new Set(agents.filter((row) => !row.archived_at).map((row) => String(row.id)));
+  return new Set(agents.map((row) => String(row.id)));
 }
 
 export async function loadMemoryBase(scope: EditScope, agent: Record<string, unknown>): Promise<EditBase> {
   const agentId = String(agent.id);
-  if (agent.archived_at) {
-    throw new StudioUnprocessableError("archived agents cannot be edited");
-  }
   const row = await scope.artifacts.getMemoryRow(operator(scope, { agentId }), agentId);
   return {
     kind: "memory",
@@ -415,7 +412,7 @@ async function reviewNoteCreate(
   let ownerId: string;
   let reader: string;
   if (level === "agent") {
-    const agents = (await scope.repo.listAgents(scope.sourceGuildId)).filter((row) => !row.archived_at);
+    const agents = await scope.repo.listAgents(scope.sourceGuildId);
     const agent = agents.find((row) => String(row.id) === agentId);
     if (!agent) {
       throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
@@ -457,7 +454,7 @@ async function reviewNoteDelete(scope: EditScope, displayPath: string): Promise<
   if (base.kind !== "note") {
     throw new StudioUnprocessableError("only notes can be deleted here");
   }
-  const members = (await scope.repo.listAgents(scope.sourceGuildId)).filter((row) => !row.archived_at);
+  const members = await scope.repo.listAgents(scope.sourceGuildId);
   const embedding = members.filter((row) => String(row.task ?? "").includes(`![[${base.displayPath}]]`));
   const naming = members.filter(
     (row) => !embedding.includes(row) && String(row.task ?? "").includes(base.displayPath),

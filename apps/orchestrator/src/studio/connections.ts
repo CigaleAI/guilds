@@ -47,7 +47,7 @@ export async function reachableConnection(
     reachable = ownerId === guildId;
   } else if (scope === "agent" && ownerId) {
     const agent = await repo.getAgent(ownerId);
-    reachable = Boolean(agent && String(agent.guild_id) === guildId && !agent.archived_at);
+    reachable = Boolean(agent && String(agent.guild_id) === guildId);
   }
   if (!reachable) {
     return null;

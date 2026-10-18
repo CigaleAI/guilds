@@ -57,6 +57,13 @@
       "when": 1791903600000,
       "tag": "0008_group_chat_clear",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791907200000,
+      "tag": "0009_guild_defaults_unarchived",
+      "breakpoints": true
     }
   ]
 }

@@ -42,13 +42,13 @@ test("a connector's own key or OAuth client is an instance key the admin fills u
   publish("borrow", { auth: { kind: "token", instance: { integration: "web-search", field: "api_key" } } });
   publish("googly", { auth: { kind: "oauth", oauth: { strategy: "configured", provider: "google-connectors" } } });
   publish("portal", { display_name: "Portal", auth: { kind: "oauth", oauth: { strategy: "configured" } } });
-  const notes = new NotesStore(tempDir("guilds-instance-connectors-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-instance-connectors-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const app = await buildApp(database, {
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     registry: registry.client,
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });

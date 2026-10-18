@@ -38,7 +38,6 @@ export type RunState = {
  */
 export function runState(run: Run): RunState {
   if (run.generating) return { status: "running", label: "Generating" };
-  if (run.archived_at) return { status: "idle", label: "Archived" };
   if (run.status === "active") return { status: "queued", label: "Open" };
   const last = run.errors.at(-1);
   if (!last) return { status: "ok", label: "Completed" };

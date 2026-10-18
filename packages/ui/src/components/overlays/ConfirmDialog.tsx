@@ -27,10 +27,10 @@ export type ConfirmDialogProps = {
   title: ReactNode;
   /** What happens, in one or two sentences: what is removed, what stops, whether it can be undone. */
   description?: ReactNode;
-  /** The action's label, naming what it does, such as "Delete database". */
+  /** The action's label, naming what it does, such as "Delete table". */
   confirmLabel?: string;
   cancelLabel?: string;
-  /** Destructive only: text the operator types before the action enables, such as the database name. */
+  /** Destructive only: text the operator types before the action enables, such as the table name. */
   confirmText?: string;
   /**
    * Runs on confirm. While a returned promise is pending the buttons are disabled; the dialog closes

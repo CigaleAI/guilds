@@ -28,14 +28,14 @@ test(
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
     const databaseUrl = await createIsolatedDatabase(dbName);
     const database = await connect(databaseUrl);
-    const notes = new NotesStore(tempDir("guilds-org-members-"), templatesRoot(), "notes");
+    const notes = new NotesStore(tempDir("guilds-org-members-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const repo = new Repositories(database.pool);
     const app = await buildApp(database, {
       repo,
       notes,
       scripts: new Scripts(repo),
-      schedules: new Schedules(repo, notes),
+      schedules: new Schedules(repo),
     });
     const json = { ...OWNER, "content-type": "application/json" };
 

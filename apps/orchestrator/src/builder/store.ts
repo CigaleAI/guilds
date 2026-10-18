@@ -203,6 +203,27 @@ export class BuilderStore {
     return Number(firstRow(result)?.seq ?? 0);
   }
 
+  /** What Builder sessions spent, per organisation. */
+  async builderUsageByOrg(): Promise<Map<string, Record<string, unknown>>> {
+    const result = await this.pool.query(
+      `SELECT s.org_id,
+              COALESCE(SUM(m.cost_usd), 0) AS cost_usd,
+              COALESCE(SUM(COALESCE((m.metadata->'usage'->>'input_tokens')::bigint, 0)), 0) AS input_tokens,
+              COALESCE(SUM(COALESCE((m.metadata->'usage'->>'output_tokens')::bigint, 0)), 0) AS output_tokens,
+              COALESCE(SUM(COALESCE((m.metadata->'usage'->>'cache_read_tokens')::bigint, 0)), 0) AS cache_read_tokens,
+              COUNT(*) FILTER (WHERE m.cost_usd IS NOT NULL) AS calls,
+              MAX(m.created_at) AS updated_at
+         FROM builder_messages m
+         JOIN builder_sessions s ON s.id = m.session_id
+        GROUP BY s.org_id`,
+    );
+    const map = new Map<string, Record<string, unknown>>();
+    for (const row of result.rows as Array<Record<string, unknown>>) {
+      map.set(String(row.org_id), row);
+    }
+    return map;
+  }
+
   async incrementUsage(
     orgId: string,
     metadata: Record<string, unknown>,

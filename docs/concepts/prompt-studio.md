@@ -157,14 +157,14 @@ selected item on the right.
 
 | Tab | List | Selected item |
 |---|---|---|
-| **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens **Files** at that note; a collection embed opens **Databases**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. It says whether the latest run used this Task and this memory. Banners say when the agent is running and when an embed does not resolve |
+| **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens **Files** at that note; a collection embed opens **Tables**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. It says whether the latest run used this Task and this memory. Banners say when the agent is running and when an embed does not resolve |
 | **Draft** | none | The pending draft: why, a side-by-side diff against its base version, **Publish**, **Edit**, **Discard**. A draft over a Task that changed since shows as conflicted |
 | **History** | Every run: what started it, time, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
 | **Memory** | Every version memory has held, newest first: version, author (run kind, person, or agent), added and removed lines; filter by author | Diff against the previous version, or the whole version. **Open step** on a version a run wrote opens the run at its `memory_write` call |
 | **Routines** | Description, timing, next wake or paused, run count; active first | The instruction as Markdown, a banner while the guild's routines are off, then the runs that routine started, marked when they fired with an older instruction. A run opens in **History**. **Edit in agent** |
 | **Scripts** | Script names and descriptions, tagged when offered as a tool | Description, provenance, parameter schema, source; **Edit in agent**. The tab is hidden while the agent's scripting is off |
 | **Files** | The notes browser over agent, guild, and organisation notes, opened at the file the link names. **Ask the coach** pins the open file. **Open step** on a provenance strip opens the run in **History** | |
-| **Databases** | The organisation's collections, one at a time from a picker, with their records, whichever agent is targeted | |
+| **Tables** | The organisation's collections, one at a time from a picker, with their records, whichever agent is targeted | |
 | **Versions** | The live Task and archived versions, with who replaced each and when | Diff against the previous version. **Restore from Prompt** opens the agent's Prompt tab |
 
 Studio does not stream a run. A generating run shows its committed
@@ -175,7 +175,7 @@ in the agent's Chat tab, which streams it. The run list polls every
 ### Guild overview
 
 With no target the inspector shows **Overview**, the guild-level
-**Files**, and the organisation's **Databases**. **Overview** holds
+**Files**, and the organisation's **Tables**. **Overview** holds
 the guild's short description, the drafts to review, the guild's
 [activity](studio-activity.md), and the roster: each agent's Task
 version and excerpt, routine count, last run, and warnings.

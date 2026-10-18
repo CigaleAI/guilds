@@ -9,8 +9,8 @@ const stateTabs = [
   { route: "/guilds/$guildId/agents/$agentId/state/memory", label: "Memory", icon: Brain },
   { route: "/guilds/$guildId/agents/$agentId/state/notes", label: "Notes", icon: BookOpen },
   {
-    route: "/guilds/$guildId/agents/$agentId/state/databases",
-    label: "Databases",
+    route: "/guilds/$guildId/agents/$agentId/state/tables",
+    label: "Tables",
     icon: Database,
   },
   {

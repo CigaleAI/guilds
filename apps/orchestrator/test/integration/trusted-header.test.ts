@@ -21,10 +21,10 @@ after(async () => {
 test("behind an authenticating proxy, a user is whoever holds the email it sends", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-trusted-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-trusted-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
-  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo, notes) };
+  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
   const config = {
     authMode: "trusted-header",
     publicBaseUrl: "https://box.tailnet.test",

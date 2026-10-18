@@ -1,6 +1,6 @@
 # Coding agents
 
-![Create your own coding agents with Claude Code, Codex, or Cursor](../../images/coding-agents.png)
+![Create your own coding agents with Claude Code, Codex, Cursor, or Antigravity](../../images/coding-agents.png)
 
 A coding agent is an [agent](../agents.md) with the coding capability
 on. It leads code work in the [guild's repositories](repositories.md).
@@ -181,8 +181,8 @@ An agent whose data must stay apart goes on a machine of its own.
 
 In the sidebar, **Add agent** under a guild opens **Create an agent**
 on two cards. **Coding agent** reads "Leads code work in the guild's
-repositories, delegated to a coding harness (Claude Code, Codex, or
-Cursor) on your own subscription."
+repositories, delegated to a coding harness (Claude Code, Codex, Cursor,
+or Antigravity) on your own subscription."
 
 It opens **Create a coding agent**: five steps on a stepper, the
 header reading "Step n of 5 · `<step>`", with **Back** and **Next**

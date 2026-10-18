@@ -27,7 +27,7 @@ test("a login waits for its settings, looks them up, and connects once they are 
   installConnectors([QUOTES]);
   const database = await connect(await createIsolatedDatabase(dbName));
   await projectConnectors(database.pool);
-  const notes = new NotesStore(tempDir("guilds-settings-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-settings-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const mcp = new McpPool();
@@ -51,7 +51,7 @@ test("a login waits for its settings, looks them up, and connects once they are 
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     mcp,
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });

@@ -35,7 +35,7 @@ export const Tones: Story = {
       <Banner tone="error" title="Couldn’t load records" meta="ERR_DB_TIMEOUT · 12s" action={retry} />
       <Banner tone="warning" title="Agent limit almost reached" meta="13 of 15 agents · raise it in Settings" />
       <Banner tone="info" title="researchoor is running" meta="run r_01M3EQ2K · started 21:40" />
-      <Banner tone="success" title="Recipe applied" meta="4 agents · 2 routines · 1 database" />
+      <Banner tone="success" title="Recipe applied" meta="4 agents · 2 routines · 1 table" />
     </div>
   ),
 };

@@ -29,12 +29,12 @@ export const Destructive: Story = {
         title="Delete degen-meta?"
         description="This removes 9 records and revokes access for 5 agents. It can’t be undone."
         confirmText="degen-meta"
-        confirmLabel="Delete database"
+        confirmLabel="Delete table"
         onConfirm={() => wait(800)}
         trigger={
           <Button variant="danger">
             <Icon icon={Trash2} size={14} />
-            Delete database
+            Delete table
           </Button>
         }
       />

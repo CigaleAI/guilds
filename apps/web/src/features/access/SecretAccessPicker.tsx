@@ -20,7 +20,7 @@ export function SecretAccessPicker({
   allowOrgWide: boolean;
   disabled?: boolean;
 }) {
-  const guilds = (useGuilds().data ?? []).filter((guild) => !guild.archived_at);
+  const guilds = useGuilds().data ?? [];
   const agentsByGuild = useAgentsByGuild(guilds.map((guild) => guild.id));
 
   return (
@@ -41,9 +41,7 @@ export function SecretAccessPicker({
             <p className="text-sm text-muted">No guilds to grant it to.</p>
           ) : (
             guilds.map((guild) => {
-              const agents = (agentsByGuild.get(guild.id) ?? []).filter(
-                (agent) => !agent.archived_at,
-              );
+              const agents = agentsByGuild.get(guild.id) ?? [];
               return (
                 <div key={guild.id} className="flex flex-col gap-0.5">
                   <Checkbox

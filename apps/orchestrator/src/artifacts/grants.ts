@@ -2,9 +2,11 @@ import { resolveItem } from "../access/index.js";
 import {
   ARTIFACT_GRANT_IDS,
   DEFAULT_ARTIFACT_GRANTS,
+  NO_HIDDEN_GUILDS,
   OPERATOR_GRANTS,
   type ArtifactActor,
   type ArtifactGrants,
+  type HiddenGuilds,
 } from "./types.js";
 
 export function grantsFromBindings(
@@ -53,12 +55,14 @@ export function operatorActor(args: {
   actorName: string;
   guildId?: string | null;
   agentId?: string | null;
+  hidden?: HiddenGuilds;
 }): ArtifactActor {
   return {
     orgId: args.orgId,
     guildId: args.guildId ?? null,
     agentId: args.agentId ?? null,
     operator: true,
+    hidden: args.hidden ?? NO_HIDDEN_GUILDS,
     grants: OPERATOR_GRANTS,
     actorType: "user",
     actorId: args.actorId,
@@ -80,6 +84,7 @@ export function agentActor(args: {
     guildId: args.guildId,
     agentId: args.agentId,
     operator: false,
+    hidden: NO_HIDDEN_GUILDS,
     grants: args.grants,
     actorType: args.runId ? "run" : "agent",
     actorId: args.runId ?? args.agentId,

@@ -223,6 +223,29 @@ test("usage_tree_exposes_studio_and_archived_residual", () => {
   assert.equal(archived.calls, 1);
 });
 
+test("builder spend is its own line, not part of deleted guilds and agents", () => {
+  const totals = (tokens: number, cost: number) => ({
+    input_tokens: tokens,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cost_usd: cost,
+    calls: 1,
+    updated_at: null,
+  });
+  const tree = usageTree({
+    orgs: [{ id: "org_manu", name: "manu", slug: "manu" }],
+    guilds: [],
+    agents: [],
+    counters: new Map([[usageCounterKey("org", "org_manu"), { ...totals(30, 0.03), calls: 2 }]]),
+    studioByOrg: new Map([["org_manu", totals(10, 0.01)]]),
+    builderByOrg: new Map([["org_manu", totals(20, 0.02)]]),
+  });
+  const manu = (tree.organisations as Array<Record<string, unknown>>)[0];
+  assert.ok(manu);
+  assert.equal((manu.builder as Record<string, unknown>).total_tokens, 20);
+  assert.equal(manu.archived, null);
+});
+
 test("utcMonth is YYYY-MM in UTC", () => {
   assert.equal(utcMonth(new Date("2026-09-15T23:00:00.000Z")), "2026-09");
 });

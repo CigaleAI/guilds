@@ -42,8 +42,8 @@ const MIN = 60_000;
 const T0 = Date.parse("2026-09-26T09:00:00Z");
 const at = (minutes: number) => new Date(T0 + minutes * MIN).toISOString();
 
-function agent(id: string, archived = false): ActivityAgent {
-  return { id, name: id.slice(2), avatar_color: "#888888", avatar_shape: "", archived };
+function agent(id: string): ActivityAgent {
+  return { id, name: id.slice(2), avatar_color: "#888888", avatar_shape: "" };
 }
 
 /** A public row; a null author is the operator. */
@@ -131,11 +131,11 @@ function view(overrides: Partial<ActivityView> = {}): ActivityView {
 /**
  * The operator's row #10 wakes intake, whose #11 wakes writer, whose #12 wakes editor (which fails).
  * A routine wakes editor later, and the operator chats with writer directly. Writer has a routine
- * that did not fire, and an archived agent did nothing.
+ * that did not fire.
  */
 function pipeline(): ActivityView {
   return view({
-    agents: [agent("a_editor"), agent("a_writer"), agent("a_intake"), agent("a_retired", true)],
+    agents: [agent("a_editor"), agent("a_writer"), agent("a_intake")],
     routines: [
       {
         id: "sch_1",
@@ -150,13 +150,6 @@ function pipeline(): ActivityView {
         description: "Daily draft",
         label: "Every day at 09:00 (UTC)",
         instruction: "Draft.",
-      },
-      {
-        id: "sch_3",
-        agent_id: "a_retired",
-        description: "Old job",
-        label: "Every hour (UTC)",
-        instruction: "Old.",
       },
     ],
     messages: [
@@ -363,7 +356,6 @@ test("the map lists every routine of its agents, the sources that started chains
   assert.ok(selectionExists(map, { kind: "link", from: "a_intake", to: "a_writer" }));
   assert.ok(selectionExists(map, { kind: "node", id: routineNode("sch_2") }));
   assert.ok(!selectionExists(map, { kind: "link", from: "a_writer", to: "a_intake" }));
-  assert.ok(!selectionExists(map, { kind: "node", id: "a_retired" }));
   assert.deepEqual(map.links.map((link) => [link.from, link.to, link.count]).sort(), [
     ["a_intake", "a_writer", 1],
     ["a_writer", "a_editor", 1],
@@ -544,10 +536,6 @@ test("each agent's inputs name what woke it, idle routines included, and its out
   assert.deepEqual(editor?.outputs.records, [{ value: "projects", count: 1 }]);
   assert.deepEqual(editor?.outputs.recordOperations, { update: 1 });
   assert.deepEqual(editor?.outputs.errors, [{ value: "Out of budget.", count: 1 }]);
-  assert.equal(
-    activity.some((item) => item.agent.id === "a_retired"),
-    false,
-  );
 });
 
 test("writes group by what they touched, with record ids and the first write", () => {

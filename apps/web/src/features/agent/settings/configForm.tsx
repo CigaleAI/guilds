@@ -891,7 +891,7 @@ export function CapabilitiesFields({
         />
         <CapabilityField
           label="Memory"
-          hint="Notes the agent keeps between runs."
+          hint="One Markdown file the agent rewrites to remember across runs."
           icon={Bookmark}
           checked={form.memory}
           onChange={(memory) => onChange({ ...form, memory })}

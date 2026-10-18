@@ -15,7 +15,7 @@ const confinement = loadJsonFixture<{
 function notesStore(): NotesStore {
   const root = path.join(tempDir("guilds-notes-"), "notes");
   mkdirSync(root);
-  return new NotesStore(root, templatesRoot(), "notes");
+  return new NotesStore(root, templatesRoot());
 }
 
 test("ensure_system_prompt uses the template", async () => {
@@ -23,11 +23,7 @@ test("ensure_system_prompt uses the template", async () => {
   await notes.ensureSystemPrompt();
   const expected = readFileSync(path.join(templatesRoot(), "system.md"), "utf8");
   assert.equal(notes.systemPath(), path.resolve(path.join(templatesRoot(), "system.md")));
-  const item = notes.readSystemPrompt();
-  assert.equal(item.path, "system.md");
-  assert.equal(item.content, expected);
-  assert.ok(item.obsidian.startsWith("obsidian://open?path="));
-  assert.equal(item.obsidian, `obsidian://open?path=${pythonQuote(notes.systemPath())}`);
+  assert.equal(readFileSync(notes.systemPath(), "utf8"), expected);
 });
 
 test("create_guild and create_agent layout", async () => {
@@ -179,7 +175,7 @@ test("operator can edit a routine note through the files pane", async () => {
   const notes = notesStore();
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
-  await notes.writeRoutineNote("acme", "research", "researcher", "sch_1", "Check Gmail.");
+  writeFileSync(path.join(notes.agentDir("acme", "research", "researcher"), "routines", "sch_1.md"), "Check Gmail.");
   const repo = await notes.writeAgentFile(
     "acme",
     "research",
@@ -188,7 +184,7 @@ test("operator can edit a routine note through the files pane", async () => {
     "Read shared notes.",
   );
   assert.equal(repo, "orgs/acme/guilds/research/agents/researcher/routines/sch_1.md");
-  assert.equal(notes.readRoutineNote("acme", "research", "researcher", "sch_1"), "Read shared notes.");
+  assert.equal(notes.readAgentFile("acme", "research", "researcher", "routines/sch_1.md"), "Read shared notes.");
   await assert.rejects(
     () => notes.writeNote("private", "acme", "research", "researcher", "routines/sch_1.md", "nope"),
     /cannot be overwritten/,
@@ -263,7 +259,7 @@ test("delete rejects protected agent files", async () => {
     source: "r_1",
     replacedBy: "run r_1 (direct)",
   });
-  await notes.writeRoutineNote("acme", "research", "researcher", "sch_1", "Check Gmail.");
+  writeFileSync(path.join(notes.agentDir("acme", "research", "researcher"), "routines", "sch_1.md"), "Check Gmail.");
   const listed = notes.listNotes("private", "acme", "research", "researcher", "history-archive/");
   const archive = listed.find((item) => item.endsWith(".md"));
   const archiveRel = (archive ?? "").split("/agents/researcher/")[1] ?? "";

@@ -24,7 +24,6 @@ export type AppConfig = {
   host: string;
   port: number;
   toolResultMaxBytes: number;
-  obsidianVaultName: string;
   publicBaseUrl: string;
   trustedHeaderName: string;
   trustedProxySecret: string;
@@ -182,7 +181,6 @@ export function loadConfig(
     host: env.HOST ?? "0.0.0.0",
     port: Number(env.PORT ?? "8080"),
     toolResultMaxBytes: Number(env.TOOL_RESULT_MAX_BYTES ?? "65536"),
-    obsidianVaultName: env.OBSIDIAN_VAULT_NAME ?? "notes",
     publicBaseUrl,
     trustedHeaderName: (env.TRUSTED_HEADER_EMAIL ?? "X-Forwarded-Email").trim() || "X-Forwarded-Email",
     trustedProxySecret,

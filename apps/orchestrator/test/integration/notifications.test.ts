@@ -27,7 +27,7 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-notifications-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-notifications-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const workspaceRoot = tempDir("guilds-notifications-workspaces-");
@@ -36,7 +36,7 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     generation,
   });
 

@@ -34,12 +34,12 @@ test("the instance descriptor lists integrations and their state, never a key", 
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   setInstanceKeys({});
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-instance-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-instance-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
   await repo.insertMember("org_home", String(member.id), "member", new Date());
-  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo, notes) };
+  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
   const core = await buildApp(database, deps);
   const describe = async (headers: Record<string, string>) => {
     const response = await core.inject({ method: "GET", url: "/api/instance", headers });

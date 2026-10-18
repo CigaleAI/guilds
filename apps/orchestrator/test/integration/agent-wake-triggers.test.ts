@@ -32,7 +32,7 @@ test("agents store wake triggers at create and through settings", { timeout: 60_
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(tempDir("guilds-wake-notes-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-wake-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
@@ -40,7 +40,7 @@ test("agents store wake triggers at create and through settings", { timeout: 60_
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
   });
 
   try {

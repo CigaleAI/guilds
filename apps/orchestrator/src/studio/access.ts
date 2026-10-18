@@ -78,9 +78,6 @@ async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot
   if (!agent || String(agent.guild_id) !== scope.sourceGuildId || String(agent.org_id) !== scope.orgId) {
     throw new StudioUnprocessableError("agent is not in the source guild");
   }
-  if (agent.archived_at) {
-    throw new StudioUnprocessableError("archived agents cannot be edited");
-  }
   const resolveScope = { orgId: scope.orgId, guildId: scope.sourceGuildId, agentId };
   const rows = await scope.repo.listBindingsCovering(resolveScope);
   const servers = await scope.repo.listMcpServers(scope.orgId);

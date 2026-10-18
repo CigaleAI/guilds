@@ -115,12 +115,10 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
   };
 
   const mentions = useMemo<MentionCandidate[]>(() => {
-    const candidates: MentionCandidate[] = agents
-      .filter((agent) => !agent.archived_at)
-      .map((agent) => {
-        const look = agentLook(agent);
-        return { name: agent.name, tone: look.tone, ...(look.src ? { src: look.src } : {}) };
-      });
+    const candidates: MentionCandidate[] = agents.map((agent) => {
+      const look = agentLook(agent);
+      return { name: agent.name, tone: look.tone, ...(look.src ? { src: look.src } : {}) };
+    });
     for (const operator of guild.operators) {
       if (operator.user_id !== user.id && isHandle(operator.name))
         candidates.push({ name: operator.name, hint: "operator" });
@@ -331,7 +329,6 @@ export function GroupChat({ guild, agents, state, focusSeq }: GroupChatProps) {
           placeholder="Message the guild — type @ to mention an agent"
           onSend={send}
           mentions={mentions}
-          disabled={Boolean(guild.archived_at)}
         />
       </div>
     </div>

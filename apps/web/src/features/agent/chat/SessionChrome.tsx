@@ -81,7 +81,7 @@ export function useChatSession() {
   };
   const toggleHistory = () => go({ history: !search.history });
 
-  const recent = (runs.data ?? []).filter((candidate) => !candidate.archived_at).slice(0, 12);
+  const recent = (runs.data ?? []).slice(0, 12);
 
   return {
     guildId,

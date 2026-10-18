@@ -6,23 +6,12 @@ import {
   DEFAULT_MAX_SCRIPTS,
   DEFAULT_MAX_WORKSPACE_MIB,
 } from "../agents/validation.js";
-import { formatColumnTimestamp } from "../db/codecs.js";
 import { jsonObj } from "../db/json.js";
 import { accessPayload } from "../access/index.js";
 import { agentSecrets } from "../access/runtime.js";
 import type { Repositories } from "../db/repositories.js";
 import { canSeeGuild, DEFAULT_GUILD_AGENTS, guildOperators, guildRole } from "../guilds/validation.js";
 import { HttpError } from "./errors.js";
-
-function iso(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value !== "string") {
-    throw new TypeError("timestamp must be a string");
-  }
-  return formatColumnTimestamp(value);
-}
 
 function agentConfig(row: Record<string, unknown>): Record<string, unknown> {
   const value = jsonObj(row.config);
@@ -51,7 +40,6 @@ export function guildItem(row: Record<string, unknown>): Record<string, unknown>
     max_agents: Number(row.max_agents ?? DEFAULT_GUILD_AGENTS),
     git_author_email: typeof row.git_author_email === "string" ? row.git_author_email : "",
     database: false,
-    archived_at: iso(row.archived_at),
     visibility: row.visibility || "org",
     operators: guildOperators(row),
     routines_enabled: row.routines_enabled !== false,
@@ -71,7 +59,6 @@ export function agentItem(row: Record<string, unknown>, generating = false): Rec
     coding: Boolean(config.coding),
     machine_id: row.machine_id,
     machine: { id: row.machine_id, name: row.machine_name, box: row.machine_box },
-    archived_at: iso(row.archived_at),
     generating,
   };
 }

@@ -25,7 +25,7 @@ import { tempDir } from "../helpers/env.js";
 function notesStore(): NotesStore {
   const root = path.join(tempDir("guilds-memory-"), "notes");
   mkdirSync(root);
-  return new NotesStore(root, templatesRoot(), "notes");
+  return new NotesStore(root, templatesRoot());
 }
 
 test("readMemory returns empty when the file is missing and the file body when it exists", () => {

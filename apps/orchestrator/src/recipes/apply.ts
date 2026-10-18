@@ -421,7 +421,7 @@ export class RecipeApplyService {
         throw new RecipeError("destination guild not found", 404);
       }
       const members = await this.deps.repo.listAgents(String(destGuild.id));
-      if (members.some((row) => !row.archived_at)) {
+      if (members.length) {
         throw new RecipeError("destination guild is not empty");
       }
     }
@@ -1099,7 +1099,7 @@ export class RecipeApplyService {
           ...collection,
           action: "conflict",
           collection_id: existing.id,
-          differences: [`the organisation already has a database called ${collection.name}`],
+          differences: [`the organisation already has a table called ${collection.name}`],
         };
       }
       const differences = columnDifferences(collection.columns, existing.columns);

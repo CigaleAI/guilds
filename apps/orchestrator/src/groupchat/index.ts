@@ -1,5 +1,5 @@
 import { jsonObj } from "../db/json.js";
-import { AgentMessageLimitReached, GroupChatCleared, GuildInactive } from "../db/errors.js";
+import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
 import { groupMessageItem } from "../db/views.js";
 import { guildOperators, type GuildOperator } from "../guilds/validation.js";
 import { AsyncEvent, EventQueue } from "../lib/event.js";
@@ -85,9 +85,7 @@ export function taggableNames(
 ): Set<string> {
   const names = new Set<string>();
   for (const member of members) {
-    if (member.archived_at === null || member.archived_at === undefined) {
-      names.add(String(member.name));
-    }
+    names.add(String(member.name));
   }
   for (const operator of operators) {
     names.add(operator.name);
@@ -110,9 +108,7 @@ export function recognizedTags(
   const names = parseTags(content, taggableNames(members, operators));
   const agentIdsByName = new Map<string, string>();
   for (const member of members) {
-    if (member.archived_at === null || member.archived_at === undefined) {
-      agentIdsByName.set(String(member.name), String(member.id));
-    }
+    agentIdsByName.set(String(member.name), String(member.id));
   }
   const agentIds: string[] = [];
   const userIds = new Set<string>();
@@ -145,9 +141,7 @@ export function taggedRecipientNamesAfter(
 ): Set<string> {
   const membersById = new Map<string, string>();
   for (const member of members) {
-    if (member.archived_at === null || member.archived_at === undefined) {
-      membersById.set(String(member.id), String(member.name));
-    }
+    membersById.set(String(member.id), String(member.name));
   }
   const recipients = new Set<string>();
   for (const row of rows) {
@@ -175,9 +169,7 @@ export function recipientNamesAfter(
 ): Set<string> {
   const membersById = new Map<string, string>();
   for (const member of members) {
-    if (member.archived_at === null || member.archived_at === undefined) {
-      membersById.set(String(member.id), String(member.name));
-    }
+    membersById.set(String(member.id), String(member.name));
   }
   const recipients = new Set<string>();
   for (const row of rows) {
@@ -535,15 +527,7 @@ export class GroupChat {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
     }
-    let row: Record<string, unknown> | null;
-    try {
-      row = await this.db.clearGroupMessages(guildId, new Date());
-    } catch (error) {
-      if (error instanceof GuildInactive) {
-        throw new GroupChatError(409, "guild is archived");
-      }
-      throw error;
-    }
+    const row = await this.db.clearGroupMessages(guildId, new Date());
     if (row === null) {
       throw new GroupChatError(404, "guild not found");
     }
@@ -581,25 +565,15 @@ export class GroupChat {
     }
     const text = requireContent(content);
     const tags = await this._tags(guildId, text);
-    let row: Record<string, unknown> | null;
-    try {
-      row = await this.db.postUserGroupMessage(
-        guildId,
-        text,
-        tags.names,
-        tags.agentIds,
-        tags.userIds,
-        new Date(),
-        {
-          authorName: options.author_name ?? "user",
-        },
-      );
-    } catch (error) {
-      if (error instanceof GuildInactive) {
-        throw new GroupChatError(409, "guild is archived");
-      }
-      throw error;
-    }
+    const row = await this.db.postUserGroupMessage(
+      guildId,
+      text,
+      tags.names,
+      tags.agentIds,
+      tags.userIds,
+      new Date(),
+      { authorName: options.author_name ?? "user" },
+    );
     if (row === null) {
       throw new GroupChatError(404, "guild not found");
     }
@@ -656,9 +630,6 @@ export class GroupChat {
         new Date(),
       );
     } catch (error) {
-      if (error instanceof GuildInactive) {
-        throw new Error("guild is archived", { cause: error });
-      }
       if (error instanceof AgentMessageLimitReached) {
         return limitError(error.limit);
       }

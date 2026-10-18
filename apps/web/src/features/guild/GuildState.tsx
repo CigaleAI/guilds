@@ -4,7 +4,7 @@ import { TabsNav, tabsTrigger, Icon } from "@guildsrun/ui";
 /** The State tab's sub-tabs in order, by route. */
 const stateTabs = [
   { route: "/guilds/$guildId/state/files", label: "Files", icon: FileText },
-  { route: "/guilds/$guildId/state/databases", label: "Databases", icon: Database },
+  { route: "/guilds/$guildId/state/tables", label: "Tables", icon: Database },
   { route: "/guilds/$guildId/state/artifacts", label: "Artifact scope", icon: FolderTree },
 ] as const;
 

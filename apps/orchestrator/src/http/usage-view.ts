@@ -10,6 +10,14 @@ async function counters(deps: AppDeps): Promise<Map<string, unknown>> {
   return map;
 }
 
+/** What the Studio and Builder coaches spent, per organisation. */
+async function coachUsage(deps: AppDeps): Promise<{ studioByOrg: Map<string, unknown>; builderByOrg: Map<string, unknown> }> {
+  return {
+    studioByOrg: deps.studio ? await deps.studio.store.studioUsageByOrg() : new Map(),
+    builderByOrg: deps.builder ? await deps.builder.store.builderUsageByOrg() : new Map(),
+  };
+}
+
 /** One organisation's usage by guild and agent, limited to the guilds `userId` may see. */
 export async function usageForOrg(
   deps: AppDeps,
@@ -25,8 +33,7 @@ export async function usageForOrg(
   const agents = (await deps.repo.listAllAgents()).filter((agent) =>
     guildIds.has(String(agent.guild_id)),
   );
-  const studioByOrg = deps.studio ? await deps.studio.store.studioUsageByOrg() : new Map();
-  const tree = usageTree({ orgs: [org], guilds, agents, counters: await counters(deps), studioByOrg });
+  const tree = usageTree({ orgs: [org], guilds, agents, counters: await counters(deps), ...(await coachUsage(deps)) });
   return (tree.organisations as Array<Record<string, unknown>>)[0] ?? { id: orgId };
 }
 
@@ -35,6 +42,5 @@ export async function usageForPlatform(deps: AppDeps): Promise<Record<string, un
   const orgs = await deps.repo.listOrgs();
   const guilds = await deps.repo.listGuilds();
   const agents = await deps.repo.listAllAgents();
-  const studioByOrg = deps.studio ? await deps.studio.store.studioUsageByOrg() : new Map();
-  return usageTree({ orgs, guilds, agents, counters: await counters(deps), studioByOrg });
+  return usageTree({ orgs, guilds, agents, counters: await counters(deps), ...(await coachUsage(deps)) });
 }

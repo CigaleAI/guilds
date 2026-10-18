@@ -67,7 +67,7 @@ export async function createServer(
   if (config.operatorEmail) {
     await setOperatorEmail(database.pool, config.operatorEmail);
   }
-  const notes = new NotesStore(config.notesRoot, config.templatesRoot, config.obsidianVaultName);
+  const notes = new NotesStore(config.notesRoot, config.templatesRoot);
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool, { orgCreated: extensionOrgCreated(extensions) });
   await syncCodeConnectors(repo);
@@ -79,7 +79,7 @@ export async function createServer(
   const policy = extensionPolicy(extensions, { repo }) ?? OPEN_POLICY;
   const artifacts = new ArtifactStore(database.pool, config.templatesRoot);
   const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo, notes);
+  const schedules = new Schedules(repo);
   const modelCredentials = extensionModelCredentials(extensions, { repo }) ?? coreModelCredentials(repo, masterKey);
   const models = new ModelsService({ repo, credentials: modelCredentials, masterKey });
   const mcp = new McpPool(TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");

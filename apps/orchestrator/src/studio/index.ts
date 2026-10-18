@@ -146,9 +146,7 @@ export class StudioService {
       about: String(guild.about ?? ""),
       ...(objective ? { objective } : {}),
     };
-    const members = (await this.store.inventory(String(guild.id), null))
-      .filter((row) => !row.archived_at)
-      .map((row) => hydrateStudioMember(row));
+    const members = (await this.store.inventory(String(guild.id), null)).map((row) => hydrateStudioMember(row));
     const system = composeStudioSystemMessage({
       mode: "optimize",
       sourceGuild,
@@ -388,12 +386,10 @@ export class StudioService {
     });
   }
 
-  async inventory(session: Record<string, unknown>, includeArchived = false): Promise<Array<Record<string, unknown>>> {
+  async inventory(session: Record<string, unknown>): Promise<Array<Record<string, unknown>>> {
     this.assertLive(session);
     const rows = await this.store.inventory(String(session.source_guild_id), String(session.id));
-    return rows
-      .filter((row) => includeArchived || !row.archived_at)
-      .map((row) => this.inventoryItem(row));
+    return rows.map((row) => this.inventoryItem(row));
   }
 
   inventoryItem(row: Record<string, unknown>): Record<string, unknown> {
@@ -412,7 +408,6 @@ export class StudioService {
       focus: row.focus,
       avatar_shape: row.avatar_shape,
       avatar_color: row.avatar_color,
-      archived: Boolean(row.archived_at),
       scripting: (jsonObj(row.config) as Record<string, unknown> | null)?.scripting !== false,
       task_version: row.task_version,
       task_hash: row.task_hash,
@@ -434,7 +429,6 @@ export class StudioService {
       draft_id: row.draft_id ?? null,
       draft_status: row.draft_status ?? null,
       warnings,
-      publishable: !row.archived_at,
     };
   }
 
@@ -484,9 +478,7 @@ export class StudioService {
         id: agent.id,
         name: agent.name,
         focus: agent.focus,
-        archived: Boolean(agent.archived_at),
         config: agent.config,
-        publishable: !agent.archived_at,
       },
       guidelines: {
         ownership: "shared",
@@ -580,9 +572,9 @@ export class StudioService {
     };
     const config = (session.config_snapshot ?? {}) as Record<string, unknown>;
     const members = session.source_guild_id
-      ? (await this.store.inventory(String(session.source_guild_id), String(session.id)))
-          .filter((row) => !row.archived_at)
-          .map((row) => hydrateStudioMember(row))
+      ? (await this.store.inventory(String(session.source_guild_id), String(session.id))).map((row) =>
+          hydrateStudioMember(row),
+        )
       : [];
     return composeStudioSystemMessage({
       mode: String(session.mode ?? "optimize"),

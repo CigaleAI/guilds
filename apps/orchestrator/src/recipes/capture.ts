@@ -22,6 +22,7 @@ import {
 import { HARNESS_INFO, HARNESSES, harnessSecretSource } from "../coding/harnesses.js";
 import { jsonObj } from "../db/json.js";
 import { secretGrants } from "../secrets/access.js";
+import { DEFAULT_AGENT_MESSAGE_LIMIT } from "../guilds/validation.js";
 import { emptyRecipe } from "./minimal.js";
 import { operatorAuthor, parseRecipe, RECIPE_HINT_MAX, type RecipeDocument } from "./schema.js";
 import { recipeNotePath, rewriteGuildTextToRecipeRefs } from "./rewrite.js";
@@ -137,7 +138,7 @@ export async function captureGuild(
 ): Promise<RecipeDocument> {
   const guildId = String(args.guild.id);
   const orgId = String(args.guild.org_id);
-  const agents = (await deps.repo.listAgents(guildId)).filter((row) => !row.archived_at);
+  const agents = await deps.repo.listAgents(guildId);
   if (!agents.length) {
     throw new RecipeError("guild has no agents to capture");
   }
@@ -159,7 +160,7 @@ export async function captureGuild(
   recipe.meta.description = String(args.guild.about ?? "");
   recipe.guild.name_suggestion = String(args.guild.name);
   recipe.guild.about = String(args.guild.about ?? "");
-  recipe.guild.group_agent_message_limit = Number(args.guild.group_agent_message_limit ?? 20);
+  recipe.guild.group_agent_message_limit = Number(args.guild.group_agent_message_limit ?? DEFAULT_AGENT_MESSAGE_LIMIT);
   recipe.guild.objective = String(args.guild.description ?? "");
 
   const hrefToNoteId = new Map<string, string>();

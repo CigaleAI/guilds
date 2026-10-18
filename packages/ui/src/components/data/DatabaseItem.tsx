@@ -15,7 +15,7 @@ export type DatabaseItemProps = Omit<ComponentProps<"button">, "children"> & {
   tone?: "plain" | "paper";
 };
 
-/** A database (collection) in the Databases list: name, purpose, record count and age. */
+/** A table in the Tables list: name, purpose, record count and age. */
 export function DatabaseItem({
   name,
   purpose,

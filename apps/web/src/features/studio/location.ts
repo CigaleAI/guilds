@@ -9,17 +9,17 @@ export type StudioAgentTab =
   | "routines"
   | "scripts"
   | "files"
-  | "databases"
+  | "tables"
   | "versions";
 
 /** What the inspector shows for the guild as a whole. */
-export type StudioGuildTab = "overview" | "files" | "databases";
+export type StudioGuildTab = "overview" | "files" | "tables";
 
 export type StudioTab = StudioAgentTab | StudioGuildTab;
 
 /**
  * Where the inspector is looking, carried in the session's URL: the agent, its tab, the item
- * selected in that tab (a run, a memory version, a routine, a script, a Task version, a database,
+ * selected in that tab (a run, a memory version, a routine, a script, a Task version, a table,
  * or the activity map's selection), and the step to reveal inside a run.
  */
 export type StudioSearch = {
@@ -38,11 +38,11 @@ export const studioAgentTabs: readonly StudioAgentTab[] = [
   "routines",
   "scripts",
   "files",
-  "databases",
+  "tables",
   "versions",
 ];
 
-export const studioGuildTabs: readonly StudioGuildTab[] = ["overview", "files", "databases"];
+export const studioGuildTabs: readonly StudioGuildTab[] = ["overview", "files", "tables"];
 
 export const studioTabLabel: Record<StudioTab, string> = {
   overview: "Overview",
@@ -53,7 +53,7 @@ export const studioTabLabel: Record<StudioTab, string> = {
   routines: "Routines",
   scripts: "Scripts",
   files: "Files",
-  databases: "Databases",
+  tables: "Tables",
   versions: "Versions",
 };
 

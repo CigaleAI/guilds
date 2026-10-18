@@ -59,6 +59,5 @@ export function requiredConfigKeys(): (keyof AppConfig)[] {
     "host",
     "port",
     "toolResultMaxBytes",
-    "obsidianVaultName",
   ];
 }

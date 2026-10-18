@@ -55,7 +55,6 @@ lives is the [Code map](code-map.md).
 - `MAX_CONCURRENT_GENERATIONS`
 - `TOOL_RESULT_MAX_BYTES`
 - `HARNESSES_OFF` (coding harnesses this box does not offer)
-- `OBSIDIAN_VAULT_NAME`
 - `HOST`
 - `PORT`
 
@@ -524,7 +523,7 @@ application data insert.
 | `JSONB` | object; defaults applied before validation |
 
 Column timestamps in REST (`created_at`, `updated_at`,
-`archived_at`, `next_run_at`, `last_run_at`, `rotated_at`) use
+`next_run_at`, `last_run_at`, `rotated_at`) use
 `YYYY-MM-DDTHH:MM:SS[.ffffff]+00:00`.
 
 Operational `at` fields in run and group errors use `Z`.

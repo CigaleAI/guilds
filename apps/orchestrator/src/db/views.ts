@@ -45,7 +45,6 @@ export function runItem(
 ): Record<string, unknown> {
   const errors = jsonObj(row.errors);
   const metadata = jsonObj(rowGet(row, "metadata") || {});
-  const archived = row.archived_at;
   return {
     id: row.id,
     agent_id: row.agent_id,
@@ -58,7 +57,6 @@ export function runItem(
     memory_prompt_hash: rowGet(row, "memory_prompt_hash") ?? null,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
-    archived_at: archived ? iso(archived) : null,
     kind: rowGet(row, "kind") || "direct",
     group_chat_through_seq: rowGet(row, "group_chat_through_seq") ?? null,
     ...scheduleFields(row, metadata),

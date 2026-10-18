@@ -42,7 +42,7 @@ import { Splitter, useSplitShare } from "../coach/Splitter";
 import { LoginsPopover } from "./LoginsPopover";
 import { StudioChat } from "./StudioChat";
 import { StudioContext, useStudio, type StudioView } from "./StudioContext";
-import { DatabasesTab, FilesTab } from "./tabs/DataTabs";
+import { TablesTab, FilesTab } from "./tabs/DataTabs";
 import { HistoryTab } from "./tabs/HistoryTab";
 import { MemoryTab } from "./tabs/MemoryTab";
 import { OverviewTab } from "./tabs/OverviewTab";
@@ -58,7 +58,7 @@ const splitKey = "studio.split";
 
 /**
  * One Studio session: the guild's agents to inspect (prompt, drafts, history, memory, routines,
- * scripts, files, databases and Task versions) or the guild's activity, beside the coach
+ * scripts, files, tables and Task versions) or the guild's activity, beside the coach
  * conversation, with evidence from either pinned to the next message.
  */
 export function StudioWorkspace() {
@@ -83,7 +83,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
   const [pane, setPane] = useState<"inspect" | "coach">("inspect");
   const [share, setShare] = useSplitShare(splitKey, 0.65);
 
-  const agents = (inventory.data ?? []).filter((agent) => !agent.archived);
+  const agents = inventory.data ?? [];
 
   const go = (next: StudioSearch, options?: { replace?: boolean }) => {
     void navigate({
@@ -384,8 +384,8 @@ function Inspector({
           <AgentView agent={agent} tab={tab} drafts={agentDrafts} />
         ) : tab === "files" ? (
           <FilesTab agent={null} />
-        ) : tab === "databases" ? (
-          <DatabasesTab agent={null} />
+        ) : tab === "tables" ? (
+          <TablesTab agent={null} />
         ) : (
           <OverviewTab pending={pending} />
         )}
@@ -416,8 +416,8 @@ function AgentView({
       return <ScriptsTab agent={agent} />;
     case "files":
       return <FilesTab agent={agent} />;
-    case "databases":
-      return <DatabasesTab agent={agent} />;
+    case "tables":
+      return <TablesTab agent={agent} />;
     case "versions":
       return <VersionsTab agent={agent} />;
     default:

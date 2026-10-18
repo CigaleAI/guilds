@@ -389,6 +389,7 @@ export class StudioStore {
     );
   }
 
+  /** What Studio sessions spent, per organisation. */
   async studioUsageByOrg(): Promise<Map<string, Record<string, unknown>>> {
     const result = await this.pool.query(
       `SELECT s.org_id,
@@ -411,7 +412,7 @@ export class StudioStore {
 
   async inventory(guildId: string, sessionId: string | null): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
-      `SELECT a.id, a.name, a.focus, a.avatar_shape, a.avatar_color, a.archived_at, a.config, a.updated_at,
+      `SELECT a.id, a.name, a.focus, a.avatar_shape, a.avatar_color, a.config, a.updated_at,
               a.task_version, a.task_hash, a.task AS task_content, a.task_updated_at,
               (SELECT COUNT(*)::int FROM schedules s WHERE s.agent_id = a.id) AS routine_count,
               (SELECT COUNT(*)::int FROM schedules s WHERE s.agent_id = a.id AND s.paused) AS paused_count,
@@ -430,7 +431,7 @@ export class StudioStore {
          LEFT JOIN studio_drafts d
            ON d.session_id = $2 AND d.target_agent_id = a.id AND d.status IN ('draft', 'conflicted')
         WHERE a.guild_id = $1
-        ORDER BY a.archived_at NULLS FIRST, a.name`,
+        ORDER BY a.name`,
       [guildId, sessionId],
     );
     return result.rows as Array<Record<string, unknown>>;

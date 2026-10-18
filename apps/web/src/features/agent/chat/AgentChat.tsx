@@ -94,15 +94,9 @@ export function AgentChat() {
         ? `${catalogModel.label} does not accept images`
         : "This agent's model is not among the organisation's chosen models";
   const current = run.data;
-  const ended = current ? current.status !== "active" || Boolean(current.archived_at) : false;
+  const ended = current ? current.status !== "active" : false;
   const continuedIn = current?.continued_by_run_id ?? null;
-  const canResume = current
-    ? ended &&
-      !continuedIn &&
-      !current.archived_at &&
-      !agent.data.archived_at &&
-      !runIsCapped(current)
-    : false;
+  const canResume = current ? ended && !continuedIn && !runIsCapped(current) : false;
 
   return (
     <div className="relative flex min-h-0 flex-1">
@@ -251,7 +245,7 @@ export function AgentChat() {
             onCancel={() =>
               current && cancel.mutate(current.id, { onError: failed("Couldn't stop the run") })
             }
-            disabled={ended || Boolean(agent.data.archived_at)}
+            disabled={ended}
           />
         </div>
       </div>

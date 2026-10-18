@@ -46,9 +46,7 @@ export async function previewCurrentState(
   const grants = grantsFromBindings(rows, { orgId, guildId, agentId });
   const levels = catalogLevels(grants);
   const secrets = await agentSecrets(deps.db, agent);
-  const members = (await deps.db.listAgents(guildId)).filter(
-    (member) => member.archived_at === null || member.archived_at === undefined,
-  );
+  const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
   const actor = agentActor({
     orgId,
@@ -136,7 +134,7 @@ export async function projectGuildConnections(
   for (const server of await deps.db.listMcpServers(orgId)) {
     servers.set(String(server.id), server);
   }
-  const members = (await deps.db.listAgents(guildId)).filter((row) => !row.archived_at);
+  const members = await deps.db.listAgents(guildId);
   const seen = new Map<string, Record<string, unknown>>();
   const scopes: Array<{ agentId: string | null }> = [{ agentId: null }, ...members.map((row) => ({ agentId: String(row.id) }))];
   for (const scope of scopes) {

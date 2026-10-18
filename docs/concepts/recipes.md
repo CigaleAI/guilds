@@ -169,9 +169,8 @@ the agent's own setup act on it. The issues list leaves out
 recipe with `status=draft`, `visibility=private`, `source_kind=guild`,
 `source_guild_id`, and `body_version=1`, and returns it with 201. The
 body may carry `include_notes`, a list of note display paths or keys to
-capture besides the ones a Task embeds. A guild with no live agents is
-refused with 422 (`guild has no agents to capture`). Archived agents
-are left out.
+capture besides the ones a Task embeds. A guild with no agents is
+refused with 422 (`guild has no agents to capture`).
 
 What capture writes:
 

@@ -21,10 +21,10 @@ after(async () => {
 test("with no sign-in, the server still refuses another host and another origin", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir("guilds-origin-"), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir("guilds-origin-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
-  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo, notes) };
+  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
   const local = await buildApp(database, deps);
   const proxied = await buildApp(database, {
     ...deps,

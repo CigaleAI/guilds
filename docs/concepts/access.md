@@ -223,7 +223,7 @@ gets each. It has no switches ([Secrets](secrets.md#in-the-app)).
 ### Collections
 
 A guild's and an agent's collection grants are set on their
-**State › Databases** tab ([Collections](collections.md)).
+**State › Tables** tab ([Collections](collections.md)).
 
 ## Rules and limits
 

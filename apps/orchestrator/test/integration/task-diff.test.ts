@@ -28,7 +28,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
   Object.assign(process.env, env);
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(databaseUrl);
-  const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot(), "notes");
+  const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const diffs: Array<[string, string, string | null]> = [];
@@ -50,7 +50,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     notes,
     artifacts: new ArtifactStore(database.pool, notes.templates),
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: new McpPool(),
     generation,

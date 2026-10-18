@@ -66,8 +66,8 @@ export function EmbedPreview({ path, notes, collections, orgId, onClose }: Embed
         <DialogFooter>
           {table && collection ? (
             <Button asChild variant="outline" className="mr-auto">
-              <Link to="/databases/$collectionId" params={{ collectionId: collection.id }}>
-                Open the database
+              <Link to="/tables/$collectionId" params={{ collectionId: collection.id }}>
+                Open the table
               </Link>
             </Button>
           ) : null}

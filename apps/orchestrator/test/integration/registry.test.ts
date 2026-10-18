@@ -76,11 +76,11 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
     await assert.rejects(() => connectorCommand(["install", "acme"], { repo, client: null }), /offline/);
 
     // Admin routes and recipe import over HTTP.
-    const notes = new NotesStore(tempDir("guilds-registry-notes-"), templatesRoot(), "notes");
+    const notes = new NotesStore(tempDir("guilds-registry-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const artifacts = new ArtifactStore(database.pool, templatesRoot());
     const scripts = new Scripts(repo);
-    const schedules = new Schedules(repo, notes);
+    const schedules = new Schedules(repo);
     const recipes = new RecipeStore(repo.pool);
     const apply = new RecipeApplyService({ repo, recipes, artifacts, notes, scripts, schedules, registry: registry.client });
     const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, recipes, apply, registry: registry.client });
@@ -222,14 +222,14 @@ test("code connectors install from a verified, signed index and swap in without 
     assert.deepEqual(await syncCodeConnectors(repo, { CONNECTORS_ROOT: root }), { loaded: [], removed: [], failed: [] });
     process.env.CONNECTORS_CODE_TIER = "1";
     process.env.CONNECTORS_ROOT = root;
-    const notes = new NotesStore(tempDir("guilds-registry-code-notes-"), templatesRoot(), "notes");
+    const notes = new NotesStore(tempDir("guilds-registry-code-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
     const pool = new McpPool();
     const app = await buildApp(database, {
       repo,
       notes,
       scripts: new Scripts(repo),
-      schedules: new Schedules(repo, notes),
+      schedules: new Schedules(repo),
       registry: signed.client,
       mcp: pool,
     });

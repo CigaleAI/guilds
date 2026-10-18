@@ -1,5 +1,4 @@
 import { newId } from "../lib/ids.js";
-import type { NotesStore } from "../notes/store.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
 import { formatScheduleRow, scheduleItem } from "./item.js";
 import { planWake, rowTiming, validateTiming, type ScheduleTiming } from "./timing.js";
@@ -35,14 +34,10 @@ export type ScheduleDatabase = {
     now: Date,
   ): Promise<Record<string, unknown> | null>;
   setScheduleNextRun(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
-  getAgent(agentId: string): Promise<Record<string, unknown> | null>;
 };
 
 export class Schedules {
-  constructor(
-    public db: ScheduleDatabase,
-    public notes: NotesStore | null = null,
-  ) {}
+  constructor(public db: ScheduleDatabase) {}
 
   async create(
     agentId: string,
@@ -180,39 +175,6 @@ export class Schedules {
       if (at === null || at > now.getTime()) continue;
       await this.db.setScheduleNextRun(String(row.id), planWake(rowTiming(row), now), now);
     }
-  }
-
-  private async names(
-    agentId: string,
-    required: boolean,
-  ): Promise<[string, string, string] | null> {
-    if (this.notes === null) {
-      return null;
-    }
-    const agent = await this.db.getAgent(agentId);
-    if (agent === null) {
-      if (required) {
-        throw new ScheduleError("agent not found");
-      }
-      return null;
-    }
-    return [String(agent.org_slug), String(agent.guild_name), String(agent.name)];
-  }
-
-  private async writeNote(agentId: string, scheduleId: string, text: string): Promise<void> {
-    const names = await this.names(agentId, true);
-    if (names === null) {
-      return;
-    }
-    await this.notes?.writeRoutineNote(names[0], names[1], names[2], scheduleId, text);
-  }
-
-  private async deleteNote(agentId: string, scheduleId: string): Promise<void> {
-    const names = await this.names(agentId, false);
-    if (names === null) {
-      return;
-    }
-    await this.notes?.deleteRoutineNote(names[0], names[1], names[2], scheduleId);
   }
 }
 

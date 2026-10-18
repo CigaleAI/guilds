@@ -12,9 +12,9 @@ guild. Agents read and write records with record tools. They never
 create, change, or delete a collection itself. Long-form text belongs
 in a [note](notes.md) instead.
 
-The app names it three ways: a **database** on the **Databases** page
-and the **New database** button, **Tables** for the record tools on the
-Tools view, and **Insert › Table** in the Task and note editor.
+The app calls a collection a **table**: the **Tables** page and its
+**New table** button, **Tables** for the record tools on the Tools
+view, and **Insert › Table** in the Task and note editor.
 
 ## When you use it
 
@@ -32,14 +32,14 @@ Tools view, and **Insert › Table** in the Task and note editor.
 
 ```mermaid
 flowchart LR
-  Op["Operator<br/>Databases page"] -->|"creates, edits columns,<br/>grants access"| C["Collection<br/>name, purpose, columns"]
+  Op["Operator<br/>Tables page"] -->|"creates, edits columns,<br/>grants access"| C["Collection<br/>name, purpose, columns"]
   C -->|"listed in State"| Ag["Agent"]
   Ag -->|"record_add / record_update<br/>record_remove"| R["Records"]
   Ag -->|"record_search / record_list"| R
   R --- C
 ```
 
-The operator creates a collection on the **Databases** page, or
+The operator creates a collection on the **Tables** page, or
 applies a Prompt Studio coach's proposal
 ([Studio proposals](studio-proposals.md)). A collection has a name, a
 purpose, and columns. Each column has a type (text, number, boolean,
@@ -119,25 +119,25 @@ write to a collection the agent can only read is refused and names
 the collection.
 
 Every organisation member reaches every collection with `write`
-through the **Databases** page and the HTTP API. That includes the
+through the **Tables** page and the HTTP API. That includes the
 own collections of private guilds the member cannot see
 ([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).
 
 ## In the app
 
-### The Databases page
+### The Tables page
 
-The **Databases** page, at `/databases`, is where the organisation
+The **Tables** page, at `/tables`, is where the organisation
 builds its collections and browses their records.
 
 The left column lists them by owner: the organisation's first, then
 each guild's own under its name. Each row shows the name, purpose,
 live record count, and when it last changed.
 
-**New database** asks for a name, a purpose, an owner (the
+**New table** asks for a name, a purpose, an owner (the
 organisation, or one guild), and columns.
 
-A collection opens at `/databases/<id>` with three views, each with
+A collection opens at `/tables/<id>` with three views, each with
 its own `?tab=`:
 
 - **Records**: a grid over the declared columns plus `id` and
@@ -181,7 +181,7 @@ its own `?tab=`:
 - **Access**: **Guilds** with their grant, and **Agents** with their
   guild's mode, their own setting, and the effective mode. It is
   read only. Each entry links to the guild's or the agent's
-  **State › Databases** tab, where access is changed. A guild's own
+  **State › Tables** tab, where access is changed. A guild's own
   collection says that only that guild's agents reach it, that the
   guild writes it, and that an agent can narrow its own access.
 
@@ -199,28 +199,28 @@ counts, and the purpose. It also has:
 Records re-read after every write and when the window regains focus.
 
 The Prompt Studio inspector shows the same records under its
-**Databases** tab ([Prompt Studio](prompt-studio.md)). The coach can
+**Tables** tab ([Prompt Studio](prompt-studio.md)). The coach can
 propose to create, change, or delete the source guild's own
 collections and the organisation's. A proposal can also change the
 grants of the source guild and its agents
 ([Studio proposals](studio-proposals.md)).
 
-### The guild's State › Databases tab
+### The guild's State › Tables tab
 
-The guild's **State › Databases** tab lists:
+The guild's **State › Tables** tab lists:
 
 - the guild's own collections, each marked **Guild only · Read &
   write**
 - every organisation collection, with a None / Read / Read & write
   control that writes the guild's grant on click
 
-Other guilds' collections are not listed. **New database** opens the
+Other guilds' collections are not listed. **New table** opens the
 creation form with this guild as the owner. A name opens that
-collection on the **Databases** page.
+collection on the **Tables** page.
 
-### The agent's State › Databases tab
+### The agent's State › Tables tab
 
-The agent's **State › Databases** tab lists every collection the
+The agent's **State › Tables** tab lists every collection the
 agent can be given, with:
 
 - a **Guild** control (None / Read / Read & write), what every member
@@ -231,7 +231,7 @@ agent can be given, with:
 The agent's own setting replaces what its guild gives it, so **None**
 keeps this one agent out of a collection the rest of the guild
 reaches. Each click writes at once. A name opens that collection on
-the **Databases** page.
+the **Tables** page.
 
 ### Embedding in the Task
 
@@ -434,7 +434,7 @@ Results are ranked by `ts_rank_cd` plus the similarity of every text
 or open-array `where` term, then by `updated_at`. `limit` is 20 by
 default and at most 100.
 
-The **Databases** page's record search runs the same predicate.
+The **Tables** page's record search runs the same predicate.
 
 ### `record_list`
 
@@ -528,7 +528,7 @@ still reach it at that row's mode.
 
 ### HTTP
 
-Organisation-authorized routes behind the **Databases** page, all
+Organisation-authorized routes behind the **Tables** page, all
 acting as the operator:
 
 ```text

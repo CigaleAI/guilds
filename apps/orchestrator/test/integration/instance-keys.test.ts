@@ -40,14 +40,14 @@ async function bootstrap(dbName: string, prefix: string): Promise<{ database: Aw
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   setInstanceKeys({});
   const database = await connect(await createIsolatedDatabase(dbName));
-  const notes = new NotesStore(tempDir(prefix), templatesRoot(), "notes");
+  const notes = new NotesStore(tempDir(prefix), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   const app = await buildApp(database, {
     repo,
     notes,
     scripts: new Scripts(repo),
-    schedules: new Schedules(repo, notes),
+    schedules: new Schedules(repo),
     masterKey: MASTER,
   });
   return { database, repo, app };

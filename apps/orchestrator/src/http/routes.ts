@@ -107,7 +107,6 @@ import {
   displayPathFor,
   inspectTaskEmbeds,
   listFileChanges,
-  listLatestFileChanges,
 } from "../artifacts/index.js";
 import { NotesError } from "../notes/store.js";
 import { scriptItem } from "../scripts/catalog.js";
@@ -131,7 +130,7 @@ import {
 import { messageItem } from "../db/views.js";
 import { memoryHistory } from "../memory/history.js";
 import { isUniqueViolation } from "../db/pg.js";
-import { GuildNameTaken, LastGuildAdmin, SecretNameTaken } from "../db/errors.js";
+import { GuildNameTaken, LastGuildAdmin, LastOrgOwner, SecretNameTaken } from "../db/errors.js";
 import { assertCanPlaceOn } from "../machines/access.js";
 import type { AgentNeeds, MachineRow } from "../machines/index.js";
 import {
@@ -476,6 +475,18 @@ async function setOperator(
   }
 }
 
+/** Runs an owner change, answering 409 when it would leave the organisation without an owner. */
+async function refuseLastOrgOwner<T>(change: () => Promise<T>): Promise<T> {
+  try {
+    return await change();
+  } catch (error) {
+    if (error instanceof LastOrgOwner) {
+      throw new HttpError(409, error.message);
+    }
+    throw error;
+  }
+}
+
 // Leaving a guild without an admin would strand it, so removing the user
 // waits until another admin is named.
 async function refuseSoleGuildAdmin(
@@ -533,17 +544,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.addHook("onSend", async (request, reply, payload) => {
     deps.identity?.onSend?.(request, reply);
     return payload;
-  });
-
-  app.get("/api/system-prompt", async () => {
-    try {
-      return notes.readSystemPrompt();
-    } catch (error) {
-      if (error instanceof NotesError) {
-        throw notesReadHttp(error);
-      }
-      throw error;
-    }
   });
 
   /**
@@ -706,12 +706,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (SEED_USER_IDS.has(userId)) {
       throw new HttpError(400, "seed user cannot be deleted");
     }
-    const owned = await repo.lastOwnedOrgsWithGuilds(userId);
-    if (owned.length) {
-      throw new HttpError(409, "user is the last owner of an organisation with guilds");
-    }
     await refuseSoleGuildAdmin(repo, userId, null);
-    const deleted = await repo.deleteUser(userId);
+    const deleted = await refuseLastOrgOwner(() => repo.deleteUser(userId));
     if (deleted === null) {
       throw new HttpError(404, "user not found");
     }
@@ -897,15 +893,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       if (!canManageOwners(String(membership.role))) {
         throw new HttpError(404, "organisation not found");
       }
-      if (existing.role === "owner" && role !== "owner") {
-        if ((await repo.countOwners(orgId)) <= 1) {
-          throw new HttpError(409, "last owner cannot be demoted");
-        }
-      }
     } else if (!canManageMembers(String(membership.role))) {
       throw new HttpError(404, "organisation not found");
     }
-    const updated = await repo.updateMemberRole(orgId, userId, role);
+    const updated = await refuseLastOrgOwner(() => repo.updateMemberRole(orgId, userId, role));
     if (updated === null) {
       throw new HttpError(404, "member not found");
     }
@@ -926,19 +917,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (existing === null) {
       throw new HttpError(404, "member not found");
     }
-    if (userId === String(user.id)) {
-      if (existing.role === "owner" && (await repo.countOwners(orgId)) <= 1) {
-        throw new HttpError(409, "last owner cannot leave");
-      }
-    } else if (existing.role === "owner") {
-      if (!canManageOwners(String(membership.role))) {
-        throw new HttpError(404, "organisation not found");
-      }
-    } else if (!canManageMembers(String(membership.role))) {
+    const manages = existing.role === "owner" ? canManageOwners : canManageMembers;
+    if (userId !== String(user.id) && !manages(String(membership.role))) {
       throw new HttpError(404, "organisation not found");
     }
     await refuseSoleGuildAdmin(repo, userId, orgId);
-    await repo.deleteMember(orgId, userId);
+    await refuseLastOrgOwner(() => repo.deleteMember(orgId, userId));
     await send(reply, 204);
   });
 
@@ -1286,7 +1270,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     const items = [];
     for (const row of agents) {
-      const actor = operatorFor(String(guild.org_id), user, {
+      const actor = await operatorFor(repo, user, {
+        orgId: String(guild.org_id),
         guildId: String(guild.id),
         agentId: String(row.id),
       });
@@ -1302,9 +1287,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.post("/api/guilds/:guild_id/agents", async (request, reply) => {
     const user = await currentUser(repo, request, deps);
     const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    if (guild.archived_at !== null) {
-      throw new HttpError(409, "guild is archived");
-    }
     if (deps.generation?.deleting_guild(String(guild.id))) {
       throw new HttpError(409, "guild is being deleted");
     }
@@ -1351,7 +1333,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         avatarColor,
         orgId: String(guild.org_id),
         artifacts: artifacts ?? null,
-        actor: operatorFor(String(guild.org_id), user, {
+        actor: await operatorFor(repo, user, {
+          orgId: String(guild.org_id),
           guildId: String(guild.id),
           agentId,
         }),
@@ -1402,7 +1385,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await listHostFiles(
         artifacts,
-        operatorFor(String(row.org_id), user, { guildId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
       );
@@ -1431,7 +1414,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await readHostFile(
         artifacts,
-        operatorFor(String(row.org_id), user, { guildId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
         filePath,
@@ -1472,7 +1455,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const written = await writeHostFile(
         artifacts,
-        operatorFor(String(row.org_id), user, { guildId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
         filePath,
@@ -1511,7 +1494,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       await deleteHostFile(
         artifacts,
-        operatorFor(String(row.org_id), user, { guildId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
         filePath,
@@ -1533,7 +1516,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return [];
     }
     try {
-      return await listHostFiles(artifacts, operatorFor(String(org.id), user), "org", String(org.id));
+      return await listHostFiles(artifacts, await operatorFor(repo, user, { orgId: String(org.id) }), "org", String(org.id));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1548,6 +1531,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (!displayPath) {
       throw new HttpError(422, "display_path is required");
     }
+    const store = requireArtifacts(artifacts);
+    const actor = await operatorFor(repo, user, { orgId: String(org.id) });
+    if (!(await store.canReadDisplayPath(actor, displayPath))) {
+      return [];
+    }
     return listFileChanges(repo.pool, String(org.id), displayPath);
   });
 
@@ -1561,10 +1549,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
-    if (!artifacts) {
-      return listLatestFileChanges(repo.pool, String(org.id), paths);
-    }
-    return latestFileChanges(artifacts, repo, operatorFor(String(org.id), user), paths);
+    const store = requireArtifacts(artifacts);
+    return latestFileChanges(store, repo, await operatorFor(repo, user, { orgId: String(org.id) }), paths);
   });
 
   app.post("/api/file-changes/latest", async (request) => {
@@ -1574,10 +1560,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const paths = Array.isArray(body.display_paths)
       ? body.display_paths.map((item) => String(item ?? "").trim()).filter(Boolean)
       : [];
-    if (!artifacts) {
-      return listLatestFileChanges(repo.pool, String(org.id), paths);
-    }
-    return latestFileChanges(artifacts, repo, operatorFor(String(org.id), user), paths);
+    const store = requireArtifacts(artifacts);
+    return latestFileChanges(store, repo, await operatorFor(repo, user, { orgId: String(org.id) }), paths);
   });
 
   app.get("/api/org/files/*", async (request) => {
@@ -1588,7 +1572,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(404, "artifact not found");
     }
     try {
-      return await readHostFile(artifacts, operatorFor(String(org.id), user), "org", String(org.id), filePath);
+      return await readHostFile(artifacts, await operatorFor(repo, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
     } catch (error) {
       catchArtifact(error);
     }
@@ -1605,7 +1589,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await writeHostFile(
         artifacts,
-        operatorFor(String(org.id), user),
+        await operatorFor(repo, user, { orgId: String(org.id) }),
         "org",
         String(org.id),
         filePath,
@@ -1624,7 +1608,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(422, "artifact store is not available");
     }
     try {
-      await deleteHostFile(artifacts, operatorFor(String(org.id), user), "org", String(org.id), filePath);
+      await deleteHostFile(artifacts, await operatorFor(repo, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1641,7 +1625,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       return [];
     }
-    const actor = operatorFor(String(org.id), user);
+    const actor = await operatorFor(repo, user, { orgId: String(org.id) });
     try {
       if (!displayPath) {
         return await artifacts.listEmbeddableNotes(actor);
@@ -1661,14 +1645,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  // Collections live at the organisation: the Databases page builds them and
+  // Collections live at the organisation: the Tables page builds them and
   // browses their records; the guild and agent settings hold the grants.
   app.get("/api/collections", async (request) => {
     const store = requireArtifacts(artifacts);
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      return await listCollections(store, operatorFor(String(org.id), user));
+      return await listCollections(store, await operatorFor(repo, user, { orgId: String(org.id) }));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1683,7 +1667,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw missing;
     }
     try {
-      const created = await createCollection(store, operatorFor(String(org.id), user), bodyOf(request));
+      const created = await createCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), bodyOf(request));
       return await send(reply, 201, created);
     } catch (error) {
       catchArtifact(error);
@@ -1695,7 +1679,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      return await getCollection(store, operatorFor(String(org.id), user), param(request, "collection_id"));
+      return await getCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1706,7 +1690,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      return await updateCollection(store, operatorFor(String(org.id), user), param(request, "collection_id"), bodyOf(request));
+      return await updateCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1717,7 +1701,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      await deleteCollection(store, operatorFor(String(org.id), user), param(request, "collection_id"));
+      await deleteCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1729,7 +1713,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      const exported = await exportCollection(store, operatorFor(String(org.id), user), param(request, "collection_id"));
+      const exported = await exportCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
       reply
         .header("content-disposition", `attachment; filename="${exported.name}.jsonl"`)
         .type("application/jsonl")
@@ -1744,7 +1728,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      return await listRecords(store, operatorFor(String(org.id), user), param(request, "collection_id"), queryOf(request));
+      return await listRecords(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), queryOf(request));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1759,7 +1743,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw missing;
     }
     try {
-      const added = await addRecord(store, operatorFor(String(org.id), user), param(request, "collection_id"), bodyOf(request).body);
+      const added = await addRecord(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request).body);
       return await send(reply, 201, added);
     } catch (error) {
       catchArtifact(error);
@@ -1771,7 +1755,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      await clearRecords(store, operatorFor(String(org.id), user), param(request, "collection_id"));
+      await clearRecords(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1783,7 +1767,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      return await getRecord(store, operatorFor(String(org.id), user), param(request, "collection_id"), param(request, "record_id"));
+      return await getRecord(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1800,7 +1784,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await updateRecord(
         store,
-        operatorFor(String(org.id), user),
+        await operatorFor(repo, user, { orgId: String(org.id) }),
         param(request, "collection_id"),
         param(request, "record_id"),
         bodyOf(request).body,
@@ -1815,7 +1799,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     try {
-      await removeRecord(store, operatorFor(String(org.id), user), param(request, "collection_id"), param(request, "record_id"));
+      await removeRecord(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1827,7 +1811,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(repo, request, deps);
     const row = await ownedGuild(repo, param(request, "guild_id"), user);
     try {
-      return await store.accessForGuild(operatorFor(String(row.org_id), user, { guildId: String(row.id) }), String(row.id));
+      return await store.accessForGuild(await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }), String(row.id));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1844,7 +1828,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       await setCollectionAccess(
         store,
-        operatorFor(String(row.org_id), user, { guildId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
         bodyOf(request),
@@ -1861,7 +1845,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const row = await ownedAgent(repo, param(request, "agent_id"), user);
     try {
       return await store.accessForAgent(
-        operatorFor(String(row.org_id), user, { guildId: String(row.guild_id), agentId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
         String(row.id),
         String(row.guild_id),
       );
@@ -1881,7 +1865,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       await setCollectionAccess(
         store,
-        operatorFor(String(row.org_id), user, { guildId: String(row.guild_id), agentId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
         "agent",
         String(row.id),
         bodyOf(request),
@@ -2244,7 +2228,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const row = await scripts.create(
-        operatorFor(String(agent.org_id), user, {
+        await operatorFor(repo, user, {
+          orgId: String(agent.org_id),
           guildId: String(agent.guild_id),
           agentId,
         }),
@@ -2275,7 +2260,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const agent = await ownedAgent(repo, agentId, user);
     try {
       await scripts.deleteAll(
-        operatorFor(String(agent.org_id), user, {
+        await operatorFor(repo, user, {
+          orgId: String(agent.org_id),
           guildId: String(agent.guild_id),
           agentId,
         }),
@@ -2317,7 +2303,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const agent = await ownedAgent(repo, agentId, user);
     try {
       await scripts.delete(
-        operatorFor(String(agent.org_id), user, {
+        await operatorFor(repo, user, {
+          orgId: String(agent.org_id),
           guildId: String(agent.guild_id),
           agentId,
         }),
@@ -2352,7 +2339,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     try {
-      const actor = operatorFor(String(row.org_id), user, {
+      const actor = await operatorFor(repo, user, {
+        orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
       });
@@ -2372,7 +2360,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const row = await ownedAgent(repo, param(request, "agent_id"), user);
     try {
       const store = requireArtifacts(artifacts);
-      const actor = operatorFor(String(row.org_id), user, {
+      const actor = await operatorFor(repo, user, {
+        orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
       });
@@ -2410,7 +2399,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     try {
-      const actor = operatorFor(String(row.org_id), user, {
+      const actor = await operatorFor(repo, user, {
+        orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
       });
@@ -2462,7 +2452,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     try {
-      const actor = operatorFor(String(row.org_id), user, {
+      const actor = await operatorFor(repo, user, {
+        orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
       });
@@ -2521,7 +2512,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       await deleteHostFile(
         artifacts,
-        operatorFor(String(row.org_id), user, { guildId: String(row.guild_id), agentId: String(row.id) }),
+        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
         "agent",
         String(row.id),
         filePath,
@@ -3521,6 +3512,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           ? null
           : String(body.connection_id)
         : null;
+      if (catalogKind === "mcp_tool" && !(await repo.isListedMcpTool(catalogId, orgId))) {
+        throw new HttpError(404, "mcp tool not found");
+      }
       let server: Record<string, unknown> | null = null;
       let connection: Record<string, unknown> | null = null;
       if (catalogKind === "mcp") {

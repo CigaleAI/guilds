@@ -6,8 +6,10 @@ import {
   DESCRIPTION_MAX,
   INSTRUCTION_MAX,
   ScheduleError,
+  MIN_GAP_MS,
   formatOffsetIso,
   nextRunAt,
+  shortestGapMs,
   validateCron,
   validateScheduleDescription,
   validateInstruction,
@@ -47,6 +49,20 @@ test("validate_cron", () => {
     assert.equal(error.message, fixture.errors.too_frequent);
     return true;
   });
+});
+
+test("cron_gap_counts_every_wake_up_of_the_day_not_only_the_next_two", () => {
+  for (const cron of ["0,1,55 * * * *", "0,1,30 * * * *", "0,1 * * * *", "0-4 0 * * *"]) {
+    assert.equal(shortestGapMs(cron), 60_000, cron);
+    assert.throws(() => validateCron(cron), ScheduleError, cron);
+  }
+});
+
+test("cron_gap_counts_the_wait_from_one_day_to_the_next", () => {
+  assert.equal(shortestGapMs("0,58 0,23 * * *"), 2 * 60_000);
+  assert.equal(shortestGapMs("30 9 * * 1"), 24 * 60 * 60_000);
+  assert.ok(shortestGapMs("*/5 * * * *") >= MIN_GAP_MS);
+  assert.equal(validateCron("0 9,17 * * 1-5"), "0 9,17 * * 1-5");
 });
 
 test("validate instruction and description", () => {

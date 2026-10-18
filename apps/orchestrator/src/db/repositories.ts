@@ -5,9 +5,9 @@ import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, messageCostUsd, usageDelta, utcMonth } f
 import {
   AgentMessageLimitReached,
   GroupChatCleared,
-  GuildInactive,
   GuildNameTaken,
   LastGuildAdmin,
+  LastOrgOwner,
   SecretNameTaken,
 } from "./errors.js";
 import { jsonObj } from "./json.js";
@@ -221,6 +221,65 @@ function guildOperatorsColumn(alias: string): string {
 }
 
 /** Guilds `p` that the user `userRef` names can see: org-visible ones, and private ones they operate. */
+/**
+ * Locks the owner rows of the organisations `orgsSql` selects (`$1` binds into it), so owner
+ * changes there run one at a time and each sees the owners the one before it left.
+ */
+async function lockOwners(client: Queryable, orgsSql: string, values: unknown[]): Promise<void> {
+  await client.query(`SELECT 1 FROM org_members WHERE role = 'owner' AND org_id IN (${orgsSql}) FOR UPDATE`, values);
+}
+
+/** Refuses a change that would take the organisation's only owner, `userId`, away. */
+async function refuseLastOwner(client: Queryable, orgId: string, userId: string, message: string): Promise<void> {
+  await lockOwners(client, "SELECT $1::text", [orgId]);
+  const result = await client.query(`SELECT user_id FROM org_members WHERE org_id = $1 AND role = 'owner'`, [orgId]);
+  const owners = (result.rows as Array<{ user_id: string }>).map((row) => row.user_id);
+  if (owners.length === 1 && owners[0] === userId) {
+    throw new LastOrgOwner(message);
+  }
+}
+
+/** Agents and operators share a guild's tags, so a user may not take an agent's name in a guild they operate. */
+async function refuseAgentNameInOperatedGuilds(client: Queryable, userId: string, name: string): Promise<void> {
+  const clash = await client.query(
+    `SELECT 1 FROM guild_operators go JOIN agents a ON a.guild_id = go.guild_id
+     WHERE go.user_id = $1 AND a.name = $2
+     LIMIT 1`,
+    [userId, name],
+  );
+  if (clash.rowCount) {
+    throw new GuildNameTaken(name, "agent");
+  }
+}
+
+async function writeUserProfile(
+  client: Queryable,
+  userId: string,
+  profile: { name?: string; timezone?: string | null; color?: string | null },
+  now: Date,
+): Promise<Record<string, unknown> | null> {
+  const result = await client.query(
+    `UPDATE users SET
+       name = CASE WHEN $2 THEN $3 ELSE name END,
+       timezone = CASE WHEN $4 THEN $5 ELSE timezone END,
+       color = CASE WHEN $6 THEN $7 ELSE color END,
+       updated_at = $8
+     WHERE id = $1
+     RETURNING id, name, email, image, timezone, color, created_at, updated_at`,
+    [
+      userId,
+      profile.name !== undefined,
+      profile.name ?? null,
+      "timezone" in profile,
+      profile.timezone ?? null,
+      "color" in profile,
+      profile.color ?? null,
+      stamp(now),
+    ],
+  );
+  return firstRow(result);
+}
+
 function guildVisibleTo(userRef: string): string {
   return `(p.visibility <> 'private'
            OR EXISTS (SELECT 1 FROM guild_operators go WHERE go.guild_id = p.id AND go.user_id = ${userRef}))`;
@@ -228,7 +287,7 @@ function guildVisibleTo(userRef: string): string {
 
 const GUILD_COLUMNS = `
   p.id, p.name, p.about, p.description, p.max_agents, p.git_author_email, p.org_id, p.group_agent_message_limit,
-  p.visibility, p.routines_enabled, o.slug AS org_slug, p.created_at, p.updated_at, p.archived_at,
+  p.visibility, p.routines_enabled, o.slug AS org_slug, p.created_at, p.updated_at,
   ${guildOperatorsColumn("operators")}`;
 
 // A secret's metadata with its grants, each grant naming its target and the guild it sits in.
@@ -349,31 +408,18 @@ export class Repositories {
   }
 
   /** Sets the fields given; a field left out keeps its value. */
+  /** Updates the user's profile; refuses a name an agent holds in a guild the user operates. */
   async updateUserProfile(
     userId: string,
     profile: { name?: string; timezone?: string | null; color?: string | null },
     now: Date,
   ): Promise<Record<string, unknown> | null> {
-    const result = await this.pool.query(
-      `UPDATE users SET
-         name = CASE WHEN $2 THEN $3 ELSE name END,
-         timezone = CASE WHEN $4 THEN $5 ELSE timezone END,
-         color = CASE WHEN $6 THEN $7 ELSE color END,
-         updated_at = $8
-       WHERE id = $1
-       RETURNING id, name, email, image, timezone, color, created_at, updated_at`,
-      [
-        userId,
-        profile.name !== undefined,
-        profile.name ?? null,
-        "timezone" in profile,
-        profile.timezone ?? null,
-        "color" in profile,
-        profile.color ?? null,
-        stamp(now),
-      ],
-    );
-    return firstRow(result);
+    return withTransaction(this.pool, async (client) => {
+      if (profile.name !== undefined) {
+        await refuseAgentNameInOperatedGuilds(client, userId, profile.name);
+      }
+      return writeUserProfile(client, userId, profile, now);
+    });
   }
 
   /** Sets or clears the email a user is identified by behind an authenticating proxy. */
@@ -425,8 +471,25 @@ export class Repositories {
     });
   }
 
+  /**
+   * Deletes the user. Refuses while the user is the only owner of an organisation that keeps
+   * other members or guilds; an organisation left with neither is deleted with them.
+   */
   async deleteUser(userId: string): Promise<Record<string, unknown> | null> {
     return withTransaction(this.pool, async (client) => {
+      await lockOwners(client, "SELECT org_id FROM org_members WHERE user_id = $1 AND role = 'owner'", [userId]);
+      const stranded = await client.query(
+        `SELECT 1 FROM org_members m
+         WHERE m.user_id = $1 AND m.role = 'owner'
+           AND NOT EXISTS (SELECT 1 FROM org_members o WHERE o.org_id = m.org_id AND o.role = 'owner' AND o.user_id <> $1)
+           AND (EXISTS (SELECT 1 FROM org_members o WHERE o.org_id = m.org_id AND o.user_id <> $1)
+                OR EXISTS (SELECT 1 FROM guilds p WHERE p.org_id = m.org_id))
+         LIMIT 1`,
+        [userId],
+      );
+      if (stranded.rows[0]) {
+        throw new LastOrgOwner("user is the last owner of an organisation with other members or guilds");
+      }
       const result = await client.query(`DELETE FROM users WHERE id = $1 RETURNING id`, [userId]);
       const row = firstRow(result);
       if (row) {
@@ -438,21 +501,6 @@ export class Repositories {
       }
       return row;
     });
-  }
-
-  async lastOwnedOrgsWithGuilds(userId: string): Promise<Array<Record<string, unknown>>> {
-    const result = await this.pool.query(
-      `SELECT o.id, o.name
-       FROM orgs o
-       JOIN org_members m ON m.org_id = o.id AND m.user_id = $1 AND m.role = 'owner'
-       WHERE (
-         SELECT COUNT(*) FROM org_members o2
-         WHERE o2.org_id = o.id AND o2.role = 'owner'
-       ) = 1
-       AND EXISTS (SELECT 1 FROM guilds p WHERE p.org_id = o.id)`,
-      [userId],
-    );
-    return result.rows as Array<Record<string, unknown>>;
   }
 
   async listOrgsForUser(userId: string): Promise<Array<Record<string, unknown>>> {
@@ -559,33 +607,35 @@ export class Repositories {
     return firstRow(result);
   }
 
+  /** Changes a member's role; refuses to demote the organisation's only owner. */
   async updateMemberRole(
     orgId: string,
     userId: string,
     role: string,
   ): Promise<Record<string, unknown> | null> {
-    const result = await this.pool.query(
-      `UPDATE org_members SET role = $3 WHERE org_id = $1 AND user_id = $2
-       RETURNING org_id, user_id, role, created_at`,
-      [orgId, userId, role],
-    );
-    return firstRow(result);
+    return withTransaction(this.pool, async (client) => {
+      if (role !== "owner") {
+        await refuseLastOwner(client, orgId, userId, "last owner cannot be demoted");
+      }
+      const result = await client.query(
+        `UPDATE org_members SET role = $3 WHERE org_id = $1 AND user_id = $2
+         RETURNING org_id, user_id, role, created_at`,
+        [orgId, userId, role],
+      );
+      return firstRow(result);
+    });
   }
 
+  /** Removes a member; refuses to remove the organisation's only owner. */
   async deleteMember(orgId: string, userId: string): Promise<Record<string, unknown> | null> {
-    const result = await this.pool.query(
-      `DELETE FROM org_members WHERE org_id = $1 AND user_id = $2 RETURNING org_id, user_id`,
-      [orgId, userId],
-    );
-    return firstRow(result);
-  }
-
-  async countOwners(orgId: string): Promise<number> {
-    const result = await this.pool.query(
-      `SELECT COUNT(*)::int AS count FROM org_members WHERE org_id = $1 AND role = 'owner'`,
-      [orgId],
-    );
-    return Number(result.rows[0]?.count ?? 0);
+    return withTransaction(this.pool, async (client) => {
+      await refuseLastOwner(client, orgId, userId, "last owner cannot leave");
+      const result = await client.query(
+        `DELETE FROM org_members WHERE org_id = $1 AND user_id = $2 RETURNING org_id, user_id`,
+        [orgId, userId],
+      );
+      return firstRow(result);
+    });
   }
 
   async listGuilds(orgId: string | null = null): Promise<Array<Record<string, unknown>>> {
@@ -609,6 +659,19 @@ export class Repositories {
       [orgId, userId],
     );
     return result.rows as Array<Record<string, unknown>>;
+  }
+
+  /** The organisation's private guilds the user does not operate, with their agents. */
+  async hiddenGuildsFor(orgId: string, userId: string): Promise<{ guildIds: string[]; agentIds: string[] }> {
+    const result = await this.pool.query(
+      `SELECT p.id, COALESCE(array_agg(a.id) FILTER (WHERE a.id IS NOT NULL), '{}') AS agent_ids
+       FROM guilds p LEFT JOIN agents a ON a.guild_id = p.id
+       WHERE p.org_id = $1 AND NOT ${guildVisibleTo("$2")}
+       GROUP BY p.id`,
+      [orgId, userId],
+    );
+    const rows = result.rows as Array<{ id: string; agent_ids: string[] }>;
+    return { guildIds: rows.map((row) => row.id), agentIds: rows.flatMap((row) => row.agent_ids) };
   }
 
   // Members of the guild's organisation who can see it: everyone for an
@@ -808,7 +871,7 @@ export class Repositories {
   async listAgents(guildId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
       `SELECT a.id, a.guild_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
-              a.created_at, a.updated_at, a.archived_at, a.task, a.task_version, a.task_hash, a.task_updated_at,
+              a.created_at, a.updated_at, a.task, a.task_version, a.task_hash, a.task_updated_at,
               a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box
        FROM agents a JOIN machines m ON m.id = a.machine_id
        WHERE a.guild_id = $1 ORDER BY a.created_at`,
@@ -914,14 +977,14 @@ export class Repositories {
     const result = await this.pool.query(
       `SELECT
          a.id, a.guild_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
-         a.created_at, a.updated_at, a.archived_at,
+         a.created_at, a.updated_at,
          a.task, a.task_version, a.task_hash, a.task_updated_at, a.workspace_mib, a.harness_logins,
          a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box,
          m.cpu AS machine_cpu, m.memory_mib AS machine_memory_mib,
          m.max_workspace_mib AS machine_max_workspace_mib, m.workspace_mib AS machine_workspace_mib,
          m.harnesses AS machine_harnesses,
          p.name AS guild_name, p.about AS guild_about, p.description AS guild_description,
-         p.archived_at AS guild_archived_at, p.org_id AS org_id, o.slug AS org_slug,
+         p.org_id AS org_id, o.slug AS org_slug,
          ${guildOperatorsColumn("guild_operators")}
        FROM agents a
        JOIN guilds p ON p.id = a.guild_id
@@ -1374,7 +1437,7 @@ export class Repositories {
              wake_triggers = COALESCE($7, wake_triggers),
              name = COALESCE($8, name)
          WHERE id = $1
-         RETURNING id, guild_id, name, config, created_at, updated_at, archived_at`,
+         RETURNING id, guild_id, name, config, created_at, updated_at`,
         [
           agentId,
           JSON.stringify(config),
@@ -2757,6 +2820,17 @@ export class Repositories {
     return firstRow(result);
   }
 
+  /** Whether a server the organisation can see lists a tool under this namespaced name. */
+  async isListedMcpTool(namespacedName: string, orgId: string | null): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM mcp_tools t JOIN connectors s ON s.id = t.mcp_server_id
+       WHERE t.namespaced_name = $1 AND (s.owner_org_id IS NULL OR s.owner_org_id = $2)
+       LIMIT 1`,
+      [namespacedName, orgId],
+    );
+    return Boolean(result.rowCount);
+  }
+
   async listMcpTools(connectionId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
       `SELECT id, connection_id, mcp_server_id, remote_name, namespaced_name,
@@ -2851,11 +2925,11 @@ export class Repositories {
   async listActiveRuns(): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
       `SELECT id, agent_id, status, config_snapshot, errors,
-              created_at, updated_at, archived_at,
+              created_at, updated_at,
               system_prompt_hash, task_prompt_hash, memory_prompt_hash,
               metadata, kind, group_chat_through_seq
        FROM runs
-       WHERE status = 'active' AND archived_at IS NULL
+       WHERE status = 'active'
        ORDER BY created_at`,
     );
     return result.rows as Array<Record<string, unknown>>;
@@ -2864,7 +2938,7 @@ export class Repositories {
   async listRuns(agentId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
       `SELECT id, agent_id, status, config_snapshot, errors,
-              created_at, updated_at, archived_at,
+              created_at, updated_at,
               system_prompt_hash, task_prompt_hash, memory_prompt_hash,
               metadata, kind, group_chat_through_seq, schedule_id
        FROM runs WHERE agent_id = $1 ORDER BY updated_at DESC`,
@@ -2876,7 +2950,7 @@ export class Repositories {
   async getRun(runId: string): Promise<Record<string, unknown> | null> {
     const result = await this.pool.query(
       `SELECT id, agent_id, status, config_snapshot, errors,
-              created_at, updated_at, archived_at,
+              created_at, updated_at,
               system_prompt_hash, task_prompt_hash, memory_prompt_hash,
               metadata, kind, group_chat_through_seq, schedule_id
        FROM runs WHERE id = $1`,
@@ -3093,7 +3167,7 @@ export class Repositories {
                 ) AS previous_through_seq
          FROM runs r
          JOIN agents a ON a.id = r.agent_id
-         WHERE a.guild_id = $1 AND r.archived_at IS NULL AND r.created_at <= $3
+         WHERE a.guild_id = $1 AND r.created_at <= $3
        ) guild_runs
        WHERE created_at >= $2 OR updated_at >= $2
        ORDER BY created_at`,
@@ -3233,7 +3307,6 @@ export class Repositories {
            SELECT COUNT(*)::int
            FROM agents a
            WHERE a.guild_id = p.id
-             AND a.archived_at IS NULL
              AND a.group_chat_delivered_through < p.group_chat_seq
          ) AS pending_agent_count
        FROM guilds p
@@ -3308,7 +3381,7 @@ export class Repositories {
     const result = await this.pool.query(
       `SELECT id, guild_id, name, created_at, group_chat_delivered_through
        FROM agents
-       WHERE guild_id = $1 AND archived_at IS NULL AND group_chat_delivered_through < $2
+       WHERE guild_id = $1 AND group_chat_delivered_through < $2
        ORDER BY group_chat_delivered_through, created_at`,
       [guildId, chatSeq],
     );
@@ -3330,13 +3403,9 @@ export class Repositories {
   // runs that started before it from posting.
   async clearGroupMessages(guildId: string, now: Date): Promise<Record<string, unknown> | null> {
     const cleared = await withTransaction(this.pool, async (client) => {
-      const guild = await client.query(`SELECT id, archived_at FROM guilds WHERE id = $1 FOR UPDATE`, [guildId]);
-      const row = firstRow(guild);
-      if (!row) {
+      const guild = await client.query(`SELECT id FROM guilds WHERE id = $1 FOR UPDATE`, [guildId]);
+      if (!firstRow(guild)) {
         return false;
-      }
-      if (row.archived_at !== null) {
-        throw new GuildInactive();
       }
       await client.query(`DELETE FROM group_messages WHERE guild_id = $1`, [guildId]);
       await client.query(
@@ -3361,7 +3430,7 @@ export class Repositories {
   }
 
   // How many public messages this user has not read, per guild they can
-  // see and that is not archived. A guild they never opened counts every message.
+  // see. A guild they never opened counts every message.
   async listUnreadGroupChats(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
       `SELECT m.guild_id, COUNT(*)::int AS count
@@ -3369,7 +3438,6 @@ export class Repositories {
        JOIN group_messages m ON m.guild_id = p.id
        LEFT JOIN group_chat_reads r ON r.guild_id = p.id AND r.user_id = $2
        WHERE p.org_id = $1
-         AND p.archived_at IS NULL
          AND ${guildVisibleTo("$2")}
          AND m.seq > COALESCE(r.seen_through_seq, 0)
        GROUP BY m.guild_id
@@ -3456,7 +3524,7 @@ export class Repositories {
        SET status = 'active',
            metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
            updated_at = $3
-       WHERE id = $1 AND status = 'completed' AND archived_at IS NULL`,
+       WHERE id = $1 AND status = 'completed'`,
       [runId, JSON.stringify({ resumed_at: now.toISOString() }), stamp(now)],
     );
   }
@@ -3486,13 +3554,9 @@ export class Repositories {
     options: { authorName?: string } = {},
   ): Promise<Record<string, unknown> | null> {
     return withTransaction(this.pool, async (client) => {
-      const guild = await client.query(`SELECT id, archived_at FROM guilds WHERE id = $1 FOR UPDATE`, [guildId]);
-      const row = firstRow(guild);
-      if (!row) {
+      const guild = await client.query(`SELECT id FROM guilds WHERE id = $1 FOR UPDATE`, [guildId]);
+      if (!firstRow(guild)) {
         return null;
-      }
-      if (row.archived_at !== null) {
-        throw new GuildInactive();
       }
       const seqResult = await client.query(
         `UPDATE guilds
@@ -3542,7 +3606,7 @@ export class Repositories {
   ): Promise<Record<string, unknown> | null> {
     return withTransaction(this.pool, async (client) => {
       const guild = await client.query(
-        `SELECT g.id, g.archived_at, g.group_agent_message_count, g.group_agent_message_limit,
+        `SELECT g.id, g.group_agent_message_count, g.group_agent_message_limit,
                 COALESCE(r.created_at < g.group_chat_cleared_at, false) AS run_predates_clear
          FROM guilds g
          LEFT JOIN runs r ON r.id = $2
@@ -3553,9 +3617,6 @@ export class Repositories {
       const row = firstRow(guild);
       if (!row) {
         return null;
-      }
-      if (row.archived_at !== null) {
-        throw new GuildInactive();
       }
       if (row.run_predates_clear === true) {
         throw new GroupChatCleared();
@@ -3632,7 +3693,6 @@ export class Repositories {
       `SELECT DISTINCT agent_id
        FROM runs
        WHERE status = 'active'
-         AND archived_at IS NULL
          AND config_snapshot->'secrets' @> $1::jsonb`,
       [JSON.stringify([{ id: secretId }])],
     );
@@ -3690,7 +3750,7 @@ export class Repositories {
 
   async countOrgGuilds(orgId: string): Promise<number> {
     const result = await this.pool.query(
-      `SELECT COUNT(*)::int AS count FROM guilds WHERE org_id = $1 AND archived_at IS NULL`,
+      `SELECT COUNT(*)::int AS count FROM guilds WHERE org_id = $1`,
       [orgId],
     );
     return Number(result.rows[0]?.count ?? 0);
@@ -3727,7 +3787,7 @@ export class Repositories {
       `SELECT COUNT(*)::int AS count
        FROM agents a
        JOIN guilds p ON p.id = a.guild_id
-       WHERE p.org_id = $1 AND a.archived_at IS NULL`,
+       WHERE p.org_id = $1`,
       [orgId],
     );
     return Number(result.rows[0]?.count ?? 0);
@@ -3739,7 +3799,6 @@ export class Repositories {
        FROM agents a
        JOIN guilds p ON p.id = a.guild_id
        WHERE p.org_id = $1
-         AND a.archived_at IS NULL
          AND COALESCE((a.config->>'browser')::boolean, FALSE)`,
       [orgId],
     );
@@ -3752,7 +3811,6 @@ export class Repositories {
        FROM agents a
        JOIN guilds p ON p.id = a.guild_id
        WHERE p.org_id = $1
-         AND a.archived_at IS NULL
          AND COALESCE((a.config->>'coding')::boolean, FALSE)`,
       [orgId],
     );

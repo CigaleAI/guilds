@@ -127,7 +127,7 @@ One directory per area. The screens are in the
 | `agent/runs/` | A run's rows grouped into generations, steps, and tool calls |
 | `files/` | The notes browser and the provenance strip |
 | `access/` | One scope's tools and secrets |
-| `databases/` | The Databases page |
+| `tables/` | The Tables page |
 | `studio/` | Prompt Studio |
 | `builder/` | The guild builder |
 | `coach/` | What Studio and Builder share: the coach log and the split |

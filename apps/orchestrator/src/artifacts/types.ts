@@ -28,11 +28,18 @@ export const OPERATOR_GRANTS: ArtifactGrants = {
   writeOrg: true,
 };
 
+/** The private guilds of the organisation an operator does not operate, with their agents. */
+export type HiddenGuilds = { guildIds: readonly string[]; agentIds: readonly string[] };
+
+export const NO_HIDDEN_GUILDS: HiddenGuilds = { guildIds: [], agentIds: [] };
+
 export type ArtifactActor = {
   orgId: string;
   guildId: string | null;
   agentId: string | null;
   operator: boolean;
+  /** What an operator actor never reaches: the notes, Memory, and own tables of these guilds and agents. */
+  hidden: HiddenGuilds;
   grants: ArtifactGrants;
   actorType: "user" | "agent" | "run";
   actorId: string;

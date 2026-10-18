@@ -223,10 +223,10 @@ test("studio_create_task_draft takes an explicit agent id or name and does not n
   assert.equal(studioAgentHandleFromArgs({ agent_id: "a_1" }), "a_1");
   assert.equal(studioAgentHandleFromArgs({ target_agent_id: "a_1" }), "a_1");
   assert.equal(studioAgentHandleFromArgs({ agent_name: "mr-manager" }), "mr-manager");
-  const researcher = { id: "a_1", name: "researcher", guild_id: "guild_1", org_id: "org_1", archived_at: null };
-  const scout = { id: "a_2", name: "scout", guild_id: "guild_1", org_id: "org_1", archived_at: null };
-  const manager = { id: "a_4", name: "mr-manager", guild_id: "guild_1", org_id: "org_1", archived_at: null };
-  const outsider = { id: "a_3", name: "researcher", guild_id: "guild_other", org_id: "org_1", archived_at: null };
+  const researcher = { id: "a_1", name: "researcher", guild_id: "guild_1", org_id: "org_1" };
+  const scout = { id: "a_2", name: "scout", guild_id: "guild_1", org_id: "org_1" };
+  const manager = { id: "a_4", name: "mr-manager", guild_id: "guild_1", org_id: "org_1" };
+  const outsider = { id: "a_3", name: "researcher", guild_id: "guild_other", org_id: "org_1" };
   const ctx = {
     sourceGuildId: "guild_1",
     orgId: "org_1",

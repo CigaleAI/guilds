@@ -259,11 +259,14 @@ export type DesignDecision = {
   accepted: boolean;
 };
 
+export const SYSTEM_RESOLUTIONS = ["catalog", "native", "browser", "script", "composition", "decision", "refused"] as const;
+export type SystemResolution = (typeof SYSTEM_RESOLUTIONS)[number];
+
 export type RecipeDesign = {
   systems: Array<
     DesignDecision & {
       name: string;
-      resolution: "catalog" | "native" | "browser" | "script" | "composition" | "decision" | "refused";
+      resolution: SystemResolution;
       server?: string;
       reason: string;
     }
@@ -382,6 +385,14 @@ function asString(value: unknown, path: string, fallback = ""): string {
     throw new RecipeError(`${path} must be a string`);
   }
   return value;
+}
+
+function asOneOf<T extends string>(value: unknown, allowed: readonly T[], path: string): T {
+  const text = asString(value, path);
+  if (!(allowed as readonly string[]).includes(text)) {
+    throw new RecipeError(`${path} must be one of: ${allowed.join(", ")}`);
+  }
+  return text as T;
 }
 
 function parseNoteKey(value: unknown, path: string): string {
@@ -705,7 +716,7 @@ function parseDesign(value: unknown): RecipeDesign {
       return {
         ...parseDecision(row, `design.systems[${index}]`),
         name: asString(row.name, `design.systems[${index}].name`),
-        resolution: asString(row.resolution, `design.systems[${index}].resolution`) as RecipeDesign["systems"][number]["resolution"],
+        resolution: asOneOf(row.resolution, SYSTEM_RESOLUTIONS, `design.systems[${index}].resolution`),
         ...(row.server ? { server: asString(row.server, `design.systems[${index}].server`) } : {}),
         reason: asString(row.reason, `design.systems[${index}].reason`),
       };

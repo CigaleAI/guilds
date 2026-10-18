@@ -27,7 +27,7 @@ export const Variants: Story = {
       <div className="flex flex-wrap items-center gap-2.5">
         <Button variant="secondary">3/3 tools</Button>
         <Button variant="danger">Remove</Button>
-        <Button variant="destructive">Delete database</Button>
+        <Button variant="destructive">Delete table</Button>
         <Button>
           <Icon icon={Plus} size={14} />
           New routine

@@ -109,7 +109,7 @@ It appears:
 - on the agent's **Prompt** tab ([Task](task.md))
 - on the agent's **State** tab, in the **Memory** and **Scripts**
   views ([Memory](memory.md), [Scripts](scripts.md))
-- in the record dialog of the **Databases** page
+- in the record dialog of the **Tables** page
   ([Collections](collections.md))
 - in the Prompt Studio inspector ([Prompt Studio](prompt-studio.md))
 

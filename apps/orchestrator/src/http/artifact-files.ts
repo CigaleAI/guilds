@@ -29,17 +29,18 @@ export async function ensureAgentArtifacts(
   });
 }
 
-export function operatorFor(
-  orgId: string,
+export async function operatorFor(
+  repo: Repositories,
   user: Record<string, unknown>,
-  extra: { guildId?: string | null; agentId?: string | null } = {},
-): ArtifactActor {
+  scope: { orgId: string; guildId?: string | null; agentId?: string | null },
+): Promise<ArtifactActor> {
   return operatorActor({
-    orgId,
+    orgId: scope.orgId,
     actorId: String(user.id),
     actorName: String(user.name ?? "operator"),
-    guildId: extra.guildId ?? null,
-    agentId: extra.agentId ?? null,
+    guildId: scope.guildId ?? null,
+    agentId: scope.agentId ?? null,
+    hidden: await repo.hiddenGuildsFor(scope.orgId, String(user.id)),
   });
 }
 
@@ -52,7 +53,7 @@ export async function latestFileChanges(
   actor: ArtifactActor,
   displayPaths: string[],
 ): Promise<Record<string, unknown>> {
-  const paths = [...new Set(displayPaths.filter((path) => path))];
+  const paths = await readablePaths(store, actor, [...new Set(displayPaths.filter((path) => path))]);
   const latest: Record<string, unknown> = await listLatestFileChanges(repo.pool, actor.orgId, paths);
   for (const path of paths) {
     if (latest[path]) {
@@ -84,6 +85,12 @@ export async function latestFileChanges(
     }
   }
   return latest;
+}
+
+/** The display paths the actor may read, in their order. */
+async function readablePaths(store: ArtifactStore, actor: ArtifactActor, displayPaths: string[]): Promise<string[]> {
+  const readable = await Promise.all(displayPaths.map((path) => store.canReadDisplayPath(actor, path)));
+  return displayPaths.filter((_, index) => readable[index]);
 }
 
 function fallbackChange(displayPath: string, version: number, name: string | null, updatedAt: unknown): Record<string, unknown> {
@@ -273,7 +280,7 @@ export function requireArtifacts(store: ArtifactStore | null | undefined): Artif
 }
 
 // ---------------------------------------------------------------------------
-// Collections: the Databases page and the settings surfaces.
+// Collections: the Tables page and the settings surfaces.
 
 export async function listCollections(store: ArtifactStore, actor: ArtifactActor): Promise<Array<Record<string, unknown>>> {
   return store.listCollections(actor, { counts: true });

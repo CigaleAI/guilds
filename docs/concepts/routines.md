@@ -33,8 +33,9 @@ HTTP routes create, pause, resume, and delete.
 A routine has one of two timings:
 
 - **Cron**: a five-field expression (minute, hour, day, month,
-  weekday), always in UTC. When it is saved, its next two wake-ups
-  must be at least five minutes apart.
+  weekday), always in UTC. Every two wake-ups its minute and hour
+  fields name in a day must be at least five minutes apart, and so
+  must a day's last wake-up and the next day's first.
 - **Random window**: every day between two times of day, in a chosen
   timezone, the agent wakes at random moments, up to a number of
   times a day. The timezone follows daylight saving. A window whose

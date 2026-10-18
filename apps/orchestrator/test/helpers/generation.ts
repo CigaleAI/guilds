@@ -225,7 +225,6 @@ export class FakeDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      archived_at: null,
       metadata: {},
     };
     this.agent = {
@@ -236,8 +235,6 @@ export class FakeDB {
       org_id: "org_1",
       org_slug: "acme",
       config: {},
-      archived_at: null,
-      guild_archived_at: null,
       ...AGENT_MACHINE,
     };
     this.messages = [
@@ -410,7 +407,7 @@ export class FakeDB {
   }
 
   async reopenRun(runId: string, now: Date) {
-    if (this.run.id !== runId || this.run.status !== "completed" || this.run.archived_at) {
+    if (this.run.id !== runId || this.run.status !== "completed") {
       return;
     }
     this.run.status = "active";
@@ -624,7 +621,6 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      archived_at: null,
       system_prompt_hash: options.systemPromptHash,
       task_prompt_hash: options.taskPromptHash,
       memory_prompt_hash: options.memoryPromptHash,
@@ -721,7 +717,6 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      archived_at: null,
       system_prompt_hash: options.systemPromptHash,
       task_prompt_hash: options.taskPromptHash,
       memory_prompt_hash: options.memoryPromptHash,
@@ -769,7 +764,6 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      archived_at: null,
       system_prompt_hash: options.systemPromptHash,
       task_prompt_hash: options.taskPromptHash,
       memory_prompt_hash: options.memoryPromptHash,
@@ -802,7 +796,7 @@ export class RecordingDB {
   }
 
   async reopenRun(runId: string, now: Date) {
-    if (this.run === null || this.run.id !== runId || this.run.status !== "completed" || this.run.archived_at) {
+    if (this.run === null || this.run.id !== runId || this.run.status !== "completed") {
       return;
     }
     this.run.status = "active";
@@ -874,7 +868,7 @@ export async function seededLoop(
   const root = path.join(tmp, "notes");
   mkdirSync(root, { recursive: true });
   mkdirSync(workspaceRoot, { recursive: true });
-  const notes = new NotesStore(root, templatesRoot(), "notes");
+  const notes = new NotesStore(root, templatesRoot());
   await notes.ensureSystemPrompt();
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
@@ -886,8 +880,6 @@ export async function seededLoop(
     org_id: "org_1",
     org_slug: "acme",
     config: { ...AGENT_CONFIG },
-    archived_at: null,
-    guild_archived_at: null,
     ...AGENT_MACHINE,
   });
   const loop = makeLoop(db, notes, workspaceRoot, new FakeSandboxes());

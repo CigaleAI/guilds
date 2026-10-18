@@ -5,7 +5,6 @@ import { readStored } from "../../app/storage";
 import { SkeletonRows } from "@guildsrun/ui";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";
 import { lastGuildKey } from "../guild/GuildWorkspace";
-import { listedGuilds } from "../shell/guilds";
 import { GuildEmptyState } from "./GuildEmptyState";
 
 /** Opens the last guild visited, or the first; with none, offers Create a guild or the Builder. */
@@ -19,7 +18,7 @@ export function Home() {
       </div>
     );
   }
-  const listed = listedGuilds(guilds.data);
+  const listed = guilds.data ?? [];
   const last = readStored(lastGuildKey);
   const target = listed.find((guild) => guild.id === last) ?? listed[0];
   if (target) return <Navigate to="/guilds/$guildId" params={{ guildId: target.id }} replace />;

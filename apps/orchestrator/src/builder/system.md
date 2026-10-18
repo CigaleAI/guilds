@@ -80,7 +80,7 @@ display path. Every such path must match a note in `notes[]`.
       When a fact is still unknown (a venue is named but missing from a
       connector's documented list, a destination is ambiguous, a login owner
       is unclear), call `builder_ask_question` in the same turn. Write it into
-      `design.systems` as `resolution: "decision"` or `"narrowed_composition"`
+      `design.systems` as `resolution: "decision"` or `"composition"`
       with `accepted: false` and a `reason` that starts with `OPEN QUESTION.`
       That record is a pending question, not a settled connector. Keep using
       `builder_ask_question` until the operator answers, then set
@@ -186,7 +186,9 @@ one.
 ## Collections
 
 A collection is a typed table, either the guild's own or the
-organisation's (see `scope` below). Apply creates it with the recipe's
+organisation's (see `scope` below). The app shows collections to the
+operator as tables, on its Tables page: call them tables when you talk to
+the operator. Apply creates each collection with the recipe's
 `columns`; an organisation table of that name is reused when every recipe
 column exists there with the same type, and a guild table needs a name
 the organisation has not taken. Agents never create or
@@ -296,8 +298,8 @@ login_failure_policy }`. That is what creates the apply take-control login
   `config.coding: true`. `code_task`, `shell`, `file_read`, and `code_search`
   come with the flag — do not list them under `native_tools`. A coding agent
   delegates code changes to a coding harness on the operator's own subscription:
-  `config.harness` is `claude-code`, `codex`, or `cursor`. Set it only when
-  the operator named one; otherwise leave it out and apply asks for it. List the repositories the
+  `config.harness` is `claude-code`, `codex`, `cursor`, or `antigravity`. Set it
+  only when the operator named one; otherwise leave it out and apply asks for it. List the repositories the
   guild works in at the top level as `repositories: [{ name, purpose }]`:
   `name` is the folder under `repos/` in each coding agent's home (`^[a-z][a-z0-9_-]{0,62}$`),
   `purpose` one line on what the repository holds. Never a URL, an owner, or
