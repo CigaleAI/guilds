@@ -410,10 +410,10 @@ Choice.
 `machine_id` on create or update places or moves the agent
 ([Machines](machines.md)). Placement refuses a full machine (409
 `machine <name> is full`) and a machine below what the agent needs
-(`<what> needs a machine with at least <size>; <machine> has
-<size>`). The organisation policy of an edition may
-cap agents, browser agents, and coding agents per organisation; core
-sets no cap. A policy refusal is 409 `<source> limit reached: <cap>`.
+(`<what> needs a machine with at least <size>; <machine> has <size>`).
+The organisation policy of an edition may cap agents, browser
+agents, and coding agents per organisation; core sets no cap. A
+policy refusal is 409 `<source> limit reached: <cap>`.
 
 ### Create
 
