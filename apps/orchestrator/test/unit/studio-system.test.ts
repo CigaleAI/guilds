@@ -145,6 +145,17 @@ test("studio tool registry writes only through operator-resolved drafts and edit
   assert.ok(writes.includes("studio_create_note"));
   assert.ok(writes.includes("studio_delete_note"));
   assert.ok(writes.includes("studio_edit_access"));
+  for (const name of ["studio_create_routine", "studio_edit_routine", "studio_delete_routine"]) {
+    assert.ok(writes.includes(name), name);
+  }
+});
+
+test("studio system prompt teaches the routine tools", () => {
+  const text = readStudioSystemTemplate();
+  assert.match(text, /## Routines/);
+  assert.match(text, /studio_create_routine/);
+  assert.match(text, /studio_edit_routine/);
+  assert.match(text, /studio_delete_routine/);
 });
 
 test("studio system prompt makes keeping agents narrow part of the coach's job", () => {

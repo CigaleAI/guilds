@@ -130,6 +130,13 @@ export async function createServer(
         path: "task.md",
       });
     },
+    publishRoutinesChanged: async (guildId, change) => {
+      await generation.group_chat.publish(guildId, "agent.routines.changed", {
+        agent_id: change.agentId,
+        action: change.action,
+        schedule_id: change.scheduleId,
+      });
+    },
     isAgentBusy: (agentId) => generation.agent_is_busy(agentId),
   });
   await studio.reconcile();

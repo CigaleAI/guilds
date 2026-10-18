@@ -11,12 +11,21 @@ import {
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj } from "../db/json.js";
 import type { Repositories } from "../db/repositories.js";
+import type { Schedules } from "../schedules/service.js";
 import { GuildValidationError, validateAbout, validateGuildDescription } from "../guilds/validation.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import type { StudioStore } from "./store.js";
 import { STUDIO_TABLE_TOOLS, applyTable, isTableTool, reviewTable, type StudioTableTool } from "./tables.js";
+import {
+  STUDIO_ROUTINE_TOOLS,
+  applyRoutine,
+  isRoutineTool,
+  reviewRoutine,
+  type RoutineChange,
+  type StudioRoutineTool,
+} from "./routines.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -37,10 +46,11 @@ export const STUDIO_EDIT_TOOLS = [
   ...STUDIO_NOTE_TOOLS,
   ...STUDIO_TABLE_TOOLS,
   ...STUDIO_ACCESS_TOOLS,
+  ...STUDIO_ROUTINE_TOOLS,
 ] as const;
 export type StudioEditTool = (typeof STUDIO_EDIT_TOOLS)[number];
 
-export type StudioEditKind = "memory" | "note" | "guild" | "collection" | "access";
+export type StudioEditKind = "memory" | "note" | "guild" | "collection" | "access" | "routine";
 export type StudioEditStatus = "pending" | "applied" | "declined";
 
 export type GuildText = { about: string; description: string };
@@ -66,6 +76,7 @@ export type EditScope = {
   user: Record<string, unknown>;
   repo: Repositories;
   artifacts: ArtifactStore;
+  schedules: Schedules;
 };
 
 export function guildTextHash(text: GuildText): string {
@@ -307,6 +318,26 @@ export async function tableEditRequest(
   const review = await reviewTable(scope, tool, args, null);
   return awaitOperator(review.title, reason, {
     kind: "collection",
+    action: review.action,
+    target: review.target,
+    base_hash: review.baseHash,
+    proposed_hash: review.proposedHash,
+    lines: lineDelta(review.live, review.proposed),
+    effects: review.effects,
+  });
+}
+
+// A routine tool's widget: the routine it creates, changes, or deletes, and
+// when the agent wakes after applying.
+export async function routineEditRequest(
+  scope: EditScope,
+  tool: StudioRoutineTool,
+  call: { args: Record<string, unknown>; agentId: string | null },
+): Promise<Record<string, unknown>> {
+  const reason = requireReason(call.args);
+  const review = await reviewRoutine(scope, tool, call);
+  return awaitOperator(review.title, reason, {
+    kind: "routine",
     action: review.action,
     target: review.target,
     base_hash: review.baseHash,
@@ -646,6 +677,12 @@ export async function viewEdit(scope: EditScope, record: EditRecord): Promise<Re
       reviewNote(scope, tool, record.args, (edit.target ?? {}) as Record<string, unknown>),
     );
   }
+  if (isRoutineTool(record.toolName)) {
+    const tool = record.toolName;
+    return viewReviewedEdit(record, edit, status, () =>
+      reviewRoutine(scope, tool, { args: record.args, agentId: recordedAgentId(edit) }),
+    );
+  }
   if (isAccessTool(record.toolName)) {
     return viewReviewedEdit(record, edit, status, () =>
       reviewAccess(scope, recordedAgentId(edit), record.args, false),
@@ -681,7 +718,7 @@ function recordedAgentId(edit: Record<string, unknown>): string {
   return String(((edit.target ?? {}) as Record<string, unknown>).agent_id ?? "");
 }
 
-// A table, note create or delete, or access edit rendered as text on both
+// A table, note create or delete, routine, or access edit rendered as text on both
 // sides, with what applying does. A resolved request is not reviewed again:
 // its target has moved on.
 async function viewReviewedEdit(
@@ -732,8 +769,14 @@ function assertBound(review: { baseHash: string; proposedHash: string }, edit: R
 export async function applyEdit(
   scope: EditScope,
   record: EditRecord,
-): Promise<{ version: number | null; guild?: Record<string, unknown> }> {
+): Promise<{ version: number | null; guild?: Record<string, unknown>; routine?: RoutineChange }> {
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
+  if (isRoutineTool(record.toolName)) {
+    const call = { args: record.args, agentId: recordedAgentId(edit) };
+    const review = await reviewRoutine(scope, record.toolName, call);
+    assertBound(review, edit, "routine");
+    return { version: null, routine: await applyRoutine(scope, review.plan) };
+  }
   if (isTableTool(record.toolName)) {
     const review = await reviewTable(scope, record.toolName, record.args, (edit.target ?? {}) as Record<string, unknown>);
     assertBound(review, edit, "table");

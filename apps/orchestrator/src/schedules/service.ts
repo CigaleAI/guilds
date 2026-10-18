@@ -27,6 +27,13 @@ export type ScheduleDatabase = {
   ): Promise<Record<string, unknown> | null>;
   listSchedules(agentId: string): Promise<Array<Record<string, unknown>>>;
   listSchedulesForGuild(guildId: string): Promise<Array<Record<string, unknown>>>;
+  updateSchedule(
+    agentId: string,
+    scheduleId: string,
+    fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
+    wake: PlannedWake | null,
+    now: Date,
+  ): Promise<Record<string, unknown> | null>;
   setScheduleNextRun(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
   getAgent(agentId: string): Promise<Record<string, unknown> | null>;
 };
@@ -135,6 +142,36 @@ export class Schedules {
     return updated;
   }
 
+  /**
+   * Changes a routine's timing, description, instruction, or paused state;
+   * a field left out keeps its value. A new timing, or a resume, plans the
+   * next wake-up from now; otherwise the planned one stays.
+   */
+  async update(
+    agentId: string,
+    scheduleId: string,
+    changes: ScheduleChanges,
+  ): Promise<Record<string, unknown>> {
+    const row = await this.db.getSchedule(agentId, (scheduleId || "").trim());
+    if (row === null) {
+      throw new ScheduleError("schedule not found");
+    }
+    const fields = changedFields(row, changes);
+    const replan = !fields.paused && (changes.when !== undefined || Boolean(row.paused));
+    const now = new Date();
+    const updated = await this.db.updateSchedule(
+      agentId,
+      String(row.id),
+      fields,
+      replan ? planWake(fields.timing, now) : null,
+      now,
+    );
+    if (updated === null) {
+      throw new ScheduleError("schedule not found");
+    }
+    return updated;
+  }
+
   async releaseGuild(guildId: string): Promise<void> {
     const now = new Date();
     for (const row of await this.db.listSchedulesForGuild(guildId)) {
@@ -177,6 +214,33 @@ export class Schedules {
     }
     await this.notes?.deleteRoutineNote(names[0], names[1], names[2], scheduleId);
   }
+}
+
+/** What an update may change; a key left out keeps the routine's value. */
+export type ScheduleChanges = {
+  when?: { cron?: unknown; window?: unknown };
+  description?: unknown;
+  instruction?: unknown;
+  paused?: boolean;
+};
+
+/** A routine's definition after `changes`, each changed field validated. */
+export function changedFields(
+  row: Record<string, unknown>,
+  changes: ScheduleChanges,
+): { timing: ScheduleTiming; description: string; instruction: string; paused: boolean } {
+  return {
+    timing: changes.when === undefined ? rowTiming(row) : validateTiming(changes.when),
+    description:
+      changes.description === undefined
+        ? String(row.description ?? "")
+        : validateScheduleDescription(changes.description),
+    instruction:
+      changes.instruction === undefined
+        ? String(row.instruction ?? "")
+        : validateInstruction(changes.instruction),
+    paused: changes.paused === undefined ? Boolean(row.paused) : changes.paused,
+  };
 }
 
 function scheduleInstant(value: unknown): number | null {

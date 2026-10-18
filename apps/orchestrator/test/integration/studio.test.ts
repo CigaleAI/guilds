@@ -17,13 +17,16 @@ import {
   studioCallConnectionTool,
   studioCreateCollection,
   studioCreateNote,
+  studioCreateRoutine,
   studioDeleteCollection,
   studioDeleteNote,
+  studioDeleteRoutine,
   studioEditAccess,
   studioEditArtifact,
   studioEditCollection,
   studioEditGuild,
   studioEditMemory,
+  studioEditRoutine,
   studioGetAgentAccess,
   studioGetArtifact,
   studioGetCollection,
@@ -72,6 +75,7 @@ const evidenceDbName = uniqueDbName("agent_platform_studio_evidence");
 const editsDbName = uniqueDbName("agent_platform_studio_edits");
 const tablesDbName = uniqueDbName("agent_platform_studio_tables");
 const narrowDbName = uniqueDbName("agent_platform_studio_narrow");
+const routinesDbName = uniqueDbName("agent_platform_studio_routines");
 const originalStream = generationLive.streamCompletion;
 
 after(async () => {
@@ -82,6 +86,7 @@ after(async () => {
   await dropIsolatedDatabase(editsDbName);
   await dropIsolatedDatabase(tablesDbName);
   await dropIsolatedDatabase(narrowDbName);
+  await dropIsolatedDatabase(routinesDbName);
 });
 
 test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 }, async () => {
@@ -1581,6 +1586,216 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     const listed = await app.inject({ method: "GET", url: "/api/studio/sessions", headers: AUTH });
     assert.equal(listed.statusCode, 200, listed.body);
     assert.equal(listed.body.includes(session.id), false);
+  } finally {
+    await app.close();
+    await database.close();
+  }
+});
+
+test("studio proposes routines to create, change, and delete that the operator applies or declines", { timeout: 60_000 }, async () => {
+  const databaseUrl = await createIsolatedDatabase(routinesDbName);
+  const database = await connect(databaseUrl);
+  const notes = new NotesStore(tempDir("guilds-studio-routines-notes-"), templatesRoot(), "notes");
+  await notes.ensureSystemPrompt();
+  const repo = new Repositories(database.pool);
+  await connectModelProvider(repo, "org_home", "deepinfra");
+  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const scripts = new Scripts(repo);
+  const schedules = new Schedules(repo, notes);
+  const published: Array<{ guildId: string; action: string; scheduleId: string }> = [];
+  const studio = new StudioService({
+    repo,
+    artifacts,
+    scripts,
+    schedules,
+    notesSystemPath: notes.systemPath(),
+    publishRoutinesChanged: async (guildId, change) => {
+      published.push({ guildId, action: change.action, scheduleId: change.scheduleId });
+    },
+  });
+  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+
+  const now = new Date();
+  await repo.insertGuild("guild_rt", "routine-guild", now, "org_home");
+  await persistAgent(repo, notes, {
+    agentId: "a_wt",
+    guildId: "guild_rt",
+    guildName: "routine-guild",
+    orgSlug: "home",
+    orgId: "org_home",
+    name: "watcher",
+    focus: "The watcher",
+    task: "Watch the feed.",
+    config: CONFIG,
+    now,
+    artifacts,
+  });
+
+  try {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/studio/sessions",
+      headers: AUTH,
+      payload: { mode: "optimize", source_guild_id: "guild_rt", coach_config: { model: TEST_MODEL, temperature: 0.2 } },
+    });
+    assert.equal(created.statusCode, 200, created.body);
+    const session = created.json() as { id: string };
+    const ctx = async (): Promise<StudioToolContext> => ({
+      session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+      user: { id: "user_operator", name: "operator" },
+      orgId: "org_home",
+      sourceGuildId: "guild_rt",
+      targetAgentId: null,
+      generation: 1,
+      store: studio.store,
+      artifacts,
+      repo,
+      schedules,
+      drafts: studio.drafts,
+      preview: studio.previewDeps(),
+      notesSystemPath: notes.systemPath(),
+    });
+    const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
+      const seq = await studio.store.nextSeq(session.id);
+      const id = `call_${seq}`;
+      await studio.store.insertMessage(
+        session.id,
+        seq,
+        1,
+        { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
+        { generation: 1 },
+        new Date(),
+      );
+      await studio.store.insertMessage(
+        session.id,
+        seq + 1,
+        1,
+        { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
+        { generation: 1, tool_name: name },
+        new Date(),
+      );
+      return seq + 1;
+    };
+    const view = async (seq: number) =>
+      (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH })).json() as {
+        status: string;
+        stale: boolean;
+        live: string;
+        proposed: string;
+        effects: string[];
+        error?: string;
+      };
+    const resolve = (seq: number, decision: string) =>
+      app.inject({ method: "POST", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH, payload: { decision } });
+
+    // Create: refused without a timing or with a bad one; applied as the operator.
+    await assert.rejects(
+      studioCreateRoutine.handler(await ctx(), { agent_id: "watcher", description: "d", instruction: "i", reason: "r" }),
+      /exactly one of cron or window/,
+    );
+    await assert.rejects(
+      studioCreateRoutine.handler(await ctx(), { agent_id: "watcher", cron: "* * * * *", description: "d", instruction: "i", reason: "r" }),
+      /at least 5 minutes/,
+    );
+    await assert.rejects(
+      studioCreateRoutine.handler(await ctx(), { agent_id: "watcher", cron: "0 9 * * *", instruction: "i", reason: "r" }),
+      /description must be a string/,
+    );
+    await assert.rejects(
+      studioCreateRoutine.handler(await ctx(), { agent_id: "nobody", cron: "0 9 * * *", description: "d", instruction: "i", reason: "r" }),
+      /not in the source guild/,
+    );
+    const createArgs = {
+      agent_id: "watcher",
+      cron: "0 9 * * 1",
+      description: "Weekly feed sweep",
+      instruction: "Sweep the feed for new items.",
+      reason: "The watcher only runs when tagged, so the feed goes stale.",
+    };
+    const createWidget = (await studioCreateRoutine.handler(await ctx(), createArgs)) as {
+      widget: string;
+      edit: { kind: string; action: string; target: { agent_id: string; schedule_id: string | null }; effects: string[] };
+    };
+    assert.equal(createWidget.widget, "studio_edit_request");
+    assert.equal(createWidget.edit.kind, "routine");
+    assert.equal(createWidget.edit.action, "create");
+    assert.deepEqual(createWidget.edit.target, {
+      agent_id: "a_wt",
+      agent_name: "watcher",
+      schedule_id: null,
+      description: "Weekly feed sweep",
+    });
+    assert.deepEqual(await repo.listSchedules("a_wt"), []);
+    const createSeq = await commit("studio_create_routine", createArgs, createWidget);
+    const createView = await view(createSeq);
+    assert.equal(createView.stale, false);
+    assert.equal(createView.live, "");
+    assert.match(createView.proposed, /^agent: watcher\ndescription: Weekly feed sweep\ntiming: 0 9 \* \* 1 /);
+    assert.match(createView.proposed, /state: active\ninstruction:\nSweep the feed for new items\.$/);
+    assert.ok(createView.effects.some((effect) => /wakes watcher/.test(effect)), createView.effects.join(" | "));
+    const createApplied = await resolve(createSeq, "apply");
+    assert.equal(createApplied.statusCode, 200, createApplied.body);
+    const [routine] = await repo.listSchedules("a_wt");
+    assert.ok(routine);
+    assert.equal(routine.cron, "0 9 * * 1");
+    assert.equal(routine.instruction, "Sweep the feed for new items.");
+    assert.equal(routine.paused, false);
+    const scheduleId = String(routine.id);
+    assert.deepEqual(published, [{ guildId: "guild_rt", action: "create", scheduleId }]);
+
+    // Edit: nothing to change is refused; a routine changed since makes the request stale.
+    await assert.rejects(
+      studioEditRoutine.handler(await ctx(), { schedule_id: scheduleId, cron: "0 9 * * 1", reason: "r" }),
+      /nothing to change/,
+    );
+    await assert.rejects(studioEditRoutine.handler(await ctx(), { schedule_id: "sch_none", paused: true, reason: "r" }), /unknown routine/);
+    const staleArgs = { schedule_id: scheduleId, instruction: "Sweep and summarise.", reason: "Needs a summary." };
+    const staleSeq = await commit("studio_edit_routine", staleArgs, await studioEditRoutine.handler(await ctx(), staleArgs));
+    await schedules.setPaused("a_wt", scheduleId, true);
+    assert.equal((await view(staleSeq)).stale, true);
+    assert.equal((await resolve(staleSeq, "apply")).statusCode, 409);
+    assert.equal((await resolve(staleSeq, "decline")).statusCode, 200);
+
+    const editArgs = {
+      schedule_id: scheduleId,
+      window: { timezone: "Europe/Paris", start: "09:00", end: "18:00", max_wakes: 3 },
+      instruction: "Sweep the feed and post what is new.",
+      paused: false,
+      reason: "Fixed Monday sweeps miss midweek items.",
+    };
+    const editWidget = (await studioEditRoutine.handler(await ctx(), editArgs)) as {
+      edit: { action: string; target: { schedule_id: string }; effects: string[] };
+    };
+    assert.equal(editWidget.edit.action, "edit");
+    assert.equal(editWidget.edit.target.schedule_id, scheduleId);
+    assert.ok(editWidget.edit.effects.some((effect) => /Resumes it/.test(effect)), editWidget.edit.effects.join(" | "));
+    assert.ok(editWidget.edit.effects.some((effect) => /planned again/.test(effect)), editWidget.edit.effects.join(" | "));
+    const editSeq = await commit("studio_edit_routine", editArgs, editWidget);
+    const editView = await view(editSeq);
+    assert.match(editView.live, /state: paused/);
+    assert.match(editView.proposed, /timing: Up to 3 random wake-ups between 09:00 and 18:00 every day \(Europe\/Paris\)/);
+    const editApplied = await resolve(editSeq, "apply");
+    assert.equal(editApplied.statusCode, 200, editApplied.body);
+    const edited = await repo.getSchedule("a_wt", scheduleId);
+    assert.equal(edited?.cron, null);
+    assert.equal(edited?.paused, false);
+    assert.equal(edited?.description, "Weekly feed sweep");
+    assert.equal(edited?.instruction, "Sweep the feed and post what is new.");
+
+    // Delete: applied as the operator; the routine is gone.
+    const deleteArgs = { schedule_id: scheduleId, reason: "The feed is now pushed to the watcher." };
+    const deleteWidget = (await studioDeleteRoutine.handler(await ctx(), deleteArgs)) as { edit: { action: string } };
+    assert.equal(deleteWidget.edit.action, "delete");
+    const deleteSeq = await commit("studio_delete_routine", deleteArgs, deleteWidget);
+    assert.equal((await view(deleteSeq)).proposed, "");
+    const deleted = await resolve(deleteSeq, "apply");
+    assert.equal(deleted.statusCode, 200, deleted.body);
+    assert.equal(await repo.getSchedule("a_wt", scheduleId), null);
+    assert.deepEqual(
+      published.map((change) => change.action),
+      ["create", "edit", "delete"],
+    );
+    assert.equal((await resolve(deleteSeq, "apply")).statusCode, 409);
   } finally {
     await app.close();
     await database.close();

@@ -61,6 +61,20 @@ test("edit and access requests are read from tool results", () => {
     editTargetLabel({ kind: "access", target: { agent_id: "a_1", agent_name: "wallet" } }),
     "wallet · access",
   );
+  assert.equal(
+    editTargetLabel({
+      kind: "routine",
+      action: "create",
+      target: {
+        agent_id: "a_1",
+        agent_name: "wallet",
+        schedule_id: null,
+        description: "Daily sweep",
+      },
+    }),
+    "wallet · Daily sweep",
+  );
+  assert.equal(editTargetLabel({ kind: "routine", target: { agent_id: "a_1" } }), "a_1 · routine");
   const access = message(5, {
     role: "tool",
     content: JSON.stringify({
@@ -125,4 +139,7 @@ test("the apply button names what a create or delete makes", () => {
   assert.equal(applyLabel({ kind: "collection", action: "delete" }), "Delete table");
   assert.equal(applyLabel({ kind: "note" }), "Apply edit");
   assert.equal(applyLabel({ kind: "access" }), "Apply edit");
+  assert.equal(applyLabel({ kind: "routine", action: "create" }), "Create routine");
+  assert.equal(applyLabel({ kind: "routine", action: "delete" }), "Delete routine");
+  assert.equal(applyLabel({ kind: "routine", action: "edit" }), "Apply edit");
 });

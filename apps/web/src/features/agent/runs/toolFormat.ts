@@ -165,6 +165,12 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
   if (name === "studio_delete_collection") {
     return args.collection ? `Propose deleting ${args.collection}` : "Propose deleting a table";
   }
+  if (name === "studio_create_routine") {
+    const handle = args.agent_id || args.agent_name;
+    return handle ? `Propose routine for ${handle}` : "Propose routine";
+  }
+  if (name === "studio_edit_routine") return "Propose routine changes";
+  if (name === "studio_delete_routine") return "Propose deleting a routine";
   if (name === "studio_inspect_history") return "Inspect run history";
   if (name === "studio_get_script") {
     return args.name ? `Read script ${args.name}` : "Read script";

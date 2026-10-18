@@ -1059,6 +1059,13 @@ export type GenerationDb = AccessDatabase &
     ): Promise<Record<string, unknown> | null>;
     listSchedules?(agentId: string): Promise<Array<Record<string, unknown>>>;
     listSchedulesForGuild?(guildId: string): Promise<Array<Record<string, unknown>>>;
+    updateSchedule?(
+      agentId: string,
+      scheduleId: string,
+      fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
+      wake: PlannedWake | null,
+      now: Date,
+    ): Promise<Record<string, unknown> | null>;
     setScheduleNextRun?(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
     insertIssue?(
       issueId: string,

@@ -16,9 +16,12 @@ digest, an hourly check of a source, a weekly clean-up. Use a random
 window when the wake-ups should not look mechanical, for example a
 few posts spread over the working day.
 
-A routine can be set up three ways: the operator adds it on the
-agent's **Routine** tab, or asks the agent to set one up in a direct
-chat or in the group chat. The agent then uses its schedule tools.
+A routine can be set up four ways: the operator adds it on the
+agent's **Routine** tab, asks the agent to set one up in a direct
+chat or in the group chat (the agent then uses its schedule tools),
+or applies a [Prompt Studio](prompt-studio.md) coach's proposal to
+create one. The coach can also propose changing a routine's timing,
+description, instruction, or pause, and deleting it.
 
 ## How it works
 
@@ -190,8 +193,16 @@ Wake-ups are planned one at a time
   first slot of the next window.
 
 `window_fires` counts fires in the window that holds `next_run_at`. A
-late fire outside any window does not count. Create, resume, and a
-guild re-enable start the count at 0.
+late fire outside any window does not count. Create, resume, a new
+timing, and a guild re-enable start the count at 0.
+
+### Changing a routine
+
+A change replaces the routine's timing, description, instruction, or
+pause; what it leaves out stays. A new timing on an unpaused routine,
+or a resume, plans the next wake-up from now. Any other change keeps
+the planned wake-up. Runs that already fired keep the instruction they
+fired with.
 
 ### Firing
 
@@ -252,7 +263,7 @@ A schedule item carries `id`, `agent_id`, `cron`, `window`, `label`
 ### Code
 
 - `apps/orchestrator/src/schedules/`: cron, random window, timing
-  labels, instruction
+  labels, instruction, and `Schedules.update`
 - `apps/orchestrator/src/generation/`: the busy lock,
   `fireDueSchedules`, `deliverScheduleRun`
 - `apps/orchestrator/src/toolbox/schedule.ts`: the schedule tools

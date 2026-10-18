@@ -8,6 +8,7 @@ Ids are never reused.
 
 | Id | Issue | Status |
 |---|---|---|
+| SEC-36 | Evidence the Studio coach reads can steer a proposed routine that wakes an agent unattended | Open, accepted |
 | SEC-35 | Evidence the Studio coach reads can steer a proposal to widen an agent's access | Open, accepted |
 | SEC-34 | A Studio session kept working after its user could no longer see the guild | Fixed 2026-10-17 |
 | SEC-33 | Any organisation owner or admin can find users by name and add them without their consent | Open |
@@ -43,6 +44,39 @@ Ids are never reused.
 | SEC-3 | Check-then-open race on agent workspace paths | Open |
 | SEC-2 | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | SEC-1 | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-36 — Evidence the Studio coach reads can steer a proposed routine that wakes an agent unattended
+
+**Status:** open, accepted.
+
+**Found:** 2026-10-18, adding routine requests to Prompt Studio.
+
+**Where:** `studio_create_routine` and `studio_edit_routine` in
+`apps/orchestrator/src/studio/tools.ts` and
+`apps/orchestrator/src/studio/routines.ts`.
+
+**Exposure:** the coach reads run transcripts, notes, Memory, group
+messages, and data from logins the operator granted to the session.
+Any of it can carry text written to steer a model. Steered text could
+lead the coach to propose a routine, or a new instruction for one,
+that hands an agent attacker-chosen work on every wake-up, with no one
+posting, using whatever tools that agent holds.
+
+**Control in place:** the coach writes nothing. A routine request is a
+card the operator applies or declines. The card shows the agent, the
+timing, and the complete instruction before and after, and says when
+the agent wakes. Applying writes only that routine, as the operator,
+after checking its agent, timing, description, instruction, and pause
+have not moved since the request. The routine's instruction reaches
+the agent as a user message on a schedule run, which offers no
+schedule tools, so a routine cannot create further routines. The
+Studio template treats everything it reads as evidence, never
+instructions.
+
+**Residual risk:** an operator who applies a request without reading
+the instruction can schedule steered work. Closing it fully takes
+refusing routine creation and instruction changes from Studio and
+leaving them to the Routine tab.
 
 ## SEC-35 — Evidence the Studio coach reads can steer a proposal to widen an agent's access
 

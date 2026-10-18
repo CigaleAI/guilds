@@ -36,6 +36,7 @@ import { grantedConnectionIds, reachableConnection, type StudioMcpClient } from 
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocus } from "./focus.js";
 import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
+import type { RoutineChange } from "./routines.js";
 
 export type StudioServiceDeps = {
   repo: Repositories;
@@ -49,6 +50,7 @@ export type StudioServiceDeps = {
   /** What the coach's model provider is called with; core's own rows when absent. */
   credentials?: ModelCredentialsProvider;
   publishFilesChanged?: (guildId: string) => Promise<void>;
+  publishRoutinesChanged?: (guildId: string, change: RoutineChange) => Promise<void>;
   isAgentBusy?: (agentId: string) => boolean;
 };
 
@@ -821,6 +823,7 @@ export class StudioService {
       user,
       repo: this.deps.repo,
       artifacts: this.deps.artifacts,
+      schedules: this.deps.schedules,
     };
   }
 
@@ -874,6 +877,8 @@ export class StudioService {
         },
         new Date(),
       );
+    } else if (outcome.applied?.routine) {
+      await this.deps.publishRoutinesChanged?.(String(session.source_guild_id), outcome.applied.routine);
     } else if (outcome.applied && !isAccessTool(outcome.record.toolName) && this.deps.publishFilesChanged) {
       await this.deps.publishFilesChanged(String(session.source_guild_id));
     }

@@ -51,6 +51,7 @@ import {
   loadMemoryBase,
   loadNoteBase,
   noteEditRequest,
+  routineEditRequest,
   tableEditRequest,
   type EditScope,
 } from "./edits.js";
@@ -1281,6 +1282,7 @@ function editScope(ctx: StudioToolContext): EditScope {
     user: ctx.user,
     repo: ctx.repo,
     artifacts: ctx.artifacts,
+    schedules: ctx.schedules,
   };
 }
 
@@ -1616,6 +1618,91 @@ export const studioDeleteCollection: StudioTool = {
   },
 };
 
+const ROUTINE_TIMING = {
+  cron: {
+    type: "string",
+    description:
+      "5-field UTC expression (minute hour day month weekday), for example '0 9 * * 1'; wake-ups at least 5 minutes apart. Pass cron or window, not both.",
+  },
+  window: {
+    type: "object",
+    description: "Random wake-ups inside a daily local-time window. Pass cron or window, not both.",
+    properties: {
+      timezone: { type: "string", description: "IANA name, for example Europe/Paris." },
+      start: { type: "string", description: "HH:MM local time." },
+      end: { type: "string", description: "HH:MM local time; earlier than start spans midnight." },
+      max_wakes: { type: "integer", description: "Most wake-ups per window; gaps are at least 5 minutes." },
+    },
+    required: ["timezone", "start", "end", "max_wakes"],
+    additionalProperties: false,
+  },
+};
+
+const ROUTINE_TEXT = {
+  description: { type: "string", description: "One-line label shown in the Routine tab, at most 400 characters." },
+  instruction: {
+    type: "string",
+    description: "Short markdown the agent receives on each wake-up, at most 2000 characters: what this wake-up is for, not the agent's whole Task.",
+  },
+};
+
+const ROUTINE_REASON = { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." };
+
+export const studioCreateRoutine: StudioTool = {
+  name: "studio_create_routine",
+  schema: functionSchema(
+    "studio_create_routine",
+    "Propose a new routine that wakes one source-guild agent on a UTC cron or at random times inside a daily window. Nothing is written: the turn pauses and the operator applies or declines. Check studio_list_routines first and change a routine that fits instead.",
+    {
+      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
+      ...ROUTINE_TIMING,
+      ...ROUTINE_TEXT,
+      paused: { type: "boolean", description: "true creates it paused; it fires once resumed." },
+      reason: ROUTINE_REASON,
+    },
+    ["agent_id", "description", "instruction", "reason"],
+  ),
+  async handler(ctx, args) {
+    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
+    return routineEditRequest(editScope(ctx), "studio_create_routine", { args, agentId: String(agent.id) });
+  },
+};
+
+export const studioEditRoutine: StudioTool = {
+  name: "studio_edit_routine",
+  schema: functionSchema(
+    "studio_edit_routine",
+    "Propose changes to one routine of a source-guild agent: its timing, description, instruction, or paused state. Fields left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read it with studio_list_routines first.",
+    {
+      schedule_id: { type: "string", description: "The routine's id from studio_list_routines. Required." },
+      ...ROUTINE_TIMING,
+      ...ROUTINE_TEXT,
+      paused: { type: "boolean", description: "true pauses it; false resumes it." },
+      reason: ROUTINE_REASON,
+    },
+    ["schedule_id", "reason"],
+  ),
+  async handler(ctx, args) {
+    return routineEditRequest(editScope(ctx), "studio_edit_routine", { args, agentId: null });
+  },
+};
+
+export const studioDeleteRoutine: StudioTool = {
+  name: "studio_delete_routine",
+  schema: functionSchema(
+    "studio_delete_routine",
+    "Propose deleting one routine of a source-guild agent. Its past runs stay. Nothing is written: the turn pauses and the operator applies or declines. Propose pausing it with studio_edit_routine instead when it may be needed again.",
+    {
+      schedule_id: { type: "string", description: "The routine's id from studio_list_routines. Required." },
+      reason: ROUTINE_REASON,
+    },
+    ["schedule_id", "reason"],
+  ),
+  async handler(ctx, args) {
+    return routineEditRequest(editScope(ctx), "studio_delete_routine", { args, agentId: null });
+  },
+};
+
 export const STUDIO_TOOLS: StudioTool[] = [
   studioListAgents,
   studioGetGuidelines,
@@ -1647,6 +1734,9 @@ export const STUDIO_TOOLS: StudioTool[] = [
   studioCreateCollection,
   studioEditCollection,
   studioDeleteCollection,
+  studioCreateRoutine,
+  studioEditRoutine,
+  studioDeleteRoutine,
 ];
 
 export function studioToolSchemas(): Array<Record<string, unknown>> {

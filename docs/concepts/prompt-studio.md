@@ -45,7 +45,7 @@ flowchart LR
     C -->|Task draft| D[Draft]
     C -->|edit request| E[Edit card]
     D -->|operator publishes| T[Live Task]
-    E -->|operator applies| W[Memory, note, guild text, collection, access]
+    E -->|operator applies| W[Memory, note, guild text, collection, routine, access]
     T --> R[New runs]
     W --> R
 ```
@@ -73,7 +73,7 @@ has a source and a set of things Studio may do with it:
 | [Memory](memory.md) | Shows every version; the coach can cite it and request an edit |
 | [Notes](notes.md) of the guild, its agents, and the organisation | Inspects, cites, and requests edits |
 | The guild's short description and description | Inspects and requests edits |
-| [Routine](routines.md) instructions | Inspects them beside the runs they produced |
+| [Routines](routines.md) | Inspects them beside the runs they produced; requests creating, changing, or deleting one |
 | Effective prompt | Shows what the next run would get, and what each past run got |
 | [Scripts](scripts.md) | Inspects source and provenance |
 | [File provenance](artifacts.md) | Shows who wrote a file and the run step that did it |
@@ -107,7 +107,8 @@ Publishing changes new runs only. Past runs stay exactly as they ran.
 
 The coach can also propose changes to an agent's memory, a note (new,
 changed, or deleted), the guild's short description and description, a
-collection, or what one agent is offered. Each proposal is an edit
+collection, a routine (new, changed, or deleted), or what one agent is
+offered. Each proposal is an edit
 request: a card in the chat with **Apply edit** and **Decline**. The coach writes nothing. When the operator applies,
 Studio writes as the operator, and only if the target has not changed
 since the coach read it. When one turn proposes several changes, the
@@ -337,6 +338,14 @@ note shows its text as removed lines, names the agents whose Task
 embeds it (applying fails until none does) or names it, and its button
 is **Delete note**.
 
+A routine request shows the routine before and after as text: the
+agent, the description, the timing in words, whether it is paused, and
+the instruction. It lists what applying does: when the agent wakes, a
+new instruction reaching later wake-ups only, a pause or resume, the
+next wake-up planned again from the apply, and the guild's routines
+being off. Its button is **Create routine**, **Delete routine**, or
+**Apply edit**.
+
 An access request shows the agent's access before and after as text:
 one line per native tool and file level, and one per connection with a
 line per connection tool. Each line says on or off, whether the agent
@@ -364,7 +373,7 @@ coach** row ([Usage](usage.md)).
 | Writes | None by the coach; the operator publishes drafts and applies edits |
 | Publishing a Task | Affects new runs only; refused when the Task changed since the draft's base |
 | Applying an edit | Refused when the target changed since the coach read it; a request resolves once |
-| Edit targets | Memory, notes (create, change, delete), guild short description and description, collections, one agent's access; never Tasks (those are drafts), scripts, records, or agent configuration |
+| Edit targets | Memory, notes (create, change, delete), guild short description and description, collections, routines (create, change, delete), one agent's access; never Tasks (those are drafts), scripts, records, or agent configuration |
 | Access edits | Agent-level only; the guild's and the organisation's settings stay as they are |
 | Collections of another guild | Read-only in Studio |
 | Outside data | Only through a login granted to the session, only its read-only tools |
@@ -388,7 +397,7 @@ coach** row ([Usage](usage.md)).
 | Memory | agent `memory` artifact and `memory_revisions` | timeline of versions; inspect, cite, edit request |
 | Notes | `note` artifacts in the source guild, its members, and the organisation | inspect, cite, create, edit, or delete request |
 | Guild about / description | `guilds.about`, `guilds.description` | inspect, edit request |
-| Routine instructions | `schedules.instruction` | inspect with the runs it produced |
+| Routines | `schedules` | inspect with the runs they produced; create, edit, or delete request |
 | Effective prompt | composed from current sources; run message sequence zero for history | current preview and immutable evidence |
 | Scripts | agent `script` artifacts | inspect source and provenance |
 | File provenance | `file_changes` | who wrote a file and the run step that did it |
@@ -536,6 +545,9 @@ draft with none has `verified_evidence: false`.
 - `studio_create_collection`
 - `studio_edit_collection`
 - `studio_delete_collection`
+- `studio_create_routine`
+- `studio_edit_routine`
+- `studio_delete_routine`
 
 They do not appear in normal agent Access panes.
 
@@ -692,6 +704,32 @@ with 409 when the hash no longer matches. Then it writes as the
 operator through the artifact store: create, update, or delete the
 collection, then each grant it changes.
 
+### Routine requests
+
+`studio_create_routine(agent_id, cron? | window?, description,
+instruction, paused?, reason)`, `studio_edit_routine(schedule_id,
+cron? | window?, description?, instruction?, paused?, reason)`, and
+`studio_delete_routine(schedule_id, reason)` return the same widget
+with `kind: "routine"` and `action` (`create`, `edit`, or `delete`).
+
+- `agent_id` names a live member of the source guild. `schedule_id`
+  names a routine of one, from `studio_list_routines`.
+- `cron` and `window` follow the timing rules of
+  [Routines](routines.md); a request passes at most one. A create
+  needs one, and an edit that passes one replaces the timing.
+- A field an edit leaves out keeps its live value. An edit that
+  changes nothing is refused.
+- A create with `paused: true` starts paused.
+
+The widget targets the routine by `schedule_id` (null until a create
+is applied) and binds a hash of its agent, timing, description,
+instruction, and pause. A fire moves the planned wake-up, not that
+hash. Apply reviews the routine again and refuses with 409 when the
+hash no longer matches. Then it writes as the operator through the
+schedule service: create, `Schedules.update`, or delete
+(`apps/orchestrator/src/studio/routines.ts`). The apply publishes
+`agent.routines.changed` on the guild's stream.
+
 ### Storage
 
 `studio_sessions`, `studio_messages`, `studio_drafts`.
@@ -816,5 +854,6 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
 | `apps/orchestrator/src/studio/activity.ts` | The activity ledger |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
+| `apps/orchestrator/src/studio/routines.ts` | Routine requests: review and apply |
 | `apps/orchestrator/src/mcp/policy.ts` | `isReadOnlyRemote` |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |

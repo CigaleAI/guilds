@@ -1856,6 +1856,37 @@ export class Repositories {
     return firstRow(result);
   }
 
+  /** Replaces a routine's definition. A null `wake` keeps the planned next wake-up. */
+  async updateSchedule(
+    agentId: string,
+    scheduleId: string,
+    fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
+    wake: PlannedWake | null,
+    now: Date,
+  ): Promise<Record<string, unknown> | null> {
+    const result = await this.pool.query(
+      `UPDATE schedules
+          SET cron = $3, wake_window = $4::jsonb, description = $5, instruction = $6, paused = $7,
+              next_run_at = COALESCE($8, next_run_at), window_fires = COALESCE($9, window_fires),
+              updated_at = $10
+        WHERE id = $1 AND agent_id = $2
+        RETURNING ${SCHEDULE_COLUMNS}`,
+      [
+        scheduleId,
+        agentId,
+        fields.timing.cron,
+        fields.timing.window ? JSON.stringify(fields.timing.window) : null,
+        fields.description,
+        fields.instruction,
+        fields.paused,
+        wake ? stamp(wake.at) : null,
+        wake ? wake.windowFires : null,
+        stamp(now),
+      ],
+    );
+    return firstRow(result);
+  }
+
   async setScheduleNextRun(scheduleId: string, wake: PlannedWake, now: Date): Promise<void> {
     await this.pool.query(
       `UPDATE schedules SET next_run_at = $2, window_fires = $3, updated_at = $4

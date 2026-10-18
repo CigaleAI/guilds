@@ -77,6 +77,10 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
     friendlyToolCall({ function: { name, arguments: args } });
   assert.equal(friendly("note_find", '{"query":"thesis"}'), "Find notes thesis");
   assert.equal(friendly("memory_write", "{}"), "Write memory");
+  assert.equal(friendly("studio_create_routine", '{"agent_id":"scout"}'), "Propose routine for scout");
+  assert.equal(friendly("studio_create_routine", "{}"), "Propose routine");
+  assert.equal(friendly("studio_edit_routine", '{"schedule_id":"sch_1"}'), "Propose routine changes");
+  assert.equal(friendly("studio_delete_routine", '{"schedule_id":"sch_1"}'), "Propose deleting a routine");
   assert.equal(friendly("record_search", '{"query":"acme"}'), "Search records acme");
   assert.equal(
     friendly("record_search", '{"collection":"customers","query":"acme"}'),

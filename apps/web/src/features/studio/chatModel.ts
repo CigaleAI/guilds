@@ -1,8 +1,8 @@
 import type { StudioMessage } from "../../api/types";
 
 /**
- * What a coach edit changes: an agent's memory or access, a note, the guild's descriptions, or a
- * table.
+ * What a coach edit changes: an agent's memory, access, or routine, a note, the guild's
+ * descriptions, or a table.
  */
 export type EditTarget = {
   agent_id?: string;
@@ -15,6 +15,10 @@ export type EditTarget = {
   collection_id?: string | null;
   /** A table's name. */
   name?: string;
+  /** A routine's id, null until the routine a create request names exists. */
+  schedule_id?: string | null;
+  /** A routine's one-line label. */
+  description?: string;
 };
 
 export type EditWidget = {
@@ -22,8 +26,8 @@ export type EditWidget = {
   title?: string;
   reason?: string;
   edit: {
-    kind?: "memory" | "note" | "guild" | "collection" | "access";
-    /** What a table or note edit does to its target; a note edit without one changes its text. */
+    kind?: "memory" | "note" | "guild" | "collection" | "access" | "routine";
+    /** What a table, routine, or note edit does to its target; a note edit without one changes its text. */
     action?: "create" | "edit" | "delete";
     target?: EditTarget;
     base_version?: number;
@@ -46,14 +50,17 @@ export type AccessWidget = {
 };
 
 /**
- * What an edit changes, in words: "wallet · Memory", "wallet · access", a note's title, "degen ·
- * about", "leads · table".
+ * What an edit changes, in words: "wallet · Memory", "wallet · access", "wallet · Daily sweep", a
+ * note's title, "degen · about", "leads · table".
  */
 export function editTargetLabel(edit: EditWidget["edit"]): string {
   const target = edit.target ?? {};
   if (edit.kind === "memory") return `${target.agent_name || target.agent_id || "agent"} · Memory`;
   if (edit.kind === "access") return `${target.agent_name || target.agent_id || "agent"} · access`;
   if (edit.kind === "collection") return `${target.name || "table"} · table`;
+  if (edit.kind === "routine") {
+    return `${target.agent_name || target.agent_id || "agent"} · ${target.description || "routine"}`;
+  }
   if (edit.kind === "note") {
     return target.title || target.display_path?.split("/").pop() || "note";
   }
@@ -69,9 +76,11 @@ export function connectionLabel(connection: AccessWidget["connection"]): string 
 /** The operator's answer to one request, in the words the coach reads. */
 export type RequestDecision = { accepted: boolean; line: string };
 
+const APPLY_NOUNS: Record<string, string> = { note: "note", routine: "routine" };
+
 /** The apply button's words: what applying a create or delete makes, else "Apply edit". */
 export function applyLabel(edit: EditWidget["edit"]): string {
-  const noun = edit.kind === "note" ? "note" : "table";
+  const noun = APPLY_NOUNS[edit.kind ?? ""] ?? "table";
   if (edit.action === "create") return `Create ${noun}`;
   if (edit.action === "delete") return `Delete ${noun}`;
   return "Apply edit";
