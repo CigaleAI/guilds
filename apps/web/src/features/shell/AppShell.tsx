@@ -11,6 +11,7 @@ import { IconButton, BrandMark, dialogScrim } from "@guildsrun/ui";
 import { ModelSetupGate } from "../models/ModelSetupGate";
 import { GuildRail } from "./GuildRail";
 import { GuildSidebar } from "./GuildSidebar";
+import { useNewMessageAlerts } from "./newMessages";
 
 /** Whether the sidebar is folded into the rail. */
 const retractedKey = "guilds-rail-retracted";
@@ -20,10 +21,11 @@ const retractedKey = "guilds-rail-retracted";
  * gate over everything while the organisation has no provider connected. On a phone the
  * navigation opens as a drawer from a top bar and closes once a page is picked. A link followed
  * from a page's content leaves a way back; a guild or agent shows it in its tab row, any other
- * page above itself.
+ * page above itself. A message posted where the operator is not looking rings a chime, and
+ * shows a desktop notification when they turned those on.
  */
 export function AppShell() {
-  useInboxStream();
+  useInboxStream(useNewMessageAlerts());
   useReturnTrail();
   const { shellBanners = [] } = useSlots();
   const [retracted, setRetracted] = useStoredFlag(retractedKey);

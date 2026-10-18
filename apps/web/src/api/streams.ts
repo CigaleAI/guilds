@@ -7,6 +7,7 @@ import type {
   BuilderSession,
   GroupChatState,
   GroupMessage,
+  MessageNotice,
   Run,
   RunMessage,
   StudioMessage,
@@ -142,8 +143,12 @@ export function useGuildStream(guildId: string): void {
   });
 }
 
-/** Keeps the inbox count current; bursts of changes collapse into one refetch. */
-export function useInboxStream(): void {
+/**
+ * Keeps the inbox current: its counts, and the unread count of each guild. Bursts of changes
+ * collapse into one refetch. A message posted in a guild the operator can see also reaches
+ * `onMessage`.
+ */
+export function useInboxStream(onMessage?: (notice: MessageNotice) => void): void {
   const client = useQueryClient();
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(pending.current), []);
@@ -154,9 +159,12 @@ export function useInboxStream(): void {
     }, 150);
   };
   useEventStream("/api/notifications/stream", {
-    events: ["notifications.changed"],
+    events: ["notifications.changed", "notifications.message"],
     onOpen: refetch,
-    onEvent: refetch,
+    onEvent: (name, data) => {
+      refetch();
+      if (name === "notifications.message" && data) onMessage?.(data as MessageNotice);
+    },
     retryMs: 5000,
   });
 }

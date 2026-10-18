@@ -220,6 +220,12 @@ function guildOperatorsColumn(alias: string): string {
    WHERE go.guild_id = p.id) AS ${alias}`;
 }
 
+/** Guilds `p` that the user `userRef` names can see: org-visible ones, and private ones they operate. */
+function guildVisibleTo(userRef: string): string {
+  return `(p.visibility <> 'private'
+           OR EXISTS (SELECT 1 FROM guild_operators go WHERE go.guild_id = p.id AND go.user_id = ${userRef}))`;
+}
+
 const GUILD_COLUMNS = `
   p.id, p.name, p.about, p.description, p.max_agents, p.git_author_email, p.org_id, p.group_agent_message_limit,
   p.visibility, p.routines_enabled, o.slug AS org_slug, p.created_at, p.updated_at, p.archived_at,
@@ -598,12 +604,24 @@ export class Repositories {
       `SELECT ${GUILD_COLUMNS}
        FROM guilds p JOIN orgs o ON o.id = p.org_id
        WHERE p.org_id = $1
-         AND (p.visibility <> 'private'
-              OR EXISTS (SELECT 1 FROM guild_operators go WHERE go.guild_id = p.id AND go.user_id = $2))
+         AND ${guildVisibleTo("$2")}
        ORDER BY p.created_at`,
       [orgId, userId],
     );
     return result.rows as Array<Record<string, unknown>>;
+  }
+
+  // Members of the guild's organisation who can see it: everyone for an
+  // org-visible guild, its operators for a private one.
+  async listGuildViewerIds(guildId: string): Promise<string[]> {
+    const result = await this.pool.query(
+      `SELECT m.user_id
+       FROM guilds p JOIN org_members m ON m.org_id = p.org_id
+       WHERE p.id = $1 AND ${guildVisibleTo("m.user_id")}
+       ORDER BY m.user_id`,
+      [guildId],
+    );
+    return result.rows.map((row) => String(row.user_id));
   }
 
   async insertGuild(
@@ -3309,6 +3327,25 @@ export class Repositories {
       return true;
     });
     return cleared ? this.getGroupChatState(guildId) : null;
+  }
+
+  // How many public messages this user has not read, per guild they can
+  // see and that is not archived. A guild they never opened counts every message.
+  async listUnreadGroupChats(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
+    const result = await this.pool.query(
+      `SELECT m.guild_id, COUNT(*)::int AS count
+       FROM guilds p
+       JOIN group_messages m ON m.guild_id = p.id
+       LEFT JOIN group_chat_reads r ON r.guild_id = p.id AND r.user_id = $2
+       WHERE p.org_id = $1
+         AND p.archived_at IS NULL
+         AND ${guildVisibleTo("$2")}
+         AND m.seq > COALESCE(r.seen_through_seq, 0)
+       GROUP BY m.guild_id
+       ORDER BY m.guild_id`,
+      [orgId, userId],
+    );
+    return result.rows as Array<Record<string, unknown>>;
   }
 
   async getGroupChatSeenThrough(guildId: string, userId: string): Promise<number | null> {

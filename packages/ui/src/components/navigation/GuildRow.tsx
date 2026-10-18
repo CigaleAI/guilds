@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { cn } from "../../cn";
 import { TreeRail } from "../../primitives/Divider";
 import { Icon } from "../../primitives/Icon";
+import { cappedCount, CountBadge } from "../identity/CountBadge";
 
 export type GuildVisibility = "org" | "private";
 
@@ -17,6 +18,8 @@ export type GuildRowProps = {
   visibility?: GuildVisibility;
   /** The guild open in the workspace; the only plum row in the sidebar. */
   selected?: boolean;
+  /** Group chat messages the operator has not read; shown as a count. */
+  unread?: number;
   onSelect?: () => void;
   open?: boolean;
   defaultOpen?: boolean;
@@ -35,6 +38,7 @@ export function GuildRow({
   maxAgents,
   visibility,
   selected,
+  unread,
   onSelect,
   open,
   defaultOpen = true,
@@ -84,6 +88,15 @@ export function GuildRow({
             >
               <Icon icon={Lock} size={14} label="Private to its operators" />
             </span>
+          ) : null}
+          {unread ? (
+            <CountBadge
+              tone={selected ? "on-plum" : "plum"}
+              className="ml-auto"
+              aria-label={`${unread} unread messages`}
+            >
+              {cappedCount(unread)}
+            </CountBadge>
           ) : null}
         </button>
       </div>

@@ -39,6 +39,31 @@ export const Rows: Story = {
   ),
 };
 
+/** Unread group chat messages show as a count at the end of the row, in either state. */
+export const Unread: Story = {
+  render: () => (
+    <>
+      <GuildRow name="X-Replies" agentCount={2} maxAgents={15} defaultOpen={false} unread={3} />
+      <GuildRow
+        name="Degen-capital"
+        agentCount={4}
+        maxAgents={15}
+        selected
+        defaultOpen={false}
+        unread={12}
+      />
+      <GuildRow
+        name="Link-Prospection"
+        agentCount={2}
+        maxAgents={15}
+        defaultOpen={false}
+        visibility="private"
+        unread={140}
+      />
+    </>
+  ),
+};
+
 export const Expanded: Story = {
   render: () => (
     <>

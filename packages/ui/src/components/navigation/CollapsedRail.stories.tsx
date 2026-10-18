@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { BookOpen, Database, Inbox, Settings, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { RingCount, RingDot } from "../../primitives/Dot";
+import { RingCount } from "../../primitives/Dot";
 import { Avatar } from "../identity/Avatar";
+import { cappedCount } from "../identity/CountBadge";
 import { CollapsedRail } from "./CollapsedRail";
 import { RailItem } from "./RailItem";
 
@@ -16,10 +17,10 @@ export default meta;
 type Story = StoryObj<typeof CollapsedRail>;
 
 const guilds = [
-  { name: "X-Replies", initials: "XR", active: true },
-  { name: "Cigale-Replies-Auto", initials: "CR", active: false },
-  { name: "Degen-capital", initials: "DC", active: true },
-  { name: "Link-Prospection", initials: "LP", active: false },
+  { name: "X-Replies", initials: "XR", unread: 0 },
+  { name: "Cigale-Replies-Auto", initials: "CR", unread: 4 },
+  { name: "Degen-capital", initials: "DC", unread: 0 },
+  { name: "Link-Prospection", initials: "LP", unread: 120 },
 ];
 
 function RailDemo() {
@@ -34,7 +35,12 @@ function RailDemo() {
           label={guild.name}
           selected={guild.name === selected}
           onClick={() => setSelected(guild.name)}
-          {...(guild.active ? { badge: <RingDot tone="signal" /> } : {})}
+          {...(guild.unread
+            ? {
+                badge: <RingCount>{cappedCount(guild.unread)}</RingCount>,
+                badgeOffset: "count" as const,
+              }
+            : {})}
         >
           {guild.initials}
         </RailItem>

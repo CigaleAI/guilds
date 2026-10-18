@@ -1261,11 +1261,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/notifications/stream", async (request, reply) => {
     const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
     const userId = String(user.id);
     await pipeSse(
       request,
       reply,
-      () => notifications.subscribe(userId),
+      () => notifications.subscribe(userId, String(org.id)),
       (queue) => notifications.unsubscribe(userId, queue),
     );
   });

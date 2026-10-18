@@ -53,6 +53,7 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
     return response.json() as {
       issues: Array<{ id: string; guild_name: string; summary: string }>;
       mentions: Array<{ seq: number; guild_name: string; author_name: string; content: string }>;
+      unread: Array<{ guild_id: string; count: number }>;
     };
   };
 
@@ -101,8 +102,17 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
         [named.seq, "watch-room", "operator"],
       ],
     );
-    assert.deepEqual((await inbox(OWNER)).mentions, [], "posting reads your own chat");
-    assert.deepEqual((await inbox(BYSTANDER)).mentions, []);
+    assert.deepEqual(teammateInbox.unread, [{ guild_id: guildId, count: 3 }]);
+    const ownerInbox = await inbox(OWNER);
+    assert.deepEqual(ownerInbox.mentions, [], "posting reads your own chat");
+    assert.deepEqual(ownerInbox.unread, [], "and leaves nothing unread");
+    const bystanderInbox = await inbox(BYSTANDER);
+    assert.deepEqual(bystanderInbox.mentions, []);
+    assert.deepEqual(
+      bystanderInbox.unread,
+      [{ guild_id: guildId, count: 3 }],
+      "an org-visible guild counts unread for every member, operator or not",
+    );
 
     const readFirst = await app.inject({
       method: "PUT",
@@ -111,24 +121,30 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
       payload: { seen_through_seq: named.seq },
     });
     assert.equal(readFirst.statusCode, 200);
+    const readOne = await inbox(TEAMMATE);
     assert.deepEqual(
-      (await inbox(TEAMMATE)).mentions.map((row) => row.seq),
+      readOne.mentions.map((row) => row.seq),
       [everyone.seq],
     );
+    assert.deepEqual(readOne.unread, [{ guild_id: guildId, count: 2 }]);
     await app.inject({
       method: "PUT",
       url: `/api/guilds/${guildId}/group-chat/read`,
       headers: { ...TEAMMATE, ...json },
       payload: { seen_through_seq: notAnOperator.seq },
     });
-    assert.deepEqual((await inbox(TEAMMATE)).mentions, []);
+    const readAll = await inbox(TEAMMATE);
+    assert.deepEqual(readAll.mentions, []);
+    assert.deepEqual(readAll.unread, [], "a chat read to its end is not unread");
 
     const taggedAgain = await post("@teammate-inbox ping");
     const followUp = await post("no tag here");
+    const taggedInbox = await inbox(TEAMMATE);
     assert.deepEqual(
-      (await inbox(TEAMMATE)).mentions.map((row) => row.seq),
+      taggedInbox.mentions.map((row) => row.seq),
       [taggedAgain.seq],
     );
+    assert.deepEqual(taggedInbox.unread, [{ guild_id: guildId, count: 2 }], "an untagged message is unread too");
     const marked = await app.inject({
       method: "POST",
       url: "/api/notifications/read",
@@ -136,6 +152,7 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
     });
     assert.equal(marked.statusCode, 200, marked.body);
     assert.deepEqual(marked.json().mentions, []);
+    assert.deepEqual(marked.json().unread, [], "marking tags read reads the whole tagged chat");
     assert.deepEqual((await inbox(TEAMMATE)).mentions, []);
     const chat = await app.inject({
       method: "GET",

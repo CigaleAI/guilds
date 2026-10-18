@@ -5,7 +5,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../../cn";
 import { Icon } from "../../primitives/Icon";
 import { Tile } from "../../primitives/Tile";
-import { CountBadge } from "../identity/CountBadge";
+import { cappedCount, CountBadge } from "../identity/CountBadge";
 
 /** Each workspace tool keeps one tile colour, in the sidebar and on the collapsed rail. */
 export type UtilityTone = "plum" | "signal" | "plum-tint" | "signal-tint" | "tide-tint" | "well";
@@ -83,9 +83,7 @@ export function UtilityLink({
           </span>
         ) : null}
       </span>
-      {count !== undefined && count > 0 ? (
-        <CountBadge>{count > 99 ? "99+" : count}</CountBadge>
-      ) : null}
+      {count !== undefined && count > 0 ? <CountBadge>{cappedCount(count)}</CountBadge> : null}
       <Slot.Slottable>{children}</Slot.Slottable>
     </Comp>
   );

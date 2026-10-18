@@ -97,6 +97,10 @@ and organisation, with initials for an avatar. Its menu:
 - switches organisation when the user has several memberships
   ([Organisations](organisations.md))
 - sets the theme: **Match system**, **Light**, or **Dark**
+- turns **Desktop notifications** on or off for this browser. Turning
+  them on asks the browser's permission; a browser that blocks them
+  says so, and the choice stays off until it allows them
+  ([Group chat](group-chat.md))
 - offers **Settings**, and **Admin** for the instance admin only
 
 An edition that signs people in adds **Sign out** here.

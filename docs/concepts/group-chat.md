@@ -155,8 +155,12 @@ An agent runs one thing at a time, whatever started it.
 ### What the operator has read
 
 Each operator has their own read cursor per guild: the last message
-they have had on screen. It drives the **New** divider and the
-**New messages** button. It never moves backwards.
+they have had on screen. It drives the **New** divider, the
+**New messages** button, and the unread count on the guild in the
+sidebar. It never moves backwards.
+
+A message posted where the operator is not looking rings a short
+chime in the browser.
 
 ### Clearing the chat
 
@@ -199,6 +203,22 @@ The **Group chat** tab is the guild's home, at `/guilds/<id>`.
   messages** when unread ones arrived, otherwise **Jump to latest**.
 - `?seq=<n>` opens the chat at that message, lights it, and marks the
   chat read up to it. The inbox uses this for a tag.
+- The sidebar shows, on each guild, how many of its messages the
+  operator has not read; the retracted rail shows it on the guild's
+  tile. A guild never opened counts every message. The count clears
+  as the chat is read.
+- A short chime rings when an agent or another operator posts in a
+  guild the operator is not watching: its chat is not on screen, the
+  tab is hidden, or the window is not focused. One's own messages
+  never ring, and replies within two seconds of a chime ring once.
+  The browser allows sound only after the operator has clicked or
+  typed in the page once.
+- The same messages show as a desktop notification once the operator
+  turns **Desktop notifications** on in the account menu
+  ([Users](users.md)). It names the author and the guild, shows the
+  agent's mascot and the start of the message, and the newest message
+  of a guild replaces the one before. Opening it brings the window
+  forward and opens the chat at that message.
 - A responding row names each agent in a group run and opens that
   agent. The last row also says how many more agents wait.
 - A message waits in a **Queued** list above the composer when it
@@ -504,6 +524,18 @@ group chat is open, its log is scrolled to the bottom, and the browser
 tab is visible. The value is clamped to the guild's sequence and never
 moves backwards. One's own messages are never new.
 
+The inbox counts the messages past the cursor in each guild the user
+can see, and its stream tells each viewer of every committed message
+([Operators](operators.md#inbox-http)). The app shows the counts in
+the sidebar and announces a message from the stream when someone else
+wrote it and the page does not show that guild's group chat with the
+tab visible and the window focused: it rings the chime, and shows a
+desktop notification when the browser allows them and the operator
+turned them on in this browser. The notification's icon is the
+agent's mascot drawn to a PNG, since browsers do not draw an SVG
+there, and its body is the preview with markdown marks dropped, cut
+to 140 characters.
+
 ### Clear
 
 Clearing runs in one transaction under the guild row lock that posts
@@ -521,8 +553,8 @@ inbox drops the cleared tags because their rows are gone. The
 dispatcher's cached recipient decision for the guild is dropped.
 
 The service then publishes `group.cleared` with the chat state. Open
-chats replace their history with an empty one, and every operator's
-inbox stream is pinged.
+chats replace their history with an empty one, and the inbox stream
+of everyone who can see the guild is pinged.
 
 An agent post checks the source run against the clear inside its
 transaction. A run whose `created_at` is before

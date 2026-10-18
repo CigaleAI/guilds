@@ -114,7 +114,9 @@ secrets granted elsewhere stay. The name can be reused.
 
 The sidebar lists the current organisation's guilds.
 
-- A guild row shows its name, and a lock when private.
+- A guild row shows its name, a lock when private, and a count of
+  the group chat messages the operator has not read
+  ([Group chat](group-chat.md)).
 - It folds open to its agents and an **Add agent** row, disabled once
   the guild is full ([Agents](agents.md)).
 - **+** on the **Guilds** header opens the create-guild dialog.
@@ -129,7 +131,8 @@ The footer holds compact title-only links:
 Then the account button with the user's name and organisation
 ([Users](users.md)).
 
-The sidebar retracts to a rail of guild initials and tool icons.
+The sidebar retracts to a rail of guild initials and tool icons; a
+guild's unread count sits on its tile.
 ⌘B, or Ctrl+B, folds it and opens it again. On a phone it opens as a
 drawer from a top bar. Folded guilds and the retracted state are
 remembered in the browser.

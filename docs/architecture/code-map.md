@@ -120,10 +120,15 @@ orchestrator serves.
 
 `src/features/` pages:
 
-- `shell/` — sidebar with agents flagged for broken Task links,
-  collapsed rail folded with ⌘B / Ctrl+B, account menu. On a phone
-  the sidebar opens as a drawer from a top bar. The model setup gate
-  over every page while no provider is connected.
+- `shell/` — sidebar with each guild's unread message count and
+  agents flagged for broken Task links, collapsed rail folded with ⌘B
+  / Ctrl+B, account menu with the desktop notifications choice, and
+  the alerts for a message posted where the operator is not looking
+  (`newMessages.ts`): the chime (`chime.ts`, two notes made with Web
+  Audio) and the desktop notification with the agent's mascot and a
+  preview (`desktopNotifications.ts`). On a phone the sidebar opens
+  as a drawer from a top bar. The model setup gate over every page
+  while no provider is connected.
 - `guild/` — guild workspace and group chat, opened at a message by
   `?seq=`. The header's member avatars open the inspector. The
   header's message budget. The guild menu's Studio, new agent and
@@ -446,7 +451,7 @@ agent runs. Studio and Builder share `conversation/`.
 | `policy/` | Organisation policy: `OrgPolicy` (an organisation's limits and whether it may work), core's open policy, and the checks core runs against it (agent, browser, coding, guild, machine, and agents-per-machine caps, the monthly Studio and Builder quota) |
 | `avatars/` | [DiceBear](https://www.dicebear.com/) SVG rendering (`clay.ts` body variants; also cutouts and voxel-bot); `looks.ts` assigns a guild family and a unique variant per builder role |
 | `issues/` | Guild-level tooling reports from `report_issue` |
-| `notifications/` | The inbox view (open issues and unread tags per operator) and its per-user change stream |
+| `notifications/` | The inbox view (open issues, unread tags, and unread messages per guild for each operator) and its per-user stream of inbox changes and posted messages |
 | `studio/` | Prompt Studio sessions, tools, drafts, publish, State preview, focus pins (`focus.ts`), edit requests (`edits.ts`) and table requests (`tables.ts`), the guild activity ledger (`activity.ts`), `system.md` |
 | `builder/` | Guild builder sessions, tools, widgets, connected-workspace search, `system.md` |
 | `recipes/` | `guilds.recipe` v2 schema, capture, rewrite, validate, apply (collection plan: create, reuse, or conflict) |
@@ -457,7 +462,7 @@ agent runs. Studio and Builder share `conversation/`.
 | `config/` | Env → `AppConfig`, core's settings; refuses the all-zero master key outside a development stack; `loadToolConfig` for command-line tools, which run in whatever mode the box is in |
 | `instance/` | `integrations.ts`: the registry of instance keys. Each optional integration, its source (`store` or `env`), its fields, what it switches on, and its state (`on`, `off`, `incomplete`); the modules that need a key read it through here, from the process snapshot or the environment. `keys.ts`: the `instance_keys` store, one AES-GCM row per integration under the master key, loaded into the snapshot at boot and after every write. `changes.ts`: what a write does besides: the platform logins synced, and the GitHub logins of a replaced or removed App disconnected. `connectors.ts`: the integrations connectors declare of their own (`connector:<slug>`, a platform key or an OAuth client), derived from the platform connector rows at boot and after a connector changes |
 | `cli/` | `seed:system` / `seed:operator`; `migrate.ts` (`make migrate`: re-stamps the recorded migrations, then applies core's); `connector.ts` (`pnpm connector install`, `update`, `remove`, `list` against the registry) |
-| `observability/` | Structured logs, request ids, client-error intake, Sentry, runtime metrics (`runtime.ts`: event loop delay and stalls, memory, the database pool) |
+| `observability/` | Structured logs, request ids, client-error intake, Sentry, runtime metrics (`runtime.ts`: event loop delay and stalls, process CPU and memory, host load, memory, and disks, the database pool and the server's connections) |
 | `net/` | Outbound HTTP with optional forward proxy; endpoint validation |
 | `lib/` | ids, paths, locks, event queue, clock, JSON, the shared name pattern (`names.ts`), nullable numbers (`numbers.ts`); `agent-file.ts` (an agent's home, `/home/<agent id>`, and reading and writing paths in it without following a link out of it) |
 

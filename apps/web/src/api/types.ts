@@ -367,9 +367,29 @@ export type MentionNotice = {
   agent: AgentBrief | null;
 };
 
+/** Group chat messages past the operator's read cursor in one guild. */
+export type UnreadChat = {
+  guild_id: string;
+  count: number;
+};
+
 export type Notifications = {
   issues: (Issue & { guild_name: string })[];
   mentions: MentionNotice[];
+  /** Every guild the operator can see with messages they have not read. */
+  unread: UnreadChat[];
+};
+
+/** What the inbox stream says of a message posted in a guild the operator can see. */
+export type MessageNotice = {
+  guild_id: string;
+  seq: number;
+  author_type: "user" | "agent";
+  author_name: string;
+  /** The start of the message, up to 300 characters of markdown. */
+  preview: string;
+  /** The agent that wrote it, with its look; null for an operator's message. */
+  agent: AgentBrief | null;
 };
 
 export type RunKind = "direct" | "group" | "schedule";

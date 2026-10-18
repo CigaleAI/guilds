@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Check, LogOut, Monitor, Moon, Settings, Sun, ShieldCheck } from "lucide-react";
+import { Bell, Check, LogOut, Monitor, Moon, Settings, Sun, ShieldCheck } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { switchOrg } from "../../api/identity";
 import { useIdentity } from "../../app/identity";
@@ -16,6 +16,7 @@ import {
   initialsOf,
   personTone,
 } from "@guildsrun/ui";
+import { useDesktopNotificationsChoice } from "./desktopNotifications";
 const themes: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "Match system", icon: Monitor },
   { value: "light", label: "Light", icon: Sun },
@@ -29,13 +30,17 @@ function personInitials(name: string): string {
     : initialsOf(name);
 }
 
-/** The signed-in operator: organisation, theme, settings and sign-out. `compact` shows only the avatar. */
+/**
+ * The signed-in operator: organisation, theme, desktop notifications, settings and sign-out.
+ * `compact` shows only the avatar.
+ */
 export function AccountMenu({ compact = false }: { compact?: boolean }) {
   const { user, org, orgs } = useIdentity();
   const { signOut } = useSlots();
   const navigate = useNavigate();
   const platformAdmin = user.platform_admin;
   const [theme, setTheme] = useThemeChoice();
+  const notifications = useDesktopNotificationsChoice();
   const avatar = (
     <Avatar
       name={user.name}
@@ -93,6 +98,17 @@ export function AccountMenu({ compact = false }: { compact?: boolean }) {
             {choice.label}
           </MenuItem>
         ))}
+        {notifications.supported ? (
+          <>
+            <MenuSeparator />
+            <MenuItem
+              icon={notifications.on ? Check : Bell}
+              onSelect={() => void notifications.toggle()}
+            >
+              Desktop notifications
+            </MenuItem>
+          </>
+        ) : null}
         <MenuSeparator />
         <MenuItem icon={Settings} onSelect={() => void navigate({ to: "/settings" })}>
           Settings

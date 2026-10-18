@@ -1,16 +1,17 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { BookOpen, Database, Inbox, Settings, Sparkles } from "lucide-react";
 import { useGuilds } from "../../api/queries";
-import { RingCount, CollapsedRail, RailItem } from "@guildsrun/ui";
+import { cappedCount, RingCount, CollapsedRail, RailItem } from "@guildsrun/ui";
 import { AccountMenu } from "./AccountMenu";
 import { guildInitials, listedGuilds } from "./guilds";
-import { useInboxCount } from "./inbox";
+import { useInboxCount, useUnreadByGuild } from "./inbox";
 
 /** The retracted sidebar: guild tiles, workspace tools and the account. */
 export function GuildRail({ onExpand }: { onExpand: () => void }) {
   const { guildId } = useParams({ strict: false });
   const guilds = listedGuilds(useGuilds().data);
   const inboxCount = useInboxCount();
+  const unread = useUnreadByGuild();
 
   return (
     <CollapsedRail
@@ -22,6 +23,12 @@ export function GuildRail({ onExpand }: { onExpand: () => void }) {
           tone="guild"
           label={guild.name}
           selected={guild.id === guildId}
+          {...(unread.has(guild.id)
+            ? {
+                badge: <RingCount>{cappedCount(unread.get(guild.id) ?? 0)}</RingCount>,
+                badgeOffset: "count" as const,
+              }
+            : {})}
         >
           <Link to="/guilds/$guildId" params={{ guildId: guild.id }}>
             {guildInitials(guild.name)}
@@ -37,7 +44,7 @@ export function GuildRail({ onExpand }: { onExpand: () => void }) {
             label="Inbox"
             {...(inboxCount
               ? {
-                  badge: <RingCount>{inboxCount > 99 ? "99+" : inboxCount}</RingCount>,
+                  badge: <RingCount>{cappedCount(inboxCount)}</RingCount>,
                   badgeOffset: "count" as const,
                 }
               : {})}

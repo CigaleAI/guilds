@@ -106,7 +106,7 @@ SSE carries transient deltas and newly committed rows
 | Stream | URL | What it keeps current |
 |---|---|---|
 | One per open guild | `/api/guilds/:id/group-chat/stream` | Chat, delivery state, issues, files, routines, and scripts |
-| The inbox | `/api/notifications/stream` | The inbox and its badge |
+| The inbox | `/api/notifications/stream` | The inbox and its badge, each guild's unread count, and the chime for a message posted where the operator is not looking |
 | One per open run | `/api/runs/:id/stream` | The run transcript |
 | One per open Studio session | `/api/studio/sessions/:id/stream` | The coach chat and drafts |
 | One per open Builder session | `/api/builder/sessions/:id/stream` | The coach chat and the recipe draft |
@@ -134,10 +134,12 @@ at 10 a minute.
 ### Browser storage
 
 `localStorage` holds the operator's user and organisation
-(`guilds-user-id`, `guilds-org-id`), the theme (`guilds-theme`), and
-view preferences: folded guilds, the retracted sidebar, the agent
-inspector's size, the Studio and Builder splits, the activity window,
-the last guild visited, and browser logins marked done. Every read and
+(`guilds-user-id`, `guilds-org-id`), the theme (`guilds-theme`),
+whether desktop notifications are wanted
+(`guilds-desktop-notifications`), and view preferences: folded
+guilds, the retracted sidebar, the agent inspector's size, the Studio
+and Builder splits, the activity window, the last guild visited, and
+browser logins marked done. Every read and
 write tolerates storage being unavailable; the cookies still carry the
 user and organisation.
 

@@ -16,7 +16,7 @@ import { CreateAgentDialog } from "../agent/CreateAgentDialog";
 import { CreateGuildDialog } from "../guild/CreateGuildDialog";
 import { AccountMenu } from "./AccountMenu";
 import { listedGuilds } from "./guilds";
-import { useInboxCount } from "./inbox";
+import { useInboxCount, useUnreadByGuild } from "./inbox";
 
 /** Guild ids the operator folded in the sidebar. */
 const collapsedKey = "guilds-guilds-collapsed";
@@ -41,6 +41,7 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
   const [creatingGuild, setCreatingGuild] = useState(false);
   const [addingTo, setAddingTo] = useState<{ id: string; name: string } | null>(null);
   const inboxCount = useInboxCount();
+  const unread = useUnreadByGuild();
   const [collapsed, setCollapsed] = useState(readCollapsed);
 
   const setOpen = (id: string, open: boolean) => {
@@ -108,6 +109,7 @@ export function GuildSidebar({ onRetract }: { onRetract: () => void }) {
                 maxAgents={guild.max_agents}
                 visibility={guild.visibility}
                 selected={guild.id === guildId}
+                unread={unread.get(guild.id) ?? 0}
                 onSelect={() =>
                   void navigate({ to: "/guilds/$guildId", params: { guildId: guild.id } })
                 }

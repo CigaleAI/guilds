@@ -12,11 +12,17 @@ export const countBadge = cva(
         accent: "bg-signal text-on-signal",
         sand: "bg-well text-fg",
         ink: "bg-ink-fill text-on-ink",
+        "on-plum": "bg-on-plum text-plum",
       },
     },
     defaultVariants: { tone: "plum" },
   },
 );
+
+/** A count as a badge shows it: as it is up to 99, then "99+". */
+export function cappedCount(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
 
 export type CountBadgeProps = ComponentProps<"span"> & VariantProps<typeof countBadge>;
 

@@ -73,6 +73,10 @@ guilds they operate:
 - the messages that tag them, by name or `@user`, past their read
   cursor for that guild
 
+It also counts, for every guild the operator can see, the group chat
+messages past their read cursor. The sidebar shows that count on the
+guild ([Group chat](group-chat.md)).
+
 Nothing is stored for the inbox itself. It is a view over issues and
 group-chat messages. Resolving the issue, or reading the chat, clears
 an entry for that reason alone. Issues stay until resolved.
@@ -173,19 +177,29 @@ operator's name is 409.
 
 ### Inbox HTTP
 
-- `GET /api/notifications` returns `{ issues, mentions }` for the
-  current organisation, newest first. A mention carries `id`,
-  `guild_id`, `guild_name`, `seq`, `author_type`, `author_name`,
-  `content`, `created_at`, and `agent` (id, name, avatar) when an
-  agent wrote it.
+- `GET /api/notifications` returns `{ issues, mentions, unread }` for
+  the current organisation, issues and mentions newest first. A
+  mention carries `id`, `guild_id`, `guild_name`, `seq`,
+  `author_type`, `author_name`, `content`, `created_at`, and `agent`
+  (id, name, avatar) when an agent wrote it. `unread` lists
+  `{ guild_id, count }` for every guild the viewer can see that is not
+  archived and has messages past their read cursor; a guild they never
+  opened counts every message.
 - `POST /api/notifications/read` advances the viewer's read cursor
   through every guild that currently has a tag in the inbox, so those
   chats are read. It returns the inbox. Issues stay until resolved.
-- `GET /api/notifications/stream` is a per-user SSE stream. It sends
-  `notifications.changed` when:
+- `GET /api/notifications/stream` is a per-user SSE stream, opened in
+  the current organisation. It sends `notifications.changed` when:
   - an issue in an operated guild changes
-  - a message tags the viewer
+  - the group chat of a guild the viewer can see is cleared
   - the viewer's read cursor moves
+
+  It sends `notifications.message` when a message is posted in a
+  guild the viewer can see, on the streams opened in that guild's
+  organisation, with `guild_id`, `seq`, `author_type`, `author_name`,
+  `preview` (the first 300 characters of the message), and `agent`
+  (id, name, avatar) when an agent wrote it, else `null`. The app
+  re-reads the inbox on either event.
 
 **Open in chat** opens `/guilds/<id>?seq=<n>`.
 

@@ -20,7 +20,13 @@ export default meta;
 type Story = StoryObj<typeof Sidebar>;
 
 type Agent = { name: string; tone: IdentityTone; state: AgentState; browser?: boolean };
-type Guild = { name: string; maxAgents: number; visibility?: GuildVisibility; agents: Agent[] };
+type Guild = {
+  name: string;
+  maxAgents: number;
+  visibility?: GuildVisibility;
+  unread?: number;
+  agents: Agent[];
+};
 
 const guilds: Guild[] = [
   {
@@ -34,6 +40,7 @@ const guilds: Guild[] = [
   {
     name: "Cigale-Replies-Auto",
     maxAgents: 15,
+    unread: 4,
     agents: [
       { name: "cigaler", tone: "dusk", state: "idle" },
       { name: "x-connector", tone: "dusk", state: "idle", browser: true },
@@ -123,6 +130,7 @@ function Workspace() {
           agentCount={g.agents.length}
           maxAgents={g.maxAgents}
           {...(g.visibility ? { visibility: g.visibility } : {})}
+          {...(g.unread ? { unread: g.unread } : {})}
           selected={g.name === guild}
           onSelect={() => setGuild(g.name)}
           onAddAgent={() => {}}
