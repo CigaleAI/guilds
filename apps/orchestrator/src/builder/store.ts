@@ -186,6 +186,26 @@ export class BuilderStore {
     return mapMessage(row);
   }
 
+  /** Replace one stored message in place: the system prompt at seq 0 is refreshed every generation. */
+  async updateMessage(
+    sessionId: string,
+    seq: number,
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+    client?: pg.PoolClient,
+  ): Promise<Record<string, unknown> | null> {
+    const db = client ?? this.pool;
+    const result = await db.query(
+      `UPDATE builder_messages
+          SET payload = $3::jsonb, metadata = $4::jsonb
+        WHERE session_id = $1 AND seq = $2
+        RETURNING *`,
+      [sessionId, seq, JSON.stringify(payload), JSON.stringify(metadata)],
+    );
+    const row = firstRow(result);
+    return row ? mapMessage(row) : null;
+  }
+
   async listMessages(sessionId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
       `SELECT * FROM builder_messages WHERE session_id = $1 ORDER BY seq`,

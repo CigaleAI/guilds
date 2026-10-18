@@ -4,7 +4,14 @@ import path from "node:path";
 import { utcClock } from "../lib/clock.js";
 import { promptHash } from "../prompts/index.js";
 import { hereDir } from "../lib/paths.js";
-import { readSharedPromptPlacement } from "../conversation/templates.js";
+import {
+  readSharedAgentPrompt,
+  readSharedContentTrust,
+  readSharedPromptPlacement,
+  readSharedTaskShape,
+  readSharedWriting,
+  type CoachTemplateOptions,
+} from "../conversation/templates.js";
 import {
   escapeXml,
   excerptBytes,
@@ -23,13 +30,18 @@ export function studioSystemPath(metaUrl = import.meta.url): string {
   return path.join(hereDir(metaUrl), STUDIO_SYSTEM_TEMPLATE);
 }
 
-export function readStudioSystemTemplate(metaUrl = import.meta.url): string {
+export function readStudioSystemTemplate(options: CoachTemplateOptions = {}, metaUrl = import.meta.url): string {
   const filePath = studioSystemPath(metaUrl);
   if (!existsSync(filePath)) {
     throw new StudioUnprocessableError("studio system template not found");
   }
   const raw = readFileSync(filePath, "utf8").replace(/\s+$/, "") + "\n";
-  return raw.replace("{{PROMPT_PLACEMENT}}", readSharedPromptPlacement().replace(/\s+$/, ""));
+  return raw
+    .replace("{{CONTENT_TRUST}}", () => readSharedContentTrust().replace(/\s+$/, ""))
+    .replace("{{PROMPT_PLACEMENT}}", () => readSharedPromptPlacement().replace(/\s+$/, ""))
+    .replace("{{WRITING}}", () => readSharedWriting().replace(/\s+$/, ""))
+    .replace("{{TASK_SHAPE}}", () => readSharedTaskShape().replace(/\s+$/, ""))
+    .replace("{{AGENT_PROMPT}}", () => readSharedAgentPrompt(options).replace(/\s+$/, ""));
 }
 
 export function studioSystemHash(content: string): string {
@@ -120,14 +132,7 @@ export function composeStudioSystemMessage(args: {
 }): { content: string; hash: string } {
   const template = args.template ?? readStudioSystemTemplate();
   const clock = utcClock(args.now);
-  const lines = [
-    template.replace(/\s+$/, ""),
-    "",
-    "## Session",
-    `- mode: ${args.mode}`,
-    `- utc_now: ${clock.utc_now}`,
-    `- utc_date: ${clock.utc_date}`,
-  ];
+  const lines = [template.replace(/\s+$/, ""), "", "## Coach configuration", JSON.stringify(args.config, null, 2)];
   if (args.sourceGuild) {
     lines.push("");
     lines.push("## Source guild");
@@ -137,53 +142,49 @@ export function composeStudioSystemMessage(args: {
         members: args.members ?? [],
       }),
     );
-  } else {
-    lines.push("- source_guild_id: null");
   }
   lines.push("");
-  lines.push("## Coach configuration");
-  lines.push(JSON.stringify(args.config, null, 2));
-  lines.push("");
-  lines.push("## Draft contract reminder");
-  lines.push(
-    "Call studio_create_task_draft with agent_id (id or name of a source-guild member), complete proposed task content, a rationale, and evidence references from committed tool results. Never ask the operator to select a target. Inspector selection is irrelevant. Several drafts may be created in one turn.",
-  );
+  lines.push("## Session");
+  lines.push(`- mode: ${args.mode}`);
+  lines.push(`- utc_now: ${clock.utc_now}`);
+  lines.push(`- utc_date: ${clock.utc_date}`);
+  if (!args.sourceGuild) {
+    lines.push("- source_guild_id: null");
+  }
   const content = `${lines.join("\n")}\n`;
   return { content, hash: createHash("sha256").update(content, "utf8").digest("hex") };
 }
 
+function latestRunKind(agent: Record<string, unknown>): unknown {
+  const run = agent.latest_run;
+  return run && typeof run === "object" ? (run as Record<string, unknown>).kind : agent.latest_run_kind;
+}
+
+function warningsLabel(agent: Record<string, unknown>): string {
+  const warnings = Array.isArray(agent.warnings) ? agent.warnings : [];
+  return warnings.length ? warnings.join(",") : "none";
+}
+
+function rosterHeader(agent: Record<string, unknown>): string {
+  const name = wrapUntrustedText("agent.name", String(agent.name ?? ""));
+  const focus = String(agent.focus ?? "").trim();
+  const focusBlock = focus ? ` focus=${wrapUntrustedText("agent.focus", focus)}` : "";
+  return `- ${agent.id} ${name}${focusBlock} task_version=${agent.task_version ?? "null"} source_hash=${agent.task_hash ?? "null"} has_embeds=${Boolean(agent.has_embeds)} routines=${agent.routine_count ?? 0} latest_run=${latestRunKind(agent) ?? "none"} draft=${agent.draft_id ?? "none"} warnings=${warningsLabel(agent)}`;
+}
+
+/** The per-generation map: roster headers and the open draft. Task excerpts live in the system message only. */
 export function composeGenerationContext(args: {
-  sourceGuild: { id: string; name: string; about?: string; objective?: string };
+  sourceGuild: { id: string };
   roster: Array<Record<string, unknown>>;
-  target: Record<string, unknown> | null;
   draft: Record<string, unknown> | null;
 }): string {
-  const members = args.roster.map((agent) => hydrateStudioMember(agent));
-  const rosterLines = args.roster.map((agent) => {
-    const name = wrapUntrustedText("agent.name", String(agent.name ?? ""));
-    const focus = String(agent.focus ?? "").trim();
-    const focusBlock = focus ? ` focus=${wrapUntrustedText("agent.focus", focus)}` : "";
-    const latestRun = agent.latest_run && typeof agent.latest_run === "object"
-      ? (agent.latest_run as Record<string, unknown>).kind
-      : agent.latest_run_kind;
-    return `- ${agent.id} ${name}${focusBlock} task_version=${agent.task_version ?? "null"} source_hash=${agent.task_hash ?? "null"} has_embeds=${Boolean(agent.has_embeds)} routines=${agent.routine_count ?? 0} latest_run=${latestRun ?? "none"}`;
-  });
   const parts = [
     wrapEvidence({
       source: "studio.generation_map",
       coordinates: { guild_id: args.sourceGuild.id },
-      body: [
-        renderStudioBaseHydration({ sourceGuild: args.sourceGuild, members }),
-        "",
-        "roster_headers:",
-        ...rosterLines,
-      ].join("\n"),
+      body: ["roster_headers:", ...args.roster.map((agent) => rosterHeader(agent))].join("\n"),
     }),
   ];
-  // Inspector selection is UI-only and is not included in the generation map.
-  parts.push(
-    "The operator inspector does not restrict this generation. Work from the hydrated guild. Never ask the operator to select a target. Ignore any earlier Studio message that said drafts need an active target. studio_create_task_draft requires agent_id or name of a source-guild member; several drafts may be created in one turn.",
-  );
   if (args.draft) {
     const rationale = String(args.draft.rationale ?? "");
     parts.push(

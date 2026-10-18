@@ -42,8 +42,7 @@ There are two kinds of agent:
 - **Wake triggers**: an optional text, up to 500 characters, that
   completes "Wake me when…". It describes the untagged group-chat
   messages the agent should answer. The field shows the focus while
-  it is empty. The operator or the Guild builder writes it, and
-  recipes carry it. Nothing reads it at run time: it is not in the
+  it is empty. The operator writes it, and recipes carry it. Nothing reads it at run time: it is not in the
   system prompt, and the group-chat router does not weigh it
   ([Group chat](group-chat.md#who-wakes-up)).
 - **Avatar**: a mascot and an identity colour. They only change how
@@ -391,7 +390,8 @@ at create, and it is part of each option the group-chat router weighs
 ([Group chat](group-chat.md#recipient-routing)).
 
 `wake_triggers` (at most 500 characters) is stored on the agent,
-written by the Guild builder, and carried in recipes. It is not
+written by the operator, and carried in recipes. The Guild builder's
+write schema leaves it out. It is not
 hydrated into the system prompt, and it is not part of the recipient
 Choice.
 

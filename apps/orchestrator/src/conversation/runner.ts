@@ -23,7 +23,7 @@ import { promptHash } from "../prompts/index.js";
 import { ConversationConflictError, ConversationError } from "./errors.js";
 import {
   projectToolResults,
-  STUDIO_TOOL_RESULT_STUB_HINT,
+  TOOL_RESULT_STUB_MIN_BYTES,
   type ProjectionBudget,
 } from "./projection.js";
 import { writeLog } from "../observability/log.js";
@@ -79,6 +79,8 @@ export type ConversationRunnerDeps = {
   credentials?: ModelCredentialsProvider;
   policy?: OrgPolicy;
   admissionKind?: WorkloadKind;
+  /** What a stubbed older tool result tells this coach to do instead. */
+  stubHint: string;
   projectionPolicyVersion?: number;
   minUnstubbedToolResults?: number;
   onToolResult?: (
@@ -143,7 +145,6 @@ export class ConversationRunner {
     maxToolCalls: number;
     maxInput: number;
     minUnstubbed?: number;
-    messageMetadata?: Record<string, unknown>;
   }): void {
     const sessionId = String(args.session.id);
     const task = this.run(args).finally(() => {
@@ -180,7 +181,6 @@ export class ConversationRunner {
     maxToolCalls: number;
     maxInput: number;
     minUnstubbed?: number;
-    messageMetadata?: Record<string, unknown>;
   }): Promise<void> {
     const sessionId = String(args.session.id);
     const orgId = String(args.session.org_id);
@@ -226,6 +226,7 @@ export class ConversationRunner {
           history,
           generationContext: args.generationContext,
           currentGeneration: args.generation,
+          stubHint: this.deps.stubHint,
           stubbed: stubbedThisStep,
           ...(minUnstubbed !== undefined ? { minUnstubbed } : {}),
           budget: {
@@ -292,7 +293,6 @@ export class ConversationRunner {
           projection_policy_version: this.deps.projectionPolicyVersion ?? 2,
           projected_input_hash: promptHash(JSON.stringify(providerMessages)),
           stubbed_message_seqs: stubbed,
-          ...(args.messageMetadata ?? {}),
           ...completion.metadata,
         };
         const row = await this.deps.store.insertMessage(
@@ -369,7 +369,7 @@ export class ConversationRunner {
             upcoming,
             args.generation,
             payload,
-            { generation: args.generation, tool_name: name, ...(args.messageMetadata ?? {}) },
+            { generation: args.generation, tool_name: name },
             new Date(),
           );
           await this.publish(sessionId, "message.committed", { message: committed });
@@ -539,6 +539,7 @@ export function projectConversationHistory(args: {
   history: Array<Record<string, unknown>>;
   generationContext: string;
   currentGeneration: number;
+  stubHint: string;
   stubbed: number[];
   minUnstubbed?: number;
   budget?: ConversationProjectionBudget;
@@ -548,9 +549,9 @@ export function projectConversationHistory(args: {
     history: args.history,
     currentGeneration: args.currentGeneration,
     keepGenerations: 1,
-    hint: STUDIO_TOOL_RESULT_STUB_HINT,
+    hint: args.stubHint,
     stubbed: args.stubbed,
-    minStubBytes: 0,
+    minStubBytes: TOOL_RESULT_STUB_MIN_BYTES,
     includeContentHash: true,
     ...(args.minUnstubbed !== undefined ? { minUnstubbed: args.minUnstubbed } : {}),
     ...(args.budget ? { budget: args.budget } : {}),
@@ -601,7 +602,7 @@ export function parseToolArgs(raw: unknown): Record<string, unknown> {
 
 export function recoverPartialToolArgs(raw: string): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  const handle = raw.match(/"(?:agent_id|target_agent_id|agent_name)"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  const handle = raw.match(/"(?:agent_id|agent_name)"\s*:\s*"((?:\\.|[^"\\])*)"/);
   if (handle?.[1]) {
     try {
       out.agent_id = JSON.parse(`"${handle[1]}"`);

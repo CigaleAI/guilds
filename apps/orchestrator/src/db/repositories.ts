@@ -362,6 +362,43 @@ function mapAgentTask(row: Record<string, unknown>): AgentTaskRow {
 /** What an edition does with a new organisation, inside the transaction that creates it. */
 export type OrgCreatedHook = (client: pg.PoolClient, org: { id: string }, now: Date) => Promise<void>;
 
+/** What a run listing filters on; every field left out matches every run. */
+export type RunHeaderFilter = {
+  kind?: string;
+  status?: string;
+  taskPromptHash?: string;
+  scheduleId?: string;
+  errorOnly?: boolean;
+  limit: number;
+  offset?: number;
+};
+
+// The columns a run header reads: no config snapshot, and only the metadata keys a header shows.
+const RUN_HEADER_COLUMNS = `id, agent_id, kind, status, errors, created_at, updated_at,
+       system_prompt_hash, task_prompt_hash, memory_prompt_hash, group_chat_through_seq, schedule_id,
+       jsonb_build_object('instruction_hash', metadata->'instruction_hash', 'task_source', metadata->'task_source') AS metadata`;
+
+const RUN_HEADER_EQUALS: Array<[keyof RunHeaderFilter, string]> = [
+  ["kind", "kind"],
+  ["status", "status"],
+  ["taskPromptHash", "task_prompt_hash"],
+  ["scheduleId", "schedule_id"],
+];
+
+function runHeaderConditions(filter: RunHeaderFilter, values: unknown[]): string[] {
+  const conditions: string[] = [];
+  for (const [key, column] of RUN_HEADER_EQUALS) {
+    if (filter[key]) {
+      values.push(filter[key]);
+      conditions.push(`${column} = $${values.length}`);
+    }
+  }
+  if (filter.errorOnly) {
+    conditions.push("jsonb_typeof(errors) = 'array' AND jsonb_array_length(errors) > 0");
+  }
+  return conditions;
+}
+
 export class Repositories {
   private orgCreated: OrgCreatedHook | undefined;
 
@@ -2945,6 +2982,43 @@ export class Repositories {
       [agentId],
     );
     return result.rows as Array<Record<string, unknown>>;
+  }
+
+  /** One agent's runs, newest first: header columns only, filtered and paged in SQL. */
+  async listRunHeaders(agentId: string, filter: RunHeaderFilter): Promise<Array<Record<string, unknown>>> {
+    const values: unknown[] = [agentId];
+    const conditions = ["agent_id = $1", ...runHeaderConditions(filter, values)];
+    values.push(filter.limit, filter.offset ?? 0);
+    const result = await this.pool.query(
+      `SELECT ${RUN_HEADER_COLUMNS}
+       FROM runs WHERE ${conditions.join(" AND ")}
+       ORDER BY updated_at DESC
+       LIMIT $${values.length - 1} OFFSET $${values.length}`,
+      values,
+    );
+    return result.rows as Array<Record<string, unknown>>;
+  }
+
+  /** Each routine's run count and latest run header, keyed by schedule id. */
+  async routineRunStats(
+    scheduleIds: string[],
+  ): Promise<Map<string, { count: number; latest: Record<string, unknown> }>> {
+    if (!scheduleIds.length) {
+      return new Map();
+    }
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (schedule_id) ${RUN_HEADER_COLUMNS},
+              COUNT(*) OVER (PARTITION BY schedule_id)::int AS run_count
+       FROM runs WHERE schedule_id = ANY($1::text[])
+       ORDER BY schedule_id, created_at DESC`,
+      [scheduleIds],
+    );
+    return new Map(
+      (result.rows as Array<Record<string, unknown>>).map((row) => [
+        String(row.schedule_id),
+        { count: Number(row.run_count), latest: row },
+      ]),
+    );
   }
 
   async getRun(runId: string): Promise<Record<string, unknown> | null> {

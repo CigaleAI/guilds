@@ -25,7 +25,11 @@ import {
   unreviewedFields,
 } from "../recipes/schema.js";
 import { blockingErrors, validateRecipe } from "../recipes/validate.js";
-import { BUILDER_DEFAULT_TEMPERATURE, BUILDER_MAX_STEPS } from "./constants.js";
+import {
+  BUILDER_DEFAULT_TEMPERATURE,
+  BUILDER_MAX_STEPS,
+  BUILDER_TOOL_RESULT_STUB_HINT,
+} from "./constants.js";
 import { BuilderConflictError, BuilderError } from "./errors.js";
 import { BuilderStore } from "./store.js";
 import { builderConversationTools, builderToolSchemas, type BuilderToolContext } from "./tools.js";
@@ -42,6 +46,8 @@ export type BuilderServiceDeps = {
   /** What the coach's model provider is called with; core's own rows when absent. */
   credentials?: ModelCredentialsProvider;
   mcp?: BuilderMcpClient | null;
+  /** The agent Guidelines template the coach is shown; the repository's own when absent. */
+  guidelinesPath?: string;
 };
 
 export class BuilderService {
@@ -60,6 +66,7 @@ export class BuilderService {
       store: this.store,
       admission: this.admission,
       admissionKind: "builder",
+      stubHint: BUILDER_TOOL_RESULT_STUB_HINT,
       credentials: this.credentials,
       policy: this.policy,
       onToolResult: async (sessionId, name, result, publish) => {
@@ -170,6 +177,7 @@ export class BuilderService {
       config: coachConfig,
       recipe: recipeBody,
       expectedBodyVersion: 1,
+      guidelinesPath: this.deps.guidelinesPath,
       now,
     });
     const session = await this.deps.recipes.withTransaction(async (client) => {
@@ -264,7 +272,19 @@ export class BuilderService {
       const parsed = parseRecipe(recipe?.body);
       const expectedBodyVersion = Number(recipe?.body_version ?? 1);
       const config = (locked.config_snapshot ?? {}) as Record<string, unknown>;
-      const system = composeBuilderSystemMessage({ config, recipe: parsed, expectedBodyVersion });
+      const system = composeBuilderSystemMessage({
+        config,
+        recipe: parsed,
+        expectedBodyVersion,
+        guidelinesPath: this.deps.guidelinesPath,
+      });
+      await this.store.updateMessage(
+        String(locked.id),
+        0,
+        { role: "system", content: system.content },
+        { source: "builder_system", system_prompt_hash: system.hash, refreshed: true },
+        client,
+      );
       const generation = Number(locked.generation_number) + 1;
       const seq = await this.store.nextSeq(String(locked.id), client);
       const userMessage = await this.store.insertMessage(

@@ -26,6 +26,14 @@ name.
 - Files the agent may rewrite (playbooks, watchlists, scoring rules) stay
   notes, or records in a collection the agent can write. The operator
   watches those files evolve. Agents cannot edit Task.
+- A specialist refines itself: it writes Memory and revises its own files,
+  so its next wake is better. A generalist that does everything builds no
+  such depth, and leaves no peer to hand work to.
+- A new file starts with its first working content, the rules, rows, or
+  entries the agent acts on at its first wake, drawn from what the
+  operator said. It is never a line describing what the file will hold.
+  A part still unknown is one line saying what is missing, for the agent
+  or the operator to fill.
 - Prefer a named file the next wake can update over a paragraph locked
   inside Task. Prefer one shared note over copies of the same text, and a
   role's own note over a shared note only some of its readers use.

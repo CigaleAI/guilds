@@ -66,6 +66,24 @@ Outside data is reachable only through a login the operator grants to
 the session. [Evidence sources](#evidence-sources) lists each source
 and what Studio may do with it.
 
+The coach's own system message carries what every agent already
+reads: the four sections of the [system prompt](system-prompt.md),
+with the Guidelines template, the Task and State intros, and the
+Memory rules inlined. It also carries how every document the coach
+writes reads (ELI5, a clear structure, each thing once, as short as it
+can be) and the shape every Task takes: an opening line, then Inputs,
+Work, Outputs, and Files, in headings and bullets, about 300 words. A
+draft repeats nothing the agent already reads.
+
+Each generation composes the system message again and stores it over
+`seq` 0. After the template it holds the coach's settings, then the
+source guild with each agent's Task to its first 500 words, then the
+Session block (mode and UTC clock) last, so the prefix before it stays
+the same between steps. A message sent with each generation holds the
+roster headers (task version and hash, routines, latest run, open
+draft, and warnings) and the open draft's header; it repeats no Task
+text.
+
 The agent's focus stays the short summary the app shows. Publishing a
 Task never overwrites it.
 
@@ -76,8 +94,9 @@ Task never overwrites it.
    routine counts, latest run, and warnings: an empty Task,
    generation errors, or a stale draft.
 3. Selecting an agent opens the inspector on it.
-4. The coach looks at the evidence, then writes a draft: the agent,
-   the complete new Task, why, and the evidence it relied on.
+4. The coach looks at the evidence, then writes a draft in the Task
+   shape: the agent, the complete new Task, why, and the evidence it
+   relied on.
 5. The operator reviews the diff and publishes. Publishing checks the
    embeds, the composed prompt, and its size in input tokens. It
    archives the outgoing Task as a version. If someone changed the
@@ -329,7 +348,6 @@ draft with none has `verified_evidence: false`.
 
 ### Tools
 
-- `studio_list_agents`
 - `studio_get_guidelines`
 - `studio_get_agent_context`
 - `studio_list_routines`
@@ -351,17 +369,14 @@ draft with none has `verified_evidence: false`.
 - `studio_list_collections`
 - `studio_get_collection`
 - `studio_edit_memory`
-- `studio_edit_artifact`
-- `studio_create_note`
-- `studio_delete_note`
+- `studio_edit_note`
 - `studio_edit_guild`
 - `studio_edit_access`
-- `studio_create_collection`
 - `studio_edit_collection`
-- `studio_delete_collection`
-- `studio_create_routine`
 - `studio_edit_routine`
-- `studio_delete_routine`
+
+`studio_edit_note`, `studio_edit_collection`, and `studio_edit_routine`
+each take an `action`: `create`, `edit`, or `delete`.
 
 They do not appear in normal agent Access panes. The proposal tools
 and the connection tools are described in
@@ -418,8 +433,9 @@ orphan drafts (see [HTTP](#http)).
 The coach loop is the shared conversation runner
 (`apps/orchestrator/src/conversation/`):
 
-- token projection with tool-result stubbing (`projection.ts`, keep 1
-  and no size floor)
+- token projection with tool-result stubbing (`projection.ts`, keep 1,
+  results under 2048 bytes never stubbed, and a stub hint each coach
+  passes)
 - cancellation with tool-call repair
 - crash reconcile
 - organisation admission
@@ -523,7 +539,7 @@ app also re-reads the session and its messages every 2.5 s
 | Path | What it holds |
 |---|---|
 | `apps/orchestrator/src/studio/system.md` | The coach's system message template |
-| `apps/orchestrator/src/conversation/` | The shared conversation runner, and the placement and trust blocks shared with the Builder |
+| `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
 | `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |

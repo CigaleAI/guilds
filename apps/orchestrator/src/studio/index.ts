@@ -131,7 +131,7 @@ export class StudioService {
         throw new StudioError(404, "parent studio session not found");
       }
     }
-    const template = readStudioSystemTemplate();
+    const template = readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath });
     const limits = (await this.policy.standing(String(args.org.id))).limits.coach.studio;
     const coachConfig = {
       model,
@@ -469,8 +469,7 @@ export class StudioService {
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
-    const runs = await this.deps.repo.listRuns(agentId);
-    const latestRun = runs[0] ?? null;
+    const latestRun = (await this.deps.repo.listRunHeaders(agentId, { limit: 1 }))[0] ?? null;
     const guidelinesHash = promptHash(standing);
     const memoryPromptHash = promptHash(memoryText);
     return {
@@ -564,20 +563,21 @@ export class StudioService {
     return memoryHistory(this.deps, actor, { id: String(agent.id), name: String(agent.name) });
   }
 
-  async composeLiveSystem(session: Record<string, unknown>): Promise<{ content: string; hash: string }> {
+  /** The system message for this generation, from the roster rows the caller already read. */
+  composeLiveSystem(
+    session: Record<string, unknown>,
+    rows: Array<Record<string, unknown>>,
+  ): { content: string; hash: string } {
     const snapshot = (session.source_guild_snapshot ?? {}) as {
       name?: string;
       about?: string;
       objective?: string;
     };
     const config = (session.config_snapshot ?? {}) as Record<string, unknown>;
-    const members = session.source_guild_id
-      ? (await this.store.inventory(String(session.source_guild_id), String(session.id))).map((row) =>
-          hydrateStudioMember(row),
-        )
-      : [];
+    const members = rows.map((row) => hydrateStudioMember(row));
     return composeStudioSystemMessage({
       mode: String(session.mode ?? "optimize"),
+      template: readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath }),
       sourceGuild: session.source_guild_id
         ? {
             id: String(session.source_guild_id),
@@ -600,9 +600,10 @@ export class StudioService {
 
   async refreshSystemMessage(
     session: Record<string, unknown>,
+    rows: Array<Record<string, unknown>>,
     client?: Parameters<StudioStore["updateMessage"]>[4],
   ): Promise<string> {
-    const system = await this.composeLiveSystem(session);
+    const system = this.composeLiveSystem(session, rows);
     const existing = await this.store.getMessage(String(session.id), 0, client);
     const metadata =
       existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
@@ -654,7 +655,8 @@ export class StudioService {
       }
       const now = new Date();
       await claimCoachRun(this.policy, this.deps.repo, String(locked.org_id), now, client);
-      const systemContent = await this.refreshSystemMessage(locked, client);
+      const rows = await this.store.inventory(String(locked.source_guild_id), String(locked.id));
+      const systemContent = await this.refreshSystemMessage(locked, rows, client);
       const generation = Number(locked.generation_number) + 1;
       let seq = await this.store.nextSeq(String(locked.id), client);
       if (focus) {
@@ -692,24 +694,12 @@ export class StudioService {
         now,
         client,
       );
-      return { session: updated ?? locked, generation, systemContent };
+      return { session: updated ?? locked, generation, systemContent, rows };
     });
-    const inventory = await this.inventory(started.session);
     const drafts = await this.store.listDraftHeads(String(started.session.id));
-    const snapshot = (started.session.source_guild_snapshot ?? {}) as {
-      name?: string;
-      about?: string;
-      objective?: string;
-    };
     const generationContext = composeGenerationContext({
-      sourceGuild: {
-        id: String(started.session.source_guild_id),
-        name: String(snapshot.name ?? ""),
-        ...(snapshot.about ? { about: String(snapshot.about) } : {}),
-        ...(snapshot.objective ? { objective: String(snapshot.objective) } : {}),
-      },
-      roster: inventory,
-      target: null,
+      sourceGuild: { id: String(started.session.source_guild_id) },
+      roster: started.rows.map((row) => this.inventoryItem(row)),
       draft: drafts[0] ?? null,
     });
     const limits = (await this.policy.standing(String(started.session.org_id))).limits.coach.studio;
@@ -720,7 +710,6 @@ export class StudioService {
       },
       user,
       generation: started.generation,
-      targetAgentId: null,
       generationContext,
       systemContent: started.systemContent,
       toolContext: {
@@ -728,7 +717,6 @@ export class StudioService {
         user,
         orgId: String(started.session.org_id),
         sourceGuildId: String(started.session.source_guild_id),
-        targetAgentId: null,
         store: this.store,
         artifacts: this.deps.artifacts,
         repo: this.deps.repo,

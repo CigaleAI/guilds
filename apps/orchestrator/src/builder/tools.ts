@@ -48,8 +48,7 @@ export const builderListCapabilities = {
     [],
   ),
   async handler(ctx: BuilderCapabilityContext) {
-    const result = await ctx.capabilities.listCapabilities({ orgId: ctx.orgId });
-    return { ...result, recipe_write: RECIPE_WRITE_HINT };
+    return ctx.capabilities.listCapabilities({ orgId: ctx.orgId });
   },
 };
 
@@ -120,7 +119,6 @@ const authorProperties = {
 
 const recipeDocumentParameter = {
   type: "object",
-  description: RECIPE_WRITE_HINT,
   properties: {
     format: { type: "string" },
     version: { type: "integer" },
@@ -155,11 +153,6 @@ const recipeDocumentParameter = {
           },
           name_suggestion: { type: "string" },
           focus: { type: "string" },
-          wake_triggers: {
-            type: "string",
-            description:
-              "What untagged group-chat messages this role wakes for. Omit to use focus.",
-          },
           avatar_shape: {
             type: "string",
             description:
@@ -408,12 +401,14 @@ export function builderWriteToolResult(
   };
 }
 
+const BUILDER_WRITE_RECIPE_DESCRIPTION = `Replace the session's draft recipe with the complete document. Pass expected_body_version from the Session block. ${RECIPE_WRITE_HINT}`;
+
 export const builderWriteRecipe = {
   name: "builder_write_recipe",
-  description: `Replace the session's draft recipe. ${RECIPE_WRITE_HINT} Prefer two or more specialized roles with distinct task.body text and a hand-off. Send complete JSON with expected_body_version. Truncated arguments are rejected — shrink prompt prose, not the roster. Do not probe the schema with a one-role empty document.`,
+  description: BUILDER_WRITE_RECIPE_DESCRIPTION,
   schema: functionSchema(
     "builder_write_recipe",
-    `Replace the session's draft recipe. ${RECIPE_WRITE_HINT} Prefer two or more specialized roles with distinct task.body text. Send complete JSON with expected_body_version.`,
+    BUILDER_WRITE_RECIPE_DESCRIPTION,
     {
       expected_body_version: { type: "integer", description: "The body_version last observed." },
       recipe: recipeDocumentParameter,

@@ -16,6 +16,7 @@ import {
 } from "../artifacts/index.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
+import type { EditAction } from "./actions.js";
 import type { EditScope } from "./edits.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
@@ -25,26 +26,15 @@ import { excerptBytes, wrapEvidence } from "./system.js";
 // and only the grants of the source guild and its live members. Like every
 // Studio edit, a proposal writes nothing until the operator applies it.
 
-export const STUDIO_TABLE_TOOLS = [
-  "studio_create_collection",
-  "studio_edit_collection",
-  "studio_delete_collection",
-] as const;
-export type StudioTableTool = (typeof STUDIO_TABLE_TOOLS)[number];
-export type TableAction = "create" | "edit" | "delete";
-
-const ACTIONS: Record<StudioTableTool, TableAction> = {
-  studio_create_collection: "create",
-  studio_edit_collection: "edit",
-  studio_delete_collection: "delete",
-};
+export const STUDIO_TABLE_TOOL = "studio_edit_collection";
+export type TableAction = EditAction;
 
 const RECENT_RECORDS = 5;
 const GUILD_MODES = ["read", "write", "none"] as const;
 const AGENT_MODES = ["read", "write", "none", "inherit"] as const;
 
-export function isTableTool(name: string): name is StudioTableTool {
-  return (STUDIO_TABLE_TOOLS as readonly string[]).includes(name);
+export function isTableTool(name: string): boolean {
+  return name === STUDIO_TABLE_TOOL;
 }
 
 type Member = { id: string; name: string };
@@ -462,12 +452,11 @@ function targetOf(
  */
 export async function reviewTable(
   scope: EditScope,
-  tool: StudioTableTool,
+  action: TableAction,
   args: Record<string, unknown>,
   recorded: Record<string, unknown> | null,
 ): Promise<TableReview> {
   const tc = await tableContext(scope);
-  const action = ACTIONS[tool];
   const requesting = recorded === null;
 
   if (action === "create") {
@@ -481,7 +470,7 @@ export async function reviewTable(
     const guildId = scopeArg === "guild" ? scope.sourceGuildId : null;
     if (await loadTable(tc, { name })) {
       throw new StudioConflictError(
-        `a table named ${name} already exists${requesting ? "; change it with studio_edit_collection" : ""}`,
+        `a table named ${name} already exists${requesting ? "; change it with studio_edit_collection action edit" : ""}`,
       );
     }
     const { access, grants } = parseAccess(

@@ -67,7 +67,10 @@ not an embed either.
 
 Prompt Studio and the [Guild builder](guild-builder.md) put durable
 rules in notes the operator can inspect, and embed them in the Task
-only with `![[display-path]]`.
+only with `![[display-path]]`. Both write a Task to one shape: an
+opening line, then Inputs, Work, Outputs, and Files, in headings and
+bullets, about 300 words, with nothing the agent's Guidelines, State,
+or Memory section already say.
 
 ### A broken embed stops the agent
 

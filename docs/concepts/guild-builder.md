@@ -59,6 +59,18 @@ The coach follows a design method:
 - **Keep each agent narrow.** An agent carries only the Task, notes,
   and tools its own work uses. Agents meet only in the collections and
   tagged messages their Tasks name.
+- **Seed files with working content.** A new note starts with the
+  rules, rows, or entries its agent acts on at its first wake, never a
+  line describing what the file will hold. A part still unknown is one
+  line saying what is missing.
+- **Write for a human reader.** Every Task, note, routine
+  instruction, table purpose, and guild description is ELI5, in a
+  clear structure, each thing said once, and as short as it can be.
+- **Write every Task to one shape.** An opening line, then Inputs,
+  Work, Outputs, and Files, in headings and bullets, about 300 words.
+  The coach's own system message carries what every agent already
+  reads: the [system prompt](system-prompt.md)'s Guidelines, Task and
+  State intros, and Memory rules. A Task repeats none of it.
 - **Hand off through a collection.** Agents pass work through a queue
   [collection](collections.md) by default. Tagged messages in
   [group chat](group-chat.md) are only for small, budgeted batches.
@@ -161,9 +173,16 @@ The coach's spend counts toward the organisation's usage. Settings ›
 ### Design rules
 
 The coach's system message is
-`apps/orchestrator/src/builder/system.md`. Prompt placement is the
-shared block in
-`apps/orchestrator/src/conversation/prompt-placement.md`. The rules
+`apps/orchestrator/src/builder/system.md`. Five blocks in
+`apps/orchestrator/src/conversation/` are shared with Prompt Studio:
+`content-trust.md` (what is authoritative and what is evidence),
+`prompt-placement.md` (the design rules and where each kind of text
+belongs, stated once for both coaches), `writing.md`
+(how every document the coach writes reads: ELI5, structured, each
+thing once, short), `task-shape.md` (the shape every Task takes), and
+`agent-prompt.md`
+(what every agent already reads, with the live Guidelines template,
+the Task and State intros, and the Memory rules inlined). The rules
 below are the ones the [checks](recipe-format.md#findings) enforce or
 the recipe records.
 
@@ -292,6 +311,21 @@ answers, connects, or skips.
 The coach uses the shared conversation runner
 (`apps/orchestrator/src/conversation/`). Studio tools are absent.
 
+Each generation composes the system message again and stores it over
+`seq` 0, so the stored transcript holds what the model saw. After the
+template it holds, in this order: the coach's model, temperature, and
+run limits; the write example
+(`apps/orchestrator/src/builder/write-example.json`) only while the
+recipe has no roles; the current recipe; the operator's access cuts;
+and the Session block (the UTC clock and `expected_body_version`)
+last, so the prefix before it stays the same between steps. The
+field-name hint is stated once, in `builder_write_recipe`'s
+description.
+
+An older tool result at or over 2048 bytes is stubbed in what is sent;
+the stub tells the coach to call the tool again and that the current
+recipe is in the system message.
+
 Catalog copy (`description`, `limitations`, `setup_hint`) comes from
 each connector's manifest, with the instance admin's overrides applied
 (see [The catalog in Admin](../tools-and-connectors/connectors.md#the-catalog-in-admin)). Platform admins
@@ -355,8 +389,10 @@ builder_messages (id, session_id, seq, generation, payload, metadata, cost_usd, 
 One session owns one `recipes` row, with `source_kind=builder` and
 `source_builder_session_id` pointing back at it. The recipe cannot be
 deleted while its session exists. `config_snapshot` holds the coach's
-model, temperature, run limits, system prompt hash, and tool schemas.
-The first message (`seq` 0) is the system prompt.
+model, temperature, run limits, system prompt hash, and tool schemas;
+the system message shows only the model, temperature, and run limits.
+The first message (`seq` 0) is the system prompt, refreshed each
+generation.
 
 The schema allows `status=archived` and `archived_at`. No route sets
 them: a Builder session is `active`, or `blocked` at the input limit.

@@ -164,7 +164,7 @@ test("only changes to tracked state are mutations", () => {
     "note_delete",
     "memory_write",
     "record_add",
-    "studio_delete_collection",
+    "studio_edit_collection",
     "script_create",
     "code_task",
   ];

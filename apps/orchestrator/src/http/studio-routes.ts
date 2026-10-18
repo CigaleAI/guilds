@@ -339,11 +339,13 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       const scheduleId = String(query.schedule_id ?? "");
       const kind = String(query.kind ?? "");
       const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
-      let runs = await repo.listRuns(String(agent.id));
-      if (hash) runs = runs.filter((row) => row.task_prompt_hash === hash);
-      if (scheduleId) runs = runs.filter((row) => String(row.schedule_id ?? "") === scheduleId);
-      if (kind) runs = runs.filter((row) => row.kind === kind);
-      return runs.slice(0, limit).map((row) => studioRunHeader(deps, row));
+      const runs = await repo.listRunHeaders(String(agent.id), {
+        taskPromptHash: hash,
+        scheduleId,
+        kind,
+        limit,
+      });
+      return runs.map((row) => studioRunHeader(deps, row));
     } catch (error) {
       mapStudioError(error);
     }
@@ -406,17 +408,8 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const agent = await studio.requireGuildAgent(session, param(request, "agent_id"));
-      const runs = await repo.listRuns(String(agent.id));
-      const byRoutine = new Map<string, { count: number; latest: Record<string, unknown> | null }>();
-      for (const row of runs) {
-        const scheduleId = String(row.schedule_id ?? "");
-        if (!scheduleId) continue;
-        const entry = byRoutine.get(scheduleId) ?? { count: 0, latest: null };
-        entry.count += 1;
-        if (!entry.latest || String(row.created_at) > String(entry.latest.created_at)) entry.latest = row;
-        byRoutine.set(scheduleId, entry);
-      }
       const rows = await repo.listSchedules(String(agent.id));
+      const byRoutine = await repo.routineRunStats(rows.map((row) => String(row.id)));
       const items = [];
       for (const row of rows) {
         const stats = byRoutine.get(String(row.id));

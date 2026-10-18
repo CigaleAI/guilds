@@ -131,11 +131,33 @@ export function toolResultError(resultMsg: RunMessage | null | undefined): strin
   return null;
 }
 
+type ToolArgs = Record<string, unknown>;
+
+function friendlyNoteChange(args: ToolArgs): string {
+  if (args.action === "create") return args.key ? `Propose note ${args.key}` : "Propose note";
+  if (args.action === "delete") return "Propose deleting a note";
+  return "Propose note edit";
+}
+
+function friendlyTableChange(args: ToolArgs): string {
+  if (args.action === "create") return args.name ? `Propose table ${args.name}` : "Propose table";
+  if (args.action === "delete") {
+    return args.collection ? `Propose deleting ${args.collection}` : "Propose deleting a table";
+  }
+  return args.collection ? `Propose changes to ${args.collection}` : "Propose table changes";
+}
+
+function friendlyRoutineChange(args: ToolArgs): string {
+  const handle = args.agent_id || args.agent_name;
+  if (args.action === "create") return handle ? `Propose routine for ${handle}` : "Propose routine";
+  if (args.action === "delete") return "Propose deleting a routine";
+  return "Propose routine changes";
+}
+
 /** A short human summary of a tool call, such as "Find notes thesis"; empty when nothing useful fits. */
 export function friendlyToolCall(call: ToolCallRequest | null | undefined): string {
   const name = call?.function?.name || "tool";
   const args = parseToolArgs(call?.function?.arguments);
-  if (name === "studio_list_agents") return "List guild agents";
   if (name === "studio_get_agent_context") {
     const handle = args.agent_id || args.target_agent_id || args.agent_name;
     return handle ? `Inspect ${handle}` : "Inspect agent context";
@@ -150,27 +172,14 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
     const handle = args.agent_id || args.agent_name;
     return handle ? `Propose Memory edit for ${handle}` : "Propose Memory edit";
   }
-  if (name === "studio_edit_artifact") return "Propose note edit";
+  if (name === "studio_edit_note") return friendlyNoteChange(args);
   if (name === "studio_edit_guild") return "Propose guild description edit";
   if (name === "studio_list_collections") return "List tables";
   if (name === "studio_get_collection") {
     return args.collection ? `Read table ${args.collection}` : "Read table";
   }
-  if (name === "studio_create_collection") {
-    return args.name ? `Propose table ${args.name}` : "Propose table";
-  }
-  if (name === "studio_edit_collection") {
-    return args.collection ? `Propose changes to ${args.collection}` : "Propose table changes";
-  }
-  if (name === "studio_delete_collection") {
-    return args.collection ? `Propose deleting ${args.collection}` : "Propose deleting a table";
-  }
-  if (name === "studio_create_routine") {
-    const handle = args.agent_id || args.agent_name;
-    return handle ? `Propose routine for ${handle}` : "Propose routine";
-  }
-  if (name === "studio_edit_routine") return "Propose routine changes";
-  if (name === "studio_delete_routine") return "Propose deleting a routine";
+  if (name === "studio_edit_collection") return friendlyTableChange(args);
+  if (name === "studio_edit_routine") return friendlyRoutineChange(args);
   if (name === "studio_inspect_history") return "Inspect run history";
   if (name === "studio_get_script") {
     return args.name ? `Read script ${args.name}` : "Read script";

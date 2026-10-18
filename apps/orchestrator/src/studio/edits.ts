@@ -17,36 +17,26 @@ import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import type { StudioStore } from "./store.js";
-import { STUDIO_TABLE_TOOLS, applyTable, isTableTool, reviewTable, type StudioTableTool } from "./tables.js";
-import {
-  STUDIO_ROUTINE_TOOLS,
-  applyRoutine,
-  isRoutineTool,
-  reviewRoutine,
-  type RoutineChange,
-  type StudioRoutineTool,
-} from "./routines.js";
+import { editActionOf } from "./actions.js";
+import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
+import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
 export const STUDIO_EDIT_WIDGET = "studio_edit_request";
 
-// Notes the coach proposes to create or delete, beside the edits of existing ones.
-export const STUDIO_NOTE_TOOLS = ["studio_create_note", "studio_delete_note"] as const;
-export type StudioNoteTool = (typeof STUDIO_NOTE_TOOLS)[number];
-
-export function isNoteTool(name: string): name is StudioNoteTool {
-  return (STUDIO_NOTE_TOOLS as readonly string[]).includes(name);
-}
+// One tool creates, edits, or deletes a note. An edit replaces an existing
+// note's body like a Memory edit; a create or delete is reviewed as a plan.
+export const STUDIO_NOTE_TOOL = "studio_edit_note";
+type NoteAction = "create" | "delete";
 
 export const STUDIO_EDIT_TOOLS = [
   "studio_edit_memory",
-  "studio_edit_artifact",
+  STUDIO_NOTE_TOOL,
   "studio_edit_guild",
-  ...STUDIO_NOTE_TOOLS,
-  ...STUDIO_TABLE_TOOLS,
+  STUDIO_TABLE_TOOL,
   ...STUDIO_ACCESS_TOOLS,
-  ...STUDIO_ROUTINE_TOOLS,
+  STUDIO_ROUTINE_TOOL,
 ] as const;
 export type StudioEditTool = (typeof STUDIO_EDIT_TOOLS)[number];
 
@@ -308,11 +298,10 @@ export function editRequest(
 // applying does to its records and readers.
 export async function tableEditRequest(
   scope: EditScope,
-  tool: StudioTableTool,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(args);
-  const review = await reviewTable(scope, tool, args, null);
+  const review = await reviewTable(scope, editActionOf(args), args, null);
   return awaitOperator(review.title, reason, {
     kind: "collection",
     action: review.action,
@@ -328,11 +317,10 @@ export async function tableEditRequest(
 // when the agent wakes after applying.
 export async function routineEditRequest(
   scope: EditScope,
-  tool: StudioRoutineTool,
   call: { args: Record<string, unknown>; agentId: string | null },
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(call.args);
-  const review = await reviewRoutine(scope, tool, call);
+  const review = await reviewRoutine(scope, editActionOf(call.args), call);
   return awaitOperator(review.title, reason, {
     kind: "routine",
     action: review.action,
@@ -430,7 +418,7 @@ async function reviewNoteCreate(
   const displayPath = `${ownerPrefix(scope.orgId, level, ownerId)}${key}`;
   const live = await liveNoteAt(scope, displayPath);
   if (live) {
-    throw new StudioConflictError(`a note already exists at ${displayPath}; change it with studio_edit_artifact`);
+    throw new StudioConflictError(`a note already exists at ${displayPath}; change it with studio_edit_note action edit`);
   }
   return {
     action: "create",
@@ -492,12 +480,12 @@ async function reviewNoteDelete(scope: EditScope, displayPath: string): Promise<
  */
 async function reviewNote(
   scope: EditScope,
-  tool: StudioNoteTool,
+  action: NoteAction,
   args: Record<string, unknown>,
   recorded: Record<string, unknown> | null,
   agentId: string | null = null,
 ): Promise<NoteReview> {
-  if (tool === "studio_create_note") {
+  if (action === "create") {
     return reviewNoteCreate(scope, args, recorded ? String(recorded.agent_id ?? "") || null : agentId);
   }
   return reviewNoteDelete(scope, recorded ? String(recorded.display_path ?? "") : argString(args, "display_path"));
@@ -527,15 +515,15 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
   }
 }
 
-// A note tool's widget: the note it creates or deletes, and what applying does.
+// A note create or delete widget: the note it creates or deletes, and what applying does.
 export async function noteEditRequest(
   scope: EditScope,
-  tool: StudioNoteTool,
+  action: NoteAction,
   args: Record<string, unknown>,
   agentId: string | null,
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(args);
-  const review = await reviewNote(scope, tool, args, null, agentId);
+  const review = await reviewNote(scope, action, args, null, agentId);
   const expected = typeof args.base_version === "number" ? args.base_version : null;
   if (review.action === "delete") {
     if (expected === null) {
@@ -644,13 +632,22 @@ async function loadBaseFor(scope: EditScope, record: EditRecord): Promise<EditBa
     }
     return loadMemoryBase(scope, agent);
   }
-  if (record.toolName === "studio_edit_artifact") {
+  if (record.toolName === STUDIO_NOTE_TOOL) {
     return loadNoteBase(scope, String(target.display_path ?? ""));
   }
   if (record.toolName === "studio_edit_guild") {
     return loadGuildBase(scope);
   }
   throw new StudioError(404, "edit request not found");
+}
+
+/** A note create or delete; null for a note edit and for every other tool. */
+function noteActionOf(record: EditRecord): NoteAction | null {
+  if (record.toolName !== STUDIO_NOTE_TOOL) {
+    return null;
+  }
+  const action = editActionOf(record.args);
+  return action === "edit" ? null : action;
 }
 
 function liveContent(base: EditBase): string | GuildText {
@@ -663,21 +660,19 @@ export async function viewEdit(scope: EditScope, record: EditRecord): Promise<Re
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   const status = editStatus(record);
   if (isTableTool(record.toolName)) {
-    const tool = record.toolName;
     return viewReviewedEdit(record, edit, status, () =>
-      reviewTable(scope, tool, record.args, (edit.target ?? {}) as Record<string, unknown>),
+      reviewTable(scope, editActionOf(record.args), record.args, (edit.target ?? {}) as Record<string, unknown>),
     );
   }
-  if (isNoteTool(record.toolName)) {
-    const tool = record.toolName;
+  const noteAction = noteActionOf(record);
+  if (noteAction) {
     return viewReviewedEdit(record, edit, status, () =>
-      reviewNote(scope, tool, record.args, (edit.target ?? {}) as Record<string, unknown>),
+      reviewNote(scope, noteAction, record.args, (edit.target ?? {}) as Record<string, unknown>),
     );
   }
   if (isRoutineTool(record.toolName)) {
-    const tool = record.toolName;
     return viewReviewedEdit(record, edit, status, () =>
-      reviewRoutine(scope, tool, { args: record.args, agentId: recordedAgentId(edit) }),
+      reviewRoutine(scope, editActionOf(record.args), { args: record.args, agentId: recordedAgentId(edit) }),
     );
   }
   if (isAccessTool(record.toolName)) {
@@ -770,18 +765,20 @@ export async function applyEdit(
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   if (isRoutineTool(record.toolName)) {
     const call = { args: record.args, agentId: recordedAgentId(edit) };
-    const review = await reviewRoutine(scope, record.toolName, call);
+    const review = await reviewRoutine(scope, editActionOf(record.args), call);
     assertBound(review, edit, "routine");
     return { version: null, routine: await applyRoutine(scope, review.plan) };
   }
   if (isTableTool(record.toolName)) {
-    const review = await reviewTable(scope, record.toolName, record.args, (edit.target ?? {}) as Record<string, unknown>);
+    const action = editActionOf(record.args);
+    const review = await reviewTable(scope, action, record.args, (edit.target ?? {}) as Record<string, unknown>);
     assertBound(review, edit, "table");
     await applyTable(scope, review.plan);
     return { version: null };
   }
-  if (isNoteTool(record.toolName)) {
-    const review = await reviewNote(scope, record.toolName, record.args, (edit.target ?? {}) as Record<string, unknown>);
+  const noteAction = noteActionOf(record);
+  if (noteAction) {
+    const review = await reviewNote(scope, noteAction, record.args, (edit.target ?? {}) as Record<string, unknown>);
     assertBound(review, edit, "note");
     return { version: await applyNote(scope, review.plan) };
   }

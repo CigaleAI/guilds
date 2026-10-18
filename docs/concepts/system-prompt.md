@@ -125,6 +125,11 @@ The Guidelines teach a few habits every agent shares:
   preview calls no connector: each connector's State key reads
   `{ unavailable: "fetched live at run start" }`
   ([Prompt Studio](prompt-studio.md)).
+- Prompt Studio and the Guild builder read this message's shape in
+  their own system messages, with the Guidelines template, the Task
+  and State intros, and the Memory rules inlined, so the Tasks they
+  write repeat none of it ([Prompt Studio](prompt-studio.md),
+  [Guild builder](guild-builder.md)).
 
 ## Rules and limits
 

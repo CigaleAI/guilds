@@ -19,3 +19,5 @@ export const STUDIO_EVIDENCE_EXCERPT_BYTES = 480;
 export const STUDIO_OBJECTIVE_EXCERPT_BYTES = 2 * 1024;
 export const STUDIO_TASK_EXCERPT_WORDS = 500;
 export const STUDIO_FOCUS_EXCERPT_BYTES = 4 * 1024;
+export const STUDIO_TOOL_RESULT_STUB_HINT =
+  "Older tool result stubbed to save context. Call the same tool again. For standing tasks use studio_get_agent_context with sections=['task'] and the agent_id. If the previous result had next_cursor, continue from that cursor.";

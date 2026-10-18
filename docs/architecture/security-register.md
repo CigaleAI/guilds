@@ -223,7 +223,7 @@ for one guild its caller can see.
 
 **Found:** 2026-10-18, adding routine requests to Prompt Studio.
 
-**Where:** `studio_create_routine` and `studio_edit_routine` in
+**Where:** `studio_edit_routine` (actions `create` and `edit`) in
 `apps/orchestrator/src/studio/tools.ts` and
 `apps/orchestrator/src/studio/routines.ts`.
 

@@ -115,9 +115,9 @@ or revokes each one for the session.
 ### Edit requests
 
 `studio_edit_memory(agent_id, content, base_version, reason)`,
-`studio_edit_artifact(display_path, content, base_version, reason)`,
-and `studio_edit_guild(about?, description?, reason)` each take the
-complete replacement text.
+`studio_edit_note(action: "edit", display_path, content, base_version,
+reason)`, and `studio_edit_guild(about?, description?, reason)` each
+take the complete replacement text.
 
 The handler checks reach, the byte cap (and the guild field length
 limits), and that `base_version` matches the live version. It writes
@@ -126,7 +126,7 @@ nothing. Its result is a `studio_edit_request` widget with
 counts. The proposed text stays in the tool call arguments. The card
 reads the live text and the proposal through `GET …/edits/:seq`.
 
-`studio_edit_artifact` takes notes only. Memory has its own tool.
+`studio_edit_note` takes notes only. Memory has its own tool.
 Tasks, scripts, objects, and records are refused.
 
 Apply re-reads the live content and refuses with 409 when its hash no
@@ -146,16 +146,17 @@ request resolves only once.
 
 ### Note requests
 
-`studio_create_note(level, agent_id?, key, title?, content, reason)`
-and `studio_delete_note(display_path, base_version, reason)` return the
-same widget with `kind: "note"` and `action` (`create` or `delete`).
+`studio_edit_note(action: "create", level, agent_id?, key, title?,
+content, reason)` and `studio_edit_note(action: "delete", display_path,
+base_version, reason)` return the same widget with `kind: "note"` and
+`action` (`create` or `delete`).
 
 - `level` is `agent` (with `agent_id`, a live member), `guild` (the
   source guild), or `org`. `key` is a `.md` file name with no folders;
   an agent note cannot take `task.md` or `memory.md`.
 - A create targets the display path the note will have and binds the
   fact that no note is live there. A note already there is refused with
-  a pointer to `studio_edit_artifact`. Apply writes it as the operator
+  a pointer to the `edit` action. Apply writes it as the operator
   through `writeNote`, with an expected version no live note has, so a
   note written meanwhile is a 409 rather than overwritten.
 - A delete takes notes of the source guild, its live members, and the
@@ -191,12 +192,14 @@ configuration, outside these requests.
 
 ### Collection requests
 
-`studio_create_collection(name, purpose, columns, scope?, access?,
-reason)`, `studio_edit_collection(collection, base_updated_at, name?,
-purpose?, columns?, access?, reason)`, and
-`studio_delete_collection(collection, reason)` return the same widget
-with `kind: "collection"` and `action` (`create`, `edit`, or
-`delete`).
+`studio_edit_collection` takes an `action` and returns the same widget
+with `kind: "collection"` and that `action`:
+
+- `create(name, purpose, columns, scope?, access?, reason)`
+- `edit(collection, base_updated_at, name?, purpose?, columns?,
+  access?, reason)`
+- `delete(collection, reason)`
+
 
 - `scope` is `guild` (the default: the source guild owns the
   collection) or `org`.
@@ -222,11 +225,15 @@ collection, then each grant it changes.
 
 ### Routine requests
 
-`studio_create_routine(agent_id, cron? | window?, description,
-instruction, paused?, reason)`, `studio_edit_routine(schedule_id,
-cron? | window?, description?, instruction?, paused?, reason)`, and
-`studio_delete_routine(schedule_id, reason)` return the same widget
-with `kind: "routine"` and `action` (`create`, `edit`, or `delete`).
+`studio_edit_routine` takes an `action` and returns the same widget
+with `kind: "routine"` and that `action`:
+
+- `create(agent_id, cron? | window?, description, instruction,
+  paused?, reason)`
+- `edit(schedule_id, cron? | window?, description?, instruction?,
+  paused?, reason)`
+- `delete(schedule_id, reason)`
+
 
 - `agent_id` names a live member of the source guild. `schedule_id`
   names a routine of one, from `studio_list_routines`.

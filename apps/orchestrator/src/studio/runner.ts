@@ -14,6 +14,7 @@ import {
   STUDIO_MAX_TOOL_CALLS,
   STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
   STUDIO_PROJECTION_POLICY_VERSION,
+  STUDIO_TOOL_RESULT_STUB_HINT,
 } from "./constants.js";
 import type { ModelCredentialsProvider } from "../llm/credentials.js";
 import type { StudioStore } from "./store.js";
@@ -60,6 +61,7 @@ export class StudioRunner {
       store: studioConversationStore(deps.store),
       admission: deps.admission,
       admissionKind: "studio",
+      stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
       projectionPolicyVersion: STUDIO_PROJECTION_POLICY_VERSION,
       minUnstubbedToolResults: STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
       ...(deps.credentials ? { credentials: deps.credentials } : {}),
@@ -95,9 +97,8 @@ export class StudioRunner {
   start(args: {
     session: Record<string, unknown>;
     user: Record<string, unknown>;
-    toolContext: Omit<StudioToolContext, "generation" | "targetAgentId"> & { targetAgentId: string | null };
+    toolContext: Omit<StudioToolContext, "generation">;
     generation: number;
-    targetAgentId: string | null;
     generationContext: string;
     systemContent?: string;
   }): void {
@@ -114,7 +115,6 @@ export class StudioRunner {
         ({
           ...args.toolContext,
           generation: args.generation,
-          targetAgentId: args.targetAgentId,
           nextMessageSeq: upcoming,
         }) as StudioToolContext,
       maxTokens: Number(config.max_tokens ?? STUDIO_MAX_TOKENS),
@@ -122,7 +122,6 @@ export class StudioRunner {
       maxToolCalls: Number(config.max_tool_calls ?? STUDIO_MAX_TOOL_CALLS),
       maxInput: Number(config.max_input_tokens ?? STUDIO_MAX_INPUT_TOKENS),
       minUnstubbed: STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
-      messageMetadata: { target_agent_id: args.targetAgentId },
     });
   }
 

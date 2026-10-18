@@ -55,6 +55,7 @@ import {
   tableEditRequest,
   type EditScope,
 } from "./edits.js";
+import { editActionOf } from "./actions.js";
 import { listTables, readTable } from "./tables.js";
 
 export type StudioToolContext = {
@@ -62,7 +63,6 @@ export type StudioToolContext = {
   user: Record<string, unknown>;
   orgId: string;
   sourceGuildId: string;
-  targetAgentId: string | null;
   generation: number;
   nextMessageSeq?: number;
   store: StudioStore;
@@ -95,15 +95,15 @@ function cursorOffset(cursor: unknown): number {
 }
 
 async function resolveHandle(ctx: StudioToolContext, handle: string | undefined): Promise<Record<string, unknown>> {
-  const agent = await resolveSourceGuildAgent(ctx, handle || ctx.targetAgentId);
+  const agent = await resolveSourceGuildAgent(ctx, handle);
   if (!agent) {
-    throw new StudioUnprocessableError(handle || ctx.targetAgentId ? "agent is not in the source guild" : "agent handle required");
+    throw new StudioUnprocessableError(handle ? "agent is not in the source guild" : "agent handle required");
   }
   return agent;
 }
 
 export function studioAgentHandleFromArgs(args: Record<string, unknown>): string {
-  for (const key of ["agent_id", "target_agent_id", "agent", "agent_name"]) {
+  for (const key of ["agent_id", "agent", "agent_name"]) {
     const value = args[key];
     if (typeof value === "string" && value.trim()) {
       return value.trim();
@@ -194,44 +194,6 @@ export function sliceStudioBytes(
   };
 }
 
-const STUDIO_AGENT_WARNING_CODES = new Set([
-  "empty_task",
-  "generation_errors",
-  "stale_draft",
-]);
-
-const VACUOUS_LIST_FILTERS = new Set([
-  "*",
-  "all",
-  "any",
-  "active",
-  "agents",
-  "agent",
-  "roster",
-  "guild",
-  "members",
-  "member",
-  "none",
-  "null",
-  "undefined",
-]);
-
-export function normalizeStudioListFilter(raw: unknown): string {
-  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  if (!value || VACUOUS_LIST_FILTERS.has(value)) {
-    return "";
-  }
-  return value;
-}
-
-export function normalizeStudioListWarning(raw: unknown): string {
-  const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value || !STUDIO_AGENT_WARNING_CODES.has(value)) {
-    return "";
-  }
-  return value;
-}
-
 function fitStudioPayload(payload: Record<string, unknown>): Record<string, unknown> {
   if (Buffer.from(JSON.stringify(payload), "utf8").length <= STUDIO_TOTAL_RETURNED_BYTES) {
     return payload;
@@ -252,98 +214,6 @@ function fitStudioPayload(payload: Record<string, unknown>): Record<string, unkn
   }
   return truncatePayload(next);
 }
-
-export const studioListAgents: StudioTool = {
-  name: "studio_list_agents",
-  schema: functionSchema(
-    "studio_list_agents",
-    "Return every agent in the source guild with task hashes, routines, latest run headers, and draft status. Omit filter and warning unless you need a substring match on name/focus or one of empty_task, generation_errors, stale_draft. The hydrated system roster is authoritative if this list looks empty.",
-    {
-      filter: {
-        type: "string",
-        description: "Optional substring of agent name or focus. Omit this field to list every source-guild agent.",
-      },
-      warning: {
-        type: "string",
-        description: "Optional warning code: empty_task, generation_errors, or stale_draft. Omit this field to list every source-guild agent.",
-      },
-    },
-    [],
-  ),
-  async handler(ctx, args) {
-    const requestedFilter = argString(args, "filter").trim();
-    const requestedWarning = argString(args, "warning").trim();
-    const filter = normalizeStudioListFilter(requestedFilter);
-    const warning = normalizeStudioListWarning(requestedWarning);
-    const rows = await ctx.store.inventory(ctx.sourceGuildId, String(ctx.session.id));
-    const mapped = [];
-    for (const row of rows) {
-      const name = String(row.name ?? "");
-      const focus = String(row.focus ?? "");
-      const content = String(row.task_content ?? "");
-      const warnings: string[] = [];
-      if (!content.trim()) warnings.push("empty_task");
-      const errors = jsonObj(row.latest_run_errors);
-      if (Array.isArray(errors) && errors.length) warnings.push("generation_errors");
-      if (row.draft_id && Number(row.draft_base_version) !== Number(row.task_version)) {
-        warnings.push("stale_draft");
-      }
-      mapped.push({
-        id: row.id,
-        name,
-        focus,
-        avatar_shape: row.avatar_shape,
-        avatar_color: row.avatar_color,
-        task_version: row.task_version,
-        task_hash: row.task_hash,
-        has_embeds: collectTaskEmbeds(content).length > 0,
-        task_updated_at: row.task_updated_at,
-        routine_count: row.routine_count,
-        paused_count: row.paused_count,
-        latest_run: row.latest_run_id
-          ? {
-              id: row.latest_run_id,
-              kind: row.latest_run_kind,
-              status: row.latest_run_status,
-              at: row.latest_run_at,
-            }
-          : null,
-        draft_id: row.draft_id ?? null,
-        warnings,
-      });
-    }
-    let agents = mapped;
-    if (filter) {
-      agents = agents.filter(
-        (agent) =>
-          String(agent.name).toLowerCase().includes(filter) || String(agent.focus).toLowerCase().includes(filter),
-      );
-    }
-    if (warning) {
-      agents = agents.filter((agent) => (agent.warnings as string[]).includes(warning));
-    }
-    const ignored: string[] = [];
-    if (requestedFilter && !filter) ignored.push("filter");
-    if (requestedWarning && !warning) ignored.push("warning");
-    const filterMiss = Boolean((filter || warning) && agents.length === 0 && mapped.length > 0);
-    if (filterMiss) {
-      agents = mapped;
-    }
-    return {
-      agents,
-      count: agents.length,
-      ...(ignored.length ? { ignored_arguments: ignored } : {}),
-      ...(filterMiss
-        ? {
-            filter_miss: true,
-            requested_filter: requestedFilter || null,
-            requested_warning: requestedWarning || null,
-            hint: "Requested filter matched no agents. Returned the full source-guild roster. The hydrated system map is the active roster.",
-          }
-        : {}),
-    };
-  },
-};
 
 export const studioGetGuidelines: StudioTool = {
   name: "studio_get_guidelines",
@@ -368,7 +238,7 @@ export const studioGetAgentContext: StudioTool = {
   name: "studio_get_agent_context",
   schema: functionSchema(
     "studio_get_agent_context",
-    "Inspect current prompt sources for one source-guild agent. The first 500 words of each standing task are already in the Studio system prompt. Use this tool for the remainder of a truncated task, the full task, memory, state, config, or effective_prompt (the exact opening system message the next run would receive, with task embeds inlined). Pass agent_id or name. The operator inspector does not choose the agent.",
+    "Inspect current prompt sources for one source-guild agent. The first 500 words of each standing task are already in the Studio system prompt. Use this tool for the remainder of a truncated task, the full task, memory, state, config, or effective_prompt (the exact opening system message the next run would receive, with task embeds inlined). Pass agent_id or name.",
     {
       agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
       sections: {
@@ -393,6 +263,9 @@ export const studioGetAgentContext: StudioTool = {
     });
     const task = await ctx.repo.getAgentTask(ctx.orgId, String(agent.id));
     const memory = await ctx.artifacts.getMemoryRow(actor, String(agent.id));
+    // state and effective_prompt read the same projection; take it once.
+    let statePreview: ReturnType<typeof previewCurrentState> | null = null;
+    const currentState = () => (statePreview ??= previewCurrentState(ctx.preview, agent));
     const result: Record<string, unknown> = {
       agent_id: agent.id,
       name: agent.name,
@@ -432,7 +305,7 @@ export const studioGetAgentContext: StudioTool = {
       };
     }
     if (want.has("state")) {
-      const preview = await previewCurrentState(ctx.preview, agent);
+      const preview = await currentState();
       const sliced = sliceStudioBytes(JSON.stringify(preview.state, null, 2), want.has("task") || want.has("memory") ? 0 : cursor);
       result.state = {
         ownership: "derived",
@@ -459,7 +332,7 @@ export const studioGetAgentContext: StudioTool = {
       } catch (error) {
         embedWarning = error instanceof Error ? error.message : "embed preflight failed";
       }
-      const preview = await previewCurrentState(ctx.preview, agent);
+      const preview = await currentState();
       const tools = await projectOfferedToolSchemas(ctx.preview, agent);
       const memoryText = await ctx.artifacts.readMemory(actor, String(agent.id));
       const memoryEnabled = memoryOf(jsonObj(agent.config));
@@ -525,17 +398,14 @@ export const studioListRoutines: StudioTool = {
       return Boolean(row.paused) === Boolean(args.paused);
     });
     const slice = filtered.slice(offset, offset + limit);
-    const runsByAgent = new Map<string, Array<Record<string, unknown>>>();
+    const stats = await ctx.repo.routineRunStats(slice.map((row) => String(row.id)));
     const routines = [];
     for (const row of slice) {
-      const agentId = String(row.agent_id);
-      if (!runsByAgent.has(agentId)) runsByAgent.set(agentId, await ctx.repo.listRuns(agentId));
-      const mine = (runsByAgent.get(agentId) ?? []).filter((run) => String(run.schedule_id ?? "") === String(row.id));
-      const latest = mine[0] ?? null;
+      const mine = stats.get(String(row.id));
       routines.push({
         ...scheduleItem(row),
-        run_count: mine.length,
-        latest_run: latest ? runHeader(latest) : null,
+        run_count: mine?.count ?? 0,
+        latest_run: mine ? runHeader(mine.latest) : null,
         instruction: wrapEvidence({
           source: "routine",
           coordinates: { schedule_id: String(row.id) },
@@ -571,26 +441,24 @@ export const studioListRuns: StudioTool = {
     const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    let runs = await ctx.repo.listRuns(String(agent.id));
-    if (argString(args, "kind")) runs = runs.filter((row) => row.kind === args.kind);
-    if (argString(args, "status")) runs = runs.filter((row) => row.status === args.status);
-    if (argString(args, "task_prompt_hash")) {
-      runs = runs.filter((row) => row.task_prompt_hash === args.task_prompt_hash);
-    }
-    if (argString(args, "schedule_id")) {
-      runs = runs.filter((row) => String(row.schedule_id ?? "") === argString(args, "schedule_id"));
-    }
-    if (args.error_only) {
-      runs = runs.filter((row) => Array.isArray(jsonObj(row.errors)) && (jsonObj(row.errors) as unknown[]).length > 0);
-    }
-    const slice = runs.slice(offset, offset + limit);
+    // One row past the page says whether another page follows.
+    const rows = await ctx.repo.listRunHeaders(String(agent.id), {
+      kind: argString(args, "kind"),
+      status: argString(args, "status"),
+      taskPromptHash: argString(args, "task_prompt_hash"),
+      scheduleId: argString(args, "schedule_id"),
+      errorOnly: args.error_only === true,
+      limit: limit + 1,
+      offset,
+    });
+    const slice = rows.slice(0, limit);
     return {
       runs: slice.map((row) => ({
         ...runHeader(row),
         errors: jsonObj(row.errors) ?? [],
         task_source: (jsonObj(row.metadata) as Record<string, unknown> | null)?.task_source ?? null,
       })),
-      next_cursor: offset + slice.length < runs.length ? String(offset + slice.length) : null,
+      next_cursor: rows.length > limit ? String(offset + limit) : null,
     };
   },
 };
@@ -1246,13 +1114,13 @@ export const studioCreateTaskDraft: StudioTool = {
   name: "studio_create_task_draft",
   schema: functionSchema(
     "studio_create_task_draft",
-    "Create or replace a standing task draft for a source-guild agent. Always pass agent_id (the agent id or name from the hydrated roster). Do not ask the operator to select a Studio target. You may create drafts for several agents in one turn. Supply complete proposed content.",
+    "Create or replace a standing task draft for a source-guild agent, named by agent_id; the operator's inspector selection plays no part. Drafts for several agents may be created in one turn. Supply complete proposed content.",
     {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required. Inspector selection is irrelevant." },
+      agent_id: { type: "string", description: "Source-guild agent id or name from the roster. Required." },
       proposed_content: {
         type: "string",
         description:
-          "Complete standing task. Shared files that must enter every run use ![[display-path]] from studio_find_artifacts / studio_get_artifact. A bare filename does not inline.",
+          "Complete standing task in the Task shape: an opening line, then Inputs, Work, Outputs, and Files as headings with bullets. Shared files that must enter every run use ![[display-path]] from studio_find_artifacts / studio_get_artifact. A bare filename does not inline.",
       },
       rationale: { type: "string" },
       evidence_refs: { type: "array" },
@@ -1330,65 +1198,47 @@ export const studioEditMemory: StudioTool = {
   },
 };
 
-export const studioEditArtifact: StudioTool = {
-  name: "studio_edit_artifact",
-  schema: functionSchema(
-    "studio_edit_artifact",
-    "Propose a complete replacement of one existing note by display path. Nothing is written: the turn pauses and the operator applies or declines. Read the note with studio_get_artifact first and pass its version as base_version. Memory, tasks, scripts, and records are not edited here.",
-    {
-      display_path: { type: "string", description: "Display path from studio_find_artifacts or studio_get_artifact. Required." },
-      content: { type: "string", description: "Complete proposed note body, not a description of changes. Required." },
-      base_version: { type: "integer", description: "Note version the proposal was built from. Required." },
-      reason: { type: "string", description: "Why this edit, one or two sentences, citing evidence. Required." },
-    },
-    ["display_path", "content", "base_version", "reason"],
-  ),
-  async handler(ctx, args) {
-    const base = await loadNoteBase(editScope(ctx), argString(args, "display_path"));
-    return editRequest(base, args, baseVersionArg(args));
-  },
+const NOTE_LEVEL = {
+  type: "string",
+  enum: ["agent", "guild", "org"],
+  description:
+    "create: agent is one agent's own file, guild is read by the source guild's agents, org is read across the organisation.",
 };
 
-export const studioCreateNote: StudioTool = {
-  name: "studio_create_note",
-  schema: functionSchema(
-    "studio_create_note",
-    "Propose a new note: a playbook, a working file, or shared rules at the narrowest level that holds every reader. Nothing is written: the turn pauses and the operator applies or declines. Search with studio_find_artifacts first and edit a note that fits instead. The result's target carries the display path to embed or name in a Task draft.",
-    {
-      level: {
-        type: "string",
-        enum: ["agent", "guild", "org"],
-        description: "agent: one agent's own file. guild: read by the source guild's agents. org: read across the organisation. Required.",
-      },
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required for level agent." },
-      key: { type: "string", description: "File name ending in .md, no folders, for example playbook.md. Required." },
-      title: { type: "string", description: "Short title shown in Files." },
-      content: { type: "string", description: "Complete note body. Required." },
-      reason: { type: "string", description: "Why this note, one or two sentences, citing evidence. Required." },
-    },
-    ["level", "key", "content", "reason"],
-  ),
-  async handler(ctx, args) {
-    const handle = studioAgentHandleFromArgs(args);
-    const agent = argString(args, "level") === "agent" && handle ? await resolveHandle(ctx, handle) : null;
-    return noteEditRequest(editScope(ctx), "studio_create_note", args, agent ? String(agent.id) : null);
-  },
-};
+async function noteAgentId(ctx: StudioToolContext, args: Record<string, unknown>): Promise<string | null> {
+  const handle = studioAgentHandleFromArgs(args);
+  if (argString(args, "level") !== "agent" || !handle) {
+    return null;
+  }
+  return String((await resolveHandle(ctx, handle)).id);
+}
 
-export const studioDeleteNote: StudioTool = {
-  name: "studio_delete_note",
+export const studioEditNote: StudioTool = {
+  name: "studio_edit_note",
   schema: functionSchema(
-    "studio_delete_note",
-    "Propose deleting one note of the source guild, one of its agents, or the organisation, by display path. Nothing is written: the turn pauses and the operator applies or declines. Applying fails while any Task embeds the note, so draft those Tasks first. Read the note with studio_get_artifact and pass its version as base_version.",
+    "studio_edit_note",
+    "Propose a change to one note of the source guild, one of its agents, or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new note at the narrowest level that holds every reader; search with studio_find_artifacts first and edit a note that fits instead; the result's target carries the display path to embed or name in a Task draft. edit: a complete replacement of an existing note's body. delete: applying fails while any Task embeds the note, so draft those Tasks first. edit and delete name the note by display_path and pass the version studio_get_artifact returned as base_version. Memory, Tasks, scripts, and records are not changed here.",
     {
-      display_path: { type: "string", description: "Display path from studio_find_artifacts or studio_get_artifact. Required." },
-      base_version: { type: "integer", description: "Note version the request was built from. Required." },
-      reason: { type: "string", description: "Why delete it, one or two sentences, citing evidence. Required." },
+      action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
+      display_path: { type: "string", description: "edit and delete: display path from studio_find_artifacts or studio_get_artifact." },
+      base_version: { type: "integer", description: "edit and delete: the note version the proposal was built from." },
+      level: NOTE_LEVEL,
+      agent_id: { type: "string", description: "create at level agent: source-guild agent id or name." },
+      key: { type: "string", description: "create: file name ending in .md, no folders, for example playbook.md." },
+      title: { type: "string", description: "create: short title shown in Files." },
+      content: { type: "string", description: "create and edit: the complete note body, not a description of changes." },
+      reason: { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." },
     },
-    ["display_path", "base_version", "reason"],
+    ["action", "reason"],
   ),
   async handler(ctx, args) {
-    return noteEditRequest(editScope(ctx), "studio_delete_note", args, null);
+    const action = editActionOf(args);
+    if (action === "edit") {
+      const base = await loadNoteBase(editScope(ctx), argString(args, "display_path"));
+      return editRequest(base, args, baseVersionArg(args));
+    }
+    const agentId = action === "create" ? await noteAgentId(ctx, args) : null;
+    return noteEditRequest(editScope(ctx), action, args, agentId);
   },
 };
 
@@ -1544,67 +1394,37 @@ export const studioGetCollection: StudioTool = {
   },
 };
 
-export const studioCreateCollection: StudioTool = {
-  name: "studio_create_collection",
-  schema: functionSchema(
-    "studio_create_collection",
-    "Propose a new table that agents read and write with the record tools. Nothing is written: the turn pauses and the operator applies or declines. Check studio_list_collections first and reuse a table that fits.",
-    {
-      name: { type: "string", description: "^[a-z][a-z0-9_-]{0,62}$, unique in the organisation. Required." },
-      purpose: { type: "string", description: "One line, at most 400 characters: what one record is and who writes it. Required." },
-      columns: columnsSchema("The typed columns, in display order. Every record write is validated against them. Required.", false),
-      scope: {
-        type: "string",
-        enum: ["guild", "org"],
-        description: "guild (default): the source guild owns the table and every member writes it. org: an organisation table, reached only through grants.",
-      },
-      access: ACCESS_SCHEMA,
-      reason: TABLE_REASON,
-    },
-    ["name", "purpose", "columns", "reason"],
-  ),
-  async handler(ctx, args) {
-    return tableEditRequest(editScope(ctx), "studio_create_collection", args);
-  },
-};
-
 export const studioEditCollection: StudioTool = {
   name: "studio_edit_collection",
   schema: functionSchema(
     "studio_edit_collection",
-    "Propose changes to one table of the source guild or the organisation: name, purpose, columns, or source-guild access. Fields left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the table with studio_get_collection first.",
+    "Propose a change to one table of the source guild or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new table agents read and write with the record tools; check studio_list_collections first and reuse a table that fits. edit: a new name, purpose, column list, or source-guild access; fields left out stay as they are. delete: the table with every record in it and every grant on it. edit and delete name the table by collection; read it with studio_get_collection first.",
     {
-      collection: { type: "string", description: "The table's current name. Required." },
-      base_updated_at: { type: "string", description: "The updated_at studio_get_collection returned. Required." },
-      name: { type: "string", description: "New table name. Tasks, notes, and routines that name the old one must change too." },
-      purpose: { type: "string", description: "New purpose, at most 400 characters." },
+      action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
+      collection: { type: "string", description: "edit and delete: the table's current name." },
+      base_updated_at: { type: "string", description: "edit: the updated_at studio_get_collection returned." },
+      name: {
+        type: "string",
+        description:
+          "create: ^[a-z][a-z0-9_-]{0,62}$, unique in the organisation. edit: the new name; Tasks, notes, and routines that name the old one must change too.",
+      },
+      purpose: { type: "string", description: "create and edit: one line, at most 400 characters: what one record is and who writes it." },
       columns: columnsSchema(
-        "The complete column list replacing the current one, in display order. Keep every column you do not mean to change; a column left out is dropped from every record.",
+        "create: the typed columns, in display order; every record write is validated against them. edit: the complete column list replacing the current one; keep every column you do not mean to change, since a column left out is dropped from every record.",
         true,
       ),
+      scope: {
+        type: "string",
+        enum: ["guild", "org"],
+        description: "create: guild (default), the source guild owns the table and every member writes it; org, an organisation table reached only through grants.",
+      },
       access: ACCESS_SCHEMA,
       reason: TABLE_REASON,
     },
-    ["collection", "base_updated_at", "reason"],
+    ["action", "reason"],
   ),
   async handler(ctx, args) {
-    return tableEditRequest(editScope(ctx), "studio_edit_collection", args);
-  },
-};
-
-export const studioDeleteCollection: StudioTool = {
-  name: "studio_delete_collection",
-  schema: functionSchema(
-    "studio_delete_collection",
-    "Propose deleting one table of the source guild or the organisation, with every record in it and every grant on it. Nothing is written: the turn pauses and the operator applies or declines. Read it with studio_get_collection first.",
-    {
-      collection: { type: "string", description: "The table's current name. Required." },
-      reason: TABLE_REASON,
-    },
-    ["collection", "reason"],
-  ),
-  async handler(ctx, args) {
-    return tableEditRequest(editScope(ctx), "studio_delete_collection", args);
+    return tableEditRequest(editScope(ctx), args);
   },
 };
 
@@ -1638,63 +1458,33 @@ const ROUTINE_TEXT = {
 
 const ROUTINE_REASON = { type: "string", description: "Why this change, one or two sentences, citing evidence. Required." };
 
-export const studioCreateRoutine: StudioTool = {
-  name: "studio_create_routine",
-  schema: functionSchema(
-    "studio_create_routine",
-    "Propose a new routine that wakes one source-guild agent on a UTC cron or at random times inside a daily window. Nothing is written: the turn pauses and the operator applies or declines. Check studio_list_routines first and change a routine that fits instead.",
-    {
-      agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
-      ...ROUTINE_TIMING,
-      ...ROUTINE_TEXT,
-      paused: { type: "boolean", description: "true creates it paused; it fires once resumed." },
-      reason: ROUTINE_REASON,
-    },
-    ["agent_id", "description", "instruction", "reason"],
-  ),
-  async handler(ctx, args) {
-    const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-    return routineEditRequest(editScope(ctx), "studio_create_routine", { args, agentId: String(agent.id) });
-  },
-};
-
 export const studioEditRoutine: StudioTool = {
   name: "studio_edit_routine",
   schema: functionSchema(
     "studio_edit_routine",
-    "Propose changes to one routine of a source-guild agent: its timing, description, instruction, or paused state. Fields left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read it with studio_list_routines first.",
+    "Propose a change to one routine of a source-guild agent. Nothing is written: the turn pauses and the operator applies or declines. create: a new routine that wakes one agent on a UTC cron or at random times inside a daily window; check studio_list_routines first and change a routine that fits instead. edit: a new timing, description, instruction, or paused state; fields left out stay as they are. delete: its past runs stay; propose pausing it instead when it may be needed again. edit and delete name the routine by schedule_id from studio_list_routines.",
     {
-      schedule_id: { type: "string", description: "The routine's id from studio_list_routines. Required." },
+      action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
+      agent_id: { type: "string", description: "create: source-guild agent id or name." },
+      schedule_id: { type: "string", description: "edit and delete: the routine's id from studio_list_routines." },
       ...ROUTINE_TIMING,
       ...ROUTINE_TEXT,
-      paused: { type: "boolean", description: "true pauses it; false resumes it." },
+      paused: { type: "boolean", description: "create: true creates it paused. edit: true pauses it; false resumes it." },
       reason: ROUTINE_REASON,
     },
-    ["schedule_id", "reason"],
+    ["action", "reason"],
   ),
   async handler(ctx, args) {
-    return routineEditRequest(editScope(ctx), "studio_edit_routine", { args, agentId: null });
+    const agentId = editActionOf(args) === "create" ? await routineAgentId(ctx, args) : null;
+    return routineEditRequest(editScope(ctx), { args, agentId });
   },
 };
 
-export const studioDeleteRoutine: StudioTool = {
-  name: "studio_delete_routine",
-  schema: functionSchema(
-    "studio_delete_routine",
-    "Propose deleting one routine of a source-guild agent. Its past runs stay. Nothing is written: the turn pauses and the operator applies or declines. Propose pausing it with studio_edit_routine instead when it may be needed again.",
-    {
-      schedule_id: { type: "string", description: "The routine's id from studio_list_routines. Required." },
-      reason: ROUTINE_REASON,
-    },
-    ["schedule_id", "reason"],
-  ),
-  async handler(ctx, args) {
-    return routineEditRequest(editScope(ctx), "studio_delete_routine", { args, agentId: null });
-  },
-};
+async function routineAgentId(ctx: StudioToolContext, args: Record<string, unknown>): Promise<string> {
+  return String((await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined)).id);
+}
 
 export const STUDIO_TOOLS: StudioTool[] = [
-  studioListAgents,
   studioGetGuidelines,
   studioGetAgentContext,
   studioListRoutines,
@@ -1716,17 +1506,11 @@ export const STUDIO_TOOLS: StudioTool[] = [
   studioListCollections,
   studioGetCollection,
   studioEditMemory,
-  studioEditArtifact,
-  studioCreateNote,
-  studioDeleteNote,
+  studioEditNote,
   studioEditGuild,
   studioEditAccess,
-  studioCreateCollection,
   studioEditCollection,
-  studioDeleteCollection,
-  studioCreateRoutine,
   studioEditRoutine,
-  studioDeleteRoutine,
 ];
 
 export function studioToolSchemas(): Array<Record<string, unknown>> {

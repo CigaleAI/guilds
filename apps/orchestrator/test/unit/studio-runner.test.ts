@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseToolArgs, projectConversationHistory, recoverPartialToolArgs } from "../../src/conversation/runner.js";
+import { TOOL_RESULT_STUB_MIN_BYTES } from "../../src/conversation/projection.js";
+import { STUDIO_TOOL_RESULT_STUB_HINT } from "../../src/studio/constants.js";
+
+const large = (text: string) => `${text}${" ".repeat(TOOL_RESULT_STUB_MIN_BYTES)}`;
 
 function row(
   seq: number,
@@ -30,6 +34,7 @@ test("projection keeps current-generation tool results including standing tasks"
     ],
     generationContext: "roster",
     currentGeneration: 1,
+    stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
     stubbed,
   });
   const tools = messages.filter((item) => item.role === "tool");
@@ -45,12 +50,13 @@ test("projection stubs older generations and tells the coach to refetch the task
   const messages = projectConversationHistory({
     history: [
       row(0, 0, { role: "system", content: "studio" }),
-      row(1, 1, { role: "tool", tool_call_id: "old", content: '{"task":{"content":"Write the digest."}}' }, { tool_name: "studio_get_agent_context" }),
+      row(1, 1, { role: "tool", tool_call_id: "old", content: large('{"task":{"content":"Write the digest."}}') }, { tool_name: "studio_get_agent_context" }),
       row(2, 2, { role: "user", content: "Look again" }),
       row(3, 2, { role: "tool", tool_call_id: "new", content: '{"task":{"content":"Scout listings."}}' }, { tool_name: "studio_get_agent_context" }),
     ],
     generationContext: "roster",
     currentGeneration: 2,
+    stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
     stubbed,
   });
   const tools = messages.filter((item) => item.role === "tool");
@@ -63,17 +69,54 @@ test("projection stubs older generations and tells the coach to refetch the task
   assert.deepEqual(stubbed, [1]);
 });
 
+test("projection keeps an older tool result smaller than the stub floor", () => {
+  const stubbed: number[] = [];
+  const messages = projectConversationHistory({
+    history: [
+      row(0, 0, { role: "system", content: "studio" }),
+      row(1, 1, { role: "tool", tool_call_id: "old", content: '{"ok":true,"body_version":3}' }),
+      row(2, 2, { role: "user", content: "Look again" }),
+    ],
+    generationContext: "roster",
+    currentGeneration: 2,
+    stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
+    stubbed,
+  });
+  const tools = messages.filter((item) => item.role === "tool");
+  assert.equal(tools[0]?.content, '{"ok":true,"body_version":3}');
+  assert.deepEqual(stubbed, []);
+});
+
+test("projection stubs with the hint the coach passes", () => {
+  const stubbed: number[] = [];
+  const messages = projectConversationHistory({
+    history: [
+      row(0, 0, { role: "system", content: "builder" }),
+      row(1, 1, { role: "tool", tool_call_id: "old", content: large("{}") }),
+      row(2, 2, { role: "user", content: "Again" }),
+    ],
+    generationContext: "map",
+    currentGeneration: 2,
+    stubHint: "Call the same tool again.",
+    stubbed,
+  });
+  const tools = messages.filter((item) => item.role === "tool");
+  assert.match(String(tools[0]?.content), /Call the same tool again\./);
+  assert.doesNotMatch(String(tools[0]?.content), /studio_get_agent_context/);
+});
+
 test("projection stubs oldest current-generation tools only after the token budget is exceeded", () => {
   const stubbed: number[] = [];
   const messages = projectConversationHistory({
     history: [
       row(0, 0, { role: "system", content: "studio" }),
-      row(1, 1, { role: "tool", tool_call_id: "a", content: "one" }),
-      row(2, 1, { role: "tool", tool_call_id: "b", content: "two" }),
-      row(3, 1, { role: "tool", tool_call_id: "c", content: "three" }),
+      row(1, 1, { role: "tool", tool_call_id: "a", content: large("one") }),
+      row(2, 1, { role: "tool", tool_call_id: "b", content: large("two") }),
+      row(3, 1, { role: "tool", tool_call_id: "c", content: large("three") }),
     ],
     generationContext: "roster",
     currentGeneration: 1,
+    stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
     stubbed,
     minUnstubbed: 2,
     budget: {
@@ -89,8 +132,8 @@ test("projection stubs oldest current-generation tools only after the token budg
   });
   const tools = messages.filter((item) => item.role === "tool");
   assert.match(String(tools[0]?.content), /"stub":true/);
-  assert.equal(String(tools[1]?.content), "two");
-  assert.equal(String(tools[2]?.content), "three");
+  assert.equal(String(tools[1]?.content), large("two"));
+  assert.equal(String(tools[2]?.content), large("three"));
   assert.deepEqual(stubbed, [1]);
 });
 
@@ -100,6 +143,7 @@ test("projection replaces a stale stored system prompt with the live system cont
     history: [row(0, 0, { role: "system", content: "studio_create_task_draft requires an active target" })],
     generationContext: "roster",
     currentGeneration: 1,
+    stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
     stubbed,
     systemContent: "Call studio_create_task_draft with agent_id of a source-guild member.",
   });
@@ -113,6 +157,6 @@ test("parseToolArgs recovers agent_id from truncated JSON", () => {
   );
   assert.equal(recovered.agent_id, "a_01M2P2GG3G1DRWV3ZCCXY9H9AZ");
   assert.equal(recovered.rationale, "rewrite manager");
-  const aliased = recoverPartialToolArgs('{"target_agent_id":"mr-manager","proposed_content":"broken');
+  const aliased = recoverPartialToolArgs('{"agent_name":"mr-manager","proposed_content":"broken');
   assert.equal(aliased.agent_id, "mr-manager");
 });

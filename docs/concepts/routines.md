@@ -252,8 +252,8 @@ Direct and group-chat runs offer six schedule tools:
 ([Native tools](../tools-and-connectors/native.md)).
 
 The Studio coach reads routines with `studio_list_routines` and
-proposes changes with `studio_create_routine` (which can create a
-routine paused), `studio_edit_routine`, and `studio_delete_routine`.
+proposes changes with `studio_edit_routine`, whose `action` is
+`create` (which can create a routine paused), `edit`, or `delete`.
 A proposal writes nothing until the operator applies it
 ([Studio proposals](studio-proposals.md)).
 

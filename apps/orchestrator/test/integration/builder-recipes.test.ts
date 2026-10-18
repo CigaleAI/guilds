@@ -146,6 +146,13 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       headers: AUTH,
     });
     assert.ok((messages.json() as unknown[]).length >= 2);
+    const stored = await builder.store.listMessages(session.id);
+    const system = stored[0]?.payload as { role: string; content: string };
+    assert.equal(system.role, "system");
+    assert.match(system.content, new RegExp(`"role": "${linkedInNotionRecipe().roles[0]?.role}"`));
+    assert.match(system.content, /expected_body_version: 2/);
+    assert.doesNotMatch(system.content, /tool_schemas|system_prompt_hash|Recipe write shape/);
+    assert.equal((stored[0]?.metadata as { refreshed?: boolean }).refreshed, true);
 
     const previewDraft = await app.inject({
       method: "POST",

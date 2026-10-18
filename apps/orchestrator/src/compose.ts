@@ -161,6 +161,7 @@ export async function createServer(
     policy,
     credentials: modelCredentials,
     mcp,
+    guidelinesPath: notes.systemPath(),
   });
   await builder.reconcile();
   const app = await buildApp(

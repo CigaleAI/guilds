@@ -4,6 +4,7 @@ import { timingText } from "../schedules/item.js";
 import { changedFields, type ScheduleChanges } from "../schedules/service.js";
 import type { ScheduleTiming } from "../schedules/timing.js";
 import { argString } from "../toolbox/schema.js";
+import type { EditAction } from "./actions.js";
 import type { EditScope } from "./edits.js";
 import { StudioUnprocessableError } from "./errors.js";
 
@@ -11,22 +12,11 @@ import { StudioUnprocessableError } from "./errors.js";
 // guild's live agents. Like every Studio edit, a proposal writes nothing
 // until the operator applies it.
 
-export const STUDIO_ROUTINE_TOOLS = [
-  "studio_create_routine",
-  "studio_edit_routine",
-  "studio_delete_routine",
-] as const;
-export type StudioRoutineTool = (typeof STUDIO_ROUTINE_TOOLS)[number];
-export type RoutineAction = "create" | "edit" | "delete";
+export const STUDIO_ROUTINE_TOOL = "studio_edit_routine";
+export type RoutineAction = EditAction;
 
-const ACTIONS: Record<StudioRoutineTool, RoutineAction> = {
-  studio_create_routine: "create",
-  studio_edit_routine: "edit",
-  studio_delete_routine: "delete",
-};
-
-export function isRoutineTool(name: string): name is StudioRoutineTool {
-  return (STUDIO_ROUTINE_TOOLS as readonly string[]).includes(name);
+export function isRoutineTool(name: string): boolean {
+  return name === STUDIO_ROUTINE_TOOL;
 }
 
 /** What a routine is: when it wakes, its label, what it tells the agent, and whether it fires. */
@@ -277,21 +267,21 @@ function reviewDelete(routine: Routine): RoutineReview {
 }
 
 /**
- * Checks what a routine tool proposes against the live guild. A create names
+ * Checks what a routine proposal does against the live guild. A create names
  * its agent through `call.agentId`; an edit or delete names the routine by
  * `schedule_id`, which stays the same from request to apply.
  */
 export async function reviewRoutine(
   scope: EditScope,
-  tool: StudioRoutineTool,
+  action: RoutineAction,
   call: RoutineCall,
 ): Promise<RoutineReview> {
   const rc = await routineContext(scope);
-  if (ACTIONS[tool] === "create") {
+  if (action === "create") {
     return reviewCreate(rc, call);
   }
   const routine = await loadRoutine(rc, argString(call.args, "schedule_id").trim());
-  return ACTIONS[tool] === "edit" ? reviewEdit(rc, routine, call) : reviewDelete(routine);
+  return action === "edit" ? reviewEdit(rc, routine, call) : reviewDelete(routine);
 }
 
 /** Writes a reviewed proposal as the operator. */

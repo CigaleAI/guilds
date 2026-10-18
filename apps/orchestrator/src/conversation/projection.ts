@@ -12,9 +12,6 @@ export const TOOL_RESULT_STUB_MIN_BYTES = 2048;
 export const AGENT_TOOL_RESULT_STUB_HINT =
   "Tool result omitted to save context. Call the same tool again. The working tree may have changed.";
 
-export const STUDIO_TOOL_RESULT_STUB_HINT =
-  "Older tool result stubbed to save context. Call the same tool again. For standing tasks use studio_get_agent_context with sections=['task'] and the agent_id. If the previous result had next_cursor, continue from that cursor.";
-
 export type ProjectionBudget = {
   model: string;
   schemas: unknown[];

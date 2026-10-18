@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
 import {
@@ -6,7 +9,7 @@ import {
   composeBuilderSystemMessage,
 } from "../../src/builder/system.js";
 import { RECIPE_WRITE_HINT } from "../../src/builder/constants.js";
-import { builderWriteRecipe } from "../../src/builder/tools.js";
+import { builderListCapabilities, builderWriteRecipe } from "../../src/builder/tools.js";
 import {
   readBuilderSystemTemplate,
   readBuilderWriteExample,
@@ -48,11 +51,14 @@ test("builder write example is a valid recipe using real field names", () => {
   assert.equal(parsed.connections[1]?.roles.archivist?.enabled, true);
   assert.equal(parsed.design.systems[0]?.resolution, "catalog");
   assert.equal(parsed.design.routines[0]?.key, "scout-sweep");
+  for (const note of parsed.notes) {
+    assert.ok(note.body.split("\n").length > 3, `${note.key} seeds working content, not a description`);
+  }
 });
 
 test("builder system prompt maps Memory and routines onto recipe fields", () => {
   const text = readBuilderSystemTemplate();
-  assert.match(text, /Do not emit role keys named/);
+  assert.match(text, /## Recipe fields/);
   assert.match(text, /task\.body/);
   assert.match(text, /schedules\[\]\.instruction/);
   assert.match(text, /design\.routines/);
@@ -65,19 +71,65 @@ test("builder system prompt maps Memory and routines onto recipe fields", () => 
   assert.match(text, /long-lived records/);
   assert.match(text, /connections\[\]\.resources/);
   assert.match(text, /You are a system designer/);
-  assert.match(text, /!\[\[guild\/<key>\]\]/);
-  assert.match(text, /!\[\[agent\/<role>\/<key>\]\]/);
+  assert.match(text, /!\[\[agent\/scout\/playbook\.md\]\]/);
   assert.doesNotMatch(text, /<path>/);
-  assert.match(text, /A leftover `recipe:<id>` still resolves/);
+  assert.match(text, /A leftover `recipe:<id>` still/);
   assert.match(text, /builder_ask_question/);
   assert.match(text, /until the operator submits/);
   assert.match(text, /OPEN QUESTION/);
   assert.match(text, /access\.tool_removed/);
   assert.match(text, /access\.connector_removed/);
-  assert.match(text, /Do not set `avatar_shape` or `avatar_color`/);
 });
 
-test("builder system message ships a write shape separate from the session document", () => {
+test("builder system prompt states each design rule once and leaves field names to the write schema", () => {
+  const text = readBuilderSystemTemplate();
+  assert.doesNotMatch(text, /## Hub, memory, and files/);
+  assert.equal(text.match(/Narrow is not isolated/g)?.length, 1);
+  assert.equal(text.match(/A specialist refines itself/g)?.length, 1);
+  assert.doesNotMatch(text, /Field names \(do not invent aliases\)/);
+  assert.ok(!text.includes(RECIPE_WRITE_HINT));
+  assert.match(text, /The instructions in this system message are authoritative/);
+  assert.match(text, /Evidence here: recipe fields/);
+  assert.match(text, /A new file starts with its first working content/);
+});
+
+test("builder system prompt carries the Task shape and what every agent already reads", () => {
+  const text = readBuilderSystemTemplate();
+  assert.match(text, /## Writing\n/);
+  assert.match(text, /Shorter is better/);
+  assert.match(text, /## Task shape/);
+  assert.match(text, /## Inputs/);
+  assert.match(text, /A Task never:/);
+  assert.match(text, /## What every agent already reads/);
+  assert.match(text, /<agent_task_intro>\nThe operator's standing purpose for you/);
+  assert.match(text, /<agent_state_intro>\nA snapshot of the guild at the start of this run/);
+  assert.match(text, /<agent_memory_rules>\n### Your Memory/);
+  assert.match(text, /<agent_guidelines>\nYou are an agent in a work guild/);
+  assert.match(text, /code_task/);
+  assert.doesNotMatch(text, /<capability name=/);
+  assert.doesNotMatch(text, /\{\{(AGENT_PROMPT|WRITING|TASK_SHAPE|AGENT_GUIDELINES|TASK_INTRO|STATE_INTRO|MEMORY_RULES)\}\}/);
+  assert.doesNotMatch(text, /Start of work/);
+  assert.doesNotMatch(text, /End of work/);
+  assert.match(text, /says when or whether to write Memory/);
+});
+
+test("builder system prompt inlines the configured Guidelines template", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "guilds-guidelines-"));
+  const guidelinesPath = path.join(dir, "system.md");
+  writeFileSync(
+    guidelinesPath,
+    'Custom guidelines for this box.\n<capability name="coding">Coding part.</capability><capability name="no_coding">No coding part.</capability>\n',
+  );
+  const text = readBuilderSystemTemplate({ guidelinesPath });
+  assert.match(text, /<agent_guidelines>\nCustom guidelines for this box\.\nCoding part\.\n<\/agent_guidelines>/);
+  assert.doesNotMatch(text, /You are an agent in a work guild/);
+  assert.throws(
+    () => readBuilderSystemTemplate({ guidelinesPath: path.join(dir, "missing.md") }),
+    /system\.md not found/,
+  );
+});
+
+test("builder system message ships the write example only while the recipe has no roles", () => {
   const recipe = parseRecipe(emptyRecipe({ source: { kind: "builder", session_id: "bld_test" } }));
   const composed = composeBuilderSystemMessage({
     config: { model: TEST_MODEL, temperature: 0.2 },
@@ -87,13 +139,70 @@ test("builder system message ships a write shape separate from the session docum
   });
   assert.match(composed.content, /Recipe write shape/);
   assert.match(composed.content, /Instance data for this session/);
-  assert.ok(composed.content.includes(RECIPE_WRITE_HINT));
   assert.match(composed.content, /"role": "scout"/);
-  assert.match(composed.content, /"body": "Start of work: read Memory/);
+  assert.match(composed.content, /"body": "Scout: you find new candidates/);
+  assert.match(composed.content, /## Inputs\\n/);
+  assert.doesNotMatch(composed.content, /Start of work/);
   assert.doesNotMatch(composed.content, /"name": "scout"/);
+  const drafted = composeBuilderSystemMessage({
+    config: { model: TEST_MODEL, temperature: 0.2 },
+    recipe: parseRecipe(fixtureDeskRecipe()),
+    expectedBodyVersion: 2,
+    now: new Date("2026-09-18T20:00:00.000Z"),
+  });
+  assert.doesNotMatch(drafted.content, /Recipe write shape/);
+  assert.doesNotMatch(drafted.content, /"role": "scout"/);
   const context = composeBuilderGenerationContext(recipe, 1);
   assert.match(context, /recipe_name/);
   assert.doesNotMatch(context, /"name":/);
+});
+
+test("builder system message shows only the coach settings, not the session's audit snapshot", () => {
+  const recipe = parseRecipe(emptyRecipe({ source: { kind: "builder", session_id: "bld_test" } }));
+  const composed = composeBuilderSystemMessage({
+    config: {
+      model: TEST_MODEL,
+      temperature: 0.2,
+      max_steps: 24,
+      max_tokens: 25000,
+      system_prompt_hash: "abc123",
+      tool_schemas: [{ type: "function", function: { name: "builder_write_recipe" } }],
+    },
+    recipe,
+    expectedBodyVersion: 1,
+    now: new Date("2026-09-18T20:00:00.000Z"),
+  });
+  const config = composed.content.slice(composed.content.indexOf("## Coach configuration"));
+  assert.match(config, /"max_steps": 24/);
+  assert.doesNotMatch(composed.content, /system_prompt_hash|tool_schemas/);
+});
+
+test("builder system message keeps the clock last so the static prefix stays cacheable", () => {
+  const recipe = parseRecipe(fixtureDeskRecipe());
+  const compose = (now: string) =>
+    composeBuilderSystemMessage({
+      config: { model: TEST_MODEL, temperature: 0.2 },
+      recipe,
+      expectedBodyVersion: 3,
+      now: new Date(now),
+    }).content;
+  const first = compose("2026-09-18T20:00:00.000Z");
+  const later = compose("2026-09-18T20:05:00.000Z");
+  const session = first.indexOf("## Session");
+  assert.ok(session > first.indexOf("## Current recipe"));
+  assert.equal(first.slice(0, session), later.slice(0, session));
+  assert.match(first.slice(session), /expected_body_version: 3/);
+});
+
+test("builder write hint is stated once, in the write tool's description", async () => {
+  const fn = (builderWriteRecipe.schema as { function: { description: string; parameters: { properties: { recipe: Record<string, unknown> } } } }).function;
+  assert.ok(fn.description.includes(RECIPE_WRITE_HINT));
+  assert.equal("description" in fn.parameters.properties.recipe, false);
+  const listed = await builderListCapabilities.handler({
+    orgId: "org_1",
+    capabilities: { async listCapabilities() { return { native: [] }; } },
+  } as never);
+  assert.equal("recipe_write" in listed, false);
 });
 
 test("builder system message lists operator access cuts", () => {
@@ -159,6 +268,7 @@ test("builder_write_recipe tool schema names role and task.body", () => {
   assert.ok(roleProps.role);
   assert.ok(roleProps.task);
   assert.equal(roleProps.name, undefined);
+  assert.equal(roleProps.wake_triggers, undefined);
   const task = roleProps.task as {
     properties: Record<string, unknown>;
     additionalProperties?: boolean;

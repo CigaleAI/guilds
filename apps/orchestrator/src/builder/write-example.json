@@ -20,7 +20,7 @@
       "focus": "Find new candidates and write them to the queue.",
       "config": { "browser": false, "scripting": false },
       "task": {
-        "body": "Start of work: read Memory, then note_get agent/scout/playbook.md and apply it.\n\nBefore queueing a candidate, check seen-set with record_list where key is the candidate name in lower case. Add each new candidate to scout-queue with record_add (name, source_url, status new), then record_add its key and source to seen-set. The runtime assigns ids; never send one. The archivist drains scout-queue; do not archive. When a sweep shows what separates a real candidate from noise, revise the playbook with note_write.",
+        "body": "Scout: you find new candidates for the desk and queue them for the archivist.\n\n## Inputs\n- The web, through search.\n- `seen-set`: the keys already queued, by lower-case candidate name.\n\n## Work\n- Judge each find against the playbook. Revise the playbook when a sweep shows what separates a real candidate from noise.\n- Never queue a key already in `seen-set`.\n\n## Outputs\n- `scout-queue`: one record per new candidate, with name, source_url, and status `new`. The archivist drains it; you do not archive.\n- `seen-set`: the candidate's key and source, once queued.\n\n## Files\n- note_get agent/scout/playbook.md: what a real candidate looks like. Yours to revise.",
         "embeds": []
       },
       "scripts": [],
@@ -29,7 +29,7 @@
           "key": "scout-sweep",
           "cron": "10 * * * *",
           "description": "Hourly sweep",
-          "instruction": "Sweep for new candidates. Skip keys already in seen-set (record_list where key); add the rest to scout-queue with status new."
+          "instruction": "Sweep for new candidates. Skip keys already in seen-set and queue the rest as new."
         }
       ],
       "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
@@ -45,7 +45,7 @@
       "focus": "Read the queue and write the durable record.",
       "config": { "browser": false, "scripting": false },
       "task": {
-        "body": "Start of work: read Memory. The map below says which Notion property each scout-queue column lands in.\n\n![[agent/archivist/notion-map.md]]\n\nFind scout-queue records with record_list where status new and archive each one, then record_update that record by id with status archived, or rejected with a reason. The scout fills scout-queue; do not scout.",
+        "body": "Archivist: you turn queued candidates into durable archive records.\n\n## Inputs\n- `scout-queue`: records with status `new`, written by the scout.\n\n## Work\n- Archive each new record as a page in the Archive database, mapped by the file below.\n- Reject a record with no usable source, and say why.\n\n## Outputs\n- `scout-queue`: the same record set to `archived`, or `rejected` with a reason. The scout fills the queue; you do not scout.\n\n## Files\n- The map below says which Notion property each `scout-queue` column lands in. The operator edits it.\n\n![[agent/archivist/notion-map.md]]",
         "embeds": ["agent/archivist/notion-map.md"]
       },
       "scripts": [],
@@ -54,7 +54,7 @@
           "key": "archive-drain",
           "cron": "25 * * * *",
           "description": "Hourly drain, offset from scout",
-          "instruction": "Archive scout-queue records whose status is new; record_update each one to status archived when done."
+          "instruction": "Archive the scout-queue records whose status is new, and set each to archived or rejected."
         }
       ],
       "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
@@ -102,7 +102,7 @@
       "level": "agent",
       "role": "scout",
       "key": "playbook.md",
-      "body": "What a real candidate looks like versus noise. The scout revises it as it learns.",
+      "body": "# Candidate playbook\n\nA real candidate:\n- has its own source page with a name and a date\n- matches the desk's subject\n\nNoise:\n- a page that repeats another source\n- an entry with no date\n\nStill to learn: which sources yield the most real candidates.",
       "kind": "seed"
     },
     {
@@ -110,7 +110,7 @@
       "level": "agent",
       "role": "archivist",
       "key": "notion-map.md",
-      "body": "Which Notion database property each scout-queue column lands in. The operator edits it; the archivist reads it every wake.",
+      "body": "# Archive map\n\n| scout-queue column | Archive property |\n| --- | --- |\n| name | Name (title) |\n| source_url | Source (URL) |\n\nStill to confirm: the property that holds the archive date.",
       "kind": "seed"
     }
   ],

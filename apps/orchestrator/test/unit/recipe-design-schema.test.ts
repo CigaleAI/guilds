@@ -99,10 +99,15 @@ test("the builder example declares columns for every collection and its tasks na
   assert.equal(findings.includes("collection.writer"), false);
   const scout = example.roles.find((role) => role.role === "scout")!;
   const archivist = example.roles.find((role) => role.role === "archivist")!;
-  assert.match(scout.task.body, /status new/);
-  assert.match(scout.task.body, /record_list where key/);
-  assert.match(archivist.task.body, /record_list where status new/);
-  assert.match(archivist.task.body, /record_update .* status archived/);
+  assert.match(scout.task.body, /status `new`/);
+  assert.match(scout.task.body, /`seen-set`/);
+  assert.match(archivist.task.body, /status `new`/);
+  assert.match(archivist.task.body, /`archived`, or `rejected`/);
+  for (const role of [scout, archivist]) {
+    assert.match(role.task.body, /^## Inputs$/m);
+    assert.match(role.task.body, /^## Outputs$/m);
+    assert.doesNotMatch(role.task.body, /Memory|record_list|record_add|record_update/);
+  }
   assert.equal(scout.native_tools.record_add, true);
   assert.equal(archivist.native_tools.record_update, true);
   assert.equal("object_put" in scout.native_tools, false);
@@ -146,7 +151,6 @@ test("the builder prompt teaches column design and grants", () => {
   const text = readBuilderSystemTemplate();
   assert.match(text, /## Collections/);
   assert.match(text, /typed table, either the guild's own or the\s+organisation's/);
-  assert.match(text, /`\{ name, type, description, required\?, unique\?, values\? \}`/);
   assert.match(text, /one required `text`\s+column with `values`/);
   assert.match(text, /one `unique`\s+column/);
   assert.match(text, /One record shape per collection/);

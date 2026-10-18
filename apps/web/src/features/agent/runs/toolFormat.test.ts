@@ -77,10 +77,16 @@ test("friendlyToolCall summarises known calls and falls back to a single short a
     friendlyToolCall({ function: { name, arguments: args } });
   assert.equal(friendly("note_find", '{"query":"thesis"}'), "Find notes thesis");
   assert.equal(friendly("memory_write", "{}"), "Write memory");
-  assert.equal(friendly("studio_create_routine", '{"agent_id":"scout"}'), "Propose routine for scout");
-  assert.equal(friendly("studio_create_routine", "{}"), "Propose routine");
-  assert.equal(friendly("studio_edit_routine", '{"schedule_id":"sch_1"}'), "Propose routine changes");
-  assert.equal(friendly("studio_delete_routine", '{"schedule_id":"sch_1"}'), "Propose deleting a routine");
+  assert.equal(friendly("studio_edit_routine", '{"action":"create","agent_id":"scout"}'), "Propose routine for scout");
+  assert.equal(friendly("studio_edit_routine", '{"action":"create"}'), "Propose routine");
+  assert.equal(friendly("studio_edit_routine", '{"action":"edit","schedule_id":"sch_1"}'), "Propose routine changes");
+  assert.equal(friendly("studio_edit_routine", '{"action":"delete","schedule_id":"sch_1"}'), "Propose deleting a routine");
+  assert.equal(friendly("studio_edit_collection", '{"action":"create","name":"leads"}'), "Propose table leads");
+  assert.equal(friendly("studio_edit_collection", '{"action":"edit","collection":"leads"}'), "Propose changes to leads");
+  assert.equal(friendly("studio_edit_collection", '{"action":"delete","collection":"leads"}'), "Propose deleting leads");
+  assert.equal(friendly("studio_edit_note", '{"action":"create","key":"playbook.md"}'), "Propose note playbook.md");
+  assert.equal(friendly("studio_edit_note", '{"action":"edit","display_path":"x"}'), "Propose note edit");
+  assert.equal(friendly("studio_edit_note", '{"action":"delete","display_path":"x"}'), "Propose deleting a note");
   assert.equal(friendly("record_search", '{"query":"acme"}'), "Search records acme");
   assert.equal(
     friendly("record_search", '{"collection":"customers","query":"acme"}'),

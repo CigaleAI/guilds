@@ -47,7 +47,7 @@ export class StudioDrafts implements StudioDraftService {
   ) {}
 
   async createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const handle = studioAgentHandleFromArgs(args) || argString(args, "agent_id") || ctx.targetAgentId;
+    const handle = studioAgentHandleFromArgs(args);
     const agent = await resolveSourceGuildAgent(ctx, handle);
     if (!agent) {
       throw new StudioUnprocessableError(await missingDraftAgentMessage(ctx, handle));
