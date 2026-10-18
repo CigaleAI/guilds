@@ -60,7 +60,10 @@ export async function createServer(
   installIntegrations(extensions.flatMap((extension) => [...(extension.integrations ?? [])]));
   installHarnessesOff(config.harnessesOff);
   const database = await connect(config.databaseUrl, extensions);
-  const stopRuntimeMetrics = startRuntimeMetrics(database.pool);
+  const stopRuntimeMetrics = startRuntimeMetrics(database.pool, {
+    root: "/",
+    workspace: config.workspaceRoot,
+  });
   if (config.operatorEmail) {
     await setOperatorEmail(database.pool, config.operatorEmail);
   }

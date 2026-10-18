@@ -256,10 +256,18 @@ With `SENTRY_DSN` set, Sentry receives under `SENTRY_ENVIRONMENT`:
 - traces, sampled at `SENTRY_TRACES_SAMPLE_RATE`
 - every `info`, `warn`, and `error` log line, as a Sentry log whose
   attributes are the line's fields, already redacted
-- runtime metrics, every 10 seconds: `node.event_loop.delay_max` and
-  `node.event_loop.delay_p99` (ms), `node.memory.heap_used` and
-  `node.memory.rss` (bytes), and the database pool's `db.pool.total`,
-  `db.pool.idle`, and `db.pool.waiting`
+- runtime metrics, every 10 seconds:
+  - the server process: `node.event_loop.delay_max` and
+    `node.event_loop.delay_p99` (ms), `node.cpu` (percent of one core,
+    so two busy cores read 200), `node.memory.heap_used` and
+    `node.memory.rss` (bytes)
+  - the host it runs on: `host.load_1m`, `host.memory.used` (percent),
+    and for the filesystem under `/` (`mount: root`) and under
+    `WORKSPACE_ROOT` (`mount: workspace`), `host.disk.free` (bytes) and
+    `host.disk.used` (percent)
+  - the database: the pool's `db.pool.total`, `db.pool.idle`, and
+    `db.pool.waiting`, and the server's client connections
+    `db.server.connections` against `db.server.max_connections`
 - a count of `node.event_loop.stall` for each 10 seconds in which the
   event loop was held 1 second or more, and of `db.pool.error` for
   each pooled connection lost while idle
