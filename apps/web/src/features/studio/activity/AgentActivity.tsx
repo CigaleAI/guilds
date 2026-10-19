@@ -21,7 +21,8 @@ import {
   type MapSelection,
   type Tally,
 } from "./activityModel";
-import { AgentMark, AgentName, NodeMark, nodeName, reasonLabel, type ActivityData } from "./parts";
+import { reasonLabel } from "./activityModel";
+import { AgentMark, AgentName, NodeMark, nodeName, type ActivityData } from "./parts";
 
 /**
  * Each agent over the window: every way it was woken and what those wakes produced (inputs), and

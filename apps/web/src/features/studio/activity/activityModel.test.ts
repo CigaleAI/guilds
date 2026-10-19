@@ -21,6 +21,8 @@ import {
   selectionExists,
   selectionFromItem,
   selectionItem,
+  operatorAuthor,
+  triggerReasonLabel,
   toMs,
   wakeBucket,
   wakeEffects,
@@ -59,6 +61,7 @@ function row(
     author_type: author === null ? "user" : "agent",
     author_name: author ?? "operator",
     author_agent_id: author,
+    author_user_id: author === null ? "user_operator" : null,
     source_run_id: sourceRun,
     tagged: [],
     preview: `row ${seq}`,
@@ -67,7 +70,7 @@ function row(
 }
 
 function byRow(seq: number | null, reason: "tag" | "jev" = "tag"): ActivityTrigger {
-  return { type: "message", seq, through_seq: seq, reason, routing: null };
+  return { type: "message", seq, through_seq: seq, reason, routing: null, inferred: false };
 }
 
 function wake(
@@ -83,7 +86,7 @@ function wake(
     started_at: at(start),
     ended_at: at(end),
     running: false,
-    trigger: { type: "direct" },
+    trigger: { type: "direct", user_id: "user_operator" },
     outcome: "silent",
     failed: false,
     errors: [],
@@ -592,4 +595,26 @@ test("durations and costs read compactly", () => {
   assert.equal(formatUsd(0.0213), "$0.021");
   assert.equal(formatUsd(1), "$1.00");
   assert.equal(formatUsd(3.456), "$3.46");
+});
+
+test("a stored waking row reads as fact, and one found from tags says it was inferred", () => {
+  assert.equal(triggerReasonLabel(byRow(4)), "tagged");
+  assert.equal(
+    triggerReasonLabel({
+      type: "message",
+      seq: 4,
+      through_seq: 4,
+      reason: "jev",
+      routing: null,
+      inferred: true,
+    }),
+    "routed, inferred",
+  );
+  assert.equal(triggerReasonLabel({ type: "routine", schedule_id: null }), null);
+});
+
+test("an operator row is the viewer's own, or names the person who posted it", () => {
+  assert.equal(operatorAuthor(row(1, 0, null), "user_operator"), "your");
+  assert.equal(operatorAuthor({ ...row(1, 0, null), author_name: "sam" }, "user_other"), "sam's");
+  assert.equal(operatorAuthor({ ...row(1, 0, null), author_user_id: null }, "user_other"), "your");
 });

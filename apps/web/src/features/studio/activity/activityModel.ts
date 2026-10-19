@@ -5,6 +5,7 @@ import type {
   ActivityPost,
   ActivityRoutine,
   ActivityToolCall,
+  ActivityTrigger,
   ActivityTriggerReason,
   ActivityView,
   ActivityWake,
@@ -16,6 +17,31 @@ import type {
  * Studio's activity views: the chains of wakes that woke one another, the map of who woke whom, and
  * what each agent took in and put out. Pure: no DOM, no fetch, no clock.
  */
+
+/** Why a message reached the agent it woke, in a word. */
+export const reasonLabel: Record<ActivityTriggerReason, string> = {
+  tag: "tagged",
+  jev: "routed",
+  rules: "rules",
+  fallback: "fallback",
+};
+
+/**
+ * Why a message woke an agent, in a word, or null for a wake no message started. A run stores
+ * the row that woke it; for an older run the row is found from tags, and the label says so.
+ */
+export function triggerReasonLabel(trigger: ActivityTrigger): string | null {
+  if (trigger.type !== "message") return null;
+  const label = reasonLabel[trigger.reason];
+  return trigger.inferred ? `${label}, inferred` : label;
+}
+
+/** Whose message an operator row is: the viewer's own, or the named person's who posted it. */
+export function operatorAuthor(message: ActivityMessage, viewerId: string): string {
+  return message.author_user_id && message.author_user_id !== viewerId
+    ? `${message.author_name}'s`
+    : "your";
+}
 
 /** The windows the activity views offer, in hours. */
 export const ACTIVITY_WINDOW_HOURS: readonly number[] = [1, 6, 24, 72, 168];

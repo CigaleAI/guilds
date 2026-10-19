@@ -177,7 +177,8 @@ export type MachineInput = {
 export type Harness = "claude-code" | "codex" | "cursor" | "antigravity";
 
 /** The reasoning efforts a harness can run a model at, lowest first. */
-export type HarnessEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type HarnessEffort =
+  "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 /** One model a harness offers. */
 export type HarnessCatalogModel = {
@@ -1409,6 +1410,8 @@ export type ActivityMessage = {
   author_type: "user" | "agent";
   author_name: string;
   author_agent_id: string | null;
+  /** The person who posted an operator row; null for an agent's row. */
+  author_user_id: string | null;
   /** The wake that posted the row; null for the operator's rows. */
   source_run_id: string | null;
   /** Names the row tags. */
@@ -1440,9 +1443,11 @@ export type ActivityTrigger =
       through_seq: number | null;
       reason: ActivityTriggerReason;
       routing: ActivityRouting | null;
+      /** True when the run stored no waking row and `seq` was found from the row's tags. */
+      inferred: boolean;
     }
   | { type: "routine"; schedule_id: string | null }
-  | { type: "direct" };
+  | { type: "direct"; user_id: string | null };
 
 /** What a write touched: a collection record, a note, a script, the agent's memory, or a repository. */
 export type ActivityWriteKind = "record" | "note" | "script" | "memory" | "code";

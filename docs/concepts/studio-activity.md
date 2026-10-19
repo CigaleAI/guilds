@@ -80,7 +80,10 @@ Below the map, the **chains** list has one row per chain, newest first,
 under day headings. Each row has its start time and what started it,
 then each agent it woke with the wake's outcome and duration.
 Connectors between them say why the message reached the agent
-(tagged, routed, rules, fallback). A post that woke two agents
+(tagged, routed, rules, fallback); a cause found from tags rather than
+stored with the run adds **inferred**. A wake an operator's message
+started names whose message it was: yours, or the person's who posted
+it. A post that woke two agents
 continues on a branch row, and long chains scroll sideways. Chains
 that produced nothing are hidden until the filter is cleared. A map
 selection lists only the chains that pass through it, including those
