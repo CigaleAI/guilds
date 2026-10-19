@@ -38,6 +38,7 @@ import {
 } from "../attachments/index.js";
 import type { AttachmentRef } from "../attachments/index.js";
 import { jsonObj } from "../db/json.js";
+import { userActor } from "../db/config-changes.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { awaitingSettings, markDisconnected } from "../mcp/index.js";
@@ -1039,7 +1040,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         }
       }
       const turningOn = routinesEnabled === true && existing.routines_enabled === false;
-      const row = await repo.updateGuild(guildId, new Date(), patch);
+      const row = await repo.updateGuild(guildId, new Date(), patch, userActor(user));
       if (row === null) {
         throw new HttpError(404, "guild not found");
       }
@@ -1047,7 +1048,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         try {
           await notes.renameGuild(String(existing.org_slug), previousName, name);
         } catch (error) {
-          await repo.updateGuild(guildId, new Date(), { name: previousName });
+          await repo.updateGuild(guildId, new Date(), { name: previousName }, userActor(user));
           throw error;
         }
       }
@@ -1206,6 +1207,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const message = await generationOf(deps).group_chat.post_user(guildId, String(body.content ?? ""), {
         author_name: String(user.name),
+        author_user_id: String(user.id),
         interrupt: body.interrupt === true,
       });
       await repo.markGroupChatSeen(guildId, String(user.id), Number(message.seq), new Date());
@@ -2130,6 +2132,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const row = await schedules.create(
+        userActor(user),
         agentId,
         { cron: body.cron, window: body.window },
         body.description,
@@ -2156,7 +2159,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const agent = await ownedAgent(repo, agentId, user);
     const body = bodyOf(request);
     try {
-      const row = await schedules.setPaused(agentId, scheduleId, Boolean(body.paused));
+      const row = await schedules.setPaused(userActor(user), agentId, scheduleId, Boolean(body.paused));
       await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
         agent_id: agentId,
         action: body.paused ? "pause" : "resume",
@@ -2177,7 +2180,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const scheduleId = param(request, "schedule_id");
     const agent = await ownedAgent(repo, agentId, user);
     try {
-      await schedules.delete(agentId, scheduleId);
+      await schedules.delete(userActor(user), agentId, scheduleId);
       await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
         agent_id: agentId,
         action: "delete",
@@ -2673,6 +2676,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const run = await generationOf(deps).create_run(param(request, "agent_id"), message, {
         attachments,
+        startedByUserId: String(user.id),
       });
       await send(reply, message !== null ? 202 : 201, run);
     } catch (error) {
@@ -3571,6 +3575,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
               overlay.enabled,
               writeConnectionId,
               now,
+              userActor(user),
             );
       return bindingItem(row);
     } catch (error) {
@@ -3588,7 +3593,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       const [catalogKind, catalogId] = validateCatalog(query.catalog_kind ?? "", query.catalog_id ?? "");
       const [scope, scopeId] = validateScope(query.scope ?? "", query.scope_id ?? null);
       await scopeGuild(repo, scope, scopeId, user);
-      const row = await repo.deleteBinding(catalogKind, catalogId, scope, scopeId);
+      const row = await repo.deleteBinding(catalogKind, catalogId, scope, scopeId, userActor(user));
       if (row === null) {
         throw new HttpError(404, "binding not found");
       }

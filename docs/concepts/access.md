@@ -282,6 +282,16 @@ An `mcp` binding may carry a `connection_id`. Native-tool, `mcp_tool`,
 and `artifact_grant` bindings never do. A listed tool with no binding
 at any scope follows its server.
 
+Setting or removing an organisation, guild, or agent binding through
+the API, a recipe apply, or a Studio access proposal appends a
+`config_changes` row with `target_kind` `access` and the `catalog_id`
+as target: `Turned on tool <id>`, `Turned off tool <id>`, or
+`Reset tool <id> to inherit` (`connector` for an `mcp` binding,
+`grant` for an `artifact_grant`). A write that leaves the setting as
+it was appends nothing. Platform bindings and the off-by-default rows
+a new login writes are not logged
+([Artifacts](artifacts.md#configuration-change-log)).
+
 Resolution walks `platform`, then the organisation, then the agent's
 guild, then the agent. Each present row replaces `enabled` and, when
 it carries a connection, the current connection. An absent row leaves

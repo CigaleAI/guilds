@@ -301,7 +301,7 @@ A public message is an immutable row:
 - a guild-local sequence;
 - author type `user` or `agent`;
 - an author-name snapshot;
-- optional agent and source-run ids;
+- optional agent, posting-user, and source-run ids;
 - the Markdown text;
 - snapshots of the recognised tag names, agent ids, and user ids.
 
@@ -311,8 +311,13 @@ current member names, the guild's operator names, and `user`.
 Historical display uses the stored names. Delivery uses the stored
 agent ids. The inbox uses the stored user ids (`tagged_user_ids`).
 
-A user post snapshots the current user's name. `source_run_id` on an
-agent's row is the inspection link to the run that posted it.
+A user post snapshots the current user's name and records the user's
+id in `author_user_id`. `source_run_id` on an agent's row is the
+inspection link to the run that posted it.
+
+A group run stores the row that woke it in `runs.wake_group_message_id`:
+the latest row after the agent's cursor that tags it, else the latest
+operator row that tags no agent, else the latest row after its cursor.
 
 ### Recipient routing
 

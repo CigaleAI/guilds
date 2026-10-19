@@ -337,7 +337,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       if (loaded.orphan) {
         throw new HttpError(403, "orphan recovery cannot discard");
       }
-      return await studioOf(deps).drafts.discard(loaded.session, String(loaded.draft.id));
+      return await studioOf(deps).drafts.discard(loaded.session, loaded.user, String(loaded.draft.id));
     } catch (error) {
       mapStudioError(error);
     }

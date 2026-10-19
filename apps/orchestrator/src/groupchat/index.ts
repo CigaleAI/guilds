@@ -193,6 +193,27 @@ export function recipientNamesAfter(
   return recipients;
 }
 
+function tagsAgent(row: Record<string, unknown>, agentId: string): boolean {
+  const selfTag = row.author_type === "agent" && row.author_agent_id === agentId;
+  return !selfTag && storedTagAgentIds(row).includes(agentId);
+}
+
+/**
+ * The public row that woke an agent's group run: the latest row after its
+ * cursor that tags it, else the latest operator row that tags no agent, else
+ * the latest row after its cursor. Null when no row is after the cursor.
+ */
+export function wakeMessage(
+  rows: Array<Record<string, unknown>>,
+  agentId: string,
+  deliveredThrough: number,
+): Record<string, unknown> | null {
+  const unseen = rows.filter((row) => Number(row.seq) > deliveredThrough);
+  const tagging = unseen.filter((row) => tagsAgent(row, agentId));
+  const broadcast = unseen.filter((row) => row.author_type === "user" && !storedTagAgentIds(row).length);
+  return tagging.at(-1) ?? broadcast.at(-1) ?? unseen.at(-1) ?? null;
+}
+
 function viewerWasTagged(
   rows: Array<Record<string, unknown>>,
   viewerName: string,
@@ -267,7 +288,7 @@ export type GroupChatDatabase = {
     taggedAgentIds: string[],
     taggedUserIds: string[],
     now: Date,
-    options?: { authorName?: string },
+    options?: { authorName?: string; authorUserId?: string | null },
   ): Promise<Record<string, unknown> | null>;
   postAgentGroupMessage(
     guildId: string,
@@ -558,7 +579,7 @@ export class GroupChat {
   async post_user(
     guildId: string,
     content: string,
-    options: { author_name?: string; interrupt?: boolean } = {},
+    options: { author_name?: string; author_user_id?: string; interrupt?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     if (this._is_deleting(guildId)) {
       throw new GroupChatError(409, "guild is being deleted");
@@ -572,7 +593,7 @@ export class GroupChat {
       tags.agentIds,
       tags.userIds,
       new Date(),
-      { authorName: options.author_name ?? "user" },
+      { authorName: options.author_name ?? "user", authorUserId: options.author_user_id ?? null },
     );
     if (row === null) {
       throw new GroupChatError(404, "guild not found");
@@ -588,7 +609,7 @@ export class GroupChat {
   async postUser(
     guildId: string,
     content: string,
-    options: { author_name?: string; interrupt?: boolean } = {},
+    options: { author_name?: string; author_user_id?: string; interrupt?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     return this.post_user(guildId, content, options);
   }

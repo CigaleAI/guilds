@@ -1,3 +1,4 @@
+import { runActor, type ChangeActor } from "../db/config-changes.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { formatScheduleStamp, timingText } from "../schedules/item.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -24,6 +25,11 @@ function schedules(ctx: ToolContext) {
   return ctx.schedules;
 }
 
+/** The run making the call, as the routine's change log names it. */
+function callActor(ctx: ToolContext, toolName: string): ChangeActor {
+  return runActor({ runId: ctx.run_id, agentName: ctx.agent_name }, { id: ctx.tool_call_id, name: toolName });
+}
+
 async function publish(ctx: ToolContext, action: string, scheduleId: string): Promise<void> {
   if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
     await ctx.group_chat.publish(ctx.guild_id, "agent.routines.changed", {
@@ -36,12 +42,13 @@ async function publish(ctx: ToolContext, action: string, scheduleId: string): Pr
 
 async function createAndPublish(
   ctx: ToolContext,
-  when: { cron?: unknown; window?: unknown },
+  call: { tool: string; when: { cron?: unknown; window?: unknown } },
   args: Record<string, unknown>,
 ): Promise<string> {
   const row = await schedules(ctx).create(
+    callActor(ctx, call.tool),
     ctx.agent_id,
-    when,
+    call.when,
     argString(args, "description"),
     argString(args, "instruction"),
   );
@@ -91,7 +98,7 @@ export const scheduleCreateCron: Tool = {
     ["cron", "description", "instruction"],
   ),
   async handler(ctx, args) {
-    return createAndPublish(ctx, { cron: args.cron }, args);
+    return createAndPublish(ctx, { tool: "schedule_create_cron", when: { cron: args.cron } }, args);
   },
 };
 
@@ -126,11 +133,14 @@ export const scheduleCreateWindow: Tool = {
     return createAndPublish(
       ctx,
       {
-        window: {
-          timezone: args.timezone,
-          start: args.start,
-          end: args.end,
-          max_wakes: args.max_wakes,
+        tool: "schedule_create_window",
+        when: {
+          window: {
+            timezone: args.timezone,
+            start: args.start,
+            end: args.end,
+            max_wakes: args.max_wakes,
+          },
         },
       },
       args,
@@ -169,7 +179,12 @@ export const schedulePause: Tool = {
     ["schedule_id"],
   ),
   async handler(ctx, args) {
-    const row = await schedules(ctx).setPaused(ctx.agent_id, argString(args, "schedule_id"), true);
+    const row = await schedules(ctx).setPaused(
+      callActor(ctx, "schedule_pause"),
+      ctx.agent_id,
+      argString(args, "schedule_id"),
+      true,
+    );
     await publish(ctx, "pause", String(row.id));
     return `paused ${row.id}`;
   },
@@ -189,7 +204,12 @@ export const scheduleResume: Tool = {
     ["schedule_id"],
   ),
   async handler(ctx, args) {
-    const row = await schedules(ctx).setPaused(ctx.agent_id, argString(args, "schedule_id"), false);
+    const row = await schedules(ctx).setPaused(
+      callActor(ctx, "schedule_resume"),
+      ctx.agent_id,
+      argString(args, "schedule_id"),
+      false,
+    );
     await publish(ctx, "resume", String(row.id));
     return `resumed ${row.id}  next ${formatScheduleStamp(row.next_run_at)}`;
   },
@@ -209,7 +229,11 @@ export const scheduleDelete: Tool = {
     ["schedule_id"],
   ),
   async handler(ctx, args) {
-    const row = await schedules(ctx).delete(ctx.agent_id, argString(args, "schedule_id"));
+    const row = await schedules(ctx).delete(
+      callActor(ctx, "schedule_delete"),
+      ctx.agent_id,
+      argString(args, "schedule_id"),
+    );
     await publish(ctx, "delete", String(row.id));
     return `deleted ${row.id}`;
   },

@@ -176,7 +176,11 @@ export class StudioDrafts implements StudioDraftService {
     });
   }
 
-  async discard(session: Record<string, unknown>, draftId: string): Promise<Record<string, unknown>> {
+  async discard(
+    session: Record<string, unknown>,
+    user: Record<string, unknown>,
+    draftId: string,
+  ): Promise<Record<string, unknown>> {
     const now = new Date();
     return this.store.withSessionLock(String(session.id), async (client) => {
       const current = await this.store.lockDraft(draftId, client);
@@ -188,7 +192,7 @@ export class StudioDrafts implements StudioDraftService {
       }
       const updated = await this.store.updateDraft(
         String(current.id),
-        { status: "discarded", resolved_at: now },
+        { status: "discarded", resolved_at: now, discarded_by_user_id: user.id ?? null },
         client,
       );
       return viewDraft(updated ?? current);

@@ -1,3 +1,5 @@
+import type { ChangeActor } from "../db/config-changes.js";
+
 export const ARTIFACT_LEVELS = ["agent", "guild", "org"] as const;
 export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];
 
@@ -33,7 +35,8 @@ export type HiddenGuilds = { guildIds: readonly string[]; agentIds: readonly str
 
 export const NO_HIDDEN_GUILDS: HiddenGuilds = { guildIds: [], agentIds: [] };
 
-export type ArtifactActor = {
+/** Who reads or writes, and what they reach. Its change fields stamp every change it makes. */
+export type ArtifactActor = ChangeActor & {
   orgId: string;
   guildId: string | null;
   agentId: string | null;
@@ -41,10 +44,6 @@ export type ArtifactActor = {
   /** What an operator actor never reaches: the notes, Memory, and own tables of these guilds and agents. */
   hidden: HiddenGuilds;
   grants: ArtifactGrants;
-  actorType: "user" | "agent" | "run";
-  actorId: string;
-  actorName: string;
-  toolCall: { id: string; name: string } | null;
 };
 
 /**

@@ -464,6 +464,7 @@ Core's tables:
 - collection_access
 - attachments
 - file_changes
+- config_changes
 - memory_revisions
 - task_revisions
 - studio_sessions

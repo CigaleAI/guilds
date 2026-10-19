@@ -10,7 +10,7 @@ event: agent.routines.changed
 data: {"agent_id": "<id:a:1>", "action": "create", "schedule_id": "<id:sch:2>"}
 
 event: group.message.committed
-data: {"id": 1, "seq": 1, "author_type": "user", "author_name": "operator", "author_agent_id": null, "source_run_id": null, "content": "@researcher hello group", "tagged": ["researcher"], "tagged_agent_ids": ["<id:a:1>"], "tagged_user_ids": [], "created_at": "<ts:+00:00-us>"}
+data: {"id": 1, "seq": 1, "author_type": "user", "author_name": "operator", "author_agent_id": null, "author_user_id": "user_operator", "source_run_id": null, "content": "@researcher hello group", "tagged": ["researcher"], "tagged_agent_ids": ["<id:a:1>"], "tagged_user_ids": [], "created_at": "<ts:+00:00-us>"}
 
 event: group.delivery.started
 data: {"agent_id": "<id:a:1>", "agent_name": "researcher", "through_seq": 1}

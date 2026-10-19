@@ -847,6 +847,7 @@ export class StudioService {
     return {
       orgId: String(session.org_id),
       sourceGuildId: String(session.source_guild_id),
+      sessionId: String(session.id),
       user,
       repo: this.deps.repo,
       artifacts: this.deps.artifacts,

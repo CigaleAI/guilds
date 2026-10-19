@@ -44,6 +44,7 @@
     "author_type": "user",
     "author_name": "operator",
     "author_agent_id": null,
+    "author_user_id": null,
     "source_run_id": null,
     "content": "hello @ada",
     "tagged": [

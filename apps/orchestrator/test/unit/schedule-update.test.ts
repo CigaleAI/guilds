@@ -3,6 +3,9 @@ import { test } from "node:test";
 import { ScheduleError } from "../../src/schedules/cron.js";
 import { Schedules, changedFields, type ScheduleDatabase } from "../../src/schedules/service.js";
 import type { PlannedWake } from "../../src/schedules/window.js";
+import { userActor } from "../../src/db/config-changes.js";
+
+const ACTOR = userActor({ id: "user_operator", name: "operator" });
 
 const ROW = {
   id: "sch_1",
@@ -66,29 +69,29 @@ test("changed_fields_validates_each_field_it_changes", () => {
 test("update_refuses_an_unknown_schedule", async () => {
   const { db } = storeWith(ROW);
   await assert.rejects(
-    new Schedules(db).update("a_1", "sch_none", { paused: true }),
+    new Schedules(db).update(ACTOR, "a_1", "sch_none", { paused: true }),
     /schedule not found/,
   );
 });
 
 test("update_keeps_the_planned_wake_when_timing_stays", async () => {
   const { db, wakes } = storeWith(ROW);
-  await new Schedules(db).update("a_1", "sch_1", { instruction: "Sweep and post." });
+  await new Schedules(db).update(ACTOR, "a_1", "sch_1", { instruction: "Sweep and post." });
   assert.deepEqual(wakes, [null]);
 });
 
 test("update_plans_a_new_wake_for_a_new_timing", async () => {
   const { db, wakes } = storeWith(ROW);
-  await new Schedules(db).update("a_1", "sch_1", { when: { cron: "0 10 * * *" } });
+  await new Schedules(db).update(ACTOR, "a_1", "sch_1", { when: { cron: "0 10 * * *" } });
   assert.ok(wakes[0]?.at instanceof Date);
 });
 
 test("update_plans_a_new_wake_on_resume_and_none_while_paused", async () => {
   const paused = storeWith({ ...ROW, paused: true });
-  await new Schedules(paused.db).update("a_1", "sch_1", { paused: false });
+  await new Schedules(paused.db).update(ACTOR, "a_1", "sch_1", { paused: false });
   assert.ok(paused.wakes[0]?.at instanceof Date);
   const active = storeWith(ROW);
-  await new Schedules(active.db).update("a_1", "sch_1", {
+  await new Schedules(active.db).update(ACTOR, "a_1", "sch_1", {
     when: { cron: "0 10 * * *" },
     paused: true,
   });

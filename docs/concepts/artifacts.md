@@ -94,11 +94,14 @@ sends the collection name and the record id.
 A write to a note, Memory, a record, a script, or the Task records a
 change: which item, what operation, the version it produced, who did
 it, and when. A change made by a run also records the run and the
-exact tool call. This record is the file's provenance.
+exact tool call. A change the operator applies from a Prompt Studio
+card also records the coach message that proposed it. This record is
+the file's provenance.
 
-Three operator actions change records and record no change:
-**Delete all** on a collection, deleting a collection, and renaming
-or removing a column.
+Three operator actions change a collection's records as a whole:
+**Delete all**, deleting the collection, and renaming or removing a
+column. Each records one entry in the configuration change log,
+against the collection, instead of one change per record.
 
 ## In the app
 
@@ -188,7 +191,9 @@ Code: `apps/orchestrator/src/artifacts/paths.ts`.
 Every note, memory, record, script, or task create, update, or
 delete appends a `file_changes` row in the same transaction as the
 write. **Delete all** (`DELETE /api/collections/:id/records`),
-deleting a collection, and a column rename or removal write no row.
+deleting a collection, and a column rename or removal append a
+`config_changes` row instead
+([Configuration change log](#configuration-change-log)).
 
 | Column | Meaning |
 |---|---|
@@ -199,7 +204,8 @@ deleting a collection, and a column rename or removal write no row.
 | `operation` | `create`, `update`, or `delete` |
 | `version` | the version the write produced |
 | `actor_type`, `actor_id`, `actor_name` | `user`, `agent`, or `run`, and who |
-| `run_id`, `tool_call_id`, `tool_name` | set on a run-owned change |
+| `run_id`, `tool_call_id`, `tool_name` | set on a run-owned change; a Studio apply sets `tool_call_id` and `tool_name` to the coach's edit call |
+| `studio_session_id`, `studio_seq` | set on a change applied from a Prompt Studio card: the session and the sequence of the coach message that proposed it |
 | `created_at` | when |
 
 The orchestrator supplies this context. Agent tool schemas carry
@@ -215,7 +221,9 @@ POST /api/file-changes/latest                     the same, with { display_paths
 ```
 
 A run-owned change in the history expands to the run's agent,
-guild, kind, status, and routine.
+guild, kind, status, and routine. Each change carries `studio`:
+`{ session_id, seq }` for a change applied from a Studio card, or
+null. Changes written before the Studio link existed carry null.
 
 A path with no recorded change but a live row falls back to that
 row's last-saved facts: `recorded: false`, the saver's name, the
@@ -223,6 +231,39 @@ version, and the time. A Task falls back to its version and time.
 
 Code: `apps/orchestrator/src/artifacts/file-changes.ts`,
 `apps/orchestrator/src/http/artifact-files.ts`.
+
+### Configuration change log
+
+`config_changes` records changes that are not file writes, one row per
+change, in the same transaction as the write:
+
+| Target kind | Logged when |
+|---|---|
+| `routine` | a routine is created, edited, paused, resumed, or deleted ([Routines](routines.md#change-log)) |
+| `access` | an organisation, guild, or agent binding is set or removed ([Access](access.md)); platform bindings are not logged |
+| `guild_text` | a guild's about or description changes |
+| `collection` | **Delete all** removes at least one record, a collection is deleted, or a column is renamed or removed |
+
+A write that changes nothing logs nothing.
+
+| Column | Meaning |
+|---|---|
+| `id` | the change id (`cchg_…`) |
+| `org_id`, `guild_id`, `agent_id` | where the target sits; the guild and organisation follow from the agent or guild |
+| `target_kind`, `target_id` | the target: a schedule id, a catalog id (tool, connector, or grant), a guild id, or a collection id |
+| `operation` | `create`, `update`, or `delete` |
+| `summary` | one line in words, such as `Paused "Morning digest"` |
+| `actor_type`, `actor_id`, `actor_name` | `user`, `agent`, or `run`, and who |
+| `run_id`, `tool_call_id`, `tool_name` | set when an agent's run made the change through a tool call |
+| `studio_session_id`, `studio_seq` | set on a change applied from a Prompt Studio card |
+| `created_at` | when |
+
+`listConfigChanges` reads one target's changes, newest first. Deleting
+the organisation, guild, or agent deletes its rows; deleting the run or
+the Studio session clears the link. Changes made before the log
+existed have no row.
+
+Code: `apps/orchestrator/src/db/config-changes.ts`.
 
 ### Kept outside the store
 

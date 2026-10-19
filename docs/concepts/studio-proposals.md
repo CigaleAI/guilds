@@ -175,7 +175,14 @@ session lock:
   `file_changes` row that carries the edit tool's call id and name.
 - The guild goes through `updateGuild` and refreshes the session's
   `source_guild_snapshot`, so the next turn's system message holds the
-  new text. Guild text keeps no history.
+  new text. Guild text keeps no content history; its change log
+  records who changed which field.
+
+Every change an apply writes, to a file, a table, a routine, access,
+or the guild's text, records the session and the sequence of the coach
+message that proposed it (`studio_session_id`, `studio_seq`), so its
+history links back to the card
+([Artifacts](artifacts.md#configuration-change-log)).
 
 The resolution is stored on the tool message as `metadata.edit_status`
 (`applied` | `declined`), `edit_resolved_at`, `resolved_by_user_id`,
@@ -313,8 +320,8 @@ the turn's one continuation message.
 `rationale`, beside the draft itself. The operator's edits to the
 draft keep its `created_message_seq`, so the request follows the
 newest version. A draft the coach replaces in the same turn needs no
-answer. Publishing stores `published_by_user_id`
-([Prompt Studio](prompt-studio.md)).
+answer. Discarding stores `discarded_by_user_id`; publishing stores
+`published_by_user_id` ([Prompt Studio](prompt-studio.md)).
 
 `studio_call_connection_tool(connection_id, tool, arguments)` proxies
 one call through the orchestrator's MCP pool on a granted, connected

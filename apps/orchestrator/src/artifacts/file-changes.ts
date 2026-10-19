@@ -2,6 +2,7 @@ import type pg from "pg";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { newId } from "../lib/ids.js";
 import { stamp } from "../db/pg.js";
+import { actorColumns, studioLink, type ChangeLink } from "../db/config-changes.js";
 import type { ArtifactActor } from "./types.js";
 
 export type FileChangeOperation = "create" | "update" | "delete";
@@ -25,8 +26,9 @@ export async function recordFileChange(
   await db.query(
     `INSERT INTO file_changes (
        id, org_id, artifact_id, task_agent_id, display_path, operation, version,
-       actor_type, actor_id, actor_name, run_id, tool_call_id, tool_name, created_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+       actor_type, actor_id, actor_name, run_id, tool_call_id, tool_name,
+       studio_session_id, studio_seq, created_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
     [
       id,
       args.orgId,
@@ -35,12 +37,7 @@ export async function recordFileChange(
       args.displayPath,
       args.operation,
       args.version,
-      actor.actorType,
-      actor.actorId,
-      actor.actorName,
-      actor.actorType === "run" ? actor.actorId : null,
-      actor.toolCall?.id ?? null,
-      actor.toolCall?.name ?? null,
+      ...actorColumns(actor),
       stamp(args.createdAt ?? new Date()),
     ],
   );
@@ -66,13 +63,15 @@ export type FileChangeView = {
     created_at: string | null;
   } | null;
   tool: { call_id: string; name: string | null } | null;
+  /** The coach message the change was applied from, for an edit applied in the Studio. */
+  studio: ChangeLink | null;
   created_at: string;
 };
 
 const CHANGE_SELECT = `
   SELECT fc.id, fc.artifact_id, fc.task_agent_id, fc.display_path,
          fc.operation, fc.version, fc.actor_type, fc.actor_id, fc.actor_name,
-         fc.run_id, fc.tool_call_id, fc.tool_name, fc.created_at,
+         fc.run_id, fc.tool_call_id, fc.tool_name, fc.studio_session_id, fc.studio_seq, fc.created_at,
          r.agent_id AS run_agent_id, r.kind AS run_kind, r.status AS run_status,
          r.schedule_id AS run_schedule_id, r.created_at AS run_created_at,
          a.guild_id AS run_guild_id
@@ -118,6 +117,7 @@ function mapChange(orgId: string, row: Record<string, unknown>): FileChangeView 
           name: row.tool_name ? String(row.tool_name) : null,
         }
       : null,
+    studio: studioLink(row),
     created_at: isoOf(row.created_at) ?? "",
   };
 }
