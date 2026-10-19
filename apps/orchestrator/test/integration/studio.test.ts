@@ -287,6 +287,10 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     );
     const draft = createdDraft.draft as Record<string, unknown>;
     assert.equal(draft.status, "draft");
+    assert.equal(createdDraft.widget, "studio_task_draft");
+    assert.equal(createdDraft.await_operator, true);
+    assert.equal(createdDraft.draft_id, draft.id);
+    assert.deepEqual(createdDraft.agent, { id: "a_studio", name: "writer" });
     assert.equal(draft.base_version, liveTask?.version);
 
     const published = await app.inject({
@@ -566,6 +570,39 @@ test("studio reads agent access, script source, and granted connections", { time
       arguments: {},
     })) as { error?: string };
     assert.equal(blockedAgain.error, "access_required");
+
+    // A login request is answered on its card: the answer and who gave it stay on the request.
+    const logged = async (result: Record<string, unknown>): Promise<number> => {
+      const seq = await studio.store.nextSeq(session.id);
+      await studio.store.insertMessage(
+        session.id,
+        seq,
+        1,
+        { role: "tool", tool_call_id: `call_${seq}`, content: JSON.stringify(result) },
+        { generation: 1, tool_name: "studio_request_connection_access" },
+        new Date(),
+      );
+      return seq;
+    };
+    const answer = (seq: number, decision: string) =>
+      app.inject({ method: "POST", url: `/api/studio/sessions/${session.id}/logins/${seq}`, headers: AUTH, payload: { decision } });
+    const declineSeq = await logged(requested);
+    const declined = await answer(declineSeq, "decline");
+    assert.equal(declined.statusCode, 200, declined.body);
+    assert.deepEqual((declined.json() as { granted_connection_ids: string[] }).granted_connection_ids, []);
+    const declinedMeta = (await studio.store.getMessage(session.id, declineSeq))?.metadata as Record<string, unknown>;
+    assert.equal(declinedMeta.access_status, "declined");
+    assert.equal(declinedMeta.resolved_by_user_id, "user_operator");
+    assert.equal((await answer(declineSeq, "grant")).statusCode, 409);
+    const grantSeq = await logged(requested);
+    assert.equal((await answer(grantSeq, "maybe")).statusCode, 422);
+    const grantedByCard = await answer(grantSeq, "grant");
+    assert.equal(grantedByCard.statusCode, 200, grantedByCard.body);
+    assert.deepEqual((grantedByCard.json() as { granted_connection_ids: string[] }).granted_connection_ids, [String(connection.id)]);
+    const grantedMeta = (await studio.store.getMessage(session.id, grantSeq))?.metadata as Record<string, unknown>;
+    assert.equal(grantedMeta.access_status, "granted");
+    const systemSeq = Number((await studio.store.listMessages(session.id))[0]?.seq);
+    assert.equal((await answer(systemSeq, "grant")).statusCode, 404);
   } finally {
     await app.close();
     await database.close();
@@ -1529,9 +1566,20 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       reason: "The archivist's runs never call these.",
     };
     const accessWidget = (await studioEditAccess.handler(await ctx(), accessArgs)) as {
-      edit: { kind: string; target: { agent_id: string }; lines: { added: number; removed: number } };
+      edit: {
+        kind: string;
+        target: { agent_id: string };
+        lines: { added: number; removed: number };
+        changes: Array<{ kind: string; id: string; setting: string }>;
+        widens: boolean;
+      };
     };
     assert.equal(accessWidget.edit.kind, "access");
+    assert.equal(accessWidget.edit.widens, false);
+    assert.deepEqual(
+      accessWidget.edit.changes.map((change) => `${change.kind}:${change.id}:${change.setting}`).sort(),
+      ["mcp_tool:notion_notion-create-pages:off", "native_tool:group_post:off", "native_tool:note_delete:off"],
+    );
     assert.equal(accessWidget.edit.target.agent_id, "a_ar");
     assert.deepEqual(accessWidget.edit.lines, { added: 3, removed: 3 });
     const accessSeq = await commit("studio_edit_access", accessArgs, accessWidget);
@@ -1542,6 +1590,8 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.match(accessView.proposed, /notion_notion-create-pages: off, set on this agent, changes data/);
     const accessApplied = await resolve(accessSeq, "apply");
     assert.equal(accessApplied.statusCode, 200, accessApplied.body);
+    const appliedMeta = (await studio.store.getMessage(session.id, accessSeq))?.metadata as Record<string, unknown>;
+    assert.equal(appliedMeta.resolved_by_user_id, "user_operator");
     const narrowed = (await studioGetAgentAccess.handler(await ctx(), { agent_id: "archivist" })) as {
       native_tools: string[];
       withheld_native_tools: string[];
@@ -1557,7 +1607,8 @@ test("studio proposes notes to create and delete and narrows an agent's access",
 
     // Giving a tool back that changes data says so; a binding moved since makes the request stale.
     const widenArgs = { agent_id: "archivist", connection_tools: { "notion_notion-create-pages": "inherit" }, reason: "It files pages after all." };
-    const widenWidget = (await studioEditAccess.handler(await ctx(), widenArgs)) as { edit: { effects: string[] } };
+    const widenWidget = (await studioEditAccess.handler(await ctx(), widenArgs)) as { edit: { effects: string[]; widens: boolean } };
+    assert.equal(widenWidget.edit.widens, true);
     assert.ok(
       widenWidget.edit.effects.some((effect) => /call notion_notion-create-pages, which can change data/.test(effect)),
       widenWidget.edit.effects.join(" | "),

@@ -1229,6 +1229,9 @@ export type StudioDraft = {
   risks: unknown;
   status: "draft" | "conflicted" | "superseded" | "discarded" | "published" | "unchanged";
   draft_number: number;
+  supersedes_draft_id: string | null;
+  /** The coach message that created the draft; the operator's edits keep it. */
+  created_message_seq: number | null;
   created_at: string;
   published_resource_version: number | null;
   size_delta_bytes: number;

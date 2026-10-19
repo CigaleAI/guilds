@@ -96,8 +96,10 @@ Task never overwrites it.
 3. Selecting an agent under **Agents** opens the inspector on it.
 4. The coach looks at the evidence, then writes a draft in the Task
    shape: the agent, the complete new Task, why, and the evidence it
-   relied on.
-5. The operator reviews the diff and publishes. Publishing checks the
+   relied on. Its turn pauses until the draft is decided, with any
+   proposal it made in the same step.
+5. The operator reviews the diff and publishes, edits and publishes,
+   or discards. Publishing checks the
    embeds, the composed prompt, and its size in input tokens. It
    archives the outgoing Task as a version. If someone changed the
    Task since the draft's base, publishing is refused.
@@ -149,7 +151,9 @@ remembered. On a narrow screen a switch shows one of them at a time.
 
 The dark header (the same as the Builder's) names the guild and shows
 the coach model and temperature, the session status, **Back to
-guild**, **Logins**, **New session**, and **Archive**. A session that
+guild**, **N to approve** while the coach waits on decisions
+([Studio proposals](studio-proposals.md#where-a-request-shows)),
+**Logins**, **New session**, and **Archive**. A session that
 hit its input-token limit offers **Continue in a new session**.
 
 Under the header, a section bar switches the inspector between four
@@ -448,8 +452,10 @@ readable by a member or embedded in a member task.
 `studio_sessions`, `studio_messages`, `studio_drafts`.
 
 Drafts are immutable numbered rows (`resource_kind = agent_task`). A
-revision inserts a new head. Draft status is `draft`, `superseded`,
-`published`, `unchanged`, `discarded`, or `conflicted`.
+revision inserts a new head that keeps the draft's
+`created_message_seq`, the coach message that created it. Draft status
+is `draft`, `superseded`, `published`, `unchanged`, `discarded`, or
+`conflicted`. `published_by_user_id` records who published it.
 
 A focus pin is a `studio_messages` user row with
 `metadata.source = studio_focus`. A proposal is a `studio_messages`
@@ -504,6 +510,7 @@ GET    /api/studio/sessions/:id/connections
 PUT    /api/studio/sessions/:id/connections/:connection_id
 GET    /api/studio/sessions/:id/edits/:seq
 POST   /api/studio/sessions/:id/edits/:seq
+POST   /api/studio/sessions/:id/logins/:seq
 GET    /api/studio/guilds/:guild_id/inventory
 GET    /api/studio/sessions/:id/inventory
 GET    /api/studio/sessions/:id/agents/:agent_id
@@ -525,7 +532,7 @@ POST   /api/studio/drafts/:id/publish
 POST   /api/studio/drafts/:id/discard
 ```
 
-The connection and edit routes are described in
+The connection, edit, and login routes are described in
 [Studio proposals](studio-proposals.md#http), and the activity route
 in [Studio activity](studio-activity.md#http).
 

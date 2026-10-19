@@ -6,6 +6,7 @@ import {
   batchReply,
   connectionLabel,
   decisionOf,
+  draftDecision,
   editTargetLabel,
   focusOf,
   widgetOf,
@@ -142,4 +143,59 @@ test("the apply button names what a create or delete makes", () => {
   assert.equal(applyLabel({ kind: "routine", action: "create" }), "Create routine");
   assert.equal(applyLabel({ kind: "routine", action: "delete" }), "Delete routine");
   assert.equal(applyLabel({ kind: "routine", action: "edit" }), "Apply edit");
+});
+
+test("a Task draft is read from its tool result and answered in the coach's words", () => {
+  const draft = widgetOf(
+    message(6, {
+      role: "tool",
+      content: JSON.stringify({
+        widget: "studio_task_draft",
+        agent: { id: "a_1", name: "wallet" },
+        draft_id: "std_1",
+        rationale: "No stop rule.",
+      }),
+    }),
+  );
+  assert.deepEqual(draft, {
+    kind: "draft",
+    agent: { id: "a_1", name: "wallet" },
+    draft_id: "std_1",
+    rationale: "No stop rule.",
+  });
+  assert.ok(draft?.kind === "draft");
+  assert.deepEqual(draftDecision(draft, "published"), {
+    accepted: true,
+    line: "Published the draft for wallet.",
+  });
+  assert.deepEqual(draftDecision(draft, "edited"), {
+    accepted: true,
+    line: "Edited and published the draft for wallet.",
+  });
+  assert.deepEqual(draftDecision(draft, "discarded"), {
+    accepted: false,
+    line: "Discarded the draft for wallet.",
+  });
+  assert.equal(
+    widgetOf(
+      message(7, {
+        role: "tool",
+        content: JSON.stringify({ widget: "studio_task_draft", agent: { id: "a_1" } }),
+      }),
+    ),
+    null,
+  );
+  assert.deepEqual(
+    widgetOf(
+      message(8, {
+        role: "tool",
+        content: JSON.stringify({
+          widget: "studio_task_draft",
+          agent: { id: "a_1" },
+          draft_id: "d",
+        }),
+      }),
+    ),
+    { kind: "draft", agent: { id: "a_1", name: "a_1" }, draft_id: "d" },
+  );
 });

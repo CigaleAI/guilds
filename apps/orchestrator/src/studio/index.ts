@@ -32,7 +32,13 @@ import { StudioStore } from "./store.js";
 import { composeGenerationContext, composeStudioSystemMessage, hydrateStudioMember, readStudioSystemTemplate, studioSystemHash } from "./system.js";
 import { studioToolSchemas } from "./tools.js";
 import { previewCurrentState, projectGuildConnections, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
-import { grantedConnectionIds, reachableConnection, type StudioMcpClient } from "./connections.js";
+import {
+  findLoginRecord,
+  grantedConnectionIds,
+  loginStatus,
+  reachableConnection,
+  type StudioMcpClient,
+} from "./connections.js";
 import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocus } from "./focus.js";
 import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
@@ -319,6 +325,22 @@ export class StudioService {
     connectionId: string,
     granted: boolean,
   ): Promise<Record<string, unknown>> {
+    const next = await this.grantedAfter(session, connectionId, granted);
+    const updated = await this.store.updateSession(
+      String(session.id),
+      { granted_connection_ids: next },
+      new Date(),
+    );
+    return this.viewSession(updated ?? { ...session, granted_connection_ids: next });
+  }
+
+  // The session's granted logins once one is granted or withdrawn. A grant
+  // must name a connected login the source guild can reach.
+  private async grantedAfter(
+    session: Record<string, unknown>,
+    connectionId: string,
+    granted: boolean,
+  ): Promise<string[]> {
     if (session.status !== "active") {
       throw new StudioConflictError("session is not active");
     }
@@ -326,30 +348,55 @@ export class StudioService {
       throw new StudioUnprocessableError("source guild is gone");
     }
     const current = grantedConnectionIds(session);
-    let next: string[];
-    if (granted) {
-      const reach = await reachableConnection(
-        this.deps.repo,
-        String(session.org_id),
-        String(session.source_guild_id),
-        connectionId,
-      );
-      if (!reach) {
-        throw new StudioUnprocessableError("connection is not reachable from the source guild");
-      }
-      if (reach.connection.status !== "connected") {
-        throw new StudioUnprocessableError(`connection is ${String(reach.connection.status)}`);
-      }
-      next = current.includes(connectionId) ? current : [...current, connectionId];
-    } else {
-      next = current.filter((id) => id !== connectionId);
+    if (!granted) {
+      return current.filter((id) => id !== connectionId);
     }
-    const updated = await this.store.updateSession(
-      String(session.id),
-      { granted_connection_ids: next },
-      new Date(),
+    const reach = await reachableConnection(
+      this.deps.repo,
+      String(session.org_id),
+      String(session.source_guild_id),
+      connectionId,
     );
-    return this.viewSession(updated ?? { ...session, granted_connection_ids: next });
+    if (!reach) {
+      throw new StudioUnprocessableError("connection is not reachable from the source guild");
+    }
+    if (reach.connection.status !== "connected") {
+      throw new StudioUnprocessableError(`connection is ${String(reach.connection.status)}`);
+    }
+    return current.includes(connectionId) ? current : [...current, connectionId];
+  }
+
+  // Grant or decline one login request from the Studio log. The answer and
+  // who gave it are kept on the request's tool message; a grant also adds the
+  // login to the session. The session lock serialises answers.
+  async resolveLogin(
+    session: Record<string, unknown>,
+    user: Record<string, unknown>,
+    seq: number,
+    decision: "grant" | "decline",
+  ): Promise<Record<string, unknown>> {
+    this.assertLive(session);
+    const sessionId = String(session.id);
+    const updated = await this.store.withSessionLock(sessionId, async (client, locked) => {
+      const record = findLoginRecord(await this.store.getMessage(sessionId, seq, client), seq);
+      const status = loginStatus(record);
+      if (status !== "pending") {
+        throw new StudioConflictError(`login request is already ${status}`);
+      }
+      const now = new Date();
+      await this.store.updateMessage(sessionId, seq, record.payload, {
+        ...record.metadata,
+        access_status: decision === "grant" ? "granted" : "declined",
+        access_resolved_at: now.toISOString(),
+        resolved_by_user_id: user.id ?? null,
+      }, client);
+      if (decision === "decline") {
+        return locked;
+      }
+      const next = await this.grantedAfter(locked, record.connectionId, true);
+      return (await this.store.updateSession(sessionId, { granted_connection_ids: next }, now, client)) ?? locked;
+    });
+    return this.viewSession(updated);
   }
 
   async archive(session: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -829,17 +876,22 @@ export class StudioService {
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const scope = this.editScope(session, user);
+    const userId = user.id === undefined || user.id === null ? null : String(user.id);
     const outcome = await this.store.withSessionLock(String(session.id), async () => {
       const record = findEditRecord(await this.store.listMessages(String(session.id)), seq);
       if (editStatus(record) !== "pending") {
         throw new StudioConflictError(`edit request is already ${editStatus(record)}`);
       }
       if (decision === "decline") {
-        await markEdit(this.store, String(session.id), record, "declined", null);
+        await markEdit(this.store, String(session.id), record, { status: "declined", version: null, userId });
         return { record, applied: null };
       }
       const applied = await applyEdit(scope, record);
-      await markEdit(this.store, String(session.id), record, "applied", applied.version);
+      await markEdit(this.store, String(session.id), record, {
+        status: "applied",
+        version: applied.version,
+        userId,
+      });
       return { record, applied };
     });
     if (outcome.applied?.guild) {

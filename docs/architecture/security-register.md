@@ -272,7 +272,10 @@ agent's own bindings, as the operator, after checking the agent's
 resolved access has not moved since the request. The card shows the
 access before and after, marks each connection tool that changes data,
 and names every such tool the request gives back. The Studio template
-treats everything it reads as evidence, never instructions.
+treats everything it reads as evidence, never instructions. A request
+that widens access is marked as such, and **Apply all** skips it: it
+needs its own apply (added 2026-10-19, with the workspace's approval
+tray).
 
 **Residual risk:** an operator who applies a request without reading it
 can give an agent a tool that changes data. Closing it fully takes

@@ -34,7 +34,27 @@ export type EditWidget = {
     /** The guild fields a guild edit changes. */
     fields?: string[];
     lines?: { added?: number; removed?: number };
+    /** An access edit's changes, one per tool, file level, or connection. */
+    changes?: AccessChange[];
+    /** Whether an access edit turns on anything the agent cannot use today. */
+    widens?: boolean;
   };
+};
+
+/** One overlay an access edit writes. */
+export type AccessChange = {
+  kind: "native_tool" | "artifact_grant" | "mcp" | "mcp_tool";
+  id: string;
+  label: string;
+  setting: "on" | "off" | "inherit";
+};
+
+/** A Task draft the coach wrote, decided like an edit: published, edited and published, or discarded. */
+export type DraftWidget = {
+  kind: "draft";
+  agent: { id: string; name: string };
+  draft_id: string;
+  rationale?: string;
 };
 
 export type AccessWidget = {
@@ -86,6 +106,23 @@ export function applyLabel(edit: EditWidget["edit"]): string {
   return "Apply edit";
 }
 
+/** A request the coach made in its turn: an edit, a login, or a Task draft. */
+export type StudioWidget = EditWidget | AccessWidget | DraftWidget;
+
+/** What became of a draft: the outcome of the last version the operator saw. */
+export type DraftOutcome = "published" | "edited" | "discarded";
+
+const DRAFT_LINES: Record<DraftOutcome, (agent: string) => string> = {
+  published: (agent) => `Published the draft for ${agent}.`,
+  edited: (agent) => `Edited and published the draft for ${agent}.`,
+  discarded: (agent) => `Discarded the draft for ${agent}.`,
+};
+
+/** A draft's answer in the words the coach reads. */
+export function draftDecision(widget: DraftWidget, outcome: DraftOutcome): RequestDecision {
+  return { accepted: outcome !== "discarded", line: DRAFT_LINES[outcome](widget.agent.name) };
+}
+
 /** One request's answer: an edit applied or declined, a login granted or declined. */
 export function decisionOf(widget: EditWidget | AccessWidget, accepted: boolean): RequestDecision {
   if (widget.kind === "edit") {
@@ -117,10 +154,22 @@ export function batchReply(decisions: readonly (RequestDecision | null)[]): stri
   return [...all.map((decision) => decision.line), next].join(" ");
 }
 
-/** A tool result that asks the operator to decide: an edit to apply, or a login to grant. */
+/** A draft widget's fields, when the tool result carries them. */
+function draftWidget(body: Record<string, unknown>): DraftWidget | null {
+  const agent = (body.agent ?? {}) as Partial<DraftWidget["agent"]>;
+  if (typeof body.draft_id !== "string" || typeof agent.id !== "string") return null;
+  return {
+    kind: "draft",
+    agent: { id: agent.id, name: typeof agent.name === "string" ? agent.name : agent.id },
+    draft_id: body.draft_id,
+    ...(typeof body.rationale === "string" ? { rationale: body.rationale } : {}),
+  };
+}
+
+/** A tool result that asks the operator to decide: an edit to apply, a login to grant, a draft. */
 export function widgetOf(
   message: Pick<StudioMessage, "payload"> | null | undefined,
-): EditWidget | AccessWidget | null {
+): StudioWidget | null {
   if (!message || message.payload.role !== "tool" || typeof message.payload.content !== "string")
     return null;
   let parsed: unknown;
@@ -149,6 +198,7 @@ export function widgetOf(
       connection: (body.connection as AccessWidget["connection"]) ?? {},
     };
   }
+  if (body.widget === "studio_task_draft") return draftWidget(body);
   return null;
 }
 

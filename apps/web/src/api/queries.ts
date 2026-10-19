@@ -2229,6 +2229,16 @@ export function useStudioConnections(id: string) {
   });
 }
 
+/** Grants or declines a login the coach asked for; the answer is kept on its request. */
+export function useResolveStudioLogin(id: string) {
+  const refresh = useStudioRefresh(id);
+  return useMutation({
+    mutationFn: ({ seq, decision }: { seq: number; decision: "grant" | "decline" }) =>
+      api<StudioSession>(`${studioPath(id)}/logins/${seq}`, { method: "POST", body: { decision } }),
+    onSuccess: refresh,
+  });
+}
+
 export function useGrantStudioConnection(id: string) {
   const refresh = useStudioRefresh(id);
   return useMutation({

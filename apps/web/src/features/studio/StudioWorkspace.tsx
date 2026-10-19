@@ -25,6 +25,8 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { AgentsSection } from "./AgentsSection";
+import { ApprovalTray } from "./ApprovalTray";
+import { useApprovals } from "./approvals";
 import { clearPin, readPin, type StudioPin } from "./investigate";
 import { studioSectionLabel, type StudioSearch } from "./location";
 import { Splitter, useSplitShare } from "../coach/Splitter";
@@ -33,6 +35,7 @@ import { SectionBar } from "./SectionBar";
 import { StateSection } from "./state/StateSection";
 import { StudioChat } from "./StudioChat";
 import { StudioContext, useStudio, type StudioView } from "./StudioContext";
+import { ProposalPanel } from "./ProposalCards";
 import { OverviewTab } from "./tabs/OverviewTab";
 import { openDraft } from "./tabs/TaskTabs";
 import { ToolsSection } from "./tools/ToolsSection";
@@ -67,6 +70,12 @@ function Workspace({ sessionId }: { sessionId: string }) {
   const split = useMediaQuery(splitScreen);
   const [pane, setPane] = useState<"inspect" | "coach">("inspect");
   const [share, setShare] = useSplitShare(splitKey, 0.65);
+  const approvals = useApprovals({
+    sessionId,
+    session: session.data,
+    messages: messages.data,
+    drafts: drafts.data,
+  });
 
   const agents = inventory.data ?? [];
 
@@ -128,6 +137,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
       setPin({ focus, prompt: "" });
       setPane("coach");
     },
+    approvals,
   };
   const unpin = () => {
     clearPin(sessionId);
@@ -174,6 +184,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
                   Continue in a new session
                 </Button>
               ) : null}
+              {data.status === "active" ? <ApprovalTray /> : null}
               {data.status === "active" ? <LoginsPopover session={data} /> : null}
               <Button asChild variant="on-panel" size="sm">
                 <Link to="/studio" search={{ guild: data.source_guild_id }}>
@@ -270,17 +281,22 @@ function Workspace({ sessionId }: { sessionId: string }) {
   );
 }
 
-/** The open section's view. */
+/** The open section's view, under the coach's requests that wait in it. */
 function Inspector({ drafts, pending }: { drafts: StudioDraft[]; pending: StudioDraft[] }) {
-  const { search } = useStudio();
-  switch (search.section) {
-    case "agents":
-      return <AgentsSection drafts={drafts} />;
-    case "state":
-      return <StateSection />;
-    case "tools":
-      return <ToolsSection />;
-    default:
-      return <OverviewTab pending={pending} />;
-  }
+  const { search, approvals } = useStudio();
+  if (search.section === "agents") return <AgentsSection drafts={drafts} />;
+  return (
+    <>
+      <ProposalPanel
+        proposals={approvals.open.filter((proposal) => proposal.place === search.section)}
+      />
+      {search.section === "state" ? (
+        <StateSection />
+      ) : search.section === "tools" ? (
+        <ToolsSection />
+      ) : (
+        <OverviewTab pending={pending} />
+      )}
+    </>
+  );
 }

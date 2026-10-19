@@ -1,13 +1,54 @@
 import { decryptPayload } from "../credentials/crypto.js";
+import { jsonObj } from "../db/json.js";
 import type { Repositories } from "../db/repositories.js";
 import { listedFromRows, McpError, isReadOnlyRemote } from "../mcp/index.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
-import { StudioUnprocessableError } from "./errors.js";
+import { StudioError, StudioUnprocessableError } from "./errors.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";
+
+export type StudioLoginStatus = "pending" | "granted" | "declined";
+
+/** A login request the coach made: its tool message and the connection it names. */
+export type LoginRecord = {
+  seq: number;
+  connectionId: string;
+  payload: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+};
+
+function widgetOf(payload: Record<string, unknown>): Record<string, unknown> | null {
+  if (payload.role !== "tool" || typeof payload.content !== "string") return null;
+  try {
+    return jsonObj(JSON.parse(payload.content)) as Record<string, unknown> | null;
+  } catch {
+    return null;
+  }
+}
+
+/** The login request at a tool message seq; anything else there is not found. */
+export function findLoginRecord(message: Record<string, unknown> | null, seq: number): LoginRecord {
+  const payload = (jsonObj(message?.payload) as Record<string, unknown> | null) ?? {};
+  const widget = widgetOf(payload);
+  const connection = (jsonObj(widget?.connection) as Record<string, unknown> | null) ?? {};
+  if (!message || widget?.widget !== STUDIO_CONNECTION_ACCESS_WIDGET || typeof connection.id !== "string") {
+    throw new StudioError(404, "login request not found");
+  }
+  return {
+    seq,
+    connectionId: connection.id,
+    payload,
+    metadata: (jsonObj(message.metadata) as Record<string, unknown> | null) ?? {},
+  };
+}
+
+export function loginStatus(record: LoginRecord): StudioLoginStatus {
+  const status = record.metadata.access_status;
+  return status === "granted" || status === "declined" ? status : "pending";
+}
 
 export type StudioMcpClient = {
   call(

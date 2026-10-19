@@ -114,6 +114,22 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
+  app.post("/api/studio/sessions/:session_id/logins/:seq", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    const body = bodyOf(request);
+    if (body.decision !== "grant" && body.decision !== "decline") {
+      throw new HttpError(422, "decision must be grant or decline");
+    }
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      return await studio.resolveLogin(session, user, Number(param(request, "seq")), body.decision);
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
   app.get("/api/studio/sessions/:session_id/edits/:seq", async (request) => {
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);

@@ -67,6 +67,8 @@ export type AccessReview = {
   proposed: string;
   effects: string[];
   changes: Change[];
+  /** Whether applying turns on anything the agent cannot use today. */
+  widens: boolean;
 };
 
 function hashOf(value: unknown): string {
@@ -297,6 +299,25 @@ function accessEffects(snapshot: Snapshot, after: Array<Record<string, unknown>>
   return effects;
 }
 
+/** Everything the agent can use under these bindings, one key per tool, file level, and connection. */
+function enabledAccess(snapshot: Snapshot, rows: Array<Record<string, unknown>>): Set<string> {
+  const on = (prefix: string, items: Resolved[]) =>
+    items.filter((item) => item.enabled).map((item) => `${prefix}:${item.catalog_id}`);
+  const keys = [...on("tool", resolvedTools(rows, snapshot.scope)), ...on("grant", resolvedGrants(rows, snapshot.scope))];
+  for (const { item, connection } of agentConnections(snapshot, rows)) {
+    keys.push(...on("mcp", [item]));
+    const tools = connection.tools.map((tool) => resolveMcpTool(rows, tool.name, { serverEnabled: item.enabled, ...snapshot.scope }));
+    keys.push(...on("mcp_tool", tools));
+  }
+  return new Set(keys);
+}
+
+/** Whether the bindings after a proposal let the agent use something it cannot use before. */
+function widensAccess(snapshot: Snapshot, after: Array<Record<string, unknown>>): boolean {
+  const before = enabledAccess(snapshot, snapshot.rows);
+  return [...enabledAccess(snapshot, after)].some((key) => !before.has(key));
+}
+
 /**
  * Checks what an access proposal asks for against the live bindings. A request
  * must change something; a review recomputes the same proposal so a binding
@@ -320,6 +341,7 @@ export async function reviewAccess(scope: EditScope, agentId: string, args: Reco
     proposed,
     effects: accessEffects(snapshot, after, changes),
     changes,
+    widens: widensAccess(snapshot, after),
   };
 }
 

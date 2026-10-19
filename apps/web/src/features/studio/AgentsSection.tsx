@@ -5,6 +5,8 @@ import type { StudioAgent, StudioDraft } from "../../api/types";
 import { agentLook } from "../../app/agents";
 import { AgentTabs, Icon, PillCount, Tag, tabsList, tabsTrigger } from "@guildsrun/ui";
 import { ActivityLedger } from "./activity/ActivityLedger";
+import { countOpen } from "./pendingModel";
+import { ProposalPanel } from "./ProposalCards";
 import {
   studioAgentTabs,
   studioTabLabel,
@@ -46,7 +48,10 @@ export function AgentsSection({ drafts }: { drafts: StudioDraft[] }) {
 
 /** Topology and each of the guild's agents, to point the inspector at. */
 function AgentStrip({ current }: { current: StudioAgent | null }) {
-  const { agents, go } = useStudio();
+  const { agents, go, approvals } = useStudio();
+  const counts = countOpen(approvals.proposals, (proposal) =>
+    proposal.place === "agents" ? proposal.agentId : null,
+  );
   return (
     <AgentTabs
       overview={{ label: "Topology" }}
@@ -56,7 +61,7 @@ function AgentStrip({ current }: { current: StudioAgent | null }) {
         ...agentLook(item),
         version: item.task_version,
         title: item.warnings.map((warning) => warningLabel[warning]).join(", ") || item.focus,
-        marks: <AgentMarks agent={item} />,
+        marks: <AgentMarks agent={item} pending={counts[item.id] ?? 0} />,
       }))}
       current={current?.id ?? null}
       onSelect={(agentId) =>
@@ -66,9 +71,10 @@ function AgentStrip({ current }: { current: StudioAgent | null }) {
   );
 }
 
-function AgentMarks({ agent }: { agent: StudioAgent }) {
+function AgentMarks({ agent, pending }: { agent: StudioAgent; pending: number }) {
   return (
     <>
+      {pending ? <PillCount aria-label={`${pending} to approve`}>{pending}</PillCount> : null}
       {agent.draft_id && agent.draft_status && openDraft({ status: agent.draft_status }) ? (
         <Tag tone="signal" font="sans">
           draft
@@ -106,7 +112,12 @@ const stateLinks: { label: string; search: (agentId: string) => StudioSearch }[]
 
 /** One agent's tabs and the open tab's view. */
 function AgentInspector({ agent, drafts }: { agent: StudioAgent; drafts: StudioDraft[] }) {
-  const { session, search } = useStudio();
+  const { session, search, approvals } = useStudio();
+  const waiting = countOpen(approvals.proposals, (proposal) =>
+    proposal.agentId === agent.id && proposal.place === "agents"
+      ? (proposal.location?.tab ?? null)
+      : null,
+  );
   const tabs = studioAgentTabs.filter((value) => value !== "scripts" || agent.scripting !== false);
   const tab = agentTab(search.tab, drafts, tabs);
   const open = drafts.filter(openDraft).length;
@@ -125,6 +136,9 @@ function AgentInspector({ agent, drafts }: { agent: StudioAgent; drafts: StudioD
             >
               {studioTabLabel[value]}
               {value === "draft" && open ? <PillCount>{open}</PillCount> : null}
+              {waiting[value] ? (
+                <span className="size-2 rounded-full bg-signal" aria-label="waiting on approval" />
+              ) : null}
             </Link>
           ))}
           {stateLinks.map((link) => (
@@ -142,6 +156,14 @@ function AgentInspector({ agent, drafts }: { agent: StudioAgent; drafts: StudioD
           ))}
         </nav>
       </div>
+      <ProposalPanel
+        proposals={approvals.open.filter(
+          (proposal) =>
+            proposal.agentId === agent.id &&
+            proposal.widget.kind !== "draft" &&
+            proposal.location?.tab === tab,
+        )}
+      />
       <div className="flex min-h-0 flex-1 flex-col">
         <AgentView agent={agent} tab={tab} drafts={drafts} />
       </div>

@@ -6,12 +6,13 @@ can propose a change to an agent's [Memory](memory.md), a
 [note](notes.md), the guild's short description and description, a
 [collection](collections.md), a [routine](routines.md), or what one
 agent is offered ([access](access.md)). It can also ask for read
-access to one login. Task changes are drafts, not proposals: the
-operator publishes them from the inspector.
+access to one login. Task changes are drafts: the operator publishes
+them from the agent's **Draft** tab, and a turn waits on them like on
+a proposal.
 
-Each proposal shows in the coach chat as a card. The coach writes
-nothing. The operator applies or declines each card, and Studio then
-writes as the operator.
+Each proposal shows in the coach chat as a card, and wherever the
+change lands in the workspace. The coach writes nothing. The operator
+applies or declines each one, and Studio then writes as the operator.
 
 ## Why it exists
 
@@ -33,24 +34,57 @@ flowchart LR
 ```
 
 1. The coach reads the live target and proposes the complete new
-   content, with a reason.
-2. The turn pauses. The card shows the live text beside the proposal.
+   content, with a reason. It issues a turn's drafts and proposals in
+   one step.
+2. The turn pauses at the end of that step. The card shows the live
+   text beside the proposal.
 3. The operator applies or declines. Apply refuses when the target
-   changed since the coach read it; the card then shows as stale.
-4. When one turn proposes several changes, the coach waits until every
-   one is applied or declined. Then it continues with one reply that
-   lists each decision.
+   changed since the coach read it; the card then shows as stale. A
+   draft is published, edited and published, or discarded.
+4. The coach waits until every request of the turn is decided, wherever
+   it was decided. Then it continues with one reply that lists each
+   decision.
 
 ### Login requests
 
 A session starts with no access to outside data. The coach may ask for
 read access to one login (a connection to an external service). The
 operator grants or declines it from a card, or from **Logins** in the
-workspace header. With a grant, the coach may call only that login's
-read-only tools, and the grant ends with the session. A login card
-counts toward the turn's answers like any other card.
+workspace header. The answer is kept on the request. With a grant, the
+coach may call only that login's read-only tools, and the grant ends
+with the session. A login card counts toward the turn's answers like
+any other card.
 
 ## In the app
+
+### Where a request shows
+
+Every request of the coach's latest turn is one pending item. It shows
+in five places, and deciding it in any of them clears it from all:
+
+| Place | What it shows |
+|---|---|
+| Header | **N to approve** opens a tray grouped by section. Each item has **Show**, its apply button (**Publish** for a draft, **Grant** for a login), and **Decline** (**Discard** for a draft), with **Apply all** and **Decline all** under them |
+| Section bar and agent tabs | A count on each section and each agent; a dot on the agent tab that holds the item |
+| The item | Its card above the view it changes: an agent's **Memory** or **Routines** tab, the guild's overview, **State**, or **Tools** |
+| Coach chat | The cards of the turn, each with **Show**; the chat's header reads **Waiting on N decisions** |
+
+| Request | Section | Lands on |
+|---|---|---|
+| Task draft | Agents | The agent's **Draft** tab |
+| Memory edit | Agents | The agent's **Memory** tab |
+| Routine create, edit, delete | Agents | The agent's **Routines** tab, at the routine |
+| Note or table create, edit, delete | State | The item in the list |
+| Access change | Tools | **Tools** |
+| Guild text | Guild | The overview |
+| Login request | Logins | The **Logins** popover |
+
+**Apply all** never grants a login and never applies an access change
+that widens what an agent can do: each of those needs its own apply,
+and **Apply all** says how many it left. **Decline all** declines
+every open request. When the last request is decided in the open
+page, the coach's reply goes out by itself. If it fails to send, or
+the turn was settled before the page opened, **Continue** sends it.
 
 ### Cards
 
@@ -62,10 +96,11 @@ resolve that one request. A card whose target changed since shows as
 stale.
 
 While more than one card of a turn is open, a line under the cards
-counts what is left, and **Apply all** and **Decline all** resolve
-every open card in turn. **Apply all** is off while any open card is
-stale; a refused apply stops the rest. If the coach's reply fails to
-send, **Continue** sends it again.
+counts what is left, with **Apply all** and **Decline all**. They
+resolve the open requests in turn; a refused apply, such as a stale
+one, stops the rest. A draft card shows the draft's number, base
+version, and outcome; its diff and **Publish**, **Edit**, and
+**Discard** are in the agent's **Draft** tab.
 
 | Proposal | What the card shows | Apply button |
 |---|---|---|
@@ -74,7 +109,7 @@ send, **Continue** sends it again.
 | Deleted note | Its text as removed lines, and the agents whose Task embeds it (applying fails until none does) | **Delete note** |
 | Collection | The collection before and after as text: a header with the owner, the purpose, one line per column, and one per grant | **Create table**, **Delete table**, or **Apply edit** |
 | Routine | The routine before and after as text: the agent, the description, the timing in words, whether it is paused, and the instruction | **Create routine**, **Delete routine**, or **Apply edit** |
-| Access | The agent's access before and after as text: one line per native tool and file level, and one per connection with a line per connection tool | **Apply edit** |
+| Access | The agent's access before and after as text: one line per native tool and file level, and one per connection with a line per connection tool. A change that widens access says it is decided on its own | **Apply edit** |
 | Login | The server and its account | **Grant read access** |
 
 Collection, routine, and access cards also list what applying does:
@@ -105,7 +140,9 @@ or revokes each one for the session.
 | Targets | Memory, notes (create, change, delete), the guild's short description and description, collections (create, change, delete), routines (create, change, delete), one agent's access |
 | Never a proposal | Tasks (those are drafts), scripts, records, agent configuration |
 | A changed target | Apply is refused (409); the card shows as stale |
-| A request | Resolves once |
+| A request | Resolves once, and records who resolved it |
+| A turn | Pauses at the end of the step that made a request; continues once every request of the turn is decided |
+| **Apply all** | Skips login grants and access changes that widen |
 | Access | Agent-level only; the guild's and the organisation's settings stay as they are |
 | Collections of another guild | Read-only in Studio |
 | Outside data | Only through a login granted to the session, only its read-only tools; a result is capped at 64 KiB |
@@ -141,8 +178,8 @@ session lock:
   new text. Guild text keeps no history.
 
 The resolution is stored on the tool message as `metadata.edit_status`
-(`applied` | `declined`), `edit_resolved_at`, and `edit_version`. A
-request resolves only once.
+(`applied` | `declined`), `edit_resolved_at`, `resolved_by_user_id`,
+and `edit_version`. A request resolves only once.
 
 ### Note requests
 
@@ -184,7 +221,11 @@ connections?, connection_tools?, reason)` returns the same widget with
 `on` and `off` write the agent-level binding, keeping the connection a
 server binding already names; `inherit` deletes it. A setting the agent
 already holds is not a change, and a request that changes nothing is
-refused. The widget binds a hash of the agent's resolved access
+refused. The widget carries `edit.changes`, one `{ kind, id, label,
+setting }` per binding it writes, and `edit.widens`, true when the
+access after the change turns on a native tool, file level,
+connection, or connection tool the agent cannot use today. The widget
+binds a hash of the agent's resolved access
 rendered as text, so a binding moved at any scope since makes the
 request stale and apply a 409 (`apps/orchestrator/src/studio/access.ts`).
 The browser, coding, scripting, and memory switches are agent
@@ -258,8 +299,22 @@ schedule service: create, `Schedules.update`, or delete
 The coach asks with
 `studio_request_connection_access(connection_id, reason)`. The tool
 result is a `studio_connection_access` widget with `await_operator`,
-so the generation pauses. The card's answer goes into the turn's one
-continuation message.
+so the generation pauses. `POST …/logins/:seq` answers it: a grant adds
+the login to the session, and either answer is stored on the tool
+message as `metadata.access_status` (`granted` | `declined`),
+`access_resolved_at`, and `resolved_by_user_id`. A login granted from
+the **Logins** popover also counts as granted. The answer goes into
+the turn's one continuation message.
+
+### Draft requests
+
+`studio_create_task_draft` returns a `studio_task_draft` widget with
+`await_operator`, the agent (`id`, `name`), the `draft_id`, and the
+`rationale`, beside the draft itself. The operator's edits to the
+draft keep its `created_message_seq`, so the request follows the
+newest version. A draft the coach replaces in the same turn needs no
+answer. Publishing stores `published_by_user_id`
+([Prompt Studio](prompt-studio.md)).
 
 `studio_call_connection_tool(connection_id, tool, arguments)` proxies
 one call through the orchestrator's MCP pool on a granted, connected
@@ -284,6 +339,7 @@ the session.
 ```text
 GET    /api/studio/sessions/:id/edits/:seq
 POST   /api/studio/sessions/:id/edits/:seq          { decision: "apply" | "decline" }
+POST   /api/studio/sessions/:id/logins/:seq         { decision: "grant" | "decline" }
 GET    /api/studio/sessions/:id/connections
 PUT    /api/studio/sessions/:id/connections/:connection_id   { granted: true | false }
 ```
@@ -292,6 +348,9 @@ PUT    /api/studio/sessions/:id/connections/:connection_id   { granted: true | f
   request at that message.
 - `POST …/edits/:seq` resolves it. Another `decision` is 422; a stale
   target is 409.
+- `POST …/logins/:seq` answers the login request at that message and
+  returns the session. Another `decision` is 422; a message that is
+  not a login request is 404; an answered request is 409.
 - `GET …/connections` lists every login reachable from the source
   guild: platform, organisation, guild, and live-member scope.
 - `PUT …/connections/:connection_id` grants or revokes one. The
@@ -299,8 +358,8 @@ PUT    /api/studio/sessions/:id/connections/:connection_id   { granted: true | f
 
 ### Storage
 
-An edit request is a `studio_messages` tool row whose resolution is in
-its metadata.
+An edit or login request is a `studio_messages` tool row whose
+resolution is in its metadata.
 
 ### Code paths
 
@@ -312,4 +371,6 @@ its metadata.
 | `apps/orchestrator/src/studio/routines.ts` | Routine requests |
 | `apps/orchestrator/src/studio/connections.ts` | Connection grants and the read-only proxy |
 | `apps/orchestrator/src/mcp/policy.ts` | `isReadOnlyRemote` |
-| `apps/web/src/features/studio/StudioChat.tsx`, `chatModel.ts` | The cards |
+| `apps/web/src/features/studio/pendingModel.ts` | The turn's requests: where each lands and what was answered |
+| `apps/web/src/features/studio/approvals.ts` | Deciding requests from anywhere and the reply that continues the coach |
+| `apps/web/src/features/studio/ProposalCards.tsx`, `ApprovalTray.tsx`, `chatModel.ts` | The cards and the header tray |

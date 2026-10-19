@@ -1,11 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { TabsNav, tabsTrigger } from "@guildsrun/ui";
+import { PillCount, TabsNav, tabsTrigger } from "@guildsrun/ui";
 import { studioSectionLabel, studioSections } from "./location";
+import { countOpen } from "./pendingModel";
 import { useStudio } from "./StudioContext";
 
-/** The workspace's four sections: the guild, its agents, its state, and the tools they call. */
+/**
+ * The workspace's four sections: the guild, its agents, its state, and the tools they call, each
+ * with how many of the coach's requests wait in it.
+ */
 export function SectionBar() {
-  const { session, search } = useStudio();
+  const { session, search, approvals } = useStudio();
+  const counts = countOpen(approvals.proposals, (proposal) => proposal.place);
   return (
     <TabsNav aria-label="Studio sections" className="border-t-0">
       {studioSections.map((section) => (
@@ -18,6 +23,7 @@ export function SectionBar() {
           className={tabsTrigger({ look: "bar" })}
         >
           {studioSectionLabel[section]}
+          {counts[section] ? <PillCount>{counts[section]}</PillCount> : null}
         </Link>
       ))}
     </TabsNav>

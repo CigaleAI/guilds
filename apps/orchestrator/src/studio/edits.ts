@@ -562,6 +562,8 @@ export async function accessEditRequest(
     proposed_hash: review.proposedHash,
     lines: lineDelta(review.live, review.proposed),
     effects: review.effects,
+    changes: review.changes,
+    widens: review.widens,
   });
 }
 
@@ -849,12 +851,18 @@ export async function applyEdit(
   return { version: null, guild: row };
 }
 
+/** How the operator answered an edit request, and who answered it. */
+export type EditResolution = {
+  status: Exclude<StudioEditStatus, "pending">;
+  version: number | null;
+  userId: string | null;
+};
+
 export async function markEdit(
   store: StudioStore,
   sessionId: string,
   record: EditRecord,
-  status: Exclude<StudioEditStatus, "pending">,
-  version: number | null,
+  resolution: EditResolution,
 ): Promise<void> {
   const message = await store.getMessage(sessionId, record.seq);
   if (!message) return;
@@ -864,9 +872,10 @@ export async function markEdit(
     (jsonObj(message.payload) as Record<string, unknown>) ?? {},
     {
       ...record.metadata,
-      edit_status: status,
+      edit_status: resolution.status,
       edit_resolved_at: new Date().toISOString(),
-      ...(status === "applied" ? { edit_version: version } : {}),
+      resolved_by_user_id: resolution.userId,
+      ...(resolution.status === "applied" ? { edit_version: resolution.version } : {}),
     },
   );
 }
