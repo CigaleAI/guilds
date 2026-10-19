@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Waypoints } from "lucide-react";
-import { EmptyState, Segmented, Select, tabsList, tabsTrigger } from "@guildsrun/ui";
+import { Segmented, Select, tabsList, tabsTrigger } from "@guildsrun/ui";
 import {
   studioStateViews,
   studioTabLabel,
@@ -9,12 +8,13 @@ import {
 } from "../location";
 import { useStudio } from "../StudioContext";
 import { StateNotes, StateTables } from "./StateList";
+import { ReferencesView } from "./ReferencesView";
 
 const allAgents = "all";
 
 /** The guild's notes, tables, scripts and Memory: a list to work in, or what references what. */
 export function StateSection() {
-  const { agents, search } = useStudio();
+  const { agents, search, go } = useStudio();
   const agent = agents.find((item) => item.id === search.agent) ?? null;
   const kind: StudioStateKind = search.kind ?? "notes";
   return (
@@ -22,13 +22,10 @@ export function StateSection() {
       <StateBar kind={kind} />
       <div className="flex min-h-0 flex-1 flex-col">
         {search.tab === "references" ? (
-          <div className="p-6">
-            <EmptyState
-              icon={Waypoints}
-              title="References"
-              description="What each Task and note embeds or names shows here."
-            />
-          </div>
+          <ReferencesView
+            agent={agent}
+            onSelect={(item) => go({ ...stateFilters(search), item }, { replace: true })}
+          />
         ) : kind === "tables" ? (
           <StateTables agent={agent} />
         ) : (

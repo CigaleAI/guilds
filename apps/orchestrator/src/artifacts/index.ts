@@ -9,6 +9,7 @@ export {
 export {
   ArtifactStore,
   hashArtifactContent,
+  type ArtifactRow,
   validateCollectionName,
   validatePurpose,
   type CollectionDescription,
@@ -20,8 +21,14 @@ export { agentActor, catalogLevels, grantsFromBindings, operatorActor } from "./
 export {
   inlineTaskEmbeds,
   collectTaskEmbeds,
+  EMBED_DEPTH,
+  inspectEmbed,
   inspectTaskEmbeds,
   snapshotTaskEmbeds,
+  walkTaskEmbeds,
+  withoutEmbeds,
+  type EmbedReader,
+  type EmbedStep,
   type TaskEmbedInspection,
   type TaskEmbedSnapshot,
 } from "./embeds.js";
@@ -40,6 +47,7 @@ export {
   ARTIFACT_KINDS,
   ARTIFACT_LEVELS,
   DEFAULT_ARTIFACT_GRANTS,
+  EMBED_BUDGET,
   resolveAccess,
   isAccessMode,
   isAgentAccessMode,

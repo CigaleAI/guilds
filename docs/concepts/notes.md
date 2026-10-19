@@ -83,7 +83,15 @@ way. A Task's embeds expand two levels deep: the Task's own embeds,
 and the embeds inside those notes. All embedded text in one run
 shares a 64 KB budget ([Task](task.md#embeds)).
 
-A note that a live Task embeds cannot be deleted.
+A note that a live Task embeds cannot be deleted. A note that only
+another note embeds can be, and that embed then breaks
+([Task](task.md#a-broken-embed-stops-the-agent)).
+
+A display path written in a note without `![[…]]` names the other
+note without embedding it. Prompt Studio's **References** view shows
+what embeds or names each note, which agents' prompts it reaches, and
+each broken embed with its reason
+([Prompt Studio](prompt-studio.md#state)).
 
 ## In the app
 
@@ -250,7 +258,7 @@ publish `guild.files.changed`.
 The guild and agent routes need a guild the caller can see. The
 `/api/org/…` routes need only organisation membership.
 `/api/org/embeddable-notes` lists and returns notes of every guild
-and agent, private guilds included
+and agent, except those of private guilds the caller does not operate
 ([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).
 
 ### Storage

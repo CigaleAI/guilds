@@ -163,7 +163,7 @@ sections:
 |---|---|
 | **Guild** | The guild's short description, description, drafts to review, and roster |
 | **Agents** | **Topology**, then one tab per agent with that agent's [tabs](#agent-tabs) |
-| **State** | The notes and tables the guild's agents work on: a **List** to browse and edit, and **References** |
+| **State** | The notes and tables the guild's agents work on: a **List** to browse and edit, and **References**, what each Task and file embeds or names |
 | **Tools** | The tools the guild's agents are offered |
 
 In **Agents**, each agent tab shows the agent's avatar, its Task
@@ -232,6 +232,34 @@ organisation's tables, switched by **Notes** and **Tables**:
   strip opens the run in the agent's **History**.
 - **Tables** shows the organisation's collections, one at a time from
   a picker, with their records to search and edit.
+
+**References** draws every Task and file in the guild's state, and
+what embeds or names what:
+
+- **Map.** The Tasks sit in the first column. The notes and tables
+  they embed follow, one column per hop: **Embedded in a Task**, **One
+  hop further**, and **Too deep**, whose text no run gets. A band below
+  holds the files no Task reaches. A solid line is an embed; a dotted
+  line is a display path the text names without embedding it. A link
+  that does not resolve, or a Task over the embed budget, is red.
+  Selecting a box lights what it pulls in and what pulls it in. Files
+  reached only past the last column are listed under the map.
+- **What stands out.** Broken embeds with their reason, Tasks over the
+  budget, notes inlined into several agents' prompts, notes too deep to
+  be inlined, and files nothing embeds or names.
+- **Detail.** For a Task: its embed budget, and everything it pulls
+  into every run, each at its hop. For a file: what it embeds or
+  names, what embeds or names it, and the agents whose prompts it
+  reaches.
+- **Actions.** **Open Prompt** opens the agent's **Prompt** tab. **Open
+  in State** selects the file in **List**. **Ask the coach** pins the
+  file.
+
+With the agent filter, the map shows what that agent's runs meet, and
+its own notes that they do not. The map counts hops the way a run
+inlines embeds ([Task](task.md#embeds)): a note met first deeper in the
+walk is inlined there once, so its own embeds can fall past the last
+inlined hop.
 
 ### Tools
 
@@ -330,7 +358,7 @@ keeps only its own fields:
 |---|---|---|
 | `guild` | none | The guild's overview |
 | `agents` | `agent`, `tab`, `item`, `call`, `seq` | With `agent`: that agent's tab (`prompt`, `draft`, `history`, `memory`, `routines`, `scripts`, `versions`), its selected item, and for a run the step for `call` (a provider tool-call id) or `seq`, scrolled into view. Without `agent`: Topology, where `item` is a map selection, `link:<from>><to>` or `node:<id>` |
-| `state` | `agent`, `tab`, `kind`, `item` | `tab` is `list` or `references`, `agent` the filter, `kind` `notes` or `tables`. For notes `item` is a display path, opened in its scope; for tables it is the collection id |
+| `state` | `agent`, `tab`, `kind`, `item` | `tab` is `list` or `references`, `agent` the filter, `kind` `notes` or `tables`. For notes `item` is a display path, opened in its scope; for tables it is the collection id. In References `item` is the selected node: a display path, or a link as written when it does not resolve |
 | `tools` | `item` | The selected tool |
 
 A link without a known `section` opens the guild's overview.
@@ -519,6 +547,7 @@ GET    /api/studio/sessions/:id/agents/:agent_id/routines
 GET    /api/studio/sessions/:id/agents/:agent_id/runs
 GET    /api/studio/sessions/:id/agents/:agent_id/memory-timeline
 GET    /api/studio/sessions/:id/activity
+GET    /api/studio/sessions/:id/references
 GET    /api/studio/sessions/:id/runs/:run_id
 GET    /api/studio/sessions/:id/messages
 POST   /api/studio/sessions/:id/messages
@@ -570,6 +599,37 @@ The agent inspector response carries `effective_prompt` (content,
 hash, inlined task, per-section hashes, and whether each section
 matches the latest run).
 
+`GET …/references` returns `{ guild_id, budget, depth, nodes, edges }`,
+computed on read from Task and note text; nothing is stored. `budget`
+is the 64 KB embed budget and `depth` the 2 levels a run inlines.
+
+| Node field | Meaning |
+|---|---|
+| `id` | The display path, or the link as written when it does not resolve |
+| `kind` | `task`, `note`, `table`, or `unresolved` |
+| `label`, `level`, `agent_id`, `collection_id` | The agent's name for a Task, else the note's title or the table's name; the level; the agent of a Task or agent-level note; a table's id |
+| `in_state` | Part of the guild's state, rather than only reached from it |
+| `bytes` | The UTF-8 size of its text |
+| `inlined_bytes` | For a Task: the note text one run inlines |
+| `hops` | Per agent id, the hop at which its runs meet it: 0 its own Task, 1 and 2 inlined, 3 left as text |
+| `depth` | Embed hops from the nearest Task, past 3 too; `null` when no Task reaches it |
+| `reason` | Why a link does not resolve, with the reasons of the embed status route |
+
+An edge is `{ from, to, kind, status }`. `kind` is `embed`, or `name`
+for a display path of a Task, note, or table that the text names
+outside an embed. An embed's `status` is `broken` when its target does
+not resolve, `inlined` when some run expands its holder's embeds,
+`too_deep` when runs meet the holder only at the last inlined level,
+and `unreached` when no Task reaches the holder; a name's is `named`.
+
+The route reads with the viewing operator's own permissions: the
+guild's agents' notes, the guild's and organisation's notes, the
+organisation's tables and the guild's own, and the notes and tables
+their embeds reach, followed as far as a run could inline them. The
+notes and tables of a private guild the operator does not operate
+are never listed ([Guilds](guilds.md)); an embed of one is a link that
+does not resolve.
+
 The runs list takes `schedule_id`, `kind`, and `task_prompt_hash` and
 returns run headers (status, generating, hashes, `schedule_id`,
 `instruction_hash`, error count). The routines list
@@ -591,5 +651,6 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
 | `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
+| `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |

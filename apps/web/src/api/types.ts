@@ -1484,6 +1484,52 @@ export type ActivityView = {
   wakes: ActivityWake[];
 };
 
+export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
+
+/** A Task, a note or table, or a link target that does not resolve. */
+export type ReferenceNode = {
+  /** The display path, or the link as written when it does not resolve. */
+  id: string;
+  kind: ReferenceNodeKind;
+  label: string;
+  level: "agent" | "guild" | "org" | null;
+  /** The agent whose Task it is, or who owns an agent-level note. */
+  agent_id: string | null;
+  collection_id: string | null;
+  /** Part of the guild's state, rather than only reached from it. */
+  in_state: boolean;
+  bytes: number;
+  /** For a Task: the note text a run inlines, counted against the budget. */
+  inlined_bytes: number | null;
+  /** The hop at which each agent's run meets it: 0 its own Task, up to `depth` inlined, one more left as text. */
+  hops: Record<string, number>;
+  /** Embed hops from the nearest Task; null when no Task reaches it. */
+  depth: number | null;
+  /** Why a link does not resolve. */
+  reason: string | null;
+};
+
+export type ReferenceEdgeStatus = "inlined" | "too_deep" | "unreached" | "broken" | "named";
+
+/** An embed (solid) or a path named in the text without embedding it (dotted). */
+export type ReferenceEdge = {
+  from: string;
+  to: string;
+  kind: "embed" | "name";
+  status: ReferenceEdgeStatus;
+};
+
+/** What every Task and file in the guild's state embeds or names. */
+export type StudioReferences = {
+  guild_id: string;
+  /** Bytes of note text one run may inline. */
+  budget: number;
+  /** How many embed levels a run inlines. */
+  depth: number;
+  nodes: ReferenceNode[];
+  edges: ReferenceEdge[];
+};
+
 /**
  * Recipe documents (`guilds.recipe` version 2) and the recipe API's responses. File references
  * point at `apps/orchestrator/src`.

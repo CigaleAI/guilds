@@ -93,6 +93,7 @@ import type {
   ApplyRow,
   GuildApplyState,
   ActivityView,
+  StudioReferences,
   BuilderCapabilities,
   BuilderSession,
   BuilderSessionSummary,
@@ -135,6 +136,7 @@ export const keys = {
   agentMemory: (agentId: string) => ["files", "memory", agentId] as const,
   embeddableNotes: ["files", "embeddable-notes"] as const,
   embedStatus: (guildId: string) => ["files", "embed-status", guildId] as const,
+  studioReferences: (id: string) => ["files", "studio-references", id] as const,
   latestChange: (displayPath: string) => ["files", "latest-change", displayPath] as const,
   fileChanges: (displayPath: string) => ["files", "changes", displayPath] as const,
   accessAll: ["access"] as const,
@@ -2292,6 +2294,14 @@ export function useStudioActivity(id: string, hours: number) {
     placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       query.state.data?.wakes.some((wake) => wake.running) ? studioPollMs : false,
+  });
+}
+
+/** What each Task and file in the session's guild embeds or names; re-read when files change. */
+export function useStudioReferences(id: string) {
+  return useQuery({
+    queryKey: keys.studioReferences(id),
+    queryFn: () => api<StudioReferences>(`${studioPath(id)}/references`),
   });
 }
 
