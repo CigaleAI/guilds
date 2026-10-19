@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Waypoints } from "lucide-react";
-import { EmptyState, Segmented, Select, tabsList, tabsTrigger } from "@guildsrun/ui";
+import { EmptyState, Segmented, Select, cn, tabsList, tabsTrigger } from "@guildsrun/ui";
 import {
   studioStateViews,
   studioTabLabel,
@@ -50,7 +50,7 @@ function StateBar({ kind }: { kind: StudioStateKind }) {
   };
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
-      <nav aria-label="State views" className={tabsList({ look: "track", className: "w-auto" })}>
+      <nav aria-label="State views" className={cn(tabsList({ look: "track" }), "w-auto")}>
         {studioStateViews.map((value) => (
           <Link
             key={value}
