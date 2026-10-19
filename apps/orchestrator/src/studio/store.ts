@@ -61,7 +61,9 @@ export class StudioStore {
     fn: (client: pg.PoolClient, session: Record<string, unknown>) => Promise<T>,
   ): Promise<T> {
     return withTransaction(this.pool, async (client) => {
-      const result = await client.query(`SELECT * FROM studio_sessions WHERE id = $1 FOR UPDATE`, [sessionId]);
+      // NO KEY UPDATE still serialises the session's writers, and lets the change logs the
+      // locked work writes reference the session without waiting on this lock.
+      const result = await client.query(`SELECT * FROM studio_sessions WHERE id = $1 FOR NO KEY UPDATE`, [sessionId]);
       const row = firstRow(result);
       if (!row) {
         throw new Error("studio session not found");

@@ -16,6 +16,7 @@ import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 import { compareColumnTimestamps } from "../../src/db/codecs.js";
+import { listConfigChanges } from "../../src/db/config-changes.js";
 import { buildMemoryTimeline } from "../../src/memory/timeline.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
@@ -363,6 +364,9 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(await store.accessForGuild(operator, "guild_alpha"), []);
     const gone = await database.pool.query(`SELECT count(*)::int AS n FROM artifacts WHERE collection_id = $1 AND deleted_at IS NULL`, [papers.id]);
     assert.equal(gone.rows[0]?.n, 0);
+    const [deletedLog] = await listConfigChanges(database.pool, operator.orgId, { kind: "collection", id: papers.id });
+    assert.equal(deletedLog?.operation, "delete");
+    assert.equal(deletedLog?.summary, "Deleted the table papers");
     const grants = await database.pool.query(`SELECT count(*)::int AS n FROM collection_access WHERE collection_id = $1`, [papers.id]);
     assert.equal(grants.rows[0]?.n, 0);
     // the name is free again
@@ -598,6 +602,15 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(await store.clearRecords(operator, scratch.id), 1);
     assert.equal(await store.clearRecords(operator, scratch.id), 0);
     await assert.rejects(() => store.clearRecords(operator, "col_missing"), /unknown collection/);
+    // Each Delete all that removed records is logged once; the one that found none is not.
+    const cleared = await listConfigChanges(database.pool, operator.orgId, { kind: "collection", id: scratch.id });
+    assert.deepEqual(
+      cleared.map((change) => [change.summary, change.actor.type]),
+      [
+        ["Deleted all 1 record of scratch", "user"],
+        ["Deleted all 3 records of scratch", "user"],
+      ],
+    );
   });
 
   test("an array column stores a list of text and where matches an item like text", async () => {

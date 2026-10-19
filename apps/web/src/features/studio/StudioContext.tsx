@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import type { StudioAgent, StudioSession } from "../../api/types";
+import type { Approvals } from "./approvals";
 import type { StudioPin } from "./investigate";
 import type { StudioSearch } from "./location";
 
@@ -25,6 +26,8 @@ export type StudioView = {
   openStep: (step: StudioStep) => void;
   /** Pins evidence to the operator's next message to the coach. */
   ask: (focus: StudioFocus) => void;
+  /** The coach's open requests, and how to answer them. */
+  approvals: Approvals;
 };
 
 export const StudioContext = createContext<StudioView | null>(null);

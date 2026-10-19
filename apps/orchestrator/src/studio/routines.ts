@@ -6,6 +6,7 @@ import type { ScheduleTiming } from "../schedules/timing.js";
 import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
 import type { EditScope } from "./edits.js";
+import { editActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
 
 // Routines the coach proposes to create, change, or delete for the source
@@ -297,15 +298,15 @@ async function writeRoutine(scope: EditScope, plan: RoutinePlan): Promise<Routin
   if (plan.action === "create") {
     const { timing, description, instruction, paused } = plan.definition;
     const when = { cron: timing.cron, window: timing.window };
-    const row = await scope.schedules.create(plan.agentId, when, description, instruction, {
+    const row = await scope.schedules.create(editActor(scope), plan.agentId, when, description, instruction, {
       paused,
     });
     return { agentId: plan.agentId, action: "create", scheduleId: String(row.id) };
   }
   if (plan.action === "edit") {
-    await scope.schedules.update(plan.agentId, plan.scheduleId, plan.changes);
+    await scope.schedules.update(editActor(scope), plan.agentId, plan.scheduleId, plan.changes);
   } else {
-    await scope.schedules.delete(plan.agentId, plan.scheduleId);
+    await scope.schedules.delete(editActor(scope), plan.agentId, plan.scheduleId);
   }
   return { agentId: plan.agentId, action: plan.action, scheduleId: plan.scheduleId };
 }

@@ -1,6 +1,6 @@
 import { CircleHelp, Clock, MessagesSquare, User, type LucideIcon } from "lucide-react";
 import { useCallback, useState } from "react";
-import type { ActivityAgent, ActivityTriggerReason, ActivityView } from "../../../api/types";
+import type { ActivityAgent, ActivityView } from "../../../api/types";
 import { agentLook } from "../../../app/agents";
 import { cn, identityFill, identityText, Icon } from "@guildsrun/ui";
 import type { ActivityIndex, ActivityMap, Chain } from "./activityModel";
@@ -12,14 +12,6 @@ export type ActivityData = {
   index: ActivityIndex;
   chains: Chain[];
   map: ActivityMap;
-};
-
-/** Why a message reached the agent it woke, in a word. */
-export const reasonLabel: Record<ActivityTriggerReason, string> = {
-  tag: "tagged",
-  jev: "routed",
-  rules: "rules",
-  fallback: "fallback",
 };
 
 export const sourceIcon: Record<Exclude<MapNodeKind, "agent">, LucideIcon> = {

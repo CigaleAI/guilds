@@ -2,11 +2,10 @@ import type { StudioDraft } from "../../../api/types";
 import { agentLook } from "../../../app/agents";
 import { relativeTime } from "../../../app/format";
 import { Button, Markdown, Avatar } from "@guildsrun/ui";
-import { ActivityLedger } from "../activity/ActivityLedger";
 import { useStudio } from "../StudioContext";
 import { warningLabel } from "../warnings";
 
-/** The guild at a glance: drafts waiting on the operator, who woke whom, and its agents. */
+/** The guild at a glance: its description, drafts waiting on the operator, and its agents. */
 export function OverviewTab({ pending }: { pending: StudioDraft[] }) {
   const { session, agents, go } = useStudio();
   const about = session.source_guild?.about;
@@ -33,7 +32,9 @@ export function OverviewTab({ pending }: { pending: StudioDraft[] }) {
                 key={draft.id}
                 variant="outline"
                 size="sm"
-                onClick={() => go({ agent: draft.target_agent_id, tab: "draft" })}
+                onClick={() =>
+                  go({ section: "agents", agent: draft.target_agent_id, tab: "draft" })
+                }
               >
                 {draft.target_snapshot?.name ?? draft.target_agent_id} · draft {draft.draft_number}
               </Button>
@@ -41,14 +42,13 @@ export function OverviewTab({ pending }: { pending: StudioDraft[] }) {
           </div>
         </section>
       ) : null}
-      <ActivityLedger />
       <section className="flex flex-col gap-2">
         <h2 className="type-label text-muted">Agents</h2>
         {agents.map((agent) => (
           <button
             key={agent.id}
             type="button"
-            onClick={() => go({ agent: agent.id })}
+            onClick={() => go({ section: "agents", agent: agent.id })}
             className="flex cursor-pointer items-start gap-3 rounded-lg bg-surface p-3 text-left hover:bg-paper-hi"
           >
             <Avatar name={agent.name} size={32} {...agentLook(agent)} />

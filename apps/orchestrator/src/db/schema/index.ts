@@ -10,6 +10,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  type PgTableExtraConfigValue,
   smallint,
   primaryKey,
   text,
@@ -260,8 +261,11 @@ export const runs = pgTable(
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     orgId: text("org_id").notNull(),
     scheduleId: text("schedule_id"),
+    wakeGroupMessageId: bigint("wake_group_message_id", { mode: "number" }),
+    startedByUserId: text("started_by_user_id"),
   },
-  (table) => [
+  // Typed, since runs and group_messages reference each other.
+  (table): PgTableExtraConfigValue[] => [
     check("runs_kind_valid", sql`${table.kind} IN ('direct', 'group', 'schedule')`),
     check("runs_status_valid", sql`${table.status} IN ('active', 'completed')`),
     foreignKey({
@@ -274,6 +278,16 @@ export const runs = pgTable(
       foreignColumns: [orgs.id],
       name: "runs_org_id_fkey",
     }),
+    foreignKey({
+      columns: [table.wakeGroupMessageId],
+      foreignColumns: [groupMessages.id],
+      name: "runs_wake_group_message_id_fkey",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.startedByUserId],
+      foreignColumns: [users.id],
+      name: "runs_started_by_user_id_fkey",
+    }).onDelete("set null"),
     index("runs_by_agent").on(table.agentId, table.updatedAt),
     index("runs_by_org").on(table.orgId),
     index("runs_by_agent_task_hash").on(table.agentId, table.taskPromptHash),
@@ -317,6 +331,7 @@ export const groupMessages = pgTable(
     taggedNames: jsonb("tagged_names").notNull().default(sql`'[]'::jsonb`),
     taggedAgentIds: jsonb("tagged_agent_ids").notNull().default(sql`'[]'::jsonb`),
     taggedUserIds: jsonb("tagged_user_ids").notNull().default(sql`'[]'::jsonb`),
+    authorUserId: text("author_user_id"),
   },
   (table) => [
     unique("group_messages_guild_id_seq_key").on(table.guildId, table.seq),
@@ -335,6 +350,11 @@ export const groupMessages = pgTable(
       columns: [table.sourceRunId],
       foreignColumns: [runs.id],
       name: "group_messages_source_run_id_fkey",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.authorUserId],
+      foreignColumns: [users.id],
+      name: "group_messages_author_user_id_fkey",
     }).onDelete("set null"),
   ],
 );
@@ -955,6 +975,8 @@ export const fileChanges = pgTable(
     toolCallId: text("tool_call_id"),
     toolName: text("tool_name"),
     createdAt: timestamptz("created_at").notNull(),
+    studioSessionId: text("studio_session_id"),
+    studioSeq: integer("studio_seq"),
   },
   (table) => [
     check(
@@ -990,9 +1012,73 @@ export const fileChanges = pgTable(
       foreignColumns: [runs.id],
       name: "file_changes_run_id_fkey",
     }).onDelete("set null"),
+    foreignKey({
+      columns: [table.studioSessionId],
+      foreignColumns: [studioSessions.id],
+      name: "file_changes_studio_session_id_fkey",
+    }).onDelete("set null"),
     index("file_changes_by_path").on(table.orgId, table.displayPath, table.createdAt),
+    index("file_changes_by_org_time").on(table.orgId, table.createdAt),
     index("file_changes_by_artifact").on(table.artifactId, table.createdAt),
     index("file_changes_by_tool_call").on(table.runId, table.toolCallId),
+  ],
+);
+
+export const configChanges = pgTable(
+  "config_changes",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    guildId: text("guild_id"),
+    agentId: text("agent_id"),
+    targetKind: text("target_kind").notNull(),
+    targetId: text("target_id").notNull(),
+    operation: text("operation").notNull(),
+    summary: text("summary").notNull(),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    actorName: text("actor_name").notNull(),
+    runId: text("run_id"),
+    toolCallId: text("tool_call_id"),
+    toolName: text("tool_name"),
+    studioSessionId: text("studio_session_id"),
+    studioSeq: integer("studio_seq"),
+    createdAt: timestamptz("created_at").notNull(),
+  },
+  (table) => [
+    check(
+      "config_changes_target_kind_check",
+      sql`${table.targetKind} IN ('routine', 'access', 'guild_text', 'collection')`,
+    ),
+    check("config_changes_operation_check", sql`${table.operation} IN ('create', 'update', 'delete')`),
+    check("config_changes_actor_type_check", sql`${table.actorType} IN ('user', 'agent', 'run')`),
+    foreignKey({
+      columns: [table.orgId],
+      foreignColumns: [orgs.id],
+      name: "config_changes_org_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.guildId],
+      foreignColumns: [guilds.id],
+      name: "config_changes_guild_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.agentId],
+      foreignColumns: [agents.id],
+      name: "config_changes_agent_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.runId],
+      foreignColumns: [runs.id],
+      name: "config_changes_run_id_fkey",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.studioSessionId],
+      foreignColumns: [studioSessions.id],
+      name: "config_changes_studio_session_id_fkey",
+    }).onDelete("set null"),
+    index("config_changes_by_target").on(table.orgId, table.targetKind, table.targetId, table.createdAt),
+    index("config_changes_by_guild").on(table.guildId, table.createdAt),
   ],
 );
 
@@ -1174,6 +1260,7 @@ export const studioDrafts = pgTable(
     publishedAt: timestamptz("published_at"),
     publishedByUserId: text("published_by_user_id"),
     publishedResourceVersion: integer("published_resource_version"),
+    discardedByUserId: text("discarded_by_user_id"),
   },
   (table) => [
     check("studio_drafts_resource_kind_check", sql`${table.resourceKind} = 'agent_task'`),
@@ -1215,6 +1302,11 @@ export const studioDrafts = pgTable(
       columns: [table.publishedByUserId],
       foreignColumns: [users.id],
       name: "studio_drafts_published_by_user_id_fkey",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.discardedByUserId],
+      foreignColumns: [users.id],
+      name: "studio_drafts_discarded_by_user_id_fkey",
     }).onDelete("set null"),
     uniqueIndex("studio_drafts_head_unique")
       .on(table.sessionId, table.targetAgentId, table.resourceKind)

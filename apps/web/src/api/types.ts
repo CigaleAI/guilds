@@ -177,7 +177,8 @@ export type MachineInput = {
 export type Harness = "claude-code" | "codex" | "cursor" | "antigravity";
 
 /** The reasoning efforts a harness can run a model at, lowest first. */
-export type HarnessEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type HarnessEffort =
+  "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 /** One model a harness offers. */
 export type HarnessCatalogModel = {
@@ -1153,6 +1154,100 @@ export type StudioSession = {
   archived_at: string | null;
 };
 
+/** How one agent is offered a tool, and how its calls went in the window. */
+export type StudioToolUsage = {
+  agent_id: string;
+  offered: boolean;
+  calls: number;
+  errors: number;
+  median_ms: number | null;
+  last_at: string | null;
+};
+
+/** A tool the guild's agents are offered or called in the window. */
+export type StudioTool = {
+  name: string;
+  source: "native" | "script" | "connector" | null;
+  group: string;
+  description: string;
+  server_id: string | null;
+  offered_to: string[];
+  calls: number;
+  errors: number;
+  median_ms: number | null;
+  last_at: string | null;
+  agents: StudioToolUsage[];
+};
+
+/** One call of a tool by one of the guild's agents. */
+export type StudioToolCall = {
+  at: string;
+  agent_id: string;
+  run_id: string;
+  call_id: string | null;
+  seq: number | null;
+  arguments: string;
+  status: "ok" | "error";
+  error: string | null;
+  duration_ms: number | null;
+};
+
+/** Who acted on a State item: a person, one of the guild's agents, or an agent of another guild. */
+export type StateActor = { kind: "person" | "agent" | "other_guild"; id: string; name: string };
+
+/** Where a State change or read opens: its run step, or the coach message it was applied from. */
+export type StateLink =
+  | { kind: "run"; run_id: string; agent_id: string | null; call_id: string | null }
+  | { kind: "coach"; session_id: string; seq: number };
+
+export type StateShare = { actor: StateActor; count: number; share: number };
+
+export type StateFlag = "no_agent_read" | "writers" | "deletes_others_rows" | "untouched";
+
+/** A note, table, script, or Memory of the guild's state, with its changes and reads in the window. */
+export type StateItemRow = {
+  display_path: string;
+  kind: "note" | "memory" | "script" | "table";
+  level: "agent" | "guild" | "org";
+  owner_id: string;
+  title: string;
+  /** Bytes of text, or records for a table. */
+  size: number;
+  version: number | null;
+  created_by: string;
+  created_at: string;
+  collection_id: string | null;
+  changes: number;
+  reads: number;
+  top_writer: StateShare | null;
+  top_reader: StateShare | null;
+  writers: number;
+  last_change: { at: string; actor: StateActor } | null;
+  flags: StateFlag[];
+};
+
+export type StateTally = { actor: StateActor; how: string; count: number };
+
+/** One recorded change of a State item. */
+export type StateHistoryEntry = {
+  at: string;
+  operation: "create" | "update" | "delete";
+  actor: StateActor;
+  link: StateLink | null;
+  /** For a table, the record the change touched; null for the table itself. */
+  record: string | null;
+  /** For a table's shape change, what it did. */
+  summary: string | null;
+};
+
+export type StateItemDetail = {
+  item: StateItemRow;
+  changes: StateTally[];
+  reads: StateTally[];
+  history: StateHistoryEntry[];
+  next_cursor: string | null;
+};
+
 /** One row of the coach conversation, shaped like a run's rows. */
 export type StudioMessage = {
   id: number;
@@ -1229,6 +1324,9 @@ export type StudioDraft = {
   risks: unknown;
   status: "draft" | "conflicted" | "superseded" | "discarded" | "published" | "unchanged";
   draft_number: number;
+  supersedes_draft_id: string | null;
+  /** The coach message that created the draft; the operator's edits keep it. */
+  created_message_seq: number | null;
   created_at: string;
   published_resource_version: number | null;
   size_delta_bytes: number;
@@ -1368,6 +1466,8 @@ export type ActivityMessage = {
   author_type: "user" | "agent";
   author_name: string;
   author_agent_id: string | null;
+  /** The person who posted an operator row; null for an agent's row. */
+  author_user_id: string | null;
   /** The wake that posted the row; null for the operator's rows. */
   source_run_id: string | null;
   /** Names the row tags. */
@@ -1399,9 +1499,11 @@ export type ActivityTrigger =
       through_seq: number | null;
       reason: ActivityTriggerReason;
       routing: ActivityRouting | null;
+      /** True when the run stored no waking row and `seq` was found from the row's tags. */
+      inferred: boolean;
     }
   | { type: "routine"; schedule_id: string | null }
-  | { type: "direct" };
+  | { type: "direct"; user_id: string | null };
 
 /** What a write touched: a collection record, a note, a script, the agent's memory, or a repository. */
 export type ActivityWriteKind = "record" | "note" | "script" | "memory" | "code";
@@ -1479,6 +1581,52 @@ export type ActivityView = {
   routines: ActivityRoutine[];
   messages: ActivityMessage[];
   wakes: ActivityWake[];
+};
+
+export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
+
+/** A Task, a note or table, or a link target that does not resolve. */
+export type ReferenceNode = {
+  /** The display path, or the link as written when it does not resolve. */
+  id: string;
+  kind: ReferenceNodeKind;
+  label: string;
+  level: "agent" | "guild" | "org" | null;
+  /** The agent whose Task it is, or who owns an agent-level note. */
+  agent_id: string | null;
+  collection_id: string | null;
+  /** Part of the guild's state, rather than only reached from it. */
+  in_state: boolean;
+  bytes: number;
+  /** For a Task: the note text a run inlines, counted against the budget. */
+  inlined_bytes: number | null;
+  /** The hop at which each agent's run meets it: 0 its own Task, up to `depth` inlined, one more left as text. */
+  hops: Record<string, number>;
+  /** Embed hops from the nearest Task; null when no Task reaches it. */
+  depth: number | null;
+  /** Why a link does not resolve. */
+  reason: string | null;
+};
+
+export type ReferenceEdgeStatus = "inlined" | "too_deep" | "unreached" | "broken" | "named";
+
+/** An embed (solid) or a path named in the text without embedding it (dotted). */
+export type ReferenceEdge = {
+  from: string;
+  to: string;
+  kind: "embed" | "name";
+  status: ReferenceEdgeStatus;
+};
+
+/** What every Task and file in the guild's state embeds or names. */
+export type StudioReferences = {
+  guild_id: string;
+  /** Bytes of note text one run may inline. */
+  budget: number;
+  /** How many embed levels a run inlines. */
+  depth: number;
+  nodes: ReferenceNode[];
+  edges: ReferenceEdge[];
 };
 
 /**

@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-42](#sec-42--a-task-can-embed-a-private-guilds-note-that-its-runs-and-studio-then-show) | A Task can embed a private guild's note that its runs and Studio then show | Open |
 | [SEC-41](#sec-41--an-organisation-could-be-left-without-an-owner) | An organisation could be left without an owner | Fixed 2026-10-18 |
 | [SEC-40](#sec-40--a-tool-binding-written-before-a-server-listed-the-tool-turned-it-on) | A tool binding written before a server listed the tool turned it on | Fixed 2026-10-18 |
 | [SEC-39](#sec-39--an-operator-could-take-an-agents-name-in-a-guild-they-operate) | An operator could take an agent's name in a guild they operate | Fixed 2026-10-18 |
@@ -50,6 +51,41 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-42 — A Task can embed a private guild's note that its runs and Studio then show
+
+**Status:** open.
+
+**Found:** 2026-10-19, building the Studio's References view.
+
+**Where:** `inlineTaskEmbeds` and `snapshotTaskEmbeds` in
+`apps/orchestrator/src/artifacts/embeds.ts`, called with an operator
+actor that carries no hidden guilds: run creation in
+`apps/orchestrator/src/generation/index.ts`, the Studio agent inspector
+in `apps/orchestrator/src/studio/index.ts`, draft previews in
+`apps/orchestrator/src/studio/drafts.ts`, and `studio_get_agent_context`
+in `apps/orchestrator/src/studio/tools.ts`.
+
+**Exposure:** saving a Task does not check what its embeds name. An
+operator of one guild can embed the display path of a guild- or
+agent-level note of a private guild they do not operate. Each run of
+that agent then carries the note's text in its system prompt, which the
+run's System tab shows to everyone who can see the agent's guild. The
+Studio Prompt tab of that agent shows it too, in the effective prompt.
+Reading it this way takes knowing the note's display path, which holds
+the private guild's id.
+
+**Control in place:** every load is limited to the Task's organisation.
+The embed status route and the Studio's References view read as the
+viewing operator, hidden guilds included, so they report such an embed
+as broken.
+
+**Fix:** not yet. Fixing it takes inlining embeds with an actor that
+leaves out the private guilds the Task's own guild may not reach, so the
+run refuses such an embed as it refuses a missing note.
+
+**Residual risk:** until then, a private guild's note is as private as
+its display path.
 
 ## SEC-41 — An organisation could be left without an owner
 
@@ -245,6 +281,13 @@ schedule tools, so a routine cannot create further routines. The
 Studio template treats everything it reads as evidence, never
 instructions.
 
+Since 2026-10-19, every routine create, edit, pause, resume, and
+delete appends a `config_changes` row with its actor. A routine
+applied from a Studio card links to the session and the coach message
+that proposed it; one an agent changed links to its run and tool call.
+A steered routine can be traced back to the proposal or the step that
+made it. The log records; it blocks nothing.
+
 **Residual risk:** an operator who applies a request without reading
 the instruction can schedule steered work. Closing it fully takes
 refusing routine creation and instruction changes from Studio and
@@ -272,7 +315,10 @@ agent's own bindings, as the operator, after checking the agent's
 resolved access has not moved since the request. The card shows the
 access before and after, marks each connection tool that changes data,
 and names every such tool the request gives back. The Studio template
-treats everything it reads as evidence, never instructions.
+treats everything it reads as evidence, never instructions. A request
+that widens access is marked as such, and **Apply all** skips it: it
+needs its own apply (added 2026-10-19, with the workspace's approval
+tray).
 
 **Residual risk:** an operator who applies a request without reading it
 can give an agent a tool that changes data. Closing it fully takes

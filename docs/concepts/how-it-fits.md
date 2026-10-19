@@ -169,8 +169,8 @@ Each concept has a page of its own.
 
 - [Prompt Studio](prompt-studio.md): improve the Tasks of a live
   guild.
-- [Studio activity](studio-activity.md): the guild overview and its
-  activity ledger.
+- [Studio activity](studio-activity.md): the activity ledger in
+  **Agents** › **Topology**.
 - [Studio proposals](studio-proposals.md): the coach's proposal
   cards.
 - [Guild builder](guild-builder.md): design a guild from a

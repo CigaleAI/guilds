@@ -14,16 +14,17 @@ import { issueItem } from "../issues/index.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";
 import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
+import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
-// run (optionally one step of it), a memory version, a routine, a file, or
-// an issue an agent reported.
+// run (optionally one step of it), a memory version, a routine, a file, an
+// issue an agent reported, or a tool the guild's agents call.
 // The client sends ids; the server checks they belong to the source guild,
 // fills in what it can, and writes the evidence block the coach reads.
 
 export const STUDIO_FOCUS_SOURCE = "studio_focus";
-export const STUDIO_FOCUS_KINDS = ["run", "memory_version", "routine", "file", "issue"] as const;
+export const STUDIO_FOCUS_KINDS = ["run", "memory_version", "routine", "file", "issue", "tool"] as const;
 export type StudioFocusKind = (typeof STUDIO_FOCUS_KINDS)[number];
 
 export type StudioFocus = {
@@ -501,6 +502,58 @@ async function resolveIssue(deps: StudioFocusDeps, input: Record<string, unknown
   };
 }
 
+// A tool name as runs record it: a native, script, or namespaced connection tool.
+const TOOL_NAME = /^[A-Za-z0-9_.:-]{1,128}$/;
+// The latest failed calls a tool pin quotes.
+const TOOL_FOCUS_FAILURES = 5;
+
+function toolUsageLines(stats: Array<Record<string, unknown>>): string[] {
+  const lines = stats
+    .filter((stat) => stat.agent_id !== null)
+    .map((stat) => `- ${String(stat.agent_id)}: ${String(stat.calls)} calls, ${String(stat.errors)} failed`);
+  return lines.length ? lines : ["- no agent called it"];
+}
+
+function toolFailureLines(rows: Array<Record<string, unknown>>): string[] {
+  return rows.map(
+    (row) => `- run ${String(row.run_id)}, call ${String(row.call_id ?? "?")} (${String(row.agent_id)}): ${excerpt(String(row.error ?? ""))}`,
+  );
+}
+
+// A tool pin: how each agent called the tool over the longest activity window,
+// and its latest failures, with where to read further.
+async function resolveTool(deps: StudioFocusDeps, input: Record<string, unknown>): Promise<{ focus: StudioFocus; content: string }> {
+  const name = str(input.tool_name).trim();
+  if (!TOOL_NAME.test(name)) {
+    throw new StudioUnprocessableError("focus tool_name must be a tool name");
+  }
+  const until = new Date();
+  const since = new Date(until.getTime() - ACTIVITY_MAX_HOURS * 3_600_000);
+  const stats = (await deps.repo.listGuildToolCallStats(deps.sourceGuildId, since, until)).filter((stat) => stat.tool_name === name);
+  const failures = await deps.repo.listGuildToolCalls(deps.sourceGuildId, name, {
+    since,
+    until,
+    errorsOnly: true,
+    before: null,
+    limit: TOOL_FOCUS_FAILURES,
+  });
+  const focus: StudioFocus = { ...emptyFocus("tool", { id: "", name: "" }), tool_name: name, label: `Tool · ${name}` };
+  const body = [
+    `Tool ${name}, called by the guild's agents in the last ${ACTIVITY_MAX_HOURS / 24} days:`,
+    ...toolUsageLines(stats),
+    ...(failures.length ? ["", "Latest failed calls:", ...toolFailureLines(failures)] : []),
+  ];
+  return {
+    focus,
+    content: block(
+      "studio.focus.tool",
+      { tool_name: name, since: since.toISOString(), until: until.toISOString() },
+      body.join("\n"),
+      `What an agent is offered: studio_get_agent_access(agent_id). A call in full: studio_get_run(run_id, tool_name="${name}").`,
+    ),
+  };
+}
+
 export async function resolveStudioFocus(
   deps: StudioFocusDeps,
   input: unknown,
@@ -521,7 +574,9 @@ export async function resolveStudioFocus(
       return resolveFile(deps, raw);
     case "issue":
       return resolveIssue(deps, raw);
+    case "tool":
+      return resolveTool(deps, raw);
     default:
-      throw new StudioUnprocessableError("focus kind must be run, memory_version, routine, file, or issue");
+      throw new StudioUnprocessableError("focus kind must be run, memory_version, routine, file, issue, or tool");
   }
 }

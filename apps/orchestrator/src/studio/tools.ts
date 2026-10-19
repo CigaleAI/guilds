@@ -927,6 +927,7 @@ export const studioListFileChanges: StudioTool = {
           ? { id: change.run.id, agent_id: change.run.agent_id, kind: change.run.kind, status: change.run.status, schedule_id: change.run.schedule_id }
           : null,
         tool: change.tool,
+        studio: change.studio,
       })),
       next_cursor: offset + slice.length < rows.length ? String(offset + slice.length) : null,
     };
@@ -1137,6 +1138,7 @@ function editScope(ctx: StudioToolContext): EditScope {
   return {
     orgId: ctx.orgId,
     sourceGuildId: ctx.sourceGuildId,
+    sessionId: String(ctx.session.id),
     user: ctx.user,
     repo: ctx.repo,
     artifacts: ctx.artifacts,

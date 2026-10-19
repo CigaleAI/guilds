@@ -73,7 +73,12 @@ export function MemoryTab({ agent }: { agent: StudioAgent }) {
               meta={`${memoryAuthorLabel(entry)} · ${memoryChangeLabel(entry)}`}
               onSelect={() =>
                 go(
-                  { agent: agent.id, tab: "memory", item: memoryVersionId(entry) },
+                  {
+                    section: "agents",
+                    agent: agent.id,
+                    tab: "memory",
+                    item: memoryVersionId(entry),
+                  },
                   { replace: true },
                 )
               }

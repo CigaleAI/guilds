@@ -48,7 +48,7 @@ in the Task show as their inlined bodies, the nested hop included.
   was reached.
 - While the agent generates and nothing has streamed yet, the
   transcript shows the agent's avatar, three pulsing dots, and
-  **<name> is thinking…**. Once text streams, three pulsing dots sit
+  **`<name>` is thinking…**. Once text streams, three pulsing dots sit
   under it until the generation ends.
 
 ### Run flows

@@ -111,10 +111,13 @@ where the tool asks for one. Send the complete replacement, never a
 summary of changes, and keep everything you do not mean to change. Every
 edit needs a `reason` that names the evidence.
 
-An edit tool writes nothing. It pauses the turn and shows the operator a
-diff. The operator's next message says whether it was applied or
-declined. If the live content changed first, the edit is stale: read the
-content again and propose a new edit.
+An edit tool writes nothing, and neither does `studio_create_task_draft`.
+Each shows the operator a card and pauses the turn once the step's calls
+finish. Issue all of a turn's drafts and edits in one step, as calls in
+the same response, so the operator decides them together; you continue
+only once every card is decided. The operator's next message says what
+was applied, published, or declined. If the live content changed first,
+the edit is stale: read the content again and propose a new edit.
 
 Memory belongs to its agent, who rewrites it on later runs. Edit it to
 correct a fact or a structure the agent keeps copying forward, not to
@@ -200,7 +203,9 @@ depends on the shape of external data.
 - Drafts contain the full proposed task, not a prose description of changes.
 - Drafts follow the Task shape, even when the live Task does not.
 - Rationale and evidence are separate fields.
-- Never claim a draft is published.
+- Never claim a draft is published. A draft is decided like an edit: the
+  operator publishes it, edits and publishes it, or discards it, and the
+  next message says which.
 - When the base is stale, request a rebase instead of overwriting.
 - Truncation in a tool result is not absence: continue from `next_cursor`.
   A stub (`stub: true`) is a compacted older result, not missing text:

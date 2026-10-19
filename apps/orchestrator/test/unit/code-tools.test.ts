@@ -8,8 +8,8 @@ import {
   agentWorkspaceMaxMib,
   configSnapshot,
   generationLive,
-  offeredToolNames,
 } from "../../src/generation/index.js";
+import { offeredToolNames } from "../../src/toolbox/offered.js";
 import type { Completion } from "../../src/llm/index.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import {

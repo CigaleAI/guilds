@@ -2,13 +2,17 @@
 
 Studio activity is the picture of what a guild did over a recent
 window: which agent woke, what woke it, and what each wake produced.
-It lives on the **Overview** of a [Prompt Studio](prompt-studio.md)
-session, beside the guild's short description, its pending drafts, and
-its roster.
+It lives in **Agents** › **Topology** of a
+[Prompt Studio](prompt-studio.md) session, the tab before the guild's
+agents.
 
 Activity is built from [runs](runs.md), the [group chat](group-chat.md),
 [routines](routines.md), and the files agents changed. It reads stored
 data only. It changes nothing.
+
+Each group run stores the public post that woke it, and each direct run
+stores who opened it. Activity reads that stored cause. Runs from before
+the cause was stored have it inferred from the chat's tags.
 
 ## When you use it
 
@@ -49,17 +53,15 @@ wake failed.
 
 ## In the app
 
-The **Overview** shows the guild's short description and the drafts to
-review. Then the activity, over a window of 1 h, 6 h, 24 h, 3 d, or
-7 d. Then the roster: each agent's Task version and excerpt, routine
-count, last run, and warnings.
+**Topology** shows the activity over a window of 1 h, 6 h, 24 h, 3 d,
+or 7 d.
 
 A wake that is still generating is drawn up to now. **Refresh** reads
 the activity again.
 
-### Flow
+### Map
 
-**Flow** opens with a **map** of who woke whom:
+**Map** opens with a drawing of who woke whom:
 
 - On the left: every routine of the guild's agents (faded when it did
   not fire), the operator's messages, and direct chats, each beside
@@ -78,7 +80,10 @@ Below the map, the **chains** list has one row per chain, newest first,
 under day headings. Each row has its start time and what started it,
 then each agent it woke with the wake's outcome and duration.
 Connectors between them say why the message reached the agent
-(tagged, routed, rules, fallback). A post that woke two agents
+(tagged, routed, rules, fallback); a cause found from tags rather than
+stored with the run adds **inferred**. A wake an operator's message
+started names whose message it was: yours, or the person's who posted
+it. A post that woke two agents
 continues on a branch row, and long chains scroll sideways. Chains
 that produced nothing are hidden until the filter is cleared. A map
 selection lists only the chains that pass through it, including those
@@ -101,13 +106,13 @@ Clicking an agent in a chain opens its wake:
 - **Open in History** (a tool call, a write, or a post opens its exact
   step) and **Ask the coach**, which pins the wake to the next question
 
-### Agents
+### Per agent
 
-**Agents** lists each agent's inputs and outputs over the window. An
+**Per agent** lists each agent's inputs and outputs over the window. An
 input is one of its routines (idle ones included), the operator's
 messages, another agent's posts, or direct chats. Each shows its
 wakes, their reasons, and their outcomes; clicking one lists its
-chains in **Flow**. The outputs are its group messages and whom they
+chains in **Map**. The outputs are its group messages and whom they
 woke, record writes by collection, note writes, scripts run and
 changed, issues reported, wakes that updated memory, wakes with no
 output, and errors by message.
@@ -131,18 +136,22 @@ The server projects the wake ledger from `runs`, `messages`,
 (`apps/orchestrator/src/studio/activity.ts`). It writes one row per run
 active in the window.
 
-- A group run woke on the latest row, since the same agent's previous
-  group run, that tags it. Without a tag, it woke on the latest
-  untagged operator row. Otherwise it woke on the snapshot's last row.
-  The reason is `tag`, `jev` (the stored Jev Choice picked this
-  agent), `rules` (tag rules without a tag), or `fallback` (the Choice
-  call failed). The stored Jev decision sits beside it
-  ([Group chat](group-chat.md)).
+- A group run woke on the row its run stores in
+  `runs.wake_group_message_id` ([Runs](runs.md#run-row)). A run with
+  none stored is inferred: the latest row, since the same agent's
+  previous group run, that tags it; without a tag, the latest untagged
+  operator row (`rules`); otherwise the snapshot's last row. The
+  trigger's `inferred` says which. The reason is `tag`, `jev` (the
+  stored Jev Choice picked this agent), `rules` (tag rules without a
+  tag), or `fallback` (the Choice call failed). The stored Jev
+  decision sits beside it ([Group chat](group-chat.md)).
 - A routine run starts from its routine. The ledger lists every
   routine with its timing in words and its instruction.
 - A direct run is the operator's chat, from its first to its last
   message in the window, with the operator's first message in the
-  window.
+  window. Its trigger carries `user_id`, the person who opened it
+  (`runs.started_by_user_id`), or null for a run from before it was
+  stored.
 - The outcome is `posted` (a `group_post` in the window, with its
   tool-call id), `wrote` (record, note, script, or code writes; memory
   does not count), or no output.
@@ -165,6 +174,11 @@ agents, routines, messages, wakes }`. A non-positive or non-numeric
 `hours`, or an `until` that is not a timestamp, is 422.
 
 - A routine carries `label` (its timing in words) and `instruction`.
+- A message carries `author_user_id`, the person who posted an
+  operator row, or null.
+- A wake's `trigger` is `{ type: "message", seq, through_seq, reason,
+  routing, inferred }`, `{ type: "routine", schedule_id }`, or
+  `{ type: "direct", user_id }`.
 - A wake carries `tool_calls` (`call_id`, `name`, `arguments`,
   `error`, `duration_ms`, `at`), `tool_call_count`, `reply`, and, for a
   direct chat, `opening`.
@@ -172,9 +186,9 @@ agents, routines, messages, wakes }`. A non-positive or non-numeric
 ### Location and storage
 
 A map selection is part of the session's inspector location:
-`item=link:<from>><to>` or `item=node:<id>` (see
+`section=agents&item=link:<from>><to>` or `section=agents&item=node:<id>` (see
 [Prompt Studio](prompt-studio.md#routes-and-location)). The window and
-the open view (**Flow** or **Agents**) persist in `localStorage`.
+the open view (**Map** or **Per agent**) persist in `localStorage`.
 
 ### Code paths
 

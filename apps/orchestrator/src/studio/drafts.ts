@@ -40,6 +40,10 @@ const REF_KINDS = new Set([
   "routine",
 ]);
 
+// A draft is decided like an edit: the tool returns this widget and the turn
+// pauses until the operator publishes or discards it.
+export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
+
 export class StudioDrafts implements StudioDraftService {
   constructor(
     public store: StudioStore,
@@ -119,6 +123,11 @@ export class StudioDrafts implements StudioDraftService {
         client,
       );
       return {
+        widget: STUDIO_TASK_DRAFT_WIDGET,
+        await_operator: true,
+        agent: { id: targetId, name: String(agent.name) },
+        draft_id: draft.id,
+        rationale,
         draft: viewDraft(draft),
         evidence_warnings: warnings,
         verified_evidence: refs.length > 0,
@@ -167,7 +176,11 @@ export class StudioDrafts implements StudioDraftService {
     });
   }
 
-  async discard(session: Record<string, unknown>, draftId: string): Promise<Record<string, unknown>> {
+  async discard(
+    session: Record<string, unknown>,
+    user: Record<string, unknown>,
+    draftId: string,
+  ): Promise<Record<string, unknown>> {
     const now = new Date();
     return this.store.withSessionLock(String(session.id), async (client) => {
       const current = await this.store.lockDraft(draftId, client);
@@ -179,7 +192,7 @@ export class StudioDrafts implements StudioDraftService {
       }
       const updated = await this.store.updateDraft(
         String(current.id),
-        { status: "discarded", resolved_at: now },
+        { status: "discarded", resolved_at: now, discarded_by_user_id: user.id ?? null },
         client,
       );
       return viewDraft(updated ?? current);
@@ -393,6 +406,7 @@ export function viewDraft(row: Record<string, unknown>): Record<string, unknown>
     draft_number: row.draft_number,
     supersedes_draft_id: row.supersedes_draft_id,
     created_generation: row.created_generation,
+    created_message_seq: row.created_message_seq,
     created_at: row.created_at,
     published_resource_version: row.published_resource_version,
     verified_evidence: refs.length > 0,

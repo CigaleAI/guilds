@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { activityWindow, classifyWrite, groupPostSeq, projectActivity, type ActivityInput } from "../../src/studio/activity.js";
+import {
+  activityWindow,
+  classifyWrite,
+  groupPostSeq,
+  messageFloor,
+  projectActivity,
+  type ActivityInput,
+} from "../../src/studio/activity.js";
 import { StudioUnprocessableError } from "../../src/studio/errors.js";
 
 const NOW = new Date("2026-09-25T17:40:00Z");
@@ -92,6 +99,7 @@ test("a tagged wake points at the latest row that tagged it, not the snapshot's 
     through_seq: 5,
     reason: "tag",
     routing: { source: "typesafe", choice: "none", confidence: 0.51 },
+    inferred: true,
   });
   assert.equal(wake?.outcome, "silent");
   assert.equal(wake?.cost_usd, 0.012);
@@ -137,6 +145,50 @@ test("untagged operator rows and Jev picks are told apart", () => {
   const jev = byRun.get("r_jev")?.trigger;
   assert.equal(jev?.type === "message" && jev.reason, "jev");
   assert.equal(jev?.type === "message" && jev.seq, 9);
+});
+
+test("a group run that stored its waking row points there, not at an inferred row", () => {
+  const view = projectActivity(
+    input({
+      messages: [message(4, "14:00:00", null, ["desk"]), message(5, "14:00:30", null, ["desk"])],
+      runs: [
+        {
+          id: "r_desk",
+          agent_id: "a_desk",
+          kind: "group",
+          errors: [],
+          metadata: {},
+          group_chat_through_seq: 5,
+          previous_through_seq: 3,
+          wake_seq: "4",
+          created_at: ts("14:00:31"),
+          updated_at: ts("14:01:00"),
+        },
+      ],
+      deliveries: [{ run_id: "r_desk", metadata: { source: "group_chat", you_were_tagged: true } }],
+    }),
+  );
+  const trigger = view.wakes[0]?.trigger;
+  assert.equal(trigger?.type === "message" && trigger.seq, 4);
+  assert.equal(trigger?.type === "message" && trigger.inferred, false);
+});
+
+test("a direct chat nobody is recorded as starting has no user", () => {
+  const view = projectActivity(
+    input({
+      runs: [{ id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("16:00:00") }],
+      stats: [{ run_id: "r_chat", last_seq: 4, first_at: ts("15:58:00"), last_at: ts("16:00:00"), cost_usd: "0" }],
+    }),
+  );
+  assert.deepEqual(view.wakes[0]?.trigger, { type: "direct", user_id: null });
+});
+
+test("the message floor sits before a stored waking row, or at the bottom of the tag scan", () => {
+  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: 900, previous_through_seq: 10, wake_seq: 850 }), 849);
+  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: 900, previous_through_seq: 10 }), 400);
+  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: 20, previous_through_seq: 10 }), 10);
+  assert.equal(messageFloor({ kind: "group", group_chat_through_seq: null }), null);
+  assert.equal(messageFloor({ kind: "direct", group_chat_through_seq: 5 }), null);
 });
 
 test("posts, writes, and errors inside the window decide the outcome", () => {
@@ -190,7 +242,7 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
     input({
       runs: [
         { id: "r_old", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("13:50:00") },
-        { id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, created_at: ts("09:00:00"), updated_at: ts("16:00:00") },
+        { id: "r_chat", agent_id: "a_desk", kind: "direct", errors: [], metadata: {}, started_by_user_id: "user_ada", created_at: ts("09:00:00"), updated_at: ts("16:00:00") },
         { id: "r_live", agent_id: "a_scout", kind: "group", errors: [], metadata: {}, group_chat_through_seq: 3, created_at: ts("17:39:00"), updated_at: ts("17:39:30") },
       ],
       stats: [
@@ -202,7 +254,7 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
   );
   assert.deepEqual(view.wakes.map((wake) => wake.run_id), ["r_chat", "r_live"]);
   assert.equal(view.wakes[0]?.started_at, "2026-09-25T15:58:00.000Z");
-  assert.deepEqual(view.wakes[0]?.trigger, { type: "direct" });
+  assert.deepEqual(view.wakes[0]?.trigger, { type: "direct", user_id: "user_ada" });
   assert.equal(view.wakes[1]?.running, true);
   assert.equal(view.wakes[1]?.ended_at, NOW.toISOString());
 });
@@ -252,6 +304,9 @@ test("public rows carry a bounded preview and their tags", () => {
   assert.equal(row?.preview.length, 401);
   assert.deepEqual(row?.tagged, ["scout", "user"]);
   assert.equal(row?.author_type, "user");
+  assert.equal(row?.author_user_id, null);
+  const posted = projectActivity(input({ messages: [{ ...message(2, "14:00:00", null, []), author_user_id: "user_ada" }] }));
+  assert.equal(posted.messages[0]?.author_user_id, "user_ada");
 });
 
 test("a coding wake lists what it changed in each repository as code writes", () => {

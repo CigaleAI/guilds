@@ -8,10 +8,10 @@ import {
   interruptionRecord,
   mcpIndex,
   mcpRedactions,
-  offeredToolNames,
   pendingToolCalls,
   workspaceMaxMib,
 } from "../../src/generation/index.js";
+import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { AGENT_CONFIG } from "../helpers/generation.js";
 

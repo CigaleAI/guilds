@@ -3,6 +3,7 @@ import {
   type QueryClient,
   useMutation,
   useQueries,
+  useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -78,6 +79,10 @@ import type {
   StudioInspector,
   StudioMessage,
   StudioSession,
+  StateItemDetail,
+  StateItemRow,
+  StudioTool,
+  StudioToolCall,
   Script,
   ScheduleInput,
   TaskFile,
@@ -93,6 +98,7 @@ import type {
   ApplyRow,
   GuildApplyState,
   ActivityView,
+  StudioReferences,
   BuilderCapabilities,
   BuilderSession,
   BuilderSessionSummary,
@@ -135,6 +141,7 @@ export const keys = {
   agentMemory: (agentId: string) => ["files", "memory", agentId] as const,
   embeddableNotes: ["files", "embeddable-notes"] as const,
   embedStatus: (guildId: string) => ["files", "embed-status", guildId] as const,
+  studioReferences: (id: string) => ["files", "studio-references", id] as const,
   latestChange: (displayPath: string) => ["files", "latest-change", displayPath] as const,
   fileChanges: (displayPath: string) => ["files", "changes", displayPath] as const,
   accessAll: ["access"] as const,
@@ -182,6 +189,12 @@ export const keys = {
   studioRoutines: (id: string, agentId: string) => ["studio", id, "routines", agentId] as const,
   studioMemory: (id: string, agentId: string) => ["studio", id, "memory", agentId] as const,
   studioActivity: (id: string, hours: number) => ["studio", id, "activity", hours] as const,
+  studioTools: (id: string, hours: number) => ["studio", id, "tools", hours] as const,
+  studioState: (id: string, query: Record<string, string>) => ["studio", id, "files", "state", query] as const,
+  studioStateItem: (id: string, path: string, hours: number, op: string) =>
+    ["studio", id, "files", "state", "item", path, hours, op] as const,
+  studioToolCalls: (id: string, name: string, hours: number, errors: boolean) =>
+    ["studio", id, "tools", name, "calls", hours, errors] as const,
   access: (owner: { scope: string; id: string }) => ["access", owner.scope, owner.id] as const,
   secretsAll: ["secrets"] as const,
   secrets: (owner: { scope: string; id: string }) => ["secrets", owner.scope, owner.id] as const,
@@ -2229,6 +2242,16 @@ export function useStudioConnections(id: string) {
   });
 }
 
+/** Grants or declines a login the coach asked for; the answer is kept on its request. */
+export function useResolveStudioLogin(id: string) {
+  const refresh = useStudioRefresh(id);
+  return useMutation({
+    mutationFn: ({ seq, decision }: { seq: number; decision: "grant" | "decline" }) =>
+      api<StudioSession>(`${studioPath(id)}/logins/${seq}`, { method: "POST", body: { decision } }),
+    onSuccess: refresh,
+  });
+}
+
 export function useGrantStudioConnection(id: string) {
   const refresh = useStudioRefresh(id);
   return useMutation({
@@ -2282,6 +2305,79 @@ export function useStudioActivity(id: string, hours: number) {
     placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       query.state.data?.wakes.some((wake) => wake.running) ? studioPollMs : false,
+  });
+}
+
+/** The guild's notes, tables, scripts and Memory with their changes and reads in the window. */
+export function useStudioState(
+  id: string,
+  filter: { hours: number; agent: string | null; kind: string | null },
+) {
+  const query: Record<string, string> = {
+    hours: String(filter.hours),
+    ...(filter.agent ? { agent: filter.agent } : {}),
+    ...(filter.kind ? { kind: filter.kind } : {}),
+  };
+  return useQuery({
+    queryKey: keys.studioState(id, query),
+    queryFn: () =>
+      api<{ items: StateItemRow[] }>(`${studioPath(id)}/state?${new URLSearchParams(query)}`).then(
+        (body) => body.items,
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** One State item: who changes and reads it, and its history a page at a time. */
+export function useStudioStateItem(id: string, item: { path: string; hours: number; op: string | null }) {
+  return useInfiniteQuery({
+    queryKey: keys.studioStateItem(id, item.path, item.hours, item.op ?? ""),
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({ path: item.path, hours: String(item.hours) });
+      if (item.op) query.set("op", item.op);
+      if (pageParam) query.set("cursor", pageParam);
+      return api<StateItemDetail>(`${studioPath(id)}/state/item?${query}`);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+  });
+}
+
+/** Every tool the guild's agents are offered or called in the window. */
+export function useStudioTools(id: string, hours: number) {
+  return useQuery({
+    queryKey: keys.studioTools(id, hours),
+    queryFn: () =>
+      api<{ tools: StudioTool[] }>(`${studioPath(id)}/tools?hours=${hours}`).then((body) => body.tools),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** One tool's calls in the window, newest first, a page at a time. */
+export function useStudioToolCalls(
+  id: string,
+  tool: { name: string; hours: number; errorsOnly: boolean },
+) {
+  return useInfiniteQuery({
+    queryKey: keys.studioToolCalls(id, tool.name, tool.hours, tool.errorsOnly),
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({ hours: String(tool.hours) });
+      if (tool.errorsOnly) query.set("errors", "true");
+      if (pageParam) query.set("cursor", pageParam);
+      return api<{ calls: StudioToolCall[]; next_cursor: string | null }>(
+        `${studioPath(id)}/tools/${encodeURIComponent(tool.name)}/calls?${query}`,
+      );
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
+  });
+}
+
+/** What each Task and file in the session's guild embeds or names; re-read when files change. */
+export function useStudioReferences(id: string) {
+  return useQuery({
+    queryKey: keys.studioReferences(id),
+    queryFn: () => api<StudioReferences>(`${studioPath(id)}/references`),
   });
 }
 

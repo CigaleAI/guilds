@@ -78,6 +78,14 @@ Missed wake-ups are not replayed.
 A recipe apply creates its routines paused. While the apply's
 checklist is open, the guild says so ([Applying recipes](applying-recipes.md)).
 
+### Change log
+
+Every create, edit, pause, resume, and delete of a routine is logged:
+who made it, when, and in words what changed. A change an agent makes
+with its schedule tools links to the run and the tool call. A change
+the operator applies from a Prompt Studio proposal links to the coach
+message that proposed it. A firing is not a change and is not logged.
+
 ### What the agent receives
 
 The run opens with the agent's usual system prompt, then one
@@ -211,6 +219,23 @@ pause; what it leaves out stays. A new timing on an unpaused routine,
 or a resume, plans the next wake-up from now. Any other change keeps
 the planned wake-up. Runs that already fired keep the instruction they
 fired with.
+
+Each write takes the actor it is made by and appends a `config_changes`
+row with `target_kind` `routine` and the schedule id, in the same
+transaction (`apps/orchestrator/src/schedules/changes.ts`):
+
+| Write | `operation` | `summary` |
+| --- | --- | --- |
+| Create | `create` | `Created "<description>"` |
+| Delete | `delete` | `Deleted "<description>"` |
+| Pause or resume | `update` | `Paused "<description>"` or `Resumed "<description>"` |
+| Timing, description, or instruction | `update` | `Changed the timing and instruction of "<description>"`, naming each field that moved |
+
+An edit that changes nothing appends no row. The actor is the
+operator for the Routine tab, the HTTP routes, a recipe apply, and a
+Studio apply (which also records the session and coach message), and
+the run with its tool call for the agent's schedule tools. The columns
+are in [Artifacts](artifacts.md#configuration-change-log).
 
 ### Firing
 

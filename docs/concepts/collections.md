@@ -197,8 +197,8 @@ counts, and the purpose. It also has:
 
 Records re-read after every write and when the window regains focus.
 
-The Prompt Studio inspector shows the same records under its
-**Tables** tab ([Prompt Studio](prompt-studio.md)). The coach can
+The Prompt Studio inspector shows the same records under
+**State** › **Tables** ([Prompt Studio](prompt-studio.md)). The coach can
 propose to create, change, or delete the source guild's own
 collections and the organisation's. A proposal can also change the
 grants of the source guild and its agents

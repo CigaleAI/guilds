@@ -34,6 +34,7 @@ import {
   type GroupChatDatabase,
   type GroupDelivery,
   type GroupRunner,
+  wakeMessage,
 } from "../groupchat/index.js";
 import { guildOperators } from "../guilds/validation.js";
 import { OPEN_POLICY, PolicyError, type OrgPolicy } from "../policy/index.js";
@@ -80,10 +81,12 @@ import {
   inlineTaskEmbeds,
   operatorActor,
   snapshotTaskEmbeds,
+  snapshotTaskCollections,
   type ArtifactActor,
   type ArtifactGrants,
 } from "../artifacts/index.js";
 import { DEFAULT_ARTIFACT_GRANTS } from "../artifacts/types.js";
+import type { ChangeActor } from "../db/config-changes.js";
 import { NotesError, type NotesStore } from "../notes/store.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { writeLog, redactText } from "../observability/log.js";
@@ -158,7 +161,6 @@ import {
   withRemainingToolCalls as _withRemainingToolCalls,
   CancelEvent,
 } from "../toolbox/index.js";
-import { BROWSER_TOOLS } from "../toolbox/browser.js";
 import { agentGitIdentity, cloneFailures, RepositoryAccessError, RepositoryTokens } from "../coding/git.js";
 import { codingRepositories, stateRepositories } from "../coding/repositories.js";
 import {
@@ -171,7 +173,6 @@ import {
 import { harnessEffortOf } from "../coding/harness-models.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import {
-  CODING_TOOLS,
   measureMachine,
   measureWorkspace,
   repeatedReadStep,
@@ -183,7 +184,6 @@ import {
   assertHarnessReady,
   checkHarnessOn,
   endLostTurn,
-  HARNESS_TOOLS,
   type HarnessCheck,
   harnessMissingError,
   HarnessSetupError,
@@ -195,7 +195,7 @@ import {
 } from "../toolbox/harness.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
 import { Issues, type IssuesDatabase } from "../issues/index.js";
-import { SCHEDULE_TOOLS } from "../toolbox/schedule.js";
+import { offeredToolNames } from "../toolbox/offered.js";
 import { dynamicScriptTools, firstClassScriptSchemas, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
 import type { DirectoryNotes } from "../directories/index.js";
 import type { PromptNotes } from "../prompts/index.js";
@@ -406,82 +406,6 @@ function errorMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
-}
-
-function isBrowserOrCodingToolName(name: string): boolean {
-  return (
-    (BROWSER_TOOLS as readonly string[]).includes(name) ||
-    (CODING_TOOLS as readonly string[]).includes(name) ||
-    (HARNESS_TOOLS as readonly string[]).includes(name)
-  );
-}
-
-function nameMatchesToolList(name: string, tools: readonly string[] | string): boolean {
-  return typeof tools === "string" ? name === tools : tools.includes(name);
-}
-
-function isHiddenByOfferedFlag(
-  name: string,
-  options: {
-    scripting?: boolean;
-    memory?: boolean;
-    schedules?: boolean;
-    direct?: boolean;
-  },
-): boolean {
-  const gates: Array<[boolean, readonly string[] | string]> = [
-    [options.scripting !== false, SCRIPT_TOOLS],
-    [options.memory !== false, "memory_write"],
-    [Boolean(options.schedules), SCHEDULE_TOOLS],
-    [Boolean(options.direct), "secret_request"],
-  ];
-  return gates.some(([allowed, tools]) => !allowed && nameMatchesToolList(name, tools));
-}
-
-function offeredNativeNames(
-  names: string[],
-  options: {
-    scripting?: boolean;
-    memory?: boolean;
-    schedules?: boolean;
-    direct?: boolean;
-  },
-): string[] {
-  return names.filter((name) => {
-    if (name === "report_issue" || isBrowserOrCodingToolName(name)) {
-      return false;
-    }
-    return !isHiddenByOfferedFlag(name, options);
-  });
-}
-
-function capabilityToolNames(options: { coding?: boolean; browser?: boolean }): string[] {
-  return [
-    ...(options.coding ? [...CODING_TOOLS, ...HARNESS_TOOLS] : []),
-    ...(options.browser ? BROWSER_TOOLS : []),
-  ];
-}
-
-// The browser and code tools follow the agent's flags, not bindings.
-export function offeredToolNames(
-  names: string[],
-  options: {
-    browser?: boolean;
-    coding?: boolean;
-    scripting?: boolean;
-    memory?: boolean;
-    schedules?: boolean;
-    direct?: boolean;
-  } = {},
-): string[] {
-  const offered = offeredNativeNames(names, options);
-  for (const name of capabilityToolNames(options)) {
-    if (!offered.includes(name)) {
-      offered.push(name);
-    }
-  }
-  offered.push("report_issue");
-  return offered;
 }
 
 function toolSchemaName(tool: unknown): string {
@@ -948,6 +872,7 @@ export type GenerationDb = AccessDatabase &
         extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]>;
         runMetadata?: Record<string, unknown>;
         userMetadata?: Record<string, unknown>;
+        startedByUserId?: string | null;
       },
     ): Promise<void>;
     createGroupRun(
@@ -964,6 +889,7 @@ export type GenerationDb = AccessDatabase &
         taskPromptHash: string;
         memoryPromptHash: string;
         runMetadata?: Record<string, unknown>;
+        wakeGroupMessageId?: number | null;
       },
     ): Promise<void>;
     createScheduleRun(
@@ -1047,8 +973,9 @@ export type GenerationDb = AccessDatabase &
       instruction: string,
       wake: PlannedWake,
       now: Date,
+      actor: ChangeActor,
     ): Promise<Record<string, unknown>>;
-    deleteSchedule?(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
+    deleteSchedule?(agentId: string, scheduleId: string, actor: ChangeActor): Promise<Record<string, unknown> | null>;
     getSchedule?(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
     setSchedulePaused?(
       agentId: string,
@@ -1056,6 +983,7 @@ export type GenerationDb = AccessDatabase &
       paused: boolean,
       wake: PlannedWake | null,
       now: Date,
+      actor: ChangeActor,
     ): Promise<Record<string, unknown> | null>;
     listSchedules?(agentId: string): Promise<Array<Record<string, unknown>>>;
     listSchedulesForGuild?(guildId: string): Promise<Array<Record<string, unknown>>>;
@@ -1065,6 +993,7 @@ export type GenerationDb = AccessDatabase &
       fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
       wake: PlannedWake | null,
       now: Date,
+      actor: ChangeActor,
     ): Promise<Record<string, unknown> | null>;
     setScheduleNextRun?(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
     insertIssue?(
@@ -1344,15 +1273,16 @@ export class GenerationLoop implements GroupRunner {
   async create_run(
     agentId: string,
     message: string | null,
-    options: { attachments?: AttachmentRef[] } = {},
+    options: { attachments?: AttachmentRef[]; startedByUserId?: string } = {},
   ): Promise<Record<string, unknown>> {
     return this.createRun(agentId, message, options);
   }
 
+  /** Opens a direct run; `startedByUserId` is the person who opened it. */
   async createRun(
     agentId: string,
     message: string | null,
-    options: { attachments?: AttachmentRef[] } = {},
+    options: { attachments?: AttachmentRef[]; startedByUserId?: string } = {},
   ): Promise<Record<string, unknown>> {
     const attachments = options.attachments ?? [];
     const opening = message === null && attachments.length ? "" : message;
@@ -1378,6 +1308,7 @@ export class GenerationLoop implements GroupRunner {
           systemPromptHash: current.system,
           taskPromptHash: current.task,
           memoryPromptHash: current.memory,
+          startedByUserId: options.startedByUserId ?? null,
           ...(runMetadata ? { runMetadata } : {}),
           ...(userMetadata ? { userMetadata } : {}),
         },
@@ -1432,6 +1363,7 @@ export class GenerationLoop implements GroupRunner {
     const now = new Date();
     const current = prepared.hashes;
     const runMetadata = preparedRunMetadata(prepared, recipients ? { recipients } : null);
+    const woke = wakeMessage(prepared.history_rows, agentId, deliveredThrough);
     const create = () =>
       this.db.createGroupRun(
         runId,
@@ -1446,6 +1378,7 @@ export class GenerationLoop implements GroupRunner {
           systemPromptHash: current.system,
           taskPromptHash: current.task,
           memoryPromptHash: current.memory,
+          wakeGroupMessageId: woke ? Number(woke.id) : null,
           ...(runMetadata ? { runMetadata } : {}),
         },
       );
@@ -2659,8 +2592,10 @@ export class GenerationLoop implements GroupRunner {
     const version = Number(agent.task_version ?? 1);
     const hash = String(agent.task_hash ?? "");
     let embeds: Array<Record<string, unknown>> = [];
+    let collections: string[] = [];
     try {
       embeds = await snapshotTaskEmbeds(this.artifacts, operator, source);
+      collections = await snapshotTaskCollections(this.artifacts, operator, source);
     } catch {
       /* keep empty embeds */
     }
@@ -2676,6 +2611,7 @@ export class GenerationLoop implements GroupRunner {
         key: "task.md",
       }),
       embeds,
+      collections,
       has_embeds: collectTaskEmbeds(source).length > 0,
     };
   }

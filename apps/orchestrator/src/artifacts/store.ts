@@ -21,6 +21,8 @@ import {
 } from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "./file-changes.js";
+import { collectionCleared, collectionColumnsChanged, collectionDeleted, type CollectionRef } from "./collection-changes.js";
+import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { operatorActor } from "./grants.js";
 import {
   allowsSimilarSpelling,
@@ -143,6 +145,20 @@ export type CollectionView = {
 
 export type RecordView = Record<string, unknown>;
 
+/** A note, Memory, or script as a guild's state lists it. */
+export type StateArtifact = {
+  display_path: string;
+  kind: "note" | "memory" | "script";
+  level: ArtifactLevel;
+  owner_id: string;
+  title: string;
+  /** Bytes of its text. */
+  size: number;
+  version: number;
+  created_by: string;
+  created_at: string;
+};
+
 export type CollectionDescription = {
   id: string;
   name: string;
@@ -151,6 +167,10 @@ export type CollectionDescription = {
   guild_id: string | null;
   access: AccessMode;
 };
+
+function collectionRef(row: CollectionRow): CollectionRef {
+  return { id: row.id, name: row.name, orgId: row.org_id, guildId: row.guild_id };
+}
 
 export class ArtifactStore {
   constructor(
@@ -411,6 +431,7 @@ export class ArtifactStore {
         }
       }
       if (change) {
+        await recordChangeIfAny(client, actor, collectionColumnsChanged(collectionRef(current), change));
         for (const rename of change.renamed) {
           await client.query(
             `UPDATE artifacts
@@ -492,6 +513,7 @@ export class ArtifactStore {
         [collection.id, now],
       );
       await client.query(`DELETE FROM collection_access WHERE collection_id = $1`, [collection.id]);
+      await recordConfigChange(client, actor, collectionDeleted(collectionRef(collection)));
     });
   }
 
@@ -520,7 +542,9 @@ export class ArtifactStore {
           WHERE collection_id = $1 AND kind = 'object' AND deleted_at IS NULL`,
         [collection.id, now, actor.actorType, actor.actorId, actor.actorName],
       );
-      return result.rowCount ?? 0;
+      const removed = result.rowCount ?? 0;
+      await recordChangeIfAny(client, actor, collectionCleared(collectionRef(collection), removed));
+      return removed;
     });
   }
 
@@ -1386,6 +1410,42 @@ export class ArtifactStore {
         },
       };
     });
+  }
+
+  /**
+   * The notes, Memory, and scripts of one guild's state the actor can read: its own, its
+   * agents', and the organisation's.
+   */
+  async listStateArtifacts(
+    actor: ArtifactActor,
+    owners: { guildId: string; agentIds: string[] },
+  ): Promise<StateArtifact[]> {
+    const result = await this.pool.query(
+      `SELECT ${ARTIFACT_SELECT}
+         FROM artifacts a
+         LEFT JOIN artifact_collections c ON c.id = a.collection_id
+        WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind IN ('note', 'memory', 'script')
+          AND (a.level = 'org'
+               OR (a.level = 'guild' AND a.owner_id = $2)
+               OR (a.level = 'agent' AND a.owner_id = ANY($3::text[])))
+        ORDER BY a.level, a.owner_id, a.key`,
+      [actor.orgId, owners.guildId, owners.agentIds],
+    );
+    return (result.rows as Array<Record<string, unknown>>)
+      .map((row) => mapRow(row))
+      .filter((row) => this.canReadRow(actor, row))
+      .map((row) => ({
+        display_path: displayPathFor(rowAsDisplay(row)),
+        kind: row.kind as StateArtifact["kind"],
+        level: row.level,
+        owner_id: row.owner_id,
+        // A script's title column holds its description; its key is its name.
+        title: row.kind === "script" ? row.key : (row.title ?? row.key),
+        size: Buffer.byteLength(row.content_text ?? JSON.stringify(row.content_json ?? ""), "utf8"),
+        version: row.version,
+        created_by: row.created_by_name,
+        created_at: row.created_at,
+      }));
   }
 
   async listEmbeddableNotes(actor: ArtifactActor): Promise<Array<Record<string, unknown>>> {

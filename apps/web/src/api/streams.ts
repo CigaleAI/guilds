@@ -279,10 +279,7 @@ const studioEvents = [
  * Follows a Studio session: the coach's reply as it is written, committed rows into the cached
  * conversation, and a refresh of drafts and state when the coach finishes or proposes a draft.
  */
-export function useStudioStream(
-  sessionId: string,
-  onDraft: (draft: { target_agent_id?: string }) => void,
-): LiveTurn | null {
+export function useStudioStream(sessionId: string): LiveTurn | null {
   const client = useQueryClient();
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [tracked, setTracked] = useState(sessionId);
@@ -318,7 +315,6 @@ export function useStudioStream(
         return;
       }
       if (name === "draft.changed") {
-        onDraft((data as { draft?: { target_agent_id?: string } } | null)?.draft ?? {});
         refresh();
         return;
       }

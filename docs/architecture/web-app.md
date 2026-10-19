@@ -121,7 +121,7 @@ not-found page (`features/home/NotFound.tsx`).
 | `/recipes/$recipeId/apply` | Apply preview | |
 | `/applies/$applyId` | Apply checklist | |
 | `/studio` | Studio landing | `guild` |
-| `/studio/$sessionId` | Studio workspace | `agent`, `tab`, `item`, `call`, `seq`: the inspected agent, its tab, the item selected in it, and the run step to reveal |
+| `/studio/$sessionId` | Studio workspace | `section`, `agent`, `tab`, `kind`, `item`, `call`, `seq`: the section (`guild`, `agents`, `state`, `tools`), the inspected or filtered agent, its tab or view, the kind of item listed, the item selected, and the run step to reveal. Without a known `section` it opens the guild |
 | `/tables`, `/tables/$collectionId` | Tables | `tab`: `columns` or `access` (records without it) |
 | `/guilds/$guildId` | Guild group chat | `seq`: open at that message |
 | `/guilds/$guildId/settings` | Guild settings | |

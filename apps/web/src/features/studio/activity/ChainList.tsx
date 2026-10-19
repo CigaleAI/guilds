@@ -27,6 +27,7 @@ import {
   MarkSquare,
   wakeOutcomeLabel,
 } from "@guildsrun/ui";
+import { useIdentity } from "../../../app/identity";
 import { useStudio } from "../StudioContext";
 import {
   chainLines,
@@ -37,8 +38,10 @@ import {
   formatUsd,
   plural,
   stepMatches,
+  operatorAuthor,
   tally,
   toMs,
+  triggerReasonLabel,
   wakeBucket,
   wakeEffects,
   type Chain,
@@ -46,15 +49,7 @@ import {
   type MapSelection,
   type WriteGroup,
 } from "./activityModel";
-import {
-  AgentMark,
-  AgentName,
-  nodeName,
-  reasonLabel,
-  sourceIcon,
-  useWidth,
-  type ActivityData,
-} from "./parts";
+import { AgentMark, AgentName, nodeName, sourceIcon, useWidth, type ActivityData } from "./parts";
 
 const PAGE = 40;
 
@@ -230,11 +225,7 @@ function ChainRow({
             {line.steps.map((item) => (
               <Fragment key={item.wake.run_id}>
                 <Connector
-                  label={
-                    item.wake.trigger.type === "message"
-                      ? reasonLabel[item.wake.trigger.reason]
-                      : null
-                  }
+                  label={triggerReasonLabel(item.wake.trigger)}
                   posted={item.post !== null}
                   matched={
                     selection !== null && selection.kind === "link" && stepMatches(selection, item)
@@ -460,7 +451,14 @@ function TriggerDetail({
             <Button
               variant="outline"
               size="xs"
-              onClick={() => go({ agent: routine.agent_id, tab: "routines", item: routine.id })}
+              onClick={() =>
+                go({
+                  section: "agents",
+                  agent: routine.agent_id,
+                  tab: "routines",
+                  item: routine.id,
+                })
+              }
             >
               Open routine
             </Button>
@@ -609,6 +607,7 @@ function StepDetail({
   onClose: () => void;
 }) {
   const { openStep, ask } = useStudio();
+  const { user } = useIdentity();
   const [section, setSection] = useState<SectionKey | null>(null);
   const { index } = data;
   const step = findStep(chain.steps, runId);
@@ -621,7 +620,7 @@ function StepDetail({
   const end = toMs(wake.ended_at) ?? start;
   const open = (call: string | null) =>
     openStep({ agentId: wake.agent_id, runId: wake.run_id, call });
-  const reason = wake.trigger.type === "message" ? reasonLabel[wake.trigger.reason] : null;
+  const reason = triggerReasonLabel(wake.trigger);
   const wokenBy = step.post
     ? `woken by ${nodeName(index, step.from)}'s post #${step.post.seq}${reason ? ` (${reason})` : ""}`
     : chain.start.kind === "routine"
@@ -629,7 +628,7 @@ function StepDetail({
       : chain.start.kind === "direct"
         ? "woken by a direct chat"
         : chain.start.kind === "operator"
-          ? `woken by your message #${chain.start.message.seq}${reason ? ` (${reason})` : ""}`
+          ? `woken by ${operatorAuthor(chain.start.message, user.id)} message #${chain.start.message.seq}${reason ? ` (${reason})` : ""}`
           : "woken by an earlier message";
   const errors = tally([
     ...wake.errors.map((error) => `${error.operation ?? "error"}: ${error.message ?? "unknown"}`),

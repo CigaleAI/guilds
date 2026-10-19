@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { Archive, ArrowLeft, Plus, TriangleAlert } from "lucide-react";
+import { Archive, ArrowLeft, Plus } from "lucide-react";
 import { useState } from "react";
 import {
   useArchiveStudio,
@@ -11,55 +11,43 @@ import {
   useStudioSession,
 } from "../../api/queries";
 import { useStudioStream } from "../../api/streams";
-import type { StudioAgent, StudioDraft } from "../../api/types";
-import { agentLook } from "../../app/agents";
+import type { StudioDraft } from "../../api/types";
 import { useMediaQuery } from "../../app/media";
 import {
   Button,
   Segmented,
-  tabsList,
-  tabsTrigger,
   PageError,
   SkeletonRows,
   ConfirmDialog,
-  AgentTabs,
   WorkspaceHeader,
   toast,
   cn,
   Icon,
-  PillCount,
-  Tag,
 } from "@guildsrun/ui";
+import { AgentsSection } from "./AgentsSection";
+import { ApprovalTray } from "./ApprovalTray";
+import { useApprovals } from "./approvals";
 import { clearPin, readPin, type StudioPin } from "./investigate";
-import {
-  studioAgentTabs,
-  studioGuildTabs,
-  studioTabLabel,
-  type StudioSearch,
-  type StudioTab,
-} from "./location";
+import { studioSectionLabel, type StudioSearch } from "./location";
 import { Splitter, useSplitShare } from "../coach/Splitter";
 import { LoginsPopover } from "./LoginsPopover";
+import { SectionBar } from "./SectionBar";
+import { StateSection } from "./state/StateSection";
 import { StudioChat } from "./StudioChat";
 import { StudioContext, useStudio, type StudioView } from "./StudioContext";
-import { TablesTab, FilesTab } from "./tabs/DataTabs";
-import { HistoryTab } from "./tabs/HistoryTab";
-import { MemoryTab } from "./tabs/MemoryTab";
+import { ProposalPanel } from "./ProposalCards";
 import { OverviewTab } from "./tabs/OverviewTab";
-import { RoutinesTab } from "./tabs/RoutinesTab";
-import { ScriptsTab } from "./tabs/ScriptsTab";
-import { DraftTab, openDraft, PromptTab } from "./tabs/TaskTabs";
-import { VersionsTab } from "./tabs/VersionsTab";
-import { warningLabel } from "./warnings";
+import { openDraft } from "./tabs/TaskTabs";
+import { ToolsSection } from "./tools/ToolsSection";
 
 /** Below this width the inspector and the coach take turns. */
 const splitScreen = "(min-width: 64rem)";
 const splitKey = "studio.split";
 
 /**
- * One Studio session: the guild's agents to inspect (prompt, drafts, history, memory, routines,
- * scripts, files, tables and Task versions) or the guild's activity, beside the coach
- * conversation, with evidence from either pinned to the next message.
+ * One Studio session: the guild, its agents (topology, then prompt, drafts, history, memory,
+ * routines, scripts and Task versions), its state, and the tools its agents call, beside the
+ * coach conversation, with evidence from any of them pinned to the next message.
  */
 export function StudioWorkspace() {
   const { sessionId } = useParams({ from: "/studio/$sessionId" });
@@ -82,6 +70,12 @@ function Workspace({ sessionId }: { sessionId: string }) {
   const split = useMediaQuery(splitScreen);
   const [pane, setPane] = useState<"inspect" | "coach">("inspect");
   const [share, setShare] = useSplitShare(splitKey, 0.65);
+  const approvals = useApprovals({
+    sessionId,
+    session: session.data,
+    messages: messages.data,
+    drafts: drafts.data,
+  });
 
   const agents = inventory.data ?? [];
 
@@ -97,9 +91,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
       setTarget.mutate(target);
   };
 
-  const streamText = useStudioStream(sessionId, (draft) => {
-    if (draft.target_agent_id) go({ agent: draft.target_agent_id, tab: "draft" });
-  });
+  const streamText = useStudioStream(sessionId);
 
   if (session.isError) {
     return (
@@ -117,7 +109,6 @@ function Workspace({ sessionId }: { sessionId: string }) {
   }
 
   const data = session.data;
-  const agent = agents.find((item) => item.id === search.agent) ?? null;
   const pending = (drafts.data ?? []).filter(openDraft);
   const view: StudioView = {
     session: data,
@@ -130,6 +121,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
         return;
       }
       go({
+        section: "agents",
         agent: agentId,
         tab: "history",
         item: runId,
@@ -142,6 +134,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
       setPin({ focus, prompt: "" });
       setPane("coach");
     },
+    approvals,
   };
   const unpin = () => {
     clearPin(sessionId);
@@ -188,6 +181,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
                   Continue in a new session
                 </Button>
               ) : null}
+              {data.status === "active" ? <ApprovalTray /> : null}
               {data.status === "active" ? <LoginsPopover session={data} /> : null}
               <Button asChild variant="on-panel" size="sm">
                 <Link to="/studio" search={{ guild: data.source_guild_id }}>
@@ -205,7 +199,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
           }
         />
 
-        {live ? <AgentStrip agents={agents} current={agent} pending={pending} /> : null}
+        {live ? <SectionBar /> : null}
 
         {!split ? (
           <div className="border-b border-line px-4 py-2 md:px-6">
@@ -215,7 +209,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
               value={pane}
               onValueChange={setPane}
               options={[
-                { value: "inspect", label: agent ? agent.name : "Guild" },
+                { value: "inspect", label: studioSectionLabel[search.section] },
                 { value: "coach", label: "Coach" },
               ]}
             />
@@ -230,7 +224,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
               style={split ? { width: `${share * 100}%` } : undefined}
             >
               {live ? (
-                <Inspector agent={agent} drafts={drafts.data ?? []} pending={pending} />
+                <Inspector drafts={drafts.data ?? []} pending={pending} />
               ) : (
                 <p className="p-6 text-sm text-muted">
                   This session is not live, so its guild can't be inspected here.
@@ -284,143 +278,22 @@ function Workspace({ sessionId }: { sessionId: string }) {
   );
 }
 
-/** The guild and each of its agents, to point the inspector at. */
-function AgentStrip({
-  agents,
-  current,
-  pending,
-}: {
-  agents: StudioAgent[];
-  current: StudioAgent | null;
-  pending: StudioDraft[];
-}) {
-  const { go } = useStudio();
-  return (
-    <AgentTabs
-      overview={{
-        label: "Guild overview",
-        marks: pending.length ? (
-          <span className="size-2 rounded-full bg-signal" aria-label="drafts pending" />
-        ) : null,
-      }}
-      agents={agents.map((item) => ({
-        id: item.id,
-        name: item.name,
-        ...agentLook(item),
-        version: item.task_version,
-        title: item.warnings.map((warning) => warningLabel[warning]).join(", ") || item.focus,
-        marks: (
-          <>
-            {item.draft_id && item.draft_status && openDraft({ status: item.draft_status }) ? (
-              <Tag tone="signal" font="sans">
-                draft
-              </Tag>
-            ) : null}
-            {item.warnings.length ? (
-              <Icon icon={TriangleAlert} size={14} className="text-t-ochre-fg" />
-            ) : null}
-          </>
-        ),
-      }))}
-      current={current?.id ?? null}
-      onSelect={(agentId) => go(agentId ? { agent: agentId } : {})}
-    />
-  );
-}
-
-/** The tabs for the guild or the selected agent, and the open tab's view. */
-function Inspector({
-  agent,
-  drafts,
-  pending,
-}: {
-  agent: StudioAgent | null;
-  drafts: StudioDraft[];
-  pending: StudioDraft[];
-}) {
-  const { session, search } = useStudio();
-  const agentDrafts = agent ? drafts.filter((draft) => draft.target_agent_id === agent.id) : [];
-  const tabs: readonly StudioTab[] = agent
-    ? studioAgentTabs.filter((value) => value !== "scripts" || agent.scripting !== false)
-    : studioGuildTabs;
-  const requested: StudioTab =
-    search.tab ?? (agent ? (agentDrafts.some(openDraft) ? "draft" : "prompt") : "overview");
-  const tab: StudioTab = tabs.includes(requested)
-    ? requested
-    : agent
-      ? agentDrafts.some(openDraft)
-        ? "draft"
-        : "prompt"
-      : "overview";
-  const count = (value: StudioTab) =>
-    value === "draft" && agentDrafts.some(openDraft)
-      ? agentDrafts.filter(openDraft).length
-      : undefined;
-
+/** The open section's view, under the coach's requests that wait in it. */
+function Inspector({ drafts, pending }: { drafts: StudioDraft[]; pending: StudioDraft[] }) {
+  const { search, approvals } = useStudio();
+  if (search.section === "agents") return <AgentsSection drafts={drafts} />;
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-line px-4 py-2">
-        <nav
-          aria-label={agent ? `Inspect ${agent.name}` : "Inspect the guild"}
-          className={tabsList({ look: "track" })}
-        >
-          {tabs.map((value) => (
-            <Link
-              key={value}
-              to="/studio/$sessionId"
-              params={{ sessionId: session.id }}
-              search={{ ...(agent ? { agent: agent.id } : {}), tab: value }}
-              aria-current={value === tab ? "page" : undefined}
-              className={tabsTrigger({ look: "track" })}
-            >
-              {studioTabLabel[value]}
-              {count(value) !== undefined ? <PillCount>{count(value)}</PillCount> : null}
-            </Link>
-          ))}
-        </nav>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col">
-        {agent ? (
-          <AgentView agent={agent} tab={tab} drafts={agentDrafts} />
-        ) : tab === "files" ? (
-          <FilesTab agent={null} />
-        ) : tab === "tables" ? (
-          <TablesTab agent={null} />
-        ) : (
-          <OverviewTab pending={pending} />
-        )}
-      </div>
+      <ProposalPanel
+        proposals={approvals.open.filter((proposal) => proposal.place === search.section)}
+      />
+      {search.section === "state" ? (
+        <StateSection />
+      ) : search.section === "tools" ? (
+        <ToolsSection />
+      ) : (
+        <OverviewTab pending={pending} />
+      )}
     </>
   );
-}
-
-function AgentView({
-  agent,
-  tab,
-  drafts,
-}: {
-  agent: StudioAgent;
-  tab: StudioTab;
-  drafts: StudioDraft[];
-}) {
-  switch (tab) {
-    case "draft":
-      return <DraftTab agent={agent} drafts={drafts} />;
-    case "history":
-      return <HistoryTab agent={agent} />;
-    case "memory":
-      return <MemoryTab agent={agent} />;
-    case "routines":
-      return <RoutinesTab agent={agent} />;
-    case "scripts":
-      return <ScriptsTab agent={agent} />;
-    case "files":
-      return <FilesTab agent={agent} />;
-    case "tables":
-      return <TablesTab agent={agent} />;
-    case "versions":
-      return <VersionsTab agent={agent} />;
-    default:
-      return <PromptTab agent={agent} />;
-  }
 }

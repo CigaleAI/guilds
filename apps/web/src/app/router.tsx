@@ -3,11 +3,12 @@ import {
   createRoute,
   createRouter,
   lazyRouteComponent,
+  type SearchSchemaInput,
 } from "@tanstack/react-router";
 import { GuildChatPage, GuildWorkspace } from "../features/guild/GuildWorkspace";
 import { Home } from "../features/home/Home";
 import type { TableTab } from "../features/tables/TablesPage";
-import { parseStudioSearch } from "../features/studio/location";
+import { parseStudioSearch, type StudioSearch } from "../features/studio/location";
 import { NotFound } from "../features/home/NotFound";
 import { AppShell } from "../features/shell/AppShell";
 
@@ -109,7 +110,8 @@ const studioSessionRoute = createRoute({
     () => import("../features/studio/StudioWorkspace"),
     "StudioWorkspace",
   ),
-  validateSearch: parseStudioSearch,
+  // Every field is optional in a link: without a section the session opens on the guild.
+  validateSearch: (search: Partial<StudioSearch> & SearchSchemaInput) => parseStudioSearch(search),
 });
 
 const tableTabs: TableTab[] = ["records", "columns", "access"];

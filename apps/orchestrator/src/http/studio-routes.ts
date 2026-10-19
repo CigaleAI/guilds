@@ -9,6 +9,10 @@ import { currentOrg, currentUser } from "./identity.js";
 import { ownedGuild } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { activityWindow, loadGuildActivity } from "../studio/activity.js";
+import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
+import { loadGuildReferences } from "../studio/references.js";
+import { loadStateHistory, loadStateItem, loadStateList, parseOperation, parseStateKind } from "../studio/state-data.js";
+import { operatorFor } from "./artifact-files.js";
 import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
 import { viewDraft } from "../studio/drafts.js";
@@ -109,6 +113,22 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       const studio = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.setConnectionGrant(session, param(request, "connection_id"), body.granted !== false);
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.post("/api/studio/sessions/:session_id/logins/:seq", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    const body = bodyOf(request);
+    if (body.decision !== "grant" && body.decision !== "decline") {
+      throw new HttpError(422, "decision must be grant or decline");
+    }
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      return await studio.resolveLogin(session, user, Number(param(request, "seq")), body.decision);
     } catch (error) {
       mapStudioError(error);
     }
@@ -320,7 +340,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       if (loaded.orphan) {
         throw new HttpError(403, "orphan recovery cannot discard");
       }
-      return await studioOf(deps).drafts.discard(loaded.session, String(loaded.draft.id));
+      return await studioOf(deps).drafts.discard(loaded.session, loaded.user, String(loaded.draft.id));
     } catch (error) {
       mapStudioError(error);
     }
@@ -365,6 +385,103 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
         now,
         generating: (runId) => (deps.generation ? deps.generation.generating(runId) : false),
       });
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  // The State list reads with the operator's own permissions, so it lists
+  // only what the viewer can open.
+  const stateScope = async (request: FastifyRequest) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    const studio = studioOf(deps);
+    const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+    studio.assertLive(session);
+    const guildId = String(session.source_guild_id);
+    const actor = await operatorFor(repo, user, { orgId: String(session.org_id), guildId });
+    return { actor, guildId, deps: { repo, artifacts: studio.deps.artifacts } };
+  };
+
+  app.get("/api/studio/sessions/:session_id/state", async (request) => {
+    const query = request.query as { hours?: unknown; agent?: unknown; kind?: unknown };
+    try {
+      const { deps: stateDeps, ...scope } = await stateScope(request);
+      return await loadStateList(
+        stateDeps,
+        { ...scope, window: activityWindow({ hours: query.hours }, new Date()) },
+        {
+          kind: parseStateKind(query.kind),
+          agentId: typeof query.agent === "string" && query.agent ? query.agent : null,
+        },
+      );
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/state/item", async (request) => {
+    const query = request.query as { path?: unknown; hours?: unknown; op?: unknown; cursor?: unknown };
+    const path = typeof query.path === "string" ? query.path : "";
+    try {
+      const { deps: stateDeps, ...scope } = await stateScope(request);
+      const numbers = await loadStateItem(stateDeps, { ...scope, window: activityWindow({ hours: query.hours }, new Date()) }, path);
+      const history = await loadStateHistory(stateDeps, scope, {
+        path,
+        op: parseOperation(query.op),
+        cursor: typeof query.cursor === "string" && query.cursor ? query.cursor : null,
+      });
+      return { ...numbers, ...history };
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/tools", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      studio.assertLive(session);
+      const window = activityWindow(request.query as { hours?: unknown }, new Date());
+      return await loadGuildTools({ repo, preview: studio.previewDeps() }, String(session.source_guild_id), window);
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/tools/:name/calls", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    const query = request.query as { hours?: unknown; errors?: unknown; cursor?: unknown };
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      studio.assertLive(session);
+      return await loadToolCalls(repo, String(session.source_guild_id), {
+        tool: param(request, "name"),
+        window: activityWindow({ hours: query.hours }, new Date()),
+        query: {
+          errorsOnly: query.errors === "true" || query.errors === "1",
+          cursor: typeof query.cursor === "string" && query.cursor ? query.cursor : null,
+        },
+      });
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/references", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      studio.assertLive(session);
+      const guildId = String(session.source_guild_id);
+      const actor = await operatorFor(repo, user, { orgId: String(session.org_id), guildId });
+      return await loadGuildReferences({ repo, artifacts: studio.deps.artifacts }, actor, guildId);
     } catch (error) {
       mapStudioError(error);
     }

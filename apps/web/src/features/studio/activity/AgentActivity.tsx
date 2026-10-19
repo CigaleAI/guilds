@@ -21,7 +21,8 @@ import {
   type MapSelection,
   type Tally,
 } from "./activityModel";
-import { AgentMark, AgentName, NodeMark, nodeName, reasonLabel, type ActivityData } from "./parts";
+import { reasonLabel } from "./activityModel";
+import { AgentMark, AgentName, NodeMark, nodeName, type ActivityData } from "./parts";
 
 /**
  * Each agent over the window: every way it was woken and what those wakes produced (inputs), and
@@ -66,7 +67,7 @@ export function AgentActivityList({
                 variant="ghost"
                 size="xs"
                 className="ml-auto"
-                onClick={() => go({ agent: agent.id })}
+                onClick={() => go({ section: "agents", agent: agent.id })}
               >
                 Inspect {agent.name}
               </Button>

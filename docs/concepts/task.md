@@ -65,6 +65,11 @@ A short `[[name]]` in prose is plain text. It is not an embed and is
 never rewritten. A file name, or a line like "inlined from: …", is
 not an embed either.
 
+A display path written in the text without `![[…]]` names that file
+without embedding it. The run gets the path, not the file's text.
+Prompt Studio's **References** view draws each named file beside the
+embeds ([Prompt Studio](prompt-studio.md#state)).
+
 Prompt Studio and the [Guild builder](guild-builder.md) put durable
 rules in notes the operator can inspect, and embed them in the Task
 only with `![[display-path]]`. Both write a Task to one shape: an
@@ -79,7 +84,19 @@ not, the agent cannot start a run until the embed is fixed or
 removed. The app marks the broken link in three places (see below).
 
 A note that a live Task embeds cannot be deleted. This keeps embeds
-from breaking by accident.
+from breaking by accident. The check reads Task text only, so an embed
+can still break in these ways:
+
+- a note embeds another note, and that note is deleted;
+- the path names something that is not a note or collection, such as
+  Memory or a record;
+- the link is not a display path, such as a leftover `recipe:` link or
+  a path without its `org/<org_id>/` start;
+- the Task's embeds hold more than 64 KB of note text.
+
+Prompt Studio's **References** view shows each of these with its
+reason, at the hop where the run meets it
+([Prompt Studio](prompt-studio.md#state)).
 
 ## In the app
 
@@ -147,9 +164,11 @@ A new agent's Task is its focus, or the template
 `apps/orchestrator/src/prompts/task.md`.
 
 The run's system row metadata records `task_source`: the Task's
-`version`, `hash`, and `display_path`, `has_embeds`, and `embeds`,
-each embedded note's `display_path`, `version`, `content_hash`, and
-`kind`.
+`version`, `hash`, and `display_path`, `has_embeds`, `embeds`, each
+embedded note's `display_path`, `version`, `content_hash`, and `kind`,
+and `collections`, the display path of each collection the Task embeds
+directly or through a note it inlines. The run row's `metadata` holds
+the same `task_source`.
 
 ### Embed expansion
 

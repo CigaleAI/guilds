@@ -50,6 +50,10 @@ import {
 import type { HeldCap } from "../policy/index.js";
 import type { ScheduleTiming } from "../schedules/timing.js";
 import type { PlannedWake } from "../schedules/window.js";
+import { routineChange } from "../schedules/changes.js";
+import { bindingChange } from "../access/changes.js";
+import { guildTextChange } from "../guilds/changes.js";
+import { recordChangeIfAny, type ChangeActor } from "./config-changes.js";
 
 type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
@@ -65,6 +69,80 @@ export async function insertDefaultMachine(client: Queryable, orgId: string, now
     [machineId, orgId, DEFAULT_MACHINE_NAME, DEFAULT_MACHINE_BOX, DEFAULT_MACHINE_MAX_WORKSPACE_MIB, stamp(now)],
   );
   return machineId;
+}
+
+/**
+ * Runs `write` on one routine in a transaction, with the routine locked, and
+ * logs what it changed against `actor`.
+ */
+async function changeSchedule(
+  pool: pg.Pool,
+  target: { agentId: string; scheduleId: string; actor: ChangeActor },
+  write: (client: pg.PoolClient) => Promise<Record<string, unknown> | null>,
+): Promise<Record<string, unknown> | null> {
+  return withTransaction(pool, async (client) => {
+    const before = firstRow(
+      await client.query(
+        `SELECT ${SCHEDULE_COLUMNS} FROM schedules WHERE id = $1 AND agent_id = $2 FOR UPDATE`,
+        [target.scheduleId, target.agentId],
+      ),
+    );
+    const after = await write(client);
+    await recordChangeIfAny(
+      client,
+      target.actor,
+      before && after ? routineChange(before, after) : null,
+    );
+    return after;
+  });
+}
+
+type GuildPatch = {
+  name?: string | null;
+  about?: string | null;
+  visibility?: string | null;
+  routinesEnabled?: boolean | null;
+  description?: string | null;
+  maxAgents?: number | null;
+  gitAuthorEmail?: string | null;
+};
+
+/** Writes the fields `options` sets and returns the guild's text after, or null when no guild has `guildId`. */
+async function updateGuildRow(
+  client: Queryable,
+  guildId: string,
+  now: Date,
+  options: GuildPatch,
+): Promise<Record<string, unknown> | null> {
+  const result = await client.query(
+    `UPDATE guilds
+     SET about = COALESCE($2, about),
+         visibility = COALESCE($3, visibility),
+         routines_enabled = COALESCE($5, routines_enabled),
+         description = COALESCE($6, description),
+         max_agents = COALESCE($7, max_agents),
+         git_author_email = COALESCE($8, git_author_email),
+         name = COALESCE($9, name),
+         updated_at = $4
+     WHERE id = $1
+     RETURNING about, description`,
+    [
+      guildId,
+      options.about ?? null,
+      options.visibility ?? null,
+      stamp(now),
+      options.routinesEnabled ?? null,
+      options.description ?? null,
+      options.maxAgents ?? null,
+      options.gitAuthorEmail ?? null,
+      options.name ?? null,
+    ],
+  );
+  return firstRow(result);
+}
+
+function guildText(row: Record<string, unknown>): { about: string; description: string } {
+  return { about: String(row.about ?? ""), description: String(row.description ?? "") };
 }
 
 /**
@@ -165,6 +243,10 @@ const SCRIPT_RETURNING = `
   id, org_id, agent_id, key AS name, title AS description, content_json AS parameters,
   content_text AS source, content_hash AS source_hash, version, created_at, updated_at
 `;
+
+// A tool result's duration when it recorded one as a number.
+const TOOL_DURATION = `CASE WHEN jsonb_typeof(m.metadata->'duration_ms') = 'number'
+  THEN (m.metadata->>'duration_ms')::numeric END`;
 
 // A stored step's text: its string content, or the text parts of a content list.
 const STEP_TEXT = `
@@ -796,46 +878,30 @@ export class Repositories {
     return firstRow(result);
   }
 
+  /** Changes a guild's settings; a change to its about or description is logged against `actor`. */
   async updateGuild(
     guildId: string,
     now: Date,
-    options: {
-      name?: string | null;
-      about?: string | null;
-      visibility?: string | null;
-      routinesEnabled?: boolean | null;
-      description?: string | null;
-      maxAgents?: number | null;
-      gitAuthorEmail?: string | null;
-    },
+    options: GuildPatch,
+    actor: ChangeActor,
   ): Promise<Record<string, unknown> | null> {
-    const result = await this.pool.query(
-      `UPDATE guilds
-       SET about = COALESCE($2, about),
-           visibility = COALESCE($3, visibility),
-           routines_enabled = COALESCE($5, routines_enabled),
-           description = COALESCE($6, description),
-           max_agents = COALESCE($7, max_agents),
-           git_author_email = COALESCE($8, git_author_email),
-           name = COALESCE($9, name),
-           updated_at = $4
-       WHERE id = $1
-       RETURNING id`,
-      [
-        guildId,
-        options.about ?? null,
-        options.visibility ?? null,
-        stamp(now),
-        options.routinesEnabled === undefined || options.routinesEnabled === null
-          ? null
-          : options.routinesEnabled,
-        options.description ?? null,
-        options.maxAgents ?? null,
-        options.gitAuthorEmail ?? null,
-        options.name ?? null,
-      ],
-    );
-    return firstRow(result) ? this.getGuild(guildId) : null;
+    const updated = await withTransaction(this.pool, async (client) => {
+      const before = firstRow(
+        await client.query(`SELECT about, description FROM guilds WHERE id = $1 FOR UPDATE`, [
+          guildId,
+        ]),
+      );
+      const after = await updateGuildRow(client, guildId, now, options);
+      if (before && after) {
+        await recordChangeIfAny(
+          client,
+          actor,
+          guildTextChange(guildId, guildText(before), guildText(after)),
+        );
+      }
+      return after;
+    });
+    return updated ? this.getGuild(guildId) : null;
   }
 
   // Grants `role` to an organisation member, or removes the operator when
@@ -1666,33 +1732,37 @@ export class Repositories {
     instruction: string,
     wake: PlannedWake,
     now: Date,
+    actor: ChangeActor,
     options: { paused?: boolean } = {},
   ): Promise<Record<string, unknown>> {
     const paused = Boolean(options.paused);
-    const result = await this.pool.query(
-      `INSERT INTO schedules (
+    return withTransaction(this.pool, async (client) => {
+      const result = await client.query(
+        `INSERT INTO schedules (
          id, agent_id, cron, wake_window, description, instruction, next_run_at, window_fires,
          paused, created_at, updated_at
        ) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10, $10)
        RETURNING ${SCHEDULE_COLUMNS}`,
-      [
-        scheduleId,
-        agentId,
-        timing.cron,
-        timing.window ? JSON.stringify(timing.window) : null,
-        description,
-        instruction,
-        stamp(wake.at),
-        wake.windowFires,
-        paused,
-        stamp(now),
-      ],
-    );
-    const row = firstRow(result);
-    if (!row) {
-      throw new Error("schedule insert failed");
-    }
-    return row;
+        [
+          scheduleId,
+          agentId,
+          timing.cron,
+          timing.window ? JSON.stringify(timing.window) : null,
+          description,
+          instruction,
+          stamp(wake.at),
+          wake.windowFires,
+          paused,
+          stamp(now),
+        ],
+      );
+      const row = firstRow(result);
+      if (!row) {
+        throw new Error("schedule insert failed");
+      }
+      await recordChangeIfAny(client, actor, routineChange(null, row));
+      return row;
+    });
   }
 
   async listSchedules(agentId: string): Promise<Array<Record<string, unknown>>> {
@@ -1913,13 +1983,17 @@ export class Repositories {
     return Number(firstRow(result)?.n ?? 0);
   }
 
-  async deleteSchedule(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null> {
-    const result = await this.pool.query(
-      `DELETE FROM schedules WHERE id = $1 AND agent_id = $2
-       RETURNING ${SCHEDULE_COLUMNS}`,
-      [scheduleId, agentId],
-    );
-    return firstRow(result);
+  async deleteSchedule(agentId: string, scheduleId: string, actor: ChangeActor): Promise<Record<string, unknown> | null> {
+    return withTransaction(this.pool, async (client) => {
+      const result = await client.query(
+        `DELETE FROM schedules WHERE id = $1 AND agent_id = $2
+         RETURNING ${SCHEDULE_COLUMNS}`,
+        [scheduleId, agentId],
+      );
+      const row = firstRow(result);
+      await recordChangeIfAny(client, actor, row ? routineChange(row, null) : null);
+      return row;
+    });
   }
 
   async getSchedule(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null> {
@@ -1937,23 +2011,26 @@ export class Repositories {
     paused: boolean,
     wake: PlannedWake | null,
     now: Date,
+    actor: ChangeActor,
   ): Promise<Record<string, unknown> | null> {
-    if (paused || wake === null) {
-      const result = await this.pool.query(
-        `UPDATE schedules SET paused = true, updated_at = $3
+    return changeSchedule(this.pool, { agentId, scheduleId, actor }, async (client) => {
+      if (paused || wake === null) {
+        const result = await client.query(
+          `UPDATE schedules SET paused = true, updated_at = $3
+           WHERE id = $1 AND agent_id = $2
+           RETURNING ${SCHEDULE_COLUMNS}`,
+          [scheduleId, agentId, stamp(now)],
+        );
+        return firstRow(result);
+      }
+      const result = await client.query(
+        `UPDATE schedules SET paused = false, next_run_at = $3, window_fires = $4, updated_at = $5
          WHERE id = $1 AND agent_id = $2
          RETURNING ${SCHEDULE_COLUMNS}`,
-        [scheduleId, agentId, stamp(now)],
+        [scheduleId, agentId, stamp(wake.at), wake.windowFires, stamp(now)],
       );
       return firstRow(result);
-    }
-    const result = await this.pool.query(
-      `UPDATE schedules SET paused = false, next_run_at = $3, window_fires = $4, updated_at = $5
-       WHERE id = $1 AND agent_id = $2
-       RETURNING ${SCHEDULE_COLUMNS}`,
-      [scheduleId, agentId, stamp(wake.at), wake.windowFires, stamp(now)],
-    );
-    return firstRow(result);
+    });
   }
 
   /** Replaces a routine's definition. A null `wake` keeps the planned next wake-up. */
@@ -1963,28 +2040,31 @@ export class Repositories {
     fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
     wake: PlannedWake | null,
     now: Date,
+    actor: ChangeActor,
   ): Promise<Record<string, unknown> | null> {
-    const result = await this.pool.query(
-      `UPDATE schedules
+    return changeSchedule(this.pool, { agentId, scheduleId, actor }, async (client) => {
+      const result = await client.query(
+        `UPDATE schedules
           SET cron = $3, wake_window = $4::jsonb, description = $5, instruction = $6, paused = $7,
               next_run_at = COALESCE($8, next_run_at), window_fires = COALESCE($9, window_fires),
               updated_at = $10
         WHERE id = $1 AND agent_id = $2
         RETURNING ${SCHEDULE_COLUMNS}`,
-      [
-        scheduleId,
-        agentId,
-        fields.timing.cron,
-        fields.timing.window ? JSON.stringify(fields.timing.window) : null,
-        fields.description,
-        fields.instruction,
-        fields.paused,
-        wake ? stamp(wake.at) : null,
-        wake ? wake.windowFires : null,
-        stamp(now),
-      ],
-    );
-    return firstRow(result);
+        [
+          scheduleId,
+          agentId,
+          fields.timing.cron,
+          fields.timing.window ? JSON.stringify(fields.timing.window) : null,
+          fields.description,
+          fields.instruction,
+          fields.paused,
+          wake ? stamp(wake.at) : null,
+          wake ? wake.windowFires : null,
+          stamp(now),
+        ],
+      );
+      return firstRow(result);
+    });
   }
 
   async setScheduleNextRun(scheduleId: string, wake: PlannedWake, now: Date): Promise<void> {
@@ -2352,58 +2432,65 @@ export class Repositories {
     enabled: boolean,
     connectionId: string | null,
     now: Date,
+    actor: ChangeActor,
   ): Promise<Record<string, unknown>> {
-    const existing = await this.pool.query(
-      `SELECT id FROM bindings
-       WHERE catalog_kind = $1 AND catalog_id = $2
-         AND scope = $3 AND scope_id = $4`,
-      [catalogKind, catalogId, scope, scopeId],
-    );
-    const found = firstRow(existing);
-    if (found === null) {
-      const [orgId, guildId, agentId] = ownerRefs(scope, scopeId);
-      const inserted = await this.pool.query(
-        `INSERT INTO bindings (
-           id, catalog_kind, catalog_id, scope, scope_id,
-           org_id, guild_id, agent_id, enabled, connection_id,
-           created_at, updated_at
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+    return withTransaction(this.pool, async (client) => {
+      const existing = await client.query(
+        `SELECT id, enabled FROM bindings
+         WHERE catalog_kind = $1 AND catalog_id = $2
+           AND scope = $3 AND scope_id = $4
+         FOR UPDATE`,
+        [catalogKind, catalogId, scope, scopeId],
+      );
+      const found = firstRow(existing);
+      const key = { catalogKind, catalogId, scope, scopeId };
+      if (found === null) {
+        const [orgId, guildId, agentId] = ownerRefs(scope, scopeId);
+        const inserted = await client.query(
+          `INSERT INTO bindings (
+             id, catalog_kind, catalog_id, scope, scope_id,
+             org_id, guild_id, agent_id, enabled, connection_id,
+             created_at, updated_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+           RETURNING id, catalog_kind, catalog_id, scope, scope_id, enabled,
+                     connection_id, created_at, updated_at`,
+          [
+            bindingId,
+            catalogKind,
+            catalogId,
+            scope,
+            scopeId,
+            orgId,
+            guildId,
+            agentId,
+            enabled,
+            connectionId,
+            stamp(now),
+          ],
+        );
+        const row = firstRow(inserted);
+        if (!row) {
+          throw new Error("binding insert failed");
+        }
+        await recordChangeIfAny(client, actor, bindingChange(key, null, enabled));
+        return row;
+      }
+      const updated = await client.query(
+        `UPDATE bindings
+         SET enabled = $2, connection_id = $3, updated_at = $4
+         WHERE id = $1
          RETURNING id, catalog_kind, catalog_id, scope, scope_id, enabled,
                    connection_id, created_at, updated_at`,
-        [
-          bindingId,
-          catalogKind,
-          catalogId,
-          scope,
-          scopeId,
-          orgId,
-          guildId,
-          agentId,
-          enabled,
-          connectionId,
-          stamp(now),
-        ],
+        [found.id, enabled, connectionId, stamp(now)],
       );
-      const row = firstRow(inserted);
+      const row = firstRow(updated);
       if (!row) {
-        throw new Error("binding insert failed");
+        throw new Error("binding update failed");
       }
+      await recordChangeIfAny(client, actor, bindingChange(key, Boolean(found.enabled), enabled));
       return row;
-    }
-    const updated = await this.pool.query(
-      `UPDATE bindings
-       SET enabled = $2, connection_id = $3, updated_at = $4
-       WHERE id = $1
-       RETURNING id, catalog_kind, catalog_id, scope, scope_id, enabled,
-                 connection_id, created_at, updated_at`,
-      [found.id, enabled, connectionId, stamp(now)],
-    );
-    const row = firstRow(updated);
-    if (!row) {
-      throw new Error("binding update failed");
-    }
-    return row;
+    });
   }
 
   async upsertPlatformBinding(
@@ -2457,23 +2544,29 @@ export class Repositories {
     catalogId: string,
     scope: string,
     scopeId: string | null,
+    actor: ChangeActor,
   ): Promise<Record<string, unknown> | null> {
-    const result =
-      scope === "platform"
-        ? await this.pool.query(
-            `DELETE FROM bindings
-             WHERE catalog_kind = $1 AND catalog_id = $2 AND scope = 'platform'
-             RETURNING id`,
-            [catalogKind, catalogId],
-          )
-        : await this.pool.query(
-            `DELETE FROM bindings
-             WHERE catalog_kind = $1 AND catalog_id = $2
-               AND scope = $3 AND scope_id = $4
-             RETURNING id`,
-            [catalogKind, catalogId, scope, scopeId],
-          );
-    return firstRow(result);
+    return withTransaction(this.pool, async (client) => {
+      const result =
+        scope === "platform"
+          ? await client.query(
+              `DELETE FROM bindings
+               WHERE catalog_kind = $1 AND catalog_id = $2 AND scope = 'platform'
+               RETURNING id, enabled`,
+              [catalogKind, catalogId],
+            )
+          : await client.query(
+              `DELETE FROM bindings
+               WHERE catalog_kind = $1 AND catalog_id = $2
+                 AND scope = $3 AND scope_id = $4
+               RETURNING id, enabled`,
+              [catalogKind, catalogId, scope, scopeId],
+            );
+      const row = firstRow(result);
+      const key = { catalogKind, catalogId, scope, scopeId };
+      await recordChangeIfAny(client, actor, row ? bindingChange(key, Boolean(row.enabled), null) : null);
+      return row;
+    });
   }
 
   async getMcpServer(serverId: string): Promise<Record<string, unknown> | null> {
@@ -3048,6 +3141,7 @@ export class Repositories {
       extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]>;
       runMetadata?: Record<string, unknown>;
       userMetadata?: Record<string, unknown>;
+      startedByUserId?: string | null;
     },
   ): Promise<void> {
     const opening = [...(options.extraMessages ?? [])];
@@ -3061,6 +3155,7 @@ export class Repositories {
       systemPromptHash: options.systemPromptHash,
       taskPromptHash: options.taskPromptHash,
       memoryPromptHash: options.memoryPromptHash,
+      startedByUserId: options.startedByUserId ?? null,
       ...(options.runMetadata ? { runMetadata: options.runMetadata } : {}),
     });
   }
@@ -3074,7 +3169,13 @@ export class Repositories {
     projected: Array<[Record<string, unknown>, Record<string, unknown>]>,
     throughSeq: number,
     now: Date,
-    options: { systemPromptHash: string; taskPromptHash: string; memoryPromptHash: string; runMetadata?: Record<string, unknown> },
+    options: {
+      systemPromptHash: string;
+      taskPromptHash: string;
+      memoryPromptHash: string;
+      runMetadata?: Record<string, unknown>;
+      wakeGroupMessageId?: number | null;
+    },
   ): Promise<void> {
     await this.insertRun(runId, agentId, "group", configSnapshot, systemContent, taskContent, projected, now, {
       ...options,
@@ -3117,6 +3218,8 @@ export class Repositories {
       groupChatThroughSeq?: number | null;
       scheduleId?: string | null;
       runMetadata?: Record<string, unknown>;
+      wakeGroupMessageId?: number | null;
+      startedByUserId?: string | null;
     },
   ): Promise<void> {
     const systemMetadata: Record<string, unknown> = { source: "system" };
@@ -3132,12 +3235,13 @@ export class Repositories {
         `INSERT INTO runs (
            id, agent_id, org_id, status, config_snapshot, created_at, updated_at,
            system_prompt_hash, task_prompt_hash, memory_prompt_hash,
-           kind, group_chat_through_seq, metadata, schedule_id
+           kind, group_chat_through_seq, metadata, schedule_id,
+           wake_group_message_id, started_by_user_id
          )
          VALUES (
            $1, $2,
            (SELECT p.org_id FROM agents a JOIN guilds p ON p.id = a.guild_id WHERE a.id = $2),
-           'active', $3::jsonb, $4, $4, $5, $6, $7, $8, $9, $10::jsonb, $11
+           'active', $3::jsonb, $4, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13
          )`,
         [
           runId,
@@ -3151,6 +3255,8 @@ export class Repositories {
           options.groupChatThroughSeq ?? null,
           JSON.stringify(options.runMetadata ?? {}),
           options.scheduleId ?? null,
+          options.wakeGroupMessageId ?? null,
+          options.startedByUserId ?? null,
         ],
       );
       for (const [seq, [payload, metadata]] of rows.entries()) {
@@ -3236,11 +3342,13 @@ export class Repositories {
       `SELECT * FROM (
          SELECT r.id, r.agent_id, r.kind, r.status, r.errors, r.metadata, r.schedule_id,
                 r.group_chat_through_seq, r.created_at, r.updated_at,
+                r.started_by_user_id, wm.seq AS wake_seq,
                 LAG(r.group_chat_through_seq) OVER (
                   PARTITION BY r.agent_id, r.kind ORDER BY r.created_at
                 ) AS previous_through_seq
          FROM runs r
          JOIN agents a ON a.id = r.agent_id
+         LEFT JOIN group_messages wm ON wm.id = r.wake_group_message_id
          WHERE a.guild_id = $1 AND r.created_at <= $3
        ) guild_runs
        WHERE created_at >= $2 OR updated_at >= $2
@@ -3343,6 +3451,69 @@ export class Repositories {
     return result.rows as Array<Record<string, unknown>>;
   }
 
+  // Per tool and agent, the guild's agent tool calls in a window: how many,
+  // how many failed, the median duration, and the last one. A row with a null
+  // agent_id holds the tool's totals over every agent.
+  async listGuildToolCallStats(guildId: string, since: Date, until: Date): Promise<Array<Record<string, unknown>>> {
+    const result = await this.pool.query(
+      `SELECT m.metadata->>'tool_name' AS tool_name, r.agent_id,
+              COUNT(*)::int AS calls,
+              (COUNT(*) FILTER (WHERE COALESCE(m.metadata->>'error', '') <> ''))::int AS errors,
+              percentile_cont(0.5) WITHIN GROUP (ORDER BY ${TOOL_DURATION}) AS median_ms,
+              MAX(m.created_at) AS last_at
+       FROM messages m
+       JOIN runs r ON r.id = m.run_id
+       JOIN agents a ON a.id = r.agent_id
+       WHERE a.guild_id = $1 AND m.created_at >= $2 AND m.created_at <= $3
+         AND m.payload->>'role' = 'tool' AND COALESCE(m.metadata->>'tool_name', '') <> ''
+       GROUP BY GROUPING SETS ((m.metadata->>'tool_name', r.agent_id), (m.metadata->>'tool_name'))`,
+      [guildId, stamp(since), stamp(until)],
+    );
+    return result.rows as Array<Record<string, unknown>>;
+  }
+
+  // One tool's calls by the guild's agents in a window, newest first, with the
+  // arguments from the assistant step that made each call. `before` pages on
+  // (created_at, id).
+  async listGuildToolCalls(
+    guildId: string,
+    tool: string,
+    page: { since: Date; until: Date; errorsOnly: boolean; before: { at: Date; id: number } | null; limit: number },
+  ): Promise<Array<Record<string, unknown>>> {
+    const result = await this.pool.query(
+      `SELECT m.id, m.run_id, m.seq, m.created_at, r.agent_id,
+              m.metadata->>'tool_call_id' AS call_id,
+              m.metadata->>'error' AS error,
+              ${TOOL_DURATION} AS duration_ms,
+              (SELECT call->'function'->>'arguments'
+               FROM messages step, jsonb_array_elements(step.payload->'tool_calls') call
+               WHERE step.run_id = m.run_id AND step.seq < m.seq
+                 AND step.payload->>'role' = 'assistant'
+                 AND call->>'id' = m.metadata->>'tool_call_id'
+               ORDER BY step.seq DESC LIMIT 1) AS arguments
+       FROM messages m
+       JOIN runs r ON r.id = m.run_id
+       JOIN agents a ON a.id = r.agent_id
+       WHERE a.guild_id = $1 AND m.created_at >= $2 AND m.created_at <= $3
+         AND m.payload->>'role' = 'tool' AND m.metadata->>'tool_name' = $4
+         AND (NOT $5 OR COALESCE(m.metadata->>'error', '') <> '')
+         AND ($6::timestamptz IS NULL OR (m.created_at, m.id) < ($6::timestamptz, $7::bigint))
+       ORDER BY m.created_at DESC, m.id DESC
+       LIMIT $8`,
+      [
+        guildId,
+        stamp(page.since),
+        stamp(page.until),
+        tool,
+        page.errorsOnly,
+        page.before ? stamp(page.before.at) : null,
+        page.before?.id ?? null,
+        page.limit,
+      ],
+    );
+    return result.rows as Array<Record<string, unknown>>;
+  }
+
   async listRunFileChanges(runIds: string[]): Promise<Array<Record<string, unknown>>> {
     if (!runIds.length) {
       return [];
@@ -3413,7 +3584,7 @@ export class Repositories {
     if (options.throughSeq === undefined || options.throughSeq === null) {
       const result = await this.pool.query(
         `SELECT id, guild_id, seq, author_type, author_name,
-                author_agent_id, source_run_id, content, tagged_names,
+                author_agent_id, author_user_id, source_run_id, content, tagged_names,
                 tagged_agent_ids, tagged_user_ids, created_at
          FROM group_messages WHERE guild_id = $1 ORDER BY seq`,
         [guildId],
@@ -3422,7 +3593,7 @@ export class Repositories {
     }
     const result = await this.pool.query(
       `SELECT id, guild_id, seq, author_type, author_name,
-              author_agent_id, source_run_id, content, tagged_names,
+              author_agent_id, author_user_id, source_run_id, content, tagged_names,
               tagged_agent_ids, tagged_user_ids, created_at
        FROM group_messages WHERE guild_id = $1 AND seq <= $2 ORDER BY seq`,
       [guildId, options.throughSeq],
@@ -3439,7 +3610,7 @@ export class Repositories {
     afterSeq: number | null,
   ): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
-      `SELECT id, seq, author_type, author_name, author_agent_id, source_run_id,
+      `SELECT id, seq, author_type, author_name, author_agent_id, author_user_id, source_run_id,
               content, tagged_names, created_at
        FROM group_messages
        WHERE guild_id = $1
@@ -3625,7 +3796,7 @@ export class Repositories {
     taggedAgentIds: string[],
     taggedUserIds: string[],
     now: Date,
-    options: { authorName?: string } = {},
+    options: { authorName?: string; authorUserId?: string | null } = {},
   ): Promise<Record<string, unknown> | null> {
     return withTransaction(this.pool, async (client) => {
       const guild = await client.query(`SELECT id FROM guilds WHERE id = $1 FOR UPDATE`, [guildId]);
@@ -3645,12 +3816,12 @@ export class Repositories {
       const inserted = await client.query(
         `INSERT INTO group_messages (
            guild_id, seq, author_type, author_name,
-           author_agent_id, source_run_id, content, tagged_names,
+           author_agent_id, author_user_id, source_run_id, content, tagged_names,
            tagged_agent_ids, tagged_user_ids, created_at
          )
-         VALUES ($1, $2, 'user', $7, NULL, NULL, $3, $4::jsonb, $5::jsonb, $8::jsonb, $6)
+         VALUES ($1, $2, 'user', $7, NULL, $9, NULL, $3, $4::jsonb, $5::jsonb, $8::jsonb, $6)
          RETURNING id, guild_id, seq, author_type, author_name,
-                   author_agent_id, source_run_id, content, tagged_names,
+                   author_agent_id, author_user_id, source_run_id, content, tagged_names,
                    tagged_agent_ids, tagged_user_ids, created_at`,
         [
           guildId,
@@ -3661,6 +3832,7 @@ export class Repositories {
           stamp(now),
           options.authorName ?? "user",
           JSON.stringify(taggedUserIds),
+          options.authorUserId ?? null,
         ],
       );
       return firstRow(inserted);
@@ -3717,7 +3889,7 @@ export class Repositories {
          )
          VALUES ($1, $2, 'agent', $3, $4, $5, $6, $7::jsonb, $8::jsonb, $10::jsonb, $9)
          RETURNING id, guild_id, seq, author_type, author_name,
-                   author_agent_id, source_run_id, content, tagged_names,
+                   author_agent_id, author_user_id, source_run_id, content, tagged_names,
                    tagged_agent_ids, tagged_user_ids, created_at`,
         [
           guildId,
