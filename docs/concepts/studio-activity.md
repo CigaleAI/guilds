@@ -55,9 +55,9 @@ or 7 d.
 A wake that is still generating is drawn up to now. **Refresh** reads
 the activity again.
 
-### Flow
+### Map
 
-**Flow** opens with a **map** of who woke whom:
+**Map** opens with a drawing of who woke whom:
 
 - On the left: every routine of the guild's agents (faded when it did
   not fire), the operator's messages, and direct chats, each beside
@@ -99,13 +99,13 @@ Clicking an agent in a chain opens its wake:
 - **Open in History** (a tool call, a write, or a post opens its exact
   step) and **Ask the coach**, which pins the wake to the next question
 
-### Agents
+### Per agent
 
-**Agents** lists each agent's inputs and outputs over the window. An
+**Per agent** lists each agent's inputs and outputs over the window. An
 input is one of its routines (idle ones included), the operator's
 messages, another agent's posts, or direct chats. Each shows its
 wakes, their reasons, and their outcomes; clicking one lists its
-chains in **Flow**. The outputs are its group messages and whom they
+chains in **Map**. The outputs are its group messages and whom they
 woke, record writes by collection, note writes, scripts run and
 changed, issues reported, wakes that updated memory, wakes with no
 output, and errors by message.
@@ -172,7 +172,7 @@ agents, routines, messages, wakes }`. A non-positive or non-numeric
 A map selection is part of the session's inspector location:
 `section=agents&item=link:<from>><to>` or `section=agents&item=node:<id>` (see
 [Prompt Studio](prompt-studio.md#routes-and-location)). The window and
-the open view (**Flow** or **Agents**) persist in `localStorage`.
+the open view (**Map** or **Per agent**) persist in `localStorage`.
 
 ### Code paths
 

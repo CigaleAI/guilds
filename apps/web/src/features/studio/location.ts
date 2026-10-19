@@ -64,6 +64,22 @@ export const studioTabLabel: Record<StudioTab, string> = {
   references: "References",
 };
 
+/**
+ * The tab an agent opens on when the URL names none it has: the tab holding a request the coach
+ * waits on, else Prompt.
+ */
+export function agentTab(
+  requested: StudioTab | undefined,
+  waiting: readonly StudioTab[],
+  tabs: readonly StudioAgentTab[],
+): StudioAgentTab {
+  return (
+    tabs.find((value) => value === requested) ??
+    tabs.find((value) => waiting.includes(value)) ??
+    "prompt"
+  );
+}
+
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() ? value.trim() : undefined;
 

@@ -167,10 +167,11 @@ sections:
 | **Tools** | The tools the guild's agents are offered |
 
 In **Agents**, each agent tab shows the agent's avatar, its Task
-version, a draft tag, and a warning marker. **Topology** counts the
-agents and clears the target. With more than four agents a filter
-joins the tabs. When the coach writes a draft, the inspector opens
-that agent's **Draft** tab.
+version, a draft tag, a warning marker, and how many requests wait on
+it. **Topology** counts the agents and clears the target. With more
+than four agents a filter joins the tabs. An agent opens on the tab that holds a request the
+coach waits on, and otherwise on **Prompt**. A tab that holds one
+carries a dot, and that tab shows the request's card above its view.
 
 Where the inspector points is part of the URL, so a link opens the
 same section, agent, tab, item, and run step. Pointing the inspector

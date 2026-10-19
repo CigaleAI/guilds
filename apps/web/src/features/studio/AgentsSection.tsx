@@ -8,6 +8,7 @@ import { ActivityLedger } from "./activity/ActivityLedger";
 import { countOpen } from "./pendingModel";
 import { ProposalPanel } from "./ProposalCards";
 import {
+  agentTab,
   studioAgentTabs,
   studioTabLabel,
   type StudioAgentTab,
@@ -87,17 +88,6 @@ function AgentMarks({ agent, pending }: { agent: StudioAgent; pending: number })
   );
 }
 
-/** The tab an agent opens on when the URL names none it has. */
-function agentTab(
-  requested: StudioTab | undefined,
-  drafts: StudioDraft[],
-  tabs: readonly StudioAgentTab[],
-): StudioAgentTab {
-  const tab = tabs.find((value) => value === requested);
-  if (tab) return tab;
-  return drafts.some(openDraft) ? "draft" : "prompt";
-}
-
 /** Where an agent's notes and tables open: State, filtered to the agent. */
 const stateLinks: { label: string; search: (agentId: string) => StudioSearch }[] = [
   {
@@ -119,7 +109,7 @@ function AgentInspector({ agent, drafts }: { agent: StudioAgent; drafts: StudioD
       : null,
   );
   const tabs = studioAgentTabs.filter((value) => value !== "scripts" || agent.scripting !== false);
-  const tab = agentTab(search.tab, drafts, tabs);
+  const tab = agentTab(search.tab, Object.keys(waiting) as StudioTab[], tabs);
   const open = drafts.filter(openDraft).length;
   return (
     <>

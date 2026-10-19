@@ -91,10 +91,7 @@ function Workspace({ sessionId }: { sessionId: string }) {
       setTarget.mutate(target);
   };
 
-  const streamText = useStudioStream(sessionId, (draft) => {
-    if (draft.target_agent_id)
-      go({ section: "agents", agent: draft.target_agent_id, tab: "draft" });
-  });
+  const streamText = useStudioStream(sessionId);
 
   if (session.isError) {
     return (

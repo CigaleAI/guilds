@@ -39,7 +39,7 @@ import type { ActivityData } from "./parts";
 
 const hoursKey = "studio.activity.hours";
 const tabKey = "studio.activity.tab";
-type ActivityTab = "flow" | "agents";
+type ActivityTab = "map" | "agents";
 
 function stored<T>(key: string, read: (value: string | null) => T): T {
   try {
@@ -58,9 +58,9 @@ function store(key: string, value: string) {
 }
 
 /**
- * The guild's activity over a window of hours. Flow maps who woke whom and lists every chain of
+ * The guild's activity over a window of hours. Map draws who woke whom and lists every chain of
  * wakes, from what started it to where it stopped; a line or box selected on the map narrows the
- * chains to those passing through it. Agents adds up what woke each agent and what it did.
+ * chains to those passing through it. Per agent adds up what woke each agent and what it did.
  */
 export function ActivityLedger() {
   const { session, search, go } = useStudio();
@@ -70,7 +70,7 @@ export function ActivityLedger() {
     ),
   );
   const [tab, setTab] = useState<ActivityTab>(() =>
-    stored(tabKey, (value) => (value === "agents" ? "agents" : "flow")),
+    stored(tabKey, (value) => (value === "agents" ? "agents" : "map")),
   );
   const activity = useStudioActivity(session.id, hours);
 
@@ -157,16 +157,16 @@ export function ActivityLedger() {
       ) : (
         <Tabs
           value={tab}
-          onValueChange={(value) => switchTab(value === "agents" ? "agents" : "flow")}
+          onValueChange={(value) => switchTab(value === "agents" ? "agents" : "map")}
         >
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <TabsList>
-              <TabsTrigger value="flow">Flow</TabsTrigger>
-              <TabsTrigger value="agents">Agents</TabsTrigger>
+              <TabsTrigger value="map">Map</TabsTrigger>
+              <TabsTrigger value="agents">Per agent</TabsTrigger>
             </TabsList>
             <OutcomeLegend lead="Each wake:" />
           </div>
-          <TabsContent value="flow" className="mt-3 flex flex-col gap-4 rounded-xl bg-surface p-4">
+          <TabsContent value="map" className="mt-3 flex flex-col gap-4 rounded-xl bg-surface p-4">
             <header className="flex flex-col gap-1">
               <h3 className="text-md font-semibold">Who woke whom</h3>
               <p className="text-xs text-muted">
@@ -188,7 +188,7 @@ export function ActivityLedger() {
             <AgentActivityList
               data={data}
               onShowChains={(next) => {
-                switchTab("flow");
+                switchTab("map");
                 if (!sameSelection(selection, next)) select(next);
               }}
             />

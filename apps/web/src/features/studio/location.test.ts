@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { focusLocation, parseStudioSearch } from "./location";
+import { agentTab, focusLocation, parseStudioSearch } from "./location";
 
 test("a run or issue pin opens the agent's History at the step", () => {
   assert.deepEqual(
@@ -108,4 +108,12 @@ test("Tools keeps only the selected tool", () => {
     section: "tools",
     item: "note_get",
   });
+});
+
+test("an agent opens on the tab asked for, else where a request waits, else Prompt", () => {
+  const tabs = ["prompt", "draft", "memory", "routines"] as const;
+  assert.equal(agentTab("routines", ["memory"], tabs), "routines");
+  assert.equal(agentTab("scripts", ["memory"], tabs), "memory");
+  assert.equal(agentTab(undefined, ["list", "draft"], tabs), "draft");
+  assert.equal(agentTab(undefined, [], tabs), "prompt");
 });
