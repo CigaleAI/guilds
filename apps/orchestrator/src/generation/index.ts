@@ -34,6 +34,7 @@ import {
   type GroupChatDatabase,
   type GroupDelivery,
   type GroupRunner,
+  wakeMessage,
 } from "../groupchat/index.js";
 import { guildOperators } from "../guilds/validation.js";
 import { OPEN_POLICY, PolicyError, type OrgPolicy } from "../policy/index.js";
@@ -84,6 +85,7 @@ import {
   type ArtifactGrants,
 } from "../artifacts/index.js";
 import { DEFAULT_ARTIFACT_GRANTS } from "../artifacts/types.js";
+import type { ChangeActor } from "../db/config-changes.js";
 import { NotesError, type NotesStore } from "../notes/store.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { writeLog, redactText } from "../observability/log.js";
@@ -948,6 +950,7 @@ export type GenerationDb = AccessDatabase &
         extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]>;
         runMetadata?: Record<string, unknown>;
         userMetadata?: Record<string, unknown>;
+        startedByUserId?: string | null;
       },
     ): Promise<void>;
     createGroupRun(
@@ -964,6 +967,7 @@ export type GenerationDb = AccessDatabase &
         taskPromptHash: string;
         memoryPromptHash: string;
         runMetadata?: Record<string, unknown>;
+        wakeGroupMessageId?: number | null;
       },
     ): Promise<void>;
     createScheduleRun(
@@ -1047,8 +1051,9 @@ export type GenerationDb = AccessDatabase &
       instruction: string,
       wake: PlannedWake,
       now: Date,
+      actor: ChangeActor,
     ): Promise<Record<string, unknown>>;
-    deleteSchedule?(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
+    deleteSchedule?(agentId: string, scheduleId: string, actor: ChangeActor): Promise<Record<string, unknown> | null>;
     getSchedule?(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
     setSchedulePaused?(
       agentId: string,
@@ -1056,6 +1061,7 @@ export type GenerationDb = AccessDatabase &
       paused: boolean,
       wake: PlannedWake | null,
       now: Date,
+      actor: ChangeActor,
     ): Promise<Record<string, unknown> | null>;
     listSchedules?(agentId: string): Promise<Array<Record<string, unknown>>>;
     listSchedulesForGuild?(guildId: string): Promise<Array<Record<string, unknown>>>;
@@ -1065,6 +1071,7 @@ export type GenerationDb = AccessDatabase &
       fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
       wake: PlannedWake | null,
       now: Date,
+      actor: ChangeActor,
     ): Promise<Record<string, unknown> | null>;
     setScheduleNextRun?(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
     insertIssue?(
@@ -1344,15 +1351,16 @@ export class GenerationLoop implements GroupRunner {
   async create_run(
     agentId: string,
     message: string | null,
-    options: { attachments?: AttachmentRef[] } = {},
+    options: { attachments?: AttachmentRef[]; startedByUserId?: string } = {},
   ): Promise<Record<string, unknown>> {
     return this.createRun(agentId, message, options);
   }
 
+  /** Opens a direct run; `startedByUserId` is the person who opened it. */
   async createRun(
     agentId: string,
     message: string | null,
-    options: { attachments?: AttachmentRef[] } = {},
+    options: { attachments?: AttachmentRef[]; startedByUserId?: string } = {},
   ): Promise<Record<string, unknown>> {
     const attachments = options.attachments ?? [];
     const opening = message === null && attachments.length ? "" : message;
@@ -1378,6 +1386,7 @@ export class GenerationLoop implements GroupRunner {
           systemPromptHash: current.system,
           taskPromptHash: current.task,
           memoryPromptHash: current.memory,
+          startedByUserId: options.startedByUserId ?? null,
           ...(runMetadata ? { runMetadata } : {}),
           ...(userMetadata ? { userMetadata } : {}),
         },
@@ -1432,6 +1441,7 @@ export class GenerationLoop implements GroupRunner {
     const now = new Date();
     const current = prepared.hashes;
     const runMetadata = preparedRunMetadata(prepared, recipients ? { recipients } : null);
+    const woke = wakeMessage(prepared.history_rows, agentId, deliveredThrough);
     const create = () =>
       this.db.createGroupRun(
         runId,
@@ -1446,6 +1456,7 @@ export class GenerationLoop implements GroupRunner {
           systemPromptHash: current.system,
           taskPromptHash: current.task,
           memoryPromptHash: current.memory,
+          wakeGroupMessageId: woke ? Number(woke.id) : null,
           ...(runMetadata ? { runMetadata } : {}),
         },
       );

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { userActor } from "../db/config-changes.js";
 import { newId } from "../lib/ids.js";
 import { captureGuild } from "../recipes/capture.js";
 import {
@@ -369,7 +370,12 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       const body = bodyOf(request);
-      await applyOf(deps).writeOverlays(row, String(body.server ?? ""), String(body.connection_id ?? ""));
+      await applyOf(deps).writeOverlays(
+        row,
+        String(body.server ?? ""),
+        String(body.connection_id ?? ""),
+        userActor(user),
+      );
       return { ok: true };
     } catch (error) {
       mapError(error);
@@ -381,7 +387,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(repo, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).verifyStep(row, param(request, "step_id"));
+      return await applyOf(deps).verifyStep(row, param(request, "step_id"), userActor(user));
     } catch (error) {
       mapError(error);
     }
@@ -407,7 +413,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(repo, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).activate(row);
+      return await applyOf(deps).activate(row, userActor(user));
     } catch (error) {
       mapError(error);
     }

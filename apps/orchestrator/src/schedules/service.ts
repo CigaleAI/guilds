@@ -3,6 +3,7 @@ import { ScheduleError, validateInstruction, validateScheduleDescription } from 
 import { formatScheduleRow, scheduleItem } from "./item.js";
 import { planWake, rowTiming, validateTiming, type ScheduleTiming } from "./timing.js";
 import type { PlannedWake } from "./window.js";
+import type { ChangeActor } from "../db/config-changes.js";
 
 export type ScheduleDatabase = {
   insertSchedule(
@@ -13,9 +14,10 @@ export type ScheduleDatabase = {
     instruction: string,
     wake: PlannedWake,
     now: Date,
+    actor: ChangeActor,
     options?: { paused?: boolean },
   ): Promise<Record<string, unknown>>;
-  deleteSchedule(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
+  deleteSchedule(agentId: string, scheduleId: string, actor: ChangeActor): Promise<Record<string, unknown> | null>;
   getSchedule(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
   setSchedulePaused(
     agentId: string,
@@ -23,6 +25,7 @@ export type ScheduleDatabase = {
     paused: boolean,
     wake: PlannedWake | null,
     now: Date,
+    actor: ChangeActor,
   ): Promise<Record<string, unknown> | null>;
   listSchedules(agentId: string): Promise<Array<Record<string, unknown>>>;
   listSchedulesForGuild(guildId: string): Promise<Array<Record<string, unknown>>>;
@@ -32,14 +35,20 @@ export type ScheduleDatabase = {
     fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
     wake: PlannedWake | null,
     now: Date,
+    actor: ChangeActor,
   ): Promise<Record<string, unknown> | null>;
   setScheduleNextRun(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
 };
 
+/**
+ * Routines of agents. Every write takes the actor it is logged against in the
+ * routine's change log.
+ */
 export class Schedules {
   constructor(public db: ScheduleDatabase) {}
 
   async create(
+    actor: ChangeActor,
     agentId: string,
     when: { cron?: unknown; window?: unknown },
     description: unknown,
@@ -60,6 +69,7 @@ export class Schedules {
       text,
       paused ? { at: now, windowFires: 0 } : planWake(timing, now),
       now,
+      actor,
       { paused },
     );
     return row;
@@ -103,12 +113,12 @@ export class Schedules {
     return String(row.instruction ?? "");
   }
 
-  async delete(agentId: string, scheduleId: string): Promise<Record<string, unknown>> {
+  async delete(actor: ChangeActor, agentId: string, scheduleId: string): Promise<Record<string, unknown>> {
     const token = (scheduleId || "").trim();
     if (!token) {
       throw new ScheduleError("schedule_id is required");
     }
-    const row = await this.db.deleteSchedule(agentId, token);
+    const row = await this.db.deleteSchedule(agentId, token, actor);
     if (row === null) {
       throw new ScheduleError("schedule not found");
     }
@@ -116,6 +126,7 @@ export class Schedules {
   }
 
   async setPaused(
+    actor: ChangeActor,
     agentId: string,
     scheduleId: string,
     paused: boolean,
@@ -130,7 +141,7 @@ export class Schedules {
     }
     const now = new Date();
     const nxt = paused ? null : planWake(rowTiming(row), now);
-    const updated = await this.db.setSchedulePaused(agentId, token, paused, nxt, now);
+    const updated = await this.db.setSchedulePaused(agentId, token, paused, nxt, now, actor);
     if (updated === null) {
       throw new ScheduleError("schedule not found");
     }
@@ -143,6 +154,7 @@ export class Schedules {
    * next wake-up from now; otherwise the planned one stays.
    */
   async update(
+    actor: ChangeActor,
     agentId: string,
     scheduleId: string,
     changes: ScheduleChanges,
@@ -160,6 +172,7 @@ export class Schedules {
       fields,
       replan ? planWake(fields.timing, now) : null,
       now,
+      actor,
     );
     if (updated === null) {
       throw new ScheduleError("schedule not found");

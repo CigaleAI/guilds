@@ -17,6 +17,7 @@ import {
   limitError,
   parseTags,
   recognizedTags,
+  wakeMessage,
   withActiveCursors,
   type ActiveDelivery,
   type GroupChatDatabase,
@@ -1414,5 +1415,36 @@ describe("groupchat", { concurrency: 1 }, () => {
   test("interrupt_targets_tagged_runs_or_every_run", () => {
     assert.deepEqual(interruptTargets(["a_1", "a_2"], ["a_2", "a_3"]), ["a_2"]);
     assert.deepEqual(interruptTargets(["a_1", "a_2"], []), ["a_1", "a_2"]);
+  });
+});
+
+describe("wake message", () => {
+  const row = (id: number, author: "user" | "agent", tagged: string[], authorAgentId: string | null = null) => ({
+    id,
+    seq: id,
+    author_type: author,
+    author_agent_id: authorAgentId,
+    tagged_agent_ids: tagged,
+  });
+
+  test("a run woke on the latest row after its cursor that tags it", () => {
+    const rows = [row(1, "user", ["a_desk"]), row(2, "user", ["a_desk"]), row(3, "user", []), row(4, "agent", [], "a_scout")];
+    assert.equal(wakeMessage(rows, "a_desk", 0)?.id, 2);
+  });
+
+  test("an agent's own tag of itself does not wake it", () => {
+    const rows = [row(1, "agent", ["a_desk"], "a_desk"), row(2, "agent", [], "a_scout")];
+    assert.equal(wakeMessage(rows, "a_desk", 0)?.id, 2);
+  });
+
+  test("without a tag, the latest operator row that tags no agent woke it", () => {
+    const rows = [row(1, "user", []), row(2, "user", ["a_scout"]), row(3, "agent", [], "a_scout")];
+    assert.equal(wakeMessage(rows, "a_desk", 0)?.id, 1);
+  });
+
+  test("otherwise the latest row after the cursor woke it, and nothing does when no row is new", () => {
+    const rows = [row(1, "user", []), row(2, "agent", ["a_scout"], "a_writer")];
+    assert.equal(wakeMessage(rows, "a_desk", 1)?.id, 2);
+    assert.equal(wakeMessage(rows, "a_desk", 2), null);
   });
 });

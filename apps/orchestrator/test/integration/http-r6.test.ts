@@ -252,6 +252,18 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
         const missing = GROUP_EVENTS.filter((name) => !transcript.text.includes(name));
         assert.deepEqual(missing, [], `group SSE missing ${missing.join(", ")}`);
         assert.equal(placeholders.maskText(transcript.text), loadTextFixture("sse/group.txt"));
+        // The group run stores the operator post that woke it; every direct run stores who opened it.
+        const woken = await database.pool.query(
+          `SELECT r.wake_group_message_id, m.author_user_id
+             FROM runs r JOIN group_messages m ON m.id = r.wake_group_message_id
+            WHERE r.kind = 'group'`,
+        );
+        assert.deepEqual(
+          woken.rows.map((row) => [Number(row.wake_group_message_id), row.author_user_id]),
+          [[Number(jsonByName.get("group-post")?.id), "user_operator"]],
+        );
+        const direct = await database.pool.query(`SELECT DISTINCT started_by_user_id FROM runs WHERE kind = 'direct'`);
+        assert.deepEqual(direct.rows, [{ started_by_user_id: "user_operator" }]);
       }
       if (recorded.name === "split-run") {
         const runId = String(jsonByName.get("split-run")?.id ?? "");

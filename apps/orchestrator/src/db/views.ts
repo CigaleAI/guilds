@@ -116,6 +116,7 @@ export function groupMessageItem(row: Record<string, unknown>): Record<string, u
     author_type: row.author_type,
     author_name: row.author_name,
     author_agent_id: row.author_agent_id ?? null,
+    author_user_id: row.author_user_id ?? null,
     source_run_id: row.source_run_id ?? null,
     content: row.content,
     tagged: Array.isArray(tagged) ? tagged : [],

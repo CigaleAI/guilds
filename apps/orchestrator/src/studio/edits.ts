@@ -17,6 +17,8 @@ import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import type { StudioStore } from "./store.js";
+import type { StudioOrigin } from "../db/config-changes.js";
+import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
@@ -63,6 +65,10 @@ type EditBase =
 export type EditScope = {
   orgId: string;
   sourceGuildId: string;
+  /** The Studio session the edits belong to. */
+  sessionId: string;
+  /** The coach message being applied; set by `applyEdit` so every write links to it. */
+  origin?: StudioOrigin;
   user: Record<string, unknown>;
   repo: Repositories;
   artifacts: ArtifactStore;
@@ -88,13 +94,6 @@ function lineDelta(before: string, after: string): { added: number; removed: num
   return { added, removed };
 }
 
-function operator(scope: EditScope, extra: { guildId?: string; agentId?: string } = {}) {
-  return scope.artifacts.operatorContext(scope.orgId, String(scope.user.id), String(scope.user.name ?? "operator"), {
-    guildId: extra.guildId ?? scope.sourceGuildId,
-    agentId: extra.agentId ?? null,
-  });
-}
-
 function artifactFailure(error: unknown): never {
   if (error instanceof ArtifactError) {
     throw error.status === 409 ? new StudioConflictError(error.message) : new StudioUnprocessableError(error.message);
@@ -109,7 +108,7 @@ async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
 
 export async function loadMemoryBase(scope: EditScope, agent: Record<string, unknown>): Promise<EditBase> {
   const agentId = String(agent.id);
-  const row = await scope.artifacts.getMemoryRow(operator(scope, { agentId }), agentId);
+  const row = await scope.artifacts.getMemoryRow(editActor(scope, { agentId }), agentId);
   return {
     kind: "memory",
     agentId,
@@ -141,7 +140,7 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
   }
   let loaded;
   try {
-    loaded = await scope.artifacts.getByDisplayPath(operator(scope), displayPath);
+    loaded = await scope.artifacts.getByDisplayPath(editActor(scope), displayPath);
   } catch (error) {
     artifactFailure(error);
   }
@@ -367,7 +366,7 @@ function names(rows: Array<Record<string, unknown>>): string {
 /** A note at a display path, or null when none is live there. */
 async function liveNoteAt(scope: EditScope, displayPath: string): Promise<{ version: number } | null> {
   try {
-    const loaded = await scope.artifacts.getByDisplayPath(operator(scope), displayPath);
+    const loaded = await scope.artifacts.getByDisplayPath(editActor(scope), displayPath);
     return loaded.row && !loaded.tombstone ? { version: Number(loaded.row.version) } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
@@ -492,7 +491,7 @@ async function reviewNote(
 }
 
 async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | null> {
-  const toolActor = operator(scope, {
+  const toolActor = editActor(scope, {
     ...(plan.action === "delete" ? { guildId: plan.guildId } : {}),
     ...(plan.agentId ? { agentId: plan.agentId } : {}),
   });
@@ -756,12 +755,14 @@ function assertBound(review: { baseHash: string; proposedHash: string }, edit: R
   }
 }
 
-// Write the proposal as the operator. The live content must still hash to
-// the base the proposal was built on; anything else is a conflict.
+// Write the proposal as the operator, linked to the coach message that
+// proposed it. The live content must still hash to the base the proposal was
+// built on; anything else is a conflict.
 export async function applyEdit(
-  scope: EditScope,
+  live: EditScope,
   record: EditRecord,
 ): Promise<{ version: number | null; guild?: Record<string, unknown>; routine?: RoutineChange }> {
+  const scope: EditScope = { ...live, origin: { sessionId: live.sessionId, seq: record.seq } };
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   if (isRoutineTool(record.toolName)) {
     const call = { args: record.args, agentId: recordedAgentId(edit) };
@@ -799,7 +800,7 @@ export async function applyEdit(
   }
   const toolCall = { id: record.toolCallId, name: record.toolName };
   if (base.kind === "memory") {
-    const actor = { ...operator(scope, { agentId: base.agentId }), toolCall };
+    const actor = { ...editActor(scope, { agentId: base.agentId }), toolCall };
     try {
       const row = await scope.artifacts.writeMemory(
         actor,
@@ -819,7 +820,7 @@ export async function applyEdit(
       throw new StudioUnprocessableError("artifact not found");
     }
     const actor = {
-      ...operator(scope, {
+      ...editActor(scope, {
         guildId: base.guildId,
         ...(base.level === "agent" ? { agentId: base.ownerId } : {}),
       }),
@@ -839,10 +840,12 @@ export async function applyEdit(
     }
   }
   const text = proposed as GuildText;
-  const row = await scope.repo.updateGuild(base.guildId, new Date(), {
-    about: text.about,
-    description: text.description,
-  });
+  const row = await scope.repo.updateGuild(
+    base.guildId,
+    new Date(),
+    { about: text.about, description: text.description },
+    editActor(scope),
+  );
   if (!row) {
     throw new StudioUnprocessableError("source guild not found");
   }

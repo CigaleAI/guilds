@@ -8,7 +8,8 @@ import { StudioUnprocessableError } from "./errors.js";
 // The guild activity ledger: one row per wake (a run of any kind) with what
 // started it, how it was routed, the tools it called, and what it produced,
 // plus the public rows those wakes answered and posted. Read-only over runs,
-// messages, group_messages, file_changes, and schedules.
+// messages, group_messages, file_changes, and schedules. A run stores the
+// public row that woke it; a run without one has its row inferred from tags.
 
 export const ACTIVITY_DEFAULT_HOURS = 24;
 export const ACTIVITY_MAX_HOURS = 24 * 7;
@@ -39,6 +40,8 @@ export type ActivityMessage = {
   author_type: "user" | "agent";
   author_name: string;
   author_agent_id: string | null;
+  // The person who posted an operator row; null for an agent's row.
+  author_user_id: string | null;
   source_run_id: string | null;
   tagged: string[];
   preview: string;
@@ -53,6 +56,7 @@ export type ActivityRouting = {
 
 export type ActivityTriggerReason = "tag" | "jev" | "rules" | "fallback";
 
+// `inferred` is true when the run stored no waking row and `seq` comes from a tag scan.
 export type ActivityTrigger =
   | {
       type: "message";
@@ -60,9 +64,10 @@ export type ActivityTrigger =
       through_seq: number | null;
       reason: ActivityTriggerReason;
       routing: ActivityRouting | null;
+      inferred: boolean;
     }
   | { type: "routine"; schedule_id: string | null }
-  | { type: "direct" };
+  | { type: "direct"; user_id: string | null };
 
 export type ActivityWriteKind = "record" | "note" | "script" | "memory" | "code";
 
@@ -244,46 +249,73 @@ function agentTags(message: Record<string, unknown> | undefined): string[] {
   return message ? names(message.tagged_names).filter((name) => name !== "user") : [];
 }
 
-// The public row that woke a group run. A tag always selects its target, so a
-// tagged agent woke on the latest row that tags it; an untagged operator row
-// wakes every member; otherwise the snapshot's latest row decided it.
+function isJevPick(routing: ActivityRouting | null, agentName: string): boolean {
+  return routing?.source === "typesafe" && routing.choice === agentName;
+}
+
+function triggerReason(tagged: boolean, routing: ActivityRouting | null, agentName: string): ActivityTriggerReason {
+  if (tagged) {
+    return "tag";
+  }
+  if (routing?.source === "fallback") {
+    return "fallback";
+  }
+  return isJevPick(routing, agentName) ? "jev" : "rules";
+}
+
+type WakeReason = { reason: ActivityTriggerReason; agentName: string };
+
+// The reasons whose waking row a tag scan finds; the others woke on the snapshot's last row.
+const SCANNED_REASONS = new Set<ActivityTriggerReason>(["tag", "rules"]);
+
+function wokeOn(message: Record<string, unknown> | undefined, why: WakeReason): boolean {
+  if (!message) {
+    return false;
+  }
+  const tags = agentTags(message);
+  return why.reason === "tag" ? tags.includes(why.agentName) : message.author_type === "user" && tags.length === 0;
+}
+
+// The lowest sequence a tag scan reaches back to, exclusive.
+function scanFloor(run: Record<string, unknown>, throughSeq: number): number {
+  return Math.max(num(run.previous_through_seq) ?? 0, throughSeq - TRIGGER_SCAN_MAX);
+}
+
+// The waking row of a run that stored none. A tag always selects its target,
+// so a tagged agent woke on the latest row that tags it; an untagged operator
+// row wakes every member; otherwise the snapshot's latest row decided it.
+function inferWakeSeq(
+  run: Record<string, unknown>,
+  why: WakeReason,
+  messagesBySeq: Map<number, Record<string, unknown>>,
+): number | null {
+  const throughSeq = num(run.group_chat_through_seq);
+  if (throughSeq === null || !SCANNED_REASONS.has(why.reason)) {
+    return throughSeq;
+  }
+  const scanned = Array.from({ length: Math.max(0, throughSeq - scanFloor(run, throughSeq)) }, (_, at) => throughSeq - at);
+  return scanned.find((seq) => wokeOn(messagesBySeq.get(seq), why)) ?? throughSeq;
+}
+
+// The public row that woke a group run: the one the run stored, or for an
+// older run the one its tags point to.
 function messageTrigger(
   run: Record<string, unknown>,
   agentName: string,
   delivery: Record<string, unknown>,
   messagesBySeq: Map<number, Record<string, unknown>>,
 ): ActivityTrigger {
-  const throughSeq = num(run.group_chat_through_seq);
-  const previousSeq = num(run.previous_through_seq) ?? 0;
   const routing = routingOf(obj(run.metadata));
-  const tagged = delivery.you_were_tagged === true;
-  let reason: ActivityTriggerReason;
-  if (tagged) {
-    reason = "tag";
-  } else if (routing?.source === "typesafe" && routing.choice === agentName) {
-    reason = "jev";
-  } else if (routing?.source === "fallback") {
-    reason = "fallback";
-  } else {
-    reason = "rules";
-  }
-  let seq = throughSeq;
-  if (throughSeq !== null && (reason === "tag" || reason === "rules")) {
-    const floor = Math.max(previousSeq, throughSeq - TRIGGER_SCAN_MAX);
-    for (let candidate = throughSeq; candidate > floor; candidate -= 1) {
-      const message = messagesBySeq.get(candidate);
-      if (!message) {
-        continue;
-      }
-      const tags = agentTags(message);
-      const wakes = reason === "tag" ? tags.includes(agentName) : message.author_type === "user" && tags.length === 0;
-      if (wakes) {
-        seq = candidate;
-        break;
-      }
-    }
-  }
-  return { type: "message", seq, through_seq: throughSeq, reason, routing };
+  const reason = triggerReason(delivery.you_were_tagged === true, routing, agentName);
+  const stored = num(run.wake_seq);
+  return {
+    type: "message",
+    seq: stored ?? inferWakeSeq(run, { reason, agentName }, messagesBySeq),
+    through_seq: num(run.group_chat_through_seq),
+    reason,
+    routing,
+    inferred: stored === null,
+  };
 }
 
 function errorsOf(value: unknown, sinceMs: number): ActivityError[] {
@@ -427,7 +459,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
     } else if (kind === "schedule") {
       trigger = { type: "routine", schedule_id: text(run.schedule_id) };
     } else {
-      trigger = { type: "direct" };
+      trigger = { type: "direct", user_id: text(run.started_by_user_id) };
     }
     const posts = postsByRun.get(runId) ?? [];
     const writes = [...(writesByRun.get(runId) ?? []), ...codeWrites(run, endedAt)];
@@ -465,6 +497,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
       author_type: row.author_type === "user" ? "user" : "agent",
       author_name: String(row.author_name ?? ""),
       author_agent_id: text(row.author_agent_id),
+      author_user_id: text(row.author_user_id),
       source_run_id: text(row.source_run_id),
       tagged: names(row.tagged_names),
       preview: preview(content, ACTIVITY_PREVIEW_CHARS),
@@ -526,6 +559,19 @@ function codeWrites(run: Record<string, unknown>, at: string): ActivityWrite[] {
   });
 }
 
+/**
+ * The sequence after which a group run's waking row lies: just before the
+ * row it stored, or the bottom of its tag scan. Null for any other run.
+ */
+export function messageFloor(run: Record<string, unknown>): number | null {
+  const throughSeq = num(run.group_chat_through_seq);
+  if (run.kind !== "group" || throughSeq === null) {
+    return null;
+  }
+  const stored = num(run.wake_seq);
+  return stored !== null ? stored - 1 : scanFloor(run, throughSeq);
+}
+
 export async function loadGuildActivity(
   repo: Repositories,
   guildId: string,
@@ -540,15 +586,8 @@ export async function loadGuildActivity(
   const runIds = runs.map((run) => String(run.id));
   const groupRunIds = runs.filter((run) => run.kind === "group").map((run) => String(run.id));
   const directRunIds = runs.filter((run) => run.kind === "direct").map((run) => String(run.id));
-  let afterSeq: number | null = null;
-  for (const run of runs) {
-    const throughSeq = num(run.group_chat_through_seq);
-    if (run.kind !== "group" || throughSeq === null) {
-      continue;
-    }
-    const floor = Math.max(num(run.previous_through_seq) ?? 0, throughSeq - TRIGGER_SCAN_MAX);
-    afterSeq = afterSeq === null ? floor : Math.min(afterSeq, floor);
-  }
+  const floors = runs.map(messageFloor).filter((floor): floor is number => floor !== null);
+  const afterSeq = floors.length ? Math.min(...floors) : null;
   const [stats, deliveries, posts, changes, steps, openings, messages] = await Promise.all([
     repo.listRunActivityStats(runIds, since),
     repo.listRunGroupDeliveries(groupRunIds),

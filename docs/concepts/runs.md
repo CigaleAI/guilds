@@ -201,10 +201,14 @@ An ended run shows a banner under the transcript:
 `runs` holds `id`, `agent_id`, `org_id`, `kind` (`direct`, `group`, or
 `schedule`), `status` (`active` or `completed`), `config_snapshot`,
 `errors`, `metadata`, `group_chat_through_seq` (group runs),
-`schedule_id` (schedule runs), the system, task, and memory prompt
-hashes, `created_at`, and `updated_at`. Deleting the agent deletes
-its runs. The app labels `group` **Group chat** and
-`schedule` **Routine**.
+`wake_group_message_id` (group runs: the public row that woke it),
+`schedule_id` (schedule runs), `started_by_user_id` (direct runs: the
+person who opened it), the system, task, and memory prompt hashes,
+`created_at`, and `updated_at`. Clearing the group chat or deleting the
+user clears the matching link. A run continued from a chain keeps its
+cause in `metadata.chain` instead ([Chain rules](#chain-rules)).
+Deleting the agent deletes its runs. The app labels `group` **Group
+chat** and `schedule` **Routine**.
 
 A direct run, or any run the operator has resumed, stays `active`
 after its generation. A group or schedule run becomes `completed`. Any

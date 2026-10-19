@@ -11,6 +11,7 @@ import { resolveMcpTool } from "../access/runtime.js";
 import { newId } from "../lib/ids.js";
 import { isReadOnlyRemote, listedFromRows } from "../mcp/index.js";
 import type { EditScope } from "./edits.js";
+import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
@@ -329,9 +330,10 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
     throw new StudioConflictError("the agent's access already matches this proposal");
   }
   const now = new Date();
+  const actor = editActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
-      await scope.repo.deleteBinding(change.kind, change.id, "agent", agentId);
+      await scope.repo.deleteBinding(change.kind, change.id, "agent", agentId, actor);
       continue;
     }
     const existing = await scope.repo.getBinding(change.kind, change.id, "agent", agentId);
@@ -339,6 +341,6 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
       change.kind === "mcp" && existing?.connection_id !== null && existing?.connection_id !== undefined
         ? String(existing.connection_id)
         : null;
-    await scope.repo.upsertBinding(newId("bind"), change.kind, change.id, "agent", agentId, change.setting === "on", connectionId, now);
+    await scope.repo.upsertBinding(newId("bind"), change.kind, change.id, "agent", agentId, change.setting === "on", connectionId, now, actor);
   }
 }

@@ -56,6 +56,7 @@ import {
   type MachineWithAgents,
 } from "../machines/index.js";
 import { jsonObj } from "../db/json.js";
+import { userActor, type ChangeActor } from "../db/config-changes.js";
 import type { Repositories } from "../db/repositories.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -733,6 +734,7 @@ export class RecipeApplyService {
             );
           }
           await this.deps.schedules.create(
+            actor,
             agentId,
             { cron: schedule.cron, window: schedule.window },
             schedule.description,
@@ -740,7 +742,7 @@ export class RecipeApplyService {
             { paused: true },
           );
         }
-        await this.writeNativeAccess(role, agentId, now);
+        await this.writeNativeAccess(role, agentId, now, actor);
       }
       const collections = (preview.collections as CollectionPlan[]).map((item) => ({ ...item }));
       for (const item of collections) {
@@ -803,6 +805,7 @@ export class RecipeApplyService {
             },
             String(connection.server),
             connectionId,
+            actor,
           );
           connection.bound = true;
         }
@@ -899,7 +902,11 @@ export class RecipeApplyService {
     return { apply: null, browser_logins: browserLoginAgentIds(await this.listReadyForGuild(guildId)) };
   }
 
-  async verifyStep(applyRow: Record<string, unknown>, stepId: string): Promise<Record<string, unknown>> {
+  async verifyStep(
+    applyRow: Record<string, unknown>,
+    stepId: string,
+    actor: ChangeActor,
+  ): Promise<Record<string, unknown>> {
     const checklist = [...((applyRow.checklist as Array<Record<string, unknown>>) ?? [])];
     const step = checklist.find((item) => item.id === stepId);
     if (!step) {
@@ -908,7 +915,7 @@ export class RecipeApplyService {
     if (step.closure !== "verified") {
       throw new RecipeError("step is attestation-only");
     }
-    const checked = await this.machineCheck({ ...applyRow, checklist }, step);
+    const checked = await this.machineCheck({ ...applyRow, checklist }, step, actor);
     if (!checked.ok) {
       throw new RecipeError(checked.reason);
     }
@@ -943,7 +950,7 @@ export class RecipeApplyService {
     return this.saveChecklist(String(applyRow.id), checklist, applyRow);
   }
 
-  async activate(applyRow: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async activate(applyRow: Record<string, unknown>, actor: ChangeActor): Promise<Record<string, unknown>> {
     const now = new Date();
     const checklist = deferLaunchSteps(
       (applyRow.checklist as Array<Record<string, unknown>>) ?? [],
@@ -966,7 +973,7 @@ export class RecipeApplyService {
       for (const [index, row] of rows.entries()) {
         const key = created[index]?.key;
         if (key && activate.has(key)) {
-          await this.deps.schedules.setPaused(agentId, String(row.id), false);
+          await this.deps.schedules.setPaused(actor, agentId, String(row.id), false);
         }
       }
     }
@@ -1006,7 +1013,12 @@ export class RecipeApplyService {
     return { ...(await this.get(String(applyRow.id))), status: "aborted" };
   }
 
-  async writeOverlays(applyRow: Record<string, unknown>, server: string, connectionId: string): Promise<void> {
+  async writeOverlays(
+    applyRow: Record<string, unknown>,
+    server: string,
+    connectionId: string,
+    actor: ChangeActor,
+  ): Promise<void> {
     const ctx = await this.validationContext(String(applyRow.org_id));
     const recipe = prepareRecipeForApply(parseRecipe((await this.deps.recipes.get(String(applyRow.recipe_id)))?.body), ctx.publishedServers);
     const connection = recipe.connections.find((item) => item.server === server);
@@ -1041,12 +1053,13 @@ export class RecipeApplyService {
         spec.enabled,
         connectionId,
         now,
+        actor,
       );
       for (const [tool, enabled] of Object.entries(spec.tools)) {
         if (!known.has(tool)) {
           continue;
         }
-        await this.deps.repo.upsertBinding(newId("bind"), "mcp_tool", tool, scope, scopeId, enabled, null, now);
+        await this.deps.repo.upsertBinding(newId("bind"), "mcp_tool", tool, scope, scopeId, enabled, null, now, actor);
       }
     };
 
@@ -1181,7 +1194,11 @@ export class RecipeApplyService {
     });
   }
 
-  private async machineCheck(applyRow: Record<string, unknown>, step: Record<string, unknown>): Promise<{ ok: boolean; reason: string }> {
+  private async machineCheck(
+    applyRow: Record<string, unknown>,
+    step: Record<string, unknown>,
+    actor: ChangeActor,
+  ): Promise<{ ok: boolean; reason: string }> {
     const id = String(step.id);
     if (id.startsWith("conn:")) {
       const slug = id.slice(5);
@@ -1193,7 +1210,7 @@ export class RecipeApplyService {
       const mcp = ((access.mcp as Array<Record<string, unknown>>) ?? []).find((item) => item.slug === slug);
       const connected = mcp?.status === "connected";
       if (connected && typeof mcp?.connection_id === "string" && mcp.connection_id) {
-        await this.writeOverlays(applyRow, slug, mcp.connection_id);
+        await this.writeOverlays(applyRow, slug, mcp.connection_id, actor);
         const overlays = ((applyRow.checklist as Array<Record<string, unknown>>) ?? []).find(
           (item) => item.id === `overlays:${slug}`,
         );
@@ -1308,7 +1325,7 @@ export class RecipeApplyService {
     let closed = false;
     for (const step of checklist) {
       if (step.kind !== "secret" || step.status !== "open") continue;
-      if ((await this.machineCheck(applyRow, step)).ok) {
+      if ((await this.machineCheck(applyRow, step, userActor(user))).ok) {
         step.status = "verified";
         step.closed_at = new Date().toISOString();
         closed = true;
@@ -1331,12 +1348,12 @@ export class RecipeApplyService {
     return { ...applyRow, checklist, warnings: nextWarnings };
   }
 
-  private async writeNativeAccess(role: RecipeRole, agentId: string, now: Date): Promise<void> {
+  private async writeNativeAccess(role: RecipeRole, agentId: string, now: Date, actor: ChangeActor): Promise<void> {
     for (const [tool, enabled] of Object.entries(role.native_tools)) {
-      await this.deps.repo.upsertBinding(newId("bind"), "native_tool", tool, "agent", agentId, enabled, null, now);
+      await this.deps.repo.upsertBinding(newId("bind"), "native_tool", tool, "agent", agentId, enabled, null, now, actor);
     }
     for (const [grant, enabled] of Object.entries(role.grants)) {
-      await this.deps.repo.upsertBinding(newId("bind"), "artifact_grant", grant, "agent", agentId, enabled, null, now);
+      await this.deps.repo.upsertBinding(newId("bind"), "artifact_grant", grant, "agent", agentId, enabled, null, now, actor);
     }
   }
 }

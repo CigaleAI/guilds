@@ -10,6 +10,10 @@ Activity is built from [runs](runs.md), the [group chat](group-chat.md),
 [routines](routines.md), and the files agents changed. It reads stored
 data only. It changes nothing.
 
+Each group run stores the public post that woke it, and each direct run
+stores who opened it. Activity reads that stored cause. Runs from before
+the cause was stored have it inferred from the chat's tags.
+
 ## When you use it
 
 - Agents wake each other in ways you do not expect, and you want to
@@ -131,18 +135,22 @@ The server projects the wake ledger from `runs`, `messages`,
 (`apps/orchestrator/src/studio/activity.ts`). It writes one row per run
 active in the window.
 
-- A group run woke on the latest row, since the same agent's previous
-  group run, that tags it. Without a tag, it woke on the latest
-  untagged operator row. Otherwise it woke on the snapshot's last row.
-  The reason is `tag`, `jev` (the stored Jev Choice picked this
-  agent), `rules` (tag rules without a tag), or `fallback` (the Choice
-  call failed). The stored Jev decision sits beside it
-  ([Group chat](group-chat.md)).
+- A group run woke on the row its run stores in
+  `runs.wake_group_message_id` ([Runs](runs.md#run-row)). A run with
+  none stored is inferred: the latest row, since the same agent's
+  previous group run, that tags it; without a tag, the latest untagged
+  operator row (`rules`); otherwise the snapshot's last row. The
+  trigger's `inferred` says which. The reason is `tag`, `jev` (the
+  stored Jev Choice picked this agent), `rules` (tag rules without a
+  tag), or `fallback` (the Choice call failed). The stored Jev
+  decision sits beside it ([Group chat](group-chat.md)).
 - A routine run starts from its routine. The ledger lists every
   routine with its timing in words and its instruction.
 - A direct run is the operator's chat, from its first to its last
   message in the window, with the operator's first message in the
-  window.
+  window. Its trigger carries `user_id`, the person who opened it
+  (`runs.started_by_user_id`), or null for a run from before it was
+  stored.
 - The outcome is `posted` (a `group_post` in the window, with its
   tool-call id), `wrote` (record, note, script, or code writes; memory
   does not count), or no output.
@@ -165,6 +173,11 @@ agents, routines, messages, wakes }`. A non-positive or non-numeric
 `hours`, or an `until` that is not a timestamp, is 422.
 
 - A routine carries `label` (its timing in words) and `instruction`.
+- A message carries `author_user_id`, the person who posted an
+  operator row, or null.
+- A wake's `trigger` is `{ type: "message", seq, through_seq, reason,
+  routing, inferred }`, `{ type: "routine", schedule_id }`, or
+  `{ type: "direct", user_id }`.
 - A wake carries `tool_calls` (`call_id`, `name`, `arguments`,
   `error`, `duration_ms`, `at`), `tool_call_count`, `reply`, and, for a
   direct chat, `opening`.

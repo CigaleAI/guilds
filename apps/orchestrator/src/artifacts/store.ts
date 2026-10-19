@@ -21,6 +21,8 @@ import {
 } from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "./file-changes.js";
+import { collectionCleared, collectionColumnsChanged, collectionDeleted, type CollectionRef } from "./collection-changes.js";
+import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { operatorActor } from "./grants.js";
 import {
   allowsSimilarSpelling,
@@ -151,6 +153,10 @@ export type CollectionDescription = {
   guild_id: string | null;
   access: AccessMode;
 };
+
+function collectionRef(row: CollectionRow): CollectionRef {
+  return { id: row.id, name: row.name, orgId: row.org_id, guildId: row.guild_id };
+}
 
 export class ArtifactStore {
   constructor(
@@ -411,6 +417,7 @@ export class ArtifactStore {
         }
       }
       if (change) {
+        await recordChangeIfAny(client, actor, collectionColumnsChanged(collectionRef(current), change));
         for (const rename of change.renamed) {
           await client.query(
             `UPDATE artifacts
@@ -492,6 +499,7 @@ export class ArtifactStore {
         [collection.id, now],
       );
       await client.query(`DELETE FROM collection_access WHERE collection_id = $1`, [collection.id]);
+      await recordConfigChange(client, actor, collectionDeleted(collectionRef(collection)));
     });
   }
 
@@ -520,7 +528,9 @@ export class ArtifactStore {
           WHERE collection_id = $1 AND kind = 'object' AND deleted_at IS NULL`,
         [collection.id, now, actor.actorType, actor.actorId, actor.actorName],
       );
-      return result.rowCount ?? 0;
+      const removed = result.rowCount ?? 0;
+      await recordChangeIfAny(client, actor, collectionCleared(collectionRef(collection), removed));
+      return removed;
     });
   }
 

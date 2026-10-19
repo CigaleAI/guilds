@@ -245,6 +245,13 @@ schedule tools, so a routine cannot create further routines. The
 Studio template treats everything it reads as evidence, never
 instructions.
 
+Since 2026-10-19, every routine create, edit, pause, resume, and
+delete appends a `config_changes` row with its actor. A routine
+applied from a Studio card links to the session and the coach message
+that proposed it; one an agent changed links to its run and tool call.
+A steered routine can be traced back to the proposal or the step that
+made it. The log records; it blocks nothing.
+
 **Residual risk:** an operator who applies a request without reading
 the instruction can schedule steered work. Closing it fully takes
 refusing routine creation and instruction changes from Studio and

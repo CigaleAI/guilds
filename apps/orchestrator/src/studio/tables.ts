@@ -18,6 +18,7 @@ import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import type { EditAction } from "./actions.js";
 import type { EditScope } from "./edits.js";
+import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
 
@@ -612,14 +613,7 @@ export async function reviewTable(
 
 /** Writes a reviewed proposal as the operator: the table first, then each grant it changes. */
 export async function applyTable(scope: EditScope, plan: TablePlan): Promise<void> {
-  const actor = scope.artifacts.operatorContext(
-    scope.orgId,
-    String(scope.user.id),
-    String(scope.user.name ?? "operator"),
-    {
-      guildId: scope.sourceGuildId,
-    },
-  );
+  const actor = editActor(scope);
   try {
     if (plan.action === "delete") {
       await scope.artifacts.deleteCollection(actor, plan.id);

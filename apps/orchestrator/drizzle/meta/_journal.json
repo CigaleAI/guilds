@@ -64,6 +64,13 @@
       "when": 1791907200000,
       "tag": "0009_guild_defaults_unarchived",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791910800000,
+      "tag": "0010_change_tracking",
+      "breakpoints": true
     }
   ]
 }

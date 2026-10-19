@@ -15,6 +15,9 @@ import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { userActor } from "../../src/db/config-changes.js";
+
+const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -74,7 +77,10 @@ test("studio activity lists each wake with what started it and what it produced"
   }
 
   // The operator tags scout; scout's wake posts a row that tags desk.
-  const first = await repo.postUserGroupMessage("guild_act", "@scout go", ["scout"], ["a_scout"], [], now, { authorName: "operator" });
+  const first = await repo.postUserGroupMessage("guild_act", "@scout go", ["scout"], ["a_scout"], [], now, {
+    authorName: "operator",
+    authorUserId: "user_operator",
+  });
   const firstSeq = Number(first?.seq);
   await repo.createGroupRun(
     "r_scout",
@@ -103,7 +109,7 @@ test("studio activity lists each wake with what started it and what it produced"
     now,
   );
 
-  // desk's wake writes a note, then runs out of tool calls without posting.
+  // desk's wake, which stores the row that woke it, writes a note, then runs out of tool calls without posting.
   await repo.createGroupRun(
     "r_desk",
     "a_desk",
@@ -113,7 +119,7 @@ test("studio activity lists each wake with what started it and what it produced"
     [[{ role: "user", content: "Group Chat info: {}" }, { generation: 1, source: "group_chat", group_seq: secondSeq, you_were_tagged: true }]],
     secondSeq,
     now,
-    HASHES,
+    { ...HASHES, wakeGroupMessageId: Number(second?.id) },
   );
   const deskActor = {
     ...agentActor({ orgId: "org_home", guildId: "guild_act", agentId: "a_desk", agentName: "desk", grants: DEFAULT_ARTIFACT_GRANTS, runId: "r_desk" }),
@@ -123,7 +129,7 @@ test("studio activity lists each wake with what started it and what it produced"
   await repo.appendRunError("r_desk", { at: now.toISOString(), operation: "generation.max_tool_calls", message: "Tool call limit reached." }, now);
 
   // A routine wake for desk that changes nothing.
-  const routine = await schedules.create("a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");
+  const routine = await schedules.create(TEST_ACTOR, "a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");
   const scheduleId = String(routine.id);
   await repo.createScheduleRun(
     "r_tick",
@@ -137,7 +143,10 @@ test("studio activity lists each wake with what started it and what it produced"
   );
 
   // The operator chats with scout directly.
-  await repo.createRun("r_chat", "a_scout", SNAPSHOT, "system prompt", "task prompt", "how are the leads?", now, HASHES);
+  await repo.createRun("r_chat", "a_scout", SNAPSHOT, "system prompt", "task prompt", "how are the leads?", now, {
+    ...HASHES,
+    startedByUserId: "user_operator",
+  });
 
   try {
     const created = await app.inject({
@@ -156,9 +165,9 @@ test("studio activity lists each wake with what started it and what it produced"
     assert.deepEqual(view.routines, [
       { id: scheduleId, agent_id: "a_desk", description: "Hourly check", label: "Every hour (UTC)", instruction: "Check the leads." },
     ]);
-    assert.deepEqual(view.messages.map((row) => [row.seq, row.author_type, row.source_run_id]), [
-      [firstSeq, "user", null],
-      [secondSeq, "agent", "r_scout"],
+    assert.deepEqual(view.messages.map((row) => [row.seq, row.author_type, row.author_user_id, row.source_run_id]), [
+      [firstSeq, "user", "user_operator", null],
+      [secondSeq, "agent", null, "r_scout"],
     ]);
 
     const byRun = new Map(view.wakes.map((wake) => [wake.run_id, wake]));
@@ -169,6 +178,7 @@ test("studio activity lists each wake with what started it and what it produced"
       through_seq: firstSeq,
       reason: "tag",
       routing: { source: "typesafe", choice: "scout", confidence: 0.9 },
+      inferred: true,
     });
     assert.equal(scout?.outcome, "posted");
     assert.deepEqual(scout?.posts.map((post) => [post.seq, post.call_id]), [[secondSeq, "call_post"]]);
@@ -179,13 +189,14 @@ test("studio activity lists each wake with what started it and what it produced"
 
     const desk = byRun.get("r_desk");
     assert.equal(desk?.trigger.type === "message" && desk.trigger.seq, secondSeq);
+    assert.equal(desk?.trigger.type === "message" && desk.trigger.inferred, false);
     assert.equal(desk?.outcome, "wrote");
     assert.equal(desk?.failed, true);
     assert.deepEqual(desk?.errors.map((error) => error.operation), ["generation.max_tool_calls"]);
     assert.deepEqual(desk?.writes.map((write) => [write.kind, write.target, write.call_id]), [["note", "leads.md", "call_note"]]);
 
     const chat = byRun.get("r_chat");
-    assert.deepEqual(chat?.trigger, { type: "direct" });
+    assert.deepEqual(chat?.trigger, { type: "direct", user_id: "user_operator" });
     assert.equal(chat?.opening, "how are the leads?");
 
     const tick = byRun.get("r_tick");

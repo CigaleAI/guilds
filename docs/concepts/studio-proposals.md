@@ -138,7 +138,14 @@ session lock:
   `file_changes` row that carries the edit tool's call id and name.
 - The guild goes through `updateGuild` and refreshes the session's
   `source_guild_snapshot`, so the next turn's system message holds the
-  new text. Guild text keeps no history.
+  new text. Guild text keeps no content history; its change log
+  records who changed which field.
+
+Every change an apply writes, to a file, a table, a routine, access,
+or the guild's text, records the session and the sequence of the coach
+message that proposed it (`studio_session_id`, `studio_seq`), so its
+history links back to the card
+([Artifacts](artifacts.md#configuration-change-log)).
 
 The resolution is stored on the tool message as `metadata.edit_status`
 (`applied` | `declined`), `edit_resolved_at`, and `edit_version`. A
