@@ -9,6 +9,7 @@ import { currentOrg, currentUser } from "./identity.js";
 import { ownedGuild } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { activityWindow, loadGuildActivity } from "../studio/activity.js";
+import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
 import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
 import { viewDraft } from "../studio/drafts.js";
@@ -380,6 +381,41 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
         ...window,
         now,
         generating: (runId) => (deps.generation ? deps.generation.generating(runId) : false),
+      });
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/tools", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      studio.assertLive(session);
+      const window = activityWindow(request.query as { hours?: unknown }, new Date());
+      return await loadGuildTools({ repo, preview: studio.previewDeps() }, String(session.source_guild_id), window);
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/tools/:name/calls", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    const query = request.query as { hours?: unknown; errors?: unknown; cursor?: unknown };
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      studio.assertLive(session);
+      return await loadToolCalls(repo, String(session.source_guild_id), {
+        tool: param(request, "name"),
+        window: activityWindow({ hours: query.hours }, new Date()),
+        query: {
+          errorsOnly: query.errors === "true" || query.errors === "1",
+          cursor: typeof query.cursor === "string" && query.cursor ? query.cursor : null,
+        },
       });
     } catch (error) {
       mapStudioError(error);

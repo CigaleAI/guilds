@@ -235,8 +235,41 @@ organisation's tables, switched by **Notes** and **Tables**:
 
 ### Tools
 
-**Tools** is where the tools the guild's agents are offered are
-listed.
+**Tools** lists every tool the guild's agents are offered now, and
+every tool they called in the window (24 h, 3 d, or 7 d). A tool comes
+from the native toolbox, from a script with parameters, or from a
+connection. Calls the coach makes are not counted: only the agents'
+runs.
+
+Each row shows the tool and its group, the agents offered it, its
+calls, its errors, the median call duration, the agent that calls it
+most and its share, and the last call. An agent offered the tool has a
+solid ring when it calls it in the window and a dashed one when it
+does not. A tool called in the window that no agent is offered now
+says **no longer offered**. Filters narrow the list by source, by
+agent, by **Needs a look**, and by search words.
+
+A row carries a flag when the tool deserves a look:
+
+| Flag | When |
+|---|---|
+| **never called** | Offered to an agent, and called by none in the window |
+| **N never call it** | Called, but N agents offered it never call it |
+| **X% fail** | 10% of its calls or more failed |
+| **needs approval** | An open access change of the coach touches it |
+
+**Needs a look** keeps the flagged tools. Selecting a tool opens its
+detail:
+
+- tiles: calls, error rate, median duration, and how many of the
+  agents offered it call it
+- who calls it, each agent with a bar of its ok and failed calls
+- the agents offered it that never call it
+- its failed calls grouped by error message
+- its calls, newest first, **All** or **Errors**, with **Load older
+  calls**. **Open step** opens the call in the agent's **History**
+
+**Ask the coach** pins the tool.
 
 ### Focus pins
 
@@ -246,6 +279,7 @@ the composer. It appears on:
 - the run, memory version, routine, and script panes
 - every tool call's detail in a **History** transcript
 - the file open in **State**
+- the tool open in **Tools**
 - a wake opened in the activity chains
 
 A run opened at a step pins that step. What can be pinned:
@@ -256,6 +290,7 @@ A run opened at a step pins that step. What can be pinned:
 - a file or record, optionally one recorded change (a whole
   collection is refused: pick a record)
 - an issue an agent reported
+- a tool the guild's agents call
 
 The chat shows a sent pin as a card that reopens the item in the
 inspector.
@@ -371,8 +406,9 @@ The block is `<evidence source="studio.focus.<kind>">`. It carries:
 - the item's coordinates
 - a capped excerpt: the focused message or tool call, the section diff
   of a memory version, the routine instruction, the file's first bytes
-  and latest change, or the issue's kind, severity, failing tool,
-  summary, and detail
+  and latest change, the issue's kind, severity, failing tool,
+  summary, and detail, or a tool's calls and failures per agent over
+  the last 7 days with its 5 latest failed calls
 - the tool that loads the rest (for an issue, `studio_get_run` on the
   reporting run filtered to `report_issue`)
 
@@ -519,6 +555,8 @@ GET    /api/studio/sessions/:id/agents/:agent_id/routines
 GET    /api/studio/sessions/:id/agents/:agent_id/runs
 GET    /api/studio/sessions/:id/agents/:agent_id/memory-timeline
 GET    /api/studio/sessions/:id/activity
+GET    /api/studio/sessions/:id/tools
+GET    /api/studio/sessions/:id/tools/:name/calls
 GET    /api/studio/sessions/:id/runs/:run_id
 GET    /api/studio/sessions/:id/messages
 POST   /api/studio/sessions/:id/messages
@@ -536,6 +574,26 @@ POST   /api/studio/drafts/:id/discard
 The connection, edit, and login routes are described in
 [Studio proposals](studio-proposals.md#http), and the activity route
 in [Studio activity](studio-activity.md#http).
+
+`GET …/tools?hours=` returns `{ since, until, tools }`. `hours` is
+positive, 24 by default, and capped at 168. Each tool row has `name`,
+`source` (`native`, `script`, `connector`, or null when no agent is
+offered it and it is not native), `group` (the native family such as
+`note`, `scripts`, or the connection's server name), `description`,
+`server_id` (connection tools), `offered_to` (the agents offered it
+now), the window's `calls`, `errors`, `median_ms`, and `last_at`, and
+`agents`: each agent offered it or calling it, with `offered` and the
+same numbers. What an agent is offered comes from the same projection
+as `studio_get_agent_access`, with the agent's switches applied; the
+numbers come from its runs' tool results (`metadata.tool_name`,
+`error`, `duration_ms`).
+
+`GET …/tools/:name/calls?hours=&errors=&cursor=` returns `{ calls,
+next_cursor }`: 50 calls a page, newest first, each with `at`,
+`agent_id`, `run_id`, `call_id`, `seq`, an `arguments` preview of 240
+characters, `status` (`ok` or `error`), `error`, and `duration_ms`.
+`errors=true` keeps failed calls. `next_cursor` is passed back as
+`cursor` for the next page; another value is 422.
 
 Create body: `{ "mode": "optimize", "source_guild_id", "coach_config":
 { model, temperature }, "parent_session_id"? }`. `model` is required:
@@ -591,5 +649,7 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/conversation/` | The shared conversation runner, and the blocks shared with the Builder: prompt placement, content trust, writing, the Task shape, and what every agent already reads |
 | `apps/orchestrator/src/studio/constants.ts` | Core's run limits and caps |
 | `apps/orchestrator/src/studio/focus.ts` | Focus pin resolution |
+| `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
+| `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |

@@ -3,6 +3,7 @@ import {
   type QueryClient,
   useMutation,
   useQueries,
+  useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -78,6 +79,8 @@ import type {
   StudioInspector,
   StudioMessage,
   StudioSession,
+  StudioTool,
+  StudioToolCall,
   Script,
   ScheduleInput,
   TaskFile,
@@ -182,6 +185,9 @@ export const keys = {
   studioRoutines: (id: string, agentId: string) => ["studio", id, "routines", agentId] as const,
   studioMemory: (id: string, agentId: string) => ["studio", id, "memory", agentId] as const,
   studioActivity: (id: string, hours: number) => ["studio", id, "activity", hours] as const,
+  studioTools: (id: string, hours: number) => ["studio", id, "tools", hours] as const,
+  studioToolCalls: (id: string, name: string, hours: number, errors: boolean) =>
+    ["studio", id, "tools", name, "calls", hours, errors] as const,
   access: (owner: { scope: string; id: string }) => ["access", owner.scope, owner.id] as const,
   secretsAll: ["secrets"] as const,
   secrets: (owner: { scope: string; id: string }) => ["secrets", owner.scope, owner.id] as const,
@@ -2292,6 +2298,36 @@ export function useStudioActivity(id: string, hours: number) {
     placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       query.state.data?.wakes.some((wake) => wake.running) ? studioPollMs : false,
+  });
+}
+
+/** Every tool the guild's agents are offered or called in the window. */
+export function useStudioTools(id: string, hours: number) {
+  return useQuery({
+    queryKey: keys.studioTools(id, hours),
+    queryFn: () =>
+      api<{ tools: StudioTool[] }>(`${studioPath(id)}/tools?hours=${hours}`).then((body) => body.tools),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** One tool's calls in the window, newest first, a page at a time. */
+export function useStudioToolCalls(
+  id: string,
+  tool: { name: string; hours: number; errorsOnly: boolean },
+) {
+  return useInfiniteQuery({
+    queryKey: keys.studioToolCalls(id, tool.name, tool.hours, tool.errorsOnly),
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({ hours: String(tool.hours) });
+      if (tool.errorsOnly) query.set("errors", "true");
+      if (pageParam) query.set("cursor", pageParam);
+      return api<{ calls: StudioToolCall[]; next_cursor: string | null }>(
+        `${studioPath(id)}/tools/${encodeURIComponent(tool.name)}/calls?${query}`,
+      );
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
   });
 }
 

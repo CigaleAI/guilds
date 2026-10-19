@@ -1153,6 +1153,44 @@ export type StudioSession = {
   archived_at: string | null;
 };
 
+/** How one agent is offered a tool, and how its calls went in the window. */
+export type StudioToolUsage = {
+  agent_id: string;
+  offered: boolean;
+  calls: number;
+  errors: number;
+  median_ms: number | null;
+  last_at: string | null;
+};
+
+/** A tool the guild's agents are offered or called in the window. */
+export type StudioTool = {
+  name: string;
+  source: "native" | "script" | "connector" | null;
+  group: string;
+  description: string;
+  server_id: string | null;
+  offered_to: string[];
+  calls: number;
+  errors: number;
+  median_ms: number | null;
+  last_at: string | null;
+  agents: StudioToolUsage[];
+};
+
+/** One call of a tool by one of the guild's agents. */
+export type StudioToolCall = {
+  at: string;
+  agent_id: string;
+  run_id: string;
+  call_id: string | null;
+  seq: number | null;
+  arguments: string;
+  status: "ok" | "error";
+  error: string | null;
+  duration_ms: number | null;
+};
+
 /** One row of the coach conversation, shaped like a run's rows. */
 export type StudioMessage = {
   id: number;

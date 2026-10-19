@@ -166,6 +166,10 @@ const SCRIPT_RETURNING = `
   content_text AS source, content_hash AS source_hash, version, created_at, updated_at
 `;
 
+// A tool result's duration when it recorded one as a number.
+const TOOL_DURATION = `CASE WHEN jsonb_typeof(m.metadata->'duration_ms') = 'number'
+  THEN (m.metadata->>'duration_ms')::numeric END`;
+
 // A stored step's text: its string content, or the text parts of a content list.
 const STEP_TEXT = `
   CASE jsonb_typeof(payload->'content')
@@ -3339,6 +3343,69 @@ export class Repositories {
          AND payload->>'role' = 'user'
        ORDER BY run_id, seq`,
       [runIds, stamp(since)],
+    );
+    return result.rows as Array<Record<string, unknown>>;
+  }
+
+  // Per tool and agent, the guild's agent tool calls in a window: how many,
+  // how many failed, the median duration, and the last one. A row with a null
+  // agent_id holds the tool's totals over every agent.
+  async listGuildToolCallStats(guildId: string, since: Date, until: Date): Promise<Array<Record<string, unknown>>> {
+    const result = await this.pool.query(
+      `SELECT m.metadata->>'tool_name' AS tool_name, r.agent_id,
+              COUNT(*)::int AS calls,
+              (COUNT(*) FILTER (WHERE COALESCE(m.metadata->>'error', '') <> ''))::int AS errors,
+              percentile_cont(0.5) WITHIN GROUP (ORDER BY ${TOOL_DURATION}) AS median_ms,
+              MAX(m.created_at) AS last_at
+       FROM messages m
+       JOIN runs r ON r.id = m.run_id
+       JOIN agents a ON a.id = r.agent_id
+       WHERE a.guild_id = $1 AND m.created_at >= $2 AND m.created_at <= $3
+         AND m.payload->>'role' = 'tool' AND COALESCE(m.metadata->>'tool_name', '') <> ''
+       GROUP BY GROUPING SETS ((m.metadata->>'tool_name', r.agent_id), (m.metadata->>'tool_name'))`,
+      [guildId, stamp(since), stamp(until)],
+    );
+    return result.rows as Array<Record<string, unknown>>;
+  }
+
+  // One tool's calls by the guild's agents in a window, newest first, with the
+  // arguments from the assistant step that made each call. `before` pages on
+  // (created_at, id).
+  async listGuildToolCalls(
+    guildId: string,
+    tool: string,
+    page: { since: Date; until: Date; errorsOnly: boolean; before: { at: Date; id: number } | null; limit: number },
+  ): Promise<Array<Record<string, unknown>>> {
+    const result = await this.pool.query(
+      `SELECT m.id, m.run_id, m.seq, m.created_at, r.agent_id,
+              m.metadata->>'tool_call_id' AS call_id,
+              m.metadata->>'error' AS error,
+              ${TOOL_DURATION} AS duration_ms,
+              (SELECT call->'function'->>'arguments'
+               FROM messages step, jsonb_array_elements(step.payload->'tool_calls') call
+               WHERE step.run_id = m.run_id AND step.seq < m.seq
+                 AND step.payload->>'role' = 'assistant'
+                 AND call->>'id' = m.metadata->>'tool_call_id'
+               ORDER BY step.seq DESC LIMIT 1) AS arguments
+       FROM messages m
+       JOIN runs r ON r.id = m.run_id
+       JOIN agents a ON a.id = r.agent_id
+       WHERE a.guild_id = $1 AND m.created_at >= $2 AND m.created_at <= $3
+         AND m.payload->>'role' = 'tool' AND m.metadata->>'tool_name' = $4
+         AND (NOT $5 OR COALESCE(m.metadata->>'error', '') <> '')
+         AND ($6::timestamptz IS NULL OR (m.created_at, m.id) < ($6::timestamptz, $7::bigint))
+       ORDER BY m.created_at DESC, m.id DESC
+       LIMIT $8`,
+      [
+        guildId,
+        stamp(page.since),
+        stamp(page.until),
+        tool,
+        page.errorsOnly,
+        page.before ? stamp(page.before.at) : null,
+        page.before?.id ?? null,
+        page.limit,
+      ],
     );
     return result.rows as Array<Record<string, unknown>>;
   }

@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { applySecretAliases } from "../../src/access/runtime.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
-import { offeredToolNames } from "../../src/generation/index.js";
+import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { SecretNameTaken } from "../../src/db/errors.js";
 import {
   AGENT_SECRET_CAP,
