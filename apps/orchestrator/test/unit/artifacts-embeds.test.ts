@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { collectTaskEmbeds, embedTagName, inspectTaskEmbeds, inlineTaskEmbeds } from "../../src/artifacts/embeds.js";
+import {
+  collectTaskEmbeds,
+  embedTagName,
+  inspectEmbed,
+  inspectTaskEmbeds,
+  inlineTaskEmbeds,
+  walkTaskEmbeds,
+  withoutEmbeds,
+  type EmbedReader,
+} from "../../src/artifacts/embeds.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import { operatorActor } from "../../src/artifacts/grants.js";
 import type { ArtifactStore } from "../../src/artifacts/store.js";
@@ -260,4 +269,88 @@ test("inspectTaskEmbeds walks one nested hop", async () => {
       { href: "org/org_1/collections/leads", ok: true },
     ],
   );
+});
+
+const notesReader = (notes: Record<string, string>): EmbedReader => async (href) => notes[href] ?? null;
+
+test("walkTaskEmbeds inlines two levels and marks the third as staying text", async () => {
+  const steps = await walkTaskEmbeds(
+    "![[org/o/a.md]]",
+    notesReader({ "org/o/a.md": "![[org/o/b.md]]", "org/o/b.md": "![[org/o/c.md]]", "org/o/c.md": "![[org/o/d.md]]" }),
+    3,
+  );
+  assert.deepEqual(steps, [
+    { from: null, href: "org/o/a.md", depth: 1, inlined: true },
+    { from: "org/o/a.md", href: "org/o/b.md", depth: 2, inlined: true },
+    { from: "org/o/b.md", href: "org/o/c.md", depth: 3, inlined: false },
+  ]);
+});
+
+test("walkTaskEmbeds stops at the inlined levels by default", async () => {
+  const steps = await walkTaskEmbeds(
+    "![[org/o/a.md]]",
+    notesReader({ "org/o/a.md": "![[org/o/b.md]]", "org/o/b.md": "![[org/o/c.md]]" }),
+  );
+  assert.deepEqual(steps.map((step) => step.href), ["org/o/a.md", "org/o/b.md"]);
+});
+
+test("walkTaskEmbeds meets a note once, at the depth the run first inlines it", async () => {
+  const steps = await walkTaskEmbeds(
+    "![[org/o/a.md]] then ![[org/o/b.md]]",
+    notesReader({ "org/o/a.md": "![[org/o/b.md]]", "org/o/b.md": "![[org/o/c.md]]" }),
+    3,
+  );
+  assert.deepEqual(
+    steps.map((step) => [step.href, step.depth, step.inlined]),
+    [
+      ["org/o/a.md", 1, true],
+      ["org/o/b.md", 2, true],
+      ["org/o/c.md", 3, false],
+    ],
+  );
+});
+
+test("walkTaskEmbeds still inlines a note it first met too deep", async () => {
+  const steps = await walkTaskEmbeds(
+    "![[org/o/a.md]] then ![[org/o/c.md]]",
+    notesReader({ "org/o/a.md": "![[org/o/b.md]]", "org/o/b.md": "![[org/o/c.md]]", "org/o/c.md": "end" }),
+    3,
+  );
+  assert.deepEqual(
+    steps.map((step) => [step.href, step.depth, step.inlined]),
+    [
+      ["org/o/a.md", 1, true],
+      ["org/o/b.md", 2, true],
+      ["org/o/c.md", 3, false],
+      ["org/o/c.md", 1, true],
+    ],
+  );
+});
+
+test("withoutEmbeds leaves only the prose", () => {
+  assert.equal(withoutEmbeds("See ![[org/o/a.md]] and org/o/b.md"), "See   and org/o/b.md");
+});
+
+test("inspectEmbed names why a link does not resolve", async () => {
+  const store = {
+    async describeCollection() {
+      return { name: "leads" };
+    },
+    async getByDisplayPath(_actor: unknown, href: string) {
+      if (href === "org/org_1/agents/a_1/memory.md") return { row: { kind: "memory" } };
+      if (href === "org/org_1/gone.md") return { tombstone: true, row: { kind: "note" } };
+      throw new ArtifactError("artifact not found", 404);
+    },
+  } as unknown as ArtifactStore;
+  const actor = operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" });
+  const reasons = await Promise.all(
+    [
+      "notes/plan.md",
+      "org/org_1/agents/a_1/memory.md",
+      "org/org_1/gone.md",
+      "org/org_1/hidden.md",
+      "org/org_2/collections/leads",
+    ].map(async (href) => (await inspectEmbed(store, actor, href)).reason),
+  );
+  assert.deepEqual(reasons, ["not a file path", "not a note", "missing", "artifact not found", "missing"]);
 });

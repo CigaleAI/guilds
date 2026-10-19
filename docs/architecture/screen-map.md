@@ -100,6 +100,7 @@ as chips. Code blocks show their language and a copy button.
 | Admin › **Users** | `/admin?tab=users` | [Instance admin](../concepts/instance-admin.md), [Users](../concepts/users.md) |
 | **Studio** landing and workspace: **Guild**, **Agents**, **State**, **Tools** | `/studio`, `/studio/<session id>` | [Prompt Studio](../concepts/prompt-studio.md) |
 | Studio **Agents** › **Topology** | `/studio/<session id>?section=agents` | [Studio activity](../concepts/studio-activity.md) |
+| Studio **State** › **References** | `/studio/<session id>?section=state&tab=references` | [Prompt Studio](../concepts/prompt-studio.md#state) |
 | Studio coach proposal cards | `/studio/<session id>` | [Studio proposals](../concepts/studio-proposals.md) |
 | **Builder** landing and workspace | `/builder`, `/builder/<session id>` | [Guild builder](../concepts/guild-builder.md) |
 | **Recipes** library and recipe page | `/recipes`, `/recipes/<id>` | [Recipes](../concepts/recipes.md) |

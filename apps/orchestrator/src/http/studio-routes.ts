@@ -10,6 +10,8 @@ import { ownedGuild } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { activityWindow, loadGuildActivity } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
+import { loadGuildReferences } from "../studio/references.js";
+import { operatorFor } from "./artifact-files.js";
 import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
 import { viewDraft } from "../studio/drafts.js";
@@ -417,6 +419,21 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
           cursor: typeof query.cursor === "string" && query.cursor ? query.cursor : null,
         },
       });
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/references", async (request) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    try {
+      const studio = studioOf(deps);
+      const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+      studio.assertLive(session);
+      const guildId = String(session.source_guild_id);
+      const actor = await operatorFor(repo, user, { orgId: String(session.org_id), guildId });
+      return await loadGuildReferences({ repo, artifacts: studio.deps.artifacts }, actor, guildId);
     } catch (error) {
       mapStudioError(error);
     }

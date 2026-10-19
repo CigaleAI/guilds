@@ -49,46 +49,77 @@ export function collectTaskEmbeds(task: string): string[] {
   return found;
 }
 
+/** The text with its embeds taken out, so what is left only names paths. */
+export function withoutEmbeds(text: string): string {
+  return text.replace(EMBED_RE, " ");
+}
+
 export const EMBED_DEPTH = 2;
 
 type EmbedBudget = { used: number };
 type EmbedMemory = { seen: Set<string>; titles: Map<string, string> };
 
-async function collectEmbedsDeep(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  text: string,
-  depth: number,
-  seen: Set<string> = new Set(),
-): Promise<string[]> {
-  const found: string[] = [];
-  for (const href of collectTaskEmbeds(text)) {
-    if (seen.has(href)) {
+/** One embed a run meets: the note that holds it (null for the Task), its depth, and whether the run inlines it. */
+export type EmbedStep = { from: string | null; href: string; depth: number; inlined: boolean };
+
+/** The text of a live note the walk goes into, or null for anything it does not open. */
+export type EmbedReader = (href: string) => Promise<string | null>;
+
+type EmbedWalk = { read: EmbedReader; levels: number; seen: Set<string>; steps: EmbedStep[] };
+type EmbedLayer = { text: string; from: string | null; depth: number };
+
+/**
+ * The embeds a run meets in a Task, in the order it inlines them: each one within EMBED_DEPTH
+ * once, as the run inlines it. Levels past EMBED_DEPTH are walked too, their embeds marked as
+ * staying text, without changing what the inlined levels see.
+ */
+export async function walkTaskEmbeds(task: string, read: EmbedReader, levels = EMBED_DEPTH): Promise<EmbedStep[]> {
+  const walk: EmbedWalk = { read, levels, seen: new Set(), steps: [] };
+  await walkEmbedLayer(walk, { text: task, from: null, depth: 1 });
+  return walk.steps;
+}
+
+async function walkEmbedLayer(walk: EmbedWalk, layer: EmbedLayer): Promise<void> {
+  for (const href of collectTaskEmbeds(layer.text)) {
+    if (walk.seen.has(href)) {
       continue;
     }
-    seen.add(href);
-    found.push(href);
-    if (depth <= 1 || collectionEmbed(href) || !isDisplayPath(href)) {
-      continue;
+    const inlined = layer.depth <= EMBED_DEPTH;
+    if (inlined) {
+      walk.seen.add(href);
+    }
+    walk.steps.push({ from: layer.from, href, depth: layer.depth, inlined });
+    await walkEmbedChild(walk, href, layer.depth);
+  }
+}
+
+async function walkEmbedChild(walk: EmbedWalk, href: string, depth: number): Promise<void> {
+  if (depth >= walk.levels) {
+    return;
+  }
+  const body = await walk.read(href);
+  if (body !== null) {
+    await walkEmbedLayer(walk, { text: body, from: href, depth: depth + 1 });
+  }
+}
+
+function storeNoteReader(store: ArtifactStore, actor: ArtifactActor): EmbedReader {
+  return async (href) => {
+    if (collectionEmbed(href) || !isDisplayPath(href)) {
+      return null;
     }
     try {
       const loaded = await store.getByDisplayPath(actor, href);
-      if (loaded.tombstone || loaded.revision || loaded.row?.kind !== "note") {
-        continue;
-      }
-      const nested = await collectEmbedsDeep(
-        store,
-        actor,
-        String(loaded.row.content_text ?? ""),
-        depth - 1,
-        seen,
-      );
-      found.push(...nested);
+      return loaded.tombstone || loaded.revision || loaded.row?.kind !== "note" ? null : String(loaded.row.content_text ?? "");
     } catch {
-      continue;
+      return null;
     }
-  }
-  return found;
+  };
+}
+
+async function collectEmbedsDeep(store: ArtifactStore, actor: ArtifactActor, text: string): Promise<string[]> {
+  const steps = await walkTaskEmbeds(text, storeNoteReader(store, actor));
+  return steps.map((step) => step.href);
 }
 
 export type TaskEmbedInspection = {
@@ -103,44 +134,44 @@ export async function inspectTaskEmbeds(
   task: string,
 ): Promise<TaskEmbedInspection[]> {
   const items: TaskEmbedInspection[] = [];
-  for (const href of await collectEmbedsDeep(store, actor, task, EMBED_DEPTH)) {
-    if (!isDisplayPath(href)) {
-      items.push({
-        href,
-        ok: false,
-        reason: href.startsWith("recipe:")
-          ? "recipe link was not rewritten to a file path"
-          : "not a file path",
-      });
-      continue;
-    }
-    const collection = collectionEmbed(href);
-    if (collection) {
-      if (collection.orgId !== actor.orgId) {
-        items.push({ href, ok: false, reason: "missing" });
-        continue;
-      }
-      const described = await store.describeCollection(actor, collection.name);
-      items.push(described ? { href, ok: true } : { href, ok: false, reason: "missing" });
-      continue;
-    }
-    try {
-      const loaded = await store.getByDisplayPath(actor, href);
-      if (loaded.tombstone || loaded.revision || !loaded.row) {
-        items.push({ href, ok: false, reason: "missing" });
-        continue;
-      }
-      if (loaded.row.kind !== "note") {
-        items.push({ href, ok: false, reason: "not a note" });
-        continue;
-      }
-      items.push({ href, ok: true });
-    } catch (error) {
-      const message = error instanceof ArtifactError ? error.message : "missing";
-      items.push({ href, ok: false, reason: message });
-    }
+  for (const href of await collectEmbedsDeep(store, actor, task)) {
+    items.push(await inspectEmbed(store, actor, href));
   }
   return items;
+}
+
+/** Whether one embed resolves for the actor, and why not when it does not. */
+export async function inspectEmbed(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<TaskEmbedInspection> {
+  if (!isDisplayPath(href)) {
+    const reason = href.startsWith("recipe:") ? "recipe link was not rewritten to a file path" : "not a file path";
+    return { href, ok: false, reason };
+  }
+  const collection = collectionEmbed(href);
+  if (collection) {
+    return inspectCollectionEmbed(store, actor, { href, ...collection });
+  }
+  return inspectNoteEmbed(store, actor, href);
+}
+
+async function inspectCollectionEmbed(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  embed: { href: string; orgId: string; name: string },
+): Promise<TaskEmbedInspection> {
+  const described = embed.orgId === actor.orgId ? await store.describeCollection(actor, embed.name) : null;
+  return described ? { href: embed.href, ok: true } : { href: embed.href, ok: false, reason: "missing" };
+}
+
+async function inspectNoteEmbed(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<TaskEmbedInspection> {
+  try {
+    const loaded = await store.getByDisplayPath(actor, href);
+    if (loaded.tombstone || loaded.revision || !loaded.row) {
+      return { href, ok: false, reason: "missing" };
+    }
+    return loaded.row.kind === "note" ? { href, ok: true } : { href, ok: false, reason: "not a note" };
+  } catch (error) {
+    return { href, ok: false, reason: error instanceof ArtifactError ? error.message : "missing" };
+  }
 }
 
 export type TaskEmbedSnapshot = {
@@ -155,7 +186,7 @@ export async function snapshotTaskEmbeds(
   actor: ArtifactActor,
   task: string,
 ): Promise<TaskEmbedSnapshot[]> {
-  const hrefs = await collectEmbedsDeep(store, actor, task, EMBED_DEPTH);
+  const hrefs = await collectEmbedsDeep(store, actor, task);
   const items: TaskEmbedSnapshot[] = [];
   for (const href of hrefs) {
     if (collectionEmbed(href)) {
