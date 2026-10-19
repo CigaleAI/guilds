@@ -130,8 +130,8 @@ test("an edit is open until it is applied or declined, and lands where it change
     [
       { section: "agents", agent: "a_1", tab: "memory" },
       { section: "agents", agent: "a_1", tab: "routines", item: "s_1" },
-      { section: "state", tab: "list", kind: "notes", item: "org/o/guilds/g/notes/a.md" },
-      { section: "state", tab: "list", kind: "tables", item: "col_1" },
+      { section: "state", tab: "list", kind: "note", item: "org/o/guilds/g/notes/a.md" },
+      { section: "state", tab: "list", kind: "table", item: "col_1" },
       { section: "tools" },
       { section: "guild" },
       { section: "agents" },
@@ -150,8 +150,8 @@ test("a note or table without a target opens the list", () => {
     [],
     [],
   );
-  assert.deepEqual(note?.location, { section: "state", tab: "list", kind: "notes" });
-  assert.deepEqual(table?.location, { section: "state", tab: "list", kind: "tables" });
+  assert.deepEqual(note?.location, { section: "state", tab: "list", kind: "note" });
+  assert.deepEqual(table?.location, { section: "state", tab: "list", kind: "table" });
 });
 
 test("a login is granted by its answer or by the Logins popover, and is decided alone", () => {

@@ -84,17 +84,21 @@ export type ReferenceStandouts = {
   shared: ReferenceNode[];
   /** Notes reached only past the inlined levels, so no run gets their text. */
   tooDeep: ReferenceNode[];
-  /** Files in the guild's state that nothing embeds or names. */
+  /** Files in the guild's state that nothing embeds or names and no agent read in the window. */
   unpointed: ReferenceNode[];
 };
 
-/** What deserves a look among the nodes the map shows. */
+/**
+ * What deserves a look among the nodes the map shows. `read` holds the files an agent read in
+ * the window, which count as in use even when nothing points to them.
+ */
 export function referenceStandouts(
   data: StudioReferences,
   shown: ReadonlySet<string>,
+  read: ReadonlySet<string>,
 ): ReferenceStandouts {
   const nodes = data.nodes.filter((node) => shown.has(node.id));
-  const pointed = new Set(data.edges.map((edge) => edge.to));
+  const pointed = new Set([...data.edges.map((edge) => edge.to), ...read]);
   const isFile = (node: ReferenceNode) => node.kind === "note" || node.kind === "table";
   return {
     broken: nodes.filter((node) => node.kind === "unresolved"),
@@ -113,8 +117,9 @@ export type StandoutGroup = { title: string; rows: Array<{ node: ReferenceNode; 
 export function standoutGroups(
   data: StudioReferences,
   shown: ReadonlySet<string>,
+  read: ReadonlySet<string>,
 ): StandoutGroup[] {
-  const standouts = referenceStandouts(data, shown);
+  const standouts = referenceStandouts(data, shown, read);
   const holders = (node: ReferenceNode) =>
     referenceLinks(data, node.id)
       .in.map((link) => link.node?.label ?? link.id)
@@ -232,17 +237,13 @@ export function referenceMeta(node: ReferenceNode, data: StudioReferences): stri
     .join(" · ");
 }
 
-/** Where State's list opens a file: a note by its path, under its agent when it has one; a table by its id. */
+/** Where State's list opens a note or a table: by its path, under its agent when it has one. */
 export function stateListLocation(node: ReferenceNode): StudioSearch | null {
-  if (node.kind === "table" && node.collection_id) {
-    return { section: "state", tab: "list", kind: "tables", item: node.collection_id };
-  }
-  if (node.kind !== "note") return null;
+  if (node.kind !== "note" && node.kind !== "table") return null;
   return {
     section: "state",
     ...(node.agent_id ? { agent: node.agent_id } : {}),
     tab: "list",
-    kind: "notes",
     item: node.id,
   };
 }

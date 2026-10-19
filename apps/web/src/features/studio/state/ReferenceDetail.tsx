@@ -146,7 +146,8 @@ function TaskDetail({
 }
 
 /** What a file embeds or names, what embeds or names it, and the prompts it reaches. */
-function FileDetail({
+/** What a file embeds or names, what embeds or names it, and which agents' prompts it reaches. */
+export function FileDetail({
   data,
   node,
   onSelect,

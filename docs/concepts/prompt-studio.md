@@ -223,15 +223,55 @@ the agent in **Agents**.
 ### State
 
 **State** has two views, **List** and **References**, with an agent
-filter beside them. **List** shows the notes browser or the
-organisation's tables, switched by **Notes** and **Tables**:
+filter beside them, and in **List** a kind filter: **All**, **Notes**,
+**Tables**, **Scripts**, or **Memory**.
 
-- **Notes** browses the guild's and the organisation's notes, plus
-  the filtered agent's own. It opens at the file the link names.
-  **Ask the coach** pins the open file. **Open step** on a provenance
-  strip opens the run in the agent's **History**.
-- **Tables** shows the organisation's collections, one at a time from
-  a picker, with their records to search and edit.
+**List** shows every note, table, script, and Memory in the guild's
+state: the guild's own, its agents', and the organisation's, each with
+its level. Only what the viewer can open is listed. For the window
+(24 h, 3 d, or 7 d), each row shows the item, its level and size, its
+changes and reads, who changes it most and who reads it most with
+their share, and its last change. Filters narrow it by kind, by agent
+(items the agent owns, changes, or reads), by **Needs a look**, and by
+search words. The list sorts by name, changes, reads, or last change.
+
+A row carries a flag when the item deserves a look:
+
+| Flag | When |
+|---|---|
+| **needs approval** | An open coach request changes it |
+| **no agent read it** | No agent of the guild read it in the window |
+| **N writers** | More than two people or agents changed it in the window |
+| **deletes another agent's rows** | A table where an agent deleted records another agent created in the window |
+| **untouched** | Nothing changed or read it in the window |
+
+**Needs a look** keeps the flagged items. Changes and reads count
+people and this guild's agents; a change by another guild's agent
+shows in the history as **another guild**, without its name. What
+counts:
+
+| Measure | Counted as |
+|---|---|
+| A change to a note, record, script, or Memory | One per recorded change; a record's counts for its table |
+| A table's shape change, **Delete all**, or deletion | One per entry of the table's change log |
+| A read through a Task embed | One per run per embedded note or table |
+| A read of Memory | One per run of its agent |
+| `note_get` | One per call, on the note it names |
+| `record_list`, `record_search` with a table | One per call, on the table |
+| A script run | One per `script_run` call or script-tool call |
+
+A search with no named target and a person's read are not counted.
+
+Selecting an item opens its detail: its version or records, changes,
+reads, and creation; who changes it and how; who reads it and how; its
+references, as **References** shows them; and its history, newest
+first, with an operation filter and **Load older changes**. A history
+entry made by a run offers **Open step**; one applied from a coach card
+names its coach message. A change saved in the app's editors shows who
+and when only. **Open text** opens the note or Memory in the notes
+browser, **Open records** the table in the records panel, so editing
+stays in State. **Open source** opens a script in its agent's
+**Scripts** tab. **Ask the coach** pins a note, script, or Memory.
 
 **References** draws every Task and file in the guild's state, and
 what embeds or names what:
@@ -246,7 +286,8 @@ what embeds or names what:
   reached only past the last column are listed under the map.
 - **What stands out.** Broken embeds with their reason, Tasks over the
   budget, notes inlined into several agents' prompts, notes too deep to
-  be inlined, and files nothing embeds or names.
+  be inlined, and files nothing embeds or names and no agent read in
+  the list's window.
 - **Detail.** For a Task: its embed budget, and everything it pulls
   into every run, each at its hop. For a file: what it embeds or
   names, what embeds or names it, and the agents whose prompts it
@@ -393,12 +434,12 @@ keeps only its own fields:
 |---|---|---|
 | `guild` | none | The guild's overview |
 | `agents` | `agent`, `tab`, `item`, `call`, `seq` | With `agent`: that agent's tab (`prompt`, `draft`, `history`, `memory`, `routines`, `scripts`, `versions`), its selected item, and for a run the step for `call` (a provider tool-call id) or `seq`, scrolled into view. Without `agent`: Topology, where `item` is a map selection, `link:<from>><to>` or `node:<id>` |
-| `state` | `agent`, `tab`, `kind`, `item` | `tab` is `list` or `references`, `agent` the filter, `kind` `notes` or `tables`. For notes `item` is a display path, opened in its scope; for tables it is the collection id. In References `item` is the selected node: a display path, or a link as written when it does not resolve |
+| `state` | `agent`, `tab`, `kind`, `item` | `tab` is `list` or `references`, `agent` the filter, `kind` `note`, `table`, `script`, or `memory`. In List `item` is the selected item's display path; a table's collection id also selects it. In References `item` is the selected node: a display path, or a link as written when it does not resolve |
 | `tools` | `item` | The selected tool |
 
 A link without a known `section` opens the guild's overview.
-A pinned file opens in State, except an agent's script, which opens
-in its **Scripts** tab. **Investigate in Studio** opens
+A pinned file opens in State with the file selected; a pinned record
+opens its table. **Investigate in Studio** opens
 `section=agents&agent=<id>&tab=history&item=<run id>`.
 
 The splitter's share persists in `localStorage`. The pinned issue of a
@@ -587,6 +628,8 @@ GET    /api/studio/sessions/:id/activity
 GET    /api/studio/sessions/:id/tools
 GET    /api/studio/sessions/:id/tools/:name/calls
 GET    /api/studio/sessions/:id/references
+GET    /api/studio/sessions/:id/state
+GET    /api/studio/sessions/:id/state/item
 GET    /api/studio/sessions/:id/runs/:run_id
 GET    /api/studio/sessions/:id/messages
 POST   /api/studio/sessions/:id/messages
@@ -604,6 +647,35 @@ POST   /api/studio/drafts/:id/discard
 The connection, edit, and login routes are described in
 [Studio proposals](studio-proposals.md#http), and the activity route
 in [Studio activity](studio-activity.md#http).
+
+`GET …/state?hours=&agent=&kind=` returns `{ since, until, items }`.
+`hours` follows the tools route. `kind` is `note`, `table`, `script`, or
+`memory` (another value is 422); `agent` keeps the items that agent
+owns, changes, or reads. Each item has `display_path`, `kind`, `level`,
+`owner_id`, `title`, `size` (bytes, or records for a table), `version`
+(null for a table), `created_by`, `created_at`, `collection_id`, the
+window's `changes` and `reads`, `top_writer` and `top_reader` (`{
+actor, count, share }`), `writers`, `last_change` (`{ at, actor }`),
+and `flags` (`no_agent_read`, `writers`, `deletes_others_rows`,
+`untouched`). An actor is `{ kind: person | agent | other_guild, id,
+name }`. Items are read with the viewer's own permissions, so a
+private guild's or a hidden item never appears. Changes come from
+`file_changes` and the table entries of `config_changes`; reads from
+`runs.metadata.task_source` (`embeds` and `collections`, recorded at
+run start), every run of a Memory's agent, and the arguments of
+`note_get`, `record_list`, `record_search`, `script_run`, and script
+tool calls.
+
+`GET …/state/item?path=&hours=&op=&cursor=` returns `{ item, changes,
+reads, history, next_cursor }` for the item at `path` (404 when the
+viewer cannot open it). `changes` and `reads` count each actor's
+operations and ways of reading in the window. `history` is the item's
+recorded changes, 50 a page, newest first, over all time: a table's
+own changes, its records', and its change log. Each entry has `at`,
+`operation`, `actor`, `link` (`{ kind: "run", run_id, agent_id,
+call_id }` or `{ kind: "coach", session_id, seq }`), `record`, and
+`summary`. `op` keeps one operation; `cursor` is the previous page's
+`next_cursor`; another value of either is 422.
 
 `GET …/tools?hours=` returns `{ since, until, tools }`. `hours` is
 positive, 24 by default, and capped at 168. Each tool row has `name`,
@@ -713,5 +785,6 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/tool-usage.ts` | The Tools list and a tool's calls |
 | `apps/orchestrator/src/toolbox/offered.ts` | Which native tools a run offers under the agent's switches |
 | `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |
+| `apps/orchestrator/src/studio/state-list.ts`, `state-data.ts` | The State list: items, their changes and reads, and an item's history |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |

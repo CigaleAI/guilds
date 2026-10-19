@@ -11,6 +11,7 @@ import { frameSse, SSE_HEADERS } from "./sse.js";
 import { activityWindow, loadGuildActivity } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
 import { loadGuildReferences } from "../studio/references.js";
+import { loadStateHistory, loadStateItem, loadStateList, parseOperation, parseStateKind } from "../studio/state-data.js";
 import { operatorFor } from "./artifact-files.js";
 import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
@@ -384,6 +385,53 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
         now,
         generating: (runId) => (deps.generation ? deps.generation.generating(runId) : false),
       });
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  // The State list reads with the operator's own permissions, so it lists
+  // only what the viewer can open.
+  const stateScope = async (request: FastifyRequest) => {
+    const user = await currentUser(repo, request, deps);
+    const org = await currentOrg(repo, request, user);
+    const studio = studioOf(deps);
+    const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
+    studio.assertLive(session);
+    const guildId = String(session.source_guild_id);
+    const actor = await operatorFor(repo, user, { orgId: String(session.org_id), guildId });
+    return { actor, guildId, deps: { repo, artifacts: studio.deps.artifacts } };
+  };
+
+  app.get("/api/studio/sessions/:session_id/state", async (request) => {
+    const query = request.query as { hours?: unknown; agent?: unknown; kind?: unknown };
+    try {
+      const { deps: stateDeps, ...scope } = await stateScope(request);
+      return await loadStateList(
+        stateDeps,
+        { ...scope, window: activityWindow({ hours: query.hours }, new Date()) },
+        {
+          kind: parseStateKind(query.kind),
+          agentId: typeof query.agent === "string" && query.agent ? query.agent : null,
+        },
+      );
+    } catch (error) {
+      mapStudioError(error);
+    }
+  });
+
+  app.get("/api/studio/sessions/:session_id/state/item", async (request) => {
+    const query = request.query as { path?: unknown; hours?: unknown; op?: unknown; cursor?: unknown };
+    const path = typeof query.path === "string" ? query.path : "";
+    try {
+      const { deps: stateDeps, ...scope } = await stateScope(request);
+      const numbers = await loadStateItem(stateDeps, { ...scope, window: activityWindow({ hours: query.hours }, new Date()) }, path);
+      const history = await loadStateHistory(stateDeps, scope, {
+        path,
+        op: parseOperation(query.op),
+        cursor: typeof query.cursor === "string" && query.cursor ? query.cursor : null,
+      });
+      return { ...numbers, ...history };
     } catch (error) {
       mapStudioError(error);
     }

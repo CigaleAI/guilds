@@ -120,15 +120,13 @@ function useAnswer(proposal: Proposal) {
   return {
     disabled: !approvals.live || approvals.busy,
     answer: (accept: boolean) =>
-      void approvals
-        .decide(proposal, accept)
-        .catch((error: Error) =>
-          toast({
-            kind: "error",
-            title: "Couldn't record the decision",
-            description: error.message,
-          }),
-        ),
+      void approvals.decide(proposal, accept).catch((error: Error) =>
+        toast({
+          kind: "error",
+          title: "Couldn't record the decision",
+          description: error.message,
+        }),
+      ),
   };
 }
 

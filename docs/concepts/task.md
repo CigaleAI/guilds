@@ -164,9 +164,11 @@ A new agent's Task is its focus, or the template
 `apps/orchestrator/src/prompts/task.md`.
 
 The run's system row metadata records `task_source`: the Task's
-`version`, `hash`, and `display_path`, `has_embeds`, and `embeds`,
-each embedded note's `display_path`, `version`, `content_hash`, and
-`kind`.
+`version`, `hash`, and `display_path`, `has_embeds`, `embeds`, each
+embedded note's `display_path`, `version`, `content_hash`, and `kind`,
+and `collections`, the display path of each collection the Task embeds
+directly or through a note it inlines. The run row's `metadata` holds
+the same `task_source`.
 
 ### Embed expansion
 

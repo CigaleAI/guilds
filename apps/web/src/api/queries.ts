@@ -79,6 +79,8 @@ import type {
   StudioInspector,
   StudioMessage,
   StudioSession,
+  StateItemDetail,
+  StateItemRow,
   StudioTool,
   StudioToolCall,
   Script,
@@ -188,6 +190,9 @@ export const keys = {
   studioMemory: (id: string, agentId: string) => ["studio", id, "memory", agentId] as const,
   studioActivity: (id: string, hours: number) => ["studio", id, "activity", hours] as const,
   studioTools: (id: string, hours: number) => ["studio", id, "tools", hours] as const,
+  studioState: (id: string, query: Record<string, string>) => ["studio", id, "files", "state", query] as const,
+  studioStateItem: (id: string, path: string, hours: number, op: string) =>
+    ["studio", id, "files", "state", "item", path, hours, op] as const,
   studioToolCalls: (id: string, name: string, hours: number, errors: boolean) =>
     ["studio", id, "tools", name, "calls", hours, errors] as const,
   access: (owner: { scope: string; id: string }) => ["access", owner.scope, owner.id] as const,
@@ -2300,6 +2305,41 @@ export function useStudioActivity(id: string, hours: number) {
     placeholderData: keepPreviousData,
     refetchInterval: (query) =>
       query.state.data?.wakes.some((wake) => wake.running) ? studioPollMs : false,
+  });
+}
+
+/** The guild's notes, tables, scripts and Memory with their changes and reads in the window. */
+export function useStudioState(
+  id: string,
+  filter: { hours: number; agent: string | null; kind: string | null },
+) {
+  const query: Record<string, string> = {
+    hours: String(filter.hours),
+    ...(filter.agent ? { agent: filter.agent } : {}),
+    ...(filter.kind ? { kind: filter.kind } : {}),
+  };
+  return useQuery({
+    queryKey: keys.studioState(id, query),
+    queryFn: () =>
+      api<{ items: StateItemRow[] }>(`${studioPath(id)}/state?${new URLSearchParams(query)}`).then(
+        (body) => body.items,
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** One State item: who changes and reads it, and its history a page at a time. */
+export function useStudioStateItem(id: string, item: { path: string; hours: number; op: string | null }) {
+  return useInfiniteQuery({
+    queryKey: keys.studioStateItem(id, item.path, item.hours, item.op ?? ""),
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({ path: item.path, hours: String(item.hours) });
+      if (item.op) query.set("op", item.op);
+      if (pageParam) query.set("cursor", pageParam);
+      return api<StateItemDetail>(`${studioPath(id)}/state/item?${query}`);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor,
   });
 }
 

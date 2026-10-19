@@ -16,6 +16,7 @@ export {
   type CollectionView,
   type MemoryRevisionRow,
   type RecordView,
+  type StateArtifact,
 } from "./store.js";
 export { agentActor, catalogLevels, grantsFromBindings, operatorActor } from "./grants.js";
 export {
@@ -29,6 +30,7 @@ export {
   withoutEmbeds,
   type EmbedReader,
   type EmbedStep,
+  snapshotTaskCollections,
   type TaskEmbedInspection,
   type TaskEmbedSnapshot,
 } from "./embeds.js";

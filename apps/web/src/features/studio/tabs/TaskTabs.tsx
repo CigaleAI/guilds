@@ -77,11 +77,7 @@ export function PromptTab({ agent }: { agent: StudioAgent }) {
             <Markdown
               density="compact"
               onOpenEmbed={(path) =>
-                go(
-                  path.includes("/collections/")
-                    ? { section: "state", agent: agent.id, tab: "list", kind: "tables" }
-                    : { section: "state", agent: agent.id, tab: "list", kind: "notes", item: path },
-                )
+                go({ section: "state", agent: agent.id, tab: "list", item: path })
               }
             >
               {data.task.content}

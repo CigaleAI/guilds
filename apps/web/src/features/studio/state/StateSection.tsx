@@ -1,13 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Segmented, Select, cn, tabsList, tabsTrigger } from "@guildsrun/ui";
-import {
-  studioStateViews,
-  studioTabLabel,
-  type StudioSearch,
-  type StudioStateKind,
-} from "../location";
+import { studioStateKinds, studioStateViews, studioTabLabel, type StudioSearch } from "../location";
 import { useStudio } from "../StudioContext";
-import { StateNotes, StateTables } from "./StateList";
+import { StateList } from "./StateList";
 import { ReferencesView } from "./ReferencesView";
 
 const allAgents = "all";
@@ -16,28 +11,33 @@ const allAgents = "all";
 export function StateSection() {
   const { agents, search, go } = useStudio();
   const agent = agents.find((item) => item.id === search.agent) ?? null;
-  const kind: StudioStateKind = search.kind ?? "notes";
   return (
     <>
-      <StateBar kind={kind} />
+      <StateBar />
       <div className="flex min-h-0 flex-1 flex-col">
         {search.tab === "references" ? (
           <ReferencesView
             agent={agent}
             onSelect={(item) => go({ ...stateFilters(search), item }, { replace: true })}
           />
-        ) : kind === "tables" ? (
-          <StateTables agent={agent} />
         ) : (
-          <StateNotes agent={agent} />
+          <StateList />
         )}
       </div>
     </>
   );
 }
 
+const kindLabel: Record<string, string> = {
+  all: "All",
+  note: "Notes",
+  table: "Tables",
+  script: "Scripts",
+  memory: "Memory",
+};
+
 /** The view, the agent filter, and in the list which kind of item it shows. */
-function StateBar({ kind }: { kind: StudioStateKind }) {
+function StateBar() {
   const { session, agents, search, go } = useStudio();
   const view = search.tab === "references" ? "references" : "list";
   const filters = stateFilters(search);
@@ -76,12 +76,16 @@ function StateBar({ kind }: { kind: StudioStateKind }) {
         <Segmented
           size="sm"
           label="Show"
-          value={kind}
-          onValueChange={(value) => go({ ...filters, kind: value }, { replace: true })}
-          options={[
-            { value: "notes", label: "Notes" },
-            { value: "tables", label: "Tables" },
-          ]}
+          value={search.kind ?? "all"}
+          onValueChange={(value) => {
+            const { kind: _kind, ...rest } = filters;
+            const kind = studioStateKinds.find((entry) => entry === value);
+            go(kind ? { ...rest, kind } : rest, { replace: true });
+          }}
+          options={["all", ...studioStateKinds].map((value) => ({
+            value,
+            label: kindLabel[value] ?? value,
+          }))}
         />
       ) : null}
     </div>

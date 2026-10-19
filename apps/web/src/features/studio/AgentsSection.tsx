@@ -92,11 +92,11 @@ function AgentMarks({ agent, pending }: { agent: StudioAgent; pending: number })
 const stateLinks: { label: string; search: (agentId: string) => StudioSearch }[] = [
   {
     label: "Files",
-    search: (agent) => ({ section: "state", agent, tab: "list", kind: "notes" }),
+    search: (agent) => ({ section: "state", agent, tab: "list", kind: "note" }),
   },
   {
     label: "Tables",
-    search: (agent) => ({ section: "state", agent, tab: "list", kind: "tables" }),
+    search: (agent) => ({ section: "state", agent, tab: "list", kind: "table" }),
   },
 ];
 

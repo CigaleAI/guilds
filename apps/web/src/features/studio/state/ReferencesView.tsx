@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Waypoints } from "lucide-react";
 import { Banner, EmptyState, SkeletonRows } from "@guildsrun/ui";
-import { useStudioReferences } from "../../../api/queries";
+import { useStudioReferences, useStudioState } from "../../../api/queries";
 import type { StudioAgent, StudioReferences } from "../../../api/types";
 import { Empty } from "../MasterDetail";
 import { useStudio } from "../StudioContext";
@@ -9,6 +9,7 @@ import { ReferenceDetail } from "./ReferenceDetail";
 import { ReferencesMap } from "./ReferencesMap";
 import { NodeRow, ReferenceSection } from "./referenceParts";
 import { referenceMapView, shownIds, standoutGroups } from "./referencesModel";
+import { storedStateHours } from "./StateList";
 
 /** What each Task and file in the guild's state embeds or names, filtered to one agent's runs. */
 export function ReferencesView({
@@ -119,7 +120,12 @@ function Standouts({
   shown: ReadonlySet<string>;
   onSelect: (id: string) => void;
 }) {
-  const groups = standoutGroups(data, shown);
+  const { session } = useStudio();
+  const state = useStudioState(session.id, { hours: storedStateHours(), agent: null, kind: null });
+  const read = new Set(
+    (state.data ?? []).filter((row) => row.reads > 0).map((row) => row.display_path),
+  );
+  const groups = standoutGroups(data, shown, read);
   return (
     <section className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">What stands out</h2>

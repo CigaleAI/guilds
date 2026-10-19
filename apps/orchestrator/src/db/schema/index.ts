@@ -1018,6 +1018,7 @@ export const fileChanges = pgTable(
       name: "file_changes_studio_session_id_fkey",
     }).onDelete("set null"),
     index("file_changes_by_path").on(table.orgId, table.displayPath, table.createdAt),
+    index("file_changes_by_org_time").on(table.orgId, table.createdAt),
     index("file_changes_by_artifact").on(table.artifactId, table.createdAt),
     index("file_changes_by_tool_call").on(table.runId, table.toolCallId),
   ],

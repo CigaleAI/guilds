@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentTab, focusLocation, parseStudioSearch } from "./location";
+import { agentTab, focusLocation, parseStudioSearch, tablePathOf } from "./location";
 
 test("a run or issue pin opens the agent's History at the step", () => {
   assert.deepEqual(
@@ -36,29 +36,32 @@ test("a memory or routine pin opens its agent's tab", () => {
   assert.equal(focusLocation({ kind: "routine", label: "", agent_id: "a_1" }), null);
 });
 
-test("a file pin opens State with the file selected, and a script its agent's Scripts", () => {
+test("a file pin opens State with the file selected, and a record its table", () => {
   assert.deepEqual(
     focusLocation({
       kind: "file",
       label: "",
       agent_id: "a_1",
-      display_path: "org/o/agents/a_1/scripts/calc_valuation.py",
+      display_path: "org/o/agents/a_1/scripts/calc_valuation",
     }),
-    { section: "agents", agent: "a_1", tab: "scripts", item: "calc_valuation" },
+    {
+      section: "state",
+      agent: "a_1",
+      tab: "list",
+      item: "org/o/agents/a_1/scripts/calc_valuation",
+    },
   );
   assert.deepEqual(
-    focusLocation({ kind: "file", label: "", display_path: "org/o/guilds/g/notes/a.md" }),
-    { section: "state", tab: "list", kind: "notes", item: "org/o/guilds/g/notes/a.md" },
+    focusLocation({ kind: "file", label: "", display_path: "org/o/collections/c/12" }),
+    { section: "state", tab: "list", item: "org/o/collections/c" },
   );
-  assert.deepEqual(
-    focusLocation({
-      kind: "file",
-      label: "",
-      agent_id: "a_1",
-      display_path: "org/o/collections/c",
-    }),
-    { section: "state", agent: "a_1", tab: "list", kind: "tables" },
-  );
+  assert.deepEqual(focusLocation({ kind: "file", label: "" }), { section: "state", tab: "list" });
+});
+
+test("a table's path is its own, and a record's names its table", () => {
+  assert.equal(tablePathOf("org/o/collections/c"), "org/o/collections/c");
+  assert.equal(tablePathOf("org/o/collections/c/12"), "org/o/collections/c");
+  assert.equal(tablePathOf("org/o/guilds/g/a.md"), null);
 });
 
 test("a pin of an unknown kind points nowhere", () => {
@@ -92,11 +95,11 @@ test("State keeps its view, agent filter, kind and selection", () => {
       section: "state",
       agent: "a_1",
       tab: "references",
-      kind: "tables",
+      kind: "table",
       item: "t_1",
       seq: "2",
     }),
-    { section: "state", agent: "a_1", tab: "references", kind: "tables", item: "t_1" },
+    { section: "state", agent: "a_1", tab: "references", kind: "table", item: "t_1" },
   );
   assert.deepEqual(parseStudioSearch({ section: "state", tab: "memory", kind: "runs" }), {
     section: "state",

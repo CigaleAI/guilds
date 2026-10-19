@@ -81,6 +81,7 @@ import {
   inlineTaskEmbeds,
   operatorActor,
   snapshotTaskEmbeds,
+  snapshotTaskCollections,
   type ArtifactActor,
   type ArtifactGrants,
 } from "../artifacts/index.js";
@@ -2591,8 +2592,10 @@ export class GenerationLoop implements GroupRunner {
     const version = Number(agent.task_version ?? 1);
     const hash = String(agent.task_hash ?? "");
     let embeds: Array<Record<string, unknown>> = [];
+    let collections: string[] = [];
     try {
       embeds = await snapshotTaskEmbeds(this.artifacts, operator, source);
+      collections = await snapshotTaskCollections(this.artifacts, operator, source);
     } catch {
       /* keep empty embeds */
     }
@@ -2608,6 +2611,7 @@ export class GenerationLoop implements GroupRunner {
         key: "task.md",
       }),
       embeds,
+      collections,
       has_embeds: collectTaskEmbeds(source).length > 0,
     };
   }

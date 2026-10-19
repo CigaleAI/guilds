@@ -210,6 +210,16 @@ export async function snapshotTaskEmbeds(
   return items;
 }
 
+/** The collections a Task embeds, directly or through the notes it inlines, by display path. */
+export async function snapshotTaskCollections(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  task: string,
+): Promise<string[]> {
+  const hrefs = await collectEmbedsDeep(store, actor, task);
+  return hrefs.filter((href) => collectionEmbed(href));
+}
+
 function hashFromRow(row: { content_text?: string | null; content_json?: unknown }): string {
   const body = row.content_text ?? JSON.stringify(row.content_json ?? {});
   return createHash("sha256").update(body, "utf8").digest("hex");

@@ -10,8 +10,10 @@ export type StudioAgentTab =
 /** The two ways State looks at the guild's notes, tables, scripts and Memory. */
 export type StudioStateView = "list" | "references";
 
-/** Which items State's list shows. */
-export type StudioStateKind = "notes" | "tables";
+/** Which kind of item State's list keeps. */
+export type StudioStateKind = "note" | "table" | "script" | "memory";
+
+export const studioStateKinds: readonly StudioStateKind[] = ["note", "table", "script", "memory"];
 
 export type StudioTab = StudioAgentTab | StudioStateView;
 
@@ -119,7 +121,7 @@ const sectionParsers: Record<StudioSection, (search: Record<string, unknown>) =>
     section: "state",
     agent: text(search.agent),
     tab: oneOf(studioStateViews, search.tab),
-    kind: oneOf(["notes", "tables"] as const, search.kind),
+    kind: oneOf(studioStateKinds, search.kind),
     item: text(search.item),
   }),
   tools: (search) => ({ section: "tools", item: text(search.item) }),
@@ -131,22 +133,21 @@ export function parseStudioSearch(search: Record<string, unknown>): StudioSearch
   return compact(sectionParsers[section](search));
 }
 
-const scriptPath = /\/agents\/[^/]+\/scripts\/([^/]+?)(\.py)?$/;
-
-/** A file opens in State, except an agent's script, which opens in its Scripts tab. */
+/** A file opens in State with the file selected; a record opens its table. */
 function fileLocation(focus: PinnedFocus): StudioSearch {
   const path = focus.display_path ?? "";
-  const script = scriptPath.exec(path)?.[1];
-  if (focus.agent_id && script) {
-    return { section: "agents", agent: focus.agent_id, tab: "scripts", item: script };
-  }
   return compact({
     section: "state",
     agent: focus.agent_id,
     tab: "list",
-    kind: path.includes("/collections/") ? "tables" : "notes",
-    item: path && !path.includes("/collections/") ? path : undefined,
+    item: (path && tablePathOf(path)) || path || undefined,
   });
+}
+
+/** A record's path names its table, `org/<org>/collections/<name>`; a table's path is its own. */
+export function tablePathOf(path: string): string | null {
+  const match = /^(org\/[^/]+\/collections\/[^/]+)(\/[^/]+)?$/.exec(path);
+  return match?.[1] ?? null;
 }
 
 function runLocation(focus: PinnedFocus): StudioSearch | null {

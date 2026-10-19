@@ -44,7 +44,8 @@ export function useInvestigateIssue() {
         toast({
           kind: "error",
           title: "Couldn't open Studio",
-          description: "Set a default model on Model keys, or start a session from Studio and pick one.",
+          description:
+            "Set a default model on Model keys, or start a session from Studio and pick one.",
         });
         return;
       }

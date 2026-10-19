@@ -1192,6 +1192,62 @@ export type StudioToolCall = {
   duration_ms: number | null;
 };
 
+/** Who acted on a State item: a person, one of the guild's agents, or an agent of another guild. */
+export type StateActor = { kind: "person" | "agent" | "other_guild"; id: string; name: string };
+
+/** Where a State change or read opens: its run step, or the coach message it was applied from. */
+export type StateLink =
+  | { kind: "run"; run_id: string; agent_id: string | null; call_id: string | null }
+  | { kind: "coach"; session_id: string; seq: number };
+
+export type StateShare = { actor: StateActor; count: number; share: number };
+
+export type StateFlag = "no_agent_read" | "writers" | "deletes_others_rows" | "untouched";
+
+/** A note, table, script, or Memory of the guild's state, with its changes and reads in the window. */
+export type StateItemRow = {
+  display_path: string;
+  kind: "note" | "memory" | "script" | "table";
+  level: "agent" | "guild" | "org";
+  owner_id: string;
+  title: string;
+  /** Bytes of text, or records for a table. */
+  size: number;
+  version: number | null;
+  created_by: string;
+  created_at: string;
+  collection_id: string | null;
+  changes: number;
+  reads: number;
+  top_writer: StateShare | null;
+  top_reader: StateShare | null;
+  writers: number;
+  last_change: { at: string; actor: StateActor } | null;
+  flags: StateFlag[];
+};
+
+export type StateTally = { actor: StateActor; how: string; count: number };
+
+/** One recorded change of a State item. */
+export type StateHistoryEntry = {
+  at: string;
+  operation: "create" | "update" | "delete";
+  actor: StateActor;
+  link: StateLink | null;
+  /** For a table, the record the change touched; null for the table itself. */
+  record: string | null;
+  /** For a table's shape change, what it did. */
+  summary: string | null;
+};
+
+export type StateItemDetail = {
+  item: StateItemRow;
+  changes: StateTally[];
+  reads: StateTally[];
+  history: StateHistoryEntry[];
+  next_cursor: string | null;
+};
+
 /** One row of the coach conversation, shaped like a run's rows. */
 export type StudioMessage = {
   id: number;

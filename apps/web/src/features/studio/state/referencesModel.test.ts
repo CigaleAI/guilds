@@ -152,16 +152,18 @@ test("a file reaches the prompts of the agents whose runs inline it, not those t
 });
 
 test("what stands out: broken links, Tasks over budget, shared notes, notes too deep, files nothing points to", () => {
-  const standouts = referenceStandouts(data, shownIds(referenceMapView(data)));
+  const standouts = referenceStandouts(data, shownIds(referenceMapView(data)), new Set());
   assert.deepEqual(ids(standouts.broken), ["gone"]);
   assert.deepEqual(ids(standouts.overBudget), ["task-b"]);
   assert.deepEqual(ids(standouts.shared), ["rules", "style"]);
   assert.deepEqual(ids(standouts.tooDeep), ["glossary", "deep"]);
   assert.deepEqual(ids(standouts.unpointed), ["lonely", "draft"]);
+  const read = referenceStandouts(data, shownIds(referenceMapView(data)), new Set(["lonely"]));
+  assert.deepEqual(ids(read.unpointed), ["draft"]);
 });
 
 test("what stands out keeps to the nodes the map shows", () => {
-  const standouts = referenceStandouts(data, shownIds(referenceMapView(data, "a")));
+  const standouts = referenceStandouts(data, shownIds(referenceMapView(data, "a")), new Set());
   assert.deepEqual(ids(standouts.broken), []);
   assert.deepEqual(ids(standouts.overBudget), []);
 });
@@ -266,35 +268,28 @@ test("referenceMeta reads a Task's budget, a file's level and size, and why a li
   );
 });
 
-test("stateListLocation opens a note by path under its agent, a table by id, and nothing else", () => {
+test("stateListLocation opens a note or a table by path, under its agent, and nothing else", () => {
   assert.deepEqual(stateListLocation(node("org/o/guilds/g/a.md")), {
     section: "state",
     tab: "list",
-    kind: "notes",
     item: "org/o/guilds/g/a.md",
   });
   assert.deepEqual(stateListLocation(node("org/o/agents/b/a.md", { agent_id: "b" })), {
     section: "state",
     agent: "b",
     tab: "list",
-    kind: "notes",
     item: "org/o/agents/b/a.md",
   });
   assert.deepEqual(
     stateListLocation(node("org/o/collections/leads", { kind: "table", collection_id: "col_1" })),
-    {
-      section: "state",
-      tab: "list",
-      kind: "tables",
-      item: "col_1",
-    },
+    { section: "state", tab: "list", item: "org/o/collections/leads" },
   );
   assert.equal(stateListLocation(node("gone", { kind: "unresolved" })), null);
   assert.equal(stateListLocation(node("task", { kind: "task" })), null);
 });
 
 test("standoutGroups titles each kind of standout and leaves out the empty ones", () => {
-  const groups = standoutGroups(data, shownIds(referenceMapView(data)));
+  const groups = standoutGroups(data, shownIds(referenceMapView(data)), new Set());
   assert.deepEqual(
     groups.map((group) => [group.title, group.rows.map((row) => row.meta)]),
     [
@@ -304,7 +299,7 @@ test("standoutGroups titles each kind of standout and leaves out the empty ones"
       ["Nothing points here", ["guild", "agent"]],
     ],
   );
-  assert.deepEqual(standoutGroups({ ...data, nodes: [], edges: [] }, new Set()), []);
+  assert.deepEqual(standoutGroups({ ...data, nodes: [], edges: [] }, new Set(), new Set()), []);
 });
 
 test("linkLabel says what becomes of an embed, or that a path is only named", () => {

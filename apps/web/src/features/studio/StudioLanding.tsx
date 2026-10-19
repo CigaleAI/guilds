@@ -1,7 +1,12 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useCreateStudioSession, useGuilds, useOrgModels, useStudioSessions } from "../../api/queries";
+import {
+  useCreateStudioSession,
+  useGuilds,
+  useOrgModels,
+  useStudioSessions,
+} from "../../api/queries";
 import { hasConnectedProvider } from "../../api/types";
 import { useIdentity } from "../../app/identity";
 import { messageTime } from "../../app/format";
@@ -66,48 +71,51 @@ export function StudioLanding() {
         {noProvider ? (
           <ConnectProviderGuide what="a Studio session" />
         ) : (
-        <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl bg-surface p-5">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Select
-              tone="paper"
-              label="Guild"
-              value={chosenGuild}
-              onValueChange={setGuildId}
-              options={(guilds.data ?? []).map((guild) => ({ value: guild.id, label: guild.name }))}
-            />
-            <Select
-              tone="paper"
-              label="Coach model"
-              placeholder="Choose a model"
-              value={chosenModel}
-              onValueChange={setModel}
-              options={modelOptions(models.data, { current: chosenModel, marketplaceOnly: true })}
-            />
-            <TextField
-              tone="paper"
-              label="Temperature"
-              type="number"
-              min={0}
-              max={2}
-              step={0.1}
-              value={temperature}
-              onChange={(event) => setTemperature(event.currentTarget.value)}
-            />
-          </div>
-          {create.isError ? (
-            <Banner tone="error" title="Couldn't start the session">
-              {create.error.message}
-            </Banner>
-          ) : null}
-          <Button
-            type="submit"
-            className="self-start"
-            disabled={create.isPending || !chosenGuild || !chosenModel}
-          >
-            <Sparkles size={14} />
-            Start a session
-          </Button>
-        </form>
+          <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl bg-surface p-5">
+            <div className="grid gap-4 md:grid-cols-3">
+              <Select
+                tone="paper"
+                label="Guild"
+                value={chosenGuild}
+                onValueChange={setGuildId}
+                options={(guilds.data ?? []).map((guild) => ({
+                  value: guild.id,
+                  label: guild.name,
+                }))}
+              />
+              <Select
+                tone="paper"
+                label="Coach model"
+                placeholder="Choose a model"
+                value={chosenModel}
+                onValueChange={setModel}
+                options={modelOptions(models.data, { current: chosenModel, marketplaceOnly: true })}
+              />
+              <TextField
+                tone="paper"
+                label="Temperature"
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperature}
+                onChange={(event) => setTemperature(event.currentTarget.value)}
+              />
+            </div>
+            {create.isError ? (
+              <Banner tone="error" title="Couldn't start the session">
+                {create.error.message}
+              </Banner>
+            ) : null}
+            <Button
+              type="submit"
+              className="self-start"
+              disabled={create.isPending || !chosenGuild || !chosenModel}
+            >
+              <Sparkles size={14} />
+              Start a session
+            </Button>
+          </form>
         )}
 
         <section aria-label="Sessions" className="flex flex-col gap-2">

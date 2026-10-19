@@ -128,7 +128,7 @@ const editPlaces: Record<string, (edit: EditWidget["edit"]) => Placed> = {
     location: {
       section: "state",
       tab: "list",
-      kind: "notes",
+      kind: "note",
       ...(edit.target?.display_path ? { item: edit.target.display_path } : {}),
     },
   }),
@@ -138,7 +138,7 @@ const editPlaces: Record<string, (edit: EditWidget["edit"]) => Placed> = {
     location: {
       section: "state",
       tab: "list",
-      kind: "tables",
+      kind: "table",
       ...(edit.target?.collection_id ? { item: edit.target.collection_id } : {}),
     },
   }),
