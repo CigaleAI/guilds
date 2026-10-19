@@ -72,7 +72,12 @@ export function VersionsTab({ agent }: { agent: StudioAgent }) {
             aria-current={position === index ? "true" : undefined}
             onClick={() =>
               go(
-                { agent: agent.id, tab: "versions", item: String(entry.version) },
+                {
+                  section: "agents",
+                  agent: agent.id,
+                  tab: "versions",
+                  item: String(entry.version),
+                },
                 { replace: true },
               )
             }

@@ -86,7 +86,7 @@ export function ActivityLedger() {
   const select = (next: MapSelection | null) =>
     go(
       {
-        tab: "overview",
+        section: "agents",
         ...(next && !sameSelection(selection, next) ? { item: selectionItem(next) } : {}),
       },
       { replace: true },

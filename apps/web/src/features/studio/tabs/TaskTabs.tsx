@@ -79,8 +79,8 @@ export function PromptTab({ agent }: { agent: StudioAgent }) {
               onOpenEmbed={(path) =>
                 go(
                   path.includes("/collections/")
-                    ? { agent: agent.id, tab: "tables" }
-                    : { agent: agent.id, tab: "files", item: path },
+                    ? { section: "state", agent: agent.id, tab: "list", kind: "tables" }
+                    : { section: "state", agent: agent.id, tab: "list", kind: "notes", item: path },
                 )
               }
             >

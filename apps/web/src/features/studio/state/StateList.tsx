@@ -9,7 +9,7 @@ import { Empty } from "../MasterDetail";
 const enc = encodeURIComponent;
 
 /** The notes an agent reads, or the guild's and organisation's, with changes opened in Studio. */
-export function FilesTab({ agent }: { agent: StudioAgent | null }) {
+export function StateNotes({ agent }: { agent: StudioAgent | null }) {
   const { session, search, openStep, ask } = useStudio();
   const guildId = session.source_guild_id;
   const shared: FileScope[] = [
@@ -56,14 +56,13 @@ export function FilesTab({ agent }: { agent: StudioAgent | null }) {
 }
 
 /** The organisation's tables, one at a time, with its records to search and edit. */
-export function TablesTab({ agent }: { agent: StudioAgent | null }) {
+export function StateTables({ agent }: { agent: StudioAgent | null }) {
   const { search, go } = useStudio();
   const tables = useDatabases();
   const id = search.item ?? tables.data?.[0]?.id;
   const table = useDatabase(id);
 
-  if (tables.isPending)
-    return <SkeletonRows rows={4} label="Loading tables" className="p-5" />;
+  if (tables.isPending) return <SkeletonRows rows={4} label="Loading tables" className="p-5" />;
   if (tables.isError) {
     return (
       <div className="p-5">
@@ -83,7 +82,13 @@ export function TablesTab({ agent }: { agent: StudioAgent | null }) {
         value={id ?? ""}
         onValueChange={(value) =>
           go(
-            { ...(agent ? { agent: agent.id } : {}), tab: "tables", item: value },
+            {
+              section: "state",
+              ...(agent ? { agent: agent.id } : {}),
+              tab: "list",
+              kind: "tables",
+              item: value,
+            },
             { replace: true },
           )
         }

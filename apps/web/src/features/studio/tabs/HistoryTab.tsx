@@ -193,7 +193,10 @@ export function HistoryTab({ agent }: { agent: StudioAgent }) {
               currentTask={currentTask}
               selected={run.id === selectedId}
               onSelect={() =>
-                go({ agent: agent.id, tab: "history", item: run.id }, { replace: true })
+                go(
+                  { section: "agents", agent: agent.id, tab: "history", item: run.id },
+                  { replace: true },
+                )
               }
             />
           ))
@@ -217,7 +220,13 @@ export function HistoryTab({ agent }: { agent: StudioAgent }) {
               fromRoutine
                 ? {
                     label: fromRoutine.description || "Routine",
-                    onBack: () => go({ agent: agent.id, tab: "routines", item: fromRoutine.id }),
+                    onBack: () =>
+                      go({
+                        section: "agents",
+                        agent: agent.id,
+                        tab: "routines",
+                        item: fromRoutine.id,
+                      }),
                   }
                 : undefined
             }

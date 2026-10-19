@@ -66,7 +66,7 @@ export function AgentActivityList({
                 variant="ghost"
                 size="xs"
                 className="ml-auto"
-                onClick={() => go({ agent: agent.id })}
+                onClick={() => go({ section: "agents", agent: agent.id })}
               >
                 Inspect {agent.name}
               </Button>

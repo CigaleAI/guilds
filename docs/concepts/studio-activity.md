@@ -2,9 +2,9 @@
 
 Studio activity is the picture of what a guild did over a recent
 window: which agent woke, what woke it, and what each wake produced.
-It lives on the **Overview** of a [Prompt Studio](prompt-studio.md)
-session, beside the guild's short description, its pending drafts, and
-its roster.
+It lives in **Agents** › **Topology** of a
+[Prompt Studio](prompt-studio.md) session, the tab before the guild's
+agents.
 
 Activity is built from [runs](runs.md), the [group chat](group-chat.md),
 [routines](routines.md), and the files agents changed. It reads stored
@@ -49,10 +49,8 @@ wake failed.
 
 ## In the app
 
-The **Overview** shows the guild's short description and the drafts to
-review. Then the activity, over a window of 1 h, 6 h, 24 h, 3 d, or
-7 d. Then the roster: each agent's Task version and excerpt, routine
-count, last run, and warnings.
+**Topology** shows the activity over a window of 1 h, 6 h, 24 h, 3 d,
+or 7 d.
 
 A wake that is still generating is drawn up to now. **Refresh** reads
 the activity again.
@@ -172,7 +170,7 @@ agents, routines, messages, wakes }`. A non-positive or non-numeric
 ### Location and storage
 
 A map selection is part of the session's inspector location:
-`item=link:<from>><to>` or `item=node:<id>` (see
+`section=agents&item=link:<from>><to>` or `section=agents&item=node:<id>` (see
 [Prompt Studio](prompt-studio.md#routes-and-location)). The window and
 the open view (**Flow** or **Agents**) persist in `localStorage`.
 

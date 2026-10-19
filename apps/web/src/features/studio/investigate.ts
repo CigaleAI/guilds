@@ -72,10 +72,11 @@ export function useInvestigateIssue() {
               params: { sessionId: session.id },
               search: issue.agent_id
                 ? {
+                    section: "agents" as const,
                     agent: issue.agent_id,
                     ...(issue.run_id ? { tab: "history" as const, item: issue.run_id } : {}),
                   }
-                : {},
+                : { section: "guild" as const },
             });
           },
           onError: (error) =>

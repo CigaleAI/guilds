@@ -71,7 +71,10 @@ export function RoutinesTab({ agent }: { agent: StudioAgent }) {
                   type="button"
                   aria-current={isSelected ? "true" : undefined}
                   onClick={() =>
-                    go({ agent: agent.id, tab: "routines", item: routine.id }, { replace: true })
+                    go(
+                      { section: "agents", agent: agent.id, tab: "routines", item: routine.id },
+                      { replace: true },
+                    )
                   }
                 />
               </Row>
@@ -178,7 +181,9 @@ function RoutineDetail({ agent, routine }: { agent: StudioAgent; routine: Studio
               {...(run.instruction_hash && run.instruction_hash !== routine.instruction_hash
                 ? { note: "older instruction" }
                 : {})}
-              onSelect={() => go({ agent: agent.id, tab: "history", item: run.id })}
+              onSelect={() =>
+                go({ section: "agents", agent: agent.id, tab: "history", item: run.id })
+              }
             />
           ))
         ) : (

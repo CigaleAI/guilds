@@ -57,7 +57,10 @@ export function ScriptsTab({ agent }: { agent: StudioAgent }) {
                   type="button"
                   aria-current={isSelected ? "true" : undefined}
                   onClick={() =>
-                    go({ agent: agent.id, tab: "scripts", item: script.name }, { replace: true })
+                    go(
+                      { section: "agents", agent: agent.id, tab: "scripts", item: script.name },
+                      { replace: true },
+                    )
                   }
                 />
               </Row>

@@ -460,7 +460,14 @@ function TriggerDetail({
             <Button
               variant="outline"
               size="xs"
-              onClick={() => go({ agent: routine.agent_id, tab: "routines", item: routine.id })}
+              onClick={() =>
+                go({
+                  section: "agents",
+                  agent: routine.agent_id,
+                  tab: "routines",
+                  item: routine.id,
+                })
+              }
             >
               Open routine
             </Button>

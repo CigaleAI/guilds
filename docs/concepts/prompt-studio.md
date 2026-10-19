@@ -93,7 +93,7 @@ Task never overwrites it.
 2. Studio lists the guild's active agents with their Task version,
    routine counts, latest run, and warnings: an empty Task,
    generation errors, or a stale draft.
-3. Selecting an agent opens the inspector on it.
+3. Selecting an agent under **Agents** opens the inspector on it.
 4. The coach looks at the evidence, then writes a draft in the Task
    shape: the agent, the complete new Task, why, and the evidence it
    relied on.
@@ -152,17 +152,28 @@ the coach model and temperature, the session status, **Back to
 guild**, **Logins**, **New session**, and **Archive**. A session that
 hit its input-token limit offers **Continue in a new session**.
 
-Under the header, one tab per agent selects the target. Each tab
-shows the agent's avatar, its Task version, a draft tag, and a warning
-marker. **Guild overview** clears the target; it counts the agents
-and carries a dot while drafts are pending. With more than four agents
-a filter joins the tabs. When the coach writes a draft, the inspector
-opens that agent's **Draft** tab.
+Under the header, a section bar switches the inspector between four
+sections:
+
+| Section | What it shows |
+|---|---|
+| **Guild** | The guild's short description, description, drafts to review, and roster |
+| **Agents** | **Topology**, then one tab per agent with that agent's [tabs](#agent-tabs) |
+| **State** | The notes and tables the guild's agents work on: a **List** to browse and edit, and **References** |
+| **Tools** | The tools the guild's agents are offered |
+
+In **Agents**, each agent tab shows the agent's avatar, its Task
+version, a draft tag, and a warning marker. **Topology** counts the
+agents and clears the target. With more than four agents a filter
+joins the tabs. When the coach writes a draft, the inspector opens
+that agent's **Draft** tab.
 
 Where the inspector points is part of the URL, so a link opens the
-same agent, tab, item, and run step. Pointing the inspector at
-another agent updates the session's target. A routine's run offers
-the way back to its routine.
+same section, agent, tab, item, and run step. Pointing the inspector
+at an agent, in **Agents** or as the **State** filter, updates the
+session's target; the other sections clear it. A routine's run offers
+the way back to its routine. On a narrow screen the section bar and
+the agent tabs scroll sideways.
 
 The coach log shows the coach's reasoning as it streams, then its
 reply. Settings › **Usage** shows the coach's spend as a **Studio
@@ -176,28 +187,51 @@ selected item on the right.
 
 | Tab | List | Selected item |
 |---|---|---|
-| **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens **Files** at that note; a collection embed opens **Tables**. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. It says whether the latest run used this Task and this memory. Banners say when the agent is running and when an embed does not resolve |
+| **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens that note in **State**; a collection embed opens State's tables. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. It says whether the latest run used this Task and this memory. Banners say when the agent is running and when an embed does not resolve |
 | **Draft** | none | The pending draft: why, a side-by-side diff against its base version, **Publish**, **Edit**, **Discard**. A draft over a Task that changed since shows as conflicted |
 | **History** | Every run: what started it, time, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
 | **Memory** | Every version memory has held, newest first: version, author (run kind, person, or agent), added and removed lines; filter by author | Diff against the previous version, or the whole version. **Open step** on a version a run wrote opens the run at its `memory_write` call |
 | **Routines** | Description, timing, next wake or paused, run count; active first | The instruction as Markdown, a banner while the guild's routines are off, then the runs that routine started, marked when they fired with an older instruction. A run opens in **History**. **Edit in agent** |
 | **Scripts** | Script names and descriptions, tagged when offered as a tool | Description, provenance, parameter schema, source; **Edit in agent**. The tab is hidden while the agent's scripting is off |
-| **Files** | The notes browser over agent, guild, and organisation notes, opened at the file the link names. **Ask the coach** pins the open file. **Open step** on a provenance strip opens the run in **History** | |
-| **Tables** | The organisation's collections, one at a time from a picker, with their records, whichever agent is targeted | |
 | **Versions** | The live Task and archived versions, with who replaced each and when | Diff against the previous version. **Restore from Prompt** opens the agent's Prompt tab |
+
+**Files** and **Tables** after the tabs are links: they open
+**State** filtered to the agent, on its notes or its tables.
 
 Studio does not stream a run. A generating run shows its committed
 steps under a banner with **Refresh**, and **Open in agent** opens it
 in the agent's Chat tab, which streams it. The run list polls every
 5 s while any run is generating.
 
-### Guild overview
+### Guild
 
-With no target the inspector shows **Overview**, the guild-level
-**Files**, and the organisation's **Tables**. **Overview** holds
-the guild's short description, the drafts to review, the guild's
-[activity](studio-activity.md), and the roster: each agent's Task
-version and excerpt, routine count, last run, and warnings.
+**Guild** holds the guild's short description, its description, the
+drafts to review, and the roster: each agent's Task version and
+excerpt, routine count, last run, and warnings. A roster entry opens
+the agent in **Agents**.
+
+### Topology
+
+**Topology** is the first tab of **Agents**. It shows the guild's
+[activity](studio-activity.md): who woke whom over a window of hours.
+
+### State
+
+**State** has two views, **List** and **References**, with an agent
+filter beside them. **List** shows the notes browser or the
+organisation's tables, switched by **Notes** and **Tables**:
+
+- **Notes** browses the guild's and the organisation's notes, plus
+  the filtered agent's own. It opens at the file the link names.
+  **Ask the coach** pins the open file. **Open step** on a provenance
+  strip opens the run in the agent's **History**.
+- **Tables** shows the organisation's collections, one at a time from
+  a picker, with their records to search and edit.
+
+### Tools
+
+**Tools** is where the tools the guild's agents are offered are
+listed.
 
 ### Focus pins
 
@@ -206,7 +240,7 @@ the composer. It appears on:
 
 - the run, memory version, routine, and script panes
 - every tool call's detail in a **History** transcript
-- the file open in **Files**
+- the file open in **State**
 - a wake opened in the activity chains
 
 A run opened at a step pins that step. What can be pinned:
@@ -283,14 +317,21 @@ The workspace is at `/studio` and `/studio/<session_id>`. The landing
 for one guild is `/studio?guild=<id>`.
 
 The inspector location is
-`/studio/<session_id>?agent=…&tab=…&item=…&call=…&seq=…`: target
-agent, tab, selected item, and the step inside a run.
-`apps/web/src/features/studio/location.ts` parses it. Opening such a
-link opens the tab and selects the item. In Files, `item` is a display
-path, opened in its scope. For a run it opens the step for `call` (a
-provider tool-call id) or `seq` and scrolls to it. A map selection on
-the overview is `item=link:<from>><to>` or `item=node:<id>`.
-**Investigate in Studio** opens `tab=history&item=<run id>`.
+`/studio/<session_id>?section=…&agent=…&tab=…&kind=…&item=…&call=…&seq=…`.
+`apps/web/src/features/studio/location.ts` parses it, and each section
+keeps only its own fields:
+
+| `section` | Fields | Meaning |
+|---|---|---|
+| `guild` | none | The guild's overview |
+| `agents` | `agent`, `tab`, `item`, `call`, `seq` | With `agent`: that agent's tab (`prompt`, `draft`, `history`, `memory`, `routines`, `scripts`, `versions`), its selected item, and for a run the step for `call` (a provider tool-call id) or `seq`, scrolled into view. Without `agent`: Topology, where `item` is a map selection, `link:<from>><to>` or `node:<id>` |
+| `state` | `agent`, `tab`, `kind`, `item` | `tab` is `list` or `references`, `agent` the filter, `kind` `notes` or `tables`. For notes `item` is a display path, opened in its scope; for tables it is the collection id |
+| `tools` | `item` | The selected tool |
+
+A link without a known `section` opens the guild's overview.
+A pinned file opens in State, except an agent's script, which opens
+in its **Scripts** tab. **Investigate in Studio** opens
+`section=agents&agent=<id>&tab=history&item=<run id>`.
 
 The splitter's share persists in `localStorage`. The pinned issue of a
 session started from **Investigate in Studio** waits in
