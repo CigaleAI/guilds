@@ -1,9 +1,9 @@
 # Gmail and Drive
 
-Connecting Gmail lets agents read mail and write drafts. Connecting
-Drive lets agents search, read, and create files in one folder. Both
-sign in through one Google Cloud OAuth client per box. You set them up
-in three steps:
+Connecting Gmail lets agents read mail, download attachments, and
+write drafts. Connecting Drive lets agents search, read, and create
+files in one folder. Both sign in through one Google Cloud OAuth client
+per box. You set them up in three steps:
 
 1. A platform admin creates the Google Cloud client, once per box.
 2. A platform admin enters its Client ID and Client secret under
@@ -60,14 +60,15 @@ save. The card reads connected, showing the folder's name.
 ## Gmail
 
 Gmail calls `https://gmail.googleapis.com/gmail/v1` with the login's
-Google access token. It writes seven tools after a successful
+Google access token. It writes eight tools after a successful
 `/users/me/profile` check:
 
 | Tool | Does |
 | --- | --- |
 | `search_threads` | Searches threads |
-| `get_thread` | Reads one thread |
-| `get_message` | Reads one message |
+| `get_thread` | Reads one thread, listing each message's attachments with their part ids |
+| `get_message` | Reads one message, listing its attachments with their part ids |
+| `download_attachment` | Writes one attachment to an optional `file_path` in the agent's home and returns the path, not the bytes. Up to 25 MB, during an agent run |
 | `list_labels` | Lists labels |
 | `list_drafts` | Lists drafts |
 | `create_draft` | Writes a draft |

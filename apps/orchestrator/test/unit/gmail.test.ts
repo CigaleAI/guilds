@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { clipText } from "../../src/connectors/format.js";
+import gmailAdapter from "../../src/connectors/gmail/adapter.js";
+import { ConnectorError, type ConnectorContext } from "../../src/connectors/types.js";
 import {
+  ATTACHMENT_CAP,
   GmailError,
+  attachmentFileName,
   callTool,
   decodeBodyData,
   headerMap,
+  messageAttachments,
   messageBody,
   ping,
   rfc2822Raw,
@@ -38,6 +46,42 @@ function payload(headers: Array<{ name: string; value: string }>, text: string) 
     headers,
     body: { data: Buffer.from(text).toString("base64url") },
   };
+}
+
+/** A temporary host directory named after agent a_1, as its home sits on its machine. */
+async function agentWorkspace(prefix: string): Promise<string> {
+  const workspace = path.join(await mkdtemp(path.join(os.tmpdir(), prefix)), "a_1");
+  await mkdir(workspace);
+  return workspace;
+}
+
+/** A message with a text body, a fetched PDF attachment at part 1, and an inline text attachment at part 2. */
+function messageWithAttachments(pdfSize = 3) {
+  return {
+    id: "m1",
+    payload: {
+      mimeType: "multipart/mixed",
+      headers: [{ name: "From", value: "Ada" }, { name: "Subject", value: "Invoice" }],
+      parts: [
+        { partId: "0", mimeType: "text/plain", filename: "", body: { data: Buffer.from("see attached").toString("base64url") } },
+        { partId: "1", mimeType: "application/pdf", filename: "invoice.pdf", body: { attachmentId: "att-1", size: pdfSize } },
+        { partId: "2", mimeType: "text/plain", filename: "notes.txt", body: { data: Buffer.from("inline").toString("base64url"), size: 6 } },
+      ],
+    },
+  };
+}
+
+/** Gmail answering the message above, and the PDF's bytes by its attachment id. */
+function attachmentsFetch(message: Record<string, unknown> = messageWithAttachments()) {
+  return mockFetch((url) => {
+    if (url.includes("/messages/m1/attachments/att-1")) {
+      return { status: 200, json: { size: 3, data: Buffer.from("PDF").toString("base64url") } };
+    }
+    if (url.includes("/messages/m1?")) {
+      return { status: 200, json: message };
+    }
+    return { status: 404, json: { error: { message: url } } };
+  });
 }
 
 test("headerMap, decode, strip, and clip", () => {
@@ -71,6 +115,30 @@ test("messageBody prefers plain text and clips html", () => {
     }),
     "only html",
   );
+});
+
+test("messageBody leaves out the text of attachments", () => {
+  assert.equal(messageBody(messageWithAttachments().payload), "see attached");
+});
+
+test("messageAttachments lists every part with a filename", () => {
+  assert.deepEqual(
+    messageAttachments(messageWithAttachments().payload).map((item) => [item.partId, item.filename, item.size]),
+    [
+      ["1", "invoice.pdf", 3],
+      ["2", "notes.txt", 6],
+    ],
+  );
+  assert.deepEqual(messageAttachments(null), []);
+});
+
+test("attachmentFileName keeps the name to one segment of the workspace root", () => {
+  const named = (filename: string) =>
+    attachmentFileName({ partId: "3", filename, mimeType: "", size: 0, attachmentId: "", data: "" });
+  assert.equal(named("../../etc/passwd"), "-..-etc-passwd");
+  assert.equal(named("a\\b\nc.pdf"), "a-b-c.pdf");
+  assert.equal(named("..."), "attachment-3");
+  assert.equal(named("x".repeat(300)).length, 200);
 });
 
 test("rfc2822Raw encodes subject and optional copies", () => {
@@ -177,6 +245,96 @@ test("get_thread and get_message render bodies", async () => {
     },
   );
   assert.equal(message, "m1  Ada  Hi\nbody");
+});
+
+test("get_message lists attachments between the headers and the body", async () => {
+  const message = await callTool("get_message", { message_id: "m1" }, { accessToken: TOKEN, client: attachmentsFetch() });
+  assert.equal(
+    message,
+    [
+      "m1  Ada  Invoice",
+      "attachment  part=1  invoice.pdf  application/pdf  bytes=3",
+      "attachment  part=2  notes.txt  text/plain  bytes=6",
+      "see attached",
+    ].join("\n"),
+  );
+});
+
+test("download_attachment fetches an attachment by id and writes it under the workspace", async () => {
+  const workspace = await agentWorkspace("gmail-download-");
+  const saved = await callTool(
+    "download_attachment",
+    { message_id: "m1", part_id: "1" },
+    { accessToken: TOKEN, client: attachmentsFetch(), workspaceDir: workspace },
+  );
+  assert.equal(saved, "file_path=/home/a_1/invoice.pdf  application/pdf  bytes=3");
+  assert.equal(await readFile(path.join(workspace, "invoice.pdf"), "utf8"), "PDF");
+});
+
+test("download_attachment writes inline attachment data to the requested file_path", async () => {
+  const workspace = await agentWorkspace("gmail-download-");
+  const saved = await callTool(
+    "download_attachment",
+    { message_id: "m1", part_id: "2", file_path: "/home/a_1/mail/notes.txt" },
+    { accessToken: TOKEN, client: attachmentsFetch(), workspaceDir: workspace },
+  );
+  assert.equal(saved, "file_path=/home/a_1/mail/notes.txt  text/plain  bytes=6");
+  assert.equal(await readFile(path.join(workspace, "mail", "notes.txt"), "utf8"), "inline");
+});
+
+test("download_attachment refuses calls it cannot serve", async () => {
+  const workspace = await agentWorkspace("gmail-download-");
+  const options = { accessToken: TOKEN, client: attachmentsFetch(), workspaceDir: workspace };
+  const refused = (status: number, pattern: RegExp) => (error: unknown) =>
+    error instanceof GmailError && error.status === status && pattern.test(error.message);
+  await assert.rejects(
+    () => callTool("download_attachment", { message_id: "m1", part_id: "1" }, { accessToken: TOKEN, client: attachmentsFetch() }),
+    refused(422, /only available during an agent run/),
+  );
+  await assert.rejects(() => callTool("download_attachment", { message_id: "m1" }, options), /part_id is required/);
+  await assert.rejects(() => callTool("download_attachment", { part_id: "1" }, options), /message_id is required/);
+  await assert.rejects(
+    () => callTool("download_attachment", { message_id: "m1", part_id: "0" }, options),
+    refused(422, /no attachment at part 0/),
+  );
+  await assert.rejects(
+    () => callTool("download_attachment", { message_id: "m1", part_id: "1", file_path: "/etc/invoice.pdf" }, options),
+    refused(422, /must be under \/home\/a_1/),
+  );
+  const large = { ...options, client: attachmentsFetch(messageWithAttachments(ATTACHMENT_CAP + 1)) };
+  await assert.rejects(
+    () => callTool("download_attachment", { message_id: "m1", part_id: "1" }, large),
+    refused(422, /larger than 25 MB/),
+  );
+});
+
+test("the Gmail adapter passes the run's workspace to download_attachment", async () => {
+  const workspace = await agentWorkspace("gmail-adapter-");
+  const ctx = { http: attachmentsFetch(), connection_id: "conn_gmail", settings: {} } as unknown as ConnectorContext;
+  const args = { message_id: "m1", part_id: "1" };
+  const saved = await gmailAdapter.call!("download_attachment", args, { access_token: TOKEN }, { ...ctx, workspace_dir: workspace });
+  assert.equal(saved, "file_path=/home/a_1/invoice.pdf  application/pdf  bytes=3");
+  await assert.rejects(
+    () => gmailAdapter.call!("download_attachment", args, { access_token: TOKEN }, ctx),
+    (error: unknown) => error instanceof ConnectorError && error.status === 422,
+  );
+});
+
+test("download_attachment never writes through a link the agent planted", async () => {
+  const workspace = await agentWorkspace("gmail-download-");
+  const host = path.join(path.dirname(workspace), "config.json");
+  await writeFile(host, "orchestrator config");
+  await symlink(host, path.join(workspace, "invoice.pdf"));
+  await assert.rejects(
+    () =>
+      callTool(
+        "download_attachment",
+        { message_id: "m1", part_id: "1" },
+        { accessToken: TOKEN, client: attachmentsFetch(), workspaceDir: workspace },
+      ),
+    (error: unknown) => error instanceof GmailError && error.status === 422,
+  );
+  assert.equal(await readFile(host, "utf8"), "orchestrator config");
 });
 
 test("list_labels and list_drafts", async () => {

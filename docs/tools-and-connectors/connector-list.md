@@ -60,8 +60,9 @@ box registers, like Notion. Tools are listed from the session.
 
 Adapter calls to `https://gmail.googleapis.com/gmail/v1` with the
 Google access token, scopes `gmail.readonly` and `gmail.compose`.
-Seven tools: `search_threads`, `get_thread`, `get_message`,
-`list_labels`, `list_drafts`, `create_draft`, and `send_message`.
+Eight tools: `search_threads`, `get_thread`, `get_message`,
+`download_attachment`, `list_labels`, `list_drafts`, `create_draft`,
+and `send_message`.
 `send_message` starts Off. Setup and detail:
 [Gmail and Drive](google.md#gmail).
 

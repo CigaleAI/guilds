@@ -8,7 +8,8 @@ const adapter: Adapter = {
   },
   async call(name, args, creds, ctx) {
     const accessToken = requiredCredential(creds, "access_token", "Gmail access token is missing");
-    return translated(GmailError, () => callTool(name, args, { accessToken, client: ctx.http }));
+    const workspace = ctx.workspace_dir ? { workspaceDir: ctx.workspace_dir } : {};
+    return translated(GmailError, () => callTool(name, args, { accessToken, client: ctx.http, ...workspace }));
   },
 };
 

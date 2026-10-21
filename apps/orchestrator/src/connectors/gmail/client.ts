@@ -1,9 +1,11 @@
+import { AgentFileError, agentDisplayPath, writeAgentFile } from "../../lib/agent-file.js";
 import { proxyFetch, type FetchFn } from "../../net/http.js";
 import { argStr, clipRows, clipText, joinParts, rowLimit } from "../format.js";
 
 export const API_BASE = "https://gmail.googleapis.com/gmail/v1";
 export const SNIPPET_CAP = 160;
 export const BODY_CAP = 4_000;
+export const ATTACHMENT_CAP = 25 * 1024 * 1024;
 const METADATA_HEADERS = ["From", "To", "Subject", "Date"];
 
 export class GmailError extends Error {
@@ -20,6 +22,21 @@ export type GmailOptions = {
   accessToken: string;
   client?: FetchFn;
   proxyUrl?: string;
+  /** The agent's workspace when the call comes from a run. */
+  workspaceDir?: string;
+};
+
+/**
+ * A message part sent as a file. Its bytes are fetched by `attachmentId`, or carried inline in
+ * `data` when the part is small.
+ */
+export type MessageAttachment = {
+  partId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string;
+  data: string;
 };
 
 export function headerMap(headers: unknown): Record<string, string> {
@@ -60,27 +77,80 @@ export function stripTags(html: string): string {
     .trim();
 }
 
+function partBody(part: Record<string, unknown>): Record<string, unknown> {
+  const body = part.body;
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
+
+function partFilename(part: Record<string, unknown>): string {
+  return String(part.filename ?? "").trim();
+}
+
+/** The inline body data of a part that is message text, not an attachment. */
+function textData(part: Record<string, unknown>): string {
+  if (partFilename(part)) {
+    return "";
+  }
+  const data = partBody(part).data;
+  return typeof data === "string" ? data : "";
+}
+
 function collectText(part: Record<string, unknown>, into: { plain: string; html: string }): void {
   const mime = String(part.mimeType ?? "");
-  const body =
-    part.body && typeof part.body === "object" && !Array.isArray(part.body)
-      ? (part.body as { data?: unknown })
-      : null;
-  const data = typeof body?.data === "string" ? body.data : "";
+  const data = textData(part);
   if (data && mime.startsWith("text/plain")) {
     into.plain += decodeBodyData(data);
   } else if (data && mime.startsWith("text/html")) {
     into.html += decodeBodyData(data);
   }
-  const parts = part.parts;
-  if (!Array.isArray(parts)) {
-    return;
+  for (const child of asList(part.parts)) {
+    collectText(child, into);
   }
-  for (const child of parts) {
-    if (child && typeof child === "object" && !Array.isArray(child)) {
-      collectText(child as Record<string, unknown>, into);
-    }
+}
+
+function attachmentOf(part: Record<string, unknown>): MessageAttachment | null {
+  const filename = partFilename(part);
+  if (!filename) {
+    return null;
   }
+  const body = partBody(part);
+  return {
+    partId: String(part.partId ?? "").trim(),
+    filename,
+    mimeType: String(part.mimeType ?? "").trim(),
+    size: typeof body.size === "number" ? body.size : 0,
+    attachmentId: typeof body.attachmentId === "string" ? body.attachmentId : "",
+    data: typeof body.data === "string" ? body.data : "",
+  };
+}
+
+function collectAttachments(part: Record<string, unknown>, into: MessageAttachment[]): void {
+  const attachment = attachmentOf(part);
+  if (attachment) {
+    into.push(attachment);
+  }
+  for (const child of asList(part.parts)) {
+    collectAttachments(child, into);
+  }
+}
+
+/** Every part of a message that carries a filename, in message order. */
+export function messageAttachments(payload: Record<string, unknown> | null): MessageAttachment[] {
+  const found: MessageAttachment[] = [];
+  if (payload) {
+    collectAttachments(payload, found);
+  }
+  return found;
+}
+
+function attachmentLine(attachment: MessageAttachment): string {
+  return joinParts(
+    "attachment",
+    `part=${attachment.partId}`,
+    attachment.filename,
+    attachment.mimeType,
+    `bytes=${attachment.size}`,
+  );
 }
 
 export function messageBody(payload: Record<string, unknown> | null): string {
@@ -272,6 +342,65 @@ function formatMessageHead(message: Record<string, unknown>): string {
   );
 }
 
+/** A message's headers, one line per attachment, then its text body. */
+function formatMessage(message: Record<string, unknown>): string {
+  const payload = messagePayload(message);
+  const attachments = messageAttachments(payload).map(attachmentLine);
+  return [formatMessageHead(message), ...attachments, messageBody(payload)].filter(Boolean).join("\n");
+}
+
+function requiredArg(arguments_: Record<string, unknown>, key: string): string {
+  const value = argStr(arguments_, key);
+  if (!value) {
+    throw new GmailError(`${key} is required`);
+  }
+  return value;
+}
+
+function findAttachment(message: Record<string, unknown>, partId: string): MessageAttachment {
+  const found = messageAttachments(messagePayload(message)).find((attachment) => attachment.partId === partId);
+  if (!found) {
+    throw new GmailError(`message has no attachment at part ${partId}`, 422);
+  }
+  return found;
+}
+
+async function attachmentBytes(
+  messageId: string,
+  attachment: MessageAttachment,
+  options: GmailOptions,
+): Promise<Buffer> {
+  if (attachment.size > ATTACHMENT_CAP) {
+    throw new GmailError("attachment is larger than 25 MB", 422);
+  }
+  if (!attachment.attachmentId) {
+    return Buffer.from(attachment.data, "base64url");
+  }
+  const fetched = await gmailRequest(
+    "GET",
+    `/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachment.attachmentId)}`,
+    options,
+  );
+  return Buffer.from(typeof fetched.data === "string" ? fetched.data : "", "base64url");
+}
+
+/** The attachment's filename as one name in the workspace root: no folders, controls, or leading dots. */
+export function attachmentFileName(attachment: MessageAttachment): string {
+  const name = attachment.filename.replace(/[\p{Cc}/\\]/gu, "-").replace(/^\.+/, "").trim();
+  return (name || `attachment-${attachment.partId}`).slice(0, 200);
+}
+
+async function saveAttachment(workspaceDir: string, filePath: string, bytes: Buffer): Promise<string> {
+  try {
+    return await writeAgentFile(workspaceDir, filePath, bytes);
+  } catch (error) {
+    if (error instanceof AgentFileError) {
+      throw new GmailError(error.message, 422);
+    }
+    throw error;
+  }
+}
+
 export async function ping(accessToken: string, options: Omit<GmailOptions, "accessToken"> = {}): Promise<string> {
   const payload = await gmailRequest("GET", "/users/me/profile", { accessToken, ...options });
   const email = payload.emailAddress;
@@ -343,11 +472,7 @@ export async function getThreadTool(
     params: { format: "full" },
   });
   const messages = asList(payload.messages);
-  const blocks = messages.map((message) => {
-    const head = formatMessageHead(message);
-    const body = messageBody(messagePayload(message));
-    return [head, body].filter(Boolean).join("\n");
-  });
+  const blocks = messages.map(formatMessage);
   const intro = joinParts(payload.id ?? threadId, `messages=${messages.length}`);
   return [intro, ...blocks].filter(Boolean).join("\n---\n") || "no results";
 }
@@ -363,9 +488,31 @@ export async function getMessageTool(
   const payload = await gmailRequest("GET", `/users/me/messages/${encodeURIComponent(messageId)}`, options, {
     params: { format: "full" },
   });
-  const head = formatMessageHead(payload);
-  const body = messageBody(messagePayload(payload));
-  return [head, body].filter(Boolean).join("\n") || "no results";
+  return formatMessage(payload) || "no results";
+}
+
+export async function downloadAttachmentTool(
+  arguments_: Record<string, unknown>,
+  options: GmailOptions,
+): Promise<string> {
+  const workspaceDir = options.workspaceDir;
+  if (!workspaceDir) {
+    throw new GmailError("download_attachment is only available during an agent run", 422);
+  }
+  const messageId = requiredArg(arguments_, "message_id");
+  const partId = requiredArg(arguments_, "part_id");
+  const message = await gmailRequest("GET", `/users/me/messages/${encodeURIComponent(messageId)}`, options, {
+    params: { format: "full" },
+  });
+  const attachment = findAttachment(message, partId);
+  const bytes = await attachmentBytes(messageId, attachment, options);
+  const filePath = argStr(arguments_, "file_path") || attachmentFileName(attachment);
+  const resolved = await saveAttachment(workspaceDir, filePath, bytes);
+  return joinParts(
+    `file_path=${agentDisplayPath(workspaceDir, resolved)}`,
+    attachment.mimeType,
+    `bytes=${bytes.length}`,
+  );
 }
 
 export async function listLabelsTool(
@@ -442,6 +589,7 @@ const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: Gm
   search_threads: searchThreadsTool,
   get_thread: getThreadTool,
   get_message: getMessageTool,
+  download_attachment: downloadAttachmentTool,
   list_labels: listLabelsTool,
   list_drafts: listDraftsTool,
   create_draft: createDraftTool,

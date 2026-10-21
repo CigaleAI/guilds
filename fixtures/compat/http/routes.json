@@ -2391,9 +2391,38 @@
                     "overlay": null
                   },
                   {
+                    "name": "gmail_download_attachment",
+                    "remote_name": "download_attachment",
+                    "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                    "input_schema": {
+                      "type": "object",
+                      "properties": {
+                        "message_id": {
+                          "type": "string",
+                          "description": "Message id, as get_thread lists it."
+                        },
+                        "part_id": {
+                          "type": "string",
+                          "description": "Attachment part id from get_message or get_thread."
+                        },
+                        "file_path": {
+                          "type": "string",
+                          "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                        }
+                      },
+                      "required": [
+                        "message_id",
+                        "part_id"
+                      ]
+                    },
+                    "enabled": false,
+                    "source_scope": null,
+                    "overlay": null
+                  },
+                  {
                     "name": "gmail_get_message",
                     "remote_name": "get_message",
-                    "description": "Read one Gmail message by id, including headers and text body.",
+                    "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -2413,7 +2442,7 @@
                   {
                     "name": "gmail_get_thread",
                     "remote_name": "get_thread",
-                    "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                    "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -4654,9 +4683,38 @@
                     "overlay": null
                   },
                   {
+                    "name": "gmail_download_attachment",
+                    "remote_name": "download_attachment",
+                    "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                    "input_schema": {
+                      "type": "object",
+                      "properties": {
+                        "message_id": {
+                          "type": "string",
+                          "description": "Message id, as get_thread lists it."
+                        },
+                        "part_id": {
+                          "type": "string",
+                          "description": "Attachment part id from get_message or get_thread."
+                        },
+                        "file_path": {
+                          "type": "string",
+                          "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                        }
+                      },
+                      "required": [
+                        "message_id",
+                        "part_id"
+                      ]
+                    },
+                    "enabled": false,
+                    "source_scope": null,
+                    "overlay": null
+                  },
+                  {
                     "name": "gmail_get_message",
                     "remote_name": "get_message",
-                    "description": "Read one Gmail message by id, including headers and text body.",
+                    "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -4676,7 +4734,7 @@
                   {
                     "name": "gmail_get_thread",
                     "remote_name": "get_thread",
-                    "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                    "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -6917,9 +6975,38 @@
                     "overlay": null
                   },
                   {
+                    "name": "gmail_download_attachment",
+                    "remote_name": "download_attachment",
+                    "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                    "input_schema": {
+                      "type": "object",
+                      "properties": {
+                        "message_id": {
+                          "type": "string",
+                          "description": "Message id, as get_thread lists it."
+                        },
+                        "part_id": {
+                          "type": "string",
+                          "description": "Attachment part id from get_message or get_thread."
+                        },
+                        "file_path": {
+                          "type": "string",
+                          "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                        }
+                      },
+                      "required": [
+                        "message_id",
+                        "part_id"
+                      ]
+                    },
+                    "enabled": false,
+                    "source_scope": null,
+                    "overlay": null
+                  },
+                  {
                     "name": "gmail_get_message",
                     "remote_name": "get_message",
-                    "description": "Read one Gmail message by id, including headers and text body.",
+                    "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -6939,7 +7026,7 @@
                   {
                     "name": "gmail_get_thread",
                     "remote_name": "get_thread",
-                    "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                    "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -9237,9 +9324,38 @@
                     "overlay": null
                   },
                   {
+                    "name": "gmail_download_attachment",
+                    "remote_name": "download_attachment",
+                    "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                    "input_schema": {
+                      "type": "object",
+                      "properties": {
+                        "message_id": {
+                          "type": "string",
+                          "description": "Message id, as get_thread lists it."
+                        },
+                        "part_id": {
+                          "type": "string",
+                          "description": "Attachment part id from get_message or get_thread."
+                        },
+                        "file_path": {
+                          "type": "string",
+                          "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                        }
+                      },
+                      "required": [
+                        "message_id",
+                        "part_id"
+                      ]
+                    },
+                    "enabled": false,
+                    "source_scope": null,
+                    "overlay": null
+                  },
+                  {
                     "name": "gmail_get_message",
                     "remote_name": "get_message",
-                    "description": "Read one Gmail message by id, including headers and text body.",
+                    "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -9259,7 +9375,7 @@
                   {
                     "name": "gmail_get_thread",
                     "remote_name": "get_thread",
-                    "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                    "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -11500,9 +11616,38 @@
                     "overlay": null
                   },
                   {
+                    "name": "gmail_download_attachment",
+                    "remote_name": "download_attachment",
+                    "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                    "input_schema": {
+                      "type": "object",
+                      "properties": {
+                        "message_id": {
+                          "type": "string",
+                          "description": "Message id, as get_thread lists it."
+                        },
+                        "part_id": {
+                          "type": "string",
+                          "description": "Attachment part id from get_message or get_thread."
+                        },
+                        "file_path": {
+                          "type": "string",
+                          "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                        }
+                      },
+                      "required": [
+                        "message_id",
+                        "part_id"
+                      ]
+                    },
+                    "enabled": false,
+                    "source_scope": null,
+                    "overlay": null
+                  },
+                  {
                     "name": "gmail_get_message",
                     "remote_name": "get_message",
-                    "description": "Read one Gmail message by id, including headers and text body.",
+                    "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -11522,7 +11667,7 @@
                   {
                     "name": "gmail_get_thread",
                     "remote_name": "get_thread",
-                    "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                    "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                     "input_schema": {
                       "type": "object",
                       "properties": {
@@ -18068,9 +18213,38 @@
                   "overlay": null
                 },
                 {
+                  "name": "gmail_download_attachment",
+                  "remote_name": "download_attachment",
+                  "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {
+                      "message_id": {
+                        "type": "string",
+                        "description": "Message id, as get_thread lists it."
+                      },
+                      "part_id": {
+                        "type": "string",
+                        "description": "Attachment part id from get_message or get_thread."
+                      },
+                      "file_path": {
+                        "type": "string",
+                        "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                      }
+                    },
+                    "required": [
+                      "message_id",
+                      "part_id"
+                    ]
+                  },
+                  "enabled": false,
+                  "source_scope": null,
+                  "overlay": null
+                },
+                {
                   "name": "gmail_get_message",
                   "remote_name": "get_message",
-                  "description": "Read one Gmail message by id, including headers and text body.",
+                  "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -18090,7 +18264,7 @@
                 {
                   "name": "gmail_get_thread",
                   "remote_name": "get_thread",
-                  "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                  "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -20282,9 +20456,38 @@
                   "overlay": null
                 },
                 {
+                  "name": "gmail_download_attachment",
+                  "remote_name": "download_attachment",
+                  "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {
+                      "message_id": {
+                        "type": "string",
+                        "description": "Message id, as get_thread lists it."
+                      },
+                      "part_id": {
+                        "type": "string",
+                        "description": "Attachment part id from get_message or get_thread."
+                      },
+                      "file_path": {
+                        "type": "string",
+                        "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                      }
+                    },
+                    "required": [
+                      "message_id",
+                      "part_id"
+                    ]
+                  },
+                  "enabled": false,
+                  "source_scope": null,
+                  "overlay": null
+                },
+                {
                   "name": "gmail_get_message",
                   "remote_name": "get_message",
-                  "description": "Read one Gmail message by id, including headers and text body.",
+                  "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -20304,7 +20507,7 @@
                 {
                   "name": "gmail_get_thread",
                   "remote_name": "get_thread",
-                  "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                  "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -22488,9 +22691,38 @@
                   "overlay": null
                 },
                 {
+                  "name": "gmail_download_attachment",
+                  "remote_name": "download_attachment",
+                  "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {
+                      "message_id": {
+                        "type": "string",
+                        "description": "Message id, as get_thread lists it."
+                      },
+                      "part_id": {
+                        "type": "string",
+                        "description": "Attachment part id from get_message or get_thread."
+                      },
+                      "file_path": {
+                        "type": "string",
+                        "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                      }
+                    },
+                    "required": [
+                      "message_id",
+                      "part_id"
+                    ]
+                  },
+                  "enabled": false,
+                  "source_scope": null,
+                  "overlay": null
+                },
+                {
                   "name": "gmail_get_message",
                   "remote_name": "get_message",
-                  "description": "Read one Gmail message by id, including headers and text body.",
+                  "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -22510,7 +22742,7 @@
                 {
                   "name": "gmail_get_thread",
                   "remote_name": "get_thread",
-                  "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                  "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -24694,9 +24926,38 @@
                   "overlay": null
                 },
                 {
+                  "name": "gmail_download_attachment",
+                  "remote_name": "download_attachment",
+                  "description": "Download one attachment of a Gmail message into the agent workspace. get_message and get_thread list each attachment's part id. Pass an optional file_path in your home. The result is that path, not file bytes.",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {
+                      "message_id": {
+                        "type": "string",
+                        "description": "Message id, as get_thread lists it."
+                      },
+                      "part_id": {
+                        "type": "string",
+                        "description": "Attachment part id from get_message or get_thread."
+                      },
+                      "file_path": {
+                        "type": "string",
+                        "description": "Destination path in your home. Defaults to the attachment's filename in the workspace root."
+                      }
+                    },
+                    "required": [
+                      "message_id",
+                      "part_id"
+                    ]
+                  },
+                  "enabled": false,
+                  "source_scope": null,
+                  "overlay": null
+                },
+                {
                   "name": "gmail_get_message",
                   "remote_name": "get_message",
-                  "description": "Read one Gmail message by id, including headers and text body.",
+                  "description": "Read one Gmail message by id, including headers, attachments with their part ids, and text body.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
@@ -24716,7 +24977,7 @@
                 {
                   "name": "gmail_get_thread",
                   "remote_name": "get_thread",
-                  "description": "Read one Gmail thread by id, including message headers and text bodies.",
+                  "description": "Read one Gmail thread by id, including message headers, attachments with their part ids, and text bodies.",
                   "input_schema": {
                     "type": "object",
                     "properties": {
