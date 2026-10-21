@@ -1,13 +1,17 @@
 // The model providers core speaks to. One row is the whole definition of a provider: its id is
 // the prefix of every stored model id (`{provider}/{model}`), and the row says what kind it is,
-// whether a cost is computed for its calls, where its Chat Completions endpoint is, and which
-// models.dev provider lists its catalog.
+// whether a cost is computed for its calls, which API it speaks and where, and which models.dev
+// provider lists its catalog.
 
 export const PROVIDER_KINDS = ["marketplace", "coding"] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
-export const PROVIDER_IDS = ["openai", "openrouter", "xai", "deepinfra", "local", "kimi"] as const;
+export const PROVIDER_IDS = ["openai", "anthropic", "openrouter", "xai", "deepinfra", "local", "kimi"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
+
+/** The wire API of a provider: OpenAI Chat Completions, or Anthropic's Messages API. */
+export const PROVIDER_APIS = ["chat-completions", "messages"] as const;
+export type ProviderApi = (typeof PROVIDER_APIS)[number];
 
 export type ProviderDef = {
   id: ProviderId;
@@ -15,7 +19,8 @@ export type ProviderDef = {
   kind: ProviderKind;
   /** Whether a cost is computed for a call; an unbilled provider's calls record `cost_source: unavailable`. */
   billed: boolean;
-  /** The Chat Completions base URL; null for `local`, whose URL the organisation saves. */
+  api: ProviderApi;
+  /** The API base URL; null for `local`, whose URL the organisation saves. */
   baseURL: string | null;
   /** The models.dev provider the catalog is read from; null for `local`, which lists its endpoint. */
   modelsDev: string | null;
@@ -27,14 +32,25 @@ export const PROVIDERS: readonly ProviderDef[] = [
     label: "OpenAI",
     kind: "marketplace",
     billed: true,
+    api: "chat-completions",
     baseURL: "https://api.openai.com/v1",
     modelsDev: "openai",
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    kind: "marketplace",
+    billed: true,
+    api: "messages",
+    baseURL: "https://api.anthropic.com",
+    modelsDev: "anthropic",
   },
   {
     id: "openrouter",
     label: "OpenRouter",
     kind: "marketplace",
     billed: true,
+    api: "chat-completions",
     baseURL: "https://openrouter.ai/api/v1",
     modelsDev: "openrouter",
   },
@@ -43,6 +59,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
     label: "xAI",
     kind: "marketplace",
     billed: true,
+    api: "chat-completions",
     baseURL: "https://api.x.ai/v1",
     modelsDev: "xai",
   },
@@ -51,6 +68,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
     label: "DeepInfra",
     kind: "marketplace",
     billed: true,
+    api: "chat-completions",
     baseURL: "https://api.deepinfra.com/v1/openai",
     modelsDev: "deepinfra",
   },
@@ -59,6 +77,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
     label: "Local endpoint",
     kind: "marketplace",
     billed: false,
+    api: "chat-completions",
     baseURL: null,
     modelsDev: null,
   },
@@ -67,6 +86,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
     label: "Kimi Code",
     kind: "coding",
     billed: false,
+    api: "chat-completions",
     baseURL: "https://api.kimi.ai/coding/v1",
     modelsDev: "kimi-code-plan-global",
   },

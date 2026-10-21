@@ -516,7 +516,7 @@ test("a role's model is a recommendation: a bad one warns and never blocks", () 
   assert.ok(blocked.some((item) => item.code === "model.not_connected" && item.severity === "warning"));
   const ready = validateRecipe(recipe, { ...ctx, connectedProviders: new Set(["kimi", "deepinfra"]) });
   assert.ok(!ready.some((item) => item.code.startsWith("model.")), JSON.stringify(ready));
-  recipe.roles[0]!.config.model = "anthropic/claude-opus-5";
+  recipe.roles[0]!.config.model = "acme/model";
   const unknown = validateRecipe(recipe, ctx);
   assert.ok(unknown.some((item) => item.code === "model.unknown" && item.severity === "warning"));
 });

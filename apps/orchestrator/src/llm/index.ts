@@ -1,5 +1,6 @@
 export {
   PROVIDERS,
+  PROVIDER_APIS,
   PROVIDER_IDS,
   PROVIDER_KINDS,
   catalogModelId,
@@ -12,7 +13,7 @@ export {
   providerLabel,
   providerOf,
 } from "./providers.js";
-export type { ProviderDef, ProviderId, ProviderKind } from "./providers.js";
+export type { ProviderApi, ProviderDef, ProviderId, ProviderKind } from "./providers.js";
 export { DEFAULT_CAPACITIES, defaultEntry, entryPayload } from "./entries.js";
 export type { CatalogEntry, CatalogRates } from "./entries.js";
 export {
@@ -76,3 +77,4 @@ export {
   streamCompletion,
 } from "./client.js";
 export type { Completion, ModelEvent, ReasoningDetail } from "./client.js";
+export { listMessagesModels, messagesFromHistory, messagesRequestBody, streamMessages } from "./anthropic.js";

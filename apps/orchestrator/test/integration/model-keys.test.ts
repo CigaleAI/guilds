@@ -68,7 +68,7 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.deepEqual(empty.json().models, []);
     assert.deepEqual(
       empty.json().providers.map((item: { id: string; connected: boolean }) => [item.id, item.connected]),
-      [["openai", false], ["openrouter", false], ["xai", false], ["deepinfra", false], ["local", false], ["kimi", false]],
+      [["openai", false], ["anthropic", false], ["openrouter", false], ["xai", false], ["deepinfra", false], ["local", false], ["kimi", false]],
     );
 
     const catalog = await app.inject({ method: "GET", url: `${base}/model-providers/deepinfra/catalog`, headers: MEMBER });
@@ -109,7 +109,7 @@ test("an organisation connects providers, chooses models, and names a default", 
     assert.equal(listed.body.includes("sk-di-secret"), false);
 
     assert.equal((await put(MEMBER, "/model-providers/deepinfra", { api_key: "sk-other" })).statusCode, 404);
-    assert.equal((await put(OWNER, "/model-providers/anthropic", { api_key: "sk-x" })).statusCode, 422);
+    assert.equal((await put(OWNER, "/model-providers/acme", { api_key: "sk-x" })).statusCode, 422);
     assert.equal((await put(OWNER, "/model-providers/openrouter", { api_key: "   " })).statusCode, 422);
     assert.equal((await put(OWNER, "/model-providers/openrouter", {})).statusCode, 422);
     assert.equal((await put(OWNER, "/model-providers/deepinfra", { models: ["openai/gpt-5"] })).statusCode, 422);

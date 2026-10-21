@@ -182,7 +182,8 @@ test("config requires a model with a provider prefix, whatever the catalog lists
   assert.equal(validateConfig(VALID_CONFIG).model, "openrouter/openai/gpt-5.6-luna");
   assert.equal(validateConfig({ ...VALID_CONFIG, model: "openai/gpt-4o" }).model, "openai/gpt-4o");
   assert.equal(validateConfig({ ...VALID_CONFIG, model: "local/qwen3-8b" }).model, "local/qwen3-8b");
-  assert.throws(() => validateConfig({ ...VALID_CONFIG, model: "anthropic/claude" }), /unknown model provider/);
+  assert.equal(validateConfig({ ...VALID_CONFIG, model: "anthropic/claude-opus-5-5" }).model, "anthropic/claude-opus-5-5");
+  assert.throws(() => validateConfig({ ...VALID_CONFIG, model: "acme/model" }), /unknown model provider/);
   assert.throws(() => validateConfig({ ...VALID_CONFIG, model: "openrouter/" }), /unknown model provider/);
   assert.throws(() => validateConfig({ ...VALID_CONFIG, model: "gpt-4o" }), /unknown model provider/);
   assert.throws(() => validateConfig({ model: "" }), /non-empty/);

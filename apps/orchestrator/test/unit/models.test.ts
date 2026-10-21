@@ -95,6 +95,7 @@ test("nothing is offered until a provider is connected", async () => {
     payload.providers.map((item) => [item.id, item.kind, item.connected, item.key_hint]),
     [
       ["openai", "marketplace", false, null],
+      ["anthropic", "marketplace", false, null],
       ["openrouter", "marketplace", false, null],
       ["xai", "marketplace", false, null],
       ["deepinfra", "marketplace", false, null],

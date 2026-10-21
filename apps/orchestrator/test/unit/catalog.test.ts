@@ -139,6 +139,6 @@ test("the bundled snapshot carries every models.dev provider of the table", () =
 test("a stored id splits at its provider prefix", () => {
   assert.deepEqual(parseModelId("deepinfra/zai-org/GLM-5.3-Flash")?.model, "zai-org/GLM-5.3-Flash");
   assert.equal(parseModelId("deepinfra/")?.model, undefined);
-  assert.equal(parseModelId("anthropic/claude"), null);
+  assert.equal(parseModelId("acme/model"), null);
   assert.equal(parseModelId("gpt-5"), null);
 });

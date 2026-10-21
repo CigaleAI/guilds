@@ -123,6 +123,14 @@
               "base_url": null
             },
             {
+              "id": "anthropic",
+              "label": "Anthropic",
+              "kind": "marketplace",
+              "connected": false,
+              "key_hint": null,
+              "base_url": null
+            },
+            {
               "id": "openrouter",
               "label": "OpenRouter",
               "kind": "marketplace",
@@ -188,6 +196,14 @@
             {
               "id": "openai",
               "label": "OpenAI",
+              "kind": "marketplace",
+              "connected": false,
+              "key_hint": null,
+              "base_url": null
+            },
+            {
+              "id": "anthropic",
+              "label": "Anthropic",
               "kind": "marketplace",
               "connected": false,
               "key_hint": null,

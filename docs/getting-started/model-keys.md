@@ -14,6 +14,7 @@ for the rest of the tutorial.
 | Provider | What you get | Where to get a key |
 |---|---|---|
 | OpenAI | GPT models | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| Anthropic | Claude models | [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys) |
 | OpenRouter | Hundreds of models behind one key, Claude and Gemini included | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
 | xAI | Grok models | [console.x.ai](https://console.x.ai/) |
 | DeepInfra | Open-weight models at a low price | [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys) |

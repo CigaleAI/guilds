@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { listMessagesModels, streamMessages } from "./anthropic.js";
 import { modelCatalog } from "./catalog.js";
 import { catalogCostUsd } from "./cost.js";
 import { parseModelId, type ProviderDef } from "./providers.js";
@@ -10,7 +11,7 @@ export class LLMError extends Error {
   }
 }
 
-function asLlmError(error: unknown, apiKey?: string | null): LLMError {
+export function asLlmError(error: unknown, apiKey?: string | null): LLMError {
   if (error instanceof LLMError) {
     error.message = redactApiKey(error.message, apiKey);
     return error;
@@ -68,8 +69,8 @@ export function reasoningEffortForModel(model: string, level: string): string | 
 }
 
 /**
- * `GET {baseURL}/models` with the key: the probe a save runs, and the local endpoint's catalog.
- * A rejected key fails; the listed ids come back.
+ * The models the key lists: the probe a save runs, and the local endpoint's catalog. A rejected
+ * key fails; the listed ids come back.
  */
 export async function listProviderModels(
   provider: ProviderDef,
@@ -83,8 +84,16 @@ export async function listProviderModels(
   if (!base) {
     throw new LLMError(`${provider.label} needs a base URL`);
   }
-  const fetchFn = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
+  if (provider.api === "messages") {
+    return listMessagesModels(provider, {
+      apiKey: key,
+      baseURL: base,
+      timeoutMs,
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    });
+  }
+  const fetchFn = options.fetch ?? fetch;
   let response: Response;
   try {
     response = await fetchFn(`${base}/models`, {
@@ -309,7 +318,7 @@ export function applyPromptCacheControl(
   return messages;
 }
 
-/** The request body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
+/** The Chat Completions body a provider takes: the fields in its row, and `temperature` only when the catalog says the model takes one. */
 export function completionRequestBody(options: {
   model: string;
   messages: Array<Record<string, unknown>>;
@@ -374,6 +383,10 @@ export async function* streamCompletion(options: {
   }
   if (options.apiKey === undefined) {
     throw new LLMError(`${provider.label} is not connected`);
+  }
+  if (provider.api === "messages") {
+    yield* streamMessages({ ...options, baseURL, apiKey: options.apiKey });
+    return;
   }
   const apiKey = options.apiKey.trim() || "local";
   const client = new OpenAI({

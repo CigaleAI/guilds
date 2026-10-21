@@ -50,3 +50,7 @@ a sandbox of their own moves them onto machines.
 To share machines, move agents onto one under each agent's
 **Settings**, **Machine**. Then delete the machines left empty under
 **Settings**, **Machines**.
+
+**Model keys** lists Anthropic. An organisation connects its Claude
+API key and offers Claude models to agents, Studio, and the Builder,
+called through Anthropic's Messages API.

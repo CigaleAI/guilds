@@ -559,8 +559,10 @@ interface ModelClient {
 }
 ```
 
-The wrapper uses the official OpenAI client, pointed at the
-provider's Chat Completions base URL with the credentials the run
+Each provider row names the API it speaks. A `chat-completions`
+provider is called with the official OpenAI client, a `messages`
+provider with the official Anthropic client (`src/llm/anthropic.ts`),
+each pointed at the provider's base URL with the credentials the run
 resolved. A run is `provider + credentials + model`. Stored model ids
 are `{provider}/{model}`.
 
@@ -570,14 +572,15 @@ One row per provider (`src/llm/providers.ts`) is its whole
 definition. A provider's kind, whether it is billed, and whether it
 needs `coding` come from the id prefix, never from a catalog row.
 
-| Id | Kind | Billed | Catalog | Base URL |
-|---|---|---|---|---|
-| `openai` | marketplace | yes | models.dev `openai` | `https://api.openai.com/v1` |
-| `openrouter` | marketplace | yes | models.dev `openrouter` | `https://openrouter.ai/api/v1` |
-| `xai` | marketplace | yes | models.dev `xai` | `https://api.x.ai/v1` |
-| `deepinfra` | marketplace | yes | models.dev `deepinfra` | `https://api.deepinfra.com/v1/openai` |
-| `local` | marketplace | no | the endpoint's `/models` | the organisation's URL |
-| `kimi` | coding | no | models.dev `kimi-code-plan-global` | `https://api.kimi.ai/coding/v1` |
+| Id | Kind | Billed | API | Catalog | Base URL |
+|---|---|---|---|---|---|
+| `openai` | marketplace | yes | `chat-completions` | models.dev `openai` | `https://api.openai.com/v1` |
+| `anthropic` | marketplace | yes | `messages` | models.dev `anthropic` | `https://api.anthropic.com` |
+| `openrouter` | marketplace | yes | `chat-completions` | models.dev `openrouter` | `https://openrouter.ai/api/v1` |
+| `xai` | marketplace | yes | `chat-completions` | models.dev `xai` | `https://api.x.ai/v1` |
+| `deepinfra` | marketplace | yes | `chat-completions` | models.dev `deepinfra` | `https://api.deepinfra.com/v1/openai` |
+| `local` | marketplace | no | `chat-completions` | the endpoint's `/models` | the organisation's URL |
+| `kimi` | coding | no | `chat-completions` | models.dev `kimi-code-plan-global` | `https://api.kimi.ai/coding/v1` |
 
 An unbilled provider's calls record `cost_source: unavailable`.
 
@@ -591,8 +594,7 @@ cache and is retried after five minutes. Before the first fetch, and
 on a box with no network, the snapshot in
 `src/llm/models-dev.snapshot.json` serves it:
 `pnpm --filter @guildsrun/orchestrator models:snapshot` rewrites that
-file from the feed, reduced to the five hosted providers and the
-fields the catalog reads. The whole feed is never checked in.
+file from the feed, reduced to the hosted providers and the fields the catalog reads. The whole feed is never checked in.
 
 A row is kept when `tool_call` is true, `status` is not
 `deprecated`, and text is among its input and output modalities. Each
@@ -632,10 +634,11 @@ Requests send `User-Agent: guilds.run`. Automatic retries are off.
 The request timeout scales with `max_tokens`, from two to ten minutes.
 
 - Inputs are the complete ordered OpenAI-style message history.
-- Tool schemas pass through without framework transformation.
+- Tool schemas pass through without framework transformation to a
+  `chat-completions` provider.
 - `temperature` is omitted when the catalog says the model does not
   take one.
-- The body differs per provider in three places:
+- A `chat-completions` body differs per provider in three places:
 
 | Provider | Output cap | Thinking | Prompt cache |
 |---|---|---|---|
@@ -646,6 +649,22 @@ The request timeout scales with `max_tokens`, from two to ten minutes.
 
 OpenAI rejects a field it does not know, so a request to it carries
 only the fields in its row.
+
+- A `messages` provider takes the same history translated to the
+  Messages API: the leading system messages become `system`, a later
+  one a user turn; assistant `tool_calls` become `tool_use` blocks and
+  `tool` messages `tool_result` blocks; consecutive turns of one role
+  merge; `image_url` parts become image blocks (a data URL as base64,
+  an http(s) URL as a URL source). Tools are sent as `name`,
+  `description`, and `input_schema`. A thinking level sends
+  `thinking: { type: "adaptive", display: "summarized" }` with
+  `output_config.effort` at that level, and no `temperature`; with no
+  level, `thinking` is omitted. Top-level `cache_control` caches the
+  prompt up to its last block. Thinking blocks are not replayed. Usage
+  counts cache reads and writes into `input_tokens`; `stop_reason`
+  maps to `finish_reason` (`tool_use` → `tool_calls`, `max_tokens` →
+  `length`, `refusal` → `content_filter`, otherwise `stop`). Saving a
+  key probes `GET /v1/models` with `x-api-key`.
 
 - Streaming emits text deltas, reasoning deltas, and one final
   assembled assistant payload.

@@ -895,7 +895,7 @@ export type MessageAttachment = {
   kind: "image" | "file";
 };
 
-export type ModelProvider = "openai" | "openrouter" | "xai" | "deepinfra" | "local" | "kimi";
+export type ModelProvider = "openai" | "anthropic" | "openrouter" | "xai" | "deepinfra" | "local" | "kimi";
 
 /** A provider as the organisation sees it: connected or not, and the last characters of its key. */
 export type OrgModelProvider = {

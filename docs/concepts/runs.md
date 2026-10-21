@@ -237,6 +237,9 @@ Chat Completions `image_url` parts:
 - a data URL when the store cannot sign;
 - always a data URL for Kimi, which refuses public image URLs.
 
+A Messages API provider receives the same parts as image blocks: a
+data URL as a base64 source, a signed URL as a URL source.
+
 Token counting adds 1600 tokens per image. It does not encode those
 URLs.
 

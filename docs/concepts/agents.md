@@ -322,7 +322,7 @@ configuration change replaces the machine's container
 ### Model id and options
 
 `model` is `{provider}/{model}`: a provider core speaks to (`openai`,
-`openrouter`, `xai`, `deepinfra`, `local`, or `kimi`) and the id that
+`anthropic`, `openrouter`, `xai`, `deepinfra`, `local`, or `kimi`) and the id that
 provider knows the model by. On save and on run the provider must be
 connected for the organisation (422 `connect a <provider> key on
 Model keys` otherwise). Whether the catalog lists the id, or the

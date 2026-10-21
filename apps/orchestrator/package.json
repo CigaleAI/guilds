@@ -85,6 +85,7 @@
   },
   "dependencies": {
     "@alibaba-group/opensandbox": "github:opensandbox-group/OpenSandbox#473ff611d93670a149ce6600f27ed194b18cce89&path:sdks/sandbox/javascript",
+    "@anthropic-ai/sdk": "^0.137.0",
     "@dicebear/core": "^10.7.0",
     "@dicebear/styles": "^10.6.0",
     "@fastify/static": "^10.1.3",

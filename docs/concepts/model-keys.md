@@ -22,9 +22,9 @@ providers, its models, and its spend.
 ### A run is a provider, a key, and a model
 
 A run is one provider, that provider's key, and one of the models the
-organisation chose. Every provider is called through its
-OpenAI-compatible Chat Completions endpoint, by the orchestrator
-alone. The key is sent to that provider and nowhere else. An agent
+organisation chose. Anthropic is called through its Messages API;
+every other provider through its OpenAI-compatible Chat Completions
+endpoint. Only the orchestrator calls a provider. The key is sent to that provider and nowhere else. An agent
 never sees it.
 
 ```mermaid
@@ -35,7 +35,7 @@ flowchart LR
   chosen --> agent[Agent's model]
   agent --> run[Run]
   key --> run
-  run -->|Chat Completions| provider[Provider]
+  run -->|Chat Completions or Messages API| provider[Provider]
 ```
 
 ### Providers
@@ -43,6 +43,7 @@ flowchart LR
 | Provider | Models | Key from | Kind | Cost shown |
 |---|---|---|---|---|
 | OpenAI | GPT models, from OpenAI | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | Marketplace | Yes |
+| Anthropic | Claude models, from Anthropic | [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys) | Marketplace | Yes |
 | OpenRouter | Hundreds of models behind one key, Claude and Gemini included | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) | Marketplace | Yes |
 | xAI | Grok models | [console.x.ai](https://console.x.ai/) | Marketplace | Yes |
 | DeepInfra | Open-weight models, priced low | [deepinfra.com/dash/api_keys](https://deepinfra.com/dash/api_keys) | Marketplace | Yes |
@@ -225,14 +226,15 @@ run as they were.
 
 ### Provider ids
 
-| Id | Label | Kind | Cost computed | Chat Completions base URL | Catalog source |
-|---|---|---|---|---|---|
-| `openai` | OpenAI | `marketplace` | Yes | `https://api.openai.com/v1` | models.dev `openai` |
-| `openrouter` | OpenRouter | `marketplace` | Yes | `https://openrouter.ai/api/v1` | models.dev `openrouter` |
-| `xai` | xAI | `marketplace` | Yes | `https://api.x.ai/v1` | models.dev `xai` |
-| `deepinfra` | DeepInfra | `marketplace` | Yes | `https://api.deepinfra.com/v1/openai` | models.dev `deepinfra` |
-| `local` | Local endpoint | `marketplace` | No | The saved `base_url` | The endpoint's `/models` |
-| `kimi` | Kimi Code | `coding` | No | `https://api.kimi.ai/coding/v1` | models.dev `kimi-code-plan-global` |
+| Id | Label | Kind | Cost computed | API | Base URL | Catalog source |
+|---|---|---|---|---|---|---|
+| `openai` | OpenAI | `marketplace` | Yes | Chat Completions | `https://api.openai.com/v1` | models.dev `openai` |
+| `anthropic` | Anthropic | `marketplace` | Yes | Messages | `https://api.anthropic.com` | models.dev `anthropic` |
+| `openrouter` | OpenRouter | `marketplace` | Yes | Chat Completions | `https://openrouter.ai/api/v1` | models.dev `openrouter` |
+| `xai` | xAI | `marketplace` | Yes | Chat Completions | `https://api.x.ai/v1` | models.dev `xai` |
+| `deepinfra` | DeepInfra | `marketplace` | Yes | Chat Completions | `https://api.deepinfra.com/v1/openai` | models.dev `deepinfra` |
+| `local` | Local endpoint | `marketplace` | No | Chat Completions | The saved `base_url` | The endpoint's `/models` |
+| `kimi` | Kimi Code | `coding` | No | Chat Completions | `https://api.kimi.ai/coding/v1` | models.dev `kimi-code-plan-global` |
 
 A stored model id is `{provider}/{model}`. The provider id is its
 prefix. An unbilled provider's calls record `cost_source:

@@ -107,6 +107,10 @@ export const PROVIDER_META: Record<ModelProvider, ProviderMeta> = {
     blurb: "GPT models, straight from OpenAI.",
     keyURL: "https://platform.openai.com/api-keys",
   },
+  anthropic: {
+    blurb: "Claude models, straight from Anthropic.",
+    keyURL: "https://platform.claude.com/settings/keys",
+  },
   openrouter: {
     blurb: "Hundreds of models behind one key, Claude and Gemini included.",
     keyURL: "https://openrouter.ai/settings/keys",
