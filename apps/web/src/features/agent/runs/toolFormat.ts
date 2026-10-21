@@ -168,6 +168,7 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
   }
   if (name === "studio_publish_draft") return "Publish task draft";
   if (name === "studio_get_guild") return "Read guild description";
+  if (name === "studio_list_guilds") return "Read other guilds";
   if (name === "studio_edit_memory") {
     const handle = args.agent_id || args.agent_name;
     return handle ? `Propose Memory edit for ${handle}` : "Propose Memory edit";

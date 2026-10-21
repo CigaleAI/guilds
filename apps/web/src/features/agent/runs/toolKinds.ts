@@ -110,6 +110,7 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   studio_call_connection_tool: { kind: "connected" },
   studio_create_task_draft: { kind: "write", level: "local" },
   studio_get_guild: { kind: "read" },
+  studio_list_guilds: { kind: "read", level: "org" },
   studio_edit_memory: { kind: "memory", level: "local", mutates: true },
   studio_edit_note: { kind: "write", mutates: true },
   studio_edit_guild: { kind: "write" },

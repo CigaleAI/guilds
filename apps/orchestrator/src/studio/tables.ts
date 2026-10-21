@@ -21,11 +21,15 @@ import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
+import { studioReachesTable } from "./reach.js";
 
 // Tables (collections) the coach reads and proposes to create, change, or
-// delete. It changes the source guild's own tables and the organisation's,
-// and only the grants of the source guild and its live members. Like every
-// Studio edit, a proposal writes nothing until the operator applies it.
+// delete. It reaches the tables the source guild's agents can be given: the
+// guild's own, which it creates, edits, and deletes, and the organisation's,
+// to which it only adds columns. On either it changes only the grants of the
+// source guild and its live members. Another guild's own tables are out of
+// reach. Like every Studio edit, a proposal writes nothing until the
+// operator applies it.
 
 export const STUDIO_TABLE_TOOL = "studio_edit_collection";
 export type TableAction = EditAction;
@@ -137,19 +141,20 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+/** The operator reading tables, without the private guilds they do not operate. */
+async function tableActor(scope: EditScope): Promise<ArtifactActor> {
+  return scope.artifacts.operatorContext(scope.orgId, String(scope.user.id), String(scope.user.name ?? "operator"), {
+    guildId: scope.sourceGuildId,
+    hidden: await scope.repo.hiddenGuildsFor(scope.orgId, String(scope.user.id)),
+  });
+}
+
 async function tableContext(scope: EditScope): Promise<TableContext> {
   const guild = await scope.repo.getGuild(scope.sourceGuildId);
   const agents = await scope.repo.listAgents(scope.sourceGuildId);
   return {
     scope,
-    actor: scope.artifacts.operatorContext(
-      scope.orgId,
-      String(scope.user.id),
-      String(scope.user.name ?? "operator"),
-      {
-        guildId: scope.sourceGuildId,
-      },
-    ),
+    actor: await tableActor(scope),
     guildName: String(guild?.name ?? "this guild"),
     members: agents.map((row) => ({ id: String(row.id), name: String(row.name) })),
   };
@@ -175,6 +180,9 @@ async function loadTable(
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
     throw error;
+  }
+  if (!studioReachesTable(tc.scope.sourceGuildId, view.guild?.id)) {
+    return null;
   }
   const source = tc.scope.sourceGuildId;
   const live = new Set(tc.members.map((member) => member.id));
@@ -211,14 +219,42 @@ async function loadTable(
   };
 }
 
-function changeable(tc: TableContext, table: Table): boolean {
-  return table.guildId === null || table.guildId === tc.scope.sourceGuildId;
+/** What a proposal may change on a table: all of the source guild's own; columns added to the organisation's. */
+type TableReach = "edit_or_delete" | "add_columns_and_grants";
+
+function reachOf(guildId: string | null): TableReach {
+  return guildId === null ? "add_columns_and_grants" : "edit_or_delete";
 }
 
-function assertChangeable(tc: TableContext, table: Table): void {
-  if (!changeable(tc, table)) {
+const ORG_TABLE_LIMIT =
+  "is an organisation table: Studio adds columns to it and changes this guild's grants; other changes are made on the Tables page";
+
+/** An organisation table keeps its name, purpose, and every column as it is; new columns may join. */
+function assertOrgTableEdit(
+  table: Table,
+  name: string,
+  purpose: string,
+  change: { columns: CollectionColumn[]; renamed: Array<{ from: string; to: string }>; removed: string[] } | null,
+): void {
+  if (table.guildId !== null) return;
+  if (name !== table.name || purpose !== table.purpose) {
+    throw new StudioUnprocessableError(`${table.name} ${ORG_TABLE_LIMIT}`);
+  }
+  if (!change) return;
+  if (change.removed.length || change.renamed.length) {
     throw new StudioUnprocessableError(
-      `${table.name} belongs to guild ${table.guildName}; change it from that guild's Studio or the Tables page`,
+      `${table.name} ${ORG_TABLE_LIMIT}; keep ${[...change.removed, ...change.renamed.map((item) => item.from)].join(", ")}`,
+    );
+  }
+  const next = new Map(change.columns.map((column) => [column.name, column]));
+  const kept = change.columns.filter((column) => table.columns.some((previous) => previous.name === column.name));
+  const altered = table.columns.filter(
+    (previous, index) =>
+      JSON.stringify(next.get(previous.name)) !== JSON.stringify(previous) || kept[index]?.name !== previous.name,
+  );
+  if (altered.length) {
+    throw new StudioUnprocessableError(
+      `${table.name} ${ORG_TABLE_LIMIT}; keep ${altered.map((column) => column.name).join(", ")} unchanged and in order`,
     );
   }
 }
@@ -523,10 +559,12 @@ export async function reviewTable(
         : "the table no longer exists",
     );
   }
-  assertChangeable(tc, table);
   const target = targetOf(tc, table.id, table.name, table.guildId);
 
   if (action === "delete") {
+    if (table.guildId === null) {
+      throw new StudioUnprocessableError(`${table.name} ${ORG_TABLE_LIMIT}`);
+    }
     return {
       action,
       title: `Delete table ${table.name}`,
@@ -564,6 +602,7 @@ export async function reviewTable(
     args.purpose === undefined ? table.purpose : valid(() => validatePurpose(String(args.purpose)));
   const change =
     args.columns === undefined ? null : valid(() => parseColumnChange(table.columns, args.columns));
+  assertOrgTableEdit(table, name, purpose, change);
   if (name !== table.name && (await loadTable(tc, { name }))) {
     throw new StudioConflictError(`a table named ${name} already exists`);
   }
@@ -644,27 +683,20 @@ export async function applyTable(scope: EditScope, plan: TablePlan): Promise<voi
   }
 }
 
-/** Every live table in the organisation: the source guild's own first, then the organisation's, then other guilds'. */
+/** The tables Studio reaches: the source guild's own first, then the organisation's. */
 export async function listTables(scope: EditScope): Promise<Array<Record<string, unknown>>> {
-  const actor = scope.artifacts.operatorContext(
-    scope.orgId,
-    String(scope.user.id),
-    String(scope.user.name ?? "operator"),
-    {
-      guildId: scope.sourceGuildId,
-    },
+  const actor = await tableActor(scope);
+  const views = (await scope.artifacts.listCollections(actor, { counts: true })).filter((view) =>
+    studioReachesTable(scope.sourceGuildId, view.guild?.id),
   );
-  const views = await scope.artifacts.listCollections(actor, { counts: true });
   const modes = new Map(
     (await scope.artifacts.accessForGuild(actor, scope.sourceGuildId)).map((row) => [
       row.collection_id,
       row.mode,
     ]),
   );
-  const rank = (guildId: string | undefined) =>
-    guildId === scope.sourceGuildId ? 0 : guildId ? 2 : 1;
   return views
-    .sort((a, b) => rank(a.guild?.id) - rank(b.guild?.id) || a.name.localeCompare(b.name))
+    .sort((a, b) => Number(!a.guild) - Number(!b.guild) || a.name.localeCompare(b.name))
     .map((view) => ({
       name: view.name,
       display_path: view.display_path,
@@ -673,7 +705,7 @@ export async function listTables(scope: EditScope): Promise<Array<Record<string,
       records: view.count ?? 0,
       columns: view.columns.map((column) => column.name),
       guild_access: modes.get(view.id) ?? null,
-      changeable: !view.guild || view.guild.id === scope.sourceGuildId,
+      studio_can: reachOf(view.guild?.id ?? null),
     }));
 }
 
@@ -703,7 +735,7 @@ export async function readTable(scope: EditScope, name: string): Promise<Record<
     owner: table.guildId ? `guild ${table.guildName}` : "organisation",
     records: table.count,
     updated_at: table.updatedAt,
-    changeable: changeable(tc, table),
+    studio_can: reachOf(table.guildId),
     columns: columnCatalog(table.columns),
     access: {
       guild: table.access.guild,

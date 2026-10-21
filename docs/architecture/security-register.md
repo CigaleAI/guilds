@@ -9,6 +9,8 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-44](#sec-44--a-recipe-preview-confirms-a-private-guilds-table-and-its-column-types) | A recipe preview confirms a private guild's table and its column types | Open |
+| [SEC-43](#sec-43--studio-shows-a-private-guilds-tables-and-records-to-operators-who-cannot-see-that-guild) | Studio shows a private guild's tables and records to operators who cannot see that guild | Fixed 2026-10-21 |
 | [SEC-42](#sec-42--a-task-can-embed-a-private-guilds-note-that-its-runs-and-studio-then-show) | A Task can embed a private guild's note that its runs and Studio then show | Open |
 | [SEC-41](#sec-41--an-organisation-could-be-left-without-an-owner) | An organisation could be left without an owner | Fixed 2026-10-18 |
 | [SEC-40](#sec-40--a-tool-binding-written-before-a-server-listed-the-tool-turned-it-on) | A tool binding written before a server listed the tool turned it on | Fixed 2026-10-18 |
@@ -51,6 +53,70 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-44 — A recipe preview confirms a private guild's table and its column types
+
+**Status:** open.
+
+**Found:** 2026-10-21, reviewing what the Builder and recipe apply can see outside a new guild.
+
+**Where:** `planCollections` and `operator` in
+`apps/orchestrator/src/recipes/apply.ts`, behind
+`POST /api/recipes/:recipe_id/preview` in
+`apps/orchestrator/src/http/recipe-routes.ts`.
+
+**Exposure:** the preview matches each recipe collection by name against
+every table in the organisation, read as an operator actor with no
+hidden guilds. An organisation member can put a guessed name in a
+recipe and preview it. If a private guild they do not operate owns a
+table of that name, the preview says the table exists and returns its
+collection id. Column differences then say which recipe columns it
+lacks and which have another type, so repeated previews map its columns.
+
+**Control in place:** every lookup is limited to the recipe's
+organisation, and the name has to be guessed. Records are never
+returned.
+
+**Fix:** not yet. Fixing it takes matching recipe collections against
+organisation tables only, since a recipe can reuse nothing else, with
+the previewing operator's hidden guilds.
+
+**Residual risk:** until then, a private guild's table names and column
+types can be probed by any organisation member who can preview a recipe.
+
+## SEC-43 — Studio shows a private guild's tables and records to operators who cannot see that guild
+
+**Status:** fixed 2026-10-21.
+
+**Found:** 2026-10-21, reviewing what a Studio session can read outside its source guild.
+
+**Where:** `operatorContext` in
+`apps/orchestrator/src/artifacts/store.ts`, which built an operator
+actor with no hidden guilds, used by `listTables`, `readTable`, and
+`tableContext` in `apps/orchestrator/src/studio/tables.ts`. Record and
+collection display paths in `studio_get_artifact`,
+`studio_list_file_changes` (`apps/orchestrator/src/studio/tools.ts`),
+and file focus pins (`apps/orchestrator/src/studio/focus.ts`) were
+accepted for any collection of the organisation.
+
+**Exposure:** the table store filters collections and grants by the
+actor's hidden guilds, and the Studio actor hid none. A Studio session
+listed every table of a private guild the operator did not operate,
+with that guild's name, the table's purpose, columns, and record count.
+`studio_get_collection` returned its latest records and the names of
+the private guild's agents holding grants on it. A record path of any
+table, private guilds included, could be read and its change history
+listed. The coach read all of it as evidence and could quote it to the
+operator.
+
+**Fix:** a single reach rule (`apps/orchestrator/src/studio/reach.ts`)
+limits every Studio table and path read to the source guild's own
+collections and the organisation's, so no other guild's own collection
+or record is in reach. Table reads build the operator actor with the
+operator's hidden guilds, so grants held in a private guild they do not
+operate are left out of what an organisation collection shows.
+
+**Residual risk:** none known for collections.
 
 ## SEC-42 — A Task can embed a private guild's note that its runs and Studio then show
 

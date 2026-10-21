@@ -57,6 +57,7 @@ import {
 } from "./edits.js";
 import { editActionOf } from "./actions.js";
 import { listTables, readTable } from "./tables.js";
+import { studioReachesParsed, studioReachesPath } from "./reach.js";
 
 export type StudioToolContext = {
   session: Record<string, unknown>;
@@ -732,8 +733,6 @@ export const studioFindArtifacts: StudioTool = {
   ),
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
-    const agents = await ctx.repo.listAgents(ctx.sourceGuildId);
-    const agentIds = new Set(agents.map((row) => String(row.id)));
     const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
     });
@@ -748,9 +747,10 @@ export const studioFindArtifacts: StudioTool = {
     const level = argString(args, "level");
     if (level === "agent" || level === "guild" || level === "org") findArgs.level = level;
     const found = await ctx.artifacts.find(actor, findArgs);
-    const allowed = found.notes.filter((item) =>
-      studioPathAllowed(String(item.display_path ?? ""), ctx.sourceGuildId, agentIds),
-    );
+    const allowed = [];
+    for (const item of found.notes) {
+      if (await studioReachesPath(ctx, String(item.display_path ?? ""))) allowed.push(item);
+    }
     const offset = cursorOffset(args.cursor);
     const slice = allowed.slice(offset, offset + limit);
     return {
@@ -767,46 +767,6 @@ export const studioFindArtifacts: StudioTool = {
     };
   },
 };
-
-function studioPathAllowed(displayPath: string, sourceGuildId: string, agentIds: Set<string>): boolean {
-  let parsed;
-  try {
-    parsed = parseDisplayPath(displayPath);
-  } catch {
-    return false;
-  }
-  if (parsed.kind === "revision") {
-    return false;
-  }
-  if (parsed.kind === "collection" || parsed.kind === "record") {
-    return true;
-  }
-  if (parsed.level === "agent") {
-    return agentIds.has(parsed.ownerId);
-  }
-  if (parsed.level === "guild") {
-    return parsed.ownerId === sourceGuildId;
-  }
-  return parsed.level === "org";
-}
-
-function studioArtifactAllowed(
-  item: Record<string, unknown>,
-  sourceGuildId: string,
-  agentIds: Set<string>,
-): boolean {
-  if (typeof item.display_path === "string" && item.display_path) {
-    return studioPathAllowed(item.display_path, sourceGuildId, agentIds);
-  }
-  const level = String(item.level ?? "");
-  if (level === "agent") {
-    return agentIds.has(String(item.agent_id ?? item.owner_id ?? ""));
-  }
-  if (level === "guild") {
-    return String(item.guild_id ?? item.owner_id ?? "") === sourceGuildId;
-  }
-  return level === "org";
-}
 
 export const studioGetArtifact: StudioTool = {
   name: "studio_get_artifact",
@@ -833,8 +793,9 @@ export const studioGetArtifact: StudioTool = {
     if (parsed.kind === "collection") {
       throw new StudioUnprocessableError(`${parsed.collectionName} is a table; read it with studio_get_collection`);
     }
-    const agents = await ctx.repo.listAgents(ctx.sourceGuildId);
-    const agentIds = new Set(agents.map((row) => String(row.id)));
+    if (!(await studioReachesParsed(ctx, parsed))) {
+      throw new StudioUnprocessableError("artifact is not in the source guild or the organisation's shared files");
+    }
     const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
     });
@@ -847,8 +808,8 @@ export const studioGetArtifact: StudioTool = {
       }
       throw error;
     }
-    if (!loaded.row || !studioArtifactAllowed(loaded.row as unknown as Record<string, unknown>, ctx.sourceGuildId, agentIds)) {
-      throw new StudioUnprocessableError("artifact is not in the source guild");
+    if (!loaded.row) {
+      throw new StudioUnprocessableError("artifact not found");
     }
     const text = loaded.row.content_text ?? JSON.stringify(loaded.row.content_json ?? {});
     const offset = cursorOffset(args.cursor);
@@ -896,20 +857,8 @@ export const studioListFileChanges: StudioTool = {
     if (parsed.orgId !== ctx.orgId) {
       throw new StudioUnprocessableError("path is not in this organisation");
     }
-    const agents = await ctx.repo.listAgents(ctx.sourceGuildId);
-    const agentIds = new Set(agents.map((row) => String(row.id)));
-    const allowed =
-      parsed.kind === "revision"
-        ? agentIds.has(parsed.agentId)
-        : parsed.kind === "collection" || parsed.kind === "record"
-          ? true
-          : parsed.level === "agent"
-            ? agentIds.has(parsed.ownerId)
-            : parsed.level === "guild"
-              ? parsed.ownerId === ctx.sourceGuildId
-              : true;
-    if (!allowed) {
-      throw new StudioUnprocessableError("path is not in the source guild");
+    if (!(await studioReachesParsed(ctx, parsed))) {
+      throw new StudioUnprocessableError("path is not in the source guild or the organisation's shared files");
     }
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(args.cursor);
@@ -1180,6 +1129,48 @@ export const studioGetGuild: StudioTool = {
   },
 };
 
+export const studioListGuilds: StudioTool = {
+  name: "studio_list_guilds",
+  schema: functionSchema(
+    "studio_list_guilds",
+    "Read the organisation's other guilds that the operator can see: each one's name, about (short), and description (long). Their agents, files, and tables stay out of reach; their shared output reaches this guild through organisation tables and notes.",
+    { cursor: { type: "string" }, limit: { type: "integer" } },
+    [],
+  ),
+  async handler(ctx, args) {
+    const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
+    const offset = cursorOffset(args.cursor);
+    const others = (await ctx.repo.listGuildsForUser(ctx.orgId, String(ctx.user.id))).filter(
+      (row) => String(row.id) !== String(ctx.sourceGuildId),
+    );
+    // A page ends at the limit or where the next guild would pass the byte cap.
+    const guilds: Array<Record<string, unknown>> = [];
+    let bytes = 0;
+    for (const row of others.slice(offset, offset + limit)) {
+      const item = {
+        guild_id: row.id,
+        name: wrapEvidence({ source: "guild_name", coordinates: { guild_id: String(row.id) }, body: String(row.name ?? "") }),
+        about: wrapEvidence({ source: "guild_about", coordinates: { guild_id: String(row.id) }, body: String(row.about ?? "") }),
+        description: wrapEvidence({
+          source: "guild_description",
+          coordinates: { guild_id: String(row.id) },
+          body: String(row.description ?? ""),
+        }),
+      };
+      const size = Buffer.byteLength(JSON.stringify(item), "utf8");
+      if (guilds.length && bytes + size > STUDIO_TOTAL_RETURNED_BYTES / 2) break;
+      guilds.push(item);
+      bytes += size;
+    }
+    const next = offset + guilds.length;
+    return truncatePayload({
+      guilds,
+      editable: false,
+      next_cursor: next < others.length ? String(next) : null,
+    });
+  },
+};
+
 export const studioEditMemory: StudioTool = {
   name: "studio_edit_memory",
   schema: functionSchema(
@@ -1374,7 +1365,7 @@ export const studioListCollections: StudioTool = {
   name: "studio_list_collections",
   schema: functionSchema(
     "studio_list_collections",
-    "List every table (collection) in the organisation: owner, purpose, record count, column names, the source guild's access, and whether Studio may change it.",
+    "List the tables (collections) the source guild's agents can be given: the guild's own, then the organisation's. Each has owner, purpose, record count, column names, the source guild's access, and studio_can: edit_or_delete for the guild's own, add_columns_and_grants for the organisation's.",
     {},
     [],
   ),
@@ -1400,7 +1391,7 @@ export const studioEditCollection: StudioTool = {
   name: "studio_edit_collection",
   schema: functionSchema(
     "studio_edit_collection",
-    "Propose a change to one table of the source guild or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new table agents read and write with the record tools; check studio_list_collections first and reuse a table that fits. edit: a new name, purpose, column list, or source-guild access; fields left out stay as they are. delete: the table with every record in it and every grant on it. edit and delete name the table by collection; read it with studio_get_collection first.",
+    "Propose a change to one table of the source guild or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new table agents read and write with the record tools; check studio_list_collections first and reuse a table that fits. edit: on the source guild's own table, a new name, purpose, column list, or member access; on an organisation table, new columns added to the unchanged current ones, or source-guild access. Fields left out stay as they are. delete: one of the source guild's own tables with every record in it and every grant on it. edit and delete name the table by collection; read it with studio_get_collection first.",
     {
       action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
       collection: { type: "string", description: "edit and delete: the table's current name." },
@@ -1505,6 +1496,7 @@ export const STUDIO_TOOLS: StudioTool[] = [
   studioCallConnectionTool,
   studioCreateTaskDraft,
   studioGetGuild,
+  studioListGuilds,
   studioListCollections,
   studioGetCollection,
   studioEditMemory,

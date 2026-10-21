@@ -73,6 +73,7 @@ import {
   type ArtifactActor,
   type ArtifactKind,
   type ArtifactLevel,
+  type HiddenGuilds,
 } from "./types.js";
 
 type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
@@ -182,7 +183,7 @@ export class ArtifactStore {
     orgId: string,
     actorId: string,
     actorName: string,
-    extra: { guildId?: string | null; agentId?: string | null } = {},
+    extra: { guildId?: string | null; agentId?: string | null; hidden?: HiddenGuilds } = {},
   ): ArtifactActor {
     return operatorActor({
       orgId,
@@ -190,6 +191,7 @@ export class ArtifactStore {
       actorName,
       guildId: extra.guildId ?? null,
       agentId: extra.agentId ?? null,
+      ...(extra.hidden ? { hidden: extra.hidden } : {}),
     });
   }
 

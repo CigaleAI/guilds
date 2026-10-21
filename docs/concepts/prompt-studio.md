@@ -517,6 +517,7 @@ draft with none has `verified_evidence: false`.
 - `studio_call_connection_tool`
 - `studio_create_task_draft`
 - `studio_get_guild`
+- `studio_list_guilds`
 - `studio_list_collections`
 - `studio_get_collection`
 - `studio_edit_memory`
@@ -533,16 +534,21 @@ They do not appear in normal agent Access panes. The proposal tools
 and the connection tools are described in
 [Studio proposals](studio-proposals.md#reference).
 
-Reach is the immutable source guild plus organisation-level artifacts
-readable by a member or embedded in a member task.
+Reach is the immutable source guild and its members, the
+organisation's notes, and the collections the source guild's agents can
+be given: the guild's own and the organisation's. Another guild's
+agents, notes, Memory, and own collections are out of reach; its about
+and description are not. One rule
+(`apps/orchestrator/src/studio/reach.ts`) decides reach for every tool
+that takes a display path, and for focus pins.
 
 | Tool | Behaviour |
 |---|---|
 | `studio_find_artifacts` | Searches notes only |
-| `studio_get_artifact` | Reads one note or record by display path. Collection and record paths are organisation-level, so every collection's records are in reach. A collection path is refused with a pointer to `studio_get_collection` |
+| `studio_get_artifact` | Reads one note or record by display path. A record is in reach when its collection is. A collection path is refused with a pointer to `studio_get_collection` |
 | `studio_get_script` | Reads one member script by name |
-| `studio_list_collections` | Every live collection in the organisation: the source guild's own first, then the organisation's, then other guilds'. Each row has owner, purpose, record count, column names, the source guild's mode, and `changeable` (the source guild's own collections and organisation collections; another guild's collection is read-only here) |
-| `studio_get_collection` | One collection by name: its full columns, record count, `updated_at`, the source guild's base mode and each live member's own and effective mode, the grants outside the guild, and its five most recently updated records as evidence (`apps/orchestrator/src/studio/tables.ts`) |
+| `studio_list_collections` | The source guild's own collections, then the organisation's. Each row has owner, purpose, record count, column names, the source guild's mode, and `studio_can`: `edit_or_delete` for the guild's own, `add_columns_and_grants` for the organisation's |
+| `studio_get_collection` | One collection in reach by name: its full columns, record count, `updated_at`, `studio_can`, the source guild's base mode and each live member's own and effective mode, the grants outside the guild, and its five most recently updated records as evidence (`apps/orchestrator/src/studio/tables.ts`). Grants held in a private guild the operator does not operate are left out |
 | `studio_get_agent_context` | Sections `task`, `memory`, `state`, `config`, `effective_prompt` (the composed opening system message with embeds inlined), `effective_prompt_headers` |
 | `studio_list_runs` | Filters by `kind`, `status`, `task_prompt_hash`, `error_only`, and `schedule_id` |
 | `studio_list_routines` | Each routine's run count and latest run |
@@ -551,6 +557,7 @@ readable by a member or embedded in a member task.
 | `studio_get_memory_version` | One version's text and its diff from the previous one, by `revision_id` or `version_index` (the live version when both are omitted) |
 | `studio_list_file_changes` | A file's recorded changes with the run and tool call that made each one, and the coach message a change applied from a card came from |
 | `studio_get_guild` | The live about and description in full; the system message holds a capped copy |
+| `studio_list_guilds` | The organisation's other guilds the operator can see, private guilds they do not operate left out: each one's id, name, about, and description as evidence. Paged with `cursor` and `limit`; a page also ends before its guilds pass half the 64 KiB result cap |
 | `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, artifact levels, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
 ### Storage
@@ -787,4 +794,5 @@ app also re-reads the session and its messages every 2.5 s
 | `apps/orchestrator/src/studio/references.ts` | The References view: what each Task and file embeds or names |
 | `apps/orchestrator/src/studio/state-list.ts`, `state-data.ts` | The State list: items, their changes and reads, and an item's history |
 | `apps/orchestrator/src/studio/tables.ts` | Collection evidence for `studio_get_collection` |
+| `apps/orchestrator/src/studio/reach.ts` | What a session reaches: the source guild, its members, organisation notes, and the collections its agents can be given |
 | `apps/web/src/features/studio/` | The workspace; `location.ts` parses the inspector location |

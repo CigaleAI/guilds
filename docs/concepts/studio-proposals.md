@@ -144,7 +144,7 @@ or revokes each one for the session.
 | A turn | Pauses at the end of the step that made a request; continues once every request of the turn is decided |
 | **Apply all** | Skips login grants and access changes that widen |
 | Access | Agent-level only; the guild's and the organisation's settings stay as they are |
-| Collections of another guild | Read-only in Studio |
+| Collections | The source guild's own: create, change, delete. The organisation's: add columns and change the source guild's grants. Another guild's own: out of reach |
 | Outside data | Only through a login granted to the session, only its read-only tools; a result is capped at 64 KiB |
 
 ## Reference
@@ -246,7 +246,8 @@ with `kind: "collection"` and that `action`:
 - `create(name, purpose, columns, scope?, access?, reason)`
 - `edit(collection, base_updated_at, name?, purpose?, columns?,
   access?, reason)`
-- `delete(collection, reason)`
+- `delete(collection, reason)`, for one of the source guild's own
+  collections
 
 
 - `scope` is `guild` (the default: the source guild owns the
@@ -261,8 +262,13 @@ with `kind: "collection"` and that `action`:
   guild and its live members. Grants outside the source guild are
   shown and never changed.
 - An edit must carry the `updated_at` the coach read and change
-  something. A name already taken is refused. A collection of another
-  guild is refused with 422.
+  something. A name already taken is refused.
+- On an organisation collection, an edit keeps the name, the purpose,
+  and every current column unchanged and in its order; it may add
+  columns and change `access`. Anything else, and a delete, is refused
+  with 422.
+- A collection of another guild is out of Studio's reach: naming one is
+  refused with 422 as an unknown table.
 
 The widget targets the collection by id (null until a create is
 applied) and binds a hash of its name, purpose, scope, columns, and

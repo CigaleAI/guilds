@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { persistAgent } from "../../src/agents/persist.js";
-import { agentActor, ArtifactStore, displayPathFor, operatorActor, ownerPrefix } from "../../src/artifacts/index.js";
+import { agentActor, ArtifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
 import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
 import { runItem } from "../../src/db/views.js";
 import { buildApp } from "../../src/app.js";
@@ -31,6 +31,7 @@ import {
   studioGetScript,
   studioListCollections,
   studioListFileChanges,
+  studioListGuilds,
   studioListMemoryRevisions,
   studioListRoutines,
   studioListRuns,
@@ -1161,11 +1162,13 @@ test("studio proposes tables to create, change, and delete that the operator app
 
   const now = new Date();
   await repo.insertGuild("guild_tb", "table-guild", now, "org_home");
-  await repo.insertGuild("guild_nb", "neighbour-guild", now, "org_home");
+  await repo.insertGuild("guild_nb", "neighbour-guild", now, "org_home", "Closes the books.", undefined, "org", null, "Writes the monthly report to the shared table.");
+  await repo.insertGuild("guild_pv", "private-guild", now, "org_home", "Unseen.", undefined, "private", null, "Not for this operator.");
   for (const [agentId, guildId, guildName, name] of [
     ["a_scout", "guild_tb", "table-guild", "scout"],
     ["a_writer", "guild_tb", "table-guild", "writer"],
     ["a_nb", "guild_nb", "neighbour-guild", "neighbour"],
+    ["a_pv", "guild_pv", "private-guild", "hidden-agent"],
   ] as const) {
     await persistAgent(repo, notes, {
       agentId,
@@ -1184,12 +1187,14 @@ test("studio proposes tables to create, change, and delete that the operator app
   const column = (name: string, type: string, extra: Record<string, unknown> = {}) => ({ name, type, description: `The ${name}.`, ...extra });
   const shared = await artifacts.createCollection(operator, { name: "shared", purpose: "Shared facts.", columns: [column("fact", "text")] });
   await artifacts.setAccess(operator, { collectionId: shared.id, subjectType: "guild", subjectId: "guild_nb", mode: "read" });
+  await artifacts.setAccess(operator, { collectionId: shared.id, subjectType: "guild", subjectId: "guild_pv", mode: "read" });
   await artifacts.createCollection(operator, {
     name: "their-queue",
     purpose: "The neighbour's queue.",
     columns: [column("item", "text")],
     guildId: "guild_nb",
   });
+  const theirRecord = await artifacts.addRecord(operator, { collection: "their-queue", body: { item: "private work" } });
 
   try {
     const created = await app.inject({
@@ -1248,17 +1253,23 @@ test("studio proposes tables to create, change, and delete that the operator app
       app.inject({ method: "POST", url: `/api/studio/sessions/${session.id}/edits/${seq}`, headers: AUTH, payload: { decision } });
     type Widget = { widget: string; await_operator: boolean; edit: { kind: string; action: string; target: { collection_id: string | null }; effects: string[] } };
 
-    // Every table is listed, the source guild's own first; another guild's table is read-only here.
+    // Other guilds: the ones the operator sees, with their about and description; a private guild they do not operate is left out.
+    const guilds = (await studioListGuilds.handler(await ctx(), {})) as {
+      guilds: Array<{ guild_id: string; about: string; description: string }>;
+    };
+    assert.deepEqual(guilds.guilds.map((item) => item.guild_id), ["guild_nb"]);
+    assert.match(guilds.guilds[0]?.about ?? "", /Closes the books\./);
+    assert.match(guilds.guilds[0]?.description ?? "", /trust="untrusted"[\s\S]*monthly report/);
+
+    // The source guild's own tables and the organisation's are listed; another guild's own table is out of reach.
     const listed = (await studioListCollections.handler(await ctx(), {})) as {
-      collections: Array<{ name: string; changeable: boolean; guild_access: string | null }>;
+      collections: Array<{ name: string; studio_can: string; guild_access: string | null }>;
     };
     assert.deepEqual(
-      listed.collections.map((item) => [item.name, item.changeable]),
-      [
-        ["shared", true],
-        ["their-queue", false],
-      ],
+      listed.collections.map((item) => [item.name, item.studio_can]),
+      [["shared", "add_columns_and_grants"]],
     );
+    await assert.rejects(studioGetCollection.handler(await ctx(), { collection: "their-queue" }), /unknown table/);
     await assert.rejects(
       studioEditCollection.handler(await ctx(), {
         action: "edit",
@@ -1267,9 +1278,12 @@ test("studio proposes tables to create, change, and delete that the operator app
         purpose: "Mine now.",
         reason: "r",
       }),
-      /belongs to guild neighbour-guild/,
+      /unknown table/,
     );
-    await assert.rejects(studioEditCollection.handler(await ctx(), { action: "delete", collection: "their-queue", reason: "r" }), /belongs to guild/);
+    await assert.rejects(studioEditCollection.handler(await ctx(), { action: "delete", collection: "their-queue", reason: "r" }), /unknown table/);
+    const theirPath = recordDisplayPath("org_home", "their-queue", String(theirRecord.record.id));
+    await assert.rejects(studioGetArtifact.handler(await ctx(), { display_path: theirPath }), /not in the source guild/);
+    await assert.rejects(studioListFileChanges.handler(await ctx(), { display_path: theirPath }), /not in the source guild/);
     await assert.rejects(
       studioGetArtifact.handler(await ctx(), { display_path: String(shared.display_path) }),
       /studio_get_collection/,
@@ -1386,9 +1400,11 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal((await resolve(purposeSeq, "decline")).statusCode, 200);
     assert.equal((await artifacts.describeCollection(operator, "leads"))?.purpose, "Changed on the Tables page.");
 
-    // An organisation table: the guild's grant changes; grants outside the guild are shown, never changed.
-    const sharedRead = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string; outside: string[] };
+    // An organisation table: the guild's grant changes; grants outside the guild are shown, never changed,
+    // and a private guild the operator does not operate is left out of them.
+    const sharedRead = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string; outside: string[]; studio_can: string };
     assert.deepEqual(sharedRead.outside, ["guild neighbour-guild read"]);
+    assert.equal(sharedRead.studio_can, "add_columns_and_grants");
     const grantArgs = { action: "edit", collection: "shared", base_updated_at: sharedRead.updated_at, access: { guild: "write" }, reason: "The scout records facts." };
     const grantWidget = (await studioEditCollection.handler(await ctx(), grantArgs)) as Record<string, unknown>;
     const grantSeq = await commit("studio_edit_collection", grantArgs, grantWidget);
@@ -1397,16 +1413,45 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal(guildAccess.find((row) => row.name === "shared")?.mode, "write");
     assert.equal((await artifacts.accessForGuild(operator, "guild_nb")).find((row) => row.name === "shared")?.mode, "read");
 
-    // Delete: the card names the records and the readers outside the guild; apply removes the table.
-    const deleteWidget = (await studioEditCollection.handler(await ctx(), { action: "delete", collection: "shared", reason: "Replaced." })) as Widget;
+    // An organisation table takes new columns only: its name, purpose, and current columns stay, and it is not deleted here.
+    const sharedNow = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string };
+    const orgEdit = { action: "edit", collection: "shared", base_updated_at: sharedNow.updated_at, reason: "r" };
+    await assert.rejects(studioEditCollection.handler(await ctx(), { ...orgEdit, purpose: "Mine now." }), /organisation table/);
+    await assert.rejects(studioEditCollection.handler(await ctx(), { ...orgEdit, name: "facts" }), /organisation table/);
+    await assert.rejects(studioEditCollection.handler(await ctx(), { ...orgEdit, columns: [column("source", "text")] }), /keep fact/);
+    await assert.rejects(
+      studioEditCollection.handler(await ctx(), { ...orgEdit, columns: [column("fact", "number")] }),
+      /keep fact unchanged/,
+    );
+    await assert.rejects(studioEditCollection.handler(await ctx(), { action: "delete", collection: "shared", reason: "r" }), /organisation table/);
+    const addArgs = { ...orgEdit, columns: [column("fact", "text"), column("source", "text")], reason: "The scout cites where a fact came from." };
+    const addWidget = (await studioEditCollection.handler(await ctx(), addArgs)) as Record<string, unknown>;
+    const addSeq = await commit("studio_edit_collection", addArgs, addWidget);
+    assert.equal((await resolve(addSeq, "apply")).statusCode, 200);
+    assert.deepEqual(
+      (await artifacts.describeCollection(operator, "shared"))?.columns.map((item) => item.name),
+      ["fact", "source"],
+    );
+    const sharedAdded = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string };
+    await assert.rejects(
+      studioEditCollection.handler(await ctx(), {
+        ...orgEdit,
+        base_updated_at: sharedAdded.updated_at,
+        columns: [column("source", "text"), column("fact", "text")],
+      }),
+      /keep fact, source unchanged and in order/,
+    );
+
+    // Delete: the card names the records; apply removes the guild's own table.
+    const deleteWidget = (await studioEditCollection.handler(await ctx(), { action: "delete", collection: "leads", reason: "Replaced." })) as Widget;
     assert.equal(deleteWidget.edit.action, "delete");
-    assert.match(deleteWidget.edit.effects.join(" "), /neighbour-guild read/);
-    const deleteSeq = await commit("studio_edit_collection", { action: "delete", collection: "shared", reason: "Replaced." }, deleteWidget as unknown as Record<string, unknown>);
+    assert.match(deleteWidget.edit.effects.join(" "), /2 records/);
+    const deleteSeq = await commit("studio_edit_collection", { action: "delete", collection: "leads", reason: "Replaced." }, deleteWidget as unknown as Record<string, unknown>);
     const deleteView = await view(deleteSeq);
     assert.equal(deleteView.proposed, "");
-    assert.match(String(deleteView.live), /shared · organisation table/);
+    assert.match(String(deleteView.live), /leads · table-guild's own table/);
     assert.equal((await resolve(deleteSeq, "apply")).statusCode, 200);
-    assert.equal(await artifacts.describeCollection(operator, "shared"), null);
+    assert.equal(await artifacts.describeCollection(operator, "leads"), null);
   } finally {
     await app.close();
     await database.close();

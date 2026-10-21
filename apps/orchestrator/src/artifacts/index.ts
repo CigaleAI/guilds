@@ -74,6 +74,7 @@ export {
   ownerPrefix,
   parseDisplayPath,
   recordDisplayPath,
+  type ParsedDisplayPath,
   SCRIPTS_SEGMENT,
   TASK_KEY,
 } from "./paths.js";

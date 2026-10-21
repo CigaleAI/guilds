@@ -54,3 +54,10 @@ To share machines, move agents onto one under each agent's
 **Model keys** lists Anthropic. An organisation connects its Claude
 API key and offers Claude models to agents, Studio, and the Builder,
 called through Anthropic's Messages API.
+
+Studio reads the about and description of the organisation's other
+guilds the operator can see. Its tables are the source guild's own and
+the organisation's. It adds columns to an organisation table and
+changes the guild's grants on it, but no longer renames, rewrites, or
+deletes one; those changes are made on the **Tables** page. Another
+guild's own tables and their records are out of Studio's reach.

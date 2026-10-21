@@ -200,9 +200,11 @@ Records re-read after every write and when the window regains focus.
 The Prompt Studio inspector shows the same records under
 **State** › **Tables** ([Prompt Studio](prompt-studio.md)). The coach can
 propose to create, change, or delete the source guild's own
-collections and the organisation's. A proposal can also change the
+collections, to create organisation collections, and to add columns to
+an existing organisation collection. A proposal can also change the
 grants of the source guild and its agents
-([Studio proposals](studio-proposals.md)).
+([Studio proposals](studio-proposals.md)). Another guild's own
+collections are out of the coach's reach.
 
 ### The guild's State › Tables tab
 

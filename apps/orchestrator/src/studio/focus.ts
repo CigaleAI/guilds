@@ -16,6 +16,7 @@ import { capBytes } from "../toolbox/output.js";
 import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
 import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
+import { studioReachesParsed } from "./reach.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -346,14 +347,14 @@ async function loadFileForFocus(
   if (parsed.orgId !== deps.orgId) {
     throw new StudioUnprocessableError("focus file is not in this organisation");
   }
+  if (parsed.kind === "collection") {
+    throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
+  }
   let agent: Record<string, unknown> | null = null;
   if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
     agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
-  } else if (parsed.kind === "artifact" && parsed.level === "guild" && parsed.ownerId !== deps.sourceGuildId) {
-    throw new StudioUnprocessableError("focus file is not in the source guild");
-  }
-  if (parsed.kind === "collection") {
-    throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
+  } else if (!(await studioReachesParsed(deps, parsed))) {
+    throw new StudioUnprocessableError("focus file is not in the source guild or the organisation's shared files");
   }
   const actor = deps.artifacts.operatorContext(deps.orgId, String(deps.user.id), String(deps.user.name ?? "operator"), {
     guildId: deps.sourceGuildId,
