@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ModelCatalog } from "../../src/llm/catalog.js";
-import { coreModelCredentials } from "../../src/llm/credentials.js";
+import { coreModelCredentials, type ModelCredentialsProvider } from "../../src/llm/credentials.js";
 import { ModelsError, ModelsService, type ModelsRepository } from "../../src/llm/models.js";
 import { projectModelsDevFeed } from "../../src/llm/models-dev.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
@@ -11,7 +11,9 @@ class MemoryRepo implements ModelsRepository {
   defaults = new Map<string, string | null>();
 
   async listOrgModelProviders(orgId: string) {
-    return [...this.rows.values()].filter((row) => row.org_id === orgId);
+    return [...this.rows.values()]
+      .filter((row) => row.org_id === orgId)
+      .map((row) => ({ ...row, own_key: row.ciphertext !== null }));
   }
 
   async getOrgModelProvider(orgId: string, provider: string) {
@@ -61,7 +63,10 @@ const feed = projectModelsDevFeed(
   ["openai", "kimi-code-plan-global"],
 );
 
-function service(probe: Record<string, string[] | number> = {}) {
+function service(
+  probe: Record<string, string[] | number> = {},
+  credentialsOf: (repo: MemoryRepo) => ModelCredentialsProvider = (repo) => coreModelCredentials(repo, TEST_MASTER_KEY),
+) {
   const repo = new MemoryRepo();
   const requests: string[] = [];
   const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -78,7 +83,7 @@ function service(probe: Record<string, string[] | number> = {}) {
   }) as typeof fetch;
   const models = new ModelsService({
     repo,
-    credentials: coreModelCredentials(repo, TEST_MASTER_KEY),
+    credentials: credentialsOf(repo),
     catalog: new ModelCatalog({ snapshot: { fetched_at: "2026-01-01", providers: feed }, url: "" }),
     fetch: fetchFn,
     masterKey: TEST_MASTER_KEY,
@@ -92,15 +97,15 @@ test("nothing is offered until a provider is connected", async () => {
   assert.equal(payload.default, null);
   assert.deepEqual(payload.models, []);
   assert.deepEqual(
-    payload.providers.map((item) => [item.id, item.kind, item.connected, item.key_hint]),
+    payload.providers.map((item) => [item.id, item.kind, item.connected, item.source, item.key_hint]),
     [
-      ["openai", "marketplace", false, null],
-      ["anthropic", "marketplace", false, null],
-      ["openrouter", "marketplace", false, null],
-      ["xai", "marketplace", false, null],
-      ["deepinfra", "marketplace", false, null],
-      ["local", "marketplace", false, null],
-      ["kimi", "coding", false, null],
+      ["openai", "marketplace", false, null, null],
+      ["anthropic", "marketplace", false, null, null],
+      ["openrouter", "marketplace", false, null, null],
+      ["xai", "marketplace", false, null, null],
+      ["deepinfra", "marketplace", false, null, null],
+      ["local", "marketplace", false, null, null],
+      ["kimi", "coding", false, null, null],
     ],
   );
   assert.deepEqual(await models.connectedProviders("org_1"), new Set());
@@ -114,7 +119,7 @@ test("connecting probes the key, keeps it on a later save, and offers the chosen
     (error: unknown) => error instanceof ModelsError && /openai\/\{model\}/.test(error.message),
   );
   const item = await models.connect("org_1", "openai", { api_key: " sk-openai-1234 ", models: ["openai/gpt-5", "openai/gpt-5", "openai/gpt-5-dated"] });
-  assert.deepEqual(item, { id: "openai", label: "OpenAI", kind: "marketplace", connected: true, key_hint: "1234", base_url: null });
+  assert.deepEqual(item, { id: "openai", label: "OpenAI", kind: "marketplace", connected: true, source: "own", key_hint: "1234", base_url: null });
   assert.deepEqual(requests, ["https://api.openai.com/v1/models sk-openai-1234"]);
   const payload = await models.read("org_1");
   assert.equal(payload.providers.find((row) => row.id === "openai")?.connected, true);
@@ -149,7 +154,7 @@ test("the local endpoint takes a URL and an optional key, lists what it reports,
   await assert.rejects(() => models.connect("org_1", "local", { base_url: "ftp://x" }), /http/);
   await assert.rejects(() => models.providerCatalog("org_1", "local"), /URL first/);
   const item = await models.connect("org_1", "local", { base_url: "http://127.0.0.1:11434/v1", models: ["local/qwen3:8b"] });
-  assert.deepEqual(item, { id: "local", label: "Local endpoint", kind: "marketplace", connected: true, key_hint: null, base_url: "http://127.0.0.1:11434/v1" });
+  assert.deepEqual(item, { id: "local", label: "Local endpoint", kind: "marketplace", connected: true, source: "own", key_hint: null, base_url: "http://127.0.0.1:11434/v1" });
   assert.deepEqual(requests, ["http://127.0.0.1:11434/v1/models "]);
   const listed = await models.providerCatalog("org_1", "local");
   assert.deepEqual(listed.map((row) => [row.id, row.thinking, row.temperature, row.attachments, row.price]), [
@@ -182,4 +187,37 @@ test("the default is one of the chosen marketplace models, and clears when that 
   assert.equal((await models.read("org_1")).default, null, "removing the key clears the default");
   assert.equal(await models.remove("org_1", "openai"), false);
   assert.deepEqual(await models.connectedProviders("org_1"), new Set(["kimi"]));
+});
+
+test("a provider the platform serves is marked so, offers its models, and is not the organisation's to remove", async () => {
+  const { models, repo } = service({ "https://api.openai.com/v1/models": ["gpt-5"] }, (store) => {
+    const own = coreModelCredentials(store, TEST_MASTER_KEY);
+    return {
+      async modelCredentials(orgId, provider) {
+        return (await own.modelCredentials(orgId, provider)) ?? (provider === "openai" ? { apiKey: "platform-key" } : null);
+      },
+    };
+  });
+  await repo.upsertOrgModelProvider(
+    "mp_1",
+    "org_1",
+    "openai",
+    { ciphertext: null, nonce: null, keyHint: null, models: ["openai/gpt-5"] },
+  );
+  const payload = await models.read("org_1");
+  assert.deepEqual(
+    payload.providers.filter((item) => item.connected).map((item) => [item.id, item.source, item.key_hint]),
+    [["openai", "platform", null]],
+  );
+  assert.deepEqual(payload.models.map((row) => row.id), ["openai/gpt-5"]);
+  assert.deepEqual(await models.setDefault("org_1", "openai/gpt-5"), { default: "openai/gpt-5" });
+  await assert.rejects(() => models.connect("org_1", "openai", { models: [] }), /api_key is required/);
+  await assert.rejects(
+    () => models.remove("org_1", "openai"),
+    (error: unknown) => error instanceof ModelsError && error.status === 409 && /OpenAI is provided by the platform/.test(error.message),
+  );
+  const item = await models.connect("org_1", "openai", { api_key: "sk-own-5678" });
+  assert.equal(item.source, "own", "the organisation's key takes over from the platform's");
+  assert.deepEqual(repo.rows.get("org_1/openai")?.models, ["openai/gpt-5"]);
+  assert.equal(await models.remove("org_1", "openai"), true);
 });

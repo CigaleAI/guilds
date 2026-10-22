@@ -621,7 +621,10 @@ Builder start, and every completion resolve credentials through it. A
 provider whose credentials resolve is **connected**; one that does not
 refuses the save with `connect a … key on Model keys` and ends a run
 with `generation.model_key`. A `PolicyError` it throws ends the run
-with its message, as the organisation policy does.
+with its message, as the organisation policy does. A connected
+provider whose row holds no key of the organisation's is served by
+the platform (`source: "platform"`), and is not the organisation's
+to remove (409).
 
 The function may return an `onUsage` callback. Core calls it once per
 completion with the run id, the model, the token usage, and the cost

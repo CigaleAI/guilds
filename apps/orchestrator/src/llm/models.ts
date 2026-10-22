@@ -56,11 +56,16 @@ export type ModelsServiceDeps = {
   masterKey?: Buffer | undefined;
 };
 
+/** Whose key a connected provider runs on: the organisation's own, or one the platform provides. */
+export type ProviderSource = "own" | "platform";
+
 export type ProviderItem = {
   id: string;
   label: string;
   kind: ProviderKind;
   connected: boolean;
+  /** Null while the provider is not connected. */
+  source: ProviderSource | null;
   key_hint: string | null;
   base_url: string | null;
 };
@@ -183,6 +188,7 @@ export class ModelsService {
         label: provider.label,
         kind: provider.kind,
         connected: state.connected,
+        source: state.connected ? (row?.own_key === true ? "own" : "platform") : null,
         key_hint: row && typeof row.key_hint === "string" && row.key_hint ? row.key_hint : null,
         base_url: provider.id === "local" ? state.baseURL : null,
       });
@@ -276,6 +282,7 @@ export class ModelsService {
       label: provider.label,
       kind: provider.kind,
       connected: true,
+      source: "own",
       key_hint: typeof row.key_hint === "string" && row.key_hint ? row.key_hint : null,
       base_url: baseURL,
     };
@@ -308,9 +315,19 @@ export class ModelsService {
     return { default: id };
   }
 
-  /** Removes the provider's row and its chosen models; a default among them clears. */
+  /**
+   * Removes the organisation's key for the provider and its chosen models; a default among them
+   * clears. A provider the platform provides is not the organisation's to remove.
+   */
   async remove(orgId: string, providerId: string): Promise<boolean> {
     const provider = requireProvider(providerId);
+    const existing = await this.deps.repo.getOrgModelProvider(orgId, provider.id);
+    if (!existing) {
+      return false;
+    }
+    if (!existing.ciphertext) {
+      throw new ModelsError(409, `${provider.label} is provided by the platform`);
+    }
     const deleted = await this.deps.repo.deleteOrgModelProvider(orgId, provider.id);
     if (!deleted) {
       return false;

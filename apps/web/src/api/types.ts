@@ -897,12 +897,17 @@ export type MessageAttachment = {
 
 export type ModelProvider = "openai" | "anthropic" | "openrouter" | "xai" | "deepinfra" | "local" | "kimi";
 
-/** A provider as the organisation sees it: connected or not, and the last characters of its key. */
+/**
+ * A provider as the organisation sees it: connected or not, whose key it runs on, and the last
+ * characters of the organisation's key.
+ */
 export type OrgModelProvider = {
   id: ModelProvider;
   label: string;
   kind: "marketplace" | "coding";
   connected: boolean;
+  /** The organisation's own key, or one the platform provides; null while not connected. */
+  source: "own" | "platform" | null;
   key_hint: string | null;
   /** The local endpoint's URL once saved; null for every other provider. */
   base_url: string | null;

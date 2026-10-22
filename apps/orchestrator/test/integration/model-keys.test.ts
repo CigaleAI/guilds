@@ -92,6 +92,7 @@ test("an organisation connects providers, chooses models, and names a default", 
       label: "DeepInfra",
       kind: "marketplace",
       connected: true,
+      source: "own",
       key_hint: "abcd",
       base_url: null,
     });
@@ -102,6 +103,7 @@ test("an organisation connects providers, chooses models, and names a default", 
     const listed = await app.inject({ method: "GET", url: `${base}/models`, headers: MEMBER });
     assert.equal(listed.statusCode, 200, listed.body);
     assert.equal(listed.json().providers.find((item: { id: string }) => item.id === "deepinfra").key_hint, "abcd");
+    assert.equal(listed.json().providers.find((item: { id: string }) => item.id === "deepinfra").source, "own");
     assert.deepEqual(
       listed.json().models.map((item: { id: string; attachments: boolean }) => [item.id, item.attachments]),
       [["deepinfra/zai-org/GLM-5.3-Flash", true], ["deepinfra/Qwen/Qwen3.8-2.4T-A95B", false]],

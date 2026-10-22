@@ -119,6 +119,7 @@
               "label": "OpenAI",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -127,6 +128,7 @@
               "label": "Anthropic",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -135,6 +137,7 @@
               "label": "OpenRouter",
               "kind": "marketplace",
               "connected": true,
+              "source": "own",
               "key_hint": "abcd",
               "base_url": null
             },
@@ -143,6 +146,7 @@
               "label": "xAI",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -151,6 +155,7 @@
               "label": "DeepInfra",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -159,6 +164,7 @@
               "label": "Local endpoint",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -167,6 +173,7 @@
               "label": "Kimi Code",
               "kind": "coding",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             }
@@ -198,6 +205,7 @@
               "label": "OpenAI",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -206,6 +214,7 @@
               "label": "Anthropic",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -214,6 +223,7 @@
               "label": "OpenRouter",
               "kind": "marketplace",
               "connected": true,
+              "source": "own",
               "key_hint": "abcd",
               "base_url": null
             },
@@ -222,6 +232,7 @@
               "label": "xAI",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -230,6 +241,7 @@
               "label": "DeepInfra",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -238,6 +250,7 @@
               "label": "Local endpoint",
               "kind": "marketplace",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             },
@@ -246,6 +259,7 @@
               "label": "Kimi Code",
               "kind": "coding",
               "connected": false,
+              "source": null,
               "key_hint": null,
               "base_url": null
             }

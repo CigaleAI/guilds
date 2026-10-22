@@ -103,8 +103,10 @@ and `trusted-header`. Paths below are under
   callback core calls once per completion with the run id, model,
   token usage, and cost. It returns null while the provider is not
   connected. It may throw a `PolicyError`, which core shows and does
-  not start the run on. Core's default decrypts the organisation's
-  row and has no callback. Who pays, whether a budget exists, and
+  not start the run on. A provider whose credentials resolve while
+  the organisation's row holds no key is shown as provided by the
+  platform (`source: "platform"`). Core's default decrypts the
+  organisation's row and has no callback. Who pays, whether a budget exists, and
   what the callback does are the implementation's
   ([Orchestrator](orchestrator.md#credentials)).
 - **Organisation created.** The hook runs inside the transaction that

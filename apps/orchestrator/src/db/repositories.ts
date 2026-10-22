@@ -4076,7 +4076,7 @@ export class Repositories {
 
   async listOrgModelProviders(orgId: string): Promise<Array<Record<string, unknown>>> {
     const result = await this.pool.query(
-      `SELECT id, org_id, provider, key_hint, models, created_at, updated_at
+      `SELECT id, org_id, provider, key_hint, models, ciphertext IS NOT NULL AS own_key, created_at, updated_at
        FROM org_model_providers
        WHERE org_id = $1
        ORDER BY provider`,

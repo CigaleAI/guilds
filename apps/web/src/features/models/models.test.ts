@@ -23,9 +23,9 @@ function model(id: string, kind: "marketplace" | "coding" = "marketplace"): Cata
 const models: OrgModels = {
   default: "openai/gpt-5",
   providers: [
-    { id: "openai", label: "OpenAI", kind: "marketplace", connected: true, key_hint: "abcd", base_url: null },
-    { id: "xai", label: "xAI", kind: "marketplace", connected: false, key_hint: null, base_url: null },
-    { id: "kimi", label: "Kimi Code", kind: "coding", connected: true, key_hint: "efgh", base_url: null },
+    { id: "openai", label: "OpenAI", kind: "marketplace", connected: true, source: "own", key_hint: "abcd", base_url: null },
+    { id: "xai", label: "xAI", kind: "marketplace", connected: false, source: null, key_hint: null, base_url: null },
+    { id: "kimi", label: "Kimi Code", kind: "coding", connected: true, source: "own", key_hint: "efgh", base_url: null },
   ],
   models: [model("openai/gpt-5"), model("openai/gpt-5-mini"), model("kimi/k3", "coding")],
 };
@@ -56,7 +56,11 @@ test("the default is preselected where the picker lists it, else nothing", () =>
 
 test("setup progress follows a connected provider, chosen models, and a default", () => {
   assert.deepEqual(setupProgress(undefined).map((step) => step.done), [false, false, false]);
-  const empty: OrgModels = { default: null, providers: models.providers.map((p) => ({ ...p, connected: false })), models: [] };
+  const empty: OrgModels = {
+    default: null,
+    providers: models.providers.map((p) => ({ ...p, connected: false, source: null })),
+    models: [],
+  };
   assert.deepEqual(setupProgress(empty).map((step) => step.done), [false, false, false]);
   assert.deepEqual(setupProgress({ ...models, default: null, models: [] }).map((step) => step.done), [true, false, false]);
   assert.deepEqual(setupProgress(models).map((step) => step.done), [true, true, true]);

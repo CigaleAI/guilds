@@ -34,19 +34,26 @@ export function modelFacts(model: CatalogModel): string {
 }
 
 /**
- * Every provider, split into marketplace and coding APIs. The organisation connects a provider
- * with its own key, ticks the models it offers from the provider's catalog, and marks one
- * marketplace model as its default. Model keys shows it on its own page; the setup gate shows it
- * while no provider is connected.
+ * The models the platform provides, then every provider split into marketplace and coding APIs.
+ * The organisation connects a provider with its own key, ticks the models it offers from the
+ * provider's catalog, and marks one marketplace model, its own or the platform's, as its default.
  */
 export function ModelProviders({ models, canManage }: { models: OrgModels; canManage: boolean }) {
   const { org } = useIdentity();
   const removeProvider = useRemoveModelProvider(org.id);
   const setDefault = useSetDefaultModel(org.id);
   const [removing, setRemoving] = useState<ModelProvider | null>(null);
+  const platform = models.providers.filter(
+    (item) => item.source === "platform" && models.models.some((model) => model.provider === item.id),
+  );
   const marketplace = models.providers.filter((item) => item.kind === "marketplace");
   const coding = models.providers.filter((item) => item.kind === "coding");
   const removingMeta = models.providers.find((item) => item.id === removing);
+  const onDefault = (model: string | null) =>
+    setDefault.mutate(model, {
+      onSuccess: () => toast({ kind: "success", title: model ? "Default model set" : "Default model cleared" }),
+      onError: (error) => toast({ kind: "error", title: "Couldn't set the default", description: error.message }),
+    });
 
   return (
     <>
@@ -61,6 +68,24 @@ export function ModelProviders({ models, canManage }: { models: OrgModels; canMa
           "None yet: every picker starts empty until one is marked below."
         )}
       </p>
+      {platform.length ? (
+        <>
+          <p className="text-sm text-fg-2">
+            <span className="font-semibold text-fg">Provided by the platform. </span>
+            These models run on the platform's keys, and the platform chooses them. Any of them can be the
+            default. A provider connected below with the organisation's key runs on that key instead.
+          </p>
+          {platform.map((provider) => (
+            <PlatformCard
+              key={provider.id}
+              provider={provider}
+              models={models}
+              canManage={canManage}
+              onDefault={onDefault}
+            />
+          ))}
+        </>
+      ) : null}
       <ProviderSection
         title="Marketplace"
         intro="Agents, Studio and the Builder run on these. Connect a provider with the organisation's key, then choose the models to offer. Keys are encrypted at rest by the orchestrator; only their last characters are shown."
@@ -68,14 +93,7 @@ export function ModelProviders({ models, canManage }: { models: OrgModels; canMa
         models={models}
         canManage={canManage}
         onRemove={setRemoving}
-        onDefault={(model) =>
-          setDefault.mutate(model, {
-            onSuccess: () =>
-              toast({ kind: "success", title: model ? "Default model set" : "Default model cleared" }),
-            onError: (error) =>
-              toast({ kind: "error", title: "Couldn't set the default", description: error.message }),
-          })
-        }
+        onDefault={onDefault}
       />
       <ProviderSection
         title="Coding APIs"
@@ -151,6 +169,38 @@ function ProviderSection({
   );
 }
 
+/** A provider the platform provides: the models it offers the organisation, each one a possible default. */
+function PlatformCard({
+  provider,
+  models,
+  canManage,
+  onDefault,
+}: {
+  provider: OrgModelProvider;
+  models: OrgModels;
+  canManage: boolean;
+  onDefault: (model: string | null) => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl bg-surface p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <ProviderLogo provider={provider.id} size={44} />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-md font-semibold">{provider.label}</span>
+          <span className="text-sm text-muted">Provided by the platform</span>
+        </div>
+      </div>
+      <ChosenModels
+        provider={provider}
+        chosen={models.models.filter((model) => model.provider === provider.id)}
+        defaultModel={models.default}
+        canManage={canManage}
+        onDefault={onDefault}
+      />
+    </section>
+  );
+}
+
 /** One provider: its state, the connect form, and once connected the catalog to choose from. */
 function ProviderCard({
   provider,
@@ -171,14 +221,17 @@ function ProviderCard({
   const [url, setUrl] = useState(provider.base_url ?? "");
   const [choosing, setChoosing] = useState(false);
   const local = provider.id === "local";
+  const own = provider.source === "own";
   const chosen = models.models.filter((model) => model.provider === provider.id);
-  const state = provider.connected
+  const state = own
     ? local
       ? `Connected · ${provider.base_url ?? ""}${provider.key_hint ? ` · key ends in ${provider.key_hint}` : ""}`
       : `Connected · key ends in ${provider.key_hint ?? "…"}`
     : local
       ? "Not connected. Save the endpoint's URL, and a key when it needs one."
-      : "Not connected. Paste the organisation's key.";
+      : provider.source === "platform"
+        ? "Provided by the platform. Paste the organisation's key to run on it instead."
+        : "Not connected. Paste the organisation's key.";
 
   const save = () => {
     const body = {
@@ -207,7 +260,7 @@ function ProviderCard({
           <span className="text-sm text-muted">{state}</span>
           <span className="text-xs text-muted">{PROVIDER_META[provider.id].blurb}</span>
         </div>
-        {provider.connected && canManage ? (
+        {own && canManage ? (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setChoosing((open) => !open)}>
               {choosing ? "Done choosing" : "Choose models"}
@@ -246,13 +299,13 @@ function ProviderCard({
             onChange={(event) => setKey(event.currentTarget.value)}
           />
           <Button type="submit" size="xl" disabled={!canSave || connect.isPending}>
-            {provider.connected ? "Replace" : "Connect"}
+            {own ? "Replace" : "Connect"}
           </Button>
         </form>
       ) : (
         <p className="text-sm text-muted">Owners and admins manage model keys.</p>
       )}
-      {provider.connected ? (
+      {own ? (
         <ChosenModels
           provider={provider}
           chosen={chosen}
@@ -261,7 +314,7 @@ function ProviderCard({
           onDefault={onDefault}
         />
       ) : null}
-      {provider.connected && choosing && canManage ? (
+      {own && choosing && canManage ? (
         <CatalogPicker
           provider={provider}
           chosen={chosen.map((model) => model.id)}

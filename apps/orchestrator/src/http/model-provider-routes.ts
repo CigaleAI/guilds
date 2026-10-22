@@ -102,7 +102,14 @@ export async function registerModelProviderRoutes(app: FastifyInstance, deps: Ap
   app.delete("/api/orgs/:org_id/model-providers/:provider", async (request, reply) => {
     const orgId = param(request, "org_id");
     await requireOrgManager(deps, request, orgId);
-    if (!(await models.remove(orgId, providerParam(request)))) {
+    const provider = providerParam(request);
+    let removed: boolean;
+    try {
+      removed = await models.remove(orgId, provider);
+    } catch (error) {
+      mapModelsError(error);
+    }
+    if (!removed) {
       throw new HttpError(404, "model provider not found");
     }
     return reply.code(204).send();

@@ -285,8 +285,9 @@ provider is 422.
 
 - `GET /api/orgs/:id/models`, for every member. It returns the
   organisation's `default`, its `providers` (`id`, `label`, `kind`,
-  `connected`, `key_hint`, and `base_url` for the local endpoint),
-  and its chosen `models` with their capacities (`thinking`,
+  `connected`, `source` (`own`, `platform`, or null while not
+  connected), `key_hint`, and `base_url` for the local endpoint), and
+  its chosen `models` with their capacities (`thinking`,
   `temperature`, `attachments`, `context`, `price` per million
   tokens, `kind`, `coding_only`). Every picker reads this.
 - `GET /api/orgs/:id/model-providers/:provider/catalog`, for every
@@ -313,7 +314,9 @@ provider is 422.
   model`), or when the model is not chosen (`choose <id>
   under <Provider> on Model keys first`).
 - `DELETE /api/orgs/:id/model-providers/:provider`, for owners and
-  admins. 204, or 404 when the provider is not connected.
+  admins. 204, or 404 when the provider is not connected. 409
+  `<Provider> is provided by the platform` when its row holds no key
+  of the organisation's.
 
 Routes live in `apps/orchestrator/src/http/model-provider-routes.ts`.
 The service is `apps/orchestrator/src/llm/models.ts`. The Model keys
@@ -364,3 +367,18 @@ Docker bridge reaches, not on loopback alone.
 An edition built on core may resolve model credentials its own way,
 with usage reporting and a policy
 ([Extension points](../architecture/extension-points.md)).
+
+A provider's `source` is `own` when the organisation's row holds its
+key, and `platform` when its credentials resolve without one: the
+edition provides the key and writes the models the row offers. In
+core every connected provider is `own`.
+
+- **Provided by the platform** heads **Model keys** when a provider
+  is `platform` and offers models. Each such provider has a card with
+  its models and **Make default**, and no key field, **Choose
+  models**, or **Remove**.
+- Under **Marketplace** and **Coding APIs**, a `platform` provider's
+  card reads **Provided by the platform** with the key field.
+  Connecting the organisation's key makes it `own`: the card then
+  holds its models, they leave the platform section, and the
+  organisation chooses them from then on.
