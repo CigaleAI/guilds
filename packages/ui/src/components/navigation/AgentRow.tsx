@@ -18,7 +18,7 @@ export type AgentRowProps = Omit<ComponentProps<"button">, "children"> & {
   browser?: boolean;
   /** The agent codes through a harness. */
   coding?: boolean;
-  /** Notes its standing prompt embeds that no longer resolve. */
+  /** Embeds in its Task that do not resolve to a file the agent can read. */
   brokenLinks?: readonly string[];
   /** The agent open in the inspector. */
   selected?: boolean;
@@ -77,7 +77,7 @@ export function AgentRow({
   const Comp = asChild ? Slot.Root : "button";
   const broken =
     brokenLinks && brokenLinks.length > 0
-      ? `Broken file link in standing prompt: ${brokenLinks.join(", ")}`
+      ? `Not reachable from the Task: ${brokenLinks.join(", ")}`
       : null;
   return (
     <Comp

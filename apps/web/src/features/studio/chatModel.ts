@@ -34,7 +34,7 @@ export type EditWidget = {
     /** The guild fields a guild edit changes. */
     fields?: string[];
     lines?: { added?: number; removed?: number };
-    /** An access edit's changes, one per tool, file level, or connection. */
+    /** An access edit's changes, one per tool or connection. */
     changes?: AccessChange[];
     /** Whether an access edit turns on anything the agent cannot use today. */
     widens?: boolean;
@@ -43,7 +43,7 @@ export type EditWidget = {
 
 /** One overlay an access edit writes. */
 export type AccessChange = {
-  kind: "native_tool" | "artifact_grant" | "mcp" | "mcp_tool";
+  kind: "native_tool" | "mcp" | "mcp_tool";
   id: string;
   label: string;
   setting: "on" | "off" | "inherit";

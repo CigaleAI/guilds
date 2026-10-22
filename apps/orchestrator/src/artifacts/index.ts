@@ -15,10 +15,13 @@ export {
   type CollectionDescription,
   type CollectionView,
   type MemoryRevisionRow,
+  type ReachedNote,
+  type ReachedTable,
   type RecordView,
   type StateArtifact,
 } from "./store.js";
-export { agentActor, catalogLevels, grantsFromBindings, operatorActor } from "./grants.js";
+export { agentActor, operatorActor } from "./actors.js";
+export { type AccessEntry, type AccessList } from "./access.js";
 export {
   inlineTaskEmbeds,
   collectTaskEmbeds,
@@ -26,6 +29,8 @@ export {
   inspectEmbed,
   inspectTaskEmbeds,
   snapshotTaskEmbeds,
+  storeNoteReader,
+  taskEmbedActor,
   walkTaskEmbeds,
   withoutEmbeds,
   type EmbedReader,
@@ -45,10 +50,9 @@ export {
 } from "./columns.js";
 export {
   ACCESS_MODES,
-  ARTIFACT_GRANT_IDS,
+  ACCESS_SUBJECTS,
   ARTIFACT_KINDS,
   ARTIFACT_LEVELS,
-  DEFAULT_ARTIFACT_GRANTS,
   EMBED_BUDGET,
   resolveAccess,
   isAccessMode,
@@ -57,9 +61,10 @@ export {
   isArtifactLevel,
   type AccessMode,
   type AccessSubject,
+  type AccessTarget,
+  type AccessTargetKind,
   type AgentAccessMode,
   type ArtifactActor,
-  type ArtifactGrants,
   type ArtifactKind,
   type ArtifactLevel,
 } from "./types.js";

@@ -35,7 +35,7 @@ flowchart TD
   Ro --> T[Task]
   Ro --> S[scripts]
   Ro --> Sc[routines]
-  Ro --> Cf[config, grants, native tools, browser]
+  Ro --> Cf[config, native tools, browser]
   R --> Co[collections]
   R --> N[seed notes]
   R --> Cn[connections: connectors and their tools per role]
@@ -87,7 +87,8 @@ apply.
 ### Access is resolved, not a matrix
 
 A recipe stores the *effective* access of each role: the connectors it
-may use, the tools of each, its grants, and the names of its secrets.
+may use, the tools of each, its native tool switches, and the names
+of its secrets.
 It adds a recommended scope for each connection and secret. It never
 stores binding ids or connection ids.
 
@@ -139,11 +140,11 @@ The document is stored in PostgreSQL and downloads as JSON.
     role, name_suggestion, focus, wake_triggers?, avatar_shape, avatar_color, config,
     task: { body, embeds[], author },
     scripts, schedules,
-    grants, native_tools,
+    native_tools,
     browser: { required, instructions, author }
   }],
   collections: [{ name, purpose, columns, scope?: "guild" | "org", guild?: "read" | "write", writers?: [role] }],
-  notes: [{ id, level, role?, key, body, kind: "seed", author }],
+  notes: [{ id, level, role?, key, body, kind: "seed", author, guild?: "read" | "write", writers?: [role] }],
   connections: [{
     server, auth, recommended_scope, recommended_role?, hint,
     setup, resources?, manifest?, author,
@@ -201,7 +202,6 @@ text looks like a credential (see
 | `task` | `{ body, embeds[], author }`. `body` is at most 256 KiB. `embeds` lists the embeds of `body`; it is informational, since checks and apply read the embeds from `body` itself |
 | `scripts` | `[{ name, description, parameters, source, secrets[], author }]`, at most 50. `source` is at most 256 KiB. `secrets` is informational: apply does not grant it, and capture writes it empty |
 | `schedules` | `[{ key, cron or window, description, instruction, author }]`, at most 50 |
-| `grants` | `{ read_guild, write_guild, read_org, write_org }`. Defaults `true`, `true`, `true`, `false` |
 | `native_tools` | `{ [tool]: boolean }`. Each entry overlays a catalog where every native tool is on, so a tool the map leaves out stays on |
 | `browser` | `{ required, instructions, author }`. `required` defaults to `config.browser` and must match it. `instructions` is at most 8 KiB |
 
@@ -249,15 +249,18 @@ guild: `{ name, purpose, columns, scope, guild, writers }`.
   that breaks a rule is refused with `collections[i].columns: …`.
   Every collection declares one; an empty list is the
   `design.untyped_collection` error.
-- `scope` is `guild` for a collection the applied guild owns. Every
-  member reads and writes it. `scope` is `org` (the default) for an
-  organisation collection.
+- `scope` is `guild` for a collection the applied guild owns. It
+  starts with the guild at `write`, so every member reads and writes
+  it. `scope` is `org` (the default) for an organisation collection.
 - A `guild` scope takes `guild: "write"` (its default) and no
   `writers`. Anything else is refused.
-- On an `org` collection, `guild` (`read` or `write`, default `read`)
-  is the grant the new guild gets. `writers` lists the roles whose
-  agents get their own `write` grant. A writer that is not a role is
-  the `collection.writer` error.
+- An `org` collection starts with the organisation at `read`. Its
+  `guild` (`read` or `write`, default `read`) is the new guild's mode
+  on the collection's access list. `writers` lists the roles whose
+  agents get their own `write` row. A writer that is not a role is the
+  `collection.writer` error.
+- A recipe carries no rows for other guilds or their agents, and no
+  agent row of `read` or `none`.
 - A collection carrying `level`, `role`, `schema`, or `key` is refused
   with a hint naming `scope`, `guild`, `writers`, `columns`, and
   `name`.
@@ -275,6 +278,18 @@ collection whose columns accept the recipe's; see
   `role`; a role that does not exist is the `note.role` error.
 - `id` defaults to `note-<n>`. `body` is at most 256 KiB. `kind` is
   always `seed`.
+- `guild` and `writers` shape a note's access like a collection's, on
+  top of the rows the note starts with at its level. `guild` (`read` or
+  `write`) is the new guild's mode on the note's access list. `writers`
+  lists the roles whose agents get their own `write` row. A writer that
+  is not a role is the `note.writer` error.
+- A `guild` note takes `guild: "write"` (its default) and no
+  `writers`. Anything else is refused. An `org` note's `guild` defaults
+  to `read`, which the organisation's starting row already gives. An
+  `agent` note has no `guild` unless the recipe sets one: it starts
+  reached by its role's agent alone.
+- As for collections, a recipe carries no rows for other guilds or
+  their agents, and no agent row of `read` or `none`.
 
 ### Embeds and tags
 
@@ -439,6 +454,7 @@ findings `collection.conflict` and `machine.*`
 | `review.script` | info | A Builder-written script nobody reviewed yet |
 | `collection.writer` | error | A collection writer is not a role |
 | `note.role` | error | An agent note names an unknown role |
+| `note.writer` | error | A note writer is not a role |
 | `connection.missing` | warning | The recipe has no connectors |
 | `server.organisation`, `server.registry`, `server.unknown` | error | The box lacks a connection's server (see [connections](#connections)) |
 | `connection.role` | error | A connection names an unknown role |

@@ -39,7 +39,7 @@ Tables allows.
    Items agents track one by one (a queue, a hand-off, a seen-set) belong
    in a table. `studio_get_agent_access` shows what an
    agent is actually offered: native tools, scripts, secret names,
-   artifact levels, and MCP connections with their listed tools. A Task
+   and MCP connections with their listed tools. A Task
    that names a tool the agent is not offered is a finding, and so is
    access its work never uses (see Narrow agents). A Task sentence the
    Guidelines, the State intro, or the Memory rules already cover is a
@@ -84,7 +84,7 @@ text into a file:
 - A Task that explains peers' work beyond the hand-off: the draft keeps
   what this agent produces and consumes, and the table or tagged message
   that carries each.
-- Tools, file levels, connections, or connection tools the agent is
+- Tools, connections, or connection tools the agent is
   offered that its Task does not need and its recent runs do not call
   (`studio_list_runs`, `studio_get_run`): propose withdrawing them with
   `studio_edit_access`.
@@ -101,7 +101,7 @@ Outside Tasks, you change files by proposing an edit:
   fits instead of creating one.
 - `studio_edit_guild`: the guild `about` (one short line) and/or
   `description` (the long text).
-- `studio_edit_access`: one agent's native tools, file levels,
+- `studio_edit_access`: one agent's native tools,
   connections, and connection tools. Each entry is `on`, `off`, or
   `inherit` (drop the agent's own setting and take what the guild and
   organisation set).
@@ -130,9 +130,11 @@ for Memory, `studio_list_file_changes` for notes.
 ## Tables
 
 A table (collection) is a typed table that agents read and write with the
-`record_*` tools. A guild's own table is written by every member and
-reached by no other guild; an organisation table is reached by the guilds
-and agents granted it. `studio_list_collections` lists this guild's own
+`record_*` tools. Each table carries an access list: rows that give the
+organisation, a guild, or one agent `read` or `write`, and an agent row
+that can also be `none`. A guild's own table starts with that guild at
+`write`; an organisation table starts with the organisation at `read`.
+`studio_list_collections` lists this guild's own
 tables and the organisation's; `studio_get_collection` reads one: its
 columns, who in this guild reaches it, who outside it does, and its latest
 records.
@@ -141,9 +143,9 @@ records.
 
 - `create`: a new table. Reuse a table that fits before creating one. By
   default this guild owns it; `scope: "org"` makes an organisation table
-  that other guilds can be granted.
+  that every guild reads.
 - `edit`: on this guild's own table, a new name, purpose, column list, or
-  access for its agents. Send the complete column list and keep every
+  access for this guild and its agents. Send the complete column list and keep every
   column you do not mean to change: a column left out loses its values in
   every record, and a renamed column carries `rename_from` so its values
   move. On an organisation table, only new columns, sent with every
@@ -163,9 +165,12 @@ organisation's other guilds. Another guild's agents, files, and own tables
 stay out of reach; what it shares, it shares through organisation tables
 and notes. Before you propose that this guild produce something, or create
 a table for it, check whether another guild's description says it already
-produces it. If it does, find the organisation table or note it writes and
-grant this guild read access instead. When no organisation table or note
-holds that output, tell the operator: only that guild can share it.
+produces it. If it does, find the organisation table or note that holds
+it. For a table this guild does not read yet, propose this guild's row on
+it with `studio_edit_collection`. For a note, ask the operator to add this
+guild to the note's access list: no Studio tool changes a note's access.
+When no organisation table or note holds that output, tell the operator:
+only that guild can share it.
 
 ## Routines
 

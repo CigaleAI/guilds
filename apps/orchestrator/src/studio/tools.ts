@@ -6,6 +6,7 @@ import {
   inlineTaskEmbeds,
   listFileChanges,
   parseDisplayPath,
+  taskEmbedActor,
   type ArtifactStore,
 } from "../artifacts/index.js";
 import { jsonObj } from "../db/json.js";
@@ -329,7 +330,7 @@ export const studioGetAgentContext: StudioTool = {
       let effectiveTask = task?.content_text ?? "";
       let embedWarning: string | null = null;
       try {
-        effectiveTask = await inlineTaskEmbeds(ctx.artifacts, actor, effectiveTask);
+        effectiveTask = await inlineTaskEmbeds(ctx.artifacts, taskEmbedActor(ctx.orgId, agent), effectiveTask);
       } catch (error) {
         embedWarning = error instanceof Error ? error.message : "embed preflight failed";
       }
@@ -935,7 +936,7 @@ export const studioGetAgentAccess: StudioTool = {
   name: "studio_get_agent_access",
   schema: functionSchema(
     "studio_get_agent_access",
-    "Inspect what one source-guild agent is offered at run start: native tools, scripts, secret names, artifact levels, and MCP connections with their listed tools. Withheld lists name what the agent could be offered but is not. Each connection says whether this Studio session may read through it (studio_granted).",
+    "Inspect what one source-guild agent is offered at run start: native tools, scripts, secret names, and MCP connections with their listed tools. Withheld lists name what the agent could be offered but is not. Each connection says whether this Studio session may read through it (studio_granted).",
     {
       agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
     },
@@ -952,7 +953,6 @@ export const studioGetAgentAccess: StudioTool = {
       withheld_native_tools: NATIVE_TOOLS.filter((name) => !access.native_tools.includes(name)),
       scripts: access.scripts,
       secrets: access.secrets,
-      artifact_levels: access.artifact_levels,
       connections: access.connections.map((connection) => ({
         id: connection.id,
         server: connection.server,
@@ -1244,16 +1244,12 @@ export const studioEditAccess: StudioTool = {
   name: "studio_edit_access",
   schema: functionSchema(
     "studio_edit_access",
-    "Propose what one source-guild agent is offered: native tools, file levels, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, coding, scripting, and memory switches are agent configuration, not access.",
+    "Propose what one source-guild agent is offered: native tools, whole connections, and single connection tools. Each entry sets the agent's own overlay: on, off, or inherit (drop the overlay and take the guild's setting). Entries left out stay as they are. Nothing is written: the turn pauses and the operator applies or declines. Read the agent with studio_get_agent_access first. The browser, coding, scripting, and memory switches are agent configuration, not access.",
     {
       agent_id: { type: "string", description: "Source-guild agent id or name. Required." },
       native_tools: {
         ...ACCESS_SETTINGS,
         description: "Native tool name to setting, from native_tools or withheld_native_tools.",
-      },
-      artifact_grants: {
-        ...ACCESS_SETTINGS,
-        description: "File level to setting: read_guild, write_guild, read_org, write_org.",
       },
       connections: {
         ...ACCESS_SETTINGS,
@@ -1337,7 +1333,7 @@ const ACCESS_SCHEMA = {
     guild: {
       type: "string",
       enum: ["read", "write", "none"],
-      description: "Organisation table only: the base mode of every agent in the guild; none removes the guild's grant.",
+      description: "The guild's row: the mode of every agent in the guild without a row of its own; none removes the guild's row.",
     },
     agents: {
       type: "array",
@@ -1348,7 +1344,7 @@ const ACCESS_SCHEMA = {
           mode: {
             type: "string",
             enum: ["read", "write", "none", "inherit"],
-            description: "The agent's own mode over the guild's: none keeps it out; inherit removes its own grant.",
+            description: "The agent's own row over the guild's: none keeps it out; inherit removes its own row.",
           },
         },
         required: ["agent_id", "mode"],
@@ -1365,7 +1361,7 @@ export const studioListCollections: StudioTool = {
   name: "studio_list_collections",
   schema: functionSchema(
     "studio_list_collections",
-    "List the tables (collections) the source guild's agents can be given: the guild's own, then the organisation's. Each has owner, purpose, record count, column names, the source guild's access, and studio_can: edit_or_delete for the guild's own, add_columns_and_grants for the organisation's.",
+    "List the tables (collections) the source guild's agents can be given: the guild's own, then the organisation's. Each has owner, purpose, record count, column names, the source guild's access, and studio_can: edit_or_delete for the guild's own, add_columns_and_access for the organisation's.",
     {},
     [],
   ),
@@ -1378,7 +1374,7 @@ export const studioGetCollection: StudioTool = {
   name: "studio_get_collection",
   schema: functionSchema(
     "studio_get_collection",
-    "Read one table: purpose, full columns, record count, updated_at (pass it as base_updated_at to studio_edit_collection), each source-guild agent's access, grants outside the guild, and the latest records.",
+    "Read one table: purpose, full columns, record count, updated_at (pass it as base_updated_at to studio_edit_collection), the organisation's row, the source guild's row, each source-guild agent's row and resulting access, the rows of other guilds and their agents, and the latest records.",
     { collection: { type: "string", description: "Table name from studio_list_collections. Required." } },
     ["collection"],
   ),
@@ -1391,7 +1387,7 @@ export const studioEditCollection: StudioTool = {
   name: "studio_edit_collection",
   schema: functionSchema(
     "studio_edit_collection",
-    "Propose a change to one table of the source guild or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new table agents read and write with the record tools; check studio_list_collections first and reuse a table that fits. edit: on the source guild's own table, a new name, purpose, column list, or member access; on an organisation table, new columns added to the unchanged current ones, or source-guild access. Fields left out stay as they are. delete: one of the source guild's own tables with every record in it and every grant on it. edit and delete name the table by collection; read it with studio_get_collection first.",
+    "Propose a change to one table of the source guild or the organisation. Nothing is written: the turn pauses and the operator applies or declines. create: a new table agents read and write with the record tools; check studio_list_collections first and reuse a table that fits. edit: on the source guild's own table, a new name, purpose, column list, or member access; on an organisation table, new columns added to the unchanged current ones, or source-guild access. Fields left out stay as they are. delete: one of the source guild's own tables with every record in it and its access list. edit and delete name the table by collection; read it with studio_get_collection first.",
     {
       action: { type: "string", enum: ["create", "edit", "delete"], description: "Required." },
       collection: { type: "string", description: "edit and delete: the table's current name." },
@@ -1409,7 +1405,7 @@ export const studioEditCollection: StudioTool = {
       scope: {
         type: "string",
         enum: ["guild", "org"],
-        description: "create: guild (default), the source guild owns the table and every member writes it; org, an organisation table reached only through grants.",
+        description: "create: guild (default), the source guild owns the table and starts with the guild at write; org, an organisation table that starts with the organisation at read.",
       },
       access: ACCESS_SCHEMA,
       reason: TABLE_REASON,

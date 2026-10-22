@@ -9,6 +9,7 @@ import {
   resolveAccess,
   validateCollectionName,
   validatePurpose,
+  type AccessEntry,
   type AccessMode,
   type AgentAccessMode,
   type ArtifactActor,
@@ -26,8 +27,8 @@ import { studioReachesTable } from "./reach.js";
 // Tables (collections) the coach reads and proposes to create, change, or
 // delete. It reaches the tables the source guild's agents can be given: the
 // guild's own, which it creates, edits, and deletes, and the organisation's,
-// to which it only adds columns. On either it changes only the grants of the
-// source guild and its live members. Another guild's own tables are out of
+// to which it only adds columns. On either it changes only the access rows of
+// the source guild and its live members. Another guild's own tables are out of
 // reach. Like every Studio edit, a proposal writes nothing until the
 // operator applies it.
 
@@ -44,10 +45,13 @@ export function isTableTool(name: string): boolean {
 
 type Member = { id: string; name: string };
 
-/** The grants Studio can change: the source guild's base mode and its live members' own rows. */
-type SourceAccess = { guild: AccessMode | null; agents: Map<string, AgentAccessMode> };
+/**
+ * The rows that reach the source guild: its own row and its live members'
+ * rows, which Studio can change, and the organisation's row, which it shows.
+ */
+type SourceAccess = { guild: AccessMode | null; org: AccessMode | null; agents: Map<string, AgentAccessMode> };
 
-type Grant = { subject: "guild" | "agent"; id: string; mode: AccessMode | AgentAccessMode | null };
+type RowChange = { subject: "guild" | "agent"; id: string; mode: AccessMode | AgentAccessMode | null };
 
 type Table = {
   id: string;
@@ -59,7 +63,7 @@ type Table = {
   updatedAt: string;
   count: number;
   access: SourceAccess;
-  /** Grants held outside the source guild: shown, never changed. */
+  /** Rows of other guilds and their agents: shown, never changed. */
   outside: string[];
 };
 
@@ -82,13 +86,13 @@ type TablePlan =
       purpose: string;
       columns: CollectionColumn[];
       guildId: string | null;
-      grants: Grant[];
+      rowChanges: RowChange[];
     }
   | {
       action: "edit";
       id: string;
       definition: { name?: string; purpose?: string; columns?: unknown } | null;
-      grants: Grant[];
+      rowChanges: RowChange[];
     }
   | { action: "delete"; id: string };
 
@@ -173,10 +177,10 @@ async function loadTable(
     id = ref.id;
   }
   let view;
-  let access;
+  let entries;
   try {
     view = await tc.scope.artifacts.getCollection(tc.actor, id);
-    access = await tc.scope.artifacts.listAccess(tc.actor, id);
+    entries = await tc.scope.artifacts.listAccess(tc.actor, { kind: "collection", id });
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
     throw error;
@@ -184,24 +188,7 @@ async function loadTable(
   if (!studioReachesTable(tc.scope.sourceGuildId, view.guild?.id)) {
     return null;
   }
-  const source = tc.scope.sourceGuildId;
-  const live = new Set(tc.members.map((member) => member.id));
-  const agents = new Map<string, AgentAccessMode>();
-  const outside: string[] = [];
-  if (!view.guild) {
-    for (const row of access.guilds) {
-      if (row.id !== source) outside.push(`guild ${row.name} ${row.mode}`);
-    }
-  }
-  for (const row of access.agents) {
-    if (row.agent_mode === null) continue;
-    if (row.guild_id !== source) {
-      outside.push(`agent ${row.name} (${row.guild_name}) ${row.agent_mode}`);
-    } else if (live.has(row.id)) {
-      agents.set(row.id, row.agent_mode);
-    }
-  }
-  const own = view.guild?.id === source;
+  const { access, outside } = sourceAccess(tc, entries);
   return {
     id: view.id,
     name: view.name,
@@ -211,23 +198,45 @@ async function loadTable(
     columns: view.columns,
     updatedAt: view.updated_at,
     count: view.count ?? 0,
-    access: {
-      guild: own ? "write" : (access.guilds.find((row) => row.id === source)?.mode ?? null),
-      agents,
-    },
+    access,
     outside,
   };
 }
 
+/** A table's access list split into the rows that reach the source guild and the rest. */
+function sourceAccess(tc: TableContext, entries: AccessEntry[]): { access: SourceAccess; outside: string[] } {
+  const source = tc.scope.sourceGuildId;
+  const live = new Set(tc.members.map((member) => member.id));
+  const access: SourceAccess = { guild: null, org: null, agents: new Map() };
+  const outside: string[] = [];
+  for (const entry of entries) {
+    if (entry.type === "org") {
+      access.org = entry.mode === "none" ? null : entry.mode;
+    } else if (entry.guild_id !== source) {
+      outside.push(entry.type === "guild" ? `guild ${entry.name} ${entry.mode}` : `agent ${entry.name} (${entry.guild_name}) ${entry.mode}`);
+    } else if (entry.type === "guild") {
+      access.guild = entry.mode === "none" ? null : entry.mode;
+    } else if (live.has(entry.id)) {
+      access.agents.set(entry.id, entry.mode);
+    }
+  }
+  return { access, outside };
+}
+
+/** The mode the source guild's rows give a member with no row of its own. */
+function baseMode(access: SourceAccess): AccessMode | null {
+  return access.guild === "write" || access.org === "write" ? "write" : (access.guild ?? access.org);
+}
+
 /** What a proposal may change on a table: all of the source guild's own; columns added to the organisation's. */
-type TableReach = "edit_or_delete" | "add_columns_and_grants";
+type TableReach = "edit_or_delete" | "add_columns_and_access";
 
 function reachOf(guildId: string | null): TableReach {
-  return guildId === null ? "add_columns_and_grants" : "edit_or_delete";
+  return guildId === null ? "add_columns_and_access" : "edit_or_delete";
 }
 
 const ORG_TABLE_LIMIT =
-  "is an organisation table: Studio adds columns to it and changes this guild's grants; other changes are made on the Tables page";
+  "is an organisation table: Studio adds columns to it and changes this guild's access; other changes are made on the Tables page";
 
 /** An organisation table keeps its name, purpose, and every column as it is; new columns may join. */
 function assertOrgTableEdit(
@@ -274,13 +283,11 @@ function parseAccess(
   tc: TableContext,
   raw: unknown,
   base: SourceAccess,
-  ownTable: boolean,
-  tableName: string,
-): { access: SourceAccess; grants: Grant[] } {
-  const access: SourceAccess = { guild: base.guild, agents: new Map(base.agents) };
-  const grants: Grant[] = [];
+): { access: SourceAccess; rowChanges: RowChange[] } {
+  const access: SourceAccess = { guild: base.guild, org: base.org, agents: new Map(base.agents) };
+  const rowChanges: RowChange[] = [];
   if (raw === undefined || raw === null) {
-    return { access, grants };
+    return { access, rowChanges };
   }
   if (typeof raw !== "object" || Array.isArray(raw)) {
     throw new StudioUnprocessableError("access must be an object with guild, agents, or both");
@@ -292,18 +299,13 @@ function parseAccess(
     }
   }
   if (body.guild !== undefined) {
-    if (ownTable) {
-      throw new StudioUnprocessableError(
-        `${tableName} is ${tc.guildName}'s own table: every member writes it and it takes no guild grant; hold a member back with an agents entry`,
-      );
-    }
     if (!(GUILD_MODES as readonly unknown[]).includes(body.guild)) {
       throw new StudioUnprocessableError("access.guild must be read, write, or none");
     }
     const mode = body.guild === "none" ? null : (body.guild as AccessMode);
     if (mode !== access.guild) {
       access.guild = mode;
-      grants.push({ subject: "guild", id: tc.scope.sourceGuildId, mode });
+      rowChanges.push({ subject: "guild", id: tc.scope.sourceGuildId, mode });
     }
   }
   if (body.agents !== undefined) {
@@ -339,15 +341,15 @@ function parseAccess(
       if (mode !== (access.agents.get(member.id) ?? null)) {
         if (mode === null) access.agents.delete(member.id);
         else access.agents.set(member.id, mode);
-        grants.push({ subject: "agent", id: member.id, mode });
+        rowChanges.push({ subject: "agent", id: member.id, mode });
       }
     }
   }
-  return { access, grants };
+  return { access, rowChanges };
 }
 
 function accessKey(access: SourceAccess): unknown {
-  return [access.guild, [...access.agents.entries()].sort(([a], [b]) => a.localeCompare(b))];
+  return [access.guild, access.org, [...access.agents.entries()].sort(([a], [b]) => a.localeCompare(b))];
 }
 
 function tableHash(table: Table): string {
@@ -386,11 +388,10 @@ function shapeOf(table: Table): Shape {
   };
 }
 
-/** The table as the operator reads it in a diff: one line per column and per grant. */
+/** The table as the operator reads it in a diff: one line per column and per access row. */
 function render(tc: TableContext, shape: Shape): string {
   const renamedFrom = new Map(shape.renamed.map((item) => [item.to, item.from]));
   const names = new Map(tc.members.map((member) => [member.id, member.name]));
-  const own = shape.guildId === tc.scope.sourceGuildId;
   const agents = [...shape.access.agents.entries()]
     .map(([id, mode]) => `- agent ${names.get(id) ?? id}: ${mode}`)
     .sort();
@@ -407,7 +408,8 @@ function render(tc: TableContext, shape: Shape): string {
       : ["- none"]),
     "",
     "access",
-    `- guild ${tc.guildName}: ${own ? "write, its own table" : (shape.access.guild ?? "no grant")}`,
+    ...(shape.access.org ? [`- organisation: ${shape.access.org}`] : []),
+    `- guild ${tc.guildName}: ${shape.access.guild ?? "no row"}`,
     ...agents,
     ...(shape.outside.length ? [`- outside ${tc.guildName}: ${shape.outside.join(", ")}`] : []),
   ].join("\n");
@@ -510,13 +512,11 @@ export async function reviewTable(
         `a table named ${name} already exists${requesting ? "; change it with studio_edit_collection action edit" : ""}`,
       );
     }
-    const { access, grants } = parseAccess(
-      tc,
-      args.access,
-      { guild: guildId ? "write" : null, agents: new Map() },
-      guildId !== null,
-      name,
-    );
+    const { access, rowChanges } = parseAccess(tc, args.access, {
+      guild: guildId ? "write" : null,
+      org: guildId ? null : "read",
+      agents: new Map(),
+    });
     const shape: Shape = {
       name,
       purpose,
@@ -527,8 +527,6 @@ export async function reviewTable(
       access,
       outside: [],
     };
-    const reached =
-      access.guild !== null || [...access.agents.values()].some((mode) => mode !== "none");
     return {
       action,
       title: `Create table ${name}`,
@@ -539,12 +537,10 @@ export async function reviewTable(
       proposed: render(tc, shape),
       effects: [
         guildId
-          ? `Creates ${name} as ${tc.guildName}'s own table: every member reads and writes it.`
-          : reached
-            ? `Creates ${name} as an organisation table, reached through the grants listed.`
-            : `Creates ${name} as an organisation table that no agent reaches until it is granted.`,
+          ? `Creates ${name} as ${tc.guildName}'s own table, reached through the access listed.`
+          : `Creates ${name} as an organisation table that every agent of the organisation reads, reached further through the access listed.`,
       ],
-      plan: { action, name, purpose, columns, guildId, grants },
+      plan: { action, name, purpose, columns, guildId, rowChanges },
     };
   }
 
@@ -574,7 +570,7 @@ export async function reviewTable(
       live: render(tc, shapeOf(table)),
       proposed: "",
       effects: [
-        `Deletes ${table.name} with its ${plural(table.count, "record")}; its grants go with it and no agent reaches it again.`,
+        `Deletes ${table.name} with its ${plural(table.count, "record")}; its access list goes with it and no agent reaches it again.`,
         ...(table.outside.length
           ? [`Reached outside this guild too: ${table.outside.join(", ")}.`]
           : []),
@@ -606,13 +602,7 @@ export async function reviewTable(
   if (name !== table.name && (await loadTable(tc, { name }))) {
     throw new StudioConflictError(`a table named ${name} already exists`);
   }
-  const { access, grants } = parseAccess(
-    tc,
-    args.access,
-    table.access,
-    table.guildId !== null,
-    table.name,
-  );
+  const { access, rowChanges } = parseAccess(tc, args.access, table.access);
   const shape: Shape = {
     ...shapeOf(table),
     name,
@@ -623,7 +613,7 @@ export async function reviewTable(
   };
   const columnsChanged = JSON.stringify(shape.columns) !== JSON.stringify(table.columns);
   const definitionChanged = name !== table.name || purpose !== table.purpose || columnsChanged;
-  if (requesting && !definitionChanged && !grants.length) {
+  if (requesting && !definitionChanged && !rowChanges.length) {
     throw new StudioUnprocessableError("the proposal matches the live table; nothing to change");
   }
   return {
@@ -645,12 +635,12 @@ export async function reviewTable(
             ...(columnsChanged ? { columns: args.columns } : {}),
           }
         : null,
-      grants,
+      rowChanges,
     },
   };
 }
 
-/** Writes a reviewed proposal as the operator: the table first, then each grant it changes. */
+/** Writes a reviewed proposal as the operator: the table first, then each access row it changes. */
 export async function applyTable(scope: EditScope, plan: TablePlan): Promise<void> {
   const actor = editActor(scope);
   try {
@@ -670,13 +660,8 @@ export async function applyTable(scope: EditScope, plan: TablePlan): Promise<voi
     } else if (plan.definition) {
       await scope.artifacts.updateCollection(actor, id, plan.definition);
     }
-    for (const grant of plan.grants) {
-      await scope.artifacts.setAccess(actor, {
-        collectionId: id,
-        subjectType: grant.subject,
-        subjectId: grant.id,
-        mode: grant.mode,
-      });
+    for (const change of plan.rowChanges) {
+      await scope.artifacts.grantAccess(actor, { kind: "collection", id }, { type: change.subject, id: change.id }, change.mode);
     }
   } catch (error) {
     tableFailure(error);
@@ -689,12 +674,12 @@ export async function listTables(scope: EditScope): Promise<Array<Record<string,
   const views = (await scope.artifacts.listCollections(actor, { counts: true })).filter((view) =>
     studioReachesTable(scope.sourceGuildId, view.guild?.id),
   );
-  const modes = new Map(
-    (await scope.artifacts.accessForGuild(actor, scope.sourceGuildId)).map((row) => [
-      row.collection_id,
-      row.mode,
-    ]),
-  );
+  const reached = await scope.artifacts.reachOf(actor, {
+    type: "guild",
+    id: scope.sourceGuildId,
+    guildId: scope.sourceGuildId,
+  });
+  const modes = new Map(reached.tables.map((table) => [table.id, table.mode]));
   return views
     .sort((a, b) => Number(!a.guild) - Number(!b.guild) || a.name.localeCompare(b.name))
     .map((view) => ({
@@ -738,6 +723,7 @@ export async function readTable(scope: EditScope, name: string): Promise<Record<
     studio_can: reachOf(table.guildId),
     columns: columnCatalog(table.columns),
     access: {
+      org: table.access.org,
       guild: table.access.guild,
       own_table: table.guildId === scope.sourceGuildId,
       agents: tc.members.map((member) => {
@@ -746,7 +732,7 @@ export async function readTable(scope: EditScope, name: string): Promise<Record<
           agent_id: member.id,
           name: member.name,
           own,
-          effective: resolveAccess(table.access.guild, own),
+          effective: resolveAccess(baseMode(table.access), own),
         };
       }),
     },

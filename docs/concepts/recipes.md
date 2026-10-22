@@ -56,7 +56,7 @@ A recipe carries the design of a guild:
   configuration
 - each role's Task, scripts, and routines
 - the collections the guild uses, with their columns and who may write
-- seed notes the Tasks rely on
+- seed notes the Tasks rely on, with who may read and write them
 - the tools and connectors each role may use
 - the secrets each role needs, by name only
 - the repositories coding roles work in, by name only
@@ -72,7 +72,9 @@ you to connect logins, add secret values, and add repositories again.
 Capturing a guild reads it as it is today and writes a new draft. The
 agents' names become role handles, and tags and note links become the
 recipe's [placeholders](recipe-format.md#placeholders-that-apply-resolves).
-Notes a Task embeds come along as seed notes. Secrets come along by
+Notes a Task embeds come along as seed notes. Each table and seed note
+keeps what its access list gives the guild and its agents. Rows that
+name other guilds or their agents stay behind. Secrets come along by
 name, with the roles that use them.
 
 ### Access cuts
@@ -207,9 +209,8 @@ What capture writes:
 - Routines travel with their `cron` or `window`, description, and
   instruction. Each gets the key `<role>-<n>`. Apply creates them
   paused.
-- Each role's grants (`read_guild`, `write_guild`, `read_org`,
-  `write_org`) and native tool switches travel as they resolve for
-  that agent.
+- Each role's native tool switches travel as they resolve for that
+  agent.
 - Each enabled connector becomes one `connections` entry, with the
   tools each role may use. The entry's `hint` is the connector's
   description, cut to 400 characters, and its `setup` is the
@@ -225,11 +226,13 @@ What capture writes:
   the guild.
 - The guild's own collections are written as `scope: "guild"`.
 - Every organisation collection the guild reaches is written as
-  `scope: "org"`. The guild reaches a collection through its own grant
-  or through a member agent's own grant. `guild` is the guild's grant
-  (`read` when only members hold grants). `writers` lists the roles
-  whose agents override it to `write`. An agent override of `read` or
-  `none` is not carried.
+  `scope: "org"`: the organisation's row, the guild's row, or a row of
+  one of its agents gives it `read` or `write`. `guild` is the better of
+  the organisation's row and the guild's row (`read` when only member
+  agents have rows). `writers` lists the roles whose agents have a
+  `write` row when `guild` is `read`. An agent row of `read` or `none`
+  is not carried. Rows that name other guilds or their agents are not
+  carried.
 - Secrets come from each role's environment. There is one entry per
   name, with its description and the roles whose agents get it.
   `recommended_scope` is `org` when the secret is organisation-wide,
@@ -240,6 +243,15 @@ What capture writes:
   in `include_notes` are captured too. Memory (`memory.md`) is never
   captured. Lived agent notes, organisation notes, Memory bodies, and
   collection records stay out unless the operator includes them.
+- Each captured note carries its access the way a collection does. A
+  guild note is `guild: "write"` with no `writers`. On an organisation
+  or agent note, `guild` is the better of the organisation's row and
+  the guild's row, left out on an agent note neither reaches. `writers`
+  lists the roles whose agents have a `write` row when `guild` is not
+  `write`; the role that owns an agent note reaches it without a row
+  and is never one of them. An agent row of `read` or `none` is not
+  carried. Rows that name other guilds or their agents are not
+  carried.
 - Capture rewrites display paths of captured notes to recipe-local refs,
   in embeds (`![[guild/<key>]]`, `![[org/<key>]]`,
   `![[agent/<role>/<key>]]`) and as plain text (`guild/<key>`, …).

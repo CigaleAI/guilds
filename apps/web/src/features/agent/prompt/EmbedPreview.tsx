@@ -45,8 +45,8 @@ export function EmbedPreview({ path, notes, collections, orgId, onClose }: Embed
             collection ? (
               <p className="text-md text-fg-2">{collection.purpose || "No purpose written."}</p>
             ) : (
-              <Banner tone="error" title="This table no longer exists">
-                Runs can't start until the link is removed from the Task.
+              <Banner tone="error" title="This table is not reachable">
+                Runs get a line saying the file is not reachable in its place.
               </Banner>
             )
           ) : note ? (
@@ -56,8 +56,8 @@ export function EmbedPreview({ path, notes, collections, orgId, onClose }: Embed
               <p className="text-sm text-muted">This note is empty.</p>
             )
           ) : fetched.isError ? (
-            <Banner tone="error" title="This note no longer exists or you can't read it">
-              Runs can't start until the link is fixed or removed from the Task.
+            <Banner tone="error" title="This note is not reachable">
+              Runs get a line saying the file is not reachable in its place.
             </Banner>
           ) : (
             <SkeletonRows rows={4} label="Loading the note" />

@@ -17,7 +17,6 @@ const access = {
     { name: "notes_only", description: "No parameters", parameters: null },
   ],
   secrets: [],
-  artifact_levels: { readable: [], writable: [] },
   connections: [
     {
       id: "conn_1",

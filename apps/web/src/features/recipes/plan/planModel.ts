@@ -156,7 +156,6 @@ export type PlanAgent = {
   taskAuthor: AuthorDraft | null;
   browserAuthor: AuthorDraft | null;
   nativeTools: string[];
-  grants: string[];
   scripts: readonly ScriptDraft[];
   routines: PlanRoutine[];
 };
@@ -314,18 +313,6 @@ export function reviewLabel(author: AuthorDraft | null | undefined): string | nu
 
 /** The group messages per agent a guild allows when its recipe names no limit, as the orchestrator applies it. */
 const DEFAULT_GROUP_LIMIT = 200;
-
-const GRANT_LABELS = new Map([
-  ["read_guild", "Read guild artifacts"],
-  ["read_org", "Read org artifacts"],
-  ["write_guild", "Write guild artifacts"],
-  ["write_org", "Write org artifacts"],
-]);
-
-/** The words an artifact grant reads as; unknown grants read as their id. */
-export function grantLabel(id: string): string {
-  return GRANT_LABELS.get(id) || id;
-}
 
 /** A cron expression in words without the UTC suffix, or "Unspecified cadence" when empty. */
 export function cadenceLabel(cron: string | null | undefined): string {
@@ -750,7 +737,6 @@ function rolesFromCreatedAgents(
     config: { model: agent.model, browser: agent.browser, coding: agent.coding },
     task: { body: agent.task || "", embeds: [], author: null },
     native_tools: Object.fromEntries(asArray(agent.native_tools).map((name) => [name, true])),
-    grants: {},
     scripts: [],
     schedules: overlayRoutines.filter((item) => item.role === agent.role),
     browser: { required: Boolean(agent.browser), instructions: "", author: null },
@@ -780,7 +766,6 @@ function planAgent(
     taskAuthor: taskAuthor(role),
     browserAuthor: browser.author || null,
     nativeTools: enabledKeys(role.native_tools),
-    grants: enabledKeys(role.grants),
     scripts: asArray(role.scripts),
     routines: routinesForRole(role, doc, overlayRoutines),
   };
@@ -1206,7 +1191,7 @@ export function agentConnectors(
   return plan.connections.filter((item) => roleUsesConnection(item, role));
 }
 
-/** The three metric pills of an agent: connectors, routines, and tools with grants. */
+/** The three metric pills of an agent: connectors, routines, and tools. */
 export type AgentMetrics = {
   connectors: {
     count: number;
@@ -1226,7 +1211,6 @@ export type AgentMetrics = {
     label: string;
     empty: boolean;
     nativeTools: string[];
-    grants: Array<{ id: string; label: string }>;
   };
 };
 
@@ -1265,9 +1249,8 @@ export function agentMetrics(
     tools: {
       count: toolCount,
       label: plural(toolCount, "tool"),
-      empty: toolCount === 0 && !agent.grants.length,
+      empty: toolCount === 0,
       nativeTools: agent.nativeTools,
-      grants: agent.grants.map((id) => ({ id, label: grantLabel(id) })),
     },
   };
 }
@@ -1581,13 +1564,31 @@ export function collectionActionChip(item: PlanCollection): CollectionView["chip
   return null;
 }
 
+/** The roles that write on top of the guild's mode, as a label suffix; "" when there are none. */
+function writersSuffix(writers: readonly string[]): string {
+  return writers.length ? ` · writers: ${writers.map((role) => `@${role}`).join(", ")}` : "";
+}
+
 /** Who reaches a collection: the guild's own table, or the guild's mode on an organisation table with its writers. */
 export function collectionAccessLabel(item: PlanCollection): string {
   if (item.scope === "guild") return "the guild's own";
-  const writers = item.writers.length
-    ? ` · writers: ${item.writers.map((role) => `@${role}`).join(", ")}`
-    : "";
-  return `guild ${item.guild}${writers}`;
+  return `guild ${item.guild}${writersSuffix(item.writers)}`;
+}
+
+/** The guild's mode a note's level gives when the recipe names none. */
+const NOTE_GUILD_DEFAULT: Record<string, string> = { org: "read", guild: "write" };
+
+/** The guild's mode on a note: the recipe's, or what the note's level gives. */
+function noteGuildMode(item: NoteDraft): string | undefined {
+  return item.guild || NOTE_GUILD_DEFAULT[item.level || "guild"];
+}
+
+/** Who reaches a note: the guild's mode, or its role alone, with the roles that write on top. */
+export function noteAccessLabel(item: NoteDraft): string {
+  const guild = noteGuildMode(item);
+  const writers = writersSuffix(asArray(item.writers).map((role) => String(role)));
+  if (guild) return `guild ${guild}${writers}`;
+  return `@${item.role || "agent"}${writers || " only"}`;
 }
 
 /** A column's type, followed by its closed values when it has them. */
@@ -1598,15 +1599,15 @@ export function columnTypeLabel(column: PlanColumn): string {
 /** A collection's card: decision chip, access, purpose, access sentence, conflict details, and columns. */
 export function collectionView(item: PlanCollection): CollectionView {
   const writers = item.writers.length
-    ? `Own write grant: ${item.writers.map((role) => `@${role}`).join(", ")}`
-    : "No per-agent write grants";
+    ? `Agent rows at write: ${item.writers.map((role) => `@${role}`).join(", ")}`
+    : "No agent rows";
   return {
     chip: collectionActionChip(item),
     access: collectionAccessLabel(item),
     snippet: item.purpose || "Typed table",
     meta:
       item.scope === "guild"
-        ? "The guild's own table · every agent in the guild reads and writes it · no other guild reaches it"
+        ? "The guild's table · every agent in the guild reads and writes it"
         : `Organisation table · every agent in the guild gets ${item.guild} · ${writers}`,
     conflict:
       item.action === "conflict"
@@ -1643,10 +1644,11 @@ export function noteSnippet(body: string | null | undefined): string {
   return cleaned.length > 88 ? `${cleaned.slice(0, 85)}…` : cleaned;
 }
 
-/** A note's card: title, owner, snippet, where apply writes it, and its body. */
+/** A note's card: title, owner, who reaches it, snippet, where apply writes it, and its body. */
 export function noteCard(item: NoteDraft): {
   title: string;
   owner: string;
+  access: string;
   snippet: string;
   destination: string;
   body: string;
@@ -1657,6 +1659,7 @@ export function noteCard(item: NoteDraft): {
   return {
     title,
     owner: item.role ? `${item.level || "agent"} · ${item.role}` : item.level || "guild",
+    access: noteAccessLabel(item),
     snippet: noteSnippet(body),
     destination:
       item.level === "agent" && item.role

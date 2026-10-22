@@ -21,27 +21,23 @@ tools do not reach the memory archive.
 
 | Tool | Parameters | Does |
 |---|---|---|
-| `note_find` | `query`, `level`, `limit` (default 20) | Searches the notes the agent may read. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ notes }` |
+| `note_find` | `query`, `level`, `limit` (default 20) | Searches the notes the agent may read. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ notes }`, each with its `access`: `read` or `write` |
 | `note_get` | `path` (required) | Reads one note by its display path. A soft-deleted note returns a tombstone |
-| `note_write` | `level`, `key`, `content` (all required) | Creates or replaces a note. `key` is the `.md` file name. Returns the display path |
-| `note_delete` | `path` (required) | Soft-deletes a note. `task.md` and `memory.md` cannot be deleted |
+| `note_write` | `content` (required), and `level` with `key`, or `path` | With `level` and `key`, writes the agent's note at that level: a new note only at `agent` or `guild` level, an existing one with `write` on it. With `path`, rewrites any existing note the agent may write. `key` is the `.md` file name. Returns the display path |
+| `note_delete` | `path` (required) | Soft-deletes a note the agent may write. `task.md` and `memory.md` cannot be deleted |
 
 A collection or record path is refused with a pointer to the record
 tools. A script is refused with a pointer to the script tools.
 
-Four grant bindings decide note reach:
-
-| Grant | Default |
-|---|---|
-| `read_guild` | On |
-| `read_org` | On |
-| `write_guild` | On |
-| `write_org` | Off |
+An agent always reaches its own agent-level notes. Every other note
+is reached through its access list
+([Access](../concepts/access.md#access-lists-for-notes-and-collections)).
 
 ## Records
 
 Records of the organisation's collections: typed tables the operator
-defines and grants ([Collections](../concepts/collections.md)). Every
+defines and opens through their access lists
+([Collections](../concepts/collections.md)). Every
 tool names the collection by `collection`. No tool creates, alters, or
 deletes a collection.
 
@@ -78,13 +74,13 @@ deletes a collection.
 An empty `record_list` result that was narrowed carries a `hint`: the
 collection's size, its newest change, and its columns.
 
-Reach is the collection grant:
+Reach is the collection's access list:
 
-- the agent's own grant row when it has one (`none` keeps it out)
-- otherwise its guild's `read` or `write` on an organisation collection
-- or `write` on the agent's guild's own collection
+- the agent's own row when it has one (`none` keeps it out)
+- otherwise the better of its guild's row and the organisation's row
 
-An ungranted collection is a 404. A write on `read` is a 403.
+A collection the agent does not reach is a 404. A write on `read` is a
+403.
 
 ## Memory
 

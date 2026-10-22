@@ -717,7 +717,7 @@ export const bindings = pgTable(
   (table) => [
     check(
       "bindings_catalog_kind_check",
-      sql`${table.catalogKind} IN ('native_tool', 'mcp', 'mcp_tool', 'artifact_grant')`,
+      sql`${table.catalogKind} IN ('native_tool', 'mcp', 'mcp_tool')`,
     ),
     check("bindings_scope_check", sql`${table.scope} IN ('platform', 'org', 'guild', 'agent')`),
     foreignKey({
@@ -870,12 +870,13 @@ export const artifactCollections = pgTable(
   ],
 );
 
-export const collectionAccess = pgTable(
-  "collection_access",
+export const artifactAccess = pgTable(
+  "artifact_access",
   {
     id: text("id").primaryKey(),
     orgId: text("org_id").notNull(),
-    collectionId: text("collection_id").notNull(),
+    targetKind: text("target_kind").notNull(),
+    targetId: text("target_id").notNull(),
     subjectType: text("subject_type").notNull(),
     subjectId: text("subject_id").notNull(),
     mode: text("mode").notNull(),
@@ -883,26 +884,23 @@ export const collectionAccess = pgTable(
     createdById: text("created_by_id").notNull(),
     createdByName: text("created_by_name").notNull(),
     createdAt: timestamptz("created_at").notNull(),
+    updatedByType: text("updated_by_type").notNull(),
+    updatedById: text("updated_by_id").notNull(),
+    updatedByName: text("updated_by_name").notNull(),
+    updatedAt: timestamptz("updated_at").notNull(),
   },
   (table) => [
-    check("collection_access_subject_check", sql`${table.subjectType} IN ('guild', 'agent')`),
-    check("collection_access_mode_check", sql`${table.mode} IN ('read', 'write', 'none')`),
-    check(
-      "collection_access_none_is_agent",
-      sql`${table.mode} <> 'none' OR ${table.subjectType} = 'agent'`,
-    ),
+    check("artifact_access_target_check", sql`${table.targetKind} IN ('note', 'collection')`),
+    check("artifact_access_subject_check", sql`${table.subjectType} IN ('org', 'guild', 'agent')`),
+    check("artifact_access_mode_check", sql`${table.mode} IN ('read', 'write', 'none')`),
+    check("artifact_access_none_is_agent", sql`${table.mode} <> 'none' OR ${table.subjectType} = 'agent'`),
     foreignKey({
       columns: [table.orgId],
       foreignColumns: [orgs.id],
-      name: "collection_access_org_id_fkey",
+      name: "artifact_access_org_id_fkey",
     }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.collectionId],
-      foreignColumns: [artifactCollections.id],
-      name: "collection_access_collection_id_fkey",
-    }).onDelete("cascade"),
-    unique("collection_access_subject_key").on(table.collectionId, table.subjectType, table.subjectId),
-    index("collection_access_by_subject").on(table.subjectType, table.subjectId),
+    unique("artifact_access_subject_key").on(table.targetKind, table.targetId, table.subjectType, table.subjectId),
+    index("artifact_access_by_subject").on(table.subjectType, table.subjectId),
   ],
 );
 
@@ -1048,7 +1046,7 @@ export const configChanges = pgTable(
   (table) => [
     check(
       "config_changes_target_kind_check",
-      sql`${table.targetKind} IN ('routine', 'access', 'guild_text', 'collection')`,
+      sql`${table.targetKind} IN ('routine', 'access', 'guild_text', 'collection', 'note')`,
     ),
     check("config_changes_operation_check", sql`${table.operation} IN ('create', 'update', 'delete')`),
     check("config_changes_actor_type_check", sql`${table.actorType} IN ('user', 'agent', 'run')`),

@@ -142,7 +142,7 @@ Everything else stays local to the organisation, guild, or agent:
 
 - notes — playbooks, style guides, field maps, working markdown
 - collections — queues, seen-sets, operational records in typed tables
-  at the organisation, reached through grants
+  of the guild or of the organisation
 - Memory — the agent's own continuity between wakes
 
 A scout queue, a poll seen-set, a draft, or a wake checklist is never a
@@ -191,15 +191,25 @@ Design the columns from how the records are used:
 - Say in `purpose` what one record is and who writes it, so producers and
   consumers agree without reading each other's Task.
 
+Each table and each note has an access list that gives the organisation,
+a guild, or an agent `read` or `write`.
+
 `scope` decides who the table belongs to. `guild` gives it to the guild
-being built: every agent in it reads and writes, nobody outside reaches
-it, and it takes no grants. Use it for the guild's own queues, seen-sets,
-and working state. `org` leaves it at the organisation for work other
-guilds share, and access is then a grant, never a default: `guild` is the
+being built: its access list starts with the guild at `write`, so every
+agent in it reads and writes. Use it for the guild's own queues,
+seen-sets, and working state. `org` leaves it at the organisation for work
+other guilds share: its access list starts with the organisation at
+`read`, so every agent of the organisation reads it. `guild` is the
 mode every agent in the guild gets, `read` or `write`, and `writers` lists
-the roles that get their own `write` grant, for a table the guild reads
-but one role maintains. A hand-off collection needs write for its producer
+the roles whose agents get `write` of their own, for a table the guild
+reads but one role maintains. A hand-off collection needs write for its producer
 and its consumer; a dedupe collection needs write for the role that polls.
+
+A note takes the same `guild` and `writers`. A guild note is written by
+every agent in the guild. An org note is read by the whole organisation;
+set `guild: "write"` when the guild maintains it. An agent note is
+reached by its role alone; set `guild` or `writers` when other roles
+read or write it.
 Validation rejects a collection without columns, a hand-off collection
 without a required state column with `values`, a writer that is not a
 role, and a role that must write a table it cannot.

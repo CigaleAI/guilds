@@ -37,17 +37,17 @@ flowchart TD
   ([Group chat](group-chat.md)).
 - **Operators.** The people the guild works for
   ([Operators](operators.md)).
-- **Guild-level notes.** Read and written by its agents
+- **Guild-level notes.** Each starts read and written by its agents
   ([Notes](notes.md)).
-- **Its own collections.** A collection that belongs to the guild is
-  written by every member and reached by nobody else. An
-  organisation collection is reached through a read or write grant
-  the operator sets ([Collections](collections.md)).
+- **Its own collections.** A collection that belongs to the guild
+  starts read and written by its agents
+  ([Collections](collections.md)).
 - **Repositories** its coding agents work in
   ([Repositories](coding/repositories.md)).
 
-How far an agent reaches over notes and collections is set by grants
-on the agent ([Access](access.md)).
+Which notes and collections an agent reaches is set on each item,
+in its access list. A row for the guild covers every agent of the
+guild ([Access](access.md#access-lists-for-notes-and-collections)).
 
 ### Purpose: short description and description
 
@@ -181,7 +181,7 @@ The tabs, one route each:
 |---|---|
 | **Group chat** | [Group chat](group-chat.md) |
 | **Settings** | Below |
-| **State** (Files, Tables, Artifact scope) | [Notes](notes.md), [Collections](collections.md), [Access](access.md) |
+| **State** (Files, Access) | [Notes](notes.md), [Access](access.md#what-a-guild-or-an-agent-reaches) |
 | **Routines** | [Routines](routines.md) |
 | **Issues** | [Inbox and issues](inbox.md) |
 | **Tools**, **Secrets** | [Access](access.md) |
@@ -325,7 +325,9 @@ It holds every agent of the guild while it runs. It then:
 - removes the guild's host notes folder
 - deletes the guild's and its agents' usage counters
 - soft-deletes the guild's own collections with their records
-- deletes the collection grants held by the guild and by its agents
+- deletes the access-list rows that name the guild or its agents,
+  and the rows on its own collections and on its and its agents'
+  notes
 - deletes every secret, not organisation-wide, whose grants all name
   the guild or its agents
 - deletes the guild row

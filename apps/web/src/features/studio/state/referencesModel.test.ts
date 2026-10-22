@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { ReferenceEdge, ReferenceNode, StudioReferences } from "../../../api/types";
 import {
   formatSize,
+  isBroken,
   isOverBudget,
   layoutReferences,
   linkLabel,
@@ -35,6 +36,7 @@ function node(id: string, fields: Partial<ReferenceNode> = {}): ReferenceNode {
     hops: {},
     depth: null,
     reason: null,
+    unreachable_for: [],
     ...fields,
   };
 }
@@ -91,7 +93,7 @@ const data: StudioReferences = {
       in_state: false,
       hops: { b: 1 },
       depth: 1,
-      reason: "missing",
+      reason: "not reachable",
     }),
   ],
   edges: [
@@ -259,12 +261,12 @@ test("referenceMeta reads a Task's budget, a file's level and size, and why a li
   assert.equal(referenceMeta(node("n", { bytes: 2048 }), data), "guild · 2.0 KB");
   assert.equal(referenceMeta(node("t", { kind: "table" }), data), "guild · table");
   assert.equal(
-    referenceMeta(node("u", { kind: "unresolved", level: null, reason: "missing" }), data),
-    "missing",
+    referenceMeta(node("u", { kind: "unresolved", level: null, reason: "not a file path" }), data),
+    "not a file path",
   );
   assert.equal(
     referenceMeta(node("u", { kind: "unresolved", level: null }), data),
-    "does not resolve",
+    "not reachable",
   );
 });
 
@@ -293,7 +295,7 @@ test("standoutGroups titles each kind of standout and leaves out the empty ones"
   assert.deepEqual(
     groups.map((group) => [group.title, group.rows.map((row) => row.meta)]),
     [
-      ["Broken embeds", ["missing · in Beta", "inlines 120 B, over the 100 B budget"]],
+      ["Broken embeds", ["not reachable · in Beta", "inlines 120 B, over the 100 B budget"]],
       ["Shared by several prompts", ["inlined for 2 agents", "inlined for 2 agents"]],
       ["Too deep to be inlined", ["3 hops from a Task", "4 hops from a Task"]],
       ["Nothing points here", ["guild", "agent"]],
@@ -305,8 +307,52 @@ test("standoutGroups titles each kind of standout and leaves out the empty ones"
 test("linkLabel says what becomes of an embed, or that a path is only named", () => {
   assert.equal(linkLabel(embed("a", "b")), "embed");
   assert.equal(linkLabel(embed("a", "b", "too_deep")), "embed · stays text");
+  assert.equal(linkLabel(embed("a", "b", "broken")), "embed · not reachable");
   assert.equal(
     linkLabel({ from: "a", to: "b", kind: "name", status: "named" }),
     "named, not embedded",
+  );
+});
+
+/** `style` is out of Beta's reach, so Beta's runs get a marker in its place. */
+const shut: StudioReferences = {
+  ...data,
+  nodes: data.nodes.map((item) =>
+    item.id === "style" ? { ...item, unreachable_for: ["b"] } : item,
+  ),
+};
+const style = shut.nodes.find((item) => item.id === "style") as ReferenceNode;
+
+test("a file some run cannot reach is broken and reaches only the other prompts", () => {
+  assert.equal(isBroken(style), true);
+  assert.equal(isBroken(node("n")), false);
+  assert.equal(isBroken(node("u", { kind: "unresolved" })), true);
+  assert.deepEqual(reachedAgents(style, 2), ["a"]);
+  assert.equal(referenceMeta(style, shut), "not reachable for Beta");
+});
+
+test("what stands out names the agents that cannot reach a file", () => {
+  const groups = standoutGroups(shut, shownIds(referenceMapView(shut)), new Set());
+  assert.deepEqual(groups[0]?.rows.map((row) => row.meta).slice(0, 2), [
+    "not reachable for Beta · in rules",
+    "not reachable · in Beta",
+  ]);
+});
+
+test("taskPulls marks a file the Task's agent cannot reach", () => {
+  const reach = (task: string) =>
+    taskPulls(shut, shut.nodes.find((item) => item.id === task) as ReferenceNode).map((pull) => [
+      pull.node.id,
+      pull.reachable,
+    ]);
+  assert.deepEqual(reach("task-b"), [
+    ["gone", false],
+    ["rules", true],
+    ["style", false],
+    ["glossary", true],
+  ]);
+  assert.deepEqual(
+    reach("task-a").find(([id]) => id === "style"),
+    ["style", true],
   );
 });

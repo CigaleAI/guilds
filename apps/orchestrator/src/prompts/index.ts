@@ -70,8 +70,7 @@ export const STATE_INTRO =
   "roster and `group.operators` the people the guild works for; use those " +
   "names when tagging. `group.history` is the last 10 public rows, each " +
   "with `sentBy`, the member or operator who wrote it. " +
-  "`readable_levels` and `writable_levels` are the note " +
-  "levels this agent may use. `collections` lists the collections this agent " +
+  "`collections` lists the collections this agent " +
   "can read (capped at 50): name, purpose, `access` (read or write), `scope` " +
   "(`guild` for a table of this guild, `org` for an organisation table), display " +
   "path, and `columns` (name, type, description, and when set required, " +
@@ -98,10 +97,6 @@ export function stateIntroForCapabilities(caps: StandingCaps): string {
         : `${listing[0]}, ${listing[1]}, or ${listing[2]}`;
   let text = STATE_INTRO.replace("initial note_find, record_list, or script_list", `initial ${listed}`);
   if (!caps.notes) {
-    text = text.replace(
-      "`readable_levels` and `writable_levels` are the note levels this agent may use. ",
-      "",
-    );
     text = text.replace("Notes are not listed here; search them with note_find. ", "");
   }
   if (!caps.scripts) {

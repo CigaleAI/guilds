@@ -32,7 +32,6 @@
           "instruction": "Sweep for new candidates. Skip keys already in seen-set and queue the rest as new."
         }
       ],
-      "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
       "native_tools": {
         "note_find": true, "note_get": true, "note_write": true, "record_list": true, "record_add": true, "record_update": false,
         "note_delete": false, "record_search": false, "record_remove": false, "schedule_create_cron": false, "schedule_create_window": false, "schedule_list": false, "schedule_pause": false, "schedule_resume": false, "schedule_delete": false, "secret_store": false, "secret_request": false, "group_post": false
@@ -57,7 +56,6 @@
           "instruction": "Archive the scout-queue records whose status is new, and set each to archived or rejected."
         }
       ],
-      "grants": { "read_guild": true, "write_guild": true, "read_org": true, "write_org": false },
       "native_tools": {
         "note_get": true, "record_list": true, "record_update": true, "note_find": false, "note_write": false, "record_add": false,
         "note_delete": false, "record_search": false, "record_remove": false, "schedule_create_cron": false, "schedule_create_window": false, "schedule_list": false, "schedule_pause": false, "schedule_resume": false, "schedule_delete": false, "secret_store": false, "secret_request": false, "group_post": false

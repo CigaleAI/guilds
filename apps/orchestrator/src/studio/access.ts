@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   BindingError,
-  resolvedGrants,
   resolvedMcp,
   resolvedTools,
   validateCatalog,
@@ -15,8 +14,7 @@ import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
-// tools, the file levels, and the connections and connection tools it is
-// offered. A change is an agent-level overlay; the guild's and the
+// tools, and the connections and connection tools it is offered. A change is an agent-level overlay; the guild's and the
 // organisation's settings stay as they are. Like every Studio edit, a
 // proposal writes nothing until the operator applies it.
 
@@ -30,7 +28,7 @@ export function isAccessTool(name: string): name is StudioAccessTool {
 const SETTINGS = ["on", "off", "inherit"] as const;
 type Setting = (typeof SETTINGS)[number];
 
-type CatalogKind = "native_tool" | "artifact_grant" | "mcp" | "mcp_tool";
+type CatalogKind = "native_tool" | "mcp" | "mcp_tool";
 
 type Change = { kind: CatalogKind; id: string; label: string; setting: Setting };
 
@@ -130,14 +128,10 @@ function stateOf(item: Resolved): string {
   return `${item.enabled ? "on" : "off"}${item.source_scope === "agent" ? ", set on this agent" : ""}`;
 }
 
-/** The access as the operator reads it in a diff: one line per tool, file level, and connection. */
+/** The access as the operator reads it in a diff: one line per tool and connection. */
 function render(snapshot: Snapshot, rows: Array<Record<string, unknown>>): string {
   const lines = [`${snapshot.agentName} · access`, "", "native tools"];
   for (const item of resolvedTools(rows, snapshot.scope)) {
-    lines.push(`- ${item.catalog_id}: ${stateOf(item)}`);
-  }
-  lines.push("", "file levels");
-  for (const item of resolvedGrants(rows, snapshot.scope)) {
     lines.push(`- ${item.catalog_id}: ${stateOf(item)}`);
   }
   lines.push("", "connections");
@@ -200,9 +194,9 @@ function entries(args: Record<string, unknown>, field: string): Array<[string, S
   return Object.entries(raw as Record<string, unknown>).map(([name, value]) => [name.trim(), settingOf(value, field, name)]);
 }
 
-function catalogId(kind: "native_tool" | "artifact_grant", id: string): string {
+function nativeToolId(name: string): string {
   try {
-    return validateCatalog(kind, id)[1];
+    return validateCatalog("native_tool", name)[1];
   } catch (error) {
     if (error instanceof BindingError) throw new StudioUnprocessableError(error.message);
     throw error;
@@ -225,12 +219,8 @@ function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change
     if (!unchanged) changes.push(change);
   };
   for (const [name, setting] of entries(args, "native_tools")) {
-    const id = catalogId("native_tool", name);
+    const id = nativeToolId(name);
     add({ kind: "native_tool", id, label: id, setting });
-  }
-  for (const [name, setting] of entries(args, "artifact_grants")) {
-    const id = catalogId("artifact_grant", name);
-    add({ kind: "artifact_grant", id, label: id, setting });
   }
   const connections = agentConnections(snapshot, snapshot.rows).map((item) => item.connection);
   for (const [id, setting] of entries(args, "connections")) {
@@ -253,26 +243,12 @@ function parseChanges(snapshot: Snapshot, args: Record<string, unknown>): Change
   return changes;
 }
 
-const GRANT_WORDS: Record<string, string> = {
-  read_guild: "read the guild's notes",
-  write_guild: "write the guild's notes",
-  read_org: "read the organisation's notes",
-  write_org: "write the organisation's notes",
-};
-
 function accessEffects(snapshot: Snapshot, after: Array<Record<string, unknown>>, changes: Change[]): string[] {
   const name = snapshot.agentName;
   const effects = [`Takes effect from ${name}'s next run; a run already going keeps what it started with.`];
   const before = new Map(agentConnections(snapshot, snapshot.rows).map(({ item, connection }) => [connection.serverId, item.enabled]));
   const now = agentConnections(snapshot, after);
   for (const change of changes) {
-    if (change.kind === "artifact_grant") {
-      const was = resolvedGrants(snapshot.rows, snapshot.scope).find((item) => item.catalog_id === change.id)?.enabled;
-      const is = resolvedGrants(after, snapshot.scope).find((item) => item.catalog_id === change.id)?.enabled;
-      if (was !== is) {
-        effects.push(`${is ? "Lets" : "Stops"} ${name} ${is ? "" : "being able to "}${GRANT_WORDS[change.id] ?? change.id}.`);
-      }
-    }
     if (change.kind === "mcp") {
       const entry = now.find(({ connection }) => connection.serverId === change.id);
       if (entry && entry.item.enabled !== before.get(change.id)) {
@@ -300,11 +276,11 @@ function accessEffects(snapshot: Snapshot, after: Array<Record<string, unknown>>
   return effects;
 }
 
-/** Everything the agent can use under these bindings, one key per tool, file level, and connection. */
+/** Everything the agent can use under these bindings, one key per tool and connection. */
 function enabledAccess(snapshot: Snapshot, rows: Array<Record<string, unknown>>): Set<string> {
   const on = (prefix: string, items: Resolved[]) =>
     items.filter((item) => item.enabled).map((item) => `${prefix}:${item.catalog_id}`);
-  const keys = [...on("tool", resolvedTools(rows, snapshot.scope)), ...on("grant", resolvedGrants(rows, snapshot.scope))];
+  const keys = on("tool", resolvedTools(rows, snapshot.scope));
   for (const { item, connection } of agentConnections(snapshot, rows)) {
     keys.push(...on("mcp", [item]));
     const tools = connection.tools.map((tool) => resolveMcpTool(rows, tool.name, { serverEnabled: item.enabled, ...snapshot.scope }));

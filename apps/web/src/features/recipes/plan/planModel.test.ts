@@ -11,13 +11,13 @@ import {
   emptyPendingAccess,
   externalCard,
   findingsByPath,
-  grantLabel,
   guildHero,
   handoffChart,
   isOperatorSystem,
   isPendingQuestion,
   isRecipeApproved,
   needsReview,
+  noteAccessLabel,
   noteCard,
   noteSnippet,
   noteTitle,
@@ -72,7 +72,6 @@ function deskRecipe(): RecipeDraft {
         task: { body: "Watch the feed and queue posts.", author: builder },
         browser: { required: true, instructions: "", author: builder },
         native_tools: { note_find: true, web_fetch: false },
-        grants: { read_guild: true, write_guild: false },
         schedules: [
           {
             key: "watch-feed",
@@ -183,7 +182,7 @@ test("scheduleCadence prefers the wake window over the cron", () => {
   assert.equal(scheduleCadence({ window: null, cron: "0 * * * *" }), "Every hour");
 });
 
-test("planFromRecipe shapes agents with defaults, enabled tools, grants, and routines", () => {
+test("planFromRecipe shapes agents with defaults, enabled tools, and routines", () => {
   const plan = planFromRecipe(deskRecipe());
   const [watcher, writer] = plan.agents;
   assert.ok(watcher && writer);
@@ -191,7 +190,6 @@ test("planFromRecipe shapes agents with defaults, enabled tools, grants, and rou
   assert.equal(watcher.model, "fast-model");
   assert.equal(watcher.browser, true);
   assert.deepEqual(watcher.nativeTools, ["note_find"]);
-  assert.deepEqual(watcher.grants, ["read_guild"]);
   assert.deepEqual(watcher.taskAuthor, builder);
   assert.equal(watcher.routines[0]?.source, "schedule");
   assert.equal(watcher.routines[0]?.window, null);
@@ -478,7 +476,7 @@ test("collectionView labels access, the apply decision, conflicts, and column ru
   assert.equal(view.access, "guild write · writers: @watcher");
   assert.equal(
     view.meta,
-    "Organisation table · every agent in the guild gets write · Own write grant: @watcher",
+    "Organisation table · every agent in the guild gets write · Agent rows at write: @watcher",
   );
   assert.deepEqual(
     view.columns.map((column) => [column.typeLabel, column.rules]),
@@ -532,6 +530,7 @@ test("noteCard shows the title, owner, first line, and where apply writes the no
   assert.deepEqual(card, {
     title: "style.md",
     owner: "guild",
+    access: "guild write",
     snippet: "Style",
     destination: "guild/style.md",
     body: "\n## Style\r\nKeep it short.",
@@ -543,10 +542,22 @@ test("noteCard shows the title, owner, first line, and where apply writes the no
     body: "",
   });
   assert.equal(agentNote.owner, "agent · writer");
+  assert.equal(agentNote.access, "@writer only");
   assert.equal(agentNote.destination, "agent/writer/k.md");
   assert.equal(agentNote.snippet, "Empty note");
   assert.equal(noteTitle({ id: "  " }), "note");
   assert.equal(noteSnippet("x".repeat(100)), `${"x".repeat(85)}…`);
+});
+
+test("noteAccessLabel shows the guild's mode, or the role alone, with the roles that write", () => {
+  assert.equal(noteAccessLabel({ level: "org" }), "guild read");
+  assert.equal(noteAccessLabel({ level: "org", guild: "write" }), "guild write");
+  assert.equal(noteAccessLabel({ level: "guild" }), "guild write");
+  assert.equal(
+    noteAccessLabel({ level: "agent", role: "writer", guild: "read", writers: ["reader"] }),
+    "guild read · writers: @reader",
+  );
+  assert.equal(noteAccessLabel({ level: "agent", role: "writer", writers: ["reader"] }), "@writer · writers: @reader");
 });
 
 test("operator and pending-question systems are told apart", () => {
@@ -819,9 +830,6 @@ test("agentCard gathers connectors, metrics, prompt, routines, operator steps, a
     { key: "watch-feed", cadence: "Every 15 minutes", description: "Check the feed" },
   ]);
   assert.equal(watcher.metrics.tools.label, "1 tool");
-  assert.deepEqual(watcher.metrics.tools.grants, [
-    { id: "read_guild", label: "Read guild artifacts" },
-  ]);
   assert.deepEqual(watcher.prompt, {
     text: "Watch the feed and queue posts.",
     badge: "31 chars",
@@ -931,10 +939,6 @@ test("needsReview is builder work that is still unreviewed", () => {
 test("promptBadge counts trimmed characters and marks empty", () => {
   assert.equal(promptBadge("  hi  "), "2 chars");
   assert.equal(promptBadge(""), "empty");
-});
-
-test("grantLabel falls back to the grant id when unknown", () => {
-  assert.equal(grantLabel("custom"), "custom");
 });
 
 test("the API's row and preview shapes feed the plan directly", () => {

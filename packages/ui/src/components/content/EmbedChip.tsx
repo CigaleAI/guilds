@@ -8,7 +8,7 @@ import { embedKind, embedLabel } from "./embeds";
 export type EmbedChipProps = Omit<ComponentProps<"span">, "children"> & {
   /** The embedded note's or table's display path. */
   path: string;
-  /** The path no longer resolves: a deleted file, or a recipe path left after apply. */
+  /** The path is not reachable: a deleted file, one the agent cannot read, or a recipe path left after apply. */
   broken?: boolean;
   /** `tinted` on a soft coloured ground, such as a person's message bubble. */
   tone?: "default" | "tinted";
@@ -27,7 +27,7 @@ export function EmbedChip({
 }: EmbedChipProps) {
   const kind = embedKind(path);
   const label = embedLabel(path);
-  const title = broken ? `Broken ${kind === "table" ? "table" : "file"} link: ${path}` : path;
+  const title = broken ? `${kind === "table" ? "Table" : "File"} not reachable: ${path}` : path;
   const classes = cn(
     tag({ tone: tone === "tinted" ? "tinted" : broken ? "plum" : "signal" }),
     "gap-1 align-middle text-xs",

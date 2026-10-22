@@ -13,7 +13,6 @@ const KIND_WORDS: Record<string, string> = {
   native_tool: "tool",
   mcp: "connector",
   mcp_tool: "tool",
-  artifact_grant: "grant",
 };
 
 function bindingLabel(key: BindingKey): string {

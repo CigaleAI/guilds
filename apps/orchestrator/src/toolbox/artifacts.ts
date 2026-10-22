@@ -157,9 +157,25 @@ export const noteGet: Tool = {
 };
 
 const NOTE_WRITE_DESCRIPTION =
-  "Create or update a Markdown note at an explicit level (agent, guild, or org). " +
+  "Create or update a Markdown note. With level (agent, guild, or org) and key, write your own note " +
+  "at that level: a new note is created at agent or guild level, and an org note is updated only when it " +
+  "exists and you have write access. With path, rewrite any existing note whose access is write. " +
   "key is the .md file name (for example queries.md); notes have no folders. " +
   "Do not pass org, guild, or agent ids.";
+
+/** The note `note_write` names: an existing note by display path, or a level and key. */
+async function writeNoteArgs(ctx: ToolContext, args: Record<string, unknown>) {
+  const content = argString(args, "content");
+  const path = argString(args, "path").trim();
+  if (path) {
+    return store(ctx).writeNoteAt(actor(ctx), path, content);
+  }
+  const levelRaw = argString(args, "level");
+  if (!isArtifactLevel(levelRaw)) {
+    throw new ArtifactError("level must be agent, guild, or org", 422);
+  }
+  return store(ctx).writeNote(actor(ctx), { level: levelRaw, key: argString(args, "key"), content });
+}
 
 export const noteWrite: Tool = {
   name: "note_write",
@@ -170,22 +186,15 @@ export const noteWrite: Tool = {
     "note_write",
     NOTE_WRITE_DESCRIPTION,
     {
-      level: { type: "string", description: "agent, guild, or org" },
+      path: { type: "string", description: "the display path of an existing note to rewrite; omit level and key" },
+      level: { type: "string", description: "agent, guild, or org; with key, when path is omitted" },
       key: { type: "string", description: "the .md file name, for example queries.md" },
       content: { type: "string" },
     },
-    ["level", "key", "content"],
+    ["content"],
   ),
   async handler(ctx, args) {
-    const levelRaw = argString(args, "level");
-    if (!isArtifactLevel(levelRaw)) {
-      throw new ArtifactError("level must be agent, guild, or org", 422);
-    }
-    const row = await store(ctx).writeNote(actor(ctx), {
-      level: levelRaw,
-      key: argString(args, "key"),
-      content: argString(args, "content"),
-    });
+    const row = await writeNoteArgs(ctx, args);
     const display = String(store(ctx).view(row).display_path);
     await publish(ctx, display);
     return display;

@@ -133,7 +133,7 @@ How the product works, for the operator. Start with
 
 **Access**
 
-- [Access](concepts/access.md) — scopes, bindings, and grants
+- [Access](concepts/access.md) — scopes, bindings, and access lists
 - [Secrets](concepts/secrets.md) — values handed to an agent's
   commands
 

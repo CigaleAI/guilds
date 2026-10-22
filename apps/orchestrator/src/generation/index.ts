@@ -74,18 +74,15 @@ import {
   ArtifactError,
   ArtifactStore,
   agentActor,
-  catalogLevels,
   collectTaskEmbeds,
   displayPathFor,
-  grantsFromBindings,
   inlineTaskEmbeds,
   operatorActor,
   snapshotTaskEmbeds,
   snapshotTaskCollections,
+  taskEmbedActor,
   type ArtifactActor,
-  type ArtifactGrants,
 } from "../artifacts/index.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../artifacts/types.js";
 import type { ChangeActor } from "../db/config-changes.js";
 import { NotesError, type NotesStore } from "../notes/store.js";
 import { tokenRedactions } from "../oauth/index.js";
@@ -793,7 +790,6 @@ export class PreparedRun {
       tools: string[];
       secrets: Array<Record<string, string>>;
       mcp: Array<Record<string, unknown>>;
-      grants?: ArtifactGrants;
     },
     public members: Array<Record<string, unknown>>,
     public history_rows: Array<Record<string, unknown>>,
@@ -2459,7 +2455,11 @@ export class GenerationLoop implements GroupRunner {
         agentId: String(agent.id),
       });
       try {
-        const task = await inlineTaskEmbeds(this.artifacts, operator, String(agent.task ?? ""));
+        const task = await inlineTaskEmbeds(
+          this.artifacts,
+          taskEmbedActor(String(agent.org_id), agent),
+          String(agent.task ?? ""),
+        );
         const memory = await this.artifacts.readMemory(operator, String(agent.id));
         return [system, task, memory];
       } catch (error) {
@@ -2552,7 +2552,6 @@ export class GenerationLoop implements GroupRunner {
         selectedHistory,
         access.secrets,
         config.max_tool_calls,
-        access.grants,
         await this._connector_state(agent),
         caps.scripts ? await this.scripts.catalog(String(agent.id)) : [],
         caps.coding ? stateRepositories(await this._guild_repositories(agent), String(agent.id)) : null,
@@ -2581,21 +2580,15 @@ export class GenerationLoop implements GroupRunner {
     if (!this.artifacts || typeof agent.org_id !== "string" || !agent.org_id) {
       return null;
     }
-    const operator = operatorActor({
-      orgId: String(agent.org_id),
-      actorId: "hydrate",
-      actorName: "operator",
-      guildId: String(agent.guild_id),
-      agentId: String(agent.id),
-    });
+    const actor = taskEmbedActor(String(agent.org_id), agent);
     const source = String(agent.task ?? "");
     const version = Number(agent.task_version ?? 1);
     const hash = String(agent.task_hash ?? "");
     let embeds: Array<Record<string, unknown>> = [];
     let collections: string[] = [];
     try {
-      embeds = await snapshotTaskEmbeds(this.artifacts, operator, source);
-      collections = await snapshotTaskCollections(this.artifacts, operator, source);
+      embeds = await snapshotTaskEmbeds(this.artifacts, actor, source);
+      collections = await snapshotTaskCollections(this.artifacts, actor, source);
     } catch {
       /* keep empty embeds */
     }
@@ -2626,7 +2619,6 @@ export class GenerationLoop implements GroupRunner {
     historyRows: Array<Record<string, unknown>>,
     secrets: Array<Record<string, unknown>> | null,
     maxToolCalls: number,
-    grants: ArtifactGrants = DEFAULT_ARTIFACT_GRANTS,
     connectors: Record<string, unknown> = {},
     scripts: unknown[] = [],
     repositories: Array<Record<string, string>> | null = null,
@@ -2635,7 +2627,6 @@ export class GenerationLoop implements GroupRunner {
     prepareWorkspace(await this.workspaceRootFor(machineId), machineId, String(agent.id), {
       browser: Boolean(asObj(agent.config).browser),
     });
-    const levels = catalogLevels(grants);
     let collections: unknown[] = [];
     if (this.artifacts && typeof agent.org_id === "string" && agent.org_id) {
       const actor = agentActor({
@@ -2643,7 +2634,6 @@ export class GenerationLoop implements GroupRunner {
         guildId: String(agent.guild_id),
         agentId: String(agent.id),
         agentName: String(agent.name),
-        grants,
       });
       try {
         collections = await this.artifacts.catalog(actor);
@@ -2671,8 +2661,6 @@ export class GenerationLoop implements GroupRunner {
           secrets,
           scripts,
           maxToolCalls,
-          readableLevels: levels.readable,
-          writableLevels: levels.writable,
           connectors,
           repositories,
         },
@@ -3375,10 +3363,6 @@ export class GenerationLoop implements GroupRunner {
       runScripts,
       offered.has("script_run"),
     );
-    let grants = DEFAULT_ARTIFACT_GRANTS;
-    if (this.artifacts && scope.orgId) {
-      grants = grantsFromBindings(rows, scope);
-    }
     const ctx = createToolContext({
       run_id: runId,
       agent_id: String(agent.id),
@@ -3394,7 +3378,6 @@ export class GenerationLoop implements GroupRunner {
               guildId: String(agent.guild_id),
               agentId: String(agent.id),
               agentName: String(agent.name),
-              grants,
               runId,
             })
           : null,

@@ -125,6 +125,8 @@ export async function listHostFiles(
 }
 
 type HostFilePayload = {
+  /** A note's id, which names it to the access API. */
+  id?: string;
   path: string;
   content: string;
   display_path: string;
@@ -202,6 +204,7 @@ export async function readHostFile(
     actor,
     ownerId,
     {
+      ...(loaded.row.kind === "note" ? { id: loaded.row.id } : {}),
       path: name,
       display_path: displayPath,
       content: String(loaded.row.content_text ?? ""),
@@ -255,7 +258,7 @@ export async function writeHostFile(
     store,
     actor,
     ownerId,
-    { path: name, content, display_path: String(store.view(row).display_path) },
+    { id: row.id, path: name, content, display_path: String(store.view(row).display_path) },
     row.kind,
     row.version,
     repo,
@@ -304,9 +307,7 @@ export async function getCollection(
   actor: ArtifactActor,
   collectionId: string,
 ): Promise<Record<string, unknown>> {
-  const collection = await store.getCollection(actor, collectionId);
-  const access = await store.listAccess(actor, collectionId);
-  return { ...collection, access_list: access };
+  return store.getCollection(actor, collectionId);
 }
 
 export async function updateCollection(
@@ -444,21 +445,6 @@ export async function exportCollection(
     return JSON.stringify(rest);
   });
   return { name: exported.name, body: lines.join("\n") + (lines.length ? "\n" : "") };
-}
-
-export async function setCollectionAccess(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  subjectType: "guild" | "agent",
-  subjectId: string,
-  body: Record<string, unknown>,
-): Promise<void> {
-  await store.setAccess(actor, {
-    collectionId: String(body.collection_id ?? ""),
-    subjectType,
-    subjectId,
-    mode: body.mode ?? null,
-  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

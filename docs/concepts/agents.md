@@ -132,8 +132,8 @@ is disabled once the guild is full. Each agent row shows:
 - a live state dot: signal green while it runs, a quiet dot when idle;
 - a code marker on a coding agent;
 - a marker for browser access;
-- a broken-link marker naming the notes or collections its Task embeds
-  that no longer exist ([Task](task.md)).
+- a marker naming the notes or collections its Task embeds that the
+  agent cannot reach ([Task](task.md#an-embed-the-agent-cannot-reach)).
 
 ### Create an agent
 
@@ -183,9 +183,9 @@ and its focus. Two warnings can sit there:
 
 - a coding agent that is not ready shows a warning icon
   ([Coding agents](coding/index.md));
-- when the Task embeds notes or collections that no longer exist, an
-  unlink button names them and opens the Prompt tab
-  ([Task](task.md)).
+- when the Task embeds notes or collections the agent cannot reach,
+  an unlink button names them and opens the Prompt tab
+  ([Task](task.md#an-embed-the-agent-cannot-reach)).
 
 A **Browser login needed** strip can show after a recipe apply
 ([Browser](browser.md)).
@@ -199,7 +199,7 @@ sideways when they do not fit.
 | --- | --- | --- |
 | **Chat** | sessions with the agent, their transcripts, and **History** | [Runs](runs.md), [Run transcript](run-transcript.md) |
 | **Prompt** | the standing Task | [Task](task.md) |
-| **State** | Memory, Notes, Tables, Scripts (with scripting on), Artifact scope | [Memory](memory.md), [Notes](notes.md), [Collections](collections.md), [Scripts](scripts.md), [Access](access.md) |
+| **State** | Memory, Notes, Access, Scripts (with scripting on) | [Memory](memory.md), [Notes](notes.md), [Access](access.md#what-a-guild-or-an-agent-reaches), [Scripts](scripts.md) |
 | **Routine** | the agent's routines | [Routines](routines.md) |
 | **Browser** | the agent's live Chrome, only with Browser on | [Browser](browser.md) |
 | **CLI** | a terminal on the agent's machine | [Agent home](agent-home.md) |
@@ -447,8 +447,8 @@ already generating`). It then:
 - stops the agent's Chrome and terminal on its machine, and removes
   its home and its `/run/guilds/<agent id>/` files; the machine's
   container stays up for the other agents on it;
-- deletes the agent's collection grants (`collection_access` rows with
-  the agent as subject);
+- deletes the access-list rows that name the agent, and the rows on
+  its notes (`artifact_access`);
 - deletes every secret granted only to that agent;
 - deletes the agent row.
 

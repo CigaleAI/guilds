@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "718f5e8a24c262b1ccad92673480a9db7afdc42440e2b780d652cef91c28db1a"
+      "sha256": "83e0759718871cf4803f96658b95d4f1c9aa28634c485ca64969be082c96c9d8"
     },
     {
       "path": "ids/shape.json",
@@ -71,13 +71,13 @@
       "path": "prompts/compose.txt",
       "source": "src/prompts composeSystemPrompt",
       "generator_version": "1",
-      "sha256": "db5180b34774f1accbacfd51b1b48f6a59cbb95dcadc8a6cc1e29f2d2376678e"
+      "sha256": "04ad957c6f0e39ff9714fe6ca071d7276dbfaf2b3de6cb0d50ed0e1d23edc0cb"
     },
     {
       "path": "prompts/hashes.json",
       "source": "src/prompts promptHash",
       "generator_version": "1",
-      "sha256": "32acdb22ac7bd2ec687367cb4db4050e50dde473f66ab3af5877d844d71c2e78"
+      "sha256": "1780ad78c7f19baece29ffe74ea3990f1fae0ec0557bcc61acd8922181b3ab54"
     },
     {
       "path": "prompts/hydrate.json",
@@ -101,7 +101,7 @@
       "path": "seed/manifest.json",
       "source": "clean-database seed rows: system, dev, runtime bootstrap",
       "generator_version": "1",
-      "sha256": "057191d83cb919f1c1770f36382765f9aeb390d55f48ba343c3f0b1be9db9ae6"
+      "sha256": "074857e1be9933094d26e2e2d4f2657f5c5dc82982433134a7d77f8c0cc31b90"
     },
     {
       "path": "sse/channel-split-run.txt",
@@ -137,7 +137,7 @@
       "path": "state/snapshot.json",
       "source": "src/state collectRunState",
       "generator_version": "1",
-      "sha256": "9d4b7e56c860b5cd585c0c354260a9412c916f841d4367fff3168b05b76c66d9"
+      "sha256": "b3e6e176422c7cf5490daf2dccad5736256d3b45c1c00b46abbb7060fdf569df"
     },
     {
       "path": "views/run-message.json",

@@ -11,7 +11,8 @@ them, repeats them, or explains them.
   agent's name, id, and home; then a paragraph from each connector
   whose tools the run offers.
 - `<task>`: the intro quoted below, then the Task with its embeds
-  inlined.
+  inlined as the agent reads them; an embed the agent cannot reach is
+  a marker saying the file is not reachable.
 - `<state>`: the intro quoted below, then a JSON snapshot taken at run
   creation.
 - `<memory>`: when the agent's Memory is on, the rules quoted below,

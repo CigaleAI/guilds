@@ -54,8 +54,8 @@ as chips. Code blocks show their language and a copy button.
 | Guild Settings: **Operators** | `/guilds/<id>/settings` | [Operators](../concepts/operators.md) |
 | Guild Settings: **Commit author email**, **Repositories** | `/guilds/<id>/settings` | [Repositories](../concepts/coding/repositories.md) |
 | Guild **State › Files** | `/guilds/<id>/state/files` | [Notes](../concepts/notes.md) |
-| Guild **State › Tables** | `/guilds/<id>/state/tables` | [Collections](../concepts/collections.md) |
-| Guild **State › Artifact scope** | `/guilds/<id>/state/artifacts` | [Notes](../concepts/notes.md), [Access](../concepts/access.md) |
+| Note **Access** button and the **Access to `<path>`** dialog | the header of an open note in the notes browser: Guild **State › Files**, Agent **State › Notes**, Studio | [Access](../concepts/access.md#the-access-panel), [Notes](../concepts/notes.md) |
+| Guild **State › Access** | `/guilds/<id>/state/access` | [Access](../concepts/access.md#what-a-guild-or-an-agent-reaches), [Notes](../concepts/notes.md), [Collections](../concepts/collections.md) |
 | Guild **Routines** tab | `/guilds/<id>/routines` | [Routines](../concepts/routines.md) |
 | Guild **Issues** tab | `/guilds/<id>/issues` | [Inbox and issues](../concepts/inbox.md) |
 | Guild **Tools** tab | `/guilds/<id>/tools` | [Access](../concepts/access.md) |
@@ -72,9 +72,8 @@ as chips. Code blocks show their language and a copy button.
 | Agent **Prompt** tab | `/guilds/<id>/agents/<id>/prompt` | [Task](../concepts/task.md) |
 | Agent **State › Memory** | `/guilds/<id>/agents/<id>/state/memory` | [Memory](../concepts/memory.md) |
 | Agent **State › Notes** | `/guilds/<id>/agents/<id>/state/notes` | [Notes](../concepts/notes.md) |
-| Agent **State › Tables** | `/guilds/<id>/agents/<id>/state/tables` | [Collections](../concepts/collections.md) |
+| Agent **State › Access** | `/guilds/<id>/agents/<id>/state/access` | [Access](../concepts/access.md#what-a-guild-or-an-agent-reaches), [Notes](../concepts/notes.md), [Collections](../concepts/collections.md) |
 | Agent **State › Scripts** | `/guilds/<id>/agents/<id>/state/scripts` | [Scripts](../concepts/scripts.md) |
-| Agent **State › Artifact scope** | `/guilds/<id>/agents/<id>/state/artifacts` | [Notes](../concepts/notes.md), [Access](../concepts/access.md) |
 | Agent **Routine** tab | `/guilds/<id>/agents/<id>/routine` | [Routines](../concepts/routines.md) |
 | Agent **Browser** tab | `/guilds/<id>/agents/<id>/browser` | [Browser](../concepts/browser.md) |
 | Agent **CLI** tab | `/guilds/<id>/agents/<id>/cli` | [Agent home](../concepts/agent-home.md) |
@@ -87,7 +86,7 @@ as chips. Code blocks show their language and a copy button.
 | Agent Settings: **Repositories** | `?section=repositories` | [Repositories](../concepts/coding/repositories.md) |
 | Access view (Tools and Secrets, at organisation, guild, and agent) | Settings, guild, and agent tabs | [Access](../concepts/access.md), [Secrets](../concepts/secrets.md) |
 | **Inbox** | `/inbox` | [Inbox and issues](../concepts/inbox.md) |
-| **Tables**: records, **Columns**, **Access** | `/tables`, `/tables/<collection id>` (`?tab=columns`, `access`) | [Collections](../concepts/collections.md) |
+| **Tables**: records, **Columns**, **Access** | `/tables`, `/tables/<collection id>` (`?tab=columns`, `access`) | [Collections](../concepts/collections.md), [Access](../concepts/access.md#the-access-panel) |
 | Settings › **General** | `/settings` | [Organisations](../concepts/organisations.md) |
 | Settings › **Members** | `/settings?tab=members` | [Organisations](../concepts/organisations.md) |
 | Settings › **Machines** | `/settings?tab=machines` | [Machines](../concepts/machines.md) |

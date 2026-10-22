@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { agentActor } from "../../src/artifacts/index.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
 import { MemoryError } from "../../src/memory/index.js";
 import { memoryWrite } from "../../src/toolbox/memory.js";
 import { createToolContext } from "../../src/toolbox/types.js";
@@ -12,7 +11,6 @@ const actor = agentActor({
   guildId: "g_1",
   agentId: "a_1",
   agentName: "researcher",
-  grants: DEFAULT_ARTIFACT_GRANTS,
   runId: "r_1",
 });
 

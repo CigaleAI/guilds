@@ -1,8 +1,8 @@
 import { newId } from "../lib/ids.js";
 import { GITHUB_SLUG } from "../github/index.js";
-import { operatorActor } from "../artifacts/grants.js";
+import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
-import type { ArtifactStore } from "../artifacts/index.js";
+import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
 import { httpAccess } from "../http/access.js";
 import type { Repositories } from "../db/repositories.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -27,6 +27,7 @@ import { emptyRecipe } from "./minimal.js";
 import { operatorAuthor, parseRecipe, RECIPE_HINT_MAX, type RecipeDocument } from "./schema.js";
 import { recipeNotePath, rewriteGuildTextToRecipeRefs } from "./rewrite.js";
 import { RecipeError } from "./errors.js";
+import { capturedNoteAccess, capturedTableAccess, type CapturedGuild } from "./access.js";
 import { exportManifest } from "../mcp/catalog.js";
 
 export type CaptureDeps = {
@@ -83,6 +84,12 @@ function portableSecretAliases(config: Record<string, unknown>): Record<string, 
 
 function clippedHint(value: unknown): string {
   return String(value ?? "").slice(0, RECIPE_HINT_MAX);
+}
+
+/** The access list of the live note at `displayPath`; empty when there is none. */
+async function noteAccessEntries(artifacts: ArtifactStore, actor: ArtifactActor, displayPath: string): Promise<AccessEntry[]> {
+  const found = await artifacts.getByDisplayPath(actor, displayPath);
+  return found.row ? artifacts.listAccess(actor, { kind: "note", id: found.row.id }) : [];
 }
 
 export function portableRoleConfig(
@@ -164,13 +171,12 @@ export async function captureGuild(
   recipe.guild.objective = String(args.guild.description ?? "");
 
   const hrefToNoteId = new Map<string, string>();
-  // Every table the guild reaches: its own, and the organisation tables it or
-  // one of its agents is granted. Writers are the agents that override an
-  // organisation table to write, named by role.
-  const memberIds = new Set(agents.map((agent) => String(agent.id)));
-  const guildModes = new Map(
-    (await deps.artifacts.accessForGuild(actor, guildId)).map((row) => [row.collection_id, row.mode]),
-  );
+  // Every table the guild reaches: its own, and the organisation tables its
+  // organisation's row, its own row, or one of its agents' rows reaches.
+  const captured: CapturedGuild = {
+    guildId,
+    members: new Map(agents.map((agent) => [String(agent.id), String(agent.name)])),
+  };
   for (const collection of await deps.artifacts.listCollections(actor)) {
     if (collection.scope === "guild") {
       if (collection.guild?.id !== guildId) {
@@ -186,10 +192,9 @@ export async function captureGuild(
       });
       continue;
     }
-    const guildMode = guildModes.get(collection.id) ?? null;
-    const access = await deps.artifacts.listAccess(actor, collection.id);
-    const memberGrants = access.agents.filter((row) => memberIds.has(row.id) && row.agent_mode !== null);
-    if (!guildMode && !memberGrants.length) {
+    const entries = await deps.artifacts.listAccess(actor, { kind: "collection", id: collection.id });
+    const reach = capturedTableAccess(entries, captured);
+    if (reach === null) {
       continue;
     }
     recipe.collections.push({
@@ -197,8 +202,7 @@ export async function captureGuild(
       purpose: collection.purpose,
       columns: collection.columns,
       scope: "org",
-      guild: guildMode ?? "read",
-      writers: memberGrants.filter((row) => row.agent_mode === "write").map((row) => row.name),
+      ...reach,
     });
   }
 
@@ -209,9 +213,6 @@ export async function captureGuild(
     const taskRow = await deps.repo.getAgentTask(orgId, agentId);
     const taskBody = String(taskRow?.content_text ?? "");
     const access = await httpAccess(deps.repo, { orgId, guildId, agentId, viewScope: "agent" });
-    const grants = Object.fromEntries(
-      (access.grants as Array<Record<string, unknown>>).map((item) => [String(item.name), Boolean(item.enabled)]),
-    );
     const nativeTools = Object.fromEntries(
       (access.tools as Array<Record<string, unknown>>).map((item) => [String(item.name), Boolean(item.enabled)]),
     );
@@ -249,12 +250,6 @@ export async function captureGuild(
           author: operatorAuthor(),
         };
       }),
-      grants: {
-        read_guild: Boolean(grants.read_guild),
-        write_guild: Boolean(grants.write_guild),
-        read_org: Boolean(grants.read_org),
-        write_org: Boolean(grants.write_org),
-      },
       native_tools: nativeTools,
       browser: {
         required: browserRequired,
@@ -376,23 +371,25 @@ export async function captureGuild(
       continue;
     }
     const id = newId("nte").slice(0, 16);
-    const captured: RecipeDocument["notes"][number] = {
+    const seed: RecipeDocument["notes"][number] = {
       id,
       level: String(note.level) as "org" | "guild" | "agent",
       key,
       body: String(note.content ?? ""),
       kind: "seed",
       author: operatorAuthor(),
+      writers: [],
     };
-    if (captured.level === "agent") {
+    if (seed.level === "agent") {
       const ownerId = String(note.owner_id ?? "");
       const owner = agents.find((agent) => String(agent.id) === ownerId);
       if (owner) {
-        captured.role = String(owner.name);
+        seed.role = String(owner.name);
       }
     }
-    hrefToNoteId.set(display, recipeNotePath(captured));
-    recipe.notes.push(captured);
+    Object.assign(seed, capturedNoteAccess(await noteAccessEntries(deps.artifacts, actor, display), seed, captured));
+    hrefToNoteId.set(display, recipeNotePath(seed));
+    recipe.notes.push(seed);
   }
 
   for (const role of recipe.roles) {

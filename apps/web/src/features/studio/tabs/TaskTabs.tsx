@@ -55,7 +55,7 @@ export function PromptTab({ agent }: { agent: StudioAgent }) {
         </Banner>
       ) : null}
       {data.task.embed_warning ? (
-        <Banner tone="error" title="An embed doesn't resolve">
+        <Banner tone="error" title="Runs can't start: the embeds can't be inlined">
           {data.task.embed_warning}
         </Banner>
       ) : null}

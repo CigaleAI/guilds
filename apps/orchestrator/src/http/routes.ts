@@ -108,6 +108,7 @@ import {
   displayPathFor,
   inspectTaskEmbeds,
   listFileChanges,
+  taskEmbedActor,
 } from "../artifacts/index.js";
 import { NotesError } from "../notes/store.js";
 import { scriptItem } from "../scripts/catalog.js";
@@ -180,7 +181,6 @@ import {
   readHostFile,
   removeRecord,
   requireArtifacts,
-  setCollectionAccess,
   updateCollection,
   updateRecord,
   writeHostFile,
@@ -1272,11 +1272,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     const items = [];
     for (const row of agents) {
-      const actor = await operatorFor(repo, user, {
-        orgId: String(guild.org_id),
-        guildId: String(guild.id),
-        agentId: String(row.id),
-      });
+      const actor = taskEmbedActor(String(guild.org_id), row);
       const inspected = await inspectTaskEmbeds(artifacts, actor, String(row.task ?? ""));
       items.push({
         id: row.id,
@@ -1648,7 +1644,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   // Collections live at the organisation: the Tables page builds them and
-  // browses their records; the guild and agent settings hold the grants.
+  // browses their records and edits their access lists.
   app.get("/api/collections", async (request) => {
     const store = requireArtifacts(artifacts);
     const user = await currentUser(repo, request, deps);
@@ -1808,71 +1804,60 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.get("/api/guilds/:guild_id/collection-access", async (request) => {
+  // An item's access list: notes and tables take the same routes.
+  const accessTargets = [
+    { path: "/api/notes/:note_id/access", kind: "note", param: "note_id" },
+    { path: "/api/collections/:collection_id/access", kind: "collection", param: "collection_id" },
+  ] as const;
+  for (const target of accessTargets) {
+    app.get(target.path, async (request) => {
+      const store = requireArtifacts(artifacts);
+      const user = await currentUser(repo, request, deps);
+      const org = await currentOrg(repo, request, user);
+      try {
+        const actor = await operatorFor(repo, user, { orgId: String(org.id) });
+        return await store.accessList(actor, { kind: target.kind, id: param(request, target.param) });
+      } catch (error) {
+        catchArtifact(error);
+      }
+    });
+
+    app.put(target.path, async (request) => {
+      const store = requireArtifacts(artifacts);
+      const user = await currentUser(repo, request, deps);
+      const org = await currentOrg(repo, request, user);
+      const missing = missingBodyFields(request.body, ["subjects"]);
+      if (missing) {
+        throw missing;
+      }
+      try {
+        const actor = await operatorFor(repo, user, { orgId: String(org.id) });
+        return await store.replaceAccess(actor, { kind: target.kind, id: param(request, target.param) }, bodyOf(request).subjects);
+      } catch (error) {
+        catchArtifact(error);
+      }
+    });
+  }
+
+  app.get("/api/guilds/:guild_id/reach", async (request) => {
     const store = requireArtifacts(artifacts);
     const user = await currentUser(repo, request, deps);
     const row = await ownedGuild(repo, param(request, "guild_id"), user);
     try {
-      return await store.accessForGuild(await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }), String(row.id));
+      const actor = await operatorFor(repo, user, { orgId: String(row.org_id) });
+      return await store.reachOf(actor, { type: "guild", id: String(row.id), guildId: String(row.id) });
     } catch (error) {
       catchArtifact(error);
     }
   });
 
-  app.put("/api/guilds/:guild_id/collection-access", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedGuild(repo, param(request, "guild_id"), user);
-    const missing = missingBodyFields(request.body, ["collection_id", "mode"]);
-    if (missing) {
-      throw missing;
-    }
-    try {
-      await setCollectionAccess(
-        store,
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
-        "guild",
-        String(row.id),
-        bodyOf(request),
-      );
-      await send(reply, 204);
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/agents/:agent_id/collection-access", async (request) => {
+  app.get("/api/agents/:agent_id/reach", async (request) => {
     const store = requireArtifacts(artifacts);
     const user = await currentUser(repo, request, deps);
     const row = await ownedAgent(repo, param(request, "agent_id"), user);
     try {
-      return await store.accessForAgent(
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
-        String(row.id),
-        String(row.guild_id),
-      );
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.put("/api/agents/:agent_id/collection-access", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
-    const missing = missingBodyFields(request.body, ["collection_id", "mode"]);
-    if (missing) {
-      throw missing;
-    }
-    try {
-      await setCollectionAccess(
-        store,
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
-        "agent",
-        String(row.id),
-        bodyOf(request),
-      );
-      await send(reply, 204);
+      const actor = await operatorFor(repo, user, { orgId: String(row.org_id) });
+      return await store.reachOf(actor, { type: "agent", id: String(row.id), guildId: String(row.guild_id) });
     } catch (error) {
       catchArtifact(error);
     }

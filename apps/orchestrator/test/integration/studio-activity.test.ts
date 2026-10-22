@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { persistAgent } from "../../src/agents/persist.js";
 import { agentActor, ArtifactStore } from "../../src/artifacts/index.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
@@ -122,7 +121,7 @@ test("studio activity lists each wake with what started it and what it produced"
     { ...HASHES, wakeGroupMessageId: Number(second?.id) },
   );
   const deskActor = {
-    ...agentActor({ orgId: "org_home", guildId: "guild_act", agentId: "a_desk", agentName: "desk", grants: DEFAULT_ARTIFACT_GRANTS, runId: "r_desk" }),
+    ...agentActor({ orgId: "org_home", guildId: "guild_act", agentId: "a_desk", agentName: "desk", runId: "r_desk" }),
     toolCall: { id: "call_note", name: "note_write" },
   };
   await artifacts.writeNote(deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });

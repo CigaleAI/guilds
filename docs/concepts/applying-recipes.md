@@ -358,7 +358,19 @@ A `scope: "guild"` collection cannot be shared, so a name the
 organisation already holds is always a conflict for it. The operator
 resolves a conflict by renaming the recipe collection.
 
-A reused collection keeps its records and its other grants.
+A reused collection keeps its records and the other rows of its
+access list.
+
+### Access
+
+Apply gives the new guild and its agents what the recipe says on each
+collection and seed note, and only raises. The new guild is brought up
+to the recipe's `guild` mode, and each `writers` role's agent up to
+`write`. A subject that already holds as much gets no row: the guild
+counts the organisation's row and its own, and an agent counts its own
+row, else its guild's mode. An existing row is never lowered, so
+applying `read` to a reused table the guild already writes leaves it at
+`write`.
 
 ### Create
 
@@ -378,7 +390,8 @@ broken:
 4. create the agents on the chosen machine, each with empty Memory and
    a first Task whose `@{role}` tags already name the new agents
 5. create agent-level seed notes (a note without a role goes to the
-   first agent)
+   first agent), then raise each seed note's access list to the
+   recipe's `guild` and `writers` (see [Access](#access))
 6. for each role in turn:
    - rewrite the Task's note links
      ([embeds and note paths](recipe-format.md#embeds-and-tags)) to
@@ -389,13 +402,15 @@ broken:
    - insert its routines paused, with tags and note paths rewritten the
      same way. An empty instruction takes the role's Task. Each
      instruction is cut to 2,000 characters, the routine limit
-   - write its grant and native-tool bindings at agent scope
+   - write its native-tool bindings at agent scope
 7. create each `create` collection with the recipe's columns. A
    collection that appeared under that name since preview is a
    conflict: preview again (409). A `scope: "guild"` collection is
-   created for the new guild. It takes no grant. An `org` collection
-   is granted the recipe's `guild` mode, and each `writers` role's
-   agent `write`, on every created or reused collection
+   created for the new guild, with the guild at `write` as its
+   starting row. A created `org` collection starts with the
+   organisation at `read`. Every created or reused collection's access
+   list is then raised to the recipe's `guild` and `writers` (see
+   [Access](#access))
 8. write the tool overlays of each reused login
 9. save the apply row with its checklist
 

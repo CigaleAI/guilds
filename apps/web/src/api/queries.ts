@@ -11,19 +11,20 @@ import { attachmentIdsOf } from "./attachments";
 import { ApiError, api } from "./client";
 import type {
   AccessBinding,
+  AccessList,
+  AccessRow,
+  AccessTarget,
   Agent,
   AgentConfig,
   AgentAccess,
   AgentDetail,
   AgentSettingsInput,
   AgentUsage,
-  AgentCollectionAccess,
   CatalogKind,
   CatalogServer,
   CatalogServerInput,
   CatalogToolInput,
   Collection,
-  CollectionAccessList,
   CollectionRecord,
   ColumnInput,
   EmbeddableNote,
@@ -33,7 +34,6 @@ import type {
   FileChange,
   GroupChatState,
   GroupMessage,
-  GuildCollectionAccess,
   GuildInput,
   GuildSchedule,
   GuildUsage,
@@ -63,6 +63,7 @@ import type {
   Notifications,
   Org,
   RecipeRow,
+  Reach,
   RecordsPage,
   RegistryConnectors,
   RegistryReload,
@@ -140,6 +141,7 @@ export const keys = {
   agentTask: (agentId: string) => ["files", "task", agentId] as const,
   agentMemory: (agentId: string) => ["files", "memory", agentId] as const,
   embeddableNotes: ["files", "embeddable-notes"] as const,
+  embedStatuses: ["files", "embed-status"] as const,
   embedStatus: (guildId: string) => ["files", "embed-status", guildId] as const,
   studioReferences: (id: string) => ["files", "studio-references", id] as const,
   latestChange: (displayPath: string) => ["files", "latest-change", displayPath] as const,
@@ -150,8 +152,10 @@ export const keys = {
   databases: ["databases"] as const,
   collection: (id: string) => ["databases", "collection", id] as const,
   records: (id: string, params: string) => ["databases", "records", id, params] as const,
-  guildDatabases: (guildId: string) => ["databases", "guild", guildId] as const,
-  agentDatabases: (agentId: string) => ["databases", "agent", agentId] as const,
+  /** Access lists and what guilds and agents reach; an access list change refreshes all of it. */
+  accessLists: ["access-lists"] as const,
+  itemAccess: (target: AccessTarget) => ["access-lists", target.kind, target.id] as const,
+  reach: (subject: ReachSubject) => ["access-lists", "reach", subject.type, subject.id] as const,
   fileList: (prefix: string) => ["files", "list", prefix] as const,
   file: (prefix: string, path: string) => ["files", "file", prefix, path] as const,
   agentUsage: (agentId: string) => ["agent", agentId, "usage"] as const,
@@ -244,7 +248,7 @@ export function useAgentsByGuild(guildIds: readonly string[]) {
   });
 }
 
-/** Each listed guild's agents whose Task embeds a note or table that no longer resolves, by agent. */
+/** Each listed guild's agents whose Task embeds something the agent cannot reach, by agent. */
 export function useBrokenEmbeds(guildIds: readonly string[]) {
   return useQueries({
     queries: guildIds.map((guildId) => ({
@@ -700,7 +704,7 @@ const accessPath = (owner: AccessOwner) =>
     : `/api/${owner.scope}s/${encodeURIComponent(owner.id)}/access`;
 
 /**
- * Tools, grants and connected servers as the owner gets them. Reading it may sync server tool
+ * Tools and connected servers as the owner gets them. Reading it may sync server tool
  * lists, so it can be slow.
  */
 export function useAccess(owner: AccessOwner) {
@@ -1502,12 +1506,11 @@ export function useDatabases() {
   });
 }
 
-/** One database with who reaches it. */
+/** One database. */
 export function useDatabase(id: string | undefined) {
   return useQuery({
     queryKey: keys.collection(id ?? ""),
-    queryFn: () =>
-      api<Collection & { access_list: CollectionAccessList }>(collectionPath(id ?? "")),
+    queryFn: () => api<Collection>(collectionPath(id ?? "")),
     enabled: Boolean(id),
   });
 }
@@ -1560,10 +1563,7 @@ export function useCreateDatabase() {
   });
 }
 
-/**
- * Changes a database's name, purpose, columns or scope. Moving it into a guild drops its grants;
- * moving it to the organisation keeps the guild's access as a grant.
- */
+/** Changes a database's name, purpose, columns or placement; its access list stays as it is. */
 export function useUpdateDatabase(id: string) {
   const refresh = useDatabasesRefresh();
   return useMutation({
@@ -1620,7 +1620,7 @@ export function useDeleteRecord(id: string) {
   });
 }
 
-/** Deletes every record; the database and its grants stay, and new ids carry on. */
+/** Deletes every record; the database and its access list stay, and new ids carry on. */
 export function useClearRecords(id: string) {
   const refresh = useDatabasesRefresh();
   return useMutation({
@@ -1629,56 +1629,60 @@ export function useClearRecords(id: string) {
   });
 }
 
-export function useGuildDatabases(guildId: string) {
+const itemAccessPaths: Record<AccessTarget["kind"], string> = {
+  note: "/api/notes",
+  collection: "/api/collections",
+};
+
+const itemAccessPath = (target: AccessTarget) =>
+  `${itemAccessPaths[target.kind]}/${encodeURIComponent(target.id)}/access`;
+
+/** Who reaches a note or a table: its access list. */
+export function useItemAccess(target: AccessTarget) {
   return useQuery({
-    queryKey: keys.guildDatabases(guildId),
-    queryFn: () => api<GuildCollectionAccess[]>(`${guildPath(guildId)}/collection-access`),
+    queryKey: keys.itemAccess(target),
+    queryFn: () => api<AccessList>(itemAccessPath(target)),
   });
 }
 
-/** Grants the guild read or write on an organisation database, or takes it back with null. */
-export function useSetGuildDatabaseAccess(guildId: string) {
-  const refresh = useDatabasesRefresh();
+/** Studio's activity and State views in any session, which list access-list changes. */
+const isStudioChangeView = (query: { queryKey: readonly unknown[] }) =>
+  query.queryKey[0] === "studio" &&
+  (query.queryKey[2] === "activity" || query.queryKey[3] === "state");
+
+/**
+ * Replaces a note's or a table's access list with the full list given. The change refreshes every
+ * access list and reach, and the Studio views that record it.
+ */
+export function useSetItemAccess(target: AccessTarget) {
+  const client = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      collectionId,
-      mode,
-    }: {
-      collectionId: string;
-      mode: GuildCollectionAccess["mode"];
-    }) =>
-      api(`${guildPath(guildId)}/collection-access`, {
-        method: "PUT",
-        body: { collection_id: collectionId, mode },
-      }),
-    onSuccess: refresh,
+    mutationFn: (subjects: AccessRow[]) =>
+      api<AccessList>(itemAccessPath(target), { method: "PUT", body: { subjects } }),
+    onSuccess: (list) => {
+      client.setQueryData(keys.itemAccess(target), list);
+      void client.invalidateQueries({ queryKey: keys.accessLists });
+      void client.invalidateQueries({ predicate: isStudioChangeView });
+      // A Task embed resolves as its agent, so a changed list can mend or break one.
+      void client.invalidateQueries({ queryKey: keys.embedStatuses });
+    },
   });
 }
 
-export function useAgentDatabases(agentId: string) {
+/** A guild, whose rows its agents share, or one agent. */
+export type ReachSubject = { type: "guild" | "agent"; id: string };
+
+const reachPaths: Record<ReachSubject["type"], string> = {
+  guild: "/api/guilds",
+  agent: "/api/agents",
+};
+
+/** The notes and tables a guild's agents, or one agent, reach. */
+export function useReach(subject: ReachSubject) {
   return useQuery({
-    queryKey: keys.agentDatabases(agentId),
+    queryKey: keys.reach(subject),
     queryFn: () =>
-      api<AgentCollectionAccess[]>(`/api/agents/${encodeURIComponent(agentId)}/collection-access`),
-  });
-}
-
-/** Sets the agent's own access over its guild's, or null to inherit the guild's. */
-export function useSetAgentDatabaseAccess(agentId: string) {
-  const refresh = useDatabasesRefresh();
-  return useMutation({
-    mutationFn: ({
-      collectionId,
-      mode,
-    }: {
-      collectionId: string;
-      mode: AgentCollectionAccess["agent_mode"];
-    }) =>
-      api(`/api/agents/${encodeURIComponent(agentId)}/collection-access`, {
-        method: "PUT",
-        body: { collection_id: collectionId, mode },
-      }),
-    onSuccess: refresh,
+      api<Reach>(`${reachPaths[subject.type]}/${encodeURIComponent(subject.id)}/reach`),
   });
 }
 

@@ -118,9 +118,13 @@ writing it to an agent note and reading it back with `note_get`.
 
 </capability>
 <capability name="notes">
-Search Markdown notes with `note_find`. Read one by its display path with
-`note_get`. Write a note with `note_write` at an explicit level (`agent`,
-`guild`, or `org`). `key` is the file name and must end in `.md` (for
+Search Markdown notes with `note_find`: it returns the notes you may read,
+each with its `access` (`read` or `write`). Read one by its display path
+with `note_get`. Write a note with `note_write` at an explicit level
+(`agent`, `guild`, or `org`). A new note is created only at `agent` or
+`guild` level; at `org` level `note_write` only updates an existing note
+you have write access to. Pass `path` to update any note you have write
+access to. `key` is the file name and must end in `.md` (for
 example `queries.md`). Notes have no folders: each level holds its notes
 side by side, so pick a key that names the note's subject. Soft-delete a
 note with `note_delete`.
@@ -128,10 +132,9 @@ note with `note_delete`.
 </capability>
 Collections are tables the operator defines. State lists the ones you can
 read, each with its `access` (`read` or `write`), its `scope` (`guild` for
-a table that belongs to your guild, which every member reads and writes;
-`org` for an organisation table shared by grant), its purpose, and its
-columns: name, type (`text`, `number`, `boolean`, `datetime`, or `array`),
-description, and when set `required`, `unique`, or the `values` a text
+a table placed in your guild; `org` for an organisation table), its
+purpose, and its columns: name, type (`text`, `number`, `boolean`,
+`datetime`, or `array`), description, and when set `required`, `unique`, or the `values` a text
 or array column accepts. No tool creates, alters, or deletes a collection; a write to
 a collection you can only read is refused and names the collection.
 Records are rows. `record_add` takes `body` with the declared columns only,
@@ -160,8 +163,7 @@ never with words such as "unhandled" that no record contains. To check
 whether something is already recorded, use `where` on the unique column or
 one `record_search` with `OR`. Narrow with `where` and `since` instead of
 listing a whole collection.
-State lists <capability name="notes">readable and writable note levels plus </capability>the collections you can
-read.<capability name="notes"> Notes are not listed in State; search them when you need them.</capability>
+State lists the collections you can read.<capability name="notes"> Notes are not listed in State; search them when you need them.</capability>
 
 From a direct or group-chat run you may create, list, pause, resume, or
 delete repeating schedules with `schedule_create_cron`,

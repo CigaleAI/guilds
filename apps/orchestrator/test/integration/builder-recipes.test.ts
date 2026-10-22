@@ -244,7 +244,8 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     );
     const deployedTables = await app.inject({ method: "GET", url: "/api/collections", headers: AUTH });
     assert.equal(deployedTables.statusCode, 200, deployedTables.body);
-    const tableNames = (deployedTables.json() as Array<{ name: string }>).map((row) => row.name);
+    const deployedRows = deployedTables.json() as Array<{ id: string; name: string }>;
+    const tableNames = deployedRows.map((row) => row.name);
     assert.ok(tableNames.includes("seen-posts") && tableNames.includes("crm-queue"));
     assert.deepEqual(
       (applyRow.plan.collections as Array<{ name: string; action: string }>).map((row) => `${row.name}:${row.action}`).sort(),
@@ -252,16 +253,18 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     );
     const watcher = members.find((row) => row.name === "li-watcher");
     assert.ok(watcher);
-    const watcherAccess = await app.inject({
-      method: "GET",
-      url: `/api/agents/${watcher.id}/collection-access`,
-      headers: AUTH,
-    });
-    assert.equal(watcherAccess.statusCode, 200, watcherAccess.body);
-    const watcherRows = watcherAccess.json() as Array<{ name: string; guild_mode: string | null; agent_mode: string | null }>;
-    assert.equal(watcherRows.find((row) => row.name === "seen-posts")?.guild_mode, "read");
-    assert.equal(watcherRows.find((row) => row.name === "seen-posts")?.agent_mode, "write");
-    assert.equal(watcherRows.find((row) => row.name === "crm-queue")?.guild_mode, "write");
+    const accessModes = async (name: string) => {
+      const table = deployedRows.find((row) => row.name === name);
+      assert.ok(table);
+      const response = await app.inject({ method: "GET", url: `/api/collections/${table.id}/access`, headers: AUTH });
+      assert.equal(response.statusCode, 200, response.body);
+      const subjects = (response.json() as { subjects: Array<{ type: string; id: string; mode: string }> }).subjects;
+      const modeOf = (type: string, id: string) => subjects.find((row) => row.type === type && row.id === id)?.mode;
+      return { guild: modeOf("guild", String(applyRow.guild_id)), watcher: modeOf("agent", String(watcher.id)) };
+    };
+    // The organisation's read row already gives the guild read on a new organisation table.
+    assert.deepEqual(await accessModes("seen-posts"), { guild: undefined, watcher: "write" });
+    assert.equal((await accessModes("crm-queue")).guild, "write");
 
     const abort = await app.inject({
       method: "POST",
@@ -366,11 +369,23 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       "a_capture",
       "Ping @scout and keep @user.",
     );
+    const captureActor = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
+    await artifacts.createCollection(captureActor, {
+      name: "capture-shared",
+      purpose: "One record per lead the organisation shares.",
+      columns: [{ name: "email", type: "text", description: "the lead's email", required: true, unique: true }],
+    });
+    const glossary = await artifacts.writeNote(captureActor, {
+      level: "org",
+      key: "capture-glossary.md",
+      content: "Lead: a person worth a reply.\n",
+    });
+    await artifacts.grantAccess(captureActor, { kind: "note", id: String(glossary.id) }, { type: "guild", id: "guild_capture" }, "write");
     const captured = await app.inject({
       method: "POST",
       url: "/api/guilds/guild_capture/recipes",
       headers: { ...AUTH, "content-type": "application/json" },
-      payload: {},
+      payload: { include_notes: ["capture-glossary.md"] },
     });
     assert.equal(captured.statusCode, 201, captured.body);
     const captureBody = JSON.stringify(captured.json());
@@ -379,11 +394,21 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     const capturedRecipe = captured.json().body as {
       version: number;
       roles: Array<{ task: { body: string } }>;
-      collections: unknown[];
+      collections: Array<{ name: string; scope: string; guild: string; writers: string[] }>;
+      notes: Array<{ key: string; level: string; guild?: string; writers: string[] }>;
     };
     assert.equal(capturedRecipe.version, 2);
     assert.ok(capturedRecipe.roles[0]?.task.body.includes("@{scout}"));
-    assert.deepEqual(capturedRecipe.collections, []);
+    // An organisation table reached through the organisation's read row comes along at guild read.
+    assert.deepEqual(
+      capturedRecipe.collections.map(({ name, scope, guild, writers }) => ({ name, scope, guild, writers })),
+      [{ name: "capture-shared", scope: "org", guild: "read", writers: [] }],
+    );
+    // An organisation note the guild writes keeps the guild's write.
+    const capturedGlossary = capturedRecipe.notes.find((note) => note.key === "capture-glossary.md");
+    assert.equal(capturedGlossary?.level, "org");
+    assert.equal(capturedGlossary?.guild, "write");
+    assert.deepEqual(capturedGlossary?.writers, []);
 
     const imported = await app.inject({
       method: "POST",

@@ -107,9 +107,9 @@ version, and outcome; its diff and **Publish**, **Edit**, and
 | Memory, note edit, guild text | A diff of the live text and the proposal | **Apply edit** |
 | New note | Its full text as added lines, and who reads it: the one agent, the guild's agents, or the organisation's | **Create note** |
 | Deleted note | Its text as removed lines, and the agents whose Task embeds it (applying fails until none does) | **Delete note** |
-| Collection | The collection before and after as text: a header with the owner, the purpose, one line per column, and one per grant | **Create table**, **Delete table**, or **Apply edit** |
+| Collection | The collection before and after as text: a header with the owner, the purpose, one line per column, then its access: the organisation's row when it has one, the source guild's row, one line per member row, and the rows outside the guild | **Create table**, **Delete table**, or **Apply edit** |
 | Routine | The routine before and after as text: the agent, the description, the timing in words, whether it is paused, and the instruction | **Create routine**, **Delete routine**, or **Apply edit** |
-| Access | The agent's access before and after as text: one line per native tool and file level, and one per connection with a line per connection tool. A change that widens access says it is decided on its own | **Apply edit** |
+| Access | The agent's access before and after as text: one line per native tool, and one per connection with a line per connection tool. A change that widens access says it is decided on its own | **Apply edit** |
 | Login | The server and its account | **Grant read access** |
 
 Collection, routine, and access cards also list what applying does:
@@ -144,7 +144,7 @@ or revokes each one for the session.
 | A turn | Pauses at the end of the step that made a request; continues once every request of the turn is decided |
 | **Apply all** | Skips login grants and access changes that widen |
 | Access | Agent-level only; the guild's and the organisation's settings stay as they are |
-| Collections | The source guild's own: create, change, delete. The organisation's: add columns and change the source guild's grants. Another guild's own: out of reach |
+| Collections | The source guild's own: create, change, delete. The organisation's: add columns and change the rows of the source guild and its live members. Another guild's own: out of reach |
 | Outside data | Only through a login granted to the session, only its read-only tools; a result is capped at 64 KiB |
 
 ## Reference
@@ -213,14 +213,12 @@ so a note proposed in the same turn is applied first.
 
 ### Access requests
 
-`studio_edit_access(agent_id, native_tools?, artifact_grants?,
-connections?, connection_tools?, reason)` returns the same widget with
+`studio_edit_access(agent_id, native_tools?, connections?,
+connection_tools?, reason)` returns the same widget with
 `kind: "access"`. Each map sets one entry to `on`, `off`, or `inherit`:
 
 - `native_tools`: a native tool name. `report_issue` and the browser
   tools are not bindings.
-- `artifact_grants`: `read_guild`, `write_guild`, `read_org`, or
-  `write_org`.
 - `connections`: a connection id the agent resolves; the setting
   applies to that connection's server.
 - `connection_tools`: a tool listed on one of the agent's connections.
@@ -230,13 +228,16 @@ server binding already names; `inherit` deletes it. A setting the agent
 already holds is not a change, and a request that changes nothing is
 refused. The widget carries `edit.changes`, one `{ kind, id, label,
 setting }` per binding it writes, and `edit.widens`, true when the
-access after the change turns on a native tool, file level,
-connection, or connection tool the agent cannot use today. The widget
+access after the change turns on a native tool, connection, or
+connection tool the agent cannot use today. The widget
 binds a hash of the agent's resolved access
 rendered as text, so a binding moved at any scope since makes the
 request stale and apply a 409 (`apps/orchestrator/src/studio/access.ts`).
 The browser, coding, scripting, and memory switches are agent
-configuration, outside these requests.
+configuration, outside these requests. Access to notes and
+collections is set on each item's access list, outside these
+requests too; a collection request changes the rows of the source
+guild and its members ([Collection requests](#collection-requests)).
 
 ### Collection requests
 
@@ -251,16 +252,18 @@ with `kind: "collection"` and that `action`:
 
 
 - `scope` is `guild` (the default: the source guild owns the
-  collection) or `org`.
+  collection and starts at `write`) or `org` (the organisation starts
+  at `read`).
 - `columns` follows the column dialect of
   [Collections](collections.md). On an edit it is the complete list. A
   renamed column carries `rename_from`.
-- `access` changes only the subjects it names: `guild` (`read`,
-  `write`, or `none`, organisation collections only) and `agents`
-  (`{ agent_id, mode }` with `read`, `write`, `none`, or `inherit`,
-  which removes the agent's own row). Those subjects are the source
-  guild and its live members. Grants outside the source guild are
-  shown and never changed.
+- `access` changes only the rows it names on the collection's access
+  list: `guild`, the source guild's row (`read`, `write`, or `none`,
+  which removes the row), and `agents` (`{ agent_id, mode }` with
+  `read`, `write`, `none`, or `inherit`, which removes the agent's own
+  row). Those subjects are the source guild and its live members. The
+  organisation's row and the rows of other guilds and their agents
+  are shown and never changed.
 - An edit must carry the `updated_at` the coach read and change
   something. A name already taken is refused.
 - On an organisation collection, an edit keeps the name, the purpose,
@@ -275,7 +278,8 @@ applied) and binds a hash of its name, purpose, scope, columns, and
 source-guild access. Apply re-reads the collection by id and refuses
 with 409 when the hash no longer matches. Then it writes as the
 operator through the artifact store: create, update, or delete the
-collection, then each grant it changes.
+collection, then each access row it changes, each logged against the
+collection ([Access](access.md#access-lists)).
 
 ### Routine requests
 

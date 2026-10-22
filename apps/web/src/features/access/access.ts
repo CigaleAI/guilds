@@ -20,8 +20,6 @@ export function findBinding(
   switch (target.kind) {
     case "native_tool":
       return access.tools.find((item) => item.name === target.id);
-    case "artifact_grant":
-      return access.grants.find((item) => item.name === target.id);
     case "mcp":
       return access.mcp.find((server) => server.id === target.id);
     case "mcp_tool":
@@ -223,10 +221,3 @@ export function toolFamilyGroups(
   }
   return [...groups, { label: "Other", tools: other }].filter((group) => group.tools.length > 0);
 }
-
-export const grantLabel: Record<string, string> = {
-  read_guild: "Read this agent's guild artifacts",
-  read_org: "Read organisation artifacts",
-  write_guild: "Write this agent's guild artifacts",
-  write_org: "Write organisation artifacts",
-};

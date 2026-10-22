@@ -28,7 +28,6 @@ function role(partial: Partial<RecipeRole> & Pick<RecipeRole, "role">): RecipeRo
     avatar_color: partial.avatar_color ?? "#7c5cff",
     scripts: partial.scripts ?? [],
     schedules: partial.schedules ?? [],
-    grants: partial.grants ?? { read_guild: true, write_guild: true, read_org: true, write_org: false },
     native_tools: partial.native_tools ?? {
       note_find: true,
       record_list: true,

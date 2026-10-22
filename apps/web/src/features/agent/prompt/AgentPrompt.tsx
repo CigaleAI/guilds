@@ -164,12 +164,10 @@ export function AgentPrompt() {
       </p>
 
       {serverBroken.length ? (
-        <Banner
-          tone="error"
-          title="Runs can't start: the Task links to something that no longer exists"
-        >
-          {serverBroken.map((path) => embedLabel(path)).join(", ")}. Fix or remove{" "}
-          {serverBroken.length === 1 ? "the link" : "the links"}, then save.
+        <Banner tone="warning" title="The Task embeds files this agent can't reach">
+          {serverBroken.map((path) => embedLabel(path)).join(", ")}. Each run gets a line saying the
+          file is not reachable in its place. Fix or remove{" "}
+          {serverBroken.length === 1 ? "the link" : "the links"}, or give the agent access.
         </Banner>
       ) : null}
 

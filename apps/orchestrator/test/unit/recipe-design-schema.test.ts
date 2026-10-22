@@ -128,6 +128,7 @@ test("validation warns when a builder design loads roles with what their work do
     body: "The scout finds candidates. The archivist writes them to Notion.",
     kind: "seed",
     author: { by: "builder", reviewed: false },
+    writers: [],
   } as (typeof example.notes)[number]);
   for (const role of example.roles) {
     role.task.body = `${role.task.body}\n\n![[guild/roles.md]]`;
@@ -147,7 +148,7 @@ test("validation warns when a builder design loads roles with what their work do
   assert.match(findings[0]!.message, /scout, archivist/);
 });
 
-test("the builder prompt teaches column design and grants", () => {
+test("the builder prompt teaches column design and access lists", () => {
   const text = readBuilderSystemTemplate();
   assert.match(text, /## Collections/);
   assert.match(text, /typed table, either the guild's own or the\s+organisation's/);
@@ -159,6 +160,7 @@ test("the builder prompt teaches column design and grants", () => {
   assert.match(text, /`scope` decides who the table belongs to/);
   assert.match(text, /`guild` is the\s+mode every agent in the guild gets/);
   assert.match(text, /`writers` lists\s+the roles/);
+  assert.match(text, /A note takes the same `guild` and `writers`/);
   assert.match(text, /Agents never create or\s+alter a table/);
   assert.doesNotMatch(text, /observed_at|object_put|object_find|JSON Schema/);
 });

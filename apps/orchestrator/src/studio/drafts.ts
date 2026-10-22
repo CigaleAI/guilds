@@ -4,6 +4,7 @@ import {
   displayPathFor,
   hashArtifactContent,
   inlineTaskEmbeds,
+  taskEmbedActor,
   type ArtifactStore,
 } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
@@ -327,7 +328,7 @@ export class StudioDrafts implements StudioDraftService {
     );
     let expanded: string;
     try {
-      expanded = await inlineTaskEmbeds(this.artifacts, actor, proposed);
+      expanded = await inlineTaskEmbeds(this.artifacts, taskEmbedActor(String(agent.org_id), agent), proposed);
     } catch (error) {
       if (error instanceof ArtifactError) {
         throw new StudioUnprocessableError(error.message);
@@ -361,7 +362,9 @@ export class StudioDrafts implements StudioDraftService {
     let priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;
     if (liveContent) {
       try {
-        priorEffective = promptHash(await inlineTaskEmbeds(this.artifacts, actor, liveContent));
+        priorEffective = promptHash(
+          await inlineTaskEmbeds(this.artifacts, taskEmbedActor(String(agent.org_id), agent), liveContent),
+        );
       } catch {
         priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;
       }

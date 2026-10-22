@@ -14,7 +14,7 @@ export const NATIVE_CAPABILITY_GROUPS = [
     id: "collections",
     label: "Collections",
     description:
-      "Organisation tables the operator defines with typed columns; a guild or an agent is granted read or write on each. Queues, seen-sets, and operational state live here, not in an external workspace. Agents add, update, remove, list, and search records; they never create or alter a collection.",
+      "Tables of a guild or of the organisation that the operator defines with typed columns; each table's access list gives the organisation, a guild, or an agent read or write. Queues, seen-sets, and operational state live here, not in an external workspace. Agents add, update, remove, list, and search records; they never create or alter a collection.",
     tools: ["record_search", "record_list", "record_add", "record_update", "record_remove"],
   },
   {

@@ -60,8 +60,6 @@ export const CORE_STATE_KEYS: ReadonlySet<string> = new Set([
   "utc_date",
   "max_tool_calls",
   "group",
-  "readable_levels",
-  "writable_levels",
   "collections",
   "scripts",
   "environment",
@@ -83,8 +81,6 @@ export function collectRunState(
     secrets?: Array<Record<string, unknown>> | null | undefined;
     scripts?: unknown[] | null | undefined;
     maxToolCalls?: number;
-    readableLevels?: string[];
-    writableLevels?: string[];
     /** The entries connectors' State hooks returned, by key. A key core uses is not one of them. */
     connectors?: Record<string, unknown>;
     /** A coding agent's guild repositories; other agents' State has no `repositories`. */
@@ -120,8 +116,6 @@ export function collectRunState(
     utc_date: clock.utc_date,
     max_tool_calls: Number(options.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS),
     group,
-    readable_levels: [...(options.readableLevels ?? ["agent"])],
-    writable_levels: [...(options.writableLevels ?? ["agent"])],
     collections: collectionEntries(options.collections),
     scripts: listing.scripts,
     environment: listing.environment,

@@ -599,9 +599,8 @@ export type Column = {
 };
 
 /**
- * A database: records with typed columns. An organisation database is reached through grants; a
- * guild's own database is written by that guild's agents only. A Task embeds one as
- * `![[org/<org_id>/collections/<name>]]`.
+ * A database: records with typed columns, placed in a guild or at the organisation. Its access list
+ * says who reaches it. A Task embeds one as `![[org/<org_id>/collections/<name>]]`.
  */
 export type Collection = {
   id: string;
@@ -619,19 +618,62 @@ export type Collection = {
 
 export type AccessMode = "read" | "write";
 
-/** Who reaches a database, as its detail lists them. */
-export type CollectionAccessList = {
-  guilds: { id: string; name: string; mode: AccessMode }[];
-  agents: {
-    id: string;
-    name: string;
-    guild_id: string;
-    guild_name: string;
-    guild_mode: AccessMode | null;
-    agent_mode: AccessMode | "none" | null;
-    effective: AccessMode | null;
-  }[];
+/** What carries an access list: a note or a table. */
+export type AccessTarget = { kind: "note" | "collection"; id: string };
+
+/** Who an access row names: the organisation, a guild, or one agent. */
+export type AccessSubjectType = "org" | "guild" | "agent";
+
+/** An access row's mode; `none` is for an agent row only and shuts that agent out. */
+export type AccessListMode = AccessMode | "none";
+
+/** One row of an access list as it is sent: the subject and its mode. */
+export type AccessRow = { type: AccessSubjectType; id: string; mode: AccessListMode };
+
+/**
+ * One row of an access list as it is read, with the subject's name and guild: an agent's guild, a
+ * guild itself, or null for the organisation.
+ */
+export type AccessEntry = AccessRow & {
+  name: string;
+  guild_id: string | null;
+  guild_name: string | null;
 };
+
+/**
+ * An item's access list: the organisation's row, then guilds', then agents'. `owner_agent_id` is
+ * the agent that owns an agent-level note: it always writes its own note, so no row names it. It
+ * is null for tables and for guild and organisation notes.
+ */
+export type AccessList = { subjects: AccessEntry[]; owner_agent_id: string | null };
+
+/** A note a guild's or an agent's rows reach, with the mode it ends up with. */
+export type ReachedNote = {
+  id: string;
+  display_path: string;
+  title: string;
+  level: "agent" | "guild" | "org";
+  owner_id: string;
+  /** The name of the organisation, guild or agent that owns the note. */
+  owner_name: string;
+  /** The guild of a guild or agent note; null for an organisation note. */
+  guild_id: string | null;
+  mode: AccessMode;
+};
+
+/** A table a guild's or an agent's rows reach, with the mode it ends up with. */
+export type ReachedTable = {
+  id: string;
+  name: string;
+  purpose: string;
+  display_path: string;
+  scope: "guild" | "org";
+  guild: { id: string; name: string } | null;
+  mode: AccessMode;
+};
+
+/** What a guild's agents, or one agent, reach. */
+export type Reach = { notes: ReachedNote[]; tables: ReachedTable[] };
 
 /** A record: its id, its column values, and who last wrote it. */
 export type CollectionRecord = {
@@ -646,30 +688,10 @@ export type CollectionRecord = {
 
 export type RecordsPage = { total: number; records: CollectionRecord[]; columns: Column[] };
 
-/** A database as a guild reaches it: its own are always written; organisation ones by grant. */
-export type GuildCollectionAccess = {
-  collection_id: string;
-  name: string;
-  purpose: string;
-  scope: "org" | "guild";
-  mode: AccessMode | null;
-};
-
-/** A database as an agent reaches it: the guild's grant, the agent's own choice, and the result. */
-export type AgentCollectionAccess = {
-  collection_id: string;
-  name: string;
-  purpose: string;
-  scope: "org" | "guild";
-  guild_mode: AccessMode | null;
-  agent_mode: AccessMode | "none" | null;
-  effective: AccessMode | null;
-};
-
 /** A column as a database definition sends it; `rename_from` renames a current column. */
 export type ColumnInput = Column & { rename_from?: string };
 
-/** Per agent, the Task embeds that no longer resolve; a run cannot start until they do. */
+/** Per agent, the Task embeds that do not resolve to a file that agent can read; its runs get a marker in their place. */
 export type EmbedStatus = { agents: { id: string; broken_embeds: string[] }[] };
 
 /** One recorded write to a file: who made it, and the run and tool call when an agent did. */
@@ -689,10 +711,10 @@ export type FileChange = {
 /** Where a binding is set, from the widest to the narrowest; the narrowest set one wins. */
 export type BindingScope = "platform" | "org" | "guild" | "agent";
 
-export type CatalogKind = "native_tool" | "mcp" | "mcp_tool" | "artifact_grant";
+export type CatalogKind = "native_tool" | "mcp" | "mcp_tool";
 
 /**
- * A tool, grant or server as one agent gets it: the effective state, the scope whose binding
+ * A tool or server as one agent gets it: the effective state, the scope whose binding
  * decided it (null when nothing is bound), and the agent's own binding when it has one.
  */
 export type AccessBinding = {
@@ -783,7 +805,6 @@ export type LookupOption = { value: unknown; label: string; detail?: string; ima
 
 export type AgentAccess = {
   tools: AccessBinding[];
-  grants: AccessBinding[];
   mcp: McpServerAccess[];
 };
 
@@ -996,6 +1017,8 @@ export type OrgMember = {
 
 /** A note in a notes scope; `path` is its file name, such as `process.md`. */
 export type FileItem = {
+  /** The note's id, which names it to the access API. */
+  id: string;
   path: string;
   display_path: string;
   kind: "note";
@@ -1003,7 +1026,14 @@ export type FileItem = {
   version: number;
 };
 
-export type FileContent = { path: string; content: string; display_path: string; version?: number };
+/** A file's text; `id` is set for a note, not for task.md or memory.md. */
+export type FileContent = {
+  id?: string;
+  path: string;
+  content: string;
+  display_path: string;
+  version?: number;
+};
 
 /** A Python script in the agent's home. One with parameters is also a tool named after it. */
 export type Script = {
@@ -1222,6 +1252,7 @@ export type StateItemRow = {
   created_by: string;
   created_at: string;
   collection_id: string | null;
+  note_id: string | null;
   changes: number;
   reads: number;
   top_writer: StateShare | null;
@@ -1611,6 +1642,8 @@ export type ReferenceNode = {
   depth: number | null;
   /** Why a link does not resolve. */
   reason: string | null;
+  /** The agents whose runs inline it but cannot read it, so they get a marker in its place. */
+  unreachable_for: string[];
 };
 
 export type ReferenceEdgeStatus = "inlined" | "too_deep" | "unreached" | "broken" | "named";
@@ -1678,14 +1711,6 @@ export type RecipeSchedule = {
   author: FieldAuthor;
 };
 
-/** The artifact grants a role's agent receives (recipes/schema.ts). */
-export type RecipeGrants = {
-  read_guild: boolean;
-  write_guild: boolean;
-  read_org: boolean;
-  write_org: boolean;
-};
-
 /** One agent of the recipe, keyed by its `role` handle (recipes/schema.ts). */
 export type RecipeRole = {
   role: string;
@@ -1697,7 +1722,6 @@ export type RecipeRole = {
   task: { body: string; embeds: string[]; author: FieldAuthor };
   scripts: RecipeScript[];
   schedules: RecipeSchedule[];
-  grants: RecipeGrants;
   native_tools: Record<string, boolean>;
   browser: { required: boolean; instructions: string; author: FieldAuthor };
 };
@@ -1707,7 +1731,8 @@ export type RecipeRepository = { name: string; purpose: string };
 
 /**
  * A typed table: owned by the applied guild (`scope: "guild"`) or held by the organisation, where
- * `guild` is the guild's grant and `writers` lists the roles granted write (recipes/schema.ts).
+ * `guild` is the applied guild's row on its access list and `writers` lists the roles whose agents
+ * get a write row (recipes/schema.ts).
  */
 export type RecipeCollection = {
   name: string;
@@ -1718,7 +1743,11 @@ export type RecipeCollection = {
   writers: string[];
 };
 
-/** A seed note apply writes at the organisation, guild, or one role's agent (recipes/schema.ts). */
+/**
+ * A seed note apply writes at the organisation, guild, or one role's agent. `guild` is the applied
+ * guild's mode on its access list (absent on an agent note the guild does not reach) and `writers`
+ * lists the roles whose agents get a write row (recipes/schema.ts).
+ */
 export type RecipeNote = {
   id: string;
   level: "org" | "guild" | "agent";
@@ -1728,6 +1757,8 @@ export type RecipeNote = {
   body: string;
   kind: "seed";
   author: FieldAuthor;
+  guild?: AccessMode;
+  writers: string[];
 };
 
 /** A resource inside a connector that the recipe's agents use (recipes/schema.ts). */

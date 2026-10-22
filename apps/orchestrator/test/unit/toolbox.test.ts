@@ -157,7 +157,7 @@ test("script_run schema from type hints", () => {
   assert.deepEqual(schemaRequired("note_get"), ["path"]);
   assert.deepEqual(schemaRequired("record_search"), ["query"]);
   assert.deepEqual(schemaRequired("record_list"), ["collection"]);
-  assert.deepEqual(schemaRequired("note_write"), ["level", "key", "content"]);
+  assert.deepEqual(schemaRequired("note_write"), ["content"]);
   const noteWrite = REGISTRY.note_write!.schema as {
     function: {
       description: string;
@@ -166,11 +166,8 @@ test("script_run schema from type hints", () => {
   };
   assert.match(noteWrite.function.description, /\.md file name/);
   assert.match(noteWrite.function.description, /notes have no folders/);
-  assert.equal(noteWrite.function.parameters.properties.path, undefined);
-  assert.equal(
-    noteWrite.function.parameters.properties.key?.description,
-    "the .md file name, for example queries.md",
-  );
+  assert.match(String(noteWrite.function.parameters.properties.path?.description), /display path of an existing note/);
+  assert.match(String(noteWrite.function.parameters.properties.key?.description), /the \.md file name, for example queries\.md$/);
   assert.deepEqual(schemaRequired("group_post"), ["content"]);
   assert.deepEqual(schemaRequired("report_issue"), ["summary", "detail", "kind"]);
   const reportIssue = REGISTRY.report_issue!.schema as {

@@ -259,18 +259,17 @@ orchestrator.
 Authorization over the artifact store is:
 
 - the application store
-- the four note grant bindings
-- the collection grants (`collection_access`: a guild's `read` or
-  `write` row as the base for its members, overridden by that
-  agent's own row, which may be `none`; nothing visible until
-  granted)
+- the access lists of notes and collections (`artifact_access`: rows
+  for the organisation, a guild, or an agent; the agent's own row
+  wins and may be `none`, otherwise the better of its guild's and the
+  organisation's row; no row is no access)
 
 There is no row-level security on those tables.
 
-Note tools see the notes the four grant bindings allow. Record tools
-see the agent's guild's own collections, which every member writes.
-They also see the organisation collections granted to the agent or
-its guild, written only under a `write` grant.
+Note tools see the agent's own notes and the notes whose access list
+reaches it. Record tools see the collections whose access list
+reaches the agent, and write only under `write`. A guild row or the
+organisation row covers agents created after it was written.
 
 No agent tool reads the memory archive (`memory_revisions`). Only
 the operator sees previous versions. `memory_write` replaces that

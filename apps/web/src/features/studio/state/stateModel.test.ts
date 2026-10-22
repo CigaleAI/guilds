@@ -26,6 +26,7 @@ function row(path: string, overrides: Partial<StateItemRow> = {}): StateItemRow 
     created_by: "operator",
     created_at: "2026-10-19T10:00:00Z",
     collection_id: null,
+    note_id: null,
     changes: 0,
     reads: 0,
     top_writer: null,

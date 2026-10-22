@@ -51,6 +51,36 @@ To share machines, move agents onto one under each agent's
 **Settings**, **Machine**. Then delete the machines left empty under
 **Settings**, **Machines**.
 
+**Breaking.** Notes and tables share one access list per item. Each
+row gives the organisation, a guild, or an agent `read` or `write`; an
+agent row can also be `none`, which shuts that agent out. An agent's
+own row wins, otherwise it gets the better of its guild's row and the
+organisation's. Access is edited on the item: a table's **Access** tab,
+and **Access** on an open note. A guild's and an agent's **State**,
+**Access** lists what it reaches. Migration 0012:
+
+- Copies every live table's rows, gives a guild's own table a
+  `write` row for its guild, and gives every organisation table
+  without an organisation row the organisation at `read`. An
+  organisation table no guild was given is now readable by every
+  agent.
+- Gives each guild note its guild at `write` and each organisation
+  note the organisation at `read`.
+- Drops the `read_guild`, `read_org`, `write_guild`, and `write_org`
+  grants. Overrides set on one agent are not carried over: that agent
+  follows its guild's and the organisation's rows.
+
+Update API clients and recipes:
+
+- `/api/notes/:id/access` and `/api/collections/:id/access` read and
+  replace an item's list. The guild and agent `collection-access`
+  routes are gone, and `GET /api/collections/:id` no longer carries
+  `access_list`.
+- The bindings API refuses `artifact_grant`.
+- A recipe whose role sets `grants` is refused.
+- A Task embed resolves as its agent: a note the agent cannot read
+  is not inlined, and the prompt says the file is not reachable.
+
 **Model keys** lists Anthropic. An organisation connects its Claude
 API key and offers Claude models to agents, Studio, and the Builder,
 called through Anthropic's Messages API.
@@ -58,6 +88,6 @@ called through Anthropic's Messages API.
 Studio reads the about and description of the organisation's other
 guilds the operator can see. Its tables are the source guild's own and
 the organisation's. It adds columns to an organisation table and
-changes the guild's grants on it, but no longer renames, rewrites, or
+changes the guild's rows in its access list, but no longer renames, rewrites, or
 deletes one; those changes are made on the **Tables** page. Another
 guild's own tables and their records are out of Studio's reach.

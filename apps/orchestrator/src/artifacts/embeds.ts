@@ -1,14 +1,21 @@
 import { createHash } from "node:crypto";
+import { agentActor } from "./actors.js";
 import { ArtifactError } from "./errors.js";
 import { isDisplayPath, parseDisplayPath } from "./paths.js";
 import { EMBED_BUDGET, type ArtifactActor } from "./types.js";
-import type { ArtifactStore } from "./store.js";
+import type { ArtifactRow, ArtifactStore } from "./store.js";
 
 const EMBED_RE = /!\[\[([^\]]+)\]\]/g;
 
+/** Why an embed that names a file path does not resolve: the agent cannot tell a missing file from one it cannot read. */
+const NOT_REACHABLE = "not reachable";
+
+const UNREACHABLE_TAG = "unreachable";
+
 // Element names an inlined note must not take: the prompt sections it sits
-// inside, where a same-named nested element would be ambiguous.
-const SECTION_NAMES = new Set(["guidelines", "task", "state", "memory"]);
+// inside and the marker for an unreachable embed, where a same-named element
+// would be ambiguous.
+const RESERVED_TAGS = new Set(["guidelines", "task", "state", "memory", UNREACHABLE_TAG]);
 
 // The XML element name for an inlined note: its file name without `.md`,
 // reduced to the characters an element name allows.
@@ -20,10 +27,25 @@ export function embedTagName(key: string): string {
   if (!slug) {
     return "note";
   }
-  if (!/^[A-Za-z_]/.test(slug) || SECTION_NAMES.has(slug.toLowerCase())) {
+  if (!/^[A-Za-z_]/.test(slug) || RESERVED_TAGS.has(slug.toLowerCase())) {
     return `note-${slug}`;
   }
   return slug;
+}
+
+/** What a run puts in place of an embed that does not resolve to a note or table the agent can read. */
+export function unreachableMarker(href: string): string {
+  return `<${UNREACHABLE_TAG} path="${escapeXml(href)}" message="This file is not reachable." />`;
+}
+
+/** The actor a Task's embeds resolve as: the agent whose Task it is. */
+export function taskEmbedActor(orgId: string, agent: Record<string, unknown>): ArtifactActor {
+  return agentActor({
+    orgId,
+    guildId: String(agent.guild_id),
+    agentId: String(agent.id),
+    agentName: String(agent.name),
+  });
 }
 
 function collectionEmbed(href: string): { orgId: string; name: string } | null {
@@ -58,6 +80,7 @@ export const EMBED_DEPTH = 2;
 
 type EmbedBudget = { used: number };
 type EmbedMemory = { seen: Set<string>; titles: Map<string, string> };
+type InlineContext = { store: ArtifactStore; actor: ArtifactActor; budget: EmbedBudget; memory: EmbedMemory };
 
 /** One embed a run meets: the note that holds it (null for the Task), its depth, and whether the run inlines it. */
 export type EmbedStep = { from: string | null; href: string; depth: number; inlined: boolean };
@@ -103,17 +126,56 @@ async function walkEmbedChild(walk: EmbedWalk, href: string, depth: number): Pro
   }
 }
 
-function storeNoteReader(store: ArtifactStore, actor: ArtifactActor): EmbedReader {
+type EmbedNote = { row: ArtifactRow; reason?: undefined } | { row?: undefined; reason: string };
+
+/** The live note an embed names, as the actor reads it, or why it does not resolve. */
+async function readEmbedNote(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<EmbedNote> {
+  if (!isDisplayPath(href)) {
+    return { reason: href.startsWith("recipe:") ? "recipe link was not rewritten to a file path" : "not a file path" };
+  }
+  const loaded = await loadDisplayPath(store, actor, href);
+  if (!loaded || loaded.tombstone) {
+    return { reason: NOT_REACHABLE };
+  }
+  if (loaded.row?.kind === "note") {
+    return { row: loaded.row };
+  }
+  return { reason: loaded.row || loaded.revision ? "not a note" : NOT_REACHABLE };
+}
+
+/** What a display path holds for the actor, or null when the store refuses it. */
+async function loadDisplayPath(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  href: string,
+): Promise<Awaited<ReturnType<ArtifactStore["getByDisplayPath"]>> | null> {
+  try {
+    return await store.getByDisplayPath(actor, href);
+  } catch (error) {
+    if (error instanceof ArtifactError) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/** Whether the actor can read the collection an embed names. */
+async function readsEmbedCollection(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  collection: { orgId: string; name: string },
+): Promise<boolean> {
+  return collection.orgId === actor.orgId && (await store.describeCollection(actor, collection.name)) !== null;
+}
+
+/** A walk reader over the notes the actor can read. */
+export function storeNoteReader(store: ArtifactStore, actor: ArtifactActor): EmbedReader {
   return async (href) => {
-    if (collectionEmbed(href) || !isDisplayPath(href)) {
+    if (collectionEmbed(href)) {
       return null;
     }
-    try {
-      const loaded = await store.getByDisplayPath(actor, href);
-      return loaded.tombstone || loaded.revision || loaded.row?.kind !== "note" ? null : String(loaded.row.content_text ?? "");
-    } catch {
-      return null;
-    }
+    const note = await readEmbedNote(store, actor, href);
+    return note.row ? String(note.row.content_text ?? "") : null;
   };
 }
 
@@ -140,38 +202,15 @@ export async function inspectTaskEmbeds(
   return items;
 }
 
-/** Whether one embed resolves for the actor, and why not when it does not. */
+/** Whether one embed resolves to a note or table the actor can read, and why not when it does not. */
 export async function inspectEmbed(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<TaskEmbedInspection> {
-  if (!isDisplayPath(href)) {
-    const reason = href.startsWith("recipe:") ? "recipe link was not rewritten to a file path" : "not a file path";
-    return { href, ok: false, reason };
-  }
   const collection = collectionEmbed(href);
   if (collection) {
-    return inspectCollectionEmbed(store, actor, { href, ...collection });
+    const reads = await readsEmbedCollection(store, actor, collection);
+    return reads ? { href, ok: true } : { href, ok: false, reason: NOT_REACHABLE };
   }
-  return inspectNoteEmbed(store, actor, href);
-}
-
-async function inspectCollectionEmbed(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  embed: { href: string; orgId: string; name: string },
-): Promise<TaskEmbedInspection> {
-  const described = embed.orgId === actor.orgId ? await store.describeCollection(actor, embed.name) : null;
-  return described ? { href: embed.href, ok: true } : { href: embed.href, ok: false, reason: "missing" };
-}
-
-async function inspectNoteEmbed(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<TaskEmbedInspection> {
-  try {
-    const loaded = await store.getByDisplayPath(actor, href);
-    if (loaded.tombstone || loaded.revision || !loaded.row) {
-      return { href, ok: false, reason: "missing" };
-    }
-    return loaded.row.kind === "note" ? { href, ok: true } : { href, ok: false, reason: "not a note" };
-  } catch (error) {
-    return { href, ok: false, reason: error instanceof ArtifactError ? error.message : "missing" };
-  }
+  const note = await readEmbedNote(store, actor, href);
+  return note.row ? { href, ok: true } : { href, ok: false, reason: note.reason };
 }
 
 export type TaskEmbedSnapshot = {
@@ -181,43 +220,45 @@ export type TaskEmbedSnapshot = {
   kind: string;
 };
 
+/** The notes a run inlines from a Task, directly or through other notes, as the actor reads them. */
 export async function snapshotTaskEmbeds(
   store: ArtifactStore,
   actor: ArtifactActor,
   task: string,
 ): Promise<TaskEmbedSnapshot[]> {
-  const hrefs = await collectEmbedsDeep(store, actor, task);
   const items: TaskEmbedSnapshot[] = [];
-  for (const href of hrefs) {
-    if (collectionEmbed(href)) {
-      continue;
-    }
-    try {
-      const loaded = await store.getByDisplayPath(actor, href);
-      if (loaded.tombstone || loaded.revision || !loaded.row) {
-        continue;
-      }
-      items.push({
-        display_path: href,
-        version: Number(loaded.row.version),
-        content_hash: String((loaded.row as { content_hash?: unknown }).content_hash ?? hashFromRow(loaded.row)),
-        kind: String(loaded.row.kind),
-      });
-    } catch {
-      continue;
+  for (const href of await collectEmbedsDeep(store, actor, task)) {
+    const note = collectionEmbed(href) ? null : await readEmbedNote(store, actor, href);
+    if (note?.row) {
+      items.push(noteSnapshot(href, note.row));
     }
   }
   return items;
 }
 
-/** The collections a Task embeds, directly or through the notes it inlines, by display path. */
+function noteSnapshot(href: string, row: ArtifactRow): TaskEmbedSnapshot {
+  return {
+    display_path: href,
+    version: Number(row.version),
+    content_hash: String((row as { content_hash?: unknown }).content_hash ?? hashFromRow(row)),
+    kind: String(row.kind),
+  };
+}
+
+/** The collections a Task embeds that the actor can read, directly or through the notes it inlines, by display path. */
 export async function snapshotTaskCollections(
   store: ArtifactStore,
   actor: ArtifactActor,
   task: string,
 ): Promise<string[]> {
-  const hrefs = await collectEmbedsDeep(store, actor, task);
-  return hrefs.filter((href) => collectionEmbed(href));
+  const found: string[] = [];
+  for (const href of await collectEmbedsDeep(store, actor, task)) {
+    const collection = collectionEmbed(href);
+    if (collection && (await readsEmbedCollection(store, actor, collection))) {
+      found.push(href);
+    }
+  }
+  return found;
 }
 
 function hashFromRow(row: { content_text?: string | null; content_json?: unknown }): string {
@@ -225,36 +266,29 @@ function hashFromRow(row: { content_text?: string | null; content_json?: unknown
   return createHash("sha256").update(body, "utf8").digest("hex");
 }
 
+/**
+ * The Task with its embeds inlined as the actor reads them: a note as an element holding its text,
+ * a collection as its name, and anything else as the unreachable marker. Throws past the embed budget.
+ */
 export async function inlineTaskEmbeds(
   store: ArtifactStore,
   actor: ArtifactActor,
   task: string,
 ): Promise<string> {
-  return expandEmbedLayer(store, actor, task, EMBED_DEPTH, { used: 0 }, { seen: new Set(), titles: new Map() });
+  const context: InlineContext = { store, actor, budget: { used: 0 }, memory: { seen: new Set(), titles: new Map() } };
+  return expandEmbedLayer(context, task, EMBED_DEPTH);
 }
 
-async function expandEmbedLayer(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  text: string,
-  depth: number,
-  budget: EmbedBudget,
-  memory: EmbedMemory,
-): Promise<string> {
-  if (depth < 1) {
-    return text;
-  }
-  const hrefs = collectTaskEmbeds(text);
+async function expandEmbedLayer(context: InlineContext, text: string, depth: number): Promise<string> {
+  const hrefs = depth < 1 ? [] : collectTaskEmbeds(text);
   if (!hrefs.length) {
     return text;
   }
+  const { memory } = context;
   const blocks = new Map<string, string>();
-  for (const href of hrefs) {
-    if (memory.seen.has(href)) {
-      continue;
-    }
+  for (const href of hrefs.filter((item) => !memory.seen.has(item))) {
     memory.seen.add(href);
-    blocks.set(href, await resolveEmbedBlock(store, actor, href, depth, budget, memory));
+    blocks.set(href, await resolveEmbedBlock(context, href, depth));
   }
   const appeared = new Set<string>();
   return text.replace(EMBED_RE, (full, href: string) => {
@@ -267,46 +301,40 @@ async function expandEmbedLayer(
   });
 }
 
-async function resolveEmbedBlock(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  href: string,
-  depth: number,
-  budget: EmbedBudget,
-  memory: EmbedMemory,
-): Promise<string> {
+async function resolveEmbedBlock(context: InlineContext, href: string, depth: number): Promise<string> {
   const collection = collectionEmbed(href);
   if (collection) {
-    memory.titles.set(href, collection.name);
-    return collection.name;
+    return resolveCollectionBlock(context, href, collection);
   }
-  let loaded;
-  try {
-    loaded = await store.getByDisplayPath(actor, href);
-  } catch (error) {
-    if (error instanceof ArtifactError) {
-      throw new ArtifactError(`embed failed: ${href} (${error.message})`, 422);
-    }
-    throw error;
+  const note = await readEmbedNote(context.store, context.actor, href);
+  return note.row ? noteBlock(context, { href, row: note.row }, depth) : unreachableMarker(href);
+}
+
+async function resolveCollectionBlock(
+  context: InlineContext,
+  href: string,
+  collection: { orgId: string; name: string },
+): Promise<string> {
+  if (!(await readsEmbedCollection(context.store, context.actor, collection))) {
+    return unreachableMarker(href);
   }
-  if (loaded.tombstone || loaded.revision || !loaded.row) {
-    throw new ArtifactError(`embed failed: ${href} (missing)`, 422);
-  }
-  if (loaded.row.kind !== "note") {
-    throw new ArtifactError(`embed failed: ${href} (not a note)`, 422);
-  }
-  let body = loaded.row.content_text ?? "";
-  budget.used += Buffer.byteLength(body, "utf8");
-  if (budget.used > EMBED_BUDGET) {
+  context.memory.titles.set(href, collection.name);
+  return collection.name;
+}
+
+async function noteBlock(context: InlineContext, note: { href: string; row: ArtifactRow }, depth: number): Promise<string> {
+  const { href, row } = note;
+  let body = row.content_text ?? "";
+  context.budget.used += Buffer.byteLength(body, "utf8");
+  if (context.budget.used > EMBED_BUDGET) {
     throw new ArtifactError("embed budget exceeded", 422);
   }
-  const title = loaded.row.title || loaded.row.key.replace(/\.md$/, "");
-  memory.titles.set(href, title);
+  context.memory.titles.set(href, row.title || row.key.replace(/\.md$/, ""));
   if (depth > 1) {
-    body = await expandEmbedLayer(store, actor, body, depth - 1, budget, memory);
+    body = await expandEmbedLayer(context, body, depth - 1);
   }
-  const tag = embedTagName(loaded.row.key);
-  return `<${tag} path="${escapeXml(href)}" level="${loaded.row.level}">\n${body.replace(/\s+$/, "")}\n</${tag}>`;
+  const tag = embedTagName(row.key);
+  return `<${tag} path="${escapeXml(href)}" level="${row.level}">\n${body.replace(/\s+$/, "")}\n</${tag}>`;
 }
 
 function escapeXml(value: string): string {

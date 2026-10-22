@@ -40,8 +40,8 @@ export function collectionDisplayPath(orgId: string, collection: Pick<Collection
 const noteListLimit = 500;
 
 /**
- * Whether an embed no longer resolves. The server's check of the saved Task decides; embeds only
- * in the draft are checked against the notes and tables the operator can see.
+ * Whether an embed is not reachable. The server's check of the saved Task, made as the agent,
+ * decides; embeds only in the draft are checked against the notes and tables the operator can see.
  */
 export function embedIsBroken(
   path: string,

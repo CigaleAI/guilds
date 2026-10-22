@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ArrowLeft, Database, Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import {
@@ -6,9 +6,10 @@ import {
   useDatabases,
   useDeleteDatabase,
   useGuilds,
+  useItemAccess,
   useUpdateDatabase,
 } from "../../api/queries";
-import type { Collection, CollectionAccessList, ColumnInput } from "../../api/types";
+import type { Collection, ColumnInput } from "../../api/types";
 import { relativeTime } from "../../app/format";
 import { useMediaQuery, wideScreen } from "../../app/media";
 import {
@@ -35,6 +36,7 @@ import {
   Icon,
   Tag,
 } from "@guildsrun/ui";
+import { AccessListPanel } from "../access/AccessListPanel";
 import { ColumnsEditor } from "./ColumnsEditor";
 import { CreateTableDialog } from "./CreateTableDialog";
 import { RecordsPanel } from "./RecordsPanel";
@@ -47,8 +49,8 @@ function scopeLabel(collection: Collection): string {
 }
 
 /**
- * The organisation's tables: the list by owner, and the open one's records, columns and who
- * reaches it. Guilds and agents grant access from State → Tables.
+ * The organisation's tables: the list by where each belongs, and the open one's records, columns
+ * and access list.
  */
 export function TablesPage() {
   const params = useParams({ strict: false });
@@ -175,6 +177,7 @@ function TableDetail({
   const navigate = useNavigate();
   const table = useDatabase(id);
   const remove = useDeleteDatabase();
+  const access = useItemAccess({ kind: "collection", id });
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -193,7 +196,6 @@ function TableDetail({
     );
   }
   const collection = table.data;
-  const reach = collection.access_list.guilds.length + collection.access_list.agents.length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -245,7 +247,7 @@ function TableDetail({
           options={[
             { value: "records", label: "Records", count: collection.count ?? 0 },
             { value: "columns", label: "Columns", count: collection.columns.length },
-            { value: "access", label: "Access", count: reach },
+            { value: "access", label: "Access", count: access.data?.subjects.length ?? 0 },
           ]}
         />
       </header>
@@ -260,7 +262,10 @@ function TableDetail({
         ) : tab === "columns" ? (
           <ColumnsTab collection={collection} />
         ) : (
-          <AccessPanel collection={collection} access={collection.access_list} />
+          <AccessListPanel
+            target={{ kind: "collection", id }}
+            intro={`Who reads and writes ${collection.name}. Where it belongs only places it; this list decides who reaches it.`}
+          />
         )}
       </div>
       <EditTableDialog collection={collection} open={editing} onOpenChange={setEditing} />
@@ -363,81 +368,6 @@ function ColumnsTab({ collection }: { collection: Collection }) {
   );
 }
 
-const modeLabel = { read: "Read", write: "Read & write", none: "None" } as const;
-
-function AccessPanel({
-  collection,
-  access,
-}: {
-  collection: Collection;
-  access: CollectionAccessList;
-}) {
-  return (
-    <div className="flex flex-col gap-5">
-      <p className="text-sm text-fg-2">
-        {collection.guild
-          ? `Only ${collection.guild.name}'s agents reach this table; the guild writes it. An agent can narrow its own access from State → Tables.`
-          : "Guilds reach this table by a grant from State → Tables; each agent can narrow or widen its own."}
-      </p>
-      <section className="flex flex-col gap-1.5">
-        <h3 className="type-label text-muted">Guilds</h3>
-        {access.guilds.length ? (
-          access.guilds.map((guild) => (
-            <div
-              key={guild.id}
-              className="flex items-center gap-3 rounded-lg bg-surface px-4 py-2.5"
-            >
-              <Link
-                to="/guilds/$guildId/state/tables"
-                params={{ guildId: guild.id }}
-                className="flex-1 font-medium hover:underline"
-              >
-                {guild.name}
-              </Link>
-              <Tag tone={guild.mode === "write" ? "tide" : "signal"} font="sans">
-                {modeLabel[guild.mode]}
-              </Tag>
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-muted">No guild has a grant.</p>
-        )}
-      </section>
-      <section className="flex flex-col gap-1.5">
-        <h3 className="type-label text-muted">Agents</h3>
-        {access.agents.length ? (
-          access.agents.map((agent) => (
-            <div
-              key={agent.id}
-              className="flex flex-wrap items-center gap-3 rounded-lg bg-surface px-4 py-2.5"
-            >
-              <Link
-                to="/guilds/$guildId/agents/$agentId/state/tables"
-                params={{ guildId: agent.guild_id, agentId: agent.id }}
-                className="font-mono font-medium hover:underline"
-              >
-                {agent.name}
-              </Link>
-              <span className="flex-1 text-xs text-muted">
-                {agent.guild_name} · guild {agent.guild_mode ? modeLabel[agent.guild_mode] : "none"}{" "}
-                · own {agent.agent_mode ? modeLabel[agent.agent_mode] : "inherit"}
-              </span>
-              <Tag
-                tone={agent.effective === "write" ? "tide" : agent.effective ? "signal" : "well"}
-                font="sans"
-              >
-                {agent.effective ? modeLabel[agent.effective] : "No access"}
-              </Tag>
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-muted">No agent reaches it.</p>
-        )}
-      </section>
-    </div>
-  );
-}
-
 const orgScope = "org";
 
 function EditTableDialog({
@@ -514,16 +444,15 @@ function EditTableDialog({
             />
             {moving ? (
               <Banner
-                tone="warning"
+                tone="info"
                 title={
                   scope === orgScope
                     ? "Moving to the organisation"
                     : `Moving to ${target ?? "a guild"}`
                 }
               >
-                {scope === orgScope
-                  ? `${collection.guild?.name ?? "The guild"} keeps read and write as a grant; other guilds reach it once granted.`
-                  : `Every current grant is dropped: only ${target ?? "that guild"}'s agents will reach it.`}
+                Only where it is listed changes. Its access list stays as it is; change who reaches
+                it on the Access tab.
               </Banner>
             ) : null}
             {update.isError ? (

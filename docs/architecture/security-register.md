@@ -11,7 +11,7 @@ risk is kept by design), or **Fixed** with its date.
 |---|---|---|
 | [SEC-44](#sec-44--a-recipe-preview-confirms-a-private-guilds-table-and-its-column-types) | A recipe preview confirms a private guild's table and its column types | Open |
 | [SEC-43](#sec-43--studio-shows-a-private-guilds-tables-and-records-to-operators-who-cannot-see-that-guild) | Studio shows a private guild's tables and records to operators who cannot see that guild | Fixed 2026-10-21 |
-| [SEC-42](#sec-42--a-task-can-embed-a-private-guilds-note-that-its-runs-and-studio-then-show) | A Task can embed a private guild's note that its runs and Studio then show | Open |
+| [SEC-42](#sec-42--a-task-can-embed-a-private-guilds-note-that-its-runs-and-studio-then-show) | A Task can embed a private guild's note that its runs and Studio then show | Fixed 2026-10-22 |
 | [SEC-41](#sec-41--an-organisation-could-be-left-without-an-owner) | An organisation could be left without an owner | Fixed 2026-10-18 |
 | [SEC-40](#sec-40--a-tool-binding-written-before-a-server-listed-the-tool-turned-it-on) | A tool binding written before a server listed the tool turned it on | Fixed 2026-10-18 |
 | [SEC-39](#sec-39--an-operator-could-take-an-agents-name-in-a-guild-they-operate) | An operator could take an agent's name in a guild they operate | Fixed 2026-10-18 |
@@ -120,38 +120,40 @@ operate are left out of what an organisation collection shows.
 
 ## SEC-42 — A Task can embed a private guild's note that its runs and Studio then show
 
-**Status:** open.
+**Status:** fixed 2026-10-22.
 
 **Found:** 2026-10-19, building the Studio's References view.
 
 **Where:** `inlineTaskEmbeds` and `snapshotTaskEmbeds` in
-`apps/orchestrator/src/artifacts/embeds.ts`, called with an operator
-actor that carries no hidden guilds: run creation in
+`apps/orchestrator/src/artifacts/embeds.ts`, which were called with an
+operator actor that carried no hidden guilds: run creation in
 `apps/orchestrator/src/generation/index.ts`, the Studio agent inspector
 in `apps/orchestrator/src/studio/index.ts`, draft previews in
 `apps/orchestrator/src/studio/drafts.ts`, and `studio_get_agent_context`
 in `apps/orchestrator/src/studio/tools.ts`.
 
 **Exposure:** saving a Task does not check what its embeds name. An
-operator of one guild can embed the display path of a guild- or
+operator of one guild could embed the display path of a guild- or
 agent-level note of a private guild they do not operate. Each run of
-that agent then carries the note's text in its system prompt, which the
+that agent then carried the note's text in its system prompt, which the
 run's System tab shows to everyone who can see the agent's guild. The
-Studio Prompt tab of that agent shows it too, in the effective prompt.
-Reading it this way takes knowing the note's display path, which holds
+Studio Prompt tab of that agent showed it too, in the effective prompt.
+Reading it this way took knowing the note's display path, which holds
 the private guild's id.
 
-**Control in place:** every load is limited to the Task's organisation.
-The embed status route and the Studio's References view read as the
-viewing operator, hidden guilds included, so they report such an embed
-as broken.
+**Fix:** every place that inlines a Task's embeds, run creation and the
+three Studio previews, resolves them as the Task's own agent
+(`taskEmbedActor` in `apps/orchestrator/src/artifacts/embeds.ts`), so a
+note is inlined only when its access list gives that agent, its guild,
+or the organisation `read` or `write`. Any other embed becomes a marker
+that names the path and says the file is not reachable; the note's text
+never enters the prompt. The embed status route and the Studio's
+References view check each Task as its agent the same way and report
+such an embed as not reachable.
 
-**Fix:** not yet. Fixing it takes inlining embeds with an actor that
-leaves out the private guilds the Task's own guild may not reach, so the
-run refuses such an embed as it refuses a missing note.
-
-**Residual risk:** until then, a private guild's note is as private as
-its display path.
+**Residual risk:** a private guild's note reaches another guild's runs
+only when its access list gives that guild, one of its agents, or the
+organisation a row, which an operator of the private guild chose.
 
 ## SEC-41 — An organisation could be left without an owner
 
@@ -313,9 +315,41 @@ guild or a grant's subject, and leaves them out of a table's grant
 listing. The file-change routes answer only for display paths the user
 can read.
 
+Since 2026-10-22, access to notes and collections is one explicit
+access list per item, the `artifact_access` table
+(`apps/orchestrator/src/artifacts/access.ts`). A row gives the
+organisation, a guild, or one agent `read` or `write`, and an agent
+row may be `none`. An agent's own row wins; otherwise it takes the
+better of its guild's row and the organisation's row; no row is no
+access. A note's level and a collection's owning guild are placement
+only. Operators reach every note and collection except those of the
+private guilds they do not operate, by the rule above. The access
+routes (`/api/notes/:note_id/access`, `/api/collections/:collection_id/access`)
+leave out the rows of those guilds and their agents, keep them
+unchanged on a `PUT`, and refuse those guilds and agents as subjects.
+The `reach` routes leave out their items. Every change to a list is
+logged in `config_changes`.
+
+The migration (`apps/orchestrator/drizzle/0012_artifact_access.sql`)
+carried every row of the previous collection grants over, and wrote a
+guild `write` row for each guild's own collection and each guild note,
+and an organisation `read` row for each organisation note and each
+organisation collection that had no organisation row. An organisation
+collection no guild had been granted therefore became readable by
+every agent of the organisation. It deleted
+every note grant binding (`artifact_grant`) at every scope without
+carrying it over. An agent, a guild, or an organisation whose note
+reach was set apart from the defaults therefore follows the new rows:
+one that was held back from guild or organisation notes reads them
+again, and one that could write organisation notes no longer can,
+until an operator adds an agent or guild row on those notes. A new
+organisation collection or note starts with the organisation at
+`read`, so every agent of the organisation reads it from creation.
+
 **Residual risk:** an organisation table a private guild is granted
 stays visible to every member, as every organisation table is; only
-the grant to that guild is hidden. The operator actors that recipe
+the grant to that guild is hidden. The same holds for an organisation
+note with a row for a private guild. The operator actors that recipe
 apply, capture, and generation build carry no hidden guilds; each acts
 for one guild its caller can see.
 

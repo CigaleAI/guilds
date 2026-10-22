@@ -79,8 +79,8 @@ Each kind of knowledge has one home:
 |---|---|---|
 | Standing purpose | The agent's Task | The operator |
 | Private notes to its future self | The agent's Memory | The agent |
-| Long-form knowledge | Notes at agent, guild, or organisation level | Agents and operators |
-| Structured records | Collections at guild or organisation level | Agents and operators, through grants |
+| Long-form knowledge | Notes at agent, guild, or organisation level | Agents and operators, through each note's access list |
+| Structured records | Collections at guild or organisation level | Agents and operators, through each collection's access list |
 | Reusable code | The agent's scripts | The agent |
 | What was said in a run | Run history, kept exactly and never rewritten | The box |
 | What was said in the guild | Group-chat history, until a guild admin clears it | The box |
@@ -145,8 +145,8 @@ Each concept has a page of its own.
 
 ### Access
 
-- [Access](access.md): scopes, bindings, and grants for tools,
-  secrets, notes, and collections.
+- [Access](access.md): scopes and bindings for tools and logins,
+  grants for secrets, and access lists for notes and collections.
 - [Secrets](secrets.md): encrypted values handed to agents as
   environment variables.
 

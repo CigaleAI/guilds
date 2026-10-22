@@ -1,10 +1,4 @@
-import {
-  agentActor,
-  catalogLevels,
-  grantsFromBindings,
-  type ArtifactStore,
-} from "../artifacts/index.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../artifacts/types.js";
+import { agentActor, type ArtifactStore } from "../artifacts/index.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
 import { agentSecrets, resolveMcpTool, type AccessDatabase } from "../access/runtime.js";
 import { isReadOnlyRemote, listedFromRows, mcpSchema, previewConnectorState } from "../mcp/index.js";
@@ -42,19 +36,10 @@ export async function previewCurrentState(
   const orgId = String(agent.org_id);
   const guildId = String(agent.guild_id);
   const agentId = String(agent.id);
-  const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
-  const grants = grantsFromBindings(rows, { orgId, guildId, agentId });
-  const levels = catalogLevels(grants);
   const secrets = await agentSecrets(deps.db, agent);
   const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
-  const actor = agentActor({
-    orgId,
-    guildId,
-    agentId,
-    agentName: String(agent.name),
-    grants,
-  });
+  const actor = agentActor({ orgId, guildId, agentId, agentName: String(agent.name) });
   let collections: unknown[] = [];
   try {
     collections = await deps.artifacts.listCollections(actor);
@@ -72,8 +57,6 @@ export async function previewCurrentState(
     secrets,
     scripts: await deps.scripts.catalog(agentId),
     maxToolCalls: Number(config.max_tool_calls ?? 50),
-    readableLevels: levels.readable,
-    writableLevels: levels.writable,
     connectors: await previewConnectorState(deps.db, agent),
   });
   return { state, projected_at: projectedAt };
@@ -162,7 +145,6 @@ export async function projectAgentAccess(
   native_tools: string[];
   scripts: Array<Record<string, unknown>>;
   secrets: Array<{ name: string; description: string }>;
-  artifact_levels: { readable: string[]; writable: string[] };
   connections: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }>;
 }> {
   const orgId = String(agent.org_id);
@@ -175,7 +157,6 @@ export async function projectAgentAccess(
     name: row.name ?? "",
     description: row.description ?? "",
   }));
-  const levels = catalogLevels(grantsFromBindings(rows, scope));
   const connections = new Map<string, Record<string, unknown>>();
   for (const connection of await deps.db.listMcpConnections(scope)) {
     connections.set(String(connection.id), connection);
@@ -201,7 +182,6 @@ export async function projectAgentAccess(
     native_tools: nativeTools,
     scripts: await deps.scripts.catalog(agentId),
     secrets,
-    artifact_levels: levels,
     connections: projected,
   };
 }
@@ -261,5 +241,3 @@ export async function projectOfferedToolSchemas(
     config_hash: config,
   };
 }
-
-export { DEFAULT_ARTIFACT_GRANTS };

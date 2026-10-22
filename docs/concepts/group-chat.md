@@ -473,9 +473,8 @@ State in the system row carries the same snapshot as a direct run
 - `group.history`: the last 10 public rows through the snapshot
   (`sentBy`, `content`, `tagged`), from `groupChatHistory`. `sentBy`
   is the author-name snapshot, a member or an operator.
-- `readable_levels` and `writable_levels` from the four note grants;
 - `collections`: `[{name, purpose, access, scope, display_path,
-  columns}]` for the collections the agent is granted, capped at 50;
+  columns}]` for the collections the agent can read, capped at 50;
 - `scripts`: `[{name, description}]` for the agent's catalog;
 - `environment`: `[{name, description}]` for the secrets this run
   injects.

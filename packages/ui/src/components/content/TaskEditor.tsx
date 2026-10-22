@@ -40,7 +40,7 @@ export type TaskEditorProps = Omit<ComponentProps<"div">, "onChange"> & {
   onPickEmbed?: (kind: EmbedKind) => Promise<string | null | undefined> | string | null | undefined;
   /** Opens an embedded note or table from the preview. */
   onOpenEmbed?: (path: string) => void;
-  /** Marks embeds whose path no longer resolves. */
+  /** Marks embeds that are not reachable. */
   isBrokenEmbed?: (path: string) => boolean;
   placeholder?: string;
   /** The view the editor opens in. Double-clicking the preview switches to Edit. */

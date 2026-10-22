@@ -24,6 +24,8 @@ export type StateItem = {
   created_at: string;
   /** A table's id; null for the others. */
   collection_id: string | null;
+  /** A note's id; null for the others. */
+  note_id: string | null;
 };
 
 /**
@@ -100,21 +102,39 @@ export function tablePathOf(displayPath: string): string | null {
   return at >= 0 && parts.length === at + 3 ? parts.slice(0, at + 2).join("/") : null;
 }
 
-/** Stored changes as events on the items they touch; a record's change counts for its table. */
+/** The config-log key of an item's own changes: a table's shape and access, a note's access. */
+export function configKey(kind: string, id: string): string {
+  return `${kind}:${id}`;
+}
+
+function itemConfigKey(item: StateItem): string | null {
+  if (item.collection_id) return configKey("collection", item.collection_id);
+  return item.note_id ? configKey("note", item.note_id) : null;
+}
+
+/**
+ * Stored changes as events on the items they touch: file changes, a record's
+ * change counted for its table, and the config log's changes to a table or a note.
+ */
 export function changeEvents(
   fileChanges: Row[],
-  collectionChanges: Row[],
+  configChanges: Row[],
   context: { items: StateItem[]; agents: Agents },
 ): StateEvent[] {
   const paths = new Set(context.items.map((item) => item.display_path));
-  const tables = new Map(context.items.map((item) => [item.collection_id ?? "", item.display_path]));
+  const configured = new Map(
+    context.items.flatMap((item) => {
+      const key = itemConfigKey(item);
+      return key ? [[key, item.display_path] as const] : [];
+    }),
+  );
   const files = fileChanges.flatMap((row) => {
     const own = String(row.display_path);
     const path = paths.has(own) ? own : tablePathOf(own);
     return path && paths.has(path) ? [changeEvent(row, path, own === path ? null : own, context.agents)] : [];
   });
-  const shapes = collectionChanges.flatMap((row) => {
-    const path = tables.get(String(row.target_id));
+  const shapes = configChanges.flatMap((row) => {
+    const path = configured.get(configKey(String(row.target_kind), String(row.target_id)));
     return path ? [changeEvent(row, path, null, context.agents)] : [];
   });
   return [...files, ...shapes];

@@ -75,7 +75,6 @@ const toolChanges: Record<
   native_tool: (id) => [id],
   mcp_tool: (id) => [id],
   mcp: (id, tools) => tools.filter((tool) => tool.server_id === id).map((tool) => tool.name),
-  artifact_grant: () => [],
 };
 
 function toolsTouched(change: AccessChange, tools: readonly StudioTool[]): string[] {

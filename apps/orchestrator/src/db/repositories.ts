@@ -849,9 +849,11 @@ export class Repositories {
         [guildId, now],
       );
       await client.query(
-        `DELETE FROM collection_access
+        `DELETE FROM artifact_access
           WHERE (subject_type = 'guild' AND subject_id = $1)
-             OR (subject_type = 'agent' AND subject_id IN (SELECT id FROM agents WHERE guild_id = $1))`,
+             OR (subject_type = 'agent' AND subject_id IN (SELECT id FROM agents WHERE guild_id = $1))
+             OR (target_kind = 'collection' AND target_id IN (SELECT id FROM artifact_collections WHERE guild_id = $1))
+             OR (target_kind = 'note' AND target_id IN (SELECT id FROM artifacts WHERE guild_id = $1))`,
         [guildId],
       );
       // A secret whose every grant goes with the guild goes with it.
@@ -1058,7 +1060,12 @@ export class Repositories {
 
   async deleteAgent(agentId: string): Promise<void> {
     await withTransaction(this.pool, async (client) => {
-      await client.query(`DELETE FROM collection_access WHERE subject_type = 'agent' AND subject_id = $1`, [agentId]);
+      await client.query(
+        `DELETE FROM artifact_access
+          WHERE (subject_type = 'agent' AND subject_id = $1)
+             OR (target_kind = 'note' AND target_id IN (SELECT id FROM artifacts WHERE agent_id = $1))`,
+        [agentId],
+      );
       // A secret granted only to this agent goes with it.
       await client.query(
         `DELETE FROM secrets s

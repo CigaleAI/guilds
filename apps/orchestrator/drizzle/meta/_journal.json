@@ -78,6 +78,13 @@
       "when": 1791914400000,
       "tag": "0011_file_changes_by_time",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791918000000,
+      "tag": "0012_artifact_access",
+      "breakpoints": true
     }
   ]
 }

@@ -461,7 +461,7 @@ Core's tables:
 - usage_counters
 - artifacts
 - artifact_collections
-- collection_access
+- artifact_access
 - attachments
 - file_changes
 - config_changes
@@ -480,12 +480,17 @@ Scripts are `artifacts` with `kind` `script` at agent level.
 Collections live in `artifact_collections` (name, purpose, typed
 `columns`, `next_id`). Their records live in `artifacts` (`kind`
 `object`, `key` the id, `identity` the normalised unique value).
-Their grants live in `collection_access` (one row per guild or
-agent: a guild row is the base `read` or `write` mode for its
-members, an agent row overrides it and may be `none`; a guild's own
-table, `artifact_collections.guild_id`, takes no guild row and is
-written by every member; rows deleted with the collection, the
-guild, or the agent).
+`artifact_collections.guild_id` places a collection in one guild, or
+at the organisation when null.
+
+Notes and collections share one access list table, `artifact_access`:
+one row per item and subject, the subject being the organisation, a
+guild, or an agent. An agent's own row wins, and `none` there shuts it
+out; otherwise it takes the better of its guild's and the
+organisation's `read` or `write`. A new guild item starts with its
+guild at `write`, a new organisation item with the organisation at
+`read`. Rows go with their collection, guild, or agent
+([Access](../concepts/access.md#access-lists)).
 
 The standing task lives on `agents.task`. Agent names are globally
 unique.
@@ -498,7 +503,7 @@ application data.
 Seeds stay separate from schema (`src/db/seed/`):
 
 ```text
-catalog.ts        seed identifiers, native-tool and grant lists
+catalog.ts        seed identifiers and native-tool lists
 mcp-manifests.ts  the installed connectors projected into catalog rows and tool copy
 system.ts         upsert catalog, platform bindings
 operator.ts       the operator and the Home organisation, on a box with no user

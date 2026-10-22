@@ -12,8 +12,6 @@ import { MissingSecretError } from "../secrets/index.js";
 import { GITHUB_SLUG } from "../github/index.js";
 import { serverManifest } from "../connectors/load.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
-import { grantsFromBindings } from "../artifacts/grants.js";
-import type { ArtifactGrants } from "../artifacts/types.js";
 
 export const PLATFORM_SEED_TOOLS = ACCESS_NATIVE_TOOLS;
 
@@ -21,7 +19,6 @@ export type RuntimeAccess = {
   tools: string[];
   secrets: Array<Record<string, string>>;
   mcp: Array<Record<string, unknown>>;
-  grants: ArtifactGrants;
 };
 
 export type AccessDatabase = {
@@ -173,7 +170,6 @@ export async function agentRuntime(
   const orgId = (agent.org_id as string | null | undefined) ?? null;
   const rows = await db.listBindingsCovering({ orgId, guildId, agentId });
   const tools = enabledToolNames(resolvedTools(rows, { orgId, guildId, agentId }));
-  const grants = grantsFromBindings(rows, { orgId, guildId, agentId });
   const metas = await agentSecrets(db, agent);
   const servers = await (db.listMcpServers?.(orgId) ?? []);
   const connections = new Map<string, Record<string, unknown>>();
@@ -245,7 +241,7 @@ export async function agentRuntime(
       });
     }
   }
-  return { tools, secrets: metas, mcp, grants };
+  return { tools, secrets: metas, mcp };
 }
 
 /**

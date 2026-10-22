@@ -4,7 +4,14 @@ import type { FileItem } from "../../api/types";
 import { buildTree, newNotePath } from "./fileTree";
 
 function file(path: string): FileItem {
-  return { path, display_path: `org/o/agents/a/${path}`, kind: "note", title: null, version: 1 };
+  return {
+    id: `n_${path}`,
+    path,
+    display_path: `org/o/agents/a/${path}`,
+    kind: "note",
+    title: null,
+    version: 1,
+  };
 }
 
 const notes = [file("process.md"), file("scoring.md"), file("sources.md")];

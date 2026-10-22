@@ -63,11 +63,32 @@ export function shownIds(view: ReferenceMapView): Set<string> {
   return new Set([...view.columns.flat(), ...view.band, ...view.deeper].map((node) => node.id));
 }
 
-/** The agents whose runs inline a file into their prompt. */
+/** The agents whose runs inline a file into their prompt: they meet it at an inlined level and can read it. */
 export function reachedAgents(node: ReferenceNode, depth: number): string[] {
   return Object.entries(node.hops)
-    .filter(([, hop]) => hop >= 1 && hop <= depth)
+    .filter(([agentId, hop]) => hop >= 1 && hop <= depth && !node.unreachable_for.includes(agentId))
     .map(([agentId]) => agentId);
+}
+
+/** Whether a link does not resolve, or some run that inlines the file cannot reach it. */
+export function isBroken(node: ReferenceNode): boolean {
+  return node.kind === "unresolved" || node.unreachable_for.length > 0;
+}
+
+/** The names of the agents whose runs cannot reach a file, from their Tasks' labels. */
+export function unreachableNames(data: StudioReferences, node: ReferenceNode): string {
+  const names = new Map(
+    data.nodes.flatMap((item) =>
+      item.kind === "task" && item.agent_id ? [[item.agent_id, item.label]] : [],
+    ),
+  );
+  return node.unreachable_for.map((agentId) => names.get(agentId) ?? agentId).join(", ");
+}
+
+/** Why a broken node is broken: the link's reason, or who cannot reach the file. */
+function brokenReason(data: StudioReferences, node: ReferenceNode): string {
+  if (node.kind === "unresolved") return node.reason ?? "not reachable";
+  return `not reachable for ${unreachableNames(data, node)}`;
 }
 
 /** Whether a Task inlines more note text than one run may hold. */
@@ -76,7 +97,7 @@ export function isOverBudget(node: ReferenceNode, budget: number): boolean {
 }
 
 export type ReferenceStandouts = {
-  /** Links that do not resolve. */
+  /** Links that do not resolve, and files some run that inlines them cannot reach. */
   broken: ReferenceNode[];
   /** Tasks that inline more note text than one run may hold. */
   overBudget: ReferenceNode[];
@@ -101,7 +122,7 @@ export function referenceStandouts(
   const pointed = new Set([...data.edges.map((edge) => edge.to), ...read]);
   const isFile = (node: ReferenceNode) => node.kind === "note" || node.kind === "table";
   return {
-    broken: nodes.filter((node) => node.kind === "unresolved"),
+    broken: nodes.filter(isBroken),
     overBudget: nodes.filter((node) => node.kind === "task" && isOverBudget(node, data.budget)),
     shared: nodes.filter(
       (node) => node.kind === "note" && reachedAgents(node, data.depth).length > 1,
@@ -130,7 +151,7 @@ export function standoutGroups(
       rows: [
         ...standouts.broken.map((node) => ({
           node,
-          meta: `${node.reason ?? "does not resolve"} · in ${holders(node)}`,
+          meta: `${brokenReason(data, node)} · in ${holders(node)}`,
         })),
         ...standouts.overBudget.map((node) => ({
           node,
@@ -161,7 +182,7 @@ const linkLabels: Record<ReferenceEdgeStatus, string> = {
   inlined: "embed",
   too_deep: "embed · stays text",
   unreached: "embed · no Task reaches it",
-  broken: "embed · does not resolve",
+  broken: "embed · not reachable",
   named: "named, not embedded",
 };
 
@@ -188,7 +209,8 @@ export function referenceLinks(
   };
 }
 
-export type TaskPull = { node: ReferenceNode; hop: number; inlined: boolean };
+/** A file a Task's runs meet: inlined, left as text past the inlined levels, or not reachable for its agent. */
+export type TaskPull = { node: ReferenceNode; hop: number; inlined: boolean; reachable: boolean };
 
 /** Everything a Task's runs meet through its embeds, nearest first: inlined, then left as text. */
 export function taskPulls(data: StudioReferences, task: ReferenceNode): TaskPull[] {
@@ -196,7 +218,9 @@ export function taskPulls(data: StudioReferences, task: ReferenceNode): TaskPull
   return data.nodes
     .flatMap((node) => {
       const hop = node.hops[agentId];
-      return hop !== undefined && hop > 0 ? [{ node, hop, inlined: hop <= data.depth }] : [];
+      if (hop === undefined || hop === 0) return [];
+      const reachable = node.kind !== "unresolved" && !node.unreachable_for.includes(agentId);
+      return [{ node, hop, inlined: hop <= data.depth, reachable }];
     })
     .sort((left, right) => left.hop - right.hop || byLabel(left.node, right.node));
 }
@@ -227,11 +251,11 @@ function followEmbeds(embeds: ReferenceEdge[], start: string, side: "from" | "to
   return [...seen];
 }
 
-/** What a box says under its name: a Task's budget, a file's level and size, or why a link fails. */
+/** What a box says under its name: a Task's budget, a file's level and size, or why it is broken. */
 export function referenceMeta(node: ReferenceNode, data: StudioReferences): string {
   if (node.kind === "task")
     return `${formatSize(node.inlined_bytes ?? 0)} of ${formatSize(data.budget)} inlined`;
-  if (node.kind === "unresolved") return node.reason ?? "does not resolve";
+  if (isBroken(node)) return brokenReason(data, node);
   return [node.level, node.kind === "note" ? formatSize(node.bytes) : "table"]
     .filter(Boolean)
     .join(" · ");

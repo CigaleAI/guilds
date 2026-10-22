@@ -3,7 +3,6 @@ import { test } from "node:test";
 import { agentActor, type ArtifactActor } from "../../src/artifacts/index.js";
 import { parseColumns, type CollectionColumn } from "../../src/artifacts/columns.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 
 type Stored = {
@@ -58,6 +57,16 @@ class FakeStore {
     };
     this.rows = this.rows.filter((item) => item.display_path !== display);
     this.rows.push(row);
+    return row;
+  }
+
+  async writeNoteAt(actor: ArtifactActor, path: string, content: string) {
+    this.calls.push({ method: "writeNoteAt", args: { path, content } });
+    const row = this.rows.find((item) => item.display_path === path);
+    if (!row || !this.readable(actor, row)) {
+      throw new ArtifactError("artifact not found", 404);
+    }
+    row.content_text = content;
     return row;
   }
 
@@ -123,14 +132,15 @@ class FakeStore {
     return Number(args.id);
   }
 
+  /** The default access lists: the organisation reads org notes, a guild its own, an agent its own. */
   private readable(actor: ArtifactActor, row: Stored) {
-    if (row.level === "org") return actor.operator || actor.grants.readOrg;
-    if (row.level === "guild") return actor.operator || (actor.grants.readGuild && actor.guildId === row.owner_id);
+    if (row.level === "org") return true;
+    if (row.level === "guild") return actor.operator || actor.guildId === row.owner_id;
     return actor.operator || actor.agentId === row.owner_id;
   }
 }
 
-function ctx(store: FakeStore, extra: { agentId?: string; guildId?: string; grants?: typeof DEFAULT_ARTIFACT_GRANTS } = {}) {
+function ctx(store: FakeStore, extra: { agentId?: string; guildId?: string } = {}) {
   const agentId = extra.agentId ?? "a_1";
   const guildId = extra.guildId ?? "guild_1";
   return createToolContext({
@@ -145,7 +155,6 @@ function ctx(store: FakeStore, extra: { agentId?: string; guildId?: string; gran
       guildId,
       agentId,
       agentName: "researcher",
-      grants: extra.grants ?? DEFAULT_ARTIFACT_GRANTS,
     }),
   });
 }
@@ -212,11 +221,9 @@ test("agent cannot read another agent's private note", async () => {
   assert.match(missing.content, /ERROR: artifact not found/);
 });
 
-test("guild write is rejected without the grant", async () => {
+test("note_write reports the store's refusal of a level the agent cannot write", async () => {
   const store = new FakeStore();
-  const toolCtx = ctx(store, {
-    grants: { ...DEFAULT_ARTIFACT_GRANTS, writeGuild: false },
-  });
+  const toolCtx = ctx(store);
   store.writeNote = async () => {
     throw new Error("write not allowed");
   };
@@ -226,6 +233,23 @@ test("guild write is rejected without the grant", async () => {
     content: "x",
   });
   assert.match(result.content, /write not allowed/);
+});
+
+test("note_write with a path rewrites that existing note", async () => {
+  const store = new FakeStore();
+  const writer = ctx(store, { agentId: "a_1", guildId: "guild_1" });
+  const created = await invoke(writer, "note_write", { level: "guild", key: "brief.md", content: "v1" });
+  const peer = ctx(store, { agentId: "a_2", guildId: "guild_1" });
+  const rewritten = await invoke(peer, "note_write", { path: created.content, content: "v2" });
+  assert.equal(rewritten.content, created.content);
+  assert.deepEqual(store.calls.at(-1), { method: "writeNoteAt", args: { path: created.content, content: "v2" } });
+  assert.match((await invoke(peer, "note_get", { path: created.content })).content, /v2/);
+});
+
+test("note_write needs a path or a level", async () => {
+  const store = new FakeStore();
+  const result = await invoke(ctx(store), "note_write", { key: "brief.md", content: "x" });
+  assert.match(result.content, /level must be agent, guild, or org/);
 });
 
 test("note tools point at the record tools for collection paths", async () => {

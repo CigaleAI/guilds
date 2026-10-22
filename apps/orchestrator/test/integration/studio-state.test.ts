@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { persistAgent } from "../../src/agents/persist.js";
 import { agentActor, ArtifactStore, ownerPrefix, snapshotTaskCollections } from "../../src/artifacts/index.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
@@ -93,7 +92,7 @@ test("studio's State lists the guild's items with who changed and read each one"
     }
     const operator = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_st" });
     const asRun = (agentId: string, name: string, guildId: string, runId: string) => ({
-      ...agentActor({ orgId: "org_home", guildId, agentId, agentName: name, grants: { ...DEFAULT_ARTIFACT_GRANTS, writeGuild: true, writeOrg: true }, runId }),
+      ...agentActor({ orgId: "org_home", guildId, agentId, agentName: name, runId }),
       toolCall: { id: `call_${runId}`, name: "note_write" },
     });
     const run = (id: string, agentId: string, calls: Call[], taskSource: Record<string, unknown> = {}) =>

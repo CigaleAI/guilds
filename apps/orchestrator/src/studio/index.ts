@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "../artifacts/index.js";
-import { collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds } from "../artifacts/index.js";
+import {
+  collectTaskEmbeds,
+  displayPathFor,
+  hashArtifactContent,
+  inlineTaskEmbeds,
+  taskEmbedActor,
+} from "../artifacts/index.js";
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import {
@@ -499,7 +505,11 @@ export class StudioService {
     let effectiveTask = task?.content_text ?? "";
     let embedWarning: string | null = null;
     try {
-      effectiveTask = await inlineTaskEmbeds(this.deps.artifacts, actor, task?.content_text ?? "");
+      effectiveTask = await inlineTaskEmbeds(
+        this.deps.artifacts,
+        taskEmbedActor(String(session.org_id), agent),
+        task?.content_text ?? "",
+      );
     } catch (error) {
       embedWarning = error instanceof Error ? error.message : "embed preflight failed";
     }

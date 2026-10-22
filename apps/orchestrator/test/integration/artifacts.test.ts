@@ -4,10 +4,12 @@ import { ArtifactStore } from "../../src/artifacts/store.js";
 import {
   agentActor,
   inlineTaskEmbeds,
+  inspectTaskEmbeds,
   listFileChanges,
   operatorActor,
 } from "../../src/artifacts/index.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
+import { unreachableMarker } from "../../src/artifacts/embeds.js";
+import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { persistAgent } from "../../src/agents/persist.js";
 import { connect, type Database } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
@@ -64,7 +66,7 @@ async function seedAgent(agentId: string, guildId: string, guildName: string, na
 }
 
 describe("artifact store", { concurrency: 1 }, () => {
-  test("tenancy, grants, reserved paths, embeds, and collections", async () => {
+  test("tenancy, access lists, reserved paths, embeds, and collections", async () => {
     const now = new Date();
     await repo.insertGuild("guild_alpha", "alpha", now, "org_home", "");
     await repo.insertGuild("guild_beta", "beta", now, "org_home", "");
@@ -83,21 +85,12 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_alpha",
       agentId: "a_alpha",
       agentName: "alpha",
-      grants: DEFAULT_ARTIFACT_GRANTS,
-    });
-    const alphaNoOrg = agentActor({
-      orgId: "org_home",
-      guildId: "guild_alpha",
-      agentId: "a_alpha",
-      agentName: "alpha",
-      grants: { ...DEFAULT_ARTIFACT_GRANTS, readOrg: false, writeOrg: false },
     });
     const beta = agentActor({
       orgId: "org_home",
       guildId: "guild_beta",
       agentId: "a_beta",
       agentName: "beta",
-      grants: DEFAULT_ARTIFACT_GRANTS,
     });
 
     const orgNote = await store.writeNote(operator, {
@@ -122,11 +115,20 @@ describe("artifact store", { concurrency: 1 }, () => {
       content: "guild note\n",
     });
 
-    await assert.rejects(() => store.getByDisplayPath(alphaNoOrg, orgPath), /artifact not found/);
+    const orgTarget = { kind: "note" as const, id: orgNote.id };
+    await store.grantAccess(operator, orgTarget, { type: "agent", id: "a_alpha" }, "none");
+    await assert.rejects(() => store.getByDisplayPath(alpha, orgPath), /artifact not found/);
     const operatorSeesDenied = await inlineTaskEmbeds(store, operator, `Follow ![[${orgPath}]]\n`);
     assert.match(operatorSeesDenied, /org schema/);
+    const alphaSeesMarker = await inlineTaskEmbeds(store, alpha, `Follow ![[${orgPath}]]\n`);
+    assert.equal(alphaSeesMarker, `Follow ${unreachableMarker(orgPath)}\n`);
+    assert.deepEqual(await inspectTaskEmbeds(store, alpha, `Follow ![[${orgPath}]]\n`), [
+      { href: orgPath, ok: false, reason: "not reachable" },
+    ]);
+    await store.grantAccess(operator, orgTarget, { type: "agent", id: "a_alpha" }, null);
     const loadedOrg = await store.getByDisplayPath(alpha, orgPath);
     assert.equal(loadedOrg.row?.content_text, "org schema\n");
+    assert.equal(loadedOrg.row?.access, "read");
 
     await assert.rejects(
       () => store.getByDisplayPath(beta, "org/org_home/agents/a_alpha/secret.md"),
@@ -219,13 +221,20 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
     await assert.rejects(() => store.createCollection(operator, { name: "papers", purpose: "again" }), /already exists/);
 
-    // Nobody sees a collection until it is granted.
+    // An organisation table starts read by the organisation; without that row nobody sees it.
+    const target = { kind: "collection" as const, id: papers.id };
+    assert.deepEqual(
+      (await store.listAccess(operator, target)).map((entry) => [entry.type, entry.id, entry.mode]),
+      [["org", "org_home", "read"]],
+    );
+    assert.equal((await store.describeCollection(beta, "papers"))?.access, "read");
+    await store.grantAccess(operator, target, { type: "org", id: "org_home" }, null);
     assert.equal(await store.describeCollection(alpha, "papers"), null);
     assert.deepEqual(await store.catalog(alpha), []);
     await assert.rejects(() => store.addRecord(alpha, { collection: "papers", body: { title: "Bees" } }), /unknown collection papers/);
     await assert.rejects(() => store.listRecords(alpha, { collection: "papers" }), /unknown collection papers/);
 
-    await store.setAccess(operator, { collectionId: papers.id, subjectType: "guild", subjectId: "guild_alpha", mode: "read" });
+    await store.grantAccess(operator, target, { type: "guild", id: "guild_alpha" }, "read");
     assert.equal((await store.describeCollection(alpha, "papers"))?.access, "read");
     await assert.rejects(
       () => store.addRecord(alpha, { collection: "papers", body: { title: "Bees" } }),
@@ -249,52 +258,45 @@ describe("artifact store", { concurrency: 1 }, () => {
     ]);
     assert.equal(await store.describeCollection(beta, "papers"), null);
 
-    // An agent's own grant reaches an organisation table its guild was never given, and the catalog lists it.
-    await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_beta", mode: "read" });
+    // An agent's own row reaches an organisation table its guild was never given, and the catalog lists it.
+    await store.grantAccess(operator, target, { type: "agent", id: "a_beta" }, "read");
     assert.equal((await store.describeCollection(beta, "papers"))?.access, "read");
     assert.deepEqual((await store.catalog(beta)).map((item) => [item.name, item.access]), [["papers", "read"]]);
-    await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_beta", mode: null });
+    await store.grantAccess(operator, target, { type: "agent", id: "a_beta" }, null);
 
-    // An agent grant raises the guild's mode; the operator sees both.
-    await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_alpha", mode: "write" });
+    // An agent row raises the guild's mode; the operator sees both rows.
+    await store.grantAccess(operator, target, { type: "agent", id: "a_alpha" }, "write");
     assert.equal((await store.describeCollection(alpha, "papers"))?.access, "write");
-    const access = await store.listAccess(operator, papers.id);
-    assert.deepEqual(access.guilds, [{ id: "guild_alpha", name: "alpha", mode: "read" }]);
-    assert.deepEqual(access.agents, [
-      { id: "a_alpha", name: "alpha", guild_id: "guild_alpha", guild_name: "alpha", guild_mode: "read", agent_mode: "write", effective: "write" },
+    assert.deepEqual(await store.listAccess(operator, target), [
+      { type: "guild", id: "guild_alpha", name: "alpha", mode: "read", guild_id: "guild_alpha", guild_name: "alpha" },
+      { type: "agent", id: "a_alpha", name: "alpha", mode: "write", guild_id: "guild_alpha", guild_name: "alpha" },
     ]);
-    assert.deepEqual(await store.accessForGuild(operator, "guild_beta"), [
-      { collection_id: papers.id, name: "papers", purpose: "reading list", scope: "org", mode: null },
-    ]);
-    assert.deepEqual(await store.accessForAgent(operator, "a_alpha", "guild_alpha"), [
-      { collection_id: papers.id, name: "papers", purpose: "reading list", scope: "org", guild_mode: "read", agent_mode: "write", effective: "write" },
-    ]);
-    // the agent's own row overrides its guild's base mode, and `none` keeps it out
-    await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_alpha", mode: "none" });
+    const tablesOf = async (subject: { type: "guild" | "agent"; id: string; guildId: string }) =>
+      (await store.reachOf(operator, subject)).tables.map((table) => [table.name, table.mode]);
+    assert.deepEqual(await tablesOf({ type: "guild", id: "guild_beta", guildId: "guild_beta" }), []);
+    assert.deepEqual(await tablesOf({ type: "guild", id: "guild_alpha", guildId: "guild_alpha" }), [["papers", "read"]]);
+    assert.deepEqual(await tablesOf({ type: "agent", id: "a_alpha", guildId: "guild_alpha" }), [["papers", "write"]]);
+    // the agent's own row overrides its guild's mode, and `none` keeps it out
+    await store.grantAccess(operator, target, { type: "agent", id: "a_alpha" }, "none");
     assert.equal(await store.describeCollection(alpha, "papers"), null);
     assert.deepEqual(await store.catalog(alpha), []);
     await assert.rejects(() => store.listRecords(alpha, { collection: "papers" }), /unknown collection papers/);
-    assert.deepEqual(await store.accessForAgent(operator, "a_alpha", "guild_alpha"), [
-      { collection_id: papers.id, name: "papers", purpose: "reading list", scope: "org", guild_mode: "read", agent_mode: "none", effective: null },
-    ]);
-    assert.deepEqual((await store.listAccess(operator, papers.id)).agents, [
-      { id: "a_alpha", name: "alpha", guild_id: "guild_alpha", guild_name: "alpha", guild_mode: "read", agent_mode: "none", effective: null },
-    ]);
+    assert.deepEqual(await tablesOf({ type: "agent", id: "a_alpha", guildId: "guild_alpha" }), []);
     await assert.rejects(
-      () => store.setAccess(operator, { collectionId: papers.id, subjectType: "guild", subjectId: "guild_alpha", mode: "none" }),
-      /mode must be read, write, or null/,
+      () => store.grantAccess(operator, target, { type: "guild", id: "guild_alpha" }, "none"),
+      /mode must be read or write/,
     );
-    await store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_alpha", mode: "write" });
+    await store.grantAccess(operator, target, { type: "agent", id: "a_alpha" }, "write");
     await assert.rejects(
-      () => store.setAccess(operator, { collectionId: papers.id, subjectType: "agent", subjectId: "a_nobody", mode: "read" }),
+      () => store.grantAccess(operator, target, { type: "agent", id: "a_nobody" }, "read"),
       /unknown agent/,
     );
     await assert.rejects(
-      () => store.setAccess(operator, { collectionId: papers.id, subjectType: "team", subjectId: "guild_alpha", mode: "read" }),
-      /subject_type must be guild or agent/,
+      () => store.replaceAccess(operator, target, [{ type: "team", id: "guild_alpha", mode: "read" }]),
+      /type must be org, guild, or agent/,
     );
     await assert.rejects(
-      () => store.setAccess(alpha, { collectionId: papers.id, subjectType: "guild", subjectId: "guild_alpha", mode: "read" }),
+      () => store.grantAccess(alpha, target, { type: "guild", id: "guild_alpha" }, "read"),
       /managed by the operator/,
     );
 
@@ -357,18 +359,21 @@ describe("artifact store", { concurrency: 1 }, () => {
     );
     await assert.rejects(() => store.updateCollection(operator, papers.id, { name: "Papers!" }), /collection name must match/);
 
-    // Deleting a collection removes its records and grants.
+    // Deleting a collection removes its records and its access list.
     await store.deleteCollection(operator, papers.id);
     assert.equal(await store.describeCollection(alpha, "papers"), null);
     await assert.rejects(() => store.getCollection(operator, papers.id), /unknown collection/);
-    assert.deepEqual(await store.accessForGuild(operator, "guild_alpha"), []);
+    assert.deepEqual(await tablesOf({ type: "guild", id: "guild_alpha", guildId: "guild_alpha" }), []);
     const gone = await database.pool.query(`SELECT count(*)::int AS n FROM artifacts WHERE collection_id = $1 AND deleted_at IS NULL`, [papers.id]);
     assert.equal(gone.rows[0]?.n, 0);
     const [deletedLog] = await listConfigChanges(database.pool, operator.orgId, { kind: "collection", id: papers.id });
     assert.equal(deletedLog?.operation, "delete");
     assert.equal(deletedLog?.summary, "Deleted the table papers");
-    const grants = await database.pool.query(`SELECT count(*)::int AS n FROM collection_access WHERE collection_id = $1`, [papers.id]);
-    assert.equal(grants.rows[0]?.n, 0);
+    const rows = await database.pool.query(
+      `SELECT count(*)::int AS n FROM artifact_access WHERE target_kind = 'collection' AND target_id = $1`,
+      [papers.id],
+    );
+    assert.equal(rows.rows[0]?.n, 0);
     // the name is free again
     const again = await store.createCollection(operator, { name: "papers", purpose: "fresh" });
     assert.notEqual(again.id, papers.id);
@@ -384,7 +389,6 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_search",
       agentId: "a_search",
       agentName: "searcher",
-      grants: DEFAULT_ARTIFACT_GRANTS,
     });
     const operator = operatorActor({
       orgId: "org_home",
@@ -405,7 +409,8 @@ describe("artifact store", { concurrency: 1 }, () => {
         { name: "seen_at", type: "datetime", description: "when it was first seen" },
       ],
     });
-    await store.setAccess(operator, { collectionId: packets.id, subjectType: "guild", subjectId: "guild_search", mode: "write" });
+    await store.grantAccess(operator, { kind: "collection", id: packets.id }, { type: "guild", id: "guild_search" }, "write");
+    await store.grantAccess(operator, { kind: "collection", id: packets.id }, { type: "org", id: "org_home" }, null);
 
     // every problem at once, nothing written
     await assert.rejects(
@@ -542,7 +547,6 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_alpha",
       agentId: "a_alpha",
       agentName: "alpha",
-      grants: DEFAULT_ARTIFACT_GRANTS,
     });
     assert.equal(await store.collectionFacts(outsider, "packets"), null);
     assert.deepEqual(await search({ query: "Solana" }).then(() => store.searchRecords(outsider, { query: "Solana" })), { records: [] });
@@ -571,7 +575,6 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_scratch",
       agentId: "a_scratch",
       agentName: "scratcher",
-      grants: DEFAULT_ARTIFACT_GRANTS,
     });
     const operator = operatorActor({
       orgId: "org_home",
@@ -585,7 +588,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       purpose: "throwaway rows",
       columns: [{ name: "title", type: "text", description: "row title", required: true, unique: true }],
     });
-    await store.setAccess(operator, { collectionId: scratch.id, subjectType: "guild", subjectId: "guild_scratch", mode: "write" });
+    await store.grantAccess(operator, { kind: "collection", id: scratch.id }, { type: "guild", id: "guild_scratch" }, "write");
     await store.addRecord(writer, { collection: "scratch", body: { title: "one" } });
     await store.addRecord(writer, { collection: "scratch", body: { title: "two" } });
     await store.addRecord(writer, { collection: "scratch", body: { title: "three" } });
@@ -594,8 +597,8 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(await store.clearRecords(operator, scratch.id), 3);
     assert.deepEqual((await store.listRecords(writer, { collection: "scratch" })).records, []);
     assert.equal((await store.getCollection(operator, scratch.id)).count, 0);
-    const grants = await store.accessForGuild(operator, "guild_scratch");
-    assert.equal(grants.some((row) => row.collection_id === scratch.id && row.mode === "write"), true);
+    const rows = await store.listAccess(operator, { kind: "collection", id: scratch.id });
+    assert.equal(rows.some((row) => row.id === "guild_scratch" && row.mode === "write"), true);
     const again = await store.addRecord(writer, { collection: "scratch", body: { title: "one" } });
     assert.equal(again.record.id, 4);
     assert.equal(again.merged, null);
@@ -609,6 +612,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       [
         ["Deleted all 1 record of scratch", "user"],
         ["Deleted all 3 records of scratch", "user"],
+        ["Gave guild scratch read and write on the table scratch", "user"],
       ],
     );
   });
@@ -622,7 +626,6 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_tags",
       agentId: "a_tags",
       agentName: "tagger",
-      grants: DEFAULT_ARTIFACT_GRANTS,
     });
     const operator = operatorActor({
       orgId: "org_home",
@@ -640,7 +643,7 @@ describe("artifact store", { concurrency: 1 }, () => {
         { name: "kind", type: "array", description: "closed labels", values: ["work", "home"] },
       ],
     });
-    await store.setAccess(operator, { collectionId: notes.id, subjectType: "guild", subjectId: "guild_tags", mode: "write" });
+    await store.grantAccess(operator, { kind: "collection", id: notes.id }, { type: "guild", id: "guild_tags" }, "write");
 
     await assert.rejects(
       () => store.addRecord(tagger, { collection: "tagged-notes", body: { title: "one", tags: "solo", kind: ["play"] } }),
@@ -680,15 +683,15 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(await list({ tags: "crm" }), [2]);
   });
 
-  test("a guild's own table: members write it, nobody else reaches it, it moves and dies with the guild", async () => {
+  test("a guild's own table: its guild row lets members write, other guilds need a row, it moves and dies with the guild", async () => {
     const now = new Date();
     await repo.insertGuild("guild_own", "own", now, "org_home", "");
     await repo.insertGuild("guild_other", "other", now, "org_home", "");
     await seedAgent("a_own", "guild_own", "own", "owner-agent", "own");
     await seedAgent("a_other", "guild_other", "other", "other-agent", "other");
     const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
-    const member = agentActor({ orgId: "org_home", guildId: "guild_own", agentId: "a_own", agentName: "owner-agent", grants: DEFAULT_ARTIFACT_GRANTS });
-    const outsider = agentActor({ orgId: "org_home", guildId: "guild_other", agentId: "a_other", agentName: "other-agent", grants: DEFAULT_ARTIFACT_GRANTS });
+    const member = agentActor({ orgId: "org_home", guildId: "guild_own", agentId: "a_own", agentName: "owner-agent" });
+    const outsider = agentActor({ orgId: "org_home", guildId: "guild_other", agentId: "a_other", agentName: "other-agent" });
 
     await assert.rejects(
       () => store.createCollection(operator, { name: "own-notes", purpose: "the guild's scratch table", guildId: "guild_nope" }),
@@ -700,10 +703,14 @@ describe("artifact store", { concurrency: 1 }, () => {
       columns: [{ name: "note", type: "text", description: "what was noted", required: true }],
       guildId: "guild_own",
     });
+    const target = { kind: "collection" as const, id: own.id };
     assert.equal(own.scope, "guild");
     assert.deepEqual(own.guild, { id: "guild_own", name: "own" });
+    assert.deepEqual(await store.listAccess(operator, target), [
+      { type: "guild", id: "guild_own", name: "own", mode: "write", guild_id: "guild_own", guild_name: "own" },
+    ]);
 
-    // members write without any grant; other guilds cannot see it; grants are refused
+    // members write through the guild row; other guilds do not see it
     const added = await store.addRecord(member, { collection: "own-notes", body: { note: "first" } });
     assert.equal(added.record.id, 1);
     assert.equal((await store.describeCollection(member, "own-notes"))?.access, "write");
@@ -711,73 +718,52 @@ describe("artifact store", { concurrency: 1 }, () => {
     await assert.rejects(() => store.listRecords(outsider, { collection: "own-notes" }), /unknown collection own-notes/);
     assert.deepEqual((await store.searchRecords(outsider, { query: "first" })).records, []);
     assert.deepEqual((await store.searchRecords(member, { query: "first" })).records.map((row) => row.id), [1]);
-    await assert.rejects(
-      () => store.setAccess(operator, { collectionId: own.id, subjectType: "guild", subjectId: "guild_other", mode: "read" }),
-      (error: Error & { status?: number }) => error.status === 422 && /belongs to own/.test(error.message),
-    );
-    await assert.rejects(
-      () => store.setAccess(operator, { collectionId: own.id, subjectType: "agent", subjectId: "a_other", mode: "read" }),
-      (error: Error & { status?: number }) => error.status === 422 && /only an agent of that guild/.test(error.message),
-    );
-    assert.deepEqual(await store.listAccess(operator, own.id), {
-      guilds: [{ id: "guild_own", name: "own", mode: "write" }],
-      agents: [
-        { id: "a_own", name: "owner-agent", guild_id: "guild_own", guild_name: "own", guild_mode: "write", agent_mode: null, effective: "write" },
-      ],
-    });
-    assert.deepEqual(
-      (await store.catalog(member)).map((item) => [item.name, item.scope, item.access]),
-      [["own-notes", "guild", "write"]],
-    );
-    assert.deepEqual(await store.catalog(outsider), []);
+    const listed = async (actor: typeof member) =>
+      (await store.catalog(actor)).filter((item) => item.name === "own-notes").map((item) => [item.name, item.scope, item.access]);
+    assert.deepEqual(await listed(member), [["own-notes", "guild", "write"]]);
+    assert.deepEqual(await listed(outsider), []);
 
-    // an override keeps one member out of its own guild's table
-    await store.setAccess(operator, { collectionId: own.id, subjectType: "agent", subjectId: "a_own", mode: "none" });
+    // a row for another guild shares it like any other table
+    await store.grantAccess(operator, target, { type: "guild", id: "guild_other" }, "read");
+    assert.equal((await store.describeCollection(outsider, "own-notes"))?.access, "read");
+    await store.grantAccess(operator, target, { type: "guild", id: "guild_other" }, null);
+
+    // an agent row keeps one member out of its own guild's table
+    await store.grantAccess(operator, target, { type: "agent", id: "a_own" }, "none");
     assert.equal(await store.describeCollection(member, "own-notes"), null);
     await assert.rejects(() => store.listRecords(member, { collection: "own-notes" }), /unknown collection own-notes/);
     assert.deepEqual((await store.searchRecords(member, { query: "first" })).records, []);
-    assert.deepEqual(await store.catalog(member), []);
-    assert.equal((await store.listAccess(operator, own.id)).agents[0]?.effective, null);
-    await store.setAccess(operator, { collectionId: own.id, subjectType: "agent", subjectId: "a_own", mode: "read" });
+    assert.deepEqual(await listed(member), []);
+    await store.grantAccess(operator, target, { type: "agent", id: "a_own" }, "read");
     assert.equal((await store.describeCollection(member, "own-notes"))?.access, "read");
     await assert.rejects(() => store.addRecord(member, { collection: "own-notes", body: { note: "x" } }), /no write access to own-notes/);
-    await store.setAccess(operator, { collectionId: own.id, subjectType: "agent", subjectId: "a_own", mode: null });
+    await store.grantAccess(operator, target, { type: "agent", id: "a_own" }, null);
     assert.equal((await store.describeCollection(member, "own-notes"))?.access, "write");
 
-    // the guild's own table sits beside the organisation tables it is granted
+    // the guild reaches its own table beside the organisation tables its rows give it
     const shared = await store.createCollection(operator, { name: "shared-notes", purpose: "an organisation table" });
-    await store.setAccess(operator, { collectionId: shared.id, subjectType: "guild", subjectId: "guild_own", mode: "read" });
-    const ours = (rows: Array<{ name: string }>) => rows.filter((row) => row.name === "own-notes" || row.name === "shared-notes");
-    assert.deepEqual(ours(await store.accessForGuild(operator, "guild_own")), [
-      { collection_id: own.id, name: "own-notes", purpose: "the guild's scratch table", scope: "guild", mode: "write" },
-      { collection_id: shared.id, name: "shared-notes", purpose: "an organisation table", scope: "org", mode: "read" },
-    ]);
-    assert.deepEqual(
-      ours(await store.accessForGuild(operator, "guild_other")).map((row) => row.name),
-      ["shared-notes"],
-    );
-    assert.deepEqual(ours(await store.accessForAgent(operator, "a_own", "guild_own")), [
-      { collection_id: own.id, name: "own-notes", purpose: "the guild's scratch table", scope: "guild", guild_mode: "write", agent_mode: null, effective: "write" },
-      { collection_id: shared.id, name: "shared-notes", purpose: "an organisation table", scope: "org", guild_mode: "read", agent_mode: null, effective: "read" },
-    ]);
+    await store.grantAccess(operator, { kind: "collection", id: shared.id }, { type: "guild", id: "guild_own" }, "write");
+    const ours = (rows: Array<{ name: string; mode: string }>) =>
+      rows.filter((row) => row.name === "own-notes" || row.name === "shared-notes").map((row) => [row.name, row.mode]);
+    const reachedBy = async (type: "guild" | "agent", id: string, guildId: string) =>
+      ours((await store.reachOf(operator, { type, id, guildId })).tables);
+    assert.deepEqual(await reachedBy("guild", "guild_own", "guild_own"), [["own-notes", "write"], ["shared-notes", "write"]]);
+    assert.deepEqual(await reachedBy("guild", "guild_other", "guild_other"), [["shared-notes", "read"]]);
+    assert.deepEqual(await reachedBy("agent", "a_own", "guild_own"), [["own-notes", "write"], ["shared-notes", "write"]]);
 
-    // moving to the organisation keeps the guild's reach as a write grant; moving to a guild drops grants
+    // moving a table is placement only: its access list stays
     const promoted = await store.updateCollection(operator, own.id, { guildId: null });
     assert.equal(promoted.scope, "org");
     assert.equal(promoted.guild, null);
-    assert.deepEqual((await store.listAccess(operator, own.id)).guilds, [{ id: "guild_own", name: "own", mode: "write" }]);
     assert.equal((await store.describeCollection(member, "own-notes"))?.access, "write");
-    await store.setAccess(operator, { collectionId: own.id, subjectType: "guild", subjectId: "guild_other", mode: "read" });
-    assert.equal((await store.describeCollection(outsider, "own-notes"))?.access, "read");
-    const restricted = await store.updateCollection(operator, own.id, { guildId: "guild_other" });
-    assert.equal(restricted.scope, "guild");
-    assert.equal(restricted.guild?.id, "guild_other");
-    assert.equal(await store.describeCollection(member, "own-notes"), null);
-    assert.equal((await store.describeCollection(outsider, "own-notes"))?.access, "write");
-    const grants = await database.pool.query(`SELECT count(*)::int AS n FROM collection_access WHERE collection_id = $1`, [own.id]);
-    assert.equal(grants.rows[0]?.n, 0);
+    assert.equal(await store.describeCollection(outsider, "own-notes"), null);
+    const moved = await store.updateCollection(operator, own.id, { guildId: "guild_other" });
+    assert.equal(moved.guild?.id, "guild_other");
+    assert.equal((await store.describeCollection(member, "own-notes"))?.access, "write");
+    assert.equal(await store.describeCollection(outsider, "own-notes"), null);
+    assert.deepEqual((await store.listAccess(operator, target)).map((row) => [row.type, row.id, row.mode]), [["guild", "guild_own", "write"]]);
 
-    // deleting a guild soft-deletes its own tables and their records
+    // deleting a guild soft-deletes its own tables and their records, and drops their access lists
     await repo.deleteGuild("guild_other");
     await assert.rejects(() => store.getCollection(operator, own.id), /unknown collection/);
     const records = await database.pool.query(
@@ -785,7 +771,213 @@ describe("artifact store", { concurrency: 1 }, () => {
       [own.id],
     );
     assert.equal(records.rows[0]?.n, 0);
+    const rows = await database.pool.query(
+      `SELECT count(*)::int AS n FROM artifact_access WHERE target_kind = 'collection' AND target_id = $1`,
+      [own.id],
+    );
+    assert.equal(rows.rows[0]?.n, 0);
     assert.equal((await store.getCollection(operator, shared.id)).name, "shared-notes");
+  });
+
+  test("note access lists: defaults at creation, guild and org rows, agent rows, writes, and the change log", async () => {
+    const now = new Date();
+    await repo.insertGuild("guild_north", "north", now, "org_home", "");
+    await repo.insertGuild("guild_south", "south", now, "org_home", "");
+    await seedAgent("a_north", "guild_north", "north", "north-agent", "north");
+    await seedAgent("a_south", "guild_south", "south", "south-agent", "south");
+    await seedAgent("a_south2", "guild_south", "south", "south-two", "south2");
+    const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
+    const north = agentActor({ orgId: "org_home", guildId: "guild_north", agentId: "a_north", agentName: "north-agent" });
+    const south = agentActor({ orgId: "org_home", guildId: "guild_south", agentId: "a_south", agentName: "south-agent" });
+    const southTwo = agentActor({ orgId: "org_home", guildId: "guild_south", agentId: "a_south2", agentName: "south-two" });
+    const rowsOf = async (id: string) =>
+      (await store.listAccess(operator, { kind: "note", id })).map((row) => [row.type, row.id, row.mode]);
+    const found = async (actor: typeof north, query: string) =>
+      (await store.find(actor, { query })).notes.map((note) => [note.display_path, note.access]);
+
+    // default rows: a guild note is written by its guild, an org note read by the organisation, an agent note has none
+    const plan = await store.writeNote(north, { level: "guild", key: "plan.md", content: "north plan\n" });
+    const planPath = String(store.view(plan).display_path);
+    const own = await store.writeNote(north, { level: "agent", key: "mine.md", content: "north private\n" });
+    const handbook = await store.writeNote(operator, { level: "org", key: "handbook.md", content: "org handbook\n" });
+    const handbookPath = String(store.view(handbook).display_path);
+    assert.deepEqual(await rowsOf(plan.id), [["guild", "guild_north", "write"]]);
+    assert.deepEqual(await rowsOf(own.id), []);
+    assert.deepEqual(await rowsOf(handbook.id), [["org", "org_home", "read"]]);
+    assert.deepEqual(await found(north, "plan"), [[planPath, "write"]]);
+    assert.deepEqual(await found(south, "plan"), []);
+    assert.deepEqual(await found(south, "handbook"), [[handbookPath, "read"]]);
+    assert.deepEqual(await found(south, "private"), []);
+
+    // a guild row covers an agent created after it
+    await seedAgent("a_north_late", "guild_north", "north", "north-late", "north-late");
+    const late = agentActor({ orgId: "org_home", guildId: "guild_north", agentId: "a_north_late", agentName: "north-late" });
+    assert.equal((await store.getByDisplayPath(late, planPath)).row?.access, "write");
+
+    // shared with a second guild at read: found by its agents, refused on write
+    await store.grantAccess(operator, { kind: "note", id: plan.id }, { type: "guild", id: "guild_south" }, "read");
+    assert.deepEqual(await found(south, "plan"), [[planPath, "read"]]);
+    await assert.rejects(() => store.writeNoteAt(south, planPath, "overwritten"), /write not allowed/);
+    await assert.rejects(() => store.deleteByDisplayPath(south, planPath), /write not allowed/);
+    const [writeRefused] = await invokeTool(
+      createToolContext({
+        run_id: "r_south",
+        agent_id: "a_south",
+        guild_id: "guild_south",
+        sandbox: null,
+        secrets: {},
+        artifacts: store,
+        artifact_actor: south,
+      }),
+      { id: "call_write", function: { name: "note_write", arguments: { path: planPath, content: "overwritten" } } },
+      {},
+      32_768,
+    );
+    assert.match(String(writeRefused.content), /write not allowed/);
+
+    // an agent row raises one agent to write, and `none` hides the note from that agent alone
+    await store.grantAccess(operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_south" }, "write");
+    await store.writeNoteAt(south, planPath, "south edit\n");
+    assert.equal((await store.getByDisplayPath(north, planPath)).row?.content_text, "south edit\n");
+    await store.grantAccess(operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_south" }, "none");
+    assert.deepEqual(await found(south, "plan"), []);
+    await assert.rejects(() => store.getByDisplayPath(south, planPath), /artifact not found/);
+    assert.deepEqual(await found(southTwo, "plan"), [[planPath, "read"]]);
+
+    // an agent shut out of a note of its own guild is refused the write, not told the note is missing
+    await store.grantAccess(operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_north_late" }, "none");
+    await assert.rejects(() => store.writeNote(late, { level: "guild", key: "plan.md", content: "x" }), /write not allowed/);
+    await assert.rejects(() => store.writeNoteAt(late, planPath, "x"), /artifact not found/);
+    await store.grantAccess(operator, { kind: "note", id: plan.id }, { type: "agent", id: "a_north_late" }, null);
+
+    // org level: an agent creates no org note, and updates one only with write access
+    await assert.rejects(() => store.writeNote(north, { level: "org", key: "fresh.md", content: "x" }), /write not allowed/);
+    await assert.rejects(() => store.writeNote(north, { level: "org", key: "handbook.md", content: "x" }), /write not allowed/);
+    await store.grantAccess(operator, { kind: "note", id: handbook.id }, { type: "guild", id: "guild_north" }, "write");
+    await store.writeNote(north, { level: "org", key: "handbook.md", content: "north handbook\n" });
+    assert.equal((await store.getByDisplayPath(south, handbookPath)).row?.content_text, "north handbook\n");
+
+    // the full list replaces the rows and logs one change per subject whose row changes
+    const replaced = await store.replaceAccess(operator, { kind: "note", id: plan.id }, [
+      { type: "guild", id: "guild_north", mode: "write" },
+      { type: "org", id: "org_home", mode: "read" },
+    ]);
+    assert.deepEqual(replaced.subjects.map((row) => [row.type, row.id, row.mode]), [
+      ["org", "org_home", "read"],
+      ["guild", "guild_north", "write"],
+    ]);
+    assert.equal(replaced.owner_agent_id, null);
+    assert.deepEqual(await found(southTwo, "plan"), [[planPath, "read"]]);
+    const log = await listConfigChanges(database.pool, operator.orgId, { kind: "note", id: plan.id });
+    assert.deepEqual(
+      log.slice(0, 3).map((entry) => entry.summary).sort(),
+      [
+        `Gave the organisation read on the note ${planPath}`,
+        `Removed agent south-agent from the access of the note ${planPath}`,
+        `Removed guild south from the access of the note ${planPath}`,
+      ],
+    );
+    await assert.rejects(
+      () =>
+        store.replaceAccess(operator, { kind: "note", id: plan.id }, [
+          { type: "guild", id: "guild_north", mode: "write" },
+          { type: "guild", id: "guild_north", mode: "read" },
+        ]),
+      { status: 422, message: "subjects[1]: the subject appears more than once" },
+    );
+
+    // the agent that owns a note always writes it: no row may name it
+    assert.equal((await store.accessList(operator, { kind: "note", id: own.id })).owner_agent_id, "a_north");
+    await assert.rejects(
+      () => store.replaceAccess(operator, { kind: "note", id: own.id }, [{ type: "agent", id: "a_north", mode: "none" }]),
+      { status: 422, message: "subjects[0]: the agent that owns the note always writes it" },
+    );
+    await assert.rejects(
+      () => store.grantAccess(operator, { kind: "note", id: own.id }, { type: "agent", id: "a_north" }, "read"),
+      { status: 422, message: "the agent that owns the note always writes it" },
+    );
+
+    // a subject that does not exist is a fault of the body, named by its place in the list
+    await assert.rejects(
+      () =>
+        store.replaceAccess(operator, { kind: "note", id: plan.id }, [
+          { type: "org", id: "org_home", mode: "read" },
+          { type: "guild", id: "guild_gone", mode: "read" },
+        ]),
+      { status: 422, message: "subjects[1]: unknown guild" },
+    );
+
+    // a row whose subject is gone does not block the list, and is removed with it
+    await database.pool.query(
+      `INSERT INTO artifact_access (
+         id, org_id, target_kind, target_id, subject_type, subject_id, mode,
+         created_by_type, created_by_id, created_by_name, created_at,
+         updated_by_type, updated_by_id, updated_by_name, updated_at
+       ) VALUES ('aacc_stale', 'org_home', 'note', $1, 'guild', 'guild_gone', 'read',
+                 'user', 'user_operator', 'operator', now(), 'user', 'user_operator', 'operator', now())`,
+      [plan.id],
+    );
+    await store.replaceAccess(operator, { kind: "note", id: plan.id }, [
+      { type: "org", id: "org_home", mode: "read" },
+      { type: "guild", id: "guild_north", mode: "read" },
+    ]);
+    assert.deepEqual(await rowsOf(plan.id), [["org", "org_home", "read"], ["guild", "guild_north", "read"]]);
+
+    // a changed row keeps who created it and records who changed it
+    const stamps = await database.pool.query(
+      `SELECT created_by_name, updated_by_name FROM artifact_access
+        WHERE target_kind = 'note' AND target_id = $1 AND subject_type = 'guild' AND subject_id = 'guild_north'`,
+      [plan.id],
+    );
+    assert.deepEqual(stamps.rows[0], { created_by_name: "north-agent", updated_by_name: "operator" });
+    await store.grantAccess(operator, { kind: "note", id: plan.id }, { type: "guild", id: "guild_north" }, "write");
+    await assert.rejects(() => store.replaceAccess(operator, { kind: "note", id: own.id }, "all"), /subjects must be a list/);
+    await assert.rejects(() => store.listAccess(operator, { kind: "note", id: "art_missing" }), /note not found/);
+
+    // a subject in a guild the operator cannot see is neither listed nor dropped
+    const blind = operatorActor({
+      orgId: "org_home",
+      actorId: "user_blind",
+      actorName: "blind",
+      hidden: { guildIds: ["guild_north"], agentIds: ["a_north", "a_north_late"] },
+    });
+    await assert.rejects(() => store.listAccess(blind, { kind: "note", id: plan.id }), /note not found/);
+    await store.replaceAccess(blind, { kind: "note", id: handbook.id }, [{ type: "org", id: "org_home", mode: "write" }]);
+    assert.deepEqual(await rowsOf(handbook.id), [["org", "org_home", "write"], ["guild", "guild_north", "write"]]);
+    await assert.rejects(
+      () => store.grantAccess(blind, { kind: "note", id: handbook.id }, { type: "guild", id: "guild_north" }, "read"),
+      /unknown guild/,
+    );
+
+    // what a guild and an agent reach
+    const notesOf = async (type: "guild" | "agent", id: string, guildId: string) =>
+      (await store.reachOf(operator, { type, id, guildId })).notes
+        .filter((note) => [plan.id, own.id, handbook.id].includes(note.id))
+        .map((note) => [note.display_path, note.mode]);
+    assert.deepEqual(await notesOf("agent", "a_north", "guild_north"), [
+      [String(store.view(own).display_path), "write"],
+      [planPath, "write"],
+      [handbookPath, "write"],
+    ]);
+    assert.deepEqual(await notesOf("guild", "guild_south", "guild_south"), [
+      [planPath, "read"],
+      [handbookPath, "write"],
+    ]);
+    const reached = (await store.reachOf(operator, { type: "agent", id: "a_north", guildId: "guild_north" })).notes;
+    assert.deepEqual(
+      reached.filter((note) => [own.id, handbook.id].includes(note.id)).map((note) => [note.owner_name, note.guild_id]),
+      [["north-agent", "guild_north"], ["Home", null]],
+    );
+
+    // an agent reads no Memory revision, even of its own Memory
+    const revision = revisionDisplayPath("org_home", "a_north", "20260101T000000-operator.md");
+    assert.equal(await store.canReadDisplayPath(north, revision), false);
+    assert.equal(await store.canReadDisplayPath(operator, revision), true);
+
+    // a deleted note takes its access rows with it
+    await store.deleteByDisplayPath(operator, planPath);
+    const left = await database.pool.query(`SELECT count(*)::int AS n FROM artifact_access WHERE target_id = $1`, [plan.id]);
+    assert.equal(left.rows[0]?.n, 0);
   });
 
   test("run tool calls record file create, update, and delete provenance", async () => {
@@ -839,7 +1031,6 @@ describe("artifact store", { concurrency: 1 }, () => {
         guildId: "guild_provenance",
         agentId: "a_provenance",
         agentName: "provenance-agent",
-        grants: DEFAULT_ARTIFACT_GRANTS,
         runId: "r_provenance",
       }),
     });
@@ -888,7 +1079,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       purpose: "hand-off queue",
       columns: [{ name: "item", type: "text", description: "what to do", required: true }],
     });
-    await store.setAccess(operator, { collectionId: queue.id, subjectType: "guild", subjectId: "guild_provenance", mode: "write" });
+    await store.grantAccess(operator, { kind: "collection", id: queue.id }, { type: "guild", id: "guild_provenance" }, "write");
     const [added] = await call("call_add", "record_add", { collection: "queue", body: { item: "first" } });
     assert.match(String(added.content), /"record":\{"id":1,"collection":"queue","item":"first"/);
     await call("call_patch", "record_update", { collection: "queue", id: 1, body: { item: "second" } });
@@ -914,7 +1105,6 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_flat",
       agentId: "a_flat",
       agentName: "flat",
-      grants: DEFAULT_ARTIFACT_GRANTS,
     });
     const operator = operatorActor({
       orgId: "org_home",
@@ -968,7 +1158,6 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_tl",
       agentId: "a_tl",
       agentName: "timeline",
-      grants: DEFAULT_ARTIFACT_GRANTS,
     });
     await store.writeMemory(operator, "a_tl", "from operator\n", "user operator");
     await store.writeMemory(writer, "a_tl", "from agent\n", "agent timeline");

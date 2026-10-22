@@ -382,6 +382,7 @@ function SectionBody({
                   <Tag tone="well" font="sans">
                     {card.owner}
                   </Tag>
+                  <span className="text-xs text-muted">{card.access}</span>
                   <span className="min-w-0 flex-1 truncate text-sm text-fg-2">{card.snippet}</span>
                   <Icon
                     icon={ChevronDown}
@@ -608,11 +609,6 @@ function AgentCardView({
           {metrics.tools.nativeTools.map((tool) => (
             <Tag key={tool} tone="term">
               {tool}
-            </Tag>
-          ))}
-          {metrics.tools.grants.map((grant) => (
-            <Tag key={grant.id} tone="tide" font="sans">
-              {grant.label}
             </Tag>
           ))}
           {metrics.tools.empty ? <span className="text-xs text-muted">No tools.</span> : null}

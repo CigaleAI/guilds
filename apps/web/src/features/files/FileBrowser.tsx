@@ -1,5 +1,5 @@
 import { useBlocker } from "@tanstack/react-router";
-import { ArrowLeft, Copy, FilePlus, FileText, Pin, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, FilePlus, FileText, Pin, ShieldCheck, Trash2 } from "lucide-react";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import {
   useCollections,
@@ -37,6 +37,7 @@ import {
   toast,
 } from "@guildsrun/ui";
 import type { EmbedKind } from "@guildsrun/ui";
+import { AccessListPanel } from "../access/AccessListPanel";
 import { EmbedPicker } from "../agent/prompt/EmbedPicker";
 import { EmbedPreview } from "../agent/prompt/EmbedPreview";
 import { embedIsBroken, pickableNotes } from "../agent/prompt/taskContext";
@@ -302,6 +303,7 @@ function NoteView({
   const resolvePick = useRef<((path: string | null) => void) | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const noteGroups = useMemo(
     () =>
@@ -355,6 +357,10 @@ function NoteView({
             Ask the coach
           </Button>
         ) : null}
+        <Button variant="outline" size="xs" onClick={() => setSharing(true)}>
+          <Icon icon={ShieldCheck} size={14} />
+          Access
+        </Button>
         <IconButton
           icon={Copy}
           label="Copy the text"
@@ -440,6 +446,7 @@ function NoteView({
         orgId={org.id}
         onClose={() => setPreviewPath(null)}
       />
+      <NoteAccessDialog item={item} open={sharing} onOpenChange={setSharing} />
       <ConfirmDialog
         kind="destructive"
         open={deleting}
@@ -470,6 +477,36 @@ function NoteView({
         }
       />
     </div>
+  );
+}
+
+/** Who reaches a note: its access list, in a dialog over the open note. */
+function NoteAccessDialog({
+  item,
+  open,
+  onOpenChange,
+}: {
+  item: FileItem;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="lg">
+        <DialogHeader title={`Access to ${item.path}`} />
+        <DialogBody>
+          <AccessListPanel
+            target={{ kind: "note", id: item.id }}
+            intro="Who reads and writes this note. Where it is placed only files it; this list decides who reaches it. An agent always reaches its own notes."
+          />
+        </DialogBody>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Done</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

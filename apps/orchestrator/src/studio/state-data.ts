@@ -44,15 +44,16 @@ async function listWindowFileChanges(deps: StateDeps, orgId: string, window: Act
   return result.rows as Row[];
 }
 
-const CONFIG_COLUMNS = `cc.target_id, cc.operation, cc.actor_type, cc.actor_id, cc.actor_name,
+const CONFIG_COLUMNS = `cc.target_kind, cc.target_id, cc.operation, cc.actor_type, cc.actor_id, cc.actor_name,
        cc.run_id, cc.tool_call_id, cc.studio_session_id, cc.studio_seq, cc.created_at, cc.id, cc.summary,
        r.agent_id AS run_agent_id`;
 
-async function listWindowTableChanges(deps: StateDeps, orgId: string, window: ActivityWindow): Promise<Row[]> {
+// The config log's changes to tables and notes: a table's shape and access, a note's access.
+async function listWindowConfigChanges(deps: StateDeps, orgId: string, window: ActivityWindow): Promise<Row[]> {
   const result = await deps.repo.pool.query(
     `SELECT ${CONFIG_COLUMNS}
        FROM config_changes cc LEFT JOIN runs r ON r.id = cc.run_id
-      WHERE cc.org_id = $1 AND cc.target_kind = 'collection' AND cc.created_at >= $2 AND cc.created_at <= $3`,
+      WHERE cc.org_id = $1 AND cc.target_kind IN ('collection', 'note') AND cc.created_at >= $2 AND cc.created_at <= $3`,
     [orgId, stamp(window.since), stamp(window.until)],
   );
   return result.rows as Row[];
@@ -109,6 +110,7 @@ async function stateTables(deps: StateDeps, actor: ArtifactActor, guildId: strin
       created_by: "",
       created_at: table.created_at,
       collection_id: table.id,
+      note_id: null,
     }));
 }
 
@@ -131,14 +133,14 @@ async function loadStateEvents(deps: StateDeps, scope: StateScope): Promise<{ it
   const agents = new Map(agentRows.map((agent) => [String(agent.id), String(agent.name)]));
   const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
   const scripts = items.filter((item) => item.kind === "script").map((item) => item.title);
-  const [files, tables, runs, calls] = await Promise.all([
+  const [files, configs, runs, calls] = await Promise.all([
     listWindowFileChanges(deps, scope.actor.orgId, scope.window),
-    listWindowTableChanges(deps, scope.actor.orgId, scope.window),
+    listWindowConfigChanges(deps, scope.actor.orgId, scope.window),
     listWindowRuns(deps, scope.guildId, scope.window),
     listWindowReadCalls(deps, scope.guildId, { window: scope.window, tools: [...READ_TOOLS, ...scripts] }),
   ]);
   const context = { items, agents };
-  return { items, events: [...changeEvents(files, tables, context), ...readEvents(runs, calls, context)] };
+  return { items, events: [...changeEvents(files, configs, context), ...readEvents(runs, calls, context)] };
 }
 
 const STATE_KINDS: readonly StateKind[] = ["note", "memory", "script", "table"];
@@ -202,8 +204,8 @@ export function parseOperation(value: unknown): string | null {
   return String(value);
 }
 
-// An item's changes, newest first: its own file changes, and for a table its
-// records' changes and its shape changes from the config log.
+// An item's changes, newest first: its own file changes, for a table its
+// records' changes, and its own changes from the config log.
 async function listItemChanges(
   deps: StateDeps,
   orgId: string,
@@ -219,7 +221,8 @@ async function listItemChanges(
               cc.run_id, cc.tool_call_id, cc.studio_session_id, cc.studio_seq, cc.created_at, cc.id,
               r.agent_id, cc.summary
          FROM config_changes cc LEFT JOIN runs r ON r.id = cc.run_id
-        WHERE cc.org_id = $1 AND cc.target_kind = 'collection' AND cc.target_id = $3
+        WHERE cc.org_id = $1
+          AND ((cc.target_kind = 'collection' AND cc.target_id = $3) OR (cc.target_kind = 'note' AND cc.target_id = $8))
      ) changes
      WHERE ($4::text IS NULL OR operation = $4)
        AND ($5::timestamptz IS NULL OR (created_at, id) < ($5::timestamptz, $6::text))
@@ -233,6 +236,7 @@ async function listItemChanges(
       page.before?.at ?? null,
       page.before?.id ?? null,
       STATE_HISTORY_PAGE + 1,
+      page.item.note_id,
     ],
   );
   return result.rows as Row[];

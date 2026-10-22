@@ -32,12 +32,40 @@ const LEADS_COLUMNS = [
   { name: "score", type: "number", description: "fit score", required: false, unique: false },
 ];
 
+type AccessRow = {
+  type: "org" | "guild" | "agent";
+  id: string;
+  name: string;
+  mode: "none" | "read" | "write";
+  guild_id: string | null;
+  guild_name: string | null;
+};
+
+const ORG_ROW: AccessRow = { type: "org", id: "org_home", name: "home", mode: "read", guild_id: null, guild_name: null };
+
+function memberRow(id: string, name: string, mode: AccessRow["mode"]): AccessRow {
+  return { type: "agent", id, name, mode, guild_id: "guild_live", guild_name: "desk" };
+}
+
+function guildRow(mode: AccessRow["mode"]): AccessRow {
+  return { type: "guild", id: "guild_live", name: "desk", mode, guild_id: "guild_live", guild_name: "desk" };
+}
+
+const DEFAULT_ACCESS: Record<string, AccessRow[]> = {
+  acol_seen: [memberRow("a_scout", "scout", "write")],
+  acol_leads: [ORG_ROW, guildRow("read"), memberRow("a_writer", "writer", "write"), memberRow("a_scout", "scout", "read")],
+  acol_other: [
+    { type: "agent", id: "a_elsewhere", name: "elsewhere", mode: "write", guild_id: "guild_other", guild_name: "other" },
+  ],
+};
+
 function captureDeps(options: {
   agents?: Array<Record<string, unknown>>;
   task?: string;
   notes?: Array<Record<string, unknown>>;
   collections?: Array<Record<string, unknown>>;
   bindings?: Array<Record<string, unknown>>;
+  access?: Record<string, AccessRow[]>;
   secrets?: Array<Record<string, unknown>>;
   connections?: Array<Record<string, unknown>>;
   servers?: Array<Record<string, unknown>>;
@@ -103,66 +131,18 @@ function captureDeps(options: {
       listMcpCatalogTools: async () => options.tools ?? [],
     } as unknown as Repositories,
     artifacts: {
-      getByDisplayPath: async () => ({ row: { content_text: "Win the inbox." }, tombstone: false }),
+      getByDisplayPath: async (_actor: unknown, displayPath: string) => {
+        const note = (options.notes ?? []).find((item) => item.display_path === displayPath);
+        return note ? { row: { id: note.id } } : {};
+      },
       listCollections: async () =>
         options.collections ?? [
           { id: "acol_seen", name: "seen-mail", purpose: "Dedupe", columns: SEEN_MAIL_COLUMNS },
           { id: "acol_leads", name: "leads", purpose: "Qualified leads", columns: LEADS_COLUMNS },
           { id: "acol_other", name: "other-desk", purpose: "Another guild's table", columns: LEADS_COLUMNS },
         ],
-      accessForGuild: async () => [
-        { collection_id: "acol_seen", name: "seen-mail", purpose: "Dedupe", mode: null },
-        { collection_id: "acol_leads", name: "leads", purpose: "Qualified leads", mode: "read" },
-        { collection_id: "acol_other", name: "other-desk", purpose: "Another guild's table", mode: null },
-      ],
-      listAccess: async (_actor: unknown, collectionId: string) => ({
-        guilds: [],
-        agents:
-          collectionId === "acol_seen"
-            ? [
-                {
-                  id: "a_scout",
-                  name: "scout",
-                  guild_id: "guild_live",
-                  guild_name: "desk",
-                  guild_mode: null,
-                  agent_mode: "write",
-                  effective: "write",
-                },
-              ]
-            : collectionId === "acol_leads"
-              ? [
-                  {
-                    id: "a_writer",
-                    name: "writer",
-                    guild_id: "guild_live",
-                    guild_name: "desk",
-                    guild_mode: "read",
-                    agent_mode: "write",
-                    effective: "write",
-                  },
-                  {
-                    id: "a_scout",
-                    name: "scout",
-                    guild_id: "guild_live",
-                    guild_name: "desk",
-                    guild_mode: "read",
-                    agent_mode: null,
-                    effective: "read",
-                  },
-                ]
-              : [
-                  {
-                    id: "a_elsewhere",
-                    name: "elsewhere",
-                    guild_id: "guild_other",
-                    guild_name: "other",
-                    guild_mode: null,
-                    agent_mode: "write",
-                    effective: "write",
-                  },
-                ],
-      }),
+      listAccess: async (_actor: unknown, target: { kind: string; id: string }) =>
+        (options.access ?? DEFAULT_ACCESS)[target.id] ?? [],
       listEmbeddableNotes: async () =>
         options.notes ?? [
           {
@@ -243,13 +223,13 @@ test("captureGuild writes a portable snapshot from a live guild", async () => {
   assert.equal(JSON.stringify(recipe).includes("lived memory"), false);
   assert.ok(recipe.notes.some((note) => note.key === "playbook.md" && note.body.includes("@{writer}")));
   assert.equal(recipe.version, 2);
-  // reached only through an agent's own grant: captured with guild read and that agent as writer
+  // reached only through an agent's own row: captured with guild read and that agent as writer
   const seenMail = recipe.collections.find((item) => item.name === "seen-mail");
   assert.ok(seenMail);
   assert.equal(seenMail.guild, "read");
   assert.deepEqual(seenMail.writers, ["scout"]);
   assert.deepEqual(seenMail.columns, SEEN_MAIL_COLUMNS);
-  // the guild's own grant is the guild mode; writers are the members with their own write grant
+  // the guild's own row is the guild mode; writers are the members whose own row is write
   const leads = recipe.collections.find((item) => item.name === "leads");
   assert.ok(leads);
   assert.equal(leads.guild, "read");
@@ -260,6 +240,88 @@ test("captureGuild writes a portable snapshot from a live guild", async () => {
   assert.equal(recipe.design.handoffs[0]?.kind, "tagged");
   assert.equal(recipe.design.handoffs[0]?.budget, 12);
   assert.deepEqual(recipe.repositories, []);
+});
+
+test("captureGuild takes the better of the organisation's and the guild's rows as the guild mode", async () => {
+  const recipe = await captureGuild(
+    captureDeps({
+      collections: [
+        { id: "acol_shared", name: "shared", purpose: "Shared desk", columns: LEADS_COLUMNS },
+        { id: "acol_org", name: "org-read", purpose: "Read by the organisation", columns: LEADS_COLUMNS },
+        { id: "acol_org_write", name: "org-write", purpose: "Written by the organisation", columns: LEADS_COLUMNS },
+        { id: "acol_closed", name: "closed", purpose: "Closed desk", columns: LEADS_COLUMNS },
+        { id: "acol_shut", name: "shut", purpose: "Shut to a member", columns: LEADS_COLUMNS },
+      ],
+      access: {
+        acol_shared: [ORG_ROW, guildRow("write"), memberRow("a_scout", "scout", "write")],
+        acol_org: [ORG_ROW],
+        acol_org_write: [{ ...ORG_ROW, mode: "write" }],
+        acol_closed: [],
+        acol_shut: [memberRow("a_scout", "scout", "none")],
+      },
+    }),
+    { guild: GUILD, user: USER },
+  );
+  assert.deepEqual(
+    recipe.collections.map((item) => [item.name, item.guild, item.writers]),
+    [
+      ["shared", "write", []],
+      ["org-read", "read", []],
+      ["org-write", "write", []],
+    ],
+  );
+});
+
+test("captureGuild carries what each note's access list gives the guild and its roles", async () => {
+  const otherGuildRow: AccessRow = {
+    type: "guild",
+    id: "guild_other",
+    name: "other",
+    mode: "write",
+    guild_id: "guild_other",
+    guild_name: "other",
+  };
+  const note = (id: string, level: string, key: string, ownerId = "") => ({
+    id,
+    display_path: `${level}/${key}`,
+    key,
+    kind: "note",
+    level,
+    owner_id: ownerId,
+    content: "Body.",
+  });
+  const recipe = await captureGuild(
+    captureDeps({
+      notes: [
+        note("n_org", "org", "glossary.md"),
+        note("n_open", "org", "open.md"),
+        note("n_guild", "guild", "rules.md", "guild_live"),
+        note("n_map", "agent", "map.md", "a_scout"),
+        note("n_own", "agent", "own.md", "a_writer"),
+      ],
+      access: {
+        n_org: [ORG_ROW, guildRow("write"), otherGuildRow],
+        n_open: [ORG_ROW, memberRow("a_writer", "writer", "write")],
+        n_guild: [guildRow("read"), memberRow("a_scout", "scout", "write")],
+        n_map: [guildRow("read"), memberRow("a_scout", "scout", "write"), memberRow("a_writer", "writer", "write")],
+        n_own: [],
+      },
+    }),
+    { guild: GUILD, user: USER, includeNotes: ["glossary.md", "open.md", "rules.md", "map.md", "own.md"] },
+  );
+  const access = Object.fromEntries(recipe.notes.map((item) => [item.key, [item.guild ?? null, item.writers]]));
+  assert.deepEqual(access, {
+    // the guild's write row on an organisation note; another guild's row stays behind
+    "glossary.md": ["write", []],
+    // the organisation's read row is the guild's mode; a member's own write row makes it a writer
+    "open.md": ["read", ["writer"]],
+    // a guild note is written by its whole guild
+    "rules.md": ["write", []],
+    // the owner reaches its note without a row, so only the other member is a writer
+    "map.md": ["read", ["writer"]],
+    // an agent note nobody else reaches carries no guild mode
+    "own.md": [null, []],
+  });
 });
 
 test("captureGuild lists the guild's repositories by name, without their URLs", async () => {

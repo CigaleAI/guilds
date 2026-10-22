@@ -7,10 +7,10 @@ organisation has one store. Agents read and write it with tools, and
 operators read and edit it in the app.
 
 Each item has a level: the organisation, one guild, or one agent.
-The level says who owns it. Each item also has a display path, a
-text address that names it exactly. The app's **Artifact scope**
-switches set how far an agent reaches into notes at the guild and
-organisation levels ([Notes](notes.md)).
+The level says where it sits. Each item also has a display path, a
+text address that names it exactly. Notes and collections each carry
+an access list that decides which agents read and write them
+([Access](access.md#access-lists-for-notes-and-collections)).
 
 ## Why it exists
 
@@ -47,11 +47,16 @@ flowchart TD
   O --> G --> A
 ```
 
-- **Notes** exist at all three levels. Four grants decide how far an
-  agent reaches beyond its own ([Notes](notes.md#how-far-an-agent-reaches)).
+- **Notes** exist at all three levels. Each note's access list decides
+  who reaches it beyond its owner agent ([Notes](notes.md#how-far-an-agent-reaches)).
 - **Collections** live at the organisation. Some belong to one guild.
-  Collection grants decide who reaches them ([Collections](collections.md#who-reaches-a-collection)).
-- **Memory** and **scripts** belong to one agent.
+  Each collection's access list decides who reaches it ([Collections](collections.md#who-reaches-a-collection)).
+- **Memory** and **scripts** belong to one agent. They have no access
+  list: only that agent and the operators reach them.
+
+The level is placement. A note's level and a collection's guild set
+its display path and where it is listed. The access list alone
+decides who reads and writes it.
 
 ### Agents use tools, never files
 
@@ -148,9 +153,9 @@ One PostgreSQL table, `artifacts`, holds every item. Its `kind` is:
 A collection itself is an `artifact_collections` row, not an
 artifact kind. The live Task is `agents.task`.
 
-Access is checked in the application: the four note grants and the
-collection grants. The database has no row-level security on these
-tables.
+Access is checked in the application, from the `artifact_access`
+rows ([Access](access.md#access-lists)). The database has no
+row-level security on these tables.
 
 ### Display paths
 
@@ -242,7 +247,8 @@ change, in the same transaction as the write:
 | `routine` | a routine is created, edited, paused, resumed, or deleted ([Routines](routines.md#change-log)) |
 | `access` | an organisation, guild, or agent binding is set or removed ([Access](access.md)); platform bindings are not logged |
 | `guild_text` | a guild's about or description changes |
-| `collection` | **Delete all** removes at least one record, a collection is deleted, or a column is renamed or removed |
+| `collection` | **Delete all** removes at least one record, a collection is deleted, a column is renamed or removed, or a row of its access list is added, changed, or removed |
+| `note` | a row of a note's access list is added, changed, or removed ([Access](access.md#access-lists)) |
 
 A write that changes nothing logs nothing.
 
@@ -250,7 +256,7 @@ A write that changes nothing logs nothing.
 |---|---|
 | `id` | the change id (`cchg_…`) |
 | `org_id`, `guild_id`, `agent_id` | where the target sits; the guild and organisation follow from the agent or guild |
-| `target_kind`, `target_id` | the target: a schedule id, a catalog id (tool, connector, or grant), a guild id, or a collection id |
+| `target_kind`, `target_id` | the target: a schedule id, a catalog id (tool or connector), a guild id, a collection id, or a note's artifact id |
 | `operation` | `create`, `update`, or `delete` |
 | `summary` | one line in words, such as `Paused "Morning digest"` |
 | `actor_type`, `actor_id`, `actor_name` | `user`, `agent`, or `run`, and who |
@@ -272,8 +278,8 @@ Code: `apps/orchestrator/src/db/config-changes.ts`.
   50 kept ([Task](task.md)).
 - Previous Memory versions: `memory_revisions`, 50 kept
   ([Memory](memory.md)).
-- Collection grants: `collection_access` rows
-  ([Collections](collections.md)).
+- Access lists of notes and collections: `artifact_access` rows
+  ([Access](access.md#access-lists)).
 - Run transcripts: run rows ([Runs](runs.md)).
 
 `note_find` and `record_search` search the store only. Scripts are

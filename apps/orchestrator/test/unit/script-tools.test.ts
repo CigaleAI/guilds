@@ -3,7 +3,6 @@ import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { agentActor, type ArtifactActor } from "../../src/artifacts/index.js";
-import { DEFAULT_ARTIFACT_GRANTS } from "../../src/artifacts/types.js";
 import { Scripts, scriptItem } from "../../src/scripts/catalog.js";
 import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.js";
 import { scriptSourceHash } from "../../src/scripts/validation.js";
@@ -145,7 +144,6 @@ function toolCtx(
       guildId: "guild_1",
       agentId: "a_1",
       agentName: "agent",
-      grants: DEFAULT_ARTIFACT_GRANTS,
       runId: "r_1",
     }),
     ...(extra.published

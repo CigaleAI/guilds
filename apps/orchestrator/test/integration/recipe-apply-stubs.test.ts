@@ -176,31 +176,26 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     return response.json() as CollectionRow[];
   }
 
-  async function guildAccess(guildId: string): Promise<Array<{ collection_id: string; name: string; mode: string | null }>> {
+  type AccessEntry = { type: string; id: string; name: string; mode: string };
+
+  async function collectionAccess(collectionId: string): Promise<AccessEntry[]> {
     const response = await app.inject({
       method: "GET",
-      url: `/api/guilds/${guildId}/collection-access`,
+      url: `/api/collections/${collectionId}/access`,
       headers: AUTH,
     });
     assert.equal(response.statusCode, 200, response.body);
-    return response.json() as Array<{ collection_id: string; name: string; mode: string | null }>;
+    return (response.json() as { subjects: AccessEntry[] }).subjects;
   }
 
-  async function agentAccess(
-    agentId: string,
-  ): Promise<Array<{ name: string; guild_mode: string | null; agent_mode: string | null; effective: string | null }>> {
-    const response = await app.inject({
-      method: "GET",
-      url: `/api/agents/${agentId}/collection-access`,
-      headers: AUTH,
-    });
+  async function noteAccess(noteId: string): Promise<AccessEntry[]> {
+    const response = await app.inject({ method: "GET", url: `/api/notes/${noteId}/access`, headers: AUTH });
     assert.equal(response.statusCode, 200, response.body);
-    return response.json() as Array<{
-      name: string;
-      guild_mode: string | null;
-      agent_mode: string | null;
-      effective: string | null;
-    }>;
+    return (response.json() as { subjects: AccessEntry[] }).subjects;
+  }
+
+  function modeOf(entries: AccessEntry[], subject: { type: string; id: string }): string | null {
+    return entries.find((entry) => entry.type === subject.type && entry.id === subject.id)?.mode ?? null;
   }
 
   async function applyRecipe(recipeId: string, guildName: string) {
@@ -312,22 +307,22 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.ok(deskReader && deskWriter);
 
     // The first apply created both tables at the organisation with the
-    // recipe's columns and granted the guild and the writer role.
+    // recipe's columns. The organisation's read row already gives the guild
+    // read, so only the guild's write and the writer role's write are added.
     const tablesAfterFirst = await listCollections();
     const seenIds = tablesAfterFirst.find((row) => row.name === "seen-ids");
     const inboxQueue = tablesAfterFirst.find((row) => row.name === "inbox-queue");
     assert.ok(seenIds && inboxQueue);
     assert.deepEqual(inboxQueue.columns, inboxQueueColumns());
-    const deskPodAccess = await guildAccess(completeApply.guild_id);
-    assert.equal(deskPodAccess.find((row) => row.name === "seen-ids")?.mode, "read");
-    assert.equal(deskPodAccess.find((row) => row.name === "inbox-queue")?.mode, "write");
-    const readerCollections = await agentAccess(String(deskReader.id));
-    const writerCollections = await agentAccess(String(deskWriter.id));
-    assert.equal(readerCollections.find((row) => row.name === "seen-ids")?.agent_mode, "write");
-    assert.equal(readerCollections.find((row) => row.name === "seen-ids")?.effective, "write");
-    assert.equal(writerCollections.find((row) => row.name === "seen-ids")?.agent_mode, null);
-    assert.equal(writerCollections.find((row) => row.name === "seen-ids")?.effective, "read");
-    assert.equal(writerCollections.find((row) => row.name === "inbox-queue")?.effective, "write");
+    const deskPod = { type: "guild", id: completeApply.guild_id };
+    const seenIdsAccess = await collectionAccess(seenIds.id);
+    const inboxQueueAccess = await collectionAccess(inboxQueue.id);
+    assert.equal(modeOf(seenIdsAccess, { type: "org", id: "org_home" }), "read");
+    assert.equal(modeOf(seenIdsAccess, deskPod), null);
+    assert.equal(modeOf(inboxQueueAccess, deskPod), "write");
+    assert.equal(modeOf(seenIdsAccess, { type: "agent", id: String(deskReader.id) }), "write");
+    assert.equal(modeOf(seenIdsAccess, { type: "agent", id: String(deskWriter.id) }), null);
+    assert.equal(modeOf(inboxQueueAccess, { type: "agent", id: String(deskWriter.id) }), null);
 
     // A second apply of the same recipe reuses the tables instead of creating them.
     const reusePreview = await previewRecipe(completeId);
@@ -455,6 +450,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
         body: "Skip thread ids already in seen-ids.\n",
         kind: "seed",
         author: operatorAuthor(),
+        writers: [],
       },
       {
         id: "crm-map",
@@ -464,6 +460,18 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
         body: "Map the sender to one CRM person.\n",
         kind: "seed",
         author: operatorAuthor(),
+        guild: "read",
+        writers: ["reader"],
+      },
+      {
+        id: "mixed-glossary",
+        level: "org",
+        key: "mixed-glossary.md",
+        body: "Thread: one mail conversation.\n",
+        kind: "seed",
+        author: operatorAuthor(),
+        guild: "write",
+        writers: [],
       },
     ];
     mixed.roles[0]!.task.body += "\n\n![[guild/desk-rules.md]]";
@@ -499,6 +507,16 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     const mapNote = await artifacts.getByDisplayPath(noteReader, mapPath);
     assert.equal(mapNote.row?.key, "crm-map.md");
     assert.equal(mapNote.row?.path, "");
+    // Each note's access list gains the recipe's guild mode and writers on top of its level's rows.
+    const mixedGuild = { type: "guild", id: mixedApply.guild_id };
+    const mapAccess = await noteAccess(String(mapNote.row?.id));
+    assert.equal(modeOf(mapAccess, mixedGuild), "read");
+    assert.equal(modeOf(mapAccess, { type: "agent", id: String(mixedReader.id) }), "write");
+    assert.equal(modeOf(await noteAccess(String(rulesNote.row?.id)), mixedGuild), "write");
+    const glossary = await artifacts.getByDisplayPath(noteReader, "org/org_home/mixed-glossary.md");
+    const glossaryAccess = await noteAccess(String(glossary.row?.id));
+    assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read");
+    assert.equal(modeOf(glossaryAccess, mixedGuild), "write");
     const mixedReaderBindings = await repo.listBindingsCovering({
       orgId: "org_home",
       guildId: mixedApply.guild_id,
@@ -582,9 +600,9 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal(huskTables.filter((row) => row.name === "inbox-queue").length, 1);
     assert.equal(huskTables.find((row) => row.name === "inbox-queue")?.id, inboxQueue.id);
     assert.deepEqual(huskTables.find((row) => row.name === "inbox-queue")?.columns, inboxQueueColumns());
-    const huskAccess = await guildAccess(huskApply.guild_id);
-    assert.equal(huskAccess.find((row) => row.name === "inbox-queue")?.mode, "write");
-    assert.equal(huskAccess.find((row) => row.name === "seen-ids")?.mode, null);
+    const huskGuild = { type: "guild", id: huskApply.guild_id };
+    assert.equal(modeOf(await collectionAccess(inboxQueue.id), huskGuild), "write");
+    assert.equal(modeOf(await collectionAccess(seenIds.id), huskGuild), null);
     const huskGuildBindings = await repo.listBindingsCovering({
       orgId: "org_home",
       guildId: huskApply.guild_id,

@@ -346,7 +346,7 @@ export function RecordsPanel({ collection }: { collection: Collection }) {
         open={clearing}
         onOpenChange={setClearing}
         title={`Delete every record from ${collection.name}?`}
-        description={`All ${collection.count ?? 0} records go, whatever the search or filters show. The table, its columns and its grants stay; new ids carry on.`}
+        description={`All ${collection.count ?? 0} records go, whatever the search or filters show. The table, its columns and its access list stay; new ids carry on.`}
         confirmLabel="Delete all records"
         confirmText={collection.name}
         onConfirm={() =>

@@ -333,13 +333,7 @@ export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContex
     }
   }
   for (const collection of recipe.collections) {
-    for (const writer of collection.writers) {
-      if (!roles.has(writer)) {
-        findings.push(
-          finding("collection.writer", "error", `collections.${collection.name}`, `unknown writer role ${writer}`),
-        );
-      }
-    }
+    findings.push(...unknownWriterFindings(collection.writers, roles, { code: "collection.writer", path: `collections.${collection.name}` }));
   }
   const noteIds = new Set(recipe.notes.map((note) => note.id));
   const notePaths = new Set(recipe.notes.map((note) => recipeNotePath(note)));
@@ -347,6 +341,7 @@ export function validateMechanical(recipe: RecipeDocument, ctx: ValidationContex
     if (note.role && !roles.has(note.role)) {
       findings.push(finding("note.role", "error", `notes.${note.id}`, "unknown role"));
     }
+    findings.push(...unknownWriterFindings(note.writers, roles, { code: "note.writer", path: `notes.${note.id}` }));
   }
   for (const role of recipe.roles) {
     for (const href of collectTaskEmbeds(role.task.body)) {
@@ -664,6 +659,17 @@ export function validateDesign(recipe: RecipeDocument, ctx: ValidationContext): 
   void producerCron;
   findings.push(...narrownessFindings(recipe));
   return findings;
+}
+
+/** An error for each role of a table's or a note's `writers` that the recipe does not have. */
+function unknownWriterFindings(
+  writers: string[],
+  roles: Set<string>,
+  where: { code: string; path: string },
+): RecipeFinding[] {
+  return writers
+    .filter((writer) => !roles.has(writer))
+    .map((writer) => finding(where.code, "error", where.path, `unknown writer role ${writer}`));
 }
 
 /** The roles whose Task or routines embed or name a note. */

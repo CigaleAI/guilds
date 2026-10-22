@@ -61,14 +61,12 @@ function server(overrides: Partial<McpServerAccess> = {}): McpServerAccess {
   };
 }
 
-test("a target finds its tool, grant, server or server tool", () => {
+test("a target finds its tool, server or server tool", () => {
   const access: AgentAccess = {
     tools: [binding("note_find")],
-    grants: [binding("read_org")],
     mcp: [server()],
   };
   assert.equal(findBinding(access, { kind: "native_tool", id: "note_find" })?.enabled, true);
-  assert.equal(findBinding(access, { kind: "artifact_grant", id: "read_org" })?.enabled, true);
   assert.equal(findBinding(access, { kind: "mcp", id: "mcp_alchemy" })?.enabled, true);
   assert.equal(findBinding(access, { kind: "mcp_tool", id: "alchemy_holdings" })?.enabled, true);
   assert.equal(findBinding(access, { kind: "native_tool", id: "gone" }), undefined);

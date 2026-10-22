@@ -31,6 +31,7 @@ const item = (path: string, overrides: Partial<StateItem> = {}): StateItem => ({
   created_by: "operator",
   created_at: "2026-10-19T10:00:00.000Z",
   collection_id: null,
+  note_id: null,
   ...overrides,
 });
 
@@ -87,8 +88,11 @@ test("a record's path names its table", () => {
   assert.equal(tablePathOf("org/o/guilds/g/rules.md"), null);
 });
 
-test("changes land on their item, records on their table, and table shape changes by id", () => {
-  const items = [item("org/o/guilds/g/rules.md"), item("org/o/collections/leads", { kind: "table", collection_id: "col_1" })];
+test("changes land on their item, records on their table, and config changes on the table or note by id", () => {
+  const items = [
+    item("org/o/guilds/g/rules.md", { note_id: "art_1" }),
+    item("org/o/collections/leads", { kind: "table", collection_id: "col_1" }),
+  ];
   const events = changeEvents(
     [
       { display_path: "org/o/guilds/g/rules.md", operation: "update", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
@@ -96,8 +100,10 @@ test("changes land on their item, records on their table, and table shape change
       { display_path: "org/o/guilds/g/other.md", operation: "update", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
     ],
     [
-      { target_id: "col_1", operation: "update", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
-      { target_id: "col_gone", operation: "delete", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
+      { target_kind: "collection", target_id: "col_1", operation: "update", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
+      { target_kind: "collection", target_id: "col_gone", operation: "delete", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
+      { target_kind: "note", target_id: "art_1", operation: "create", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
+      { target_kind: "note", target_id: "col_1", operation: "delete", actor_type: "user", actor_id: "u", actor_name: "u", created_at: at },
     ],
     { items, agents },
   );
@@ -107,6 +113,7 @@ test("changes land on their item, records on their table, and table shape change
       ["org/o/guilds/g/rules.md", "update", null],
       ["org/o/collections/leads", "delete", "org/o/collections/leads/3"],
       ["org/o/collections/leads", "update", null],
+      ["org/o/guilds/g/rules.md", "create", null],
     ],
   );
 });

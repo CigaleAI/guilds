@@ -13,7 +13,9 @@ import {
   referenceLinks,
   stateListLocation,
   taskPulls,
+  unreachableNames,
   type ReferenceLink,
+  type TaskPull,
 } from "./referencesModel";
 
 /** The selected Task or file: what it pulls in, what pulls it in, and where to open it. */
@@ -122,13 +124,11 @@ function TaskDetail({
       ) : null}
       <Section title="Pulled into every run">
         {pulls.length ? (
-          pulls.map(({ node: pulled, hop, inlined }) => (
+          pulls.map((pull) => (
             <NodeRow
-              key={pulled.id}
-              node={pulled}
-              meta={
-                inlined ? `${labels[hop]} · ${formatSize(pulled.bytes)}` : "Too deep · stays text"
-              }
+              key={pull.node.id}
+              node={pull.node}
+              meta={pullMeta(pull, labels)}
               onSelect={onSelect}
             />
           ))
@@ -145,7 +145,13 @@ function TaskDetail({
   );
 }
 
-/** What a file embeds or names, what embeds or names it, and the prompts it reaches. */
+/** How a Task's run meets a file: inlined at a level, not reachable, or left as text. */
+function pullMeta(pull: TaskPull, labels: string[]): string {
+  if (!pull.inlined) return "Too deep · stays text";
+  if (!pull.reachable) return `${labels[pull.hop]} · not reachable`;
+  return `${labels[pull.hop]} · ${formatSize(pull.node.bytes)}`;
+}
+
 /** What a file embeds or names, what embeds or names it, and which agents' prompts it reaches. */
 export function FileDetail({
   data,
@@ -163,6 +169,13 @@ export function FileDetail({
     <>
       {node.kind === "unresolved" ? (
         <Banner tone="error" title="This link does not resolve" meta={node.reason ?? undefined} />
+      ) : null}
+      {node.unreachable_for.length ? (
+        <Banner
+          tone="error"
+          title="Not reachable for some runs that inline it"
+          meta={unreachableNames(data, node)}
+        />
       ) : null}
       {node.kind === "note" ? (
         <Section title="Embeds or names">

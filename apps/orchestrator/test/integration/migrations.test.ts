@@ -16,12 +16,14 @@ const freshDb = uniqueDbName("agent_platform_migrate_fresh");
 const editionDb = uniqueDbName("agent_platform_migrate_edition");
 const driftDb = uniqueDbName("agent_platform_migrate_drift");
 const cliDb = uniqueDbName("agent_platform_migrate_cli");
+const accessDb = uniqueDbName("agent_platform_migrate_access");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
   await dropIsolatedDatabase(editionDb);
   await dropIsolatedDatabase(driftDb);
   await dropIsolatedDatabase(cliDb);
+  await dropIsolatedDatabase(accessDb);
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
@@ -146,6 +148,70 @@ test("the native CLI migration drops the cli flag from recipe roles, keeping the
     ]);
     assert.equal(migrated.rows[0].body.format, "guilds.recipe");
     assert.deepEqual(migrated.rows[1].body, { roles: [] });
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the access-list migration moves table rows, gives live guild and org items their default rows, and drops note grants", async () => {
+  const pool = await createPool(await createIsolatedDatabase(accessDb));
+  try {
+    const folder = chainBefore("0012_artifact_access");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    const by = "'user', 'user_1', 'operator'";
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_a', 'a', 'org_1', $1, $1), ('guild_b', 'b', 'org_1', $1, $1)",
+      [now],
+    );
+    await pool.query(
+      `INSERT INTO public.artifact_collections (id, org_id, guild_id, name, purpose, created_by_type, created_by_id, created_by_name, created_at, updated_at, deleted_at)
+       VALUES ('acol_org', 'org_1', NULL, 'shared', 'p', ${by}, $1, $1, NULL),
+              ('acol_own', 'org_1', 'guild_a', 'own', 'p', ${by}, $1, $1, NULL),
+              ('acol_gone', 'org_1', 'guild_a', 'gone', 'p', ${by}, $1, $1, $1)`,
+      [now],
+    );
+    await pool.query(
+      `INSERT INTO public.collection_access (id, org_id, collection_id, subject_type, subject_id, mode, created_by_type, created_by_id, created_by_name, created_at)
+       VALUES ('cacc_1', 'org_1', 'acol_org', 'guild', 'guild_b', 'read', ${by}, $1),
+              ('cacc_2', 'org_1', 'acol_gone', 'guild', 'guild_b', 'read', ${by}, $1)`,
+      [now],
+    );
+    const note = (id: string, level: string, owner: string, guild: string | null, deleted: string | null) =>
+      pool.query(
+        `INSERT INTO public.artifacts (id, org_id, level, owner_id, guild_id, kind, key, content_text, content_hash,
+                                       created_by_type, created_by_id, created_by_name, updated_by_type, updated_by_id, updated_by_name,
+                                       created_at, updated_at, deleted_at)
+         VALUES ($1, 'org_1', $2, $3, $4, 'note', $1 || '.md', 'x', 'h', ${by}, ${by}, $5, $5, $6)`,
+        [id, level, owner, guild, now, deleted],
+      );
+    await note("art_guild", "guild", "guild_a", "guild_a", null);
+    await note("art_org", "org", "org_1", null, null);
+    await note("art_deleted", "guild", "guild_a", "guild_a", now);
+    await pool.query(
+      `INSERT INTO public.bindings (id, catalog_kind, catalog_id, scope, scope_id, org_id, enabled, created_at, updated_at)
+       VALUES ('bind_1', 'artifact_grant', 'write_org', 'org', 'org_1', 'org_1', true, $1, $1)`,
+      [now],
+    );
+
+    await applyMigrations(pool);
+    const rows = await pool.query(
+      `SELECT target_kind, target_id, subject_type, subject_id, mode FROM public.artifact_access ORDER BY target_kind, target_id, subject_id`,
+    );
+    assert.deepEqual(rows.rows, [
+      { target_kind: "collection", target_id: "acol_org", subject_type: "guild", subject_id: "guild_b", mode: "read" },
+      { target_kind: "collection", target_id: "acol_org", subject_type: "org", subject_id: "org_1", mode: "read" },
+      { target_kind: "collection", target_id: "acol_own", subject_type: "guild", subject_id: "guild_a", mode: "write" },
+      { target_kind: "note", target_id: "art_guild", subject_type: "guild", subject_id: "guild_a", mode: "write" },
+      { target_kind: "note", target_id: "art_org", subject_type: "org", subject_id: "org_1", mode: "read" },
+    ]);
+    const stamps = await pool.query(
+      `SELECT DISTINCT updated_by_name = created_by_name AND updated_at = created_at AS same FROM public.artifact_access`,
+    );
+    assert.deepEqual(stamps.rows, [{ same: true }]);
+    assert.equal((await pool.query("SELECT to_regclass('public.collection_access') AS name")).rows[0].name, null);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM public.bindings")).rows[0].n, 0);
   } finally {
     await pool.end();
   }

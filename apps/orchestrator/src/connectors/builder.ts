@@ -54,5 +54,5 @@ export function builderGuidance(): string {
 export function storageHint(): string {
   const systems = systemOfRecordNames();
   const examples = systems === "none installed" ? "" : ` such as ${systems}`;
-  return `External workspaces${examples} hold long-lived records the operator already owns (CRM rows, wikis, canonical project tables). Queues, seen-sets, wake state, drafts, playbooks the guild revises, and Memory stay local: notes at organisation, guild, or agent scope, and typed collections at the organisation that the guild or its agents are granted.`;
+  return `External workspaces${examples} hold long-lived records the operator already owns (CRM rows, wikis, canonical project tables). Queues, seen-sets, wake state, drafts, playbooks the guild revises, and Memory stay local: notes at organisation, guild, or agent scope, and typed collections of the guild or of the organisation, each reached through its access list.`;
 }

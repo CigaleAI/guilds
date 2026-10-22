@@ -269,8 +269,10 @@ and `where` on it, and moves the record to the next state with
 
 `scope: "guild"` is for the guild being built, whose agents all read
 and write it. `scope: "org"` is for a collection other guilds can
-share; its access is a grant (see
-[Recipe format](recipe-format.md#collections)).
+share: the whole organisation reads it, and `guild` and `writers` say
+what the new guild and its roles get on its access list (see
+[Recipe format](recipe-format.md#collections)). A seed note takes the
+same `guild` and `writers` (see [Recipe format](recipe-format.md#notes)).
 
 ### Writes
 

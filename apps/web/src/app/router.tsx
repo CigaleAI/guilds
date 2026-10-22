@@ -188,7 +188,7 @@ const guildUsageRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/guild/pages/GuildUsage"), "GuildUsage"),
 });
 
-/** The State tab: files, tables and artifact scope as sub-tabs, one route each. */
+/** The State tab: files and access as sub-tabs, one route each. */
 const guildStateRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "state",
@@ -201,22 +201,16 @@ const guildStateIndexRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/guild/GuildState"), "GuildStateIndex"),
 });
 
-const guildTablesRoute = createRoute({
+const guildAccessRoute = createRoute({
   getParentRoute: () => guildStateRoute,
-  path: "tables",
-  component: lazyRouteComponent(
-    () => import("../features/tables/TableAccessTabs"),
-    "GuildTablesTab",
-  ),
+  path: "access",
+  component: lazyRouteComponent(() => import("../features/guild/GuildAccessTabs"), "GuildReachTab"),
 });
 
-const agentTablesRoute = createRoute({
+const agentAccessRoute = createRoute({
   getParentRoute: () => agentStateRoute,
-  path: "tables",
-  component: lazyRouteComponent(
-    () => import("../features/tables/TableAccessTabs"),
-    "AgentTablesTab",
-  ),
+  path: "access",
+  component: lazyRouteComponent(() => import("../features/agent/AgentAccessTabs"), "AgentReachTab"),
 });
 
 /** `path` opens that note first, by display path. */
@@ -231,30 +225,12 @@ const guildFilesRoute = createRoute({
   validateSearch: parseFileSearch,
 });
 
-const guildArtifactsRoute = createRoute({
-  getParentRoute: () => guildStateRoute,
-  path: "artifacts",
-  component: lazyRouteComponent(
-    () => import("../features/guild/GuildAccessTabs"),
-    "GuildArtifactScope",
-  ),
-});
-
 const agentScriptsRoute = createRoute({
   getParentRoute: () => agentStateRoute,
   path: "scripts",
   component: lazyRouteComponent(
     () => import("../features/agent/scripts/AgentScripts"),
     "AgentScripts",
-  ),
-});
-
-const agentArtifactsRoute = createRoute({
-  getParentRoute: () => agentStateRoute,
-  path: "artifacts",
-  component: lazyRouteComponent(
-    () => import("../features/agent/AgentAccessTabs"),
-    "AgentArtifactScope",
   ),
 });
 
@@ -337,7 +313,7 @@ const agentPromptRoute = createRoute({
   ),
 });
 
-/** The State tab: memory, notes, tables, scripts and artifact scope as sub-tabs, one route each. */
+/** The State tab: memory, notes, access and scripts as sub-tabs, one route each. */
 const agentStateRoute = createRoute({
   getParentRoute: () => agentRoute,
   path: "state",
@@ -432,12 +408,7 @@ export const router = createRouter({
     guildRoute.addChildren([
       guildChatRoute,
       guildSettingsRoute,
-      guildStateRoute.addChildren([
-        guildStateIndexRoute,
-        guildFilesRoute,
-        guildTablesRoute,
-        guildArtifactsRoute,
-      ]),
+      guildStateRoute.addChildren([guildStateIndexRoute, guildFilesRoute, guildAccessRoute]),
       guildRoutinesRoute,
       guildIssuesRoute,
       guildUsageRoute,
@@ -450,9 +421,8 @@ export const router = createRouter({
           agentStateIndexRoute,
           agentMemoryRoute,
           agentNotesRoute,
-          agentTablesRoute,
+          agentAccessRoute,
           agentScriptsRoute,
-          agentArtifactsRoute,
         ]),
         agentHistoryRoute,
         agentRoutineRoute,

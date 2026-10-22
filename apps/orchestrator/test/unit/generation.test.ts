@@ -5,7 +5,8 @@ import path from "node:path";
 import { after, describe, test } from "node:test";
 import { DeliveryBusyError } from "../../src/groupchat/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
-import { operatorActor } from "../../src/artifacts/index.js";
+import { ArtifactError, operatorActor } from "../../src/artifacts/index.js";
+import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import * as generationMod from "../../src/generation/index.js";
 import { PolicyError } from "../../src/policy/index.js";
 import {
@@ -989,8 +990,6 @@ describe("generation", { concurrency: 1 }, () => {
     assert.equal(state.max_tool_calls, 50);
     assert.deepEqual((state.group as { members: unknown }).members, [{ name: "researcher" }]);
     assert.deepEqual((state.group as { history: unknown }).history, []);
-    assert.deepEqual(state.readable_levels, ["agent", "guild", "org"]);
-    assert.deepEqual(state.writable_levels, ["agent", "guild"]);
     assert.deepEqual(state.collections, []);
     assert.ok(!("shared" in state));
     assert.ok(!("notes" in state));
@@ -2412,6 +2411,37 @@ describe("generation", { concurrency: 1 }, () => {
         return true;
       },
     );
+  });
+
+  test("hydrate_inlines_task_embeds_as_the_agent_and_marks_what_it_cannot_read", async () => {
+    const { notes, tmp } = await seededLoop();
+    const rules = "org/org_1/guilds/guild_1/rules.md";
+    const shut = "org/org_1/shut.md";
+    const readers: boolean[] = [];
+    const artifacts = {
+      async getByDisplayPath(actor: { operator: boolean }, href: string) {
+        readers.push(actor.operator);
+        if (actor.operator || href === rules) {
+          return { row: { kind: "note", level: "guild", key: "rules.md", content_text: "Cite sources." } };
+        }
+        throw new ArtifactError("artifact not found", 404);
+      },
+      async readMemory() {
+        return "";
+      },
+    };
+    const loop = makeLoop(new FakeDB({}), notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
+      artifacts: artifacts as never,
+    });
+    const [, task] = await loop._hydrate({
+      id: "a_1",
+      guild_id: "guild_1",
+      org_id: "org_1",
+      name: "researcher",
+      task: `![[${rules}]] then ![[${shut}]]`,
+    });
+    assert.equal(task, `<rules path="${rules}" level="guild">\nCite sources.\n</rules> then ${unreachableMarker(shut)}`);
+    assert.deepEqual(readers, [false, false]);
   });
 
   test("event bus drops stalled subscribers", async () => {

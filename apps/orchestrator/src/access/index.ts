@@ -1,4 +1,3 @@
-import { ARTIFACT_GRANT_IDS } from "../artifacts/types.js";
 import { NATIVE_TOOLS } from "../db/seed/catalog.js";
 import { visibleAt } from "../credentials/visibility.js";
 import { oauthSetupState } from "../oauth/index.js";
@@ -43,7 +42,7 @@ export const BROWSER_TOOLS = [
   "browser_eval",
 ] as const;
 export const ACCESS_NATIVE_TOOLS = NATIVE_TOOLS;
-export const CATALOG_KINDS = ["native_tool", "mcp", "mcp_tool", "artifact_grant"] as const;
+export const CATALOG_KINDS = ["native_tool", "mcp", "mcp_tool"] as const;
 export const SCOPES = ["platform", "org", "guild", "agent"] as const;
 
 export class BindingError extends Error {
@@ -92,7 +91,7 @@ export function validateScope(
 
 export function validateCatalog(catalogKind: string, catalogId: string): [string, string] {
   if (!(CATALOG_KINDS as readonly string[]).includes(catalogKind)) {
-    throw new BindingError("catalog_kind must be native_tool, mcp, mcp_tool, or artifact_grant");
+    throw new BindingError("catalog_kind must be native_tool, mcp, or mcp_tool");
   }
   if (typeof catalogId !== "string" || !catalogId.trim()) {
     throw new BindingError("catalog_id is required");
@@ -107,11 +106,6 @@ export function validateCatalog(catalogKind: string, catalogId: string): [string
     }
     if (!(NATIVE_TOOLS as readonly string[]).includes(id)) {
       throw new BindingError(`unknown native tool: ${id}`);
-    }
-  }
-  if (catalogKind === "artifact_grant") {
-    if (!(ARTIFACT_GRANT_IDS as readonly string[]).includes(id)) {
-      throw new BindingError("unknown artifact grant");
     }
   }
   return [catalogKind, id];
@@ -131,7 +125,7 @@ export function validateBinding(args: {
 }): Overlay {
   const [catalogKind, catalogId] = validateCatalog(args.catalogKind, args.catalogId);
   const [scope, scopeId] = validateScope(args.scope, args.scopeId);
-  if (catalogKind === "native_tool" || catalogKind === "mcp_tool" || catalogKind === "artifact_grant") {
+  if (catalogKind === "native_tool" || catalogKind === "mcp_tool") {
     return {
       catalog_kind: catalogKind,
       catalog_id: catalogId,
@@ -281,27 +275,6 @@ export function resolvedTools(
   );
 }
 
-export function resolvedGrants(
-  rows: Array<Record<string, unknown>>,
-  options: {
-    orgId?: string | null | undefined;
-    guildId?: string | null | undefined;
-    agentId?: string | null | undefined;
-    viewScope?: string | undefined;
-  } = {},
-): Resolved[] {
-  return ARTIFACT_GRANT_IDS.map((id) => resolveItem(rows, "artifact_grant", id, options));
-}
-
-export function grantView(item: Resolved): Record<string, unknown> {
-  return {
-    name: item.catalog_id,
-    enabled: item.enabled,
-    source_scope: item.source_scope,
-    overlay: item.overlay === null ? null : { enabled: item.overlay.enabled },
-  };
-}
-
 export function enabledToolNames(items: Resolved[]): string[] {
   return items.filter((item) => item.enabled).map((item) => item.catalog_id);
 }
@@ -424,7 +397,6 @@ export function accessPayload(args: {
     viewScope: args.viewScope,
   };
   const tools = resolvedTools(args.rows, options).map(toolView);
-  const grants = resolvedGrants(args.rows, options).map(grantView);
   const byConnection = new Map<string, Record<string, unknown>>();
   for (const connection of args.connections ?? []) {
     byConnection.set(String(connection.id), connection);
@@ -439,5 +411,5 @@ export function accessPayload(args: {
         : [];
     return mcpView(item, server, connection, { tools: listed });
   });
-  return { tools, grants, mcp };
+  return { tools, mcp };
 }

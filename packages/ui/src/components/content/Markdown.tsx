@@ -348,7 +348,7 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children"> & {
   tone?: MarkdownTone;
   /** Opens an embedded note or table; embeds render as buttons when set. */
   onOpenEmbed?: (path: string) => void;
-  /** Marks embeds whose path no longer resolves. */
+  /** Marks embeds that are not reachable. */
   isBrokenEmbed?: (path: string) => boolean;
   /** Handles the message tagged; their `@handle` shows as a mention chip. */
   mentions?: readonly string[];

@@ -48,8 +48,8 @@ name.
 - Compact learned continuity belongs in Memory. Rewrite it when a wake
   changed how the next wake should act.
 - Playbooks, watchlists, and other files that change future behavior belong
-  in named agent-level notes, or in organisation collections the guild or the
-  agent is granted, that the Task points at. A collection is a typed table
+  in named agent-level notes, or in organisation collections whose access
+  list gives the guild or the agent read or write, that the Task points at. A collection is a typed table
   with operator-defined columns; agents write records, never the columns.
   Agents do not rewrite Task.
 - Wake-specific work belongs in a routine instruction.
@@ -68,13 +68,18 @@ is ordinary text. The only hydrated include is a Task embed:
 
 `![[display-path]]`
 
-Hydration is depth 2, as the operator, with a 64 KB budget. The first
-embed of a path is replaced in place by the note body. A later embed of
-the same path becomes the note title. A collection path
+Hydration is depth 2, as the agent, with a 64 KB budget. An embed
+resolves only to a note or collection whose access list gives the agent,
+its guild, or the organisation read or write. The first embed of a note
+is replaced in place by the note body. A later embed of the same path
+becomes the note title. A collection path
 (`org/<org_id>/collections/<name>`) becomes the table name; it does not
 inline records or schema. `![[…]]` markers inside those note bodies
-expand one more hop; a third hop stays text. Inlining does not grant
-`note_get`.
+expand one more hop; a third hop stays text. Any other embed, whether
+missing, deleted, out of the agent's reach, or not a note or collection
+path, becomes
+`<unreachable path="…" message="This file is not reachable." />` and the
+run still starts.
 
 Use an embed when every wake of a role must see a stable file (its own
 rules, or rules every role that embeds it uses, such as house style) and

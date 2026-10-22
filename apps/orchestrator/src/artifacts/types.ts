@@ -6,30 +6,6 @@ export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];
 export const ARTIFACT_KINDS = ["note", "object", "memory", "script"] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 
-export const ARTIFACT_GRANT_IDS = ["read_guild", "read_org", "write_guild", "write_org"] as const;
-
-/** The four note grants. Collections are not governed by them. */
-export type ArtifactGrants = {
-  readGuild: boolean;
-  readOrg: boolean;
-  writeGuild: boolean;
-  writeOrg: boolean;
-};
-
-export const DEFAULT_ARTIFACT_GRANTS: ArtifactGrants = {
-  readGuild: true,
-  readOrg: true,
-  writeGuild: true,
-  writeOrg: false,
-};
-
-export const OPERATOR_GRANTS: ArtifactGrants = {
-  readGuild: true,
-  readOrg: true,
-  writeGuild: true,
-  writeOrg: true,
-};
-
 /** The private guilds of the organisation an operator does not operate, with their agents. */
 export type HiddenGuilds = { guildIds: readonly string[]; agentIds: readonly string[] };
 
@@ -43,20 +19,23 @@ export type ArtifactActor = ChangeActor & {
   operator: boolean;
   /** What an operator actor never reaches: the notes, Memory, and own tables of these guilds and agents. */
   hidden: HiddenGuilds;
-  grants: ArtifactGrants;
 };
 
 /**
- * A collection grant. A guild row is the base mode for its members; an agent
- * row overrides that base for one agent and may lower it, `none` meaning no
- * access at all.
+ * One row of an item's access list. An org or guild row gives every agent in
+ * it a mode; an agent row replaces that for one agent and may lower it,
+ * `none` meaning no access at all.
  */
 export const ACCESS_MODES = ["read", "write"] as const;
 export type AccessMode = (typeof ACCESS_MODES)[number];
 export const AGENT_ACCESS_MODES = ["none", "read", "write"] as const;
 export type AgentAccessMode = (typeof AGENT_ACCESS_MODES)[number];
-export const ACCESS_SUBJECTS = ["guild", "agent"] as const;
+export const ACCESS_SUBJECTS = ["org", "guild", "agent"] as const;
 export type AccessSubject = (typeof ACCESS_SUBJECTS)[number];
+/** What carries an access list: a note or a collection. */
+export const ACCESS_TARGETS = ["note", "collection"] as const;
+export type AccessTargetKind = (typeof ACCESS_TARGETS)[number];
+export type AccessTarget = { kind: AccessTargetKind; id: string };
 
 export const WRITE_MAX_BYTES = 256 * 1024;
 export const LIVE_ARTIFACTS_MAX = 10_000;
@@ -93,10 +72,10 @@ export function isAccessSubject(value: unknown): value is AccessSubject {
   return typeof value === "string" && (ACCESS_SUBJECTS as readonly string[]).includes(value);
 }
 
-/** `write` implies `read`; a missing grant is no access. */
 /**
  * The mode an agent ends up with: its own row when it has one, `none` meaning
- * no access, otherwise the base its guild gives it.
+ * no access, otherwise the base its guild and organisation rows give it.
+ * `write` implies `read`; no row is no access.
  */
 export function resolveAccess(base: AccessMode | null, override: AgentAccessMode | null): AccessMode | null {
   if (override === null || override === undefined) {

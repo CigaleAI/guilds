@@ -28,7 +28,6 @@ import {
   bindingOrigin,
   canResetFirst,
   findBinding,
-  grantLabel,
   isCapabilityNativeTool,
   nativeToolDisplay,
   toolFamilyGroups,
@@ -41,13 +40,12 @@ import { OrgServerDialog } from "./OrgServerDialog";
 import { scopeCopy } from "./scopeCopy";
 import { ServerCard } from "./ServerCard";
 
-type ToolsPane = "builtin" | "connections" | "artifacts";
+type ToolsPane = "builtin" | "connections";
 
-const allPanes: readonly ToolsPane[] = ["connections", "builtin", "artifacts"];
+const allPanes: readonly ToolsPane[] = ["connections", "builtin"];
 const paneOptions: { value: ToolsPane; label: string }[] = [
   { value: "connections", label: "Integrations" },
   { value: "builtin", label: "Native tools" },
-  { value: "artifacts", label: "Artifact scope" },
 ];
 
 function Pane({
@@ -73,8 +71,7 @@ function connectable<T extends { slug: string }>(servers: T[], _owner: AccessOwn
 }
 
 /**
- * What a scope's agents can use: integrations, native tools, and how far they reach into notes
- * and tables. Each switch sets the scope's own binding over what it inherits from wider scopes,
+ * What a scope's agents can use: integrations and native tools. Each switch sets the scope's own binding over what it inherits from wider scopes,
  * organisation and the platform; runs take the tools as they are when they start.
  */
 export function AccessTools({
@@ -86,7 +83,7 @@ export function AccessTools({
 }: {
   owner: AccessOwner;
   hideFamilies?: string[];
-  /** Which of the three sections to show. */
+  /** Which of the two sections to show. */
   panes?: readonly ToolsPane[];
   /** Agent capabilities that gate browser and coding tools. */
   capabilities?: AgentNativeCapabilities;
@@ -161,17 +158,16 @@ export function AccessTools({
     );
   }
 
-  const { tools, grants, mcp } = access.data;
+  const { tools, mcp } = access.data;
   const bindingCount = bindingsOfLogin.data?.bindings?.length;
 
-  const renderBinding = (item: AccessBinding, target: BindingTarget, description?: string) => {
+  const renderBinding = (item: AccessBinding, target: BindingTarget) => {
     const origin = bindingOrigin(item, owner.scope);
     const display = nativeToolDisplay(item, owner.scope, capabilities, instance.data);
     return (
       <ToolRow
         key={item.name}
         name={item.name}
-        {...(description ? { description } : {})}
         enabled={display.enabled}
         {...(display.caption ? { caption: display.caption } : {})}
         {...(display.bindable && item.source_scope ? { source: item.source_scope } : {})}
@@ -207,12 +203,10 @@ export function AccessTools({
 
   return (
     <Frame>
-      {panes.some((item) => item !== "artifacts") ? (
-        <p className="text-sm text-fg-2">
-          {copy.switchesIntro} A run starts with the tools of that moment. Turning a tool off drops
-          it from later turns.
-        </p>
-      ) : null}
+      <p className="text-sm text-fg-2">
+        {copy.switchesIntro} A run starts with the tools of that moment. Turning a tool off drops it
+        from later turns.
+      </p>
 
       {switcher ? (
         <Segmented
@@ -269,7 +263,7 @@ export function AccessTools({
             <OrgServerDialog orgId={owner.id} open={adding} onClose={() => setAdding(false)} />
           ) : null}
         </Pane>
-      ) : pane === "builtin" ? (
+      ) : (
         <Pane
           title="Native tools"
           description="Notes, tables, memory, scripts, routines, group chat and secrets, served by the orchestrator; browser and coding follow the agent's capabilities. No login to connect."
@@ -289,21 +283,6 @@ export function AccessTools({
                   )}
                 </NativeFamily>
               ))}
-          </div>
-        </Pane>
-      ) : (
-        <Pane
-          title="Artifact scope"
-          description="How far agents may read and write notes and tables beyond their own, which they can always read and write. Guild means the agent's own guild."
-        >
-          <div className="flex flex-col overflow-hidden rounded-xl bg-surface">
-            {grants.map((grant) =>
-              renderBinding(
-                grant,
-                { kind: "artifact_grant", id: grant.name },
-                grantLabel[grant.name],
-              ),
-            )}
           </div>
         </Pane>
       )}

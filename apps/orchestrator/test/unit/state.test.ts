@@ -62,8 +62,6 @@ test("collect_run_state matches the R0 fixture", () => {
         parameters: { type: "object" },
       },
     ],
-    readableLevels: ["agent", "guild", "org"],
-    writableLevels: ["agent", "guild"],
     now: new Date("2026-09-13T09:00:12.000Z"),
   });
   assert.deepEqual(state, fixture.state);

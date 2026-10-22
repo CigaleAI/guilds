@@ -4,7 +4,6 @@ import { newId } from "../../lib/ids.js";
 import {
   DROPPED_MCP_SERVERS,
   DROPPED_NATIVE_TOOLS,
-  PLATFORM_ARTIFACT_GRANTS,
   PLATFORM_NATIVE_TOOLS,
 } from "./catalog.js";
 import { installedConnectors } from "../../connectors/index.js";
@@ -120,24 +119,6 @@ export async function seedSystem(pool: pg.Pool, now = new Date()): Promise<void>
       )
       `,
       [newId("bind"), catalogId, timestamp],
-    );
-  }
-  for (const grant of PLATFORM_ARTIFACT_GRANTS) {
-    await pool.query(
-      `
-      INSERT INTO bindings (
-        id, catalog_kind, catalog_id, scope, scope_id, enabled,
-        connection_id, created_at, updated_at
-      )
-      SELECT $1, 'artifact_grant', $2, 'platform', NULL, $4, NULL, $3, $3
-      WHERE NOT EXISTS (
-        SELECT 1 FROM bindings
-        WHERE catalog_kind = 'artifact_grant'
-          AND catalog_id = $2
-          AND scope = 'platform'
-      )
-      `,
-      [newId("bind"), grant.id, timestamp, grant.enabled],
     );
   }
 }

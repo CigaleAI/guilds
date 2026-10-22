@@ -4,6 +4,7 @@ import { cn, Icon } from "@guildsrun/ui";
 import type { ReferenceEdgeStatus, ReferenceNodeKind, StudioReferences } from "../../../api/types";
 import { useWidth } from "../activity/parts";
 import {
+  isBroken,
   isOverBudget,
   layoutReferences,
   litIds,
@@ -148,7 +149,7 @@ function ReferenceBox({
   onSelect: () => void;
 }) {
   const { node } = placed;
-  const failing = node.kind === "unresolved" || isOverBudget(node, data.budget);
+  const failing = isBroken(node) || isOverBudget(node, data.budget);
   return (
     <button
       type="button"

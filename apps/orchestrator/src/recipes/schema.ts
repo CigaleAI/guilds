@@ -5,7 +5,7 @@ import { NAME_RE } from "../lib/names.js";
 import { parseColumns, type CollectionColumn } from "../artifacts/columns.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";
-import { COLLECTION_NAME_RE, PURPOSE_MAX, type AccessMode } from "../artifacts/types.js";
+import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode, type AccessMode } from "../artifacts/types.js";
 import type { WakeWindow } from "../schedules/window.js";
 import { RecipeError } from "./errors.js";
 import { loadManifest, ManifestError, recipeManifestProblem, type Manifest } from "../connectors/manifest.js";
@@ -167,7 +167,6 @@ export type RecipeRole = {
   task: { body: string; embeds: string[]; author: FieldAuthor };
   scripts: RecipeScript[];
   schedules: RecipeSchedule[];
-  grants: { read_guild: boolean; write_guild: boolean; read_org: boolean; write_org: boolean };
   native_tools: Record<string, boolean>;
   browser: { required: boolean; instructions: string; author: FieldAuthor };
 };
@@ -192,20 +191,26 @@ export type RecipeSchedule = {
 };
 
 /**
- * A typed table at the organisation. Apply creates it with these columns or
- * reuses a live table of the same name, grants the new guild `guild`, and grants
- * each `writers` role's agent `write`.
+ * A typed table of the applied guild or of the organisation. Apply creates it
+ * with these columns or reuses a live table of the same name, then raises the
+ * new guild's mode on its access list to `guild` and each `writers` role's
+ * agent to `write`.
  */
 export type RecipeCollection = {
   name: string;
   purpose: string;
   columns: CollectionColumn[];
-  /** `guild`: the applied guild owns it. `org`: the organisation holds it and `guild` is the grant. */
+  /** `guild`: the applied guild owns it. `org`: the organisation holds it and `guild` is the guild's mode on it. */
   scope: "guild" | "org";
   guild: AccessMode;
   writers: string[];
 };
 
+/**
+ * A seed note. Its access is shaped like a table's: `guild` is the mode every
+ * agent of the applied guild gets on it and `writers` the roles whose agents
+ * write it, both beyond the rows the note starts with at its level.
+ */
 export type RecipeNote = {
   id: string;
   level: "org" | "guild" | "agent";
@@ -215,6 +220,9 @@ export type RecipeNote = {
   body: string;
   kind: "seed";
   author: FieldAuthor;
+  /** Absent on an agent note the guild does not reach. */
+  guild?: AccessMode;
+  writers: string[];
 };
 
 export type RecipeConnectionResource = {
@@ -505,7 +513,6 @@ function parseRole(value: unknown, index: number): RecipeRole {
       "task",
       "scripts",
       "schedules",
-      "grants",
       "native_tools",
       "browser",
     ],
@@ -532,8 +539,6 @@ function parseRole(value: unknown, index: number): RecipeRole {
   const embeds = Array.isArray(taskRaw.embeds)
     ? taskRaw.embeds.map((item, embedIndex) => asString(item, `${path}.task.embeds[${embedIndex}]`))
     : [];
-  const grantsRaw = record.grants === undefined ? {} : assertObject(record.grants, `${path}.grants`);
-  assertKeys(grantsRaw, ["read_guild", "write_guild", "read_org", "write_org"], `${path}.grants`);
   const browserRaw = record.browser === undefined ? {} : assertObject(record.browser, `${path}.browser`);
   assertKeys(browserRaw, ["required", "instructions", "author"], `${path}.browser`);
   const instructions = asString(browserRaw.instructions, `${path}.browser.instructions`);
@@ -563,12 +568,6 @@ function parseRole(value: unknown, index: number): RecipeRole {
     schedules: Array.isArray(record.schedules)
       ? record.schedules.map((item, scheduleIndex) => parseSchedule(item, `${path}.schedules[${scheduleIndex}]`))
       : [],
-    grants: {
-      read_guild: asBool(grantsRaw.read_guild, `${path}.grants.read_guild`, true),
-      write_guild: asBool(grantsRaw.write_guild, `${path}.grants.write_guild`, true),
-      read_org: asBool(grantsRaw.read_org, `${path}.grants.read_org`, true),
-      write_org: asBool(grantsRaw.write_org, `${path}.grants.write_org`, false),
-    },
     native_tools: parseBoolMap(record.native_tools, `${path}.native_tools`),
     browser: {
       required,
@@ -674,20 +673,93 @@ function parseCollection(value: unknown, index: number): RecipeCollection {
   if (scope === "guild" && guild !== "write") {
     throw new RecipeError(`${path}.guild must be write when scope is guild: every agent in the guild writes its own table`);
   }
-  if (row.writers !== undefined && !Array.isArray(row.writers)) {
-    throw new RecipeError(`${path}.writers must be an array of role names`);
-  }
-  const writers: string[] = [];
-  for (const [writerIndex, writer] of (row.writers ?? []).entries()) {
-    const role = asString(writer, `${path}.writers[${writerIndex}]`).trim();
-    if (role && !writers.includes(role)) {
-      writers.push(role);
-    }
-  }
+  const writers = parseWriters(row.writers, `${path}.writers`);
   if (scope === "guild" && writers.length) {
     throw new RecipeError(`${path}.writers is empty when scope is guild: every agent in the guild already writes its own table`);
   }
   return { name, purpose, columns, scope, guild, writers };
+}
+
+/** The role names of a `writers` list, trimmed and without repeats. */
+function parseWriters(value: unknown, path: string): string[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new RecipeError(`${path} must be an array of role names`);
+  }
+  const roles = value.map((writer, index) => asString(writer, `${path}[${index}]`).trim());
+  return [...new Set(roles.filter(Boolean))];
+}
+
+const NOTE_LEVELS: readonly RecipeNote["level"][] = ["org", "guild", "agent"];
+
+function parseNoteLevel(value: unknown, path: string): RecipeNote["level"] {
+  const level = asString(value, path);
+  if (!(NOTE_LEVELS as readonly string[]).includes(level)) {
+    throw new RecipeError(`${path} must be org, guild, or agent`);
+  }
+  return level as RecipeNote["level"];
+}
+
+/** The mode a note's level gives the guild when the recipe names none. */
+const NOTE_GUILD_DEFAULT: Record<RecipeNote["level"], AccessMode | undefined> = {
+  org: "read",
+  guild: "write",
+  agent: undefined,
+};
+
+function parseNoteGuild(value: unknown, level: RecipeNote["level"], path: string): AccessMode | undefined {
+  const guild = value === undefined ? NOTE_GUILD_DEFAULT[level] : value;
+  if (guild === undefined || isAccessMode(guild)) {
+    return guild;
+  }
+  throw new RecipeError(`${path} must be read or write`);
+}
+
+/** A guild note is written by every agent of its guild: it takes `guild: "write"` and no writers. */
+function assertGuildNoteAccess(guild: AccessMode | undefined, writers: string[], path: string): void {
+  if (guild !== "write" || writers.length) {
+    throw new RecipeError(`${path} takes guild write and no writers: every agent in the guild already writes a guild note`);
+  }
+}
+
+/** A note's `guild` and `writers`, defaulting `guild` to what the note's level gives. */
+function parseNoteAccess(
+  row: Record<string, unknown>,
+  level: RecipeNote["level"],
+  path: string,
+): Pick<RecipeNote, "guild" | "writers"> {
+  const guild = parseNoteGuild(row.guild, level, `${path}.guild`);
+  const writers = parseWriters(row.writers, `${path}.writers`);
+  if (level === "guild") {
+    assertGuildNoteAccess(guild, writers, path);
+  }
+  return guild === undefined ? { writers } : { guild, writers };
+}
+
+function parseNote(item: unknown, index: number): RecipeNote {
+  const path = `notes[${index}]`;
+  const row = assertObject(item, path);
+  assertKeys(row, ["id", "level", "role", "key", "body", "kind", "author", "guild", "writers"], path);
+  const body = asString(row.body, `${path}.body`);
+  if (byteLen(body) > RECIPE_NOTE_MAX_BYTES) {
+    throw new RecipeError(`${path}.body exceeds ${RECIPE_NOTE_MAX_BYTES} bytes`);
+  }
+  const level = parseNoteLevel(row.level, `${path}.level`);
+  const note: RecipeNote = {
+    id: asString(row.id, `${path}.id`, `note-${index + 1}`),
+    level,
+    key: parseNoteKey(row.key, `${path}.key`),
+    body,
+    kind: "seed",
+    author: parseAuthor(row.author, operatorAuthor()),
+    ...parseNoteAccess(row, level, path),
+  };
+  if (row.role) {
+    note.role = asString(row.role, `${path}.role`);
+  }
+  return note;
 }
 
 function parseDecision(record: Record<string, unknown>, path: string): DesignDecision {
@@ -841,30 +913,7 @@ export function parseRecipe(input: unknown): RecipeDocument {
     }
     collectionNames.add(collection.name);
   }
-  const notes: RecipeNote[] = notesRaw.map((item, index) => {
-    const row = assertObject(item, `notes[${index}]`);
-    assertKeys(row, ["id", "level", "role", "key", "body", "kind", "author"], `notes[${index}]`);
-    const body = asString(row.body, `notes[${index}].body`);
-    if (byteLen(body) > RECIPE_NOTE_MAX_BYTES) {
-      throw new RecipeError(`notes[${index}].body exceeds ${RECIPE_NOTE_MAX_BYTES} bytes`);
-    }
-    const level = asString(row.level, `notes[${index}].level`);
-    if (level !== "org" && level !== "guild" && level !== "agent") {
-      throw new RecipeError(`notes[${index}].level must be org, guild, or agent`);
-    }
-    const note: RecipeNote = {
-      id: asString(row.id, `notes[${index}].id`, `note-${index + 1}`),
-      level,
-      key: parseNoteKey(row.key, `notes[${index}].key`),
-      body,
-      kind: "seed",
-      author: parseAuthor(row.author, operatorAuthor()),
-    };
-    if (row.role) {
-      note.role = asString(row.role, `notes[${index}].role`);
-    }
-    return note;
-  });
+  const notes: RecipeNote[] = notesRaw.map(parseNote);
   const connections = connectionsRaw.map((item, index) => {
     const row = assertObject(item, `connections[${index}]`);
     assertKeys(

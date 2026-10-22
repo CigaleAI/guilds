@@ -80,8 +80,8 @@ function ReferencesBody({
           onSelect={onSelect}
         />
         <p className="text-xs text-muted">
-          A solid line is an embed, a dotted line a path named in the text. Red does not resolve;
-          ochre stays text because a run does not inline that deep.
+          A solid line is an embed, a dotted line a path named in the text. Red is not reachable for
+          a run that inlines it; ochre stays text because a run does not inline that deep.
         </p>
         {view.deeper.length ? (
           <ReferenceSection title="Deeper than the map">

@@ -79,7 +79,6 @@ from spending its first tool calls on looking around. It holds:
 - the members and the operators
 - up to 10 recent public group-chat messages
   ([Group chat](group-chat.md#delivery))
-- the note levels the agent may read and write
 - the collections the agent can read, with their columns
 - the agent's scripts
 - the names of the secrets the agent has, never their values
@@ -142,7 +141,8 @@ The Guidelines teach a few habits every agent shares:
 | Notes in State | not listed |
 | A connector's State hook | 5 seconds for all hooks together; 32,000 bytes at most per key |
 | Missing Guidelines template | the agent stays visible but cannot start a run |
-| A broken embed in the Task | the agent cannot start a run ([Task](task.md)) |
+| An embed the agent cannot reach | the run starts, with a marker in its place ([Task](task.md#an-embed-the-agent-cannot-reach)) |
+| More than 64 KB of embedded text | the agent cannot start a run ([Task](task.md)) |
 
 ## Reference
 
@@ -202,8 +202,8 @@ without its tags, when the condition holds, and removed otherwise:
 | `no_memory` | `memory` is off |
 | `memory_write` | `memory` is on and the run offers `memory_write` |
 
-Without note tools, the State intro also drops the note levels and
-the line about searching notes. Without scripts, it drops the
+Without note tools, the State intro also drops the line about
+searching notes. Without scripts, it drops the
 `scripts` explanation.
 
 ### State keys
@@ -217,8 +217,7 @@ the line about searching notes. Without scripts, it drops the
 | `group.operators` | the guild's operators: `name` and `role` ([Operators](operators.md)) |
 | `group.history` | up to 10 public rows, each with `sentBy`: the last 10, or the 10 the group router keeps from the last 40 ([Group chat](group-chat.md#delivery)) |
 | `group.about`, `group.description` | the guild's short and long description, when set |
-| `readable_levels`, `writable_levels` | the note levels the four grant bindings allow ([Notes](notes.md)) |
-| `collections` | every collection the agent is granted, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
+| `collections` | every collection the agent can read, capped at 50: `name`, `purpose`, `access`, `scope`, `display_path`, `columns`; past the cap one more entry carries `truncated: true` ([Collections](collections.md)) |
 | `scripts` | the script catalog ([Scripts](scripts.md)) |
 | `environment` | bound secret names with descriptions ([Secrets](secrets.md)) |
 | `repositories` | a coding agent's guild repositories: `name`, working-tree `path`, `default_branch` ([Repositories](coding/repositories.md)) |
@@ -268,9 +267,10 @@ this order:
    requests, and data that is never instructions
    ([Coding agents](coding/index.md)).
 6. The browser tools, when on ([Browser](browser.md)).
-7. Notes, when offered: `note_find`, `note_get`, `note_write` at a
-   level, `.md` keys with no folders, and `note_delete`
-   ([Notes](notes.md)).
+7. Notes, when offered: `note_find` and the `access` of each note it
+   returns, `note_get`, `note_write` at a level or by display path, a
+   new note only at `agent` or `guild` level, `.md` keys with no
+   folders, and `note_delete` ([Notes](notes.md)).
 8. Collections and records: what State lists, the record tools, the
    `where`, `since`, and `order` filters, `record_search` syntax, and
    queue collections that carry their state in a column
@@ -290,7 +290,7 @@ The generated Memory section owns the `memory_write` guidance.
 | Case | Result |
 |---|---|
 | `system.md` missing | 422 `system.md not found`; the agent stays visible and cannot create a run |
-| an embed in the Task fails | 422 ([Task](task.md#embed-expansion)) |
+| the Task's embeds hold more than 64 KB of note text | 422 `embed budget exceeded` ([Task](task.md#embed-expansion)) |
 | `memory` row missing | Memory hydrates as empty |
 
 Code: `apps/orchestrator/src/prompts/index.ts` (composition),

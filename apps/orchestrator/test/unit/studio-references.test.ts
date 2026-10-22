@@ -12,6 +12,7 @@ import {
 
 const path = (name: string) => `org/o/guilds/g/${name}.md`;
 const LEADS = "org/o/collections/leads";
+const byteLength = (text: string) => Buffer.byteLength(text, "utf8");
 
 function note(name: string, text: string | null, inState = true): ReferenceFile {
   return {
@@ -35,20 +36,23 @@ function task(agentId: string, text: string): ReferenceTask {
   };
 }
 
+/** The input as loading builds it: each agent walks its Task reading only what it can reach. */
 async function input(
   tasks: ReferenceTask[],
   files: ReferenceFile[],
   unresolved: ReferenceInput["unresolved"] = [],
+  blocked: Record<string, string[]> = {},
 ): Promise<ReferenceInput> {
   const texts = noteTexts(files);
   const walks = new Map<string, EmbedStep[]>();
+  const unreachable = new Map<string, Set<string>>();
   for (const item of tasks) {
-    walks.set(
-      item.agent_id,
-      await walkTaskEmbeds(item.text, async (href) => texts.get(href) ?? null, 3),
-    );
+    const cannotRead = new Set(blocked[item.agent_id] ?? []);
+    const read = async (href: string) => (cannotRead.has(href) ? null : (texts.get(href) ?? null));
+    walks.set(item.agent_id, await walkTaskEmbeds(item.text, read, 3));
+    unreachable.set(item.agent_id, cannotRead);
   }
-  return { guild_id: "g", tasks, files, unresolved, walks };
+  return { guild_id: "g", tasks, files, unresolved, walks, unreachable };
 }
 
 const leads: ReferenceFile = {
@@ -144,6 +148,31 @@ test("buildReferences counts the note text each Task inlines against the budget"
   assert.equal(inlined("a"), one + 3 + EMBED_BUDGET);
   assert.equal(references.budget, EMBED_BUDGET);
   assert.equal(references.depth, 2);
+});
+
+test("buildReferences marks an embed broken for the run whose agent cannot read the target", async () => {
+  const references = buildReferences(
+    await input(
+      [task("a", `![[${path("one")}]] ![[${path("shut")}]]`), task("b", `![[${path("one")}]]`)],
+      [note("one", `![[${path("two")}]]`), note("two", "two"), note("shut", "secret text")],
+      [],
+      { a: [path("shut")], b: [path("two")] },
+    ),
+  );
+  const status = (from: string, to: string) =>
+    references.edges.find((edge) => edge.from === from && edge.to === to)?.status;
+  const node = (id: string) => references.nodes.find((item) => item.id === id);
+  assert.equal(status("org/o/agents/a/task.md", path("shut")), "broken");
+  assert.equal(status("org/o/agents/a/task.md", path("one")), "inlined");
+  assert.equal(status(path("one"), path("two")), "broken");
+  assert.deepEqual(node(path("shut"))?.unreachable_for, ["a"]);
+  assert.deepEqual(node(path("two"))?.unreachable_for, ["b"]);
+  assert.deepEqual(node(path("one"))?.unreachable_for, []);
+  assert.equal(
+    node("org/o/agents/a/task.md")?.inlined_bytes,
+    byteLength(`![[${path("two")}]]`) + 3,
+  );
+  assert.equal(node("org/o/agents/b/task.md")?.inlined_bytes, byteLength(`![[${path("two")}]]`));
 });
 
 test("buildReferences draws no edges out of a note it did not read", async () => {

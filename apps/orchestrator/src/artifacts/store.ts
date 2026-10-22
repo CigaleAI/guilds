@@ -22,8 +22,23 @@ import {
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "./file-changes.js";
 import { collectionCleared, collectionColumnsChanged, collectionDeleted, type CollectionRef } from "./collection-changes.js";
-import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
-import { operatorActor } from "./grants.js";
+import { recordChangeIfAny, recordConfigChange, type ConfigChange } from "../db/config-changes.js";
+import {
+  agentModeSql,
+  createsWritable,
+  defaultGrants,
+  diffGrants,
+  grantKey,
+  grantSummary,
+  parseGrant,
+  parseGrants,
+  reachedMode,
+  subjectAt,
+  type AccessEntry,
+  type AccessGrant,
+  type AccessList,
+} from "./access.js";
+import { operatorActor } from "./actors.js";
 import {
   allowsSimilarSpelling,
   FUZZY_THRESHOLD,
@@ -49,26 +64,23 @@ import {
   parseDisplayPath,
   revisionDisplayPath,
   TASK_KEY,
-  type ParsedDisplayPath,
 } from "./paths.js";
 import {
   COLLECTION_NAME_RE,
   FIND_DEFAULT,
   FIND_MAX,
   isAccessMode,
-  isAgentAccessMode,
-  isAccessSubject,
   LIVE_ARTIFACTS_MAX,
   LIVE_COLLECTIONS_MAX,
   LIVE_RECORDS_MAX,
   MEMORY_REVISIONS_MAX,
-  resolveAccess,
   PURPOSE_MAX,
   SEARCH_TEXT_MAX,
   STATE_COLLECTIONS_MAX,
   WRITE_MAX_BYTES,
   type AccessMode,
   type AccessSubject,
+  type AccessTarget,
   type AgentAccessMode,
   type ArtifactActor,
   type ArtifactKind,
@@ -102,6 +114,8 @@ export type ArtifactRow = {
   updated_by_name: string;
   created_at: string;
   updated_at: string;
+  /** The reader's mode, on a row read for an actor. */
+  access?: AccessMode;
 };
 
 export type MemoryRevisionRow = {
@@ -158,6 +172,27 @@ export type StateArtifact = {
   version: number;
   created_by: string;
   created_at: string;
+  /** A note's id; null for Memory and scripts. */
+  note_id: string | null;
+};
+
+/** A note a guild or an agent reaches, with the mode it ends up with. */
+export type ReachedNote = {
+  id: string;
+  display_path: string;
+  title: string;
+  level: ArtifactLevel;
+  owner_id: string;
+  /** The name of the organisation, guild, or agent that owns the note. */
+  owner_name: string;
+  /** The guild of a guild or agent note; null for an organisation note. */
+  guild_id: string | null;
+  mode: AccessMode;
+};
+
+/** A table a guild or an agent reaches, with the mode it ends up with. */
+export type ReachedTable = Pick<CollectionView, "id" | "name" | "purpose" | "display_path" | "scope" | "guild"> & {
+  mode: AccessMode;
 };
 
 export type CollectionDescription = {
@@ -323,7 +358,12 @@ export class ArtifactStore {
     });
   }
 
-  /** Notes sit directly under their owner: `level` picks the owner, `key` names the file. */
+  /**
+   * Notes sit directly under their owner: `level` picks the owner, `key` names
+   * the file. An existing note is written with write access to it, and is
+   * otherwise refused as not writable; a new one only where its starting
+   * access lets the writer write it.
+   */
   async writeNote(
     actor: ArtifactActor,
     args: {
@@ -337,7 +377,6 @@ export class ArtifactStore {
     const key = normalizeNoteKey(args.key);
     assertNoteKeyFree(args.level, key);
     this.assertBytes(args.content);
-    this.assertWriteLevel(actor, args.level);
     const owner = this.ownerFor(actor, args.level);
     await this.assertLiveCount(owner.orgId, args.level, owner.ownerId);
     const searchText = [args.title ?? "", key].filter(Boolean).join(" ").slice(0, SEARCH_TEXT_MAX);
@@ -351,6 +390,30 @@ export class ArtifactStore {
       contentText: args.content,
       searchText,
       ...(args.expectedVersion !== undefined ? { expectedVersion: args.expectedVersion } : {}),
+    });
+  }
+
+  /** Rewrites the live note a display path names, with write access to it. */
+  async writeNoteAt(actor: ArtifactActor, displayPath: string, content: string): Promise<ArtifactRow> {
+    const parsed = parseDisplayPath(displayPath);
+    if (parsed.kind !== "artifact" || parsed.orgId !== actor.orgId) {
+      throw new ArtifactError("artifact not found", 404);
+    }
+    const row = await this.loadParsed(parsed);
+    if (!row || row.kind !== "note") {
+      throw new ArtifactError("artifact not found", 404);
+    }
+    await this.assertRead(actor, row);
+    this.assertBytes(content);
+    return this.upsertContent(actor, {
+      level: row.level,
+      owner: { orgId: row.org_id, ownerId: row.owner_id, guildId: row.guild_id, agentId: row.agent_id },
+      kind: "note",
+      path: row.path,
+      key: row.key,
+      title: row.title,
+      contentText: content,
+      searchText: row.search_text,
     });
   }
 
@@ -375,15 +438,20 @@ export class ArtifactStore {
     }
     const now = stamp(new Date());
     try {
-      const result = await this.pool.query(
-        `INSERT INTO artifact_collections (
-           id, org_id, guild_id, name, purpose, columns, next_id,
-           created_by_type, created_by_id, created_by_name, created_at, updated_at
-         ) VALUES ($1,$2,$3,$4,$5,$6::json,1,$7,$8,$9,$10,$10)
-         RETURNING ${COLLECTION_SELECT}`,
-        [newId("acol"), actor.orgId, guildId, name, purpose, JSON.stringify(columns), actor.actorType, actor.actorId, actor.actorName, now],
-      );
-      return this.collectionView(mapCollection(result.rows[0] as Record<string, unknown>), "write", 0);
+      return await withTransaction(this.pool, async (client) => {
+        const result = await client.query(
+          `INSERT INTO artifact_collections (
+             id, org_id, guild_id, name, purpose, columns, next_id,
+             created_by_type, created_by_id, created_by_name, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6::json,1,$7,$8,$9,$10,$10)
+           RETURNING ${COLLECTION_SELECT}`,
+          [newId("acol"), actor.orgId, guildId, name, purpose, JSON.stringify(columns), actor.actorType, actor.actorId, actor.actorName, now],
+        );
+        const created = mapCollection(result.rows[0] as Record<string, unknown>);
+        const grants = guildId ? defaultGrants("guild", guildId) : defaultGrants("org", actor.orgId);
+        await this.writeGrants(client, actor, { kind: "collection", id: created.id }, grants);
+        return this.collectionView(created, "write", 0);
+      });
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ArtifactError("collection already exists", 409);
@@ -393,13 +461,11 @@ export class ArtifactStore {
   }
 
   /**
-   * Replaces a collection's name, purpose, scope, or columns. A column
+   * Replaces a collection's name, purpose, owner, or columns. A column
    * change is applied to the live records in the same transaction: a
    * renamed column moves its key, a removed column drops it, and a column
    * that becomes unique is refused while live records repeat a value.
-   * Moving a table to a guild drops every grant, since the guild's members
-   * always write their own table; moving it to the organisation keeps the
-   * former guild's reach as a `write` grant.
+   * The owner is placement only: moving a table leaves its access list as it is.
    */
   async updateCollection(
     actor: ArtifactActor,
@@ -420,18 +486,6 @@ export class ArtifactStore {
     const now = stamp(new Date());
     await withTransaction(this.pool, async (client) => {
       await client.query(`SELECT id FROM artifact_collections WHERE id = $1 FOR UPDATE`, [current.id]);
-      if (guildId !== current.guild_id) {
-        await client.query(`DELETE FROM collection_access WHERE collection_id = $1`, [current.id]);
-        if (guildId === null && current.guild_id) {
-          await client.query(
-            `INSERT INTO collection_access (
-               id, org_id, collection_id, subject_type, subject_id, mode,
-               created_by_type, created_by_id, created_by_name, created_at
-             ) VALUES ($1,$2,$3,'guild',$4,'write',$5,$6,$7,$8)`,
-            [newId("cacc"), actor.orgId, current.id, current.guild_id, actor.actorType, actor.actorId, actor.actorName, now],
-          );
-        }
-      }
       if (change) {
         await recordChangeIfAny(client, actor, collectionColumnsChanged(collectionRef(current), change));
         for (const rename of change.renamed) {
@@ -496,7 +550,7 @@ export class ArtifactStore {
     return this.collectionView(updated, "write", await this.countRecords(updated.id));
   }
 
-  /** Soft-deletes a collection with every record in it and drops its grants. */
+  /** Soft-deletes a collection with every record in it and drops its access list. */
   async deleteCollection(actor: ArtifactActor, collectionId: string): Promise<void> {
     this.assertOperator(actor);
     const collection = await this.loadCollectionById(actor, collectionId);
@@ -514,13 +568,13 @@ export class ArtifactStore {
         `UPDATE artifact_collections SET deleted_at = $2, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL`,
         [collection.id, now],
       );
-      await client.query(`DELETE FROM collection_access WHERE collection_id = $1`, [collection.id]);
+      await client.query(`DELETE FROM artifact_access WHERE target_kind = 'collection' AND target_id = $1`, [collection.id]);
       await recordConfigChange(client, actor, collectionDeleted(collectionRef(collection)));
     });
   }
 
   /**
-   * Soft-deletes every live record. The collection, its grants, and `next_id`
+   * Soft-deletes every live record. The collection, its access list, and `next_id`
    * stay, so later inserts keep numbering from where the table left off.
    */
   async clearRecords(actor: ArtifactActor, collectionId: string): Promise<number> {
@@ -649,254 +703,100 @@ export class ArtifactStore {
   }
 
   // ---------------------------------------------------------------------------
-  // Access: a grant per guild or per agent, read or write.
+  // Access: one list per note and per table, edited by the operator.
 
-  /** Every grant on a collection, with the guilds and agents it reaches. */
-  async listAccess(
-    actor: ArtifactActor,
-    collectionId: string,
-  ): Promise<{
-    guilds: Array<{ id: string; name: string; mode: AccessMode }>;
-    agents: Array<{
-      id: string;
-      name: string;
-      guild_id: string;
-      guild_name: string;
-      guild_mode: AccessMode | null;
-      agent_mode: AgentAccessMode | null;
-      effective: AccessMode | null;
-    }>;
-  }> {
+  /** An item's access list, without the subjects of guilds the actor cannot see. */
+  async listAccess(actor: ArtifactActor, target: AccessTarget): Promise<AccessEntry[]> {
+    return (await this.accessList(actor, target)).subjects;
+  }
+
+  /** An item's access list with the agent that owns it, when one does. */
+  async accessList(actor: ArtifactActor, target: AccessTarget): Promise<AccessList> {
     this.assertOperator(actor);
-    const collection = await this.loadCollectionById(actor, collectionId);
-    if (!collection) {
-      throw new ArtifactError("unknown collection", 404);
-    }
-    if (collection.guild_id) {
-      const members = await this.pool.query(
-        `SELECT a.id, a.name, a.guild_id, g.name AS guild_name, ag.mode AS agent_mode
-           FROM agents a
-           JOIN guilds g ON g.id = a.guild_id
-           LEFT JOIN collection_access ag
-             ON ag.collection_id = $1 AND ag.subject_type = 'agent' AND ag.subject_id = a.id
-          WHERE a.guild_id = $2
-          ORDER BY a.name`,
-        [collection.id, collection.guild_id],
-      );
-      return {
-        guilds: [{ id: collection.guild_id, name: collection.guild_name ?? "", mode: "write" }],
-        agents: (members.rows as Array<Record<string, unknown>>).map((row) => {
-          const agentMode = (row.agent_mode as AgentAccessMode | null) ?? null;
-          return {
-            id: String(row.id),
-            name: String(row.name),
-            guild_id: String(row.guild_id),
-            guild_name: String(row.guild_name),
-            guild_mode: "write" as const,
-            agent_mode: agentMode,
-            effective: resolveAccess("write", agentMode),
-          };
-        }),
-      };
-    }
-    const guilds = await this.pool.query(
-      `SELECT g.id, g.name, x.mode
-         FROM collection_access x
-         JOIN guilds g ON g.id = x.subject_id
-        WHERE x.collection_id = $1 AND x.subject_type = 'guild'
-        ORDER BY g.name`,
-      [collection.id],
-    );
-    const agents = await this.pool.query(
-      `SELECT a.id, a.name, a.guild_id, g.name AS guild_name, ag.mode AS agent_mode, gg.mode AS guild_mode
-         FROM agents a
-         JOIN guilds g ON g.id = a.guild_id
-         LEFT JOIN collection_access ag
-           ON ag.collection_id = $1 AND ag.subject_type = 'agent' AND ag.subject_id = a.id
-         LEFT JOIN collection_access gg
-           ON gg.collection_id = $1 AND gg.subject_type = 'guild' AND gg.subject_id = a.guild_id
-        WHERE a.org_id = $2 AND (ag.mode IS NOT NULL OR gg.mode IS NOT NULL)
-        ORDER BY g.name, a.name`,
-      [collection.id, actor.orgId],
-    );
-    return {
-      guilds: visibleGrants(
-        actor,
-        (guilds.rows as Array<Record<string, unknown>>).map((row) => ({
-          id: String(row.id),
-          name: String(row.name),
-          mode: String(row.mode) as AccessMode,
-        })),
-      ),
-      agents: visibleGrants(actor, (agents.rows as Array<Record<string, unknown>>).map((row) => {
-        const guildMode = (row.guild_mode as AccessMode | null) ?? null;
-        const agentMode = (row.agent_mode as AgentAccessMode | null) ?? null;
-        return {
-          id: String(row.id),
-          name: String(row.name),
-          guild_id: String(row.guild_id),
-          guild_name: String(row.guild_name),
-          guild_mode: guildMode,
-          agent_mode: agentMode,
-          effective: resolveAccess(guildMode, agentMode),
-        };
-      })),
-    };
+    const item = await this.requireTarget(actor, target);
+    return { subjects: await this.loadEntries(this.pool, actor, target), owner_agent_id: item.ownerAgentId };
   }
 
   /**
-   * Writes, replaces, or (with `mode: null`) removes one grant. A guild's
-   * own table takes no grants: every agent in that guild writes it and
-   * nobody else reaches it.
+   * Replaces an item's access list with `subjects`, the full list, and logs
+   * one change per subject whose row changes. The rows of subjects in guilds
+   * the actor cannot see stay as they are. Only the subjects whose row is
+   * written must exist, so a row whose subject is gone can still be removed.
    */
-  async setAccess(
+  async replaceAccess(actor: ArtifactActor, target: AccessTarget, subjects: unknown): Promise<AccessList> {
+    this.assertOperator(actor);
+    const item = await this.requireTarget(actor, target);
+    const wanted = parseGrants(subjects);
+    return withTransaction(this.pool, async (client) => {
+      const before = await this.loadEntries(client, actor, target);
+      const names = new Map(before.map((entry) => [grantKey(entry), subjectLabel(entry.type, entry.name)]));
+      const { upserts, removals } = diffGrants(before, wanted);
+      for (const grant of upserts) {
+        const where = subjectAt(wanted.indexOf(grant));
+        assertNotOwner(item, grant, where);
+        names.set(grantKey(grant), subjectLabel(grant.type, await this.requireSubject(actor, grant, where)));
+      }
+      const known = new Set(before.map(grantKey));
+      await this.writeGrants(client, actor, target, upserts);
+      await this.removeGrants(client, target, removals);
+      const changes = [
+        ...upserts.map((grant) => accessChange(item, names.get(grantKey(grant)) ?? grant.id, grant.mode, known.has(grantKey(grant)))),
+        ...removals.map((grant) => accessChange(item, names.get(grantKey(grant)) ?? grant.id, null, true)),
+      ];
+      for (const change of changes) {
+        await recordConfigChange(client, actor, change);
+      }
+      return { subjects: await this.loadEntries(client, actor, target), owner_agent_id: item.ownerAgentId };
+    });
+  }
+
+  /**
+   * Sets one subject's row on an item, or removes it when `mode` is null, and
+   * logs the change. Only a subject whose row is written must exist.
+   */
+  async grantAccess(
     actor: ArtifactActor,
-    args: { collectionId: string; subjectType: unknown; subjectId: string; mode: unknown },
+    target: AccessTarget,
+    subject: { type: AccessSubject; id: string },
+    mode: AgentAccessMode | null,
   ): Promise<void> {
     this.assertOperator(actor);
-    const collection = await this.loadCollectionById(actor, args.collectionId);
-    if (!collection) {
-      throw new ArtifactError("unknown collection", 404);
-    }
-    if (!isAccessSubject(args.subjectType)) {
-      throw new ArtifactError("subject_type must be guild or agent", 422);
-    }
-    const subjectType: AccessSubject = args.subjectType;
-    if (collection.guild_id && subjectType === "guild") {
-      throw new ArtifactError(
-        `${collection.name} belongs to ${collection.guild_name ?? "its guild"}: it is written by that guild and takes no guild grant`,
-        422,
-      );
-    }
-    const wanted = args.mode ?? null;
-    if (wanted !== null && (subjectType === "guild" ? !isAccessMode(wanted) : !isAgentAccessMode(wanted))) {
-      throw new ArtifactError(
-        subjectType === "guild" ? "mode must be read, write, or null" : "mode must be none, read, write, or null",
-        422,
-      );
-    }
-    const subjectId = String(args.subjectId ?? "").trim();
-    const owner = await this.pool.query(
-      subjectType === "guild"
-        ? `SELECT id FROM guilds WHERE id = $1 AND org_id = $2`
-        : `SELECT id, guild_id FROM agents WHERE id = $1 AND org_id = $2`,
-      [subjectId, actor.orgId],
-    );
-    const ownerRow = owner.rows[0] as { id: string; guild_id?: string } | undefined;
-    if (!ownerRow || visibleGrants(actor, [ownerRow]).length === 0) {
-      throw new ArtifactError(`unknown ${subjectType}`, 404);
-    }
-    if (collection.guild_id && String((owner.rows[0] as { guild_id?: string }).guild_id ?? "") !== collection.guild_id) {
-      throw new ArtifactError(
-        `${collection.name} belongs to ${collection.guild_name ?? "its guild"}: only an agent of that guild reaches it`,
-        422,
-      );
-    }
-    if (wanted === null) {
-      await this.pool.query(
-        `DELETE FROM collection_access WHERE collection_id = $1 AND subject_type = $2 AND subject_id = $3`,
-        [collection.id, subjectType, subjectId],
-      );
-      return;
-    }
-    await this.pool.query(
-      `INSERT INTO collection_access (
-         id, org_id, collection_id, subject_type, subject_id, mode,
-         created_by_type, created_by_id, created_by_name, created_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (collection_id, subject_type, subject_id)
-       DO UPDATE SET mode = EXCLUDED.mode, created_by_type = EXCLUDED.created_by_type,
-                     created_by_id = EXCLUDED.created_by_id, created_by_name = EXCLUDED.created_by_name,
-                     created_at = EXCLUDED.created_at`,
-      [
-        newId("cacc"),
-        actor.orgId,
-        collection.id,
-        subjectType,
-        subjectId,
-        wanted,
-        actor.actorType,
-        actor.actorId,
-        actor.actorName,
-        stamp(new Date()),
-      ],
-    );
-  }
-
-  /**
-   * Every live table a guild can be given: its own tables (always `write`,
-   * `scope: "guild"`) and the organisation tables with the guild's grant.
-   * Other guilds' tables are left out.
-   */
-  async accessForGuild(
-    actor: ArtifactActor,
-    guildId: string,
-  ): Promise<Array<{ collection_id: string; name: string; purpose: string; scope: "guild" | "org"; mode: AccessMode | null }>> {
-    this.assertOperator(actor);
-    const result = await this.pool.query(
-      `SELECT c.id, c.name, c.purpose, c.guild_id, x.mode
-         FROM artifact_collections c
-         LEFT JOIN collection_access x
-           ON x.collection_id = c.id AND x.subject_type = 'guild' AND x.subject_id = $2
-        WHERE c.org_id = $1 AND c.deleted_at IS NULL AND (c.guild_id IS NULL OR c.guild_id = $2)
-        ORDER BY c.guild_id IS NULL, c.name`,
-      [actor.orgId, guildId],
-    );
-    return (result.rows as Array<Record<string, unknown>>).map((row) => ({
-      collection_id: String(row.id),
-      name: String(row.name),
-      purpose: String(row.purpose),
-      scope: row.guild_id ? "guild" : "org",
-      mode: row.guild_id ? "write" : ((row.mode as AccessMode | null) ?? null),
-    }));
-  }
-
-  /**
-   * Every live table an agent can be given: the organisation tables with its
-   * guild's base mode, and its guild's own tables, whose base is `write`.
-   * `agent_mode` is this agent's override (`none` keeps it out) and
-   * `effective` is what the agent ends up with.
-   */
-  async accessForAgent(
-    actor: ArtifactActor,
-    agentId: string,
-    guildId: string,
-  ): Promise<
-    Array<{
-      collection_id: string;
-      name: string;
-      purpose: string;
-      scope: "guild" | "org";
-      guild_mode: AccessMode | null;
-      agent_mode: AgentAccessMode | null;
-      effective: AccessMode | null;
-    }>
-  > {
-    this.assertOperator(actor);
-    const result = await this.pool.query(
-      `SELECT c.id, c.name, c.purpose, c.guild_id, ag.mode AS agent_mode, gg.mode AS guild_mode
-         FROM artifact_collections c
-         LEFT JOIN collection_access ag
-           ON ag.collection_id = c.id AND ag.subject_type = 'agent' AND ag.subject_id = $2
-         LEFT JOIN collection_access gg
-           ON gg.collection_id = c.id AND gg.subject_type = 'guild' AND gg.subject_id = $3
-        WHERE c.org_id = $1 AND c.deleted_at IS NULL AND (c.guild_id IS NULL OR c.guild_id = $3)
-        ORDER BY c.guild_id IS NULL, c.name`,
-      [actor.orgId, agentId, guildId],
-    );
-    return (result.rows as Array<Record<string, unknown>>).map((row) => {
-      const guildMode = row.guild_id ? ("write" as const) : ((row.guild_mode as AccessMode | null) ?? null);
-      const agentMode = (row.agent_mode as AgentAccessMode | null) ?? null;
-      return {
-        collection_id: String(row.id),
-        name: String(row.name),
-        purpose: String(row.purpose),
-        scope: row.guild_id ? ("guild" as const) : ("org" as const),
-        guild_mode: guildMode,
-        agent_mode: agentMode,
-        effective: resolveAccess(guildMode, agentMode),
-      };
+    const item = await this.requireTarget(actor, target);
+    const grant = parseGrant({ ...subject, mode: mode ?? "read" });
+    await withTransaction(this.pool, async (client) => {
+      const before = (await this.loadEntries(client, actor, target)).find((entry) => grantKey(entry) === grantKey(grant));
+      if ((before?.mode ?? null) === mode) {
+        return;
+      }
+      let name = before?.name ?? grant.id;
+      if (mode === null) {
+        await this.removeGrants(client, target, [grant]);
+      } else {
+        assertNotOwner(item, grant);
+        name = await this.requireSubject(actor, grant);
+        await this.writeGrants(client, actor, target, [{ ...grant, mode }]);
+      }
+      await recordConfigChange(client, actor, accessChange(item, subjectLabel(grant.type, name), mode, before !== undefined));
     });
+  }
+
+  /**
+   * What a guild or an agent reaches: the notes and tables its rows give it,
+   * with the mode it ends up with. An agent also reaches its own notes. A
+   * guild reaches what its own and its organisation's rows give.
+   */
+  async reachOf(
+    actor: ArtifactActor,
+    subject: { type: "guild" | "agent"; id: string; guildId: string },
+  ): Promise<{ notes: ReachedNote[]; tables: ReachedTable[] }> {
+    this.assertOperator(actor);
+    const reacher: ArtifactActor = {
+      ...actor,
+      operator: false,
+      guildId: subject.guildId,
+      agentId: subject.type === "agent" ? subject.id : null,
+    };
+    return { notes: await this.reachedNotes(actor, reacher), tables: await this.reachedTables(actor, reacher) };
   }
 
   // ---------------------------------------------------------------------------
@@ -1244,8 +1144,7 @@ export class ArtifactStore {
     if (!row) {
       throw new ArtifactError("artifact not found", 404);
     }
-    this.assertRead(actor, row);
-    this.assertWriteLevel(actor, row.level);
+    await this.assertWrite(actor, row);
     if (row.kind === "memory") {
       throw new ArtifactError("cannot delete this file", 422);
     }
@@ -1263,6 +1162,7 @@ export class ArtifactStore {
       if (!result.rows[0]) {
         throw new ArtifactError("artifact not found", 404);
       }
+      await client.query(`DELETE FROM artifact_access WHERE target_kind = 'note' AND target_id = $1`, [row.id]);
       await recordFileChange(client, actor, {
         orgId: row.org_id,
         artifactId: row.id,
@@ -1280,7 +1180,7 @@ export class ArtifactStore {
   ): Promise<{ row?: ArtifactRow; revision?: { content: string; display_path: string }; tombstone?: boolean }> {
     const parsed = parseDisplayPath(displayPath);
     if (parsed.kind === "revision") {
-      if (!actor.operator || !this.canReadLevel(actor, "agent", parsed.agentId)) {
+      if (!actor.operator || !reachesOwner(actor, "agent", parsed.agentId)) {
         throw new ArtifactError("artifact not found", 404);
       }
       const result = await this.pool.query(
@@ -1326,11 +1226,11 @@ export class ArtifactStore {
     if (!includingDeleted) {
       throw new ArtifactError("artifact not found", 404);
     }
-    this.assertRead(actor, includingDeleted);
+    const access = await this.assertRead(actor, includingDeleted);
     if (includingDeleted.deleted_at) {
       return { tombstone: true, row: includingDeleted };
     }
-    return { row: includingDeleted };
+    return { row: { ...includingDeleted, access } };
   }
 
   /** Whether the actor may read what a display path names, so its change history may be shown. */
@@ -1342,8 +1242,14 @@ export class ArtifactStore {
     if ("collectionName" in parsed) {
       return (await this.describeCollection(actor, parsed.collectionName)) !== null;
     }
-    const owner = fileOwner(parsed);
-    return this.canReadLevel(actor, owner.level, owner.ownerId);
+    if (parsed.kind === "revision") {
+      return actor.operator && reachesOwner(actor, "agent", parsed.agentId);
+    }
+    const row = await this.loadParsed(parsed, true);
+    if (!row) {
+      return reachesOwner(actor, parsed.level, parsed.ownerId);
+    }
+    return (await this.artifactMode(actor, row)) !== null;
   }
 
   /** Notes the actor may read, searched by `query` or listed, optionally at one level. */
@@ -1367,24 +1273,22 @@ export class ArtifactStore {
     level: ArtifactLevel,
     ownerId: string,
   ): Promise<Array<Record<string, unknown>>> {
-    if (!this.canReadLevel(actor, level, ownerId)) {
-      return [];
-    }
+    const values: unknown[] = [actor.orgId, level, ownerId];
     const result = await this.pool.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
         WHERE a.org_id = $1 AND a.level = $2 AND a.owner_id = $3 AND a.deleted_at IS NULL
-          AND a.kind = 'note'
+          AND a.kind = 'note' AND (${this.readScope(actor, values)})
         ORDER BY a.key`,
-      [actor.orgId, level, ownerId],
+      values,
     );
     return (result.rows as Array<Record<string, unknown>>).map((row) => this.fileView(mapRow(row)));
   }
 
   /** Previous memory versions, newest first. Only the operator reads them; agents never see the archive. */
   async listRevisions(actor: ArtifactActor, agentId: string): Promise<MemoryRevisionRow[]> {
-    if (!actor.operator || !this.canReadLevel(actor, "agent", agentId)) {
+    if (!actor.operator || !reachesOwner(actor, "agent", agentId)) {
       return [];
     }
     const result = await this.pool.query(
@@ -1422,6 +1326,7 @@ export class ArtifactStore {
     actor: ArtifactActor,
     owners: { guildId: string; agentIds: string[] },
   ): Promise<StateArtifact[]> {
+    const values: unknown[] = [actor.orgId, owners.guildId, owners.agentIds];
     const result = await this.pool.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
@@ -1430,12 +1335,12 @@ export class ArtifactStore {
           AND (a.level = 'org'
                OR (a.level = 'guild' AND a.owner_id = $2)
                OR (a.level = 'agent' AND a.owner_id = ANY($3::text[])))
+          AND (${this.readScope(actor, values)})
         ORDER BY a.level, a.owner_id, a.key`,
-      [actor.orgId, owners.guildId, owners.agentIds],
+      values,
     );
     return (result.rows as Array<Record<string, unknown>>)
       .map((row) => mapRow(row))
-      .filter((row) => this.canReadRow(actor, row))
       .map((row) => ({
         display_path: displayPathFor(rowAsDisplay(row)),
         kind: row.kind as StateArtifact["kind"],
@@ -1447,23 +1352,23 @@ export class ArtifactStore {
         version: row.version,
         created_by: row.created_by_name,
         created_at: row.created_at,
+        note_id: row.kind === "note" ? row.id : null,
       }));
   }
 
   async listEmbeddableNotes(actor: ArtifactActor): Promise<Array<Record<string, unknown>>> {
+    const values: unknown[] = [actor.orgId];
     const result = await this.pool.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
         WHERE a.org_id = $1 AND a.kind = 'note' AND a.deleted_at IS NULL
+          AND (${this.readScope(actor, values)})
         ORDER BY a.level, a.key
         LIMIT 500`,
-      [actor.orgId],
+      values,
     );
-    return (result.rows as Array<Record<string, unknown>>)
-      .map((row) => mapRow(row))
-      .filter((row) => this.canReadRow(actor, row))
-      .map((row) => this.view(row));
+    return (result.rows as Array<Record<string, unknown>>).map((row) => this.view(mapRow(row)));
   }
 
   view(row: ArtifactRow): Record<string, unknown> {
@@ -1480,6 +1385,7 @@ export class ArtifactStore {
       author: row.updated_by_name,
       version: row.version,
       updated_at: formatOperationalTimestamp(String(row.updated_at)),
+      ...(row.access ? { access: row.access } : {}),
       content: row.content_text,
     };
   }
@@ -1501,31 +1407,16 @@ export class ArtifactStore {
     return view;
   }
 
-  /** A note as the Host lists it: `path` is its file name. */
+  /** A note as the Host lists it: `path` is its file name, `id` names it to the access API. */
   fileView(row: ArtifactRow): Record<string, unknown> {
     return {
+      id: row.id,
       path: row.key,
       display_path: displayPathFor(rowAsDisplay(row)),
       kind: row.kind,
       title: row.title,
       version: row.version,
     };
-  }
-
-  canReadLevel(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
-    if (actor.orgId === "" || ownerId === "") {
-      return false;
-    }
-    if (actor.operator) {
-      return !isHiddenOwner(actor, level, ownerId);
-    }
-    if (level === "org") {
-      return actor.grants.readOrg;
-    }
-    if (level === "guild") {
-      return actor.grants.readGuild && actor.guildId === ownerId;
-    }
-    return actor.agentId === ownerId;
   }
 
   // ---------------------------------------------------------------------------
@@ -1553,33 +1444,14 @@ export class ArtifactStore {
     return described;
   }
 
-  /**
-   * The actor's mode on a collection: its guild's base mode, `write` on the
-   * guild's own table, replaced by this agent's override when it has one.
-   * The operator writes everything.
-   */
+  /** The actor's mode on a collection from its access list. The operator writes everything. */
   private async accessMode(actor: ArtifactActor, collection: CollectionRow): Promise<AccessMode | null> {
     if (actor.operator) {
       return "write";
     }
-    if (collection.guild_id && actor.guildId !== collection.guild_id) {
-      return null;
-    }
-    const result = await this.pool.query(
-      `SELECT subject_type, mode FROM collection_access
-        WHERE collection_id = $1
-          AND ((subject_type = 'agent' AND subject_id = $2) OR (subject_type = 'guild' AND subject_id = $3))`,
-      [collection.id, actor.agentId ?? "", actor.guildId ?? ""],
-    );
-    const rows = result.rows as Array<{ subject_type: string; mode: string }>;
-    const base = collection.guild_id
-      ? ("write" as AccessMode)
-      : (() => {
-          const row = rows.find((item) => item.subject_type === "guild");
-          return row && isAccessMode(row.mode) ? row.mode : null;
-        })();
-    const override = rows.find((item) => item.subject_type === "agent");
-    return resolveAccess(base, override && isAgentAccessMode(override.mode) ? override.mode : null);
+    const values: unknown[] = [collection.id];
+    const result = await this.pool.query(`SELECT ${agentModeSql("collection", "$1", actor, values)} AS mode`, values);
+    return reachedMode(result.rows[0]?.mode);
   }
 
   private async accessibleCollections(actor: ArtifactActor): Promise<Array<{ row: CollectionRow; mode: AccessMode }>> {
@@ -1593,26 +1465,22 @@ export class ArtifactStore {
       );
       return (result.rows as Array<Record<string, unknown>>).map((row) => ({ row: mapCollection(row), mode: "write" }));
     }
+    const values: unknown[] = [actor.orgId];
+    const mode = agentModeSql("collection", "artifact_collections.id", actor, values);
     const result = await this.pool.query(
-      `SELECT ${COLLECTION_SELECT}, ag.mode AS agent_mode, gg.mode AS guild_mode
-         FROM artifact_collections
-         LEFT JOIN collection_access ag ON ag.collection_id = artifact_collections.id
-          AND ag.subject_type = 'agent' AND ag.subject_id = $2
-         LEFT JOIN collection_access gg ON gg.collection_id = artifact_collections.id
-          AND gg.subject_type = 'guild' AND gg.subject_id = $3
-        WHERE artifact_collections.org_id = $1 AND artifact_collections.deleted_at IS NULL
-          AND (artifact_collections.guild_id = $3
-               OR (artifact_collections.guild_id IS NULL AND (gg.id IS NOT NULL OR ag.id IS NOT NULL)))
-        ORDER BY artifact_collections.name`,
-      [actor.orgId, actor.agentId ?? "", actor.guildId ?? ""],
+      `SELECT * FROM (
+         SELECT ${COLLECTION_SELECT}, ${mode} AS mode
+           FROM artifact_collections
+          WHERE artifact_collections.org_id = $1 AND artifact_collections.deleted_at IS NULL
+       ) reached
+        WHERE reached.mode IN ('read', 'write')
+        ORDER BY reached.name`,
+      values,
     );
-    return (result.rows as Array<Record<string, unknown>>).flatMap((row) => {
-      const mapped = mapCollection(row);
-      const base = mapped.guild_id ? ("write" as AccessMode) : isAccessMode(row.guild_mode) ? row.guild_mode : null;
-      const override = isAgentAccessMode(row.agent_mode) ? row.agent_mode : null;
-      const mode = resolveAccess(base, override);
-      return mode ? [{ row: mapped, mode }] : [];
-    });
+    return (result.rows as Array<Record<string, unknown>>).map((row) => ({
+      row: mapCollection(row),
+      mode: row.mode as AccessMode,
+    }));
   }
 
   /** The predicate over `a.collection_id` for every collection the actor can read. */
@@ -1623,17 +1491,168 @@ export class ArtifactStore {
       values.push(actor.hidden.guildIds);
       return `c.org_id = $${org} AND (c.guild_id IS NULL OR c.guild_id <> ALL($${values.length}::text[]))`;
     }
-    values.push(actor.agentId ?? "");
-    const agent = values.length;
-    values.push(actor.guildId ?? "");
-    const guild = values.length;
-    const override = `(SELECT x.mode FROM collection_access x
-         WHERE x.collection_id = a.collection_id AND x.subject_type = 'agent' AND x.subject_id = $${agent})`;
-    const base = `(SELECT x.mode FROM collection_access x
-         WHERE x.collection_id = a.collection_id AND x.subject_type = 'guild' AND x.subject_id = $${guild})`;
-    return `c.org_id = $${org}
-      AND (c.guild_id = $${guild} OR (c.guild_id IS NULL AND COALESCE(${override}, ${base}) IS NOT NULL))
-      AND COALESCE(${override}, 'inherit') <> 'none'`;
+    return `c.org_id = $${org} AND ${agentModeSql("collection", "a.collection_id", actor, values)} IN ('read', 'write')`;
+  }
+
+  /** The note or live collection an access call names, or a 404. */
+  private async requireTarget(actor: ArtifactActor, target: AccessTarget): Promise<AccessItem> {
+    if (target.kind === "collection") {
+      const collection = await this.loadCollectionById(actor, target.id);
+      if (!collection) {
+        throw new ArtifactError("unknown collection", 404);
+      }
+      return {
+        target,
+        orgId: collection.org_id,
+        guildId: collection.guild_id,
+        ownerAgentId: null,
+        label: `the table ${collection.name}`,
+      };
+    }
+    const result = await this.pool.query(
+      `SELECT ${ARTIFACT_SELECT}
+         FROM artifacts a
+         LEFT JOIN artifact_collections c ON c.id = a.collection_id
+        WHERE a.id = $1 AND a.org_id = $2 AND a.kind = 'note' AND a.deleted_at IS NULL`,
+      [target.id, actor.orgId],
+    );
+    const row = result.rows[0] ? mapRow(result.rows[0] as Record<string, unknown>) : null;
+    if (!row || !reachesOwner(actor, row.level, row.owner_id)) {
+      throw new ArtifactError("note not found", 404);
+    }
+    return {
+      target,
+      orgId: row.org_id,
+      guildId: row.guild_id,
+      ownerAgentId: row.level === "agent" ? row.owner_id : null,
+      label: `the note ${displayPathFor(rowAsDisplay(row))}`,
+    };
+  }
+
+  /**
+   * The name of the organisation, guild, or agent a grant names. A subject
+   * that does not exist, is in another organisation, or is in a guild the
+   * actor cannot see is a 422 prefixed by `where`.
+   */
+  private async requireSubject(
+    actor: ArtifactActor,
+    subject: { type: AccessSubject; id: string },
+    where = "",
+  ): Promise<string> {
+    const result = await this.pool.query(SUBJECT_SQL[subject.type], [subject.id, actor.orgId]);
+    const row = result.rows[0] as { name: string; guild_id: string | null } | undefined;
+    if (!row || (row.guild_id !== null && actor.hidden.guildIds.includes(row.guild_id))) {
+      throw new ArtifactError(`${where}unknown ${subject.type}`, 422);
+    }
+    return row.name;
+  }
+
+  /** An item's access list: the organisation first, then guilds, then agents by guild. */
+  private async loadEntries(db: Queryable, actor: ArtifactActor, target: AccessTarget): Promise<AccessEntry[]> {
+    const result = await db.query(
+      `SELECT x.subject_type AS type, x.subject_id AS id, x.mode,
+              COALESCE(o.name, g.name, ag.name, x.subject_id) AS name,
+              COALESCE(g.id, ag.guild_id) AS guild_id,
+              COALESCE(g.name, agg.name) AS guild_name
+         FROM artifact_access x
+         LEFT JOIN orgs o ON x.subject_type = 'org' AND o.id = x.subject_id
+         LEFT JOIN guilds g ON x.subject_type = 'guild' AND g.id = x.subject_id
+         LEFT JOIN agents ag ON x.subject_type = 'agent' AND ag.id = x.subject_id
+         LEFT JOIN guilds agg ON agg.id = ag.guild_id
+        WHERE x.target_kind = $1 AND x.target_id = $2
+        ORDER BY CASE x.subject_type WHEN 'org' THEN 0 WHEN 'guild' THEN 1 ELSE 2 END, guild_name, name`,
+      [target.kind, target.id],
+    );
+    return visibleEntries(actor, result.rows as AccessEntry[]);
+  }
+
+  private async writeGrants(db: Queryable, actor: ArtifactActor, target: AccessTarget, grants: AccessGrant[]): Promise<void> {
+    for (const grant of grants) {
+      await db.query(
+        `INSERT INTO artifact_access (
+           id, org_id, target_kind, target_id, subject_type, subject_id, mode,
+           created_by_type, created_by_id, created_by_name, created_at,
+           updated_by_type, updated_by_id, updated_by_name, updated_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$8,$9,$10,$11)
+         ON CONFLICT (target_kind, target_id, subject_type, subject_id)
+         DO UPDATE SET mode = EXCLUDED.mode, updated_by_type = EXCLUDED.updated_by_type,
+                       updated_by_id = EXCLUDED.updated_by_id, updated_by_name = EXCLUDED.updated_by_name,
+                       updated_at = EXCLUDED.updated_at`,
+        [
+          newId("aacc"),
+          actor.orgId,
+          target.kind,
+          target.id,
+          grant.type,
+          grant.id,
+          grant.mode,
+          actor.actorType,
+          actor.actorId,
+          actor.actorName,
+          stamp(new Date()),
+        ],
+      );
+    }
+  }
+
+  private async removeGrants(db: Queryable, target: AccessTarget, grants: AccessGrant[]): Promise<void> {
+    for (const grant of grants) {
+      await db.query(
+        `DELETE FROM artifact_access
+          WHERE target_kind = $1 AND target_id = $2 AND subject_type = $3 AND subject_id = $4`,
+        [target.kind, target.id, grant.type, grant.id],
+      );
+    }
+  }
+
+  /** The live notes `reacher` reads, without those of guilds `actor` cannot see. */
+  private async reachedNotes(actor: ArtifactActor, reacher: ArtifactActor): Promise<ReachedNote[]> {
+    const values: unknown[] = [actor.orgId];
+    const mode = this.artifactModeSql(reacher, values);
+    const hidden = this.readScope(actor, values);
+    const result = await this.pool.query(
+      `SELECT * FROM (
+         SELECT ${ARTIFACT_SELECT}, ${mode} AS access_mode, ${OWNER_NAME_SQL} AS owner_name
+           FROM artifacts a
+           LEFT JOIN artifact_collections c ON c.id = a.collection_id
+          WHERE a.org_id = $1 AND a.kind = 'note' AND a.deleted_at IS NULL AND (${hidden})
+       ) reached
+        WHERE reached.access_mode IN ('read', 'write')
+        ORDER BY reached.level, reached.owner_id, reached.key`,
+      values,
+    );
+    return (result.rows as Array<Record<string, unknown>>).map((raw) => {
+      const row = mapRow(raw);
+      return {
+        id: row.id,
+        display_path: displayPathFor(rowAsDisplay(row)),
+        title: row.title ?? row.key,
+        level: row.level,
+        owner_id: row.owner_id,
+        owner_name: String(raw.owner_name),
+        guild_id: row.guild_id,
+        mode: row.access ?? "read",
+      };
+    });
+  }
+
+  /** The live tables `reacher` reads, without those of guilds `actor` cannot see. */
+  private async reachedTables(actor: ArtifactActor, reacher: ArtifactActor): Promise<ReachedTable[]> {
+    const visible = new Set((await this.accessibleCollections(actor)).map((item) => item.row.id));
+    return (await this.accessibleCollections(reacher))
+      .filter((item) => visible.has(item.row.id))
+      .map((item) => {
+        const view = this.collectionView(item.row, item.mode);
+        return {
+          id: view.id,
+          name: view.name,
+          purpose: view.purpose,
+          display_path: view.display_path,
+          scope: view.scope,
+          guild: view.guild,
+          mode: item.mode,
+        };
+      });
   }
 
   private async requireGuild(actor: ArtifactActor, guildId: string): Promise<string> {
@@ -1824,34 +1843,38 @@ export class ArtifactStore {
     return row;
   }
 
-  private canReadRow(actor: ArtifactActor, row: ArtifactRow): boolean {
+  /**
+   * The actor's mode on a note, Memory, or script: the operator writes all but
+   * hidden guilds' files, an agent writes its own, and a note follows its
+   * access list. Null when the actor does not reach it.
+   */
+  private async artifactMode(actor: ArtifactActor, row: ArtifactRow): Promise<AccessMode | null> {
     if (row.org_id !== actor.orgId) {
-      return false;
+      return null;
     }
-    return this.canReadLevel(actor, row.level, row.owner_id);
+    if (actor.operator || (row.level === "agent" && row.owner_id === actor.agentId)) {
+      return reachesOwner(actor, row.level, row.owner_id) ? "write" : null;
+    }
+    if (row.kind !== "note") {
+      return null;
+    }
+    const values: unknown[] = [row.id];
+    const result = await this.pool.query(`SELECT ${agentModeSql("note", "$1", actor, values)} AS mode`, values);
+    return reachedMode(result.rows[0]?.mode);
   }
 
-  private assertRead(actor: ArtifactActor, row: ArtifactRow & { deleted_at?: string | null }): void {
-    if (!this.canReadRow(actor, row)) {
+  private async assertRead(actor: ArtifactActor, row: ArtifactRow): Promise<AccessMode> {
+    const mode = await this.artifactMode(actor, row);
+    if (!mode) {
       throw new ArtifactError("artifact not found", 404);
     }
+    return mode;
   }
 
-  private assertWriteLevel(actor: ArtifactActor, level: ArtifactLevel): void {
-    if (actor.operator) {
-      return;
+  private async assertWrite(actor: ArtifactActor, row: ArtifactRow): Promise<void> {
+    if ((await this.assertRead(actor, row)) !== "write") {
+      throw new ArtifactError("write not allowed", 422);
     }
-    if (level === "agent") {
-      if (!actor.agentId) throw new ArtifactError("write not allowed", 422);
-      return;
-    }
-    if (level === "guild" && actor.grants.writeGuild && actor.guildId) {
-      return;
-    }
-    if (level === "org" && actor.grants.writeOrg) {
-      return;
-    }
-    throw new ArtifactError("write not allowed", 422);
   }
 
   private ownerFor(
@@ -1976,7 +1999,7 @@ export class ArtifactStore {
     args: {
       level: ArtifactLevel;
       owner: { orgId: string; ownerId: string; guildId: string | null; agentId: string | null };
-      kind: "note" | "memory";
+      kind: "note";
       path: string;
       key: string;
       title: string | null;
@@ -1998,6 +2021,9 @@ export class ArtifactStore {
       );
       const live = existing.rows[0] as (Record<string, unknown> & { content_hash?: string }) | undefined;
       if (live) {
+        if ((await this.artifactMode(actor, mapRow(live))) !== "write") {
+          throw new ArtifactError("write not allowed", 422);
+        }
         if (args.expectedVersion !== undefined && Number(live.version) !== args.expectedVersion) {
           throw new ArtifactError("version conflict", 409);
         }
@@ -2029,6 +2055,9 @@ export class ArtifactStore {
           version: row.version,
         });
         return row;
+      }
+      if (!actor.operator && !createsWritable(args.level)) {
+        throw new ArtifactError("write not allowed", 422);
       }
       const now = stamp(new Date());
       try {
@@ -2066,6 +2095,7 @@ export class ArtifactStore {
           ],
         );
         const row = mapRow(result.rows[0] as Record<string, unknown>);
+        await this.writeGrants(client, actor, { kind: "note", id: row.id }, defaultGrants(row.level, row.owner_id));
         await recordFileChange(client, actor, {
           orgId: row.org_id,
           artifactId: row.id,
@@ -2073,7 +2103,7 @@ export class ArtifactStore {
           operation: "create",
           version: row.version,
         });
-        return row;
+        return { ...row, access: "write" as const };
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw new ArtifactError("artifact already exists", 409);
@@ -2106,25 +2136,35 @@ export class ArtifactStore {
   }
 
   /**
-   * Notes the actor may read, binding only the ids the clause references so
-   * that every parameter has a type PostgreSQL can infer.
+   * The SQL for the actor's mode on the artifact `a`, the way `artifactMode`
+   * decides it: `write`, `read`, or `none` or NULL when the actor does not reach it.
    */
-  private readScope(actor: ArtifactActor, values: unknown[]): string {
+  private artifactModeSql(actor: ArtifactActor, values: unknown[]): string {
     if (actor.operator) {
-      values.push(actor.hidden.guildIds, actor.hidden.agentIds);
-      return `NOT ((a.level = 'guild' AND a.owner_id = ANY($${values.length - 1}::text[]))
-                OR (a.level = 'agent' AND a.owner_id = ANY($${values.length}::text[])))`;
+      return `'write'`;
     }
     values.push(actor.agentId ?? "");
-    const parts = [`(a.level = 'agent' AND a.agent_id = $${values.length})`];
-    if (actor.grants.readGuild) {
-      values.push(actor.guildId ?? "");
-      parts.push(`(a.level = 'guild' AND a.guild_id = $${values.length})`);
+    const own = values.length;
+    return `CASE WHEN a.level = 'agent' AND a.owner_id = $${own} THEN 'write'
+                 WHEN a.kind = 'note' THEN ${agentModeSql("note", "a.id", actor, values)} END`;
+  }
+
+  /** The predicate over the artifact `a` for every note, Memory, and script the actor may read. */
+  private readScope(actor: ArtifactActor, values: unknown[]): string {
+    if (actor.operator) {
+      return hiddenScope(actor, values);
     }
-    if (actor.grants.readOrg) {
-      parts.push("a.level = 'org'");
-    }
-    return parts.join(" OR ");
+    return `(${this.artifactModeSql(actor, values)}) IN ('read', 'write')`;
+  }
+
+  /** A join giving each artifact `a` the actor's mode once, as `m.access_mode`. */
+  private modeJoin(actor: ArtifactActor, values: unknown[]): string {
+    return `CROSS JOIN LATERAL (SELECT ${this.artifactModeSql(actor, values)} AS access_mode) m`;
+  }
+
+  /** `readScope` over an artifact `a` whose mode `modeJoin` already gives. */
+  private joinedReadScope(actor: ArtifactActor, values: unknown[]): string {
+    return actor.operator ? hiddenScope(actor, values) : `m.access_mode IN ('read', 'write')`;
   }
 
   private levelFilter(level: ArtifactLevel | undefined, values: unknown[]): string {
@@ -2142,11 +2182,12 @@ export class ArtifactStore {
     limit: number,
   ): Promise<ArtifactRow[]> {
     const values: unknown[] = [actor.orgId];
-    let sql = `SELECT ${ARTIFACT_SELECT}
+    let sql = `SELECT ${ARTIFACT_SELECT}, m.access_mode
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
+         ${this.modeJoin(actor, values)}
         WHERE a.deleted_at IS NULL AND a.kind = 'note' AND a.org_id = $1
-          AND (${this.readScope(actor, values)})`;
+          AND (${this.joinedReadScope(actor, values)})`;
     sql += this.levelFilter(level, values);
     values.push(query);
     const qIndex = values.length;
@@ -2163,11 +2204,12 @@ export class ArtifactStore {
 
   private async listNotes(actor: ArtifactActor, level: ArtifactLevel | undefined, limit: number): Promise<ArtifactRow[]> {
     const values: unknown[] = [actor.orgId];
-    let sql = `SELECT ${ARTIFACT_SELECT}
+    let sql = `SELECT ${ARTIFACT_SELECT}, m.access_mode
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
+         ${this.modeJoin(actor, values)}
         WHERE a.deleted_at IS NULL AND a.kind = 'note' AND a.org_id = $1
-          AND (${this.readScope(actor, values)})`;
+          AND (${this.joinedReadScope(actor, values)})`;
     sql += this.levelFilter(level, values);
     values.push(limit);
     sql += ` ORDER BY a.level, a.key LIMIT $${values.length}`;
@@ -2175,6 +2217,19 @@ export class ArtifactStore {
     return (result.rows as Array<Record<string, unknown>>).map((row) => mapRow(row));
   }
 }
+
+/** The predicate over the artifact `a` leaving out the files of guilds and agents hidden from the actor. */
+function hiddenScope(actor: ArtifactActor, values: unknown[]): string {
+  values.push(actor.hidden.guildIds, actor.hidden.agentIds);
+  return `NOT ((a.level = 'guild' AND a.owner_id = ANY($${values.length - 1}::text[]))
+            OR (a.level = 'agent' AND a.owner_id = ANY($${values.length}::text[])))`;
+}
+
+/** The name of the organisation, guild, or agent that owns the artifact `a`, or its id when it has none. */
+const OWNER_NAME_SQL = `COALESCE(CASE a.level
+    WHEN 'org' THEN (SELECT o.name FROM orgs o WHERE o.id = a.owner_id)
+    WHEN 'guild' THEN (SELECT g.name FROM guilds g WHERE g.id = a.owner_id)
+    ELSE (SELECT ag.name FROM agents ag WHERE ag.id = a.owner_id) END, a.owner_id)`;
 
 const ARTIFACT_SELECT = `
   a.id, a.org_id, a.level, a.owner_id, a.guild_id, a.agent_id, a.origin_guild_id,
@@ -2190,6 +2245,13 @@ const ARTIFACT_RETURNING = `
   search_text, version, created_by_name, updated_by_name, created_at, updated_at
 `;
 
+/** The name of an access subject in the organisation, and the guild it sits in. */
+const SUBJECT_SQL: Record<AccessSubject, string> = {
+  org: `SELECT name, NULL::text AS guild_id FROM orgs WHERE id = $1 AND id = $2`,
+  guild: `SELECT name, id AS guild_id FROM guilds WHERE id = $1 AND org_id = $2`,
+  agent: `SELECT name, guild_id FROM agents WHERE id = $1 AND org_id = $2`,
+};
+
 const COLLECTION_SELECT = `
   artifact_collections.id, artifact_collections.org_id, artifact_collections.guild_id,
   (SELECT g.name FROM guilds g WHERE g.id = artifact_collections.guild_id) AS guild_name,
@@ -2199,12 +2261,6 @@ const COLLECTION_SELECT = `
 `;
 
 /** The owner of a note or file path; a Memory revision belongs to its agent. */
-function fileOwner(
-  parsed: Extract<ParsedDisplayPath, { kind: "artifact" | "revision" }>,
-): { level: ArtifactLevel; ownerId: string } {
-  return parsed.kind === "revision" ? { level: "agent", ownerId: parsed.agentId } : parsed;
-}
-
 /** Whether a guild- or agent-level owner sits in a private guild the operator actor cannot see. */
 function isHiddenOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
   if (level === "guild") {
@@ -2222,9 +2278,54 @@ function visibleCollection(actor: ArtifactActor, row: Record<string, unknown> | 
   return collection.guild_id && actor.hidden.guildIds.includes(collection.guild_id) ? null : collection;
 }
 
-/** A grant listing without the guilds and agents the actor cannot see. */
-function visibleGrants<T extends { id: string; guild_id?: string }>(actor: ArtifactActor, rows: T[]): T[] {
-  return rows.filter((row) => !actor.hidden.guildIds.includes(row.guild_id ?? row.id));
+/** An access list without the guilds, and their agents, the actor cannot see. */
+function visibleEntries(actor: ArtifactActor, entries: AccessEntry[]): AccessEntry[] {
+  return entries.filter((entry) => !entry.guild_id || !actor.hidden.guildIds.includes(entry.guild_id));
+}
+
+/**
+ * Whether the actor reaches what an owner holds outside any access list: a
+ * Task, a Memory, a script, a Memory revision. The operator reaches all but
+ * hidden guilds'; an agent reaches its own.
+ */
+function reachesOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
+  if (actor.operator) {
+    return !isHiddenOwner(actor, level, ownerId);
+  }
+  return level === "agent" && ownerId === actor.agentId;
+}
+
+/** How a change-log line names a subject. */
+function subjectLabel(type: AccessSubject, name: string): string {
+  return type === "org" ? "the organisation" : `${type} ${name}`;
+}
+
+/** An item whose access list is being changed, as its change-log entries name it. */
+type AccessItem = {
+  target: AccessTarget;
+  orgId: string;
+  guildId: string | null;
+  /** The agent that owns an agent-level note, which always writes it. */
+  ownerAgentId: string | null;
+  label: string;
+};
+
+/** Refuses a row naming the agent that owns the item: it always writes its own note. */
+function assertNotOwner(item: AccessItem, grant: AccessGrant, where = ""): void {
+  if (grant.type === "agent" && grant.id === item.ownerAgentId) {
+    throw new ArtifactError(`${where}the agent that owns the note always writes it`, 422);
+  }
+}
+
+function accessChange(item: AccessItem, subject: string, mode: AgentAccessMode | null, existed: boolean): ConfigChange {
+  return {
+    orgId: item.orgId,
+    guildId: item.guildId,
+    targetKind: item.target.kind,
+    targetId: item.target.id,
+    operation: mode === null ? "delete" : existed ? "update" : "create",
+    summary: grantSummary(subject, item.label, mode),
+  };
 }
 
 function mapCollection(row: Record<string, unknown>): CollectionRow {
@@ -2274,6 +2375,7 @@ function mapRow(row: Record<string, unknown>): ArtifactRow {
     updated_by_name: String(row.updated_by_name),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    ...(isAccessMode(row.access_mode) ? { access: row.access_mode } : {}),
   };
 }
 

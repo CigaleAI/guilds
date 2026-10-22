@@ -112,8 +112,8 @@ export function CreateTableDialog({
                 label="Belongs to"
                 hint={
                   scope === orgScope
-                    ? "Guilds and agents reach it through grants."
-                    : "Only this guild's agents reach it, and they write it."
+                    ? "Every agent of the organisation starts with read; change it on its Access tab."
+                    : "This guild's agents start with read and write; change it on its Access tab."
                 }
                 value={scope}
                 onValueChange={setScope}

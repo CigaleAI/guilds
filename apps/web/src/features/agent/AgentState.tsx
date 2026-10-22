@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, useParams } from "@tanstack/react-router";
-import { BookOpen, Brain, Database, FileCode, FolderTree } from "lucide-react";
+import { BookOpen, Brain, FileCode, ShieldCheck } from "lucide-react";
 import { useAgent } from "../../api/queries";
 import { TabsNav, tabsTrigger, Icon } from "@guildsrun/ui";
 import { capabilityOn } from "./settings/configForm";
@@ -9,9 +9,9 @@ const stateTabs = [
   { route: "/guilds/$guildId/agents/$agentId/state/memory", label: "Memory", icon: Brain },
   { route: "/guilds/$guildId/agents/$agentId/state/notes", label: "Notes", icon: BookOpen },
   {
-    route: "/guilds/$guildId/agents/$agentId/state/tables",
-    label: "Tables",
-    icon: Database,
+    route: "/guilds/$guildId/agents/$agentId/state/access",
+    label: "Access",
+    icon: ShieldCheck,
   },
   {
     route: "/guilds/$guildId/agents/$agentId/state/scripts",
@@ -19,14 +19,9 @@ const stateTabs = [
     icon: FileCode,
     capability: "scripting",
   },
-  {
-    route: "/guilds/$guildId/agents/$agentId/state/artifacts",
-    label: "Artifact scope",
-    icon: FolderTree,
-  },
 ] as const;
 
-/** The agent's State tab: what it keeps between runs, and how far it reaches, one route per sub-tab. */
+/** The agent's State tab: what it keeps between runs, and what it reaches, one route per sub-tab. */
 export function AgentState() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const agent = useAgent(agentId);

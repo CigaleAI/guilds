@@ -4,7 +4,7 @@ import {
   type AgentConfig,
 } from "./validation.js";
 import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
-import { operatorActor } from "../artifacts/grants.js";
+import { operatorActor } from "../artifacts/actors.js";
 import { hashTaskContent, resolveTaskContent } from "./task.js";
 
 export type AgentNotes = {

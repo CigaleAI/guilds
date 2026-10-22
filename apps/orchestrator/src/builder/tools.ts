@@ -214,7 +214,6 @@ const recipeDocumentParameter = {
               additionalProperties: false,
             },
           },
-          grants: { type: "object" },
           native_tools: { type: "object" },
           browser: {
             type: "object",
@@ -233,7 +232,7 @@ const recipeDocumentParameter = {
     collections: {
       type: "array",
       description:
-        "Typed tables at the organisation. Apply creates each one or reuses a live table of that name.",
+        "Typed tables of the guild or of the organisation. Apply creates each one or reuses a live organisation table of that name.",
       items: {
         type: "object",
         properties: {
@@ -283,18 +282,18 @@ const recipeDocumentParameter = {
             type: "string",
             enum: ["guild", "org"],
             description:
-              "guild: this guild owns the table and every agent in it reads and writes; org: the organisation holds it and guild is the grant. Default org.",
+              "guild: this guild owns the table and every agent in it reads and writes; org: the organisation holds it, every agent of the organisation reads it, and guild is the guild's mode on its access list. Default org.",
           },
           guild: {
             type: "string",
             enum: ["read", "write"],
-            description: "An org table: the mode every agent in the guild gets.",
+            description: "An org table: the mode every agent in the guild gets. Default read.",
           },
           writers: {
             type: "array",
             items: { type: "string" },
             description:
-              "An org table: role handles that get their own write grant. Needed when guild is read and the role writes.",
+              "An org table: role handles whose agents get write on its access list. Needed when guild is read and the role writes.",
           },
         },
         required: ["name", "purpose", "columns"],
@@ -313,6 +312,18 @@ const recipeDocumentParameter = {
           body: { type: "string" },
           kind: { type: "string" },
           author: authorProperties,
+          guild: {
+            type: "string",
+            enum: ["read", "write"],
+            description:
+              "The mode every agent in the guild gets. A guild note is always write; an org note defaults to read; an agent note reaches only its role unless set.",
+          },
+          writers: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "An org or agent note: role handles whose agents get write on its access list. A guild note takes none.",
+          },
         },
         additionalProperties: false,
       },

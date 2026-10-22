@@ -58,8 +58,13 @@ flowchart LR
   name. Its records are not inlined.
 - The same note embedded twice is inlined once. Later embeds of it
   become its title.
-- Embedding a note does not let the agent read it with `note_get`.
-  The text is in its prompt, but its grants stay as they are.
+- An embed is resolved as the agent. A note or collection is
+  inlined only when its access list gives the agent, its guild, or
+  the organisation `read` or `write`
+  ([Access](access.md#access-lists-for-notes-and-collections)).
+- An embed the agent cannot reach is replaced by a short marker that
+  names the path and says the file is not reachable. The run starts,
+  and the agent can report the link.
 
 A short `[[name]]` in prose is plain text. It is not an embed and is
 never rewritten. A file name, or a line like "inlined from: …", is
@@ -77,26 +82,30 @@ opening line, then Inputs, Work, Outputs, and Files, in headings and
 bullets, about 300 words, with nothing the agent's Guidelines, State,
 or Memory section already say.
 
-### A broken embed stops the agent
+### An embed the agent cannot reach
 
-An embed must resolve to a live note or collection. When one does
-not, the agent cannot start a run until the embed is fixed or
-removed. The app marks the broken link in three places (see below).
+An embed reaches a file when it names a live note or collection that
+the agent can read. The agent cannot tell a missing file from one it
+cannot read, so every other embed is handled the same way: the run
+starts, and the marker takes the embed's place. The app marks the
+link in three places (see below).
 
-A note that a live Task embeds cannot be deleted. This keeps embeds
-from breaking by accident. The check reads Task text only, so an embed
-can still break in these ways:
+A note that a live Task embeds cannot be deleted. The check reads
+Task text only, so an embed can still stop reaching a file:
 
+- the note's access list does not give the agent, its guild, or the
+  organisation `read` or `write`;
 - a note embeds another note, and that note is deleted;
 - the path names something that is not a note or collection, such as
   Memory or a record;
 - the link is not a display path, such as a leftover `recipe:` link or
-  a path without its `org/<org_id>/` start;
-- the Task's embeds hold more than 64 KB of note text.
+  a path without its `org/<org_id>/` start.
 
-Prompt Studio's **References** view shows each of these with its
-reason, at the hop where the run meets it
-([Prompt Studio](prompt-studio.md#state)).
+A Task whose embeds hold more than 64 KB of note text cannot start a
+run until the embeds are cut down.
+
+Prompt Studio's **References** view shows each of these, at the hop
+where the agent's run meets it ([Prompt Studio](prompt-studio.md#state)).
 
 ## In the app
 
@@ -109,9 +118,8 @@ The agent's **Prompt** tab edits the Task.
   the chosen note or collection at the cursor as `![[display-path]]`.
   A collection chip shows the collection's name. Clicking an embed
   opens a preview of it.
-- An embed that does not resolve is marked. A banner,
-  **Runs can't start: the Task links to something that no longer
-  exists**, names each broken link.
+- An embed the agent cannot reach is marked. A banner, **The Task
+  embeds files this agent can't reach**, names each one.
 - The **Version** picker lists the live version and every earlier one,
   with when it was replaced and by whom. An earlier version shows as
   **Text** or **Compare with live**. **Restore v*N*** makes it the
@@ -122,8 +130,9 @@ The agent's **Prompt** tab edits the Task.
   ([Artifacts](artifacts.md#every-change-is-recorded)).
 - Leaving with unsaved edits asks first.
 
-A broken embed is also marked on the agent's row in the sidebar and
-in the agent inspector's header (**Broken file link in the Task**).
+An embed the agent cannot reach is also marked on the agent's row in
+the sidebar and in the agent inspector's header (**Not reachable from
+the Task**).
 
 Prompt Studio drafts Task changes for the operator to review and
 publish ([Prompt Studio](prompt-studio.md)).
@@ -142,7 +151,8 @@ run creation, embeds inlined
 | Saving the same text | nothing changes, no version is added |
 | Embed depth | the Task's embeds and one more hop |
 | Embedded text per run | 64 KB in total |
-| A broken embed | the agent cannot start a run |
+| An embed the agent cannot reach | the run starts with a marker in its place |
+| More than 64 KB of embedded text | the agent cannot start a run |
 | Deleting a note a live Task embeds | refused |
 | Deleting `task.md` | refused |
 
@@ -165,9 +175,10 @@ A new agent's Task is its focus, or the template
 
 The run's system row metadata records `task_source`: the Task's
 `version`, `hash`, and `display_path`, `has_embeds`, `embeds`, each
-embedded note's `display_path`, `version`, `content_hash`, and `kind`,
-and `collections`, the display path of each collection the Task embeds
-directly or through a note it inlines. The run row's `metadata` holds
+note the run inlines with its `display_path`, `version`,
+`content_hash`, and `kind`, and `collections`, the display path of
+each collection the agent can read that the Task embeds directly or
+through a note it inlines. The run row's `metadata` holds
 the same `task_source`.
 
 ### Embed expansion
@@ -175,8 +186,8 @@ the same `task_source`.
 `apps/orchestrator/src/artifacts/embeds.ts` expands embeds at run
 creation:
 
-- The load is as the operator, so the agent's note grants do not
-  limit it. Depth is 2. The budget is 64 KB of embedded note text in
+- The load is as the agent, so the note's access list decides what
+  is inlined. Depth is 2. The budget is 64 KB of embedded note text in
   total.
 - Each note body is wrapped in an element named after its file name
   without `.md`, reduced to letters, digits, `_`, and `-`, with
@@ -189,19 +200,23 @@ creation:
   ```
 
 - A name that would clash with a prompt section (`guidelines`,
-  `task`, `state`, `memory`) or cannot open an element is prefixed
-  `note-`. An empty name becomes `note`.
-- A collection path becomes the collection name.
+  `task`, `state`, `memory`) or with the marker (`unreachable`), or
+  cannot open an element, is prefixed `note-`. An empty name becomes
+  `note`.
+- A collection path the agent can read becomes the collection name.
 - A path already inlined becomes the note's title (or its key
   without `.md`).
+- Any other embed becomes the marker, with the path escaped:
 
-A run is refused with 422 when an embed fails:
+  ```text
+  <unreachable path="org/o_…/guilds/guild_…/style-guide.md" message="This file is not reachable." />
+  ```
 
-| Case | Error |
-|---|---|
-| not a display path, missing, or deleted | `embed failed: <path> (<reason>)` |
-| a path that is not a note or collection | `embed failed: <path> (not a note)` |
-| more than 64 KB of embedded text | `embed budget exceeded` |
+  This covers a path that is missing, deleted, out of the agent's
+  reach, not a display path, or not a note or collection.
+
+A run is refused with 422 `embed budget exceeded` when the embeds hold
+more than 64 KB of note text.
 
 Deleting a note that a live Task embeds is 409
 `note is embedded in task (<agent ids>)`.
@@ -210,7 +225,7 @@ Recipes write embeds in a recipe-local form, `![[guild/…]]`,
 `![[org/…]]`, or `![[agent/<role>/…]]`, which apply rewrites into
 display paths ([Recipe format](recipe-format.md),
 [Applying recipes](applying-recipes.md)). A live Task that still
-holds a `recipe:` link or a missing file shows as broken.
+holds a `recipe:` link or a missing file shows as not reachable.
 
 ### HTTP
 
@@ -229,6 +244,7 @@ GET  /api/org/embeddable-notes                the notes the Insert picker offers
   `task is not writable`. More than 256 KB is 422
   `write exceeds 256 KB`.
 - `DELETE` on `task.md` is 422 `cannot delete this file`.
-- `broken_embeds` lists each embed of the agent's Task that does not
-  resolve: not a display path, a `recipe:` link that was not
-  rewritten, missing, or not a note.
+- `broken_embeds` lists each embed of the agent's Task, and of the
+  notes its run inlines, that the run replaces with the marker. The
+  check is made as that agent, so it includes the files the agent's
+  access lists keep it from.

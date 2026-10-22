@@ -1,6 +1,7 @@
 import { useParams } from "@tanstack/react-router";
 import { AccessSecrets } from "../access/AccessSecrets";
 import { AccessTools } from "../access/AccessTools";
+import { ReachList } from "../access/ReachList";
 
 /** The guild's Tools tab: integrations and native tools, what its agents get unless one overrides it. */
 export function GuildToolsTab() {
@@ -10,10 +11,10 @@ export function GuildToolsTab() {
   );
 }
 
-/** The guild's State sub-tab: how far its agents may read and write notes and tables beyond their own. */
-export function GuildArtifactScope() {
+/** The guild's State sub-tab: the notes and tables its agents reach. */
+export function GuildReachTab() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
-  return <AccessTools owner={{ scope: "guild", id: guildId }} panes={["artifacts"]} />;
+  return <ReachList subject={{ type: "guild", id: guildId }} guildId={guildId} />;
 }
 
 /** The guild's Secrets tab: secrets shared with its agents. */

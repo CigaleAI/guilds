@@ -258,11 +258,13 @@ test("builder_write_recipe tool schema names role and task.body", () => {
   assert.deepEqual(Object.keys(noteProps).sort(), [
     "author",
     "body",
+    "guild",
     "id",
     "key",
     "kind",
     "level",
     "role",
+    "writers",
   ]);
   const roleProps = recipe.recipe.properties.roles.items.properties;
   assert.ok(roleProps.role);

@@ -31,7 +31,7 @@ import {
   type Harness,
 } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor, type Effort } from "../coding/harness-models.js";
-import { operatorActor } from "../artifacts/grants.js";
+import { operatorActor } from "../artifacts/actors.js";
 import {
   ArtifactError,
   ownerPrefix,
@@ -70,6 +70,7 @@ import {
   type OrgPolicy,
 } from "../policy/index.js";
 import { httpAccess } from "../http/access.js";
+import { agentsOfRoles, raiseRecipeAccess } from "./access.js";
 import { RecipeConflictError, RecipeError } from "./errors.js";
 import {
   builderAuthor,
@@ -619,6 +620,7 @@ export class RecipeApplyService {
       }
       const names = new Map((preview.names as Array<{ role: string; name: string }>).map((item) => [item.role, item.name]));
       const noteHref = new Map<string, string>();
+      const writtenNotes: Array<{ note: RecipeDocument["notes"][number]; id: string }> = [];
       for (const note of recipe.notes) {
         if (note.level === "agent") {
           continue;
@@ -632,6 +634,7 @@ export class RecipeApplyService {
         });
         const prefix = ownerPrefix(String(written.org_id ?? org.id), note.level, String(written.owner_id ?? ownerId));
         rememberNoteHref(noteHref, note, `${prefix}${String(written.key ?? note.key)}`);
+        writtenNotes.push({ note, id: String(written.id) });
       }
       const roleToAgent = new Map<string, string>();
       for (const role of recipe.roles) {
@@ -674,6 +677,14 @@ export class RecipeApplyService {
         );
         const prefix = ownerPrefix(String(written.org_id ?? org.id), "agent", agentId);
         rememberNoteHref(noteHref, note, `${prefix}${String(written.key ?? note.key)}`);
+        writtenNotes.push({ note, id: String(written.id) });
+      }
+      for (const { note, id } of writtenNotes) {
+        await raiseRecipeAccess({ artifacts: this.deps.artifacts, actor }, { kind: "note", id }, {
+          access: note,
+          guildId,
+          writerIds: agentsOfRoles(note.writers, roleToAgent),
+        });
       }
       const roleToName = names;
       for (const role of recipe.roles) {
@@ -766,26 +777,14 @@ export class RecipeApplyService {
           createdCollections.push(created.id);
           item.collection_id = created.id;
         }
-        if (!item.collection_id || item.scope === "guild") {
-          // A guild's own table is written by every member and takes no grant.
+        if (!item.collection_id) {
           continue;
         }
-        await this.deps.artifacts.setAccess(actor, {
-          collectionId: item.collection_id,
-          subjectType: "guild",
-          subjectId: guildId,
-          mode: item.guild,
+        await raiseRecipeAccess({ artifacts: this.deps.artifacts, actor }, { kind: "collection", id: item.collection_id }, {
+          access: item,
+          guildId,
+          writerIds: agentsOfRoles(item.writers, roleToAgent),
         });
-        for (const writer of item.writers) {
-          const agentId = roleToAgent.get(writer);
-          if (!agentId) continue;
-          await this.deps.artifacts.setAccess(actor, {
-            collectionId: item.collection_id,
-            subjectType: "agent",
-            subjectId: agentId,
-            mode: "write",
-          });
-        }
       }
       const planNames = [...names.entries()].map(([role, name]) => ({
         role,
@@ -1352,9 +1351,6 @@ export class RecipeApplyService {
     for (const [tool, enabled] of Object.entries(role.native_tools)) {
       await this.deps.repo.upsertBinding(newId("bind"), "native_tool", tool, "agent", agentId, enabled, null, now, actor);
     }
-    for (const [grant, enabled] of Object.entries(role.grants)) {
-      await this.deps.repo.upsertBinding(newId("bind"), "artifact_grant", grant, "agent", agentId, enabled, null, now, actor);
-    }
   }
 }
 
@@ -1784,6 +1780,8 @@ function inventoryFromRecipe(
       key: item.key,
       level: item.level,
       role: item.role ?? null,
+      guild: item.guild ?? null,
+      writers: item.writers,
     })),
     scripts: recipe.roles.flatMap((role) =>
       role.scripts.map((item) => ({ role: role.role, name: item.name, description: item.description })),

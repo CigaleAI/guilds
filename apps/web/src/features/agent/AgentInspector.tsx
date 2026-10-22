@@ -115,8 +115,8 @@ export function AgentInspector() {
                   {broken.length ? (
                     <IconButton
                       icon={Unlink}
-                      label={`Broken file link in the Task: ${broken.join(", ")}`}
-                      title={`Broken file link in the Task: ${broken.join(", ")}`}
+                      label={`Not reachable from the Task: ${broken.join(", ")}`}
+                      title={`Not reachable from the Task: ${broken.join(", ")}`}
                       variant="surface"
                       className="text-t-ochre-fg"
                       onClick={() =>

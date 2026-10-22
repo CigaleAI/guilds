@@ -8,7 +8,9 @@ collections.
 
 Collections live in the organisation's [artifact store](artifacts.md).
 A collection belongs either to the whole organisation or to one
-guild. Agents read and write records with record tools. They never
+guild. Its [access list](access.md#access-lists-for-notes-and-collections)
+decides which agents read it and which write it. Agents read and
+write records with record tools. They never
 create, change, or delete a collection itself. Long-form text belongs
 in a [note](notes.md) instead.
 
@@ -32,7 +34,7 @@ view, and **Insert › Table** in the Task and note editor.
 
 ```mermaid
 flowchart LR
-  Op["Operator<br/>Tables page"] -->|"creates, edits columns,<br/>grants access"| C["Collection<br/>name, purpose, columns"]
+  Op["Operator<br/>Tables page"] -->|"creates, edits columns,<br/>sets the access list"| C["Collection<br/>name, purpose, columns"]
   C -->|"listed in State"| Ag["Agent"]
   Ag -->|"record_add / record_update<br/>record_remove"| R["Records"]
   Ag -->|"record_search / record_list"| R
@@ -48,10 +50,8 @@ reads the purpose and the descriptions to know what goes where.
 
 Every run's system prompt lists the collections its State catalog
 holds, with their columns ([System prompt](system-prompt.md)). The
-agent does not need to look them up. The catalog holds the agent's
-guild's own collections and the organisation collections its guild
-has a grant on, or the agent's own grant reaches, as the agent's own
-grant adjusts them.
+agent does not need to look them up. The catalog holds every
+collection the agent can read, each with the agent's mode on it.
 
 ### Records
 
@@ -80,47 +80,44 @@ filters on the unique column, or runs one `record_search` with `OR`.
 
 ### Organisation and guild collections
 
-- A **guild's own collection** belongs to one guild. Every agent of
-  that guild can write it. No other guild reaches it. Deleting the
-  guild deletes the collection and its records.
-- An **organisation collection** is reached only through a grant the
-  operator sets.
+- A **guild's own collection** belongs to one guild. It is listed
+  under that guild and starts with that guild at `write`. Deleting
+  the guild deletes the collection and its records.
+- An **organisation collection** belongs to no guild. It starts with
+  the organisation at `read`, so every agent reads it and none writes
+  it.
+
+The owner is placement only. Moving a collection between a guild and
+the organisation leaves its access list as it is.
 
 A name is unique in the whole organisation, whatever the owner. Two
 guilds cannot both own a collection called `queue`.
 
 ### Who reaches a collection
 
-Access to a collection is a grant, separate from the note grants.
-For scopes and grants in general, see [Access](access.md).
+A collection's access list gives the organisation, a guild, or one
+agent a mode on it. An agent's mode is its own row when it has one,
+otherwise the better of its guild's row and the organisation's row.
+No row is no access. The rule is the same for notes
+([Access](access.md#access-lists-for-notes-and-collections)).
 
-- A **guild grant** gives every agent of the guild `read` or `write`,
-  including agents added later.
-- An **agent grant** overrides its guild for one agent. It can be
-  `none`, `read`, or `write`.
+So one agent can be held back or raised:
 
-```text
-effective = agent grant ?? guild grant        write implies read
-```
-
-So one member can be held back or raised:
-
-- `none` keeps it out of a collection the rest of the guild reaches
-- `read` holds it to reading where the guild writes
+- `none` keeps it out of a collection the rest of its guild reaches
+- `read` holds it to reading where its guild writes
 - `write` raises it above a guild that only reads
 
-On a guild's own collection, every agent of that guild starts at
-`write`. The guild takes no grant on it. An agent grant still
-overrides it, so a single member can be held back.
+A guild row shares a collection with a second guild. The
+organisation row at `read` or `write` opens it to every agent.
 
 A collection the agent cannot read behaves as if it did not exist. A
 write to a collection the agent can only read is refused and names
 the collection.
 
 Every organisation member reaches every collection with `write`
-through the **Tables** page and the HTTP API. That includes the
-own collections of private guilds the member cannot see
-([SEC-37](../architecture/security-register.md#sec-37--any-organisation-member-can-read-and-change-a-private-guilds-notes-and-databases-through-organisation-wide-routes)).
+through the **Tables** page and the HTTP API, except the own
+collections of private guilds the member does not operate
+([Guilds](guilds.md#visibility)).
 
 ## In the app
 
@@ -134,7 +131,10 @@ each guild's own under its name. Each row shows the name, purpose,
 live record count, and when it last changed.
 
 **New table** asks for a name, a purpose, an owner (the
-organisation, or one guild), and columns.
+organisation, or one guild), and columns. A hint says how the table
+starts: an organisation table with every agent reading it, a guild
+table with that guild's agents reading and writing it. Both are
+changed on the **Access** tab.
 
 A collection opens at `/tables/<id>` with three views, each with
 its own `?tab=`:
@@ -177,23 +177,22 @@ its own `?tab=`:
   - Adding columns applies directly.
   - A column that cannot become unique because values repeat is
     refused by the server, with the duplicates listed.
-- **Access**: **Guilds** with their grant, and **Agents** with their
-  guild's mode, their own setting, and the effective mode. It is
-  read only. Each entry links to the guild's or the agent's
-  **State › Tables** tab, where access is changed. A guild's own
-  collection says that only that guild's agents reach it, that the
-  guild writes it, and that an agent can narrow its own access.
+- **Access**: the **Access** panel of the collection, with the
+  number of rows as the tab's count. It lists the organisation, the
+  guilds, and the agents on its access list, each with its mode, and
+  adds, changes, and removes rows
+  ([Access](access.md#the-access-panel)).
 
 The header shows the name, the owner chip, the record and column
 counts, and the purpose. It also has:
 
 - a pencil to rename the collection, edit its purpose, or move it
-  between the organisation and a guild. A warning explains that
-  moving to a guild drops every grant, and moving to the
-  organisation keeps the former guild's reach as Read & write.
+  between the organisation and a guild. When the owner changes, a
+  banner says that only the placement changes and the access list
+  stays.
 - **Export**, which downloads the records as JSONL.
 - **Delete**, which confirms with the record count and the name typed
-  out, and removes every grant with it.
+  out, and removes its access list with it.
 
 Records re-read after every write and when the window regains focus.
 
@@ -202,37 +201,17 @@ The Prompt Studio inspector shows the same records under
 propose to create, change, or delete the source guild's own
 collections, to create organisation collections, and to add columns to
 an existing organisation collection. A proposal can also change the
-grants of the source guild and its agents
+access rows of the source guild and its live members
 ([Studio proposals](studio-proposals.md)). Another guild's own
 collections are out of the coach's reach.
 
-### The guild's State › Tables tab
+### What a guild or an agent reaches
 
-The guild's **State › Tables** tab lists:
-
-- the guild's own collections, each marked **Guild only · Read &
-  write**
-- every organisation collection, with a None / Read / Read & write
-  control that writes the guild's grant on click
-
-Other guilds' collections are not listed. **New table** opens the
-creation form with this guild as the owner. A name opens that
-collection on the **Tables** page.
-
-### The agent's State › Tables tab
-
-The agent's **State › Tables** tab lists every collection the
-agent can be given, with:
-
-- a **Guild** control (None / Read / Read & write), what every member
-  gets. It is fixed at Read & write on the guild's own collections.
-- a **This agent** control (Inherit / None / Read / Read & write).
-- the effective access.
-
-The agent's own setting replaces what its guild gives it, so **None**
-keeps this one agent out of a collection the rest of the guild
-reaches. Each click writes at once. A name opens that collection on
-the **Tables** page.
+The **Access** sub-tab of the guild's and the agent's **State**
+lists the tables that guild's agents, or that agent, reach, each with
+its mode. The listing is read only. A table there opens its
+**Access** tab on the **Tables** page
+([Access](access.md#what-a-guild-or-an-agent-reaches)).
 
 ### Embedding in the Task
 
@@ -253,6 +232,8 @@ name; records are not inlined ([Task](task.md)).
 | Indexed text per record | 32 KB; text past it is not searched |
 | Ids | start at 1, never reused |
 | Who creates, changes, deletes a collection | the operator only |
+| Starting access | owned by a guild: the guild at `write`; owned by the organisation: the organisation at `read` |
+| Who changes the access list | the operator only |
 | Size of one record | 256 KB of JSON |
 | Column values | text, number, boolean, datetime, or a list of strings; a many-to-many of records is a second collection |
 | Agent queries | the record tools only; a script reads records only from a tool result |
@@ -485,29 +466,18 @@ unique column or `record_search`. Otherwise it restates how `where`
 matches by type and that `record_search` matches words in the
 values.
 
-### Access grants
+### Access list
 
-A grant is one `collection_access` row: `subject_type` `guild` or
-`agent`, `subject_id`, and `mode`, one row per subject and
-collection. A guild row's mode is `read` or `write`. An agent row's
-mode is `none`, `read`, or `write`.
+A collection's access list is its `artifact_access` rows with
+`target_kind` `collection` and the collection id
+([Access](access.md#access-lists)). Any subject may hold a row on any
+collection, a guild's own included.
 
-On a guild's own collection:
-
-- a guild row is refused with 422 (`<name> belongs to <guild>: it is
-  written by that guild and takes no guild grant`)
-- an agent row is accepted only for an agent of that guild (422
-  otherwise)
-
-Moving a collection to a guild drops every grant. Moving it to the
-organisation keeps the former guild's reach as a `write` grant.
-
-Deleting a guild or an agent deletes its grant rows. Deleting a
-collection soft-deletes its records and drops its grants. Clearing a
-collection's records leaves the collection and its grants.
-
-The four note grant bindings do not touch collections
-([Notes](notes.md)).
+Creating a collection writes its starting row. Changing its owner
+leaves its rows as they are. Deleting a collection soft-deletes its
+records and drops its rows. Clearing its records leaves the
+collection and its rows. Deleting a guild or an agent drops the rows
+that name it.
 
 A tool call on a collection the agent cannot read fails with 404
 `unknown collection <name>`. A write with `read` fails with 403
@@ -515,17 +485,13 @@ A tool call on a collection the agent cannot read fails with 404
 
 ### In State
 
-State lists, in name order and capped at 50, the agent's guild's own
-collections and the organisation collections with a grant row for
-its guild, each at its effective mode. An entry whose effective mode
-is no access is left out. Each entry has `name`, `purpose`, `access`
-(`read` or `write`), `scope` (`guild` or `org`), `display_path`, and
-`columns`. Past the cap, one more entry carries `truncated: true`.
-
-An organisation collection with only an agent row for this agent is
-not in State. `record_list`, `record_add`, `record_update`,
-`record_remove`, and `record_search` with or without `collection`
-still reach it at that row's mode.
+State lists, in name order and capped at 50, every collection the
+agent can read, at its mode. Each entry has `name`, `purpose`,
+`access` (`read` or `write`), `scope` (`guild` for a table placed in
+a guild, `org` for an organisation table), `display_path`, and
+`columns`. Past the cap, one more entry carries
+`truncated: true`. The record tools reach the same collections at the
+same modes.
 
 ### HTTP
 
@@ -535,20 +501,18 @@ acting as the operator:
 ```text
 GET    /api/collections                          every live collection with its record count
 POST   /api/collections                          { name, purpose, columns, guild_id? }; 201
-GET    /api/collections/:id                      the collection, its count, and access_list (guilds, agents)
+GET    /api/collections/:id                      the collection and its count
 PATCH  /api/collections/:id                      { name?, purpose?, columns?, guild_id? }; a renamed column carries rename_from; guild_id null moves it to the organisation
 DELETE /api/collections/:id                      204
 GET    /api/collections/:id/export               the live records as JSONL, without collection and version
 GET    /api/collections/:id/records              query, where, since, order, limit, offset; { total, records, columns }
 POST   /api/collections/:id/records              { body }; 201 { record, merged }
-DELETE /api/collections/:id/records              every live record; the collection, grants, and next_id stay; 204
+DELETE /api/collections/:id/records              every live record; the collection, its access list, and next_id stay; 204
 GET    /api/collections/:id/records/:rid
 PATCH  /api/collections/:id/records/:rid         { body }; { record, warnings }
 DELETE /api/collections/:id/records/:rid         204
-GET    /api/guilds/:id/collection-access         the guild's own collections (scope guild, write) and every organisation collection with the guild's grant
-PUT    /api/guilds/:id/collection-access         { collection_id, mode }; mode null removes the grant; 204
-GET    /api/agents/:id/collection-access         the guild's own collections and every organisation collection, with the guild's grant, the agent's grant, and the effective mode
-PUT    /api/agents/:id/collection-access         { collection_id, mode }; mode none, read, write, or null to inherit; 204
+GET    /api/collections/:id/access               { subjects, owner_agent_id }: the access list
+PUT    /api/collections/:id/access               { subjects: [{ type, id, mode }] }: the full list, replacing it
 ```
 
 - `where` and `order` travel as JSON in the query string. `order_by`
@@ -558,10 +522,11 @@ PUT    /api/agents/:id/collection-access         { collection_id, mode }; mode n
 - Records carry `display_path`, so the provenance strip can look them
   up.
 - The routes act as the operator for any organisation member. They
-  list and change every collection of the organisation, private
-  guilds' own collections included. The `access_list` of
-  `GET /api/collections/:id` names every guild and agent the
-  collection reaches, private guilds included.
+  list and change every collection of the organisation except the
+  own collections of private guilds the member does not operate,
+  which answer 404 `unknown collection`.
+- The access routes, their refusals, and their change-log entries are
+  in [Access](access.md#access-lists).
 - **Delete all**, deleting a collection, and a column rename or
   removal record no file change
   ([Artifact store](artifacts.md#file-provenance)).

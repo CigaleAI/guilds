@@ -71,7 +71,7 @@ one as a submodule ([Extension points](extension-points.md)).
 | `secrets/` | Who reaches and manages a secret, `secret_store`, and redaction ([Secrets](../concepts/secrets.md)) |
 | `db/` | Pool, codecs, Drizzle schema, `Repositories`, seeds, and the migration check |
 | `attachments/` | Chat images: sniffing, the blob store, and hydration |
-| `artifacts/` | `ArtifactStore`: notes, memory, scripts, collections, records, and grants ([Artifacts](../concepts/artifacts.md)) |
+| `artifacts/` | `ArtifactStore`: notes, memory, scripts, collections, records, and the access lists of notes and collections ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
 | `notes/` | `NotesStore`: `system.md` and the routine shadow files; the store the generation unit tests use |
 | `directories/` | State listing over `NotesStore` for those tests |
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |

@@ -96,7 +96,6 @@ test("an open access change marks the tools it touches", () => {
       proposal("open", [
         { kind: "native_tool", id: "note_get", label: "note_get", setting: "off" },
         { kind: "mcp", id: "srv_1", label: "Notion", setting: "on" },
-        { kind: "artifact_grant", id: "read_org", label: "read_org", setting: "on" },
       ]),
       proposal("decided", [
         { kind: "mcp_tool", id: "other_tool", label: "other_tool", setting: "off" },

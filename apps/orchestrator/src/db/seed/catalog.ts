@@ -72,12 +72,5 @@ export const PLATFORM_NATIVE_TOOLS = [
   "group_post",
 ] as const;
 
-export const PLATFORM_ARTIFACT_GRANTS = [
-  { id: "read_guild", enabled: true },
-  { id: "read_org", enabled: true },
-  { id: "write_guild", enabled: true },
-  { id: "write_org", enabled: false },
-] as const;
-
 /** Core's connectors as the seed installs them. */
 export const MCP_SEED_SERVERS = CONNECTORS.entries().map((entry) => ({ id: entry.id, slug: entry.manifest.slug }));

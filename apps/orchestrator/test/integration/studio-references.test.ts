@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { ArtifactStore } from "../../src/artifacts/index.js";
+import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
@@ -24,7 +25,7 @@ after(async () => {
 });
 
 test(
-  "studio references draw what each Task embeds or names, as deep as a run inlines it",
+  "studio references draw what each Task embeds or names, as deep as a run inlines it and as its agent reads",
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -143,7 +144,8 @@ test(
       const edge = (from: string, to: string) =>
         refs.edges.find((item) => item.from === from && item.to === to);
 
-      // Every broken embed embed-status reports is on the map, with its reason, met by that agent's run.
+      // Every broken embed embed-status reports is on the map, met by that agent's run: a link that
+      // does not resolve with its reason, or a file that agent cannot read.
       const status = (await call("GET", `${guild}/embed-status`, OWNER)) as {
         agents: Array<{ id: string; broken_embeds: string[] }>;
       };
@@ -152,17 +154,20 @@ test(
       );
       assert.deepEqual(broken[writer], ["notes/plan.md", vaultPath].sort());
       assert.deepEqual(broken[reviewer], [temp]);
-      assert.deepEqual(broken[editor], []);
+      assert.deepEqual(broken[editor], [style]);
       for (const item of status.agents) {
         for (const href of item.broken_embeds) {
-          assert.equal(node(href)?.kind, "unresolved", href);
-          assert.ok(node(href)?.reason, href);
-          assert.notEqual(node(href)?.hops[item.id], undefined, href);
+          const target = node(href);
+          assert.ok(target?.reason || target?.unreachable_for.includes(item.id), href);
+          assert.notEqual(target?.hops[item.id], undefined, href);
         }
       }
       assert.equal(node("notes/plan.md")?.reason, "not a file path");
-      assert.equal(node(temp)?.reason, "missing");
+      assert.equal(node(temp)?.reason, "not reachable");
       assert.equal(edge(checklist, temp)?.status, "broken");
+      // The writer's own note is out of the editor's reach, so the editor's run marks it.
+      assert.deepEqual(node(style)?.unreachable_for, [editor]);
+      assert.equal(edge(rules, style)?.status, "broken");
 
       // The private guild's note is never read or listed.
       assert.equal(
@@ -179,28 +184,37 @@ test(
       assert.equal(node(deep)?.depth, 4);
       assert.equal(node(lonely)?.depth, null);
       assert.equal(node(style)?.agent_id, writer);
-      assert.equal(edge(rules, style)?.status, "inlined");
       assert.equal(edge(style, glossary)?.status, "too_deep");
       assert.equal(edge(`org/org_home/agents/${writer}/task.md`, aside)?.status, "named");
       assert.equal(node(leads)?.kind, "table");
       assert.ok(node(leads)?.collection_id);
 
-      // What the map calls inlined is what the effective prompt inlines.
-      const inspector = await call(
-        "GET",
-        `/api/studio/sessions/${String(session.id)}/agents/${editor}`,
-        OWNER,
-      );
-      const inlined = String((inspector.effective_prompt as { task_content: string }).task_content);
+      // What the map calls inlined is what the effective prompt inlines, as each agent reads.
+      const taskContent = async (id: string) => {
+        const inspector = await call(
+          "GET",
+          `/api/studio/sessions/${String(session.id)}/agents/${id}`,
+          OWNER,
+        );
+        return String((inspector.effective_prompt as { task_content: string }).task_content);
+      };
+      const inlined = await taskContent(writer);
       assert.match(inlined, /Rules\./);
       assert.match(inlined, /Style\./);
       assert.ok(inlined.includes(`![[${glossary}]]`));
       assert.doesNotMatch(inlined, /Terms\./);
-      const editorTask = node(`org/org_home/agents/${editor}/task.md`);
+      assert.ok(inlined.includes(unreachableMarker(vaultPath)));
+      assert.doesNotMatch(inlined, /kept in the vault/);
+      const editorInlined = await taskContent(editor);
+      assert.match(editorInlined, /Rules\./);
+      assert.ok(editorInlined.includes(unreachableMarker(style)));
+      assert.doesNotMatch(editorInlined, /Style\./);
+      const inlinedBytes = (id: string) => node(`org/org_home/agents/${id}/task.md`)?.inlined_bytes;
       assert.equal(
-        editorTask?.inlined_bytes,
+        inlinedBytes(writer),
         Buffer.byteLength(`Rules. ![[${style}]]`) + Buffer.byteLength(`Style. ![[${glossary}]]`),
       );
+      assert.equal(inlinedBytes(editor), Buffer.byteLength(`Rules. ![[${style}]]`));
       assert.equal(refs.budget, 64 * 1024);
 
       // Another member cannot read the operator's session.

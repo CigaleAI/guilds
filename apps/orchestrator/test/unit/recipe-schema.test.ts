@@ -145,10 +145,52 @@ test("writers must be roles of the recipe", () => {
   assert.match(writer.message, /archivist/);
 });
 
+function withNote(note: Record<string, unknown>): unknown {
+  const recipe = fixtureDeskRecipe() as unknown as Record<string, unknown>;
+  recipe.notes = [{ id: "n", key: "n.md", body: "Body.", kind: "seed", ...note }];
+  return recipe;
+}
+
+test("a note's guild mode defaults to what its level gives and its writers to none", () => {
+  const modes = (["org", "guild", "agent"] as const).map((level) => {
+    const note = parseRecipe(withNote({ level, role: level === "agent" ? "reader" : undefined })).notes[0]!;
+    return [level, note.guild ?? null, note.writers];
+  });
+  assert.deepEqual(modes, [
+    ["org", "read", []],
+    ["guild", "write", []],
+    ["agent", null, []],
+  ]);
+});
+
+test("a note carries a guild mode and writers beyond its level's rows", () => {
+  const note = parseRecipe(withNote({ level: "agent", role: "writer", guild: "read", writers: ["reader", " reader "] })).notes[0]!;
+  assert.equal(note.guild, "read");
+  assert.deepEqual(note.writers, ["reader"]);
+  assert.equal(parseRecipe(withNote({ level: "org", guild: "write" })).notes[0]?.guild, "write");
+});
+
+test("a note's guild mode is read or write and a guild note keeps guild write without writers", () => {
+  assert.throws(() => parseRecipe(withNote({ level: "org", guild: "none" })), /notes\[0\]\.guild must be read or write/);
+  assert.throws(() => parseRecipe(withNote({ level: "org", writers: "reader" })), /notes\[0\]\.writers must be an array/);
+  assert.throws(() => parseRecipe(withNote({ level: "guild", guild: "read" })), /notes\[0\] takes guild write and no writers/);
+  assert.throws(() => parseRecipe(withNote({ level: "guild", writers: ["reader"] })), /notes\[0\] takes guild write and no writers/);
+});
+
+test("a note's writers must be roles of the recipe", () => {
+  const recipe = parseRecipe(withNote({ level: "org", writers: ["archivist"] }));
+  const findings = validateRecipe(recipe, { ...ctx, publishedServers: new Set(["mail", "crm"]) });
+  const writer = findings.find((item) => item.code === "note.writer");
+  assert.ok(writer);
+  assert.equal(writer.severity, "error");
+  assert.equal(writer.path, "notes.n");
+  assert.match(writer.message, /archivist/);
+});
+
 test("plain-text note paths must name a recipe note", () => {
   const recipe = parseRecipe(fixtureDeskRecipe());
   recipe.notes = [
-    { id: "rules", level: "guild", key: "rules.md", body: "Rules.\n", kind: "seed", author: operatorAuthor() },
+    { id: "rules", level: "guild", key: "rules.md", body: "Rules.\n", kind: "seed", author: operatorAuthor(), writers: [] },
   ];
   recipe.roles[0]!.task.body += "\n\nRead guild/rules.md, then note_get agent/reader/playbook.md.";
   const findings = validateRecipe(recipe, { ...ctx, publishedServers: new Set(["mail", "crm"]) });
@@ -359,6 +401,7 @@ test("applyReview covers schedules, notes, and external cards", () => {
     body: "Keep the queue moving.",
     kind: "seed",
     author: builderAuthor(),
+    writers: [],
   });
   recipe.external.push({
     kind: "url",

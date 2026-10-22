@@ -192,7 +192,7 @@ selected item on the right.
 
 | Tab | List | Selected item |
 |---|---|---|
-| **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens that note in **State**; a collection embed opens State's tables. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. It says whether the latest run used this Task and this memory. Banners say when the agent is running and when an embed does not resolve |
+| **Prompt** | none | The live Task and its version, with **Edit in agent**. A note embed chip opens that note in **State**; a collection embed opens State's tables. Then what a run gets: the effective prompt, the exact opening system message the next run would store, with note embeds expanded to their text and collection embeds replaced by the collection's name, split into guidelines, task, state, and (when Memory is on) memory. An embed the agent cannot reach shows as the marker its run gets ([Task](task.md#embed-expansion)). It says whether the latest run used this Task and this memory. Banners say when the agent is running and when the embeds hold more than the 64 KB budget |
 | **Draft** | none | The pending draft: why, a side-by-side diff against its base version, **Publish**, **Edit**, **Discard**. A draft over a Task that changed since shows as conflicted |
 | **History** | Every run: what started it, time, older Task, generating, error count; filters by kind, errors, and current Task | The run transcript, as in the agent's Chat tab: offered tools, system prompt sections with note text filled in, the run flow; whether it ran on the current Task, guidelines, and memory; **Open in agent** |
 | **Memory** | Every version memory has held, newest first: version, author (run kind, person, or agent), added and removed lines; filter by author | Diff against the previous version, or the whole version. **Open step** on a version a run wrote opens the run at its `memory_write` call |
@@ -281,17 +281,19 @@ what embeds or names what:
   hop further**, and **Too deep**, whose text no run gets. A band below
   holds the files no Task reaches. A solid line is an embed; a dotted
   line is a display path the text names without embedding it. A link
-  that does not resolve, or a Task over the embed budget, is red.
+  that does not resolve, a file some run that inlines it cannot reach,
+  or a Task over the embed budget, is red.
   Selecting a box lights what it pulls in and what pulls it in. Files
   reached only past the last column are listed under the map.
-- **What stands out.** Broken embeds with their reason, Tasks over the
-  budget, notes inlined into several agents' prompts, notes too deep to
+- **What stands out.** Broken embeds with their reason (a file some
+  agent's run cannot reach names those agents), Tasks over the budget, notes inlined into several agents' prompts, notes too deep to
   be inlined, and files nothing embeds or names and no agent read in
   the list's window.
 - **Detail.** For a Task: its embed budget, and everything it pulls
-  into every run, each at its hop. For a file: what it embeds or
-  names, what embeds or names it, and the agents whose prompts it
-  reaches.
+  into every run, each at its hop, with the files its agent cannot
+  reach marked not reachable. For a file: what it embeds or names,
+  what embeds or names it, the agents whose prompts it reaches, and
+  the agents whose runs cannot reach it.
 - **Actions.** **Open Prompt** opens the agent's **Prompt** tab. **Open
   in State** selects the file in **List**. **Ask the coach** pins the
   file.
@@ -300,7 +302,9 @@ With the agent filter, the map shows what that agent's runs meet, and
 its own notes that they do not. The map counts hops the way a run
 inlines embeds ([Task](task.md#embeds)): a note met first deeper in the
 walk is inlined there once, so its own embeds can fall past the last
-inlined hop.
+inlined hop. Each Task's run is walked as its agent, so a file the
+agent cannot reach gets the marker in that run, and the walk does not
+go into it.
 
 ### Tools
 
@@ -547,8 +551,8 @@ that takes a display path, and for focus pins.
 | `studio_find_artifacts` | Searches notes only |
 | `studio_get_artifact` | Reads one note or record by display path. A record is in reach when its collection is. A collection path is refused with a pointer to `studio_get_collection` |
 | `studio_get_script` | Reads one member script by name |
-| `studio_list_collections` | The source guild's own collections, then the organisation's. Each row has owner, purpose, record count, column names, the source guild's mode, and `studio_can`: `edit_or_delete` for the guild's own, `add_columns_and_grants` for the organisation's |
-| `studio_get_collection` | One collection in reach by name: its full columns, record count, `updated_at`, `studio_can`, the source guild's base mode and each live member's own and effective mode, the grants outside the guild, and its five most recently updated records as evidence (`apps/orchestrator/src/studio/tables.ts`). Grants held in a private guild the operator does not operate are left out |
+| `studio_list_collections` | The source guild's own collections, then the organisation's. Each row has owner, purpose, record count, column names, the mode the source guild's agents get from the guild's and the organisation's rows (`guild_access`), and `studio_can`: `edit_or_delete` for the guild's own, `add_columns_and_access` for the organisation's |
+| `studio_get_collection` | One collection in reach by name: its full columns, record count, `updated_at`, `studio_can`, the organisation's row, the source guild's row, each live member's own row and the mode it ends up with (counting the guild's and the organisation's rows), the rows of other guilds and their agents, and its five most recently updated records as evidence (`apps/orchestrator/src/studio/tables.ts`). Rows of a private guild the operator does not operate are left out |
 | `studio_get_agent_context` | Sections `task`, `memory`, `state`, `config`, `effective_prompt` (the composed opening system message with embeds inlined), `effective_prompt_headers` |
 | `studio_list_runs` | Filters by `kind`, `status`, `task_prompt_hash`, `error_only`, and `schedule_id` |
 | `studio_list_routines` | Each routine's run count and latest run |
@@ -558,7 +562,7 @@ that takes a display path, and for focus pins.
 | `studio_list_file_changes` | A file's recorded changes with the run and tool call that made each one, and the coach message a change applied from a card came from |
 | `studio_get_guild` | The live about and description in full; the system message holds a capped copy |
 | `studio_list_guilds` | The organisation's other guilds the operator can see, private guilds they do not operate left out: each one's id, name, about, and description as evidence. Paged with `cursor` and `limit`; a page also ends before its guilds pass half the 64 KiB result cap |
-| `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, artifact levels, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
+| `studio_get_agent_access` | What one member is offered at run start, projected from bindings, the secrets that reach it, and the stored MCP catalog: native tools and the ones withheld, scripts, secret names and descriptions, and each MCP connection with its offered and withheld tools, whether the server is enabled for that agent, and whether this session may read through it. No remote list and no credential decryption |
 
 ### Storage
 
@@ -660,14 +664,16 @@ in [Studio activity](studio-activity.md#http).
 `memory` (another value is 422); `agent` keeps the items that agent
 owns, changes, or reads. Each item has `display_path`, `kind`, `level`,
 `owner_id`, `title`, `size` (bytes, or records for a table), `version`
-(null for a table), `created_by`, `created_at`, `collection_id`, the
+(null for a table), `created_by`, `created_at`, `collection_id` (a
+table's id, else null), `note_id` (a note's id, else null), the
 window's `changes` and `reads`, `top_writer` and `top_reader` (`{
 actor, count, share }`), `writers`, `last_change` (`{ at, actor }`),
 and `flags` (`no_agent_read`, `writers`, `deletes_others_rows`,
 `untouched`). An actor is `{ kind: person | agent | other_guild, id,
 name }`. Items are read with the viewer's own permissions, so a
 private guild's or a hidden item never appears. Changes come from
-`file_changes` and the table entries of `config_changes`; reads from
+`file_changes` and the table and note entries of `config_changes`
+(a table's shape and access, a note's access); reads from
 `runs.metadata.task_source` (`embeds` and `collections`, recorded at
 run start), every run of a Memory's agent, and the arguments of
 `note_get`, `record_list`, `record_search`, `script_run`, and script
@@ -677,8 +683,8 @@ tool calls.
 reads, history, next_cursor }` for the item at `path` (404 when the
 viewer cannot open it). `changes` and `reads` count each actor's
 operations and ways of reading in the window. `history` is the item's
-recorded changes, 50 a page, newest first, over all time: a table's
-own changes, its records', and its change log. Each entry has `at`,
+recorded changes, 50 a page, newest first, over all time: its own
+changes, a table's records', and its entries in the change log. Each entry has `at`,
 `operation`, `actor`, `link` (`{ kind: "run", run_id, agent_id,
 call_id }` or `{ kind: "coach", session_id, seq }`), `record`, and
 `summary`. `op` keeps one operation; `cursor` is the previous page's
@@ -748,25 +754,29 @@ is the 64 KB embed budget and `depth` the 2 levels a run inlines.
 | `label`, `level`, `agent_id`, `collection_id` | The agent's name for a Task, else the note's title or the table's name; the level; the agent of a Task or agent-level note; a table's id |
 | `in_state` | Part of the guild's state, rather than only reached from it |
 | `bytes` | The UTF-8 size of its text |
-| `inlined_bytes` | For a Task: the note text one run inlines |
+| `inlined_bytes` | For a Task: the note text one run inlines, leaving out the files its agent cannot reach |
 | `hops` | Per agent id, the hop at which its runs meet it: 0 its own Task, 1 and 2 inlined, 3 left as text |
 | `depth` | Embed hops from the nearest Task, past 3 too; `null` when no Task reaches it |
 | `reason` | Why a link does not resolve, with the reasons of the embed status route |
+| `unreachable_for` | The agents whose runs meet it at an inlined hop but cannot read it, so their runs get the marker in its place |
 
 An edge is `{ from, to, kind, status }`. `kind` is `embed`, or `name`
 for a display path of a Task, note, or table that the text names
 outside an embed. An embed's `status` is `broken` when its target does
-not resolve, `inlined` when some run expands its holder's embeds,
+not resolve or a run that expands its holder's embeds cannot read it,
+`inlined` when some run expands its holder's embeds,
 `too_deep` when runs meet the holder only at the last inlined level,
 and `unreached` when no Task reaches the holder; a name's is `named`.
 
-The route reads with the viewing operator's own permissions: the
-guild's agents' notes, the guild's and organisation's notes, the
+The route reads the files with the viewing operator's own permissions:
+the guild's agents' notes, the guild's and organisation's notes, the
 organisation's tables and the guild's own, and the notes and tables
 their embeds reach, followed as far as a run could inline them. The
 notes and tables of a private guild the operator does not operate
 are never listed ([Guilds](guilds.md)); an embed of one is a link that
-does not resolve.
+does not resolve. Each Task's walk, `hops`, `inlined_bytes`, and
+`unreachable_for` are read as that Task's agent, the way its run
+inlines ([Task](task.md#embed-expansion)).
 
 The runs list takes `schedule_id`, `kind`, and `task_prompt_hash` and
 returns run headers (status, generating, hashes, `schedule_id`,
