@@ -101,7 +101,7 @@
       "path": "seed/manifest.json",
       "source": "clean-database seed rows: system, dev, runtime bootstrap",
       "generator_version": "1",
-      "sha256": "e08c6562dc3b02085f69978ad6a9b0ec2cfa83b977f40d9d6ec88ad717078815"
+      "sha256": "150896bb3e8c0a152c512c398fea33717495a3e67931498b6085ca54661cb68c"
     },
     {
       "path": "sse/channel-split-run.txt",

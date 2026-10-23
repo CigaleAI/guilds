@@ -79,15 +79,15 @@
         "enabled": true
       },
       {
-        "catalog_id": "schedule_update",
-        "enabled": true
-      },
-      {
         "catalog_id": "schedule_pause",
         "enabled": true
       },
       {
         "catalog_id": "schedule_resume",
+        "enabled": true
+      },
+      {
+        "catalog_id": "schedule_update",
         "enabled": true
       },
       {
@@ -328,7 +328,7 @@
     "orgs": 1,
     "org_members": 1,
     "connectors": 15,
-    "bindings": 24,
+    "bindings": 25,
     "secrets": 0
   }
 }
