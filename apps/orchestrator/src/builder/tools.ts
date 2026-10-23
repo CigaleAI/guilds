@@ -259,7 +259,7 @@ const recipeDocumentParameter = {
                 type: { type: "string", enum: ["text", "number", "boolean", "datetime", "array"] },
                 description: {
                   type: "string",
-                  description: "What the value means, for the agents. At most 200 characters.",
+                  description: "What the value means and how agents should fill it. At most 1000 characters.",
                 },
                 required: { type: "boolean" },
                 unique: {

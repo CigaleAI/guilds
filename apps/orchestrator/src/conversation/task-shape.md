@@ -13,7 +13,8 @@ wake. Write every Task, new or redrafted, in this shape:
 4. `## Outputs`: what it produces and where each lands: a table and the
    state value it writes, whom it tags and when, a system it writes.
 5. `## Files`: the files it owns and revises, each by path with one line
-   on what it holds, and the embeds (`![[…]]`) every wake must see.
+   on what it holds: the embeds (`![[…]]`) every wake must see, and
+   the references (`[[…]]`) it reads when it needs them.
 
 Headings and bullets, one idea per line, no paragraphs of rules. Leave
 out a section the role has no use for. About 300 words outside embeds:

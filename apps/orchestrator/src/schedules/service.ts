@@ -199,6 +199,21 @@ export type ScheduleChanges = {
   paused?: boolean;
 };
 
+/**
+ * The changes a request or tool call names: `cron` or `window` for a new
+ * timing, `description`, `instruction`, and a boolean `paused`. A key it
+ * leaves out is left out of the changes.
+ */
+export function scheduleChanges(input: Record<string, unknown>): ScheduleChanges {
+  const timed = input.cron !== undefined || input.window !== undefined;
+  return {
+    ...(timed ? { when: { cron: input.cron, window: input.window } } : {}),
+    ...(input.description !== undefined ? { description: input.description } : {}),
+    ...(input.instruction !== undefined ? { instruction: input.instruction } : {}),
+    ...(typeof input.paused === "boolean" ? { paused: input.paused } : {}),
+  };
+}
+
 /** A routine's definition after `changes`, each changed field validated. */
 export function changedFields(
   row: Record<string, unknown>,

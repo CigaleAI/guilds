@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { TaskEditor, type TaskEditorProps } from "./TaskEditor";
+import { TaskEditor, type InsertKind, type TaskEditorProps } from "./TaskEditor";
 
 const meta: Meta<typeof TaskEditor> = {
   title: "Components/Content/TaskEditor",
@@ -18,6 +18,7 @@ const liveTask = `You run the degen fund. Moon or rekt, it's on you.
 - Never size a trade without verified wallet balances.
 - Orders go to ![[org/org_01j9x2k7/collections/degen-orders]] with status \`PENDING\`.
 - Report hourly; stay silent when nothing changed.
+- When a call looks odd, read [[org/org_01j9x2k7/guilds/g_01j9x3m1/red-flags.md]].
 
 ## Every 24h
 Run a retrospective with researchoor: check closed and exited calls, see how your decisions held up, and fold the learnings into ![[org/org_01j9x2k7/guilds/g_01j9x3m1/fund-thesis.md]], your memory and the scoring system.`;
@@ -34,9 +35,10 @@ const sizingRules = `
 - Ignore calls from accounts younger than 30 days.
 - Escalate to the operator when a single order exceeds $2,500.`;
 
-const picked: Record<"note" | "table", string> = {
-  note: "org/org_01j9x2k7/guilds/g_01j9x3m1/trench-rules.md",
-  table: "org/org_01j9x2k7/collections/degen-projects",
+const picked: Record<InsertKind, string> = {
+  note: "![[org/org_01j9x2k7/guilds/g_01j9x3m1/trench-rules.md]]",
+  table: "![[org/org_01j9x2k7/collections/degen-projects]]",
+  column: "`degen-projects.status`",
 };
 
 function Editor({
@@ -60,7 +62,7 @@ function Editor({
           setVersion((current) => current + 1);
         }}
         onDiscard={() => setValue(live)}
-        onPickEmbed={(kind) => picked[kind]}
+        onPickInsert={(kind) => picked[kind]}
         isBrokenEmbed={(path) => path.includes("trench-rules")}
         {...props}
       />

@@ -37,6 +37,8 @@ the agent until you resume it.
   month, and weekday. Wake-ups must be at least five minutes apart.
 - **Random window** wakes the agent at random times between two
   hours of the day, in your timezone, up to a number of times a day.
+- **Edit routine**, under the selected routine, changes its timing,
+  description, or instruction.
 - The guild's **Routines** tab lists every routine in the guild. One
   switch there holds them all.
 

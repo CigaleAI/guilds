@@ -27,8 +27,8 @@ import {
   toast,
   Icon,
 } from "@guildsrun/ui";
-import type { EmbedKind } from "@guildsrun/ui";
-import { EmbedPicker } from "./EmbedPicker";
+import type { InsertKind } from "@guildsrun/ui";
+import { InsertPicker } from "./InsertPicker";
 import { EmbedPreview } from "./EmbedPreview";
 import { embedIsBroken, pickableNotes } from "./taskContext";
 import { LatestChange } from "../../files/LatestChange";
@@ -55,8 +55,8 @@ export function AgentPrompt() {
   const [viewing, setViewing] = useState<number | null>(null);
   const [pastView, setPastView] = useState<"text" | "changes">("text");
   const [showConflict, setShowConflict] = useState(false);
-  const [picking, setPicking] = useState<EmbedKind | null>(null);
-  const resolvePick = useRef<((path: string | null) => void) | null>(null);
+  const [picking, setPicking] = useState<InsertKind | null>(null);
+  const resolvePick = useRef<((markup: string | null) => void) | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<TaskRevision | null>(null);
 
@@ -91,7 +91,7 @@ export function AgentPrompt() {
     [notes.data, org.id, guildId, agentId],
   );
 
-  const pickEmbed = (kind: EmbedKind) =>
+  const pickInsert = (kind: InsertKind) =>
     new Promise<string | null>((resolve) => {
       resolvePick.current = resolve;
       setPicking(kind);
@@ -159,7 +159,9 @@ export function AgentPrompt() {
     <TabFrame>
       <p className="text-sm text-fg-2">
         The agent's standing purpose, sent in its system prompt on every run. Notes and tables
-        embedded with <code className="font-mono text-xs">![[…]]</code> are added when a run starts.
+        embedded with <code className="font-mono text-xs">![[…]]</code> are added when a run starts;
+        a note referenced with <code className="font-mono text-xs">[[…]]</code> is read by the agent
+        when it needs it.
         {versioned ? " Saving keeps the previous version, so it can be restored." : null}
       </p>
 
@@ -285,7 +287,7 @@ export function AgentPrompt() {
           onDiscard={() => setDraft(null)}
           {...(current.version !== undefined ? { revision: current.version } : {})}
           saving={save.isPending}
-          onPickEmbed={pickEmbed}
+          onPickInsert={pickInsert}
           onOpenEmbed={setPreviewPath}
           isBrokenEmbed={isBroken}
           defaultMode="preview"
@@ -299,14 +301,14 @@ export function AgentPrompt() {
         </p>
       ) : null}
 
-      <EmbedPicker
+      <InsertPicker
         kind={picking}
         noteGroups={noteGroups}
         collections={collections.data}
         orgId={org.id}
-        onPick={(path) => {
+        onPick={(markup) => {
           setPicking(null);
-          resolvePick.current?.(path);
+          resolvePick.current?.(markup);
           resolvePick.current = null;
         }}
       />

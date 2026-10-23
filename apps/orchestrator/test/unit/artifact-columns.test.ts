@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   ARRAY_ITEM_MAX,
   ARRAY_ITEMS_MAX,
+  COLUMN_DESCRIPTION_MAX,
   columnCatalog,
   describeColumn,
   identityFor,
@@ -46,7 +47,11 @@ test("parseColumns names the rule a column breaks", () => {
   assert.throws(one({ name: "id", type: "text", description: "x" }), /column "id": name is reserved/);
   assert.throws(one({ name: "a", type: "json", description: "x" }), /type must be one of text, number, boolean, datetime, array/);
   assert.throws(one({ name: "a", type: "text" }), /column "a": description is required/);
-  assert.throws(one({ name: "a", type: "text", description: "x".repeat(201) }), /at most 200 characters/);
+  assert.doesNotThrow(one({ name: "a", type: "text", description: "x".repeat(COLUMN_DESCRIPTION_MAX) }));
+  assert.throws(
+    one({ name: "a", type: "text", description: "x".repeat(COLUMN_DESCRIPTION_MAX + 1) }),
+    /at most 1000 characters/,
+  );
   assert.throws(one({ name: "a", type: "text", description: "x", required: "yes" }), /required must be true or false/);
   assert.throws(one({ name: "a", type: "boolean", description: "x", unique: true }), /unique needs a text or number column/);
   assert.throws(one({ name: "a", type: "array", description: "x", unique: true }), /unique needs a text or number column/);

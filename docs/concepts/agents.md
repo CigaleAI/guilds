@@ -199,7 +199,7 @@ sideways when they do not fit.
 | --- | --- | --- |
 | **Chat** | sessions with the agent, their transcripts, and **History** | [Runs](runs.md), [Run transcript](run-transcript.md) |
 | **Prompt** | the standing Task | [Task](task.md) |
-| **State** | Memory, Notes, Access, Scripts (with scripting on) | [Memory](memory.md), [Notes](notes.md), [Access](access.md#what-a-guild-or-an-agent-reaches), [Scripts](scripts.md) |
+| **State** | Memory, Notes, Tables, Access, Scripts (with scripting on) | [Memory](memory.md), [Notes](notes.md), [Collections](collections.md#what-a-guild-or-an-agent-reaches), [Access](access.md#what-a-guild-or-an-agent-reaches), [Scripts](scripts.md) |
 | **Routine** | the agent's routines | [Routines](routines.md) |
 | **Browser** | the agent's live Chrome, only with Browser on | [Browser](browser.md) |
 | **CLI** | a terminal on the agent's machine | [Agent home](agent-home.md) |

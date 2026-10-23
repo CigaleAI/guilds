@@ -1,6 +1,6 @@
 import type { Collection, EmbeddableNote, FileChange, NoteLevel } from "../../../api/types";
-import { embedKind } from "@guildsrun/ui";
-import type { ChangeActor } from "@guildsrun/ui";
+import { embedKind, embedMarkup, linkMarkup } from "@guildsrun/ui";
+import type { ChangeActor, EmbedMode, InsertKind } from "@guildsrun/ui";
 export type NoteGroup = { level: NoteLevel; label: string; notes: EmbeddableNote[] };
 
 const levelLabel: Record<NoteLevel, string> = {
@@ -34,6 +34,25 @@ export function pickableNotes(
 
 export function collectionDisplayPath(orgId: string, collection: Pick<Collection, "name">): string {
   return `org/${orgId}/collections/${collection.name}`;
+}
+
+/** A column as a Task names it: `table.column` in code, so the agent reads it as a machine name. */
+export function columnMarkup(table: string, column: string): string {
+  return `\`${table}.${column}\``;
+}
+
+/** What the operator chose in the insert picker: a note's or table's path, and for a column its table's name. */
+export type InsertPick = { path: string; table: string; column: string | null; mode: EmbedMode };
+
+const markupByKind: Record<InsertKind, (pick: InsertPick) => string | null> = {
+  note: (pick) => linkMarkup(pick.path, pick.mode),
+  table: (pick) => embedMarkup(pick.path),
+  column: (pick) => (pick.column ? columnMarkup(pick.table, pick.column) : null),
+};
+
+/** The text a pick inserts: a note embedded or referenced, a table embedded, a column by name. */
+export function insertMarkup(kind: InsertKind, pick: InsertPick): string | null {
+  return markupByKind[kind](pick);
 }
 
 /** The server lists at most this many notes; past it, a note missing from the list may still exist. */

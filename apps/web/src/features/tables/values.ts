@@ -8,6 +8,8 @@ const columnName = /^[a-z][a-z0-9_]{0,63}$/;
 export const tableName = /^[a-z][a-z0-9_-]{0,62}$/;
 const maxColumns = 64;
 export const maxValues = 50;
+/** A column's description is instructions every agent that reads the table gets in State. */
+export const maxColumnDescription = 1000;
 
 /** Whether a stored value still fits its column; a changed column can leave old values behind. */
 export function fits(value: unknown, column: Column): boolean {

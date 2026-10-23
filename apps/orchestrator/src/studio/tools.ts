@@ -1290,7 +1290,7 @@ export const studioEditGuild: StudioTool = {
 const COLUMN_PROPERTIES = {
   name: { type: "string", description: "^[a-z][a-z0-9_]{0,63}$; id, created_at, updated_at, created_by, and updated_by are reserved." },
   type: { type: "string", enum: ["text", "number", "boolean", "datetime", "array"] },
-  description: { type: "string", description: "What the value means, for the agents. At most 200 characters." },
+  description: { type: "string", description: "What the value means and how agents should fill it. At most 1000 characters." },
   required: { type: "boolean" },
   unique: {
     type: "boolean",

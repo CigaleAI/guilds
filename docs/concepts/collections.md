@@ -16,7 +16,8 @@ in a [note](notes.md) instead.
 
 The app calls a collection a **table**: the **Tables** page and its
 **New table** button, **Tables** for the record tools on the Tools
-view, and **Insert › Table** in the Task and note editor.
+view, and **Insert › Table** and **Insert › Column** in the Task and
+note editor.
 
 ## When you use it
 
@@ -166,8 +167,8 @@ its own `?tab=`:
   - **Refresh** re-reads the records.
 - **Columns**: one row per column: name, type (text, number,
   boolean, datetime, array), **required**, **unique** (text and
-  number only), description, and for a text or array column its
-  allowed values.
+  number only), description in a multi-line box with a character
+  count, and for a text or array column its allowed values.
   - Rows move up and down. Columns are added and removed. Rule breaks
     show inline.
   - **Save columns** on a collection with live records first asks to
@@ -207,9 +208,16 @@ collections are out of the coach's reach.
 
 ### What a guild or an agent reaches
 
+The **Tables** sub-tab of the guild's and the agent's **State** lists
+the tables that guild's agents, or that agent, reach. Each shows its
+placement, its mode, its purpose, and its columns with their
+descriptions. **New table** creates one placed in the guild. With no
+table reached, the sub-tab says **No tables yet**.
+
 The **Access** sub-tab of the guild's and the agent's **State**
 lists the tables that guild's agents, or that agent, reach, each with
-its mode. The listing is read only. A table there opens its
+its mode, next to the notes. Both sections show, with **None.** when
+one is empty. The listing is read only. A table there opens its
 **Access** tab on the **Tables** page
 ([Access](access.md#what-a-guild-or-an-agent-reaches)).
 
@@ -218,6 +226,11 @@ its mode. The listing is read only. A table there opens its
 The Prompt tab's **Insert › Table** adds a collection to the Task as
 `![[display-path]]`. In the run's prompt it becomes the collection's
 name; records are not inlined ([Task](task.md)).
+
+**Insert › Column** picks a table, then one of its columns, and adds
+it as `` `table.column` ``. The picker shows each column's type and
+description, so the Task names the column exactly
+([Task](task.md#columns)).
 
 ## Rules and limits
 
@@ -271,7 +284,7 @@ values }`:
 |---|---|
 | `name` | `^[a-z][a-z0-9_]{0,63}$`, unique in the collection; `id`, `created_at`, `updated_at`, `created_by`, and `updated_by` are reserved |
 | `type` | `text`, `number`, `boolean`, `datetime`, or `array` |
-| `description` | required, at most 200 characters; State prints it to the agents |
+| `description` | required, at most 1,000 characters; State prints it to the agents |
 | `required` | default false |
 | `unique` | default false; `text` or `number` only; at most one per collection |
 | `values` | `text` or `array` only: 1 to 50 distinct non-empty strings of at most 64 characters; the column then accepts only those |

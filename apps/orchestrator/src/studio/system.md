@@ -66,7 +66,8 @@ Find existing files with `studio_find_artifacts` and
 `![[display-path]]` in the draft using a `display_path` those tools
 returned, or the target `display_path` of a note create request
 — never a guessed path, a bare filename, or "inlined from: …". When the
-agent should revise the file, name that path and tell it to `note_get`.
+agent should revise the file, or needs it only on some wakes, reference
+it as `[[display-path]]` with the same path.
 A draft that embeds or names a note proposed in the same turn depends on
 it: say in the rationale that the note must be applied before the draft
 is published.

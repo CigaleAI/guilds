@@ -1,4 +1,4 @@
-import { FileText, Table2 } from "lucide-react";
+import { Columns3, FileText, Table2 } from "lucide-react";
 import {
   useLayoutEffect,
   useRef,
@@ -13,11 +13,14 @@ import { Icon } from "../../primitives/Icon";
 import { Pill } from "../../primitives/Pill";
 import { tag } from "../../primitives/Tag";
 import { Button } from "../actions/Button";
-import { embedMarkup, type EmbedKind } from "./embeds";
+import type { EmbedKind } from "./embeds";
 import { Markdown } from "./Markdown";
 import { Segmented } from "../controls/Segmented";
 
 export type TaskEditorMode = "edit" | "preview";
+
+/** What the Insert bar offers: a note or a table to link, or a table's column to name. */
+export type InsertKind = EmbedKind | "column";
 
 export type TaskEditorProps = Omit<ComponentProps<"div">, "onChange"> & {
   value: string;
@@ -34,11 +37,13 @@ export type TaskEditorProps = Omit<ComponentProps<"div">, "onChange"> & {
   tokenCount?: number;
   saving?: boolean;
   /**
-   * Opens the note or table picker. Resolves to the chosen display path, which is inserted at the
-   * cursor as `![[path]]`, or to nothing when the operator cancels. Without it, Insert is hidden.
+   * Opens the picker for a note, a table or a column. Resolves to the text inserted at the cursor,
+   * such as `![[path]]`, or to nothing when the operator cancels. Without it, Insert is hidden.
    */
-  onPickEmbed?: (kind: EmbedKind) => Promise<string | null | undefined> | string | null | undefined;
-  /** Opens an embedded note or table from the preview. */
+  onPickInsert?: (
+    kind: InsertKind,
+  ) => Promise<string | null | undefined> | string | null | undefined;
+  /** Opens an embedded or referenced note or table from the preview. */
   onOpenEmbed?: (path: string) => void;
   /** Marks embeds that are not reachable. */
   isBrokenEmbed?: (path: string) => boolean;
@@ -63,10 +68,26 @@ const insertChip = cn(
 
 const numberFormat = new Intl.NumberFormat("en-US");
 
+/** The 0-based line of a caret offset in the text. */
+function lineAt(text: string, offset: number): number {
+  return text.slice(0, offset).split("\n").length - 1;
+}
+
+/** Scrolls the editor just enough to show a line; the textarea grows with its text, so its own scroll never moves. */
+function revealLine(textarea: HTMLTextAreaElement, line: number) {
+  textarea.parentElement?.children[line]?.scrollIntoView({ block: "nearest" });
+}
+
+const insertChoices: { kind: InsertKind; label: string; icon: typeof FileText }[] = [
+  { kind: "note", label: "Note", icon: FileText },
+  { kind: "table", label: "Table", icon: Table2 },
+  { kind: "column", label: "Column", icon: Columns3 },
+];
+
 /**
  * Markdown an operator writes and agents read: an agent's Task, the only part of the system prompt
  * an operator writes, or a note. Notes and tables are embedded with `![[path]]` and expanded when
- * a run reads the text.
+ * a run reads the text; a note referenced with `[[path]]` is read by the agent when it needs it.
  */
 export function TaskEditor({
   value,
@@ -77,7 +98,7 @@ export function TaskEditor({
   revision,
   tokenCount,
   saving = false,
-  onPickEmbed,
+  onPickInsert,
   onOpenEmbed,
   isBrokenEmbed,
   placeholder = "Describe this agent's standing purpose…",
@@ -112,8 +133,10 @@ export function TaskEditor({
     const textarea = textareaRef.current;
     if (caret === null || !textarea) return;
     pendingCaret.current = null;
-    textarea.focus();
+    // Writing the value moved the caret to the end; focusing first would scroll there.
     textarea.setSelectionRange(caret, caret);
+    textarea.focus({ preventScroll: true });
+    revealLine(textarea, lineAt(value, caret));
   }, [value]);
 
   useLayoutEffect(() => {
@@ -131,21 +154,22 @@ export function TaskEditor({
   function track(event: SyntheticEvent<HTMLTextAreaElement>) {
     const { selectionStart, selectionEnd, value: text } = event.currentTarget;
     selection.current = { start: selectionStart, end: selectionEnd };
-    setCaretLine(text.slice(0, selectionStart).split("\n").length - 1);
+    setCaretLine(lineAt(text, selectionStart));
   }
 
-  async function insert(kind: EmbedKind) {
-    if (!onPickEmbed) return;
+  async function insert(kind: InsertKind) {
+    if (!onPickInsert) return;
     const range = selection.current;
-    const path = await onPickEmbed(kind);
-    if (!path) return;
+    const markup = await onPickInsert(kind);
+    if (!markup) return;
     const current = latestValue.current;
     const start = Math.min(range?.start ?? current.length, current.length);
     const end = Math.min(range?.end ?? current.length, current.length);
-    const markup = embedMarkup(path);
+    const next = current.slice(0, start) + markup + current.slice(end);
     pendingCaret.current = start + markup.length;
     selection.current = { start: pendingCaret.current, end: pendingCaret.current };
-    onChange(current.slice(0, start) + markup + current.slice(end));
+    setCaretLine(lineAt(next, pendingCaret.current));
+    onChange(next);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -168,29 +192,22 @@ export function TaskEditor({
       {...props}
     >
       <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-3 py-2">
-        {onPickEmbed ? (
+        {onPickInsert ? (
           <>
             <span className="mr-1 text-xs text-muted">Insert</span>
-            <button
-              type="button"
-              className={insertChip}
-              disabled={mode !== "edit"}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => void insert("note")}
-            >
-              <Icon icon={FileText} size={14} />
-              Note
-            </button>
-            <button
-              type="button"
-              className={insertChip}
-              disabled={mode !== "edit"}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => void insert("table")}
-            >
-              <Icon icon={Table2} size={14} />
-              Table
-            </button>
+            {insertChoices.map((choice) => (
+              <button
+                key={choice.kind}
+                type="button"
+                className={insertChip}
+                disabled={mode !== "edit"}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void insert(choice.kind)}
+              >
+                <Icon icon={choice.icon} size={14} />
+                {choice.label}
+              </button>
+            ))}
           </>
         ) : null}
         <span className="flex-1" />

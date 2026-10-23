@@ -22,9 +22,8 @@ chat or in the group chat (the agent then uses its schedule tools),
 or applies a [Prompt Studio](prompt-studio.md) coach's proposal to
 create one ([Studio proposals](studio-proposals.md)).
 
-Only a coach proposal changes a routine's timing, description, or
-instruction. The Routine tab, the agent's schedule tools, and the
-HTTP routes create, pause, resume, and delete.
+Each of these ways also edits a routine's timing, description, or
+instruction, pauses and resumes it, and deletes it.
 
 ## How it works
 
@@ -113,6 +112,8 @@ wake-ups run in UTC and random windows run in their own timezone.
   **Last wake** (a link to that run), the number of wake-ups so far,
   when it was added, and the instruction.
 - A switch on each row pauses and resumes it.
+- **Edit routine** opens the routine's form filled with its timing,
+  description, and instruction.
 - **Delete routine** asks first. Past wake-ups stay in the Chat tab's
   **History**.
 - **New routine** opens a form: **Timing** is **Cron** (UTC) or
@@ -141,7 +142,7 @@ first, then paused ones. Each agent's name opens its Routine tab.
   ones from now. A count beside it reads, for example, "3 active · 1
   paused", or "3 held · 1 paused" while the switch is off.
 - Each routine row has its own pause switch.
-- Routines are added and deleted from the agent's Routine tab.
+- Routines are added, edited, and deleted from the agent's Routine tab.
 
 While the switch is off, the guild header shows a **Routines off**
 chip. The guild **Settings** tab edits the same switch
@@ -271,9 +272,10 @@ Schedule runs do not offer the schedule tools or `secret_request`.
 
 ### Tools
 
-Direct and group-chat runs offer six schedule tools:
+Direct and group-chat runs offer seven schedule tools:
 `schedule_create_cron`, `schedule_create_window`, `schedule_list`,
-`schedule_pause`, `schedule_resume`, and `schedule_delete`
+`schedule_update`, `schedule_pause`, `schedule_resume`, and
+`schedule_delete`
 ([Native tools](../tools-and-connectors/native.md)).
 
 The Studio coach reads routines with `studio_list_routines` and
@@ -288,7 +290,7 @@ A proposal writes nothing until the operator applies it
 | --- | --- | --- | --- |
 | `GET /api/agents/:id/schedules` | the agent's schedules | 200 | 404 |
 | `POST /api/agents/:id/schedules` | creates one from `cron` or `window`, `description`, `instruction` | 201 | 422 missing `description` or `instruction`, or an invalid timing, description, or instruction; 404 |
-| `PATCH /api/agents/:id/schedules/:schedule_id` | sets `paused` | 200 | 404 |
+| `PATCH /api/agents/:id/schedules/:schedule_id` | changes any of `cron` or `window`, `description`, `instruction`, and `paused` ([Changing a routine](#changing-a-routine)) | 200 | 422 an invalid timing, description, or instruction; 404 |
 | `DELETE /api/agents/:id/schedules/:schedule_id` | deletes one | 204 | 404 |
 | `GET /api/guilds/:id/schedules` | every schedule in the guild, with its agent | 200 | |
 | `PUT /api/guilds/:id` | `routines_enabled` switches the guild's routines ([Guilds](guilds.md)) | 200 | |

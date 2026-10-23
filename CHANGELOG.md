@@ -91,3 +91,20 @@ the organisation's. It adds columns to an organisation table and
 changes the guild's rows in its access list, but no longer renames, rewrites, or
 deletes one; those changes are made on the **Tables** page. Another
 guild's own tables and their records are out of Studio's reach.
+
+A Task or a note references a note as `[[display-path]]`: the run
+keeps the link, and the agent reads the note with `note_get` when it
+needs it. **Insert › Note** chooses **Embed** or **Reference**, with an
+info tooltip on the difference. **Insert › Column** picks a table's
+column and inserts it as `` `table.column` ``. A column's description
+holds up to 1,000 characters, in a multi-line box. A guild's and an
+agent's **State** has a **Tables** sub-tab listing the tables they
+reach with their columns, and **Access** always shows its **Tables**
+and **Notes** sections.
+
+A routine's timing, description, and instruction can be changed in
+place. The agent's **Routine** tab has **Edit routine**,
+`PATCH /api/agents/:id/schedules/:schedule_id` takes `cron` or
+`window`, `description`, and `instruction` beside `paused`, and agents
+in chat get the `schedule_update` tool. A new timing on a running
+routine plans its next wake-up from now.

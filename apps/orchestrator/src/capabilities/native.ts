@@ -38,6 +38,7 @@ export const NATIVE_CAPABILITY_GROUPS = [
       "schedule_create_cron",
       "schedule_create_window",
       "schedule_list",
+      "schedule_update",
       "schedule_pause",
       "schedule_resume",
       "schedule_delete",

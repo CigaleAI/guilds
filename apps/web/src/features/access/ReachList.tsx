@@ -1,9 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { useReach, type ReachSubject } from "../../api/queries";
 import type { AccessMode, ReachedNote, ReachedTable } from "../../api/types";
-import { Banner, EmptyState, SkeletonRows, Tag } from "@guildsrun/ui";
+import { Banner, SkeletonRows, Tag } from "@guildsrun/ui";
 import { accessModeLabel } from "./accessList";
 import { noteLink, notePlacement } from "./reach";
 
@@ -128,12 +127,6 @@ export function ReachList({ subject, guildId }: { subject: ReachSubject; guildId
           <SkeletonRows rows={4} label="Loading what it reaches" />
         ) : reach.isError ? (
           <Banner tone="error" title="Couldn't load what it reaches" meta={reach.error.message} />
-        ) : reach.data.notes.length + reach.data.tables.length === 0 ? (
-          <EmptyState
-            icon={ShieldCheck}
-            title="Nothing reached yet"
-            description="Add a row for it to a note's or a table's access list."
-          />
         ) : (
           <>
             <Section title="Tables" count={reach.data.tables.length}>

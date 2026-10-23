@@ -1,6 +1,7 @@
 import { runActor, type ChangeActor } from "../db/config-changes.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { formatScheduleStamp, timingText } from "../schedules/item.js";
+import { scheduleChanges } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
@@ -10,6 +11,7 @@ export const SCHEDULE_TOOLS = [
   "schedule_create_cron",
   "schedule_create_window",
   "schedule_list",
+  "schedule_update",
   "schedule_pause",
   "schedule_resume",
   "schedule_delete",
@@ -162,6 +164,66 @@ export const scheduleList: Tool = {
   ),
   async handler(ctx) {
     return schedules(ctx).listForAgent(ctx.agent_id);
+  },
+};
+
+const UPDATE_DESCRIPTION =
+  "Change one of this agent's schedules by id from schedule_list: a new timing, description, " +
+  "or instruction. Pass only what changes; the rest stays. Pass cron or window, not both; a " +
+  "new timing on a running schedule plans the next wake-up from now. Pausing and resuming " +
+  "use schedule_pause and schedule_resume.";
+
+export const scheduleUpdate: Tool = {
+  name: "schedule_update",
+  description: UPDATE_DESCRIPTION,
+  output_filter: identityOutput,
+  filter_name: "identity",
+  schema: functionSchema(
+    "schedule_update",
+    UPDATE_DESCRIPTION,
+    {
+      schedule_id: { type: "string" },
+      cron: {
+        type: "string",
+        description: "new 5-field UTC expression: minute hour day month weekday, e.g. '0 9 * * 1'",
+      },
+      window: {
+        type: "object",
+        description: "new random wake-ups inside a daily local-time window",
+        properties: {
+          timezone: { type: "string", description: "IANA name, e.g. Europe/Paris" },
+          start: { type: "string", description: "HH:MM local time" },
+          end: { type: "string", description: "HH:MM local time; earlier than start spans midnight" },
+          max_wakes: {
+            type: "integer",
+            description: "most wake-ups per window; gaps are at least 5 minutes",
+          },
+        },
+        required: ["timezone", "start", "end", "max_wakes"],
+        additionalProperties: false,
+      },
+      description: {
+        type: "string",
+        description: "new one-line label for the Routine tab and schedule_list",
+      },
+      instruction: {
+        type: "string",
+        description: "new short markdown for the Schedule wake-up user message",
+      },
+    },
+    ["schedule_id"],
+  ),
+  async handler(ctx, args) {
+    const { cron, window, description, instruction } = args;
+    const row = await schedules(ctx).update(
+      callActor(ctx, "schedule_update"),
+      ctx.agent_id,
+      argString(args, "schedule_id"),
+      scheduleChanges({ cron, window, description, instruction }),
+    );
+    await publish(ctx, "edit", String(row.id));
+    const next = row.paused ? "paused" : `next ${formatScheduleStamp(row.next_run_at)}`;
+    return `updated ${row.id}  ${timingText(rowTiming(row))}  ${next}\n${row.description}`;
   },
 };
 

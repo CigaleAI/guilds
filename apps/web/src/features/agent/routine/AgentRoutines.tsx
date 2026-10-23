@@ -1,5 +1,5 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { Plus, Repeat, Trash2 } from "lucide-react";
+import { Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   useAgent,
@@ -39,8 +39,8 @@ function routineState(routine: Schedule, guildOn: boolean): RoutineState {
 }
 
 /**
- * The agent's routines: when each wakes it and with what instruction. Routines are added, paused
- * and deleted here; an agent can also set its own from chat.
+ * The agent's routines: when each wakes it and with what instruction. Routines are added, edited,
+ * paused and deleted here; an agent can also set its own from chat.
  */
 export function AgentRoutines() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
@@ -52,6 +52,7 @@ export function AgentRoutines() {
   const remove = useDeleteSchedule(agentId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Schedule | null>(null);
   const [deleting, setDeleting] = useState<Schedule | null>(null);
 
   const guildOn = guild.data?.routines_enabled ?? true;
@@ -162,6 +163,7 @@ export function AgentRoutines() {
                 wakes={wakes.get(selected.id) ?? []}
                 guildId={guildId}
                 agentId={agentId}
+                onEdit={() => setEditing(selected)}
                 onDelete={() => setDeleting(selected)}
               />
             ) : null}
@@ -170,6 +172,16 @@ export function AgentRoutines() {
       </div>
 
       <RoutineForm agentId={agentId} agentName={agentName} open={adding} onOpenChange={setAdding} />
+      {editing ? (
+        <RoutineForm
+          key={editing.id}
+          agentId={agentId}
+          agentName={agentName}
+          routine={editing}
+          open
+          onOpenChange={(open) => !open && setEditing(null)}
+        />
+      ) : null}
       <ConfirmDialog
         kind="destructive"
         open={deleting !== null}
@@ -206,6 +218,7 @@ type RoutineDetailProps = {
   wakes: Run[];
   guildId: string;
   agentId: string;
+  onEdit: () => void;
   onDelete: () => void;
 };
 
@@ -223,7 +236,7 @@ function Facts({ items }: { items: { term: string; value: ReactNode }[] }) {
 }
 
 /** One routine in full: its timing in words, its instruction, and its wake-ups so far. */
-function RoutineDetail({ routine, wakes, guildId, agentId, onDelete }: RoutineDetailProps) {
+function RoutineDetail({ routine, wakes, guildId, agentId, onEdit, onDelete }: RoutineDetailProps) {
   const last = wakes[0];
   return (
     <section
@@ -271,10 +284,16 @@ function RoutineDetail({ routine, wakes, guildId, agentId, onDelete }: RoutineDe
           <Markdown density="compact">{routine.instruction}</Markdown>
         </div>
       </div>
-      <Button variant="danger" size="sm" className="self-start" onClick={onDelete}>
-        <Icon icon={Trash2} size={14} />
-        Delete routine
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          <Icon icon={Pencil} size={14} />
+          Edit routine
+        </Button>
+        <Button variant="danger" size="sm" onClick={onDelete}>
+          <Icon icon={Trash2} size={14} />
+          Delete routine
+        </Button>
+      </div>
     </section>
   );
 }

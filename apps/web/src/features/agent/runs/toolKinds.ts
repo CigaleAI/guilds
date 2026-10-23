@@ -76,6 +76,7 @@ const TABLE: Readonly<Record<string, ToolEntry>> = Object.freeze({
   schedule_create_cron: { kind: "write", level: "local" },
   schedule_create_window: { kind: "write", level: "local" },
   schedule_list: { kind: "read", level: "local" },
+  schedule_update: { kind: "write", level: "local" },
   schedule_pause: { kind: "write", level: "local" },
   schedule_resume: { kind: "write", level: "local" },
   schedule_delete: { kind: "write", level: "local" },

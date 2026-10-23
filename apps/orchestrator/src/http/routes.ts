@@ -115,6 +115,7 @@ import { scriptItem } from "../scripts/catalog.js";
 import { ScriptError } from "../scripts/validation.js";
 import { scheduleItem } from "../schedules/item.js";
 import { ScheduleError } from "../schedules/cron.js";
+import { scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
 import { Issues, IssueError } from "../issues/index.js";
@@ -368,6 +369,15 @@ function generationOf(deps: AppDeps): GenerationLoop {
 
 function groupHttp(error: GroupChatError): HttpError {
   return new HttpError(error.status, error.detail);
+}
+
+/** How a routine change reads on the guild's stream: a pause or resume alone, or an edit. */
+function routineAction(changes: ScheduleChanges): string {
+  const fields = Object.keys(changes).filter((key) => key !== "paused");
+  if (fields.length || changes.paused === undefined) {
+    return "edit";
+  }
+  return changes.paused ? "pause" : "resume";
 }
 
 async function publishGroup(
@@ -2142,18 +2152,21 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const agentId = param(request, "agent_id");
     const scheduleId = param(request, "schedule_id");
     const agent = await ownedAgent(repo, agentId, user);
-    const body = bodyOf(request);
+    if ((await repo.getSchedule(agentId, scheduleId)) === null) {
+      throw new HttpError(404, "schedule not found");
+    }
+    const changes = scheduleChanges(bodyOf(request));
     try {
-      const row = await schedules.setPaused(userActor(user), agentId, scheduleId, Boolean(body.paused));
+      const row = await schedules.update(userActor(user), agentId, scheduleId, changes);
       await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
         agent_id: agentId,
-        action: body.paused ? "pause" : "resume",
+        action: routineAction(changes),
         schedule_id: row.id,
       });
       return scheduleItem(row);
     } catch (error) {
       if (error instanceof ScheduleError) {
-        throw new HttpError(404, error.message);
+        throw new HttpError(422, error.message);
       }
       throw error;
     }

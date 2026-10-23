@@ -152,7 +152,7 @@ operators see it in their inbox and on the guild's **Issues** tab
 
 ## Routines
 
-Six tools manage the agent's own schedules
+Seven tools manage the agent's own schedules
 ([Routines](../concepts/routines.md)). They refuse a schedule run.
 
 | Tool | Parameters | Does |
@@ -160,6 +160,7 @@ Six tools manage the agent's own schedules
 | `schedule_create_cron` | `cron`, `description`, `instruction` | A repeating wake-up on a UTC clock |
 | `schedule_create_window` | `timezone`, `start`, `end`, `max_wakes`, `description`, `instruction` | Random wake-ups inside a daily local-time window |
 | `schedule_list` | none | Lists the agent's schedules and when each fires next, in UTC |
+| `schedule_update` | `schedule_id`; any of `cron` or `window` (`timezone`, `start`, `end`, `max_wakes`), `description`, `instruction` | Changes what it names; the rest stays. A new timing on a running schedule plans the next fire from now |
 | `schedule_pause` | `schedule_id` | Stops a schedule firing |
 | `schedule_resume` | `schedule_id` | Resumes it. The next fire is recomputed from now |
 | `schedule_delete` | `schedule_id` | Deletes it |

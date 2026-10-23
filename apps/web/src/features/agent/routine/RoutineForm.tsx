@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { useCreateSchedule } from "../../../api/queries";
-import type { ScheduleInput, WakeWindow } from "../../../api/types";
+import { useCreateSchedule, useUpdateSchedule } from "../../../api/queries";
+import type { Schedule, ScheduleInput, WakeWindow } from "../../../api/types";
 import { useIdentity } from "../../../app/identity";
 import {
   Button,
@@ -33,37 +33,42 @@ function localTimezone(preferred: string | null): string {
 type RoutineFormProps = {
   agentId: string;
   agentName: string;
+  /** The routine to edit; without one, the form adds a new routine. */
+  routine?: Schedule;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-/** Adds a routine: a UTC cron expression or a daily random window, and what to do on each wake-up. */
-export function RoutineForm({ agentId, agentName, open, onOpenChange }: RoutineFormProps) {
+/**
+ * Adds or edits a routine: a UTC cron expression or a daily random window, and what to do on each
+ * wake-up.
+ */
+export function RoutineForm({ agentId, agentName, routine, open, onOpenChange }: RoutineFormProps) {
   const { user } = useIdentity();
   const create = useCreateSchedule(agentId);
-  const [mode, setMode] = useState<Mode>("cron");
-  const [cron, setCron] = useState("");
-  const [wakeWindow, setWakeWindow] = useState<WakeWindow>(() => ({
-    timezone: localTimezone(user.timezone),
-    start: "08:00",
-    end: "20:00",
-    max_wakes: 10,
-  }));
-  const [description, setDescription] = useState("");
-  const [instruction, setInstruction] = useState("");
-
-  const reset = () => {
-    setMode("cron");
-    setCron("");
-    setWakeWindow({
+  const update = useUpdateSchedule(agentId);
+  const save = routine ? update : create;
+  const defaultWindow = (): WakeWindow =>
+    routine?.window ?? {
       timezone: localTimezone(user.timezone),
       start: "08:00",
       end: "20:00",
       max_wakes: 10,
-    });
-    setDescription("");
-    setInstruction("");
+    };
+  const [mode, setMode] = useState<Mode>(routine?.window ? "window" : "cron");
+  const [cron, setCron] = useState(routine?.cron ?? "");
+  const [wakeWindow, setWakeWindow] = useState<WakeWindow>(defaultWindow);
+  const [description, setDescription] = useState(routine?.description ?? "");
+  const [instruction, setInstruction] = useState(routine?.instruction ?? "");
+
+  const reset = () => {
+    setMode(routine?.window ? "window" : "cron");
+    setCron(routine?.cron ?? "");
+    setWakeWindow(defaultWindow());
+    setDescription(routine?.description ?? "");
+    setInstruction(routine?.instruction ?? "");
     create.reset();
+    update.reset();
   };
 
   const submit = (event: FormEvent) => {
@@ -72,13 +77,20 @@ export function RoutineForm({ agentId, agentName, open, onOpenChange }: RoutineF
       mode === "cron"
         ? { cron: cron.trim(), description, instruction }
         : { window: wakeWindow, description, instruction };
-    create.mutate(input, {
-      onSuccess: (routine) => {
-        toast({ kind: "success", title: "Routine added", description: routine.label });
-        reset();
-        onOpenChange(false);
-      },
-    });
+    const done = (saved: Schedule) => {
+      toast({
+        kind: "success",
+        title: routine ? "Routine saved" : "Routine added",
+        description: saved.label,
+      });
+      reset();
+      onOpenChange(false);
+    };
+    if (routine) {
+      update.mutate({ scheduleId: routine.id, input }, { onSuccess: done });
+    } else {
+      create.mutate(input, { onSuccess: done });
+    }
   };
 
   const timing =
@@ -95,7 +107,7 @@ export function RoutineForm({ agentId, agentName, open, onOpenChange }: RoutineF
       <DialogContent size="md">
         <form onSubmit={submit} className="flex min-h-0 flex-col">
           <DialogHeader
-            title="New routine"
+            title={routine ? "Edit routine" : "New routine"}
             description={`Wakes ${agentName} on a schedule with an instruction.`}
           />
           <DialogBody>
@@ -194,9 +206,12 @@ export function RoutineForm({ agentId, agentName, open, onOpenChange }: RoutineF
               placeholder="What to do on this wake-up"
               hint="Sent to the agent as the wake-up message."
             />
-            {create.isError ? (
-              <Banner tone="error" title="Couldn't add the routine">
-                {create.error.message}
+            {save.isError ? (
+              <Banner
+                tone="error"
+                title={routine ? "Couldn't save the routine" : "Couldn't add the routine"}
+              >
+                {save.error.message}
               </Banner>
             ) : null}
           </DialogBody>
@@ -204,8 +219,14 @@ export function RoutineForm({ agentId, agentName, open, onOpenChange }: RoutineF
             <DialogClose asChild>
               <Button variant="ghost">Cancel</Button>
             </DialogClose>
-            <Button type="submit" disabled={create.isPending}>
-              {create.isPending ? "Adding…" : "Add routine"}
+            <Button type="submit" disabled={save.isPending}>
+              {routine
+                ? save.isPending
+                  ? "Saving…"
+                  : "Save routine"
+                : save.isPending
+                  ? "Adding…"
+                  : "Add routine"}
             </Button>
           </DialogFooter>
         </form>

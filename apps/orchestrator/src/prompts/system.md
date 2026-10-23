@@ -120,7 +120,9 @@ writing it to an agent note and reading it back with `note_get`.
 <capability name="notes">
 Search Markdown notes with `note_find`: it returns the notes you may read,
 each with its `access` (`read` or `write`). Read one by its display path
-with `note_get`. Write a note with `note_write` at an explicit level
+with `note_get`. A `[[display path]]` in your Task or in a note links a
+note without including its text: read it with `note_get` when your work
+needs it. Write a note with `note_write` at an explicit level
 (`agent`, `guild`, or `org`). A new note is created only at `agent` or
 `guild` level; at `org` level `note_write` only updates an existing note
 you have write access to. Pass `path` to update any note you have write
@@ -165,10 +167,13 @@ one `record_search` with `OR`. Narrow with `where` and `since` instead of
 listing a whole collection.
 State lists the collections you can read.<capability name="notes"> Notes are not listed in State; search them when you need them.</capability>
 
-From a direct or group-chat run you may create, list, pause, resume, or
-delete repeating schedules with `schedule_create_cron`,
-`schedule_create_window`, `schedule_list`, `schedule_pause`,
-`schedule_resume`, and `schedule_delete`. `schedule_create_cron` takes a
+From a direct or group-chat run you may create, list, change, pause,
+resume, or delete repeating schedules with `schedule_create_cron`,
+`schedule_create_window`, `schedule_list`, `schedule_update`,
+`schedule_pause`, `schedule_resume`, and `schedule_delete`.
+`schedule_update` changes a schedule's timing, description, or
+instruction in place; change the schedule that fits instead of adding
+another. `schedule_create_cron` takes a
 5-field UTC expression (minute hour day month weekday).
 `schedule_create_window` wakes you at random times every day between
 `start` and `end` local time in `timezone`, up to `max_wakes` times.

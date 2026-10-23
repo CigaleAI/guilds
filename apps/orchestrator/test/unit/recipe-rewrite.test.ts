@@ -109,3 +109,16 @@ test("capture turns live note paths back into recipe paths in embeds and plain t
     "![[agent/scout/playbook.md]] then note_get agent/scout/playbook.md.",
   );
 });
+
+test("a [[…]] reference round-trips between its recipe path and its live display path", () => {
+  const live = "org/org_1/guilds/guild_1/desk-protocol.md";
+  const applied = rewriteRecipePathsToDisplayPaths(
+    "Read [[guild/desk-protocol.md]] when a desk asks.",
+    new Map([["guild/desk-protocol.md", live]]),
+  );
+  assert.equal(applied.text, `Read [[${live}]] when a desk asks.`);
+  assert.equal(
+    rewriteHrefsToRecipeRefs(applied.text, new Map([[live, "guild/desk-protocol.md"]])),
+    "Read [[guild/desk-protocol.md]] when a desk asks.",
+  );
+});

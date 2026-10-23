@@ -126,11 +126,12 @@ not-found page (`features/home/NotFound.tsx`).
 | `/guilds/$guildId` | Guild group chat | `seq`: open at that message |
 | `/guilds/$guildId/settings` | Guild settings | |
 | `/guilds/$guildId/state/files` | Guild State › Files | `path`: open that note |
+| `/guilds/$guildId/state/tables` | Guild State › Tables | |
 | `/guilds/$guildId/state/access` | Guild State › Access | |
 | `/guilds/$guildId/routines`, `…/issues`, `…/usage`, `…/tools`, `…/secrets` | Guild tabs | |
 | `/guilds/$guildId/agents/$agentId` | Agent inspector, Chat tab | `run`: one session; with it `call` or `seq` for a step; `history=true` opens the History drawer |
 | `…/agents/$agentId/prompt` | Agent Prompt tab | |
-| `…/agents/$agentId/state/memory`, `…/state/notes`, `…/state/access`, `…/state/scripts` | Agent State sub-tabs | `path` on notes |
+| `…/agents/$agentId/state/memory`, `…/state/notes`, `…/state/tables`, `…/state/access`, `…/state/scripts` | Agent State sub-tabs | `path` on notes |
 | `…/agents/$agentId/history` | Opens Chat with the History drawer | |
 | `…/agents/$agentId/routine`, `…/browser`, `…/cli`, `…/tools`, `…/secrets`, `…/usage` | Agent tabs | |
 | `…/agents/$agentId/settings` | Agent Settings | `section`: the open section (Identity without it) |

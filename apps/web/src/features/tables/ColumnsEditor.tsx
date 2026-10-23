@@ -8,12 +8,13 @@ import {
   FormField,
   Select,
   TextField,
+  TextAreaField,
   Field,
   FieldInput,
   Icon,
   Tag,
 } from "@guildsrun/ui";
-import { columnTypes, maxValues } from "./values";
+import { columnTypes, maxColumnDescription, maxValues } from "./values";
 
 export function blankColumn(): ColumnInput {
   return { name: "", type: "text", description: "", required: false, unique: false };
@@ -96,11 +97,14 @@ export function ColumnsEditor({ columns, onChange, errors }: ColumnsEditorProps)
                 />
               </div>
             </div>
-            <TextField
+            <TextAreaField
               tone="paper"
               label="Description"
-              maxLength={200}
-              placeholder="What agents should put here"
+              font="sans"
+              rows={3}
+              maxLength={maxColumnDescription}
+              showCount
+              placeholder="What agents should put here, and how"
               value={column.description}
               onChange={(event) => update(index, { description: event.currentTarget.value })}
             />

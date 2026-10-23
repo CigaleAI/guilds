@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
-import { changedFields, type ScheduleChanges } from "../schedules/service.js";
+import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import type { ScheduleTiming } from "../schedules/timing.js";
 import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
@@ -120,23 +120,6 @@ async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Rout
   return { id: scheduleId, agent, definition: changedFields(row, {}) };
 }
 
-/** The timing a call names, or undefined when it names none. */
-function whenOf(args: Record<string, unknown>): ScheduleChanges["when"] {
-  return args.cron === undefined && args.window === undefined
-    ? undefined
-    : { cron: args.cron, window: args.window };
-}
-
-function changesOf(args: Record<string, unknown>): ScheduleChanges {
-  const when = whenOf(args);
-  return {
-    ...(when !== undefined ? { when } : {}),
-    ...(args.description !== undefined ? { description: args.description } : {}),
-    ...(args.instruction !== undefined ? { instruction: args.instruction } : {}),
-    ...(typeof args.paused === "boolean" ? { paused: args.paused } : {}),
-  };
-}
-
 function definitionHash(agentId: string, definition: Definition): string {
   return hashOf([
     agentId,
@@ -179,7 +162,7 @@ function reviewCreate(rc: RoutineContext, call: RoutineCall): RoutineReview {
     changedFields(
       {},
       {
-        when: whenOf(call.args) ?? {},
+        when: scheduleChanges(call.args).when ?? {},
         description: call.args.description ?? null,
         instruction: call.args.instruction ?? null,
         paused: call.args.paused === true,
@@ -225,7 +208,7 @@ function editEffects(rc: RoutineContext, live: Definition, next: Definition): st
 }
 
 function reviewEdit(rc: RoutineContext, routine: Routine, call: RoutineCall): RoutineReview {
-  const changes = changesOf(call.args);
+  const changes = scheduleChanges(call.args);
   const next = valid(() => changedFields(routineRow(routine), changes));
   const baseHash = definitionHash(routine.agent.id, routine.definition);
   const proposedHash = definitionHash(routine.agent.id, next);

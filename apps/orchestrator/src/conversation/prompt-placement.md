@@ -63,10 +63,13 @@ prompt. Do not treat them as the same document.
 
 ## Linking files
 
-A bare filename or "inlined from: foo.md" does nothing. Short `[[name]]`
-is ordinary text. The only hydrated include is a Task embed:
+A bare filename or "inlined from: foo.md" does nothing. A `[[name]]`
+that is not a display path is ordinary text. A Task links a file in one
+of two forms:
 
-`![[display-path]]`
+- `![[display-path]]` embeds it: hydration includes its text.
+- `[[display-path]]` references it: the run keeps the link as written,
+  and the agent reads the note with `note_get` when its work needs it.
 
 Hydration is depth 2, as the agent, with a 64 KB budget. An embed
 resolves only to a note or collection whose access list gives the agent,
@@ -85,8 +88,8 @@ Use an embed when every wake of a role must see a stable file (its own
 rules, or rules every role that embeds it uses, such as house style) and
 the operator should edit that file once. Table columns already reach
 every agent that can read the table; do not copy them into a note. Use a
-named path plus `note_get` / `note_find` when the agent is expected to
-revise the file; those working notes belong in Files, not frozen inside
+reference when the agent is expected to revise the file, or needs it only
+on some wakes; those working notes belong in Files, not frozen inside
 Task.
 
 When linking in prose, use the display path returned by note tools. Do
@@ -94,8 +97,8 @@ not guess `org_id`, `guild_id`, or `agent_id`.
 
 A recipe is portable, so it cannot contain those ids yet. Write the
 destination file instead: `![[guild/house-style.md]]`, `![[org/glossary.md]]`,
-or `![[agent/scout/playbook.md]]`. A working note named for `note_get`
-takes the same destination path in plain text:
-`note_get agent/scout/playbook.md`. Apply creates the file and rewrites
-both forms to the live display path. A leftover `recipe:<id>` still
+or `![[agent/scout/playbook.md]]`. A reference or a working note named
+for `note_get` takes the same destination path:
+`[[agent/scout/playbook.md]]`, `note_get agent/scout/playbook.md`. Apply
+creates the file and rewrites every form to the live display path. A leftover `recipe:<id>` still
 works when it matches `notes[].id`.

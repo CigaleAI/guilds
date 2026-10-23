@@ -188,7 +188,7 @@ const guildUsageRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/guild/pages/GuildUsage"), "GuildUsage"),
 });
 
-/** The State tab: files and access as sub-tabs, one route each. */
+/** The State tab: files, tables and access as sub-tabs, one route each. */
 const guildStateRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "state",
@@ -199,6 +199,24 @@ const guildStateIndexRoute = createRoute({
   getParentRoute: () => guildStateRoute,
   path: "/",
   component: lazyRouteComponent(() => import("../features/guild/GuildState"), "GuildStateIndex"),
+});
+
+const guildTablesRoute = createRoute({
+  getParentRoute: () => guildStateRoute,
+  path: "tables",
+  component: lazyRouteComponent(
+    () => import("../features/tables/StateTablesTab"),
+    "GuildTablesTab",
+  ),
+});
+
+const agentTablesRoute = createRoute({
+  getParentRoute: () => agentStateRoute,
+  path: "tables",
+  component: lazyRouteComponent(
+    () => import("../features/tables/StateTablesTab"),
+    "AgentTablesTab",
+  ),
 });
 
 const guildAccessRoute = createRoute({
@@ -313,7 +331,7 @@ const agentPromptRoute = createRoute({
   ),
 });
 
-/** The State tab: memory, notes, access and scripts as sub-tabs, one route each. */
+/** The State tab: memory, notes, tables, access and scripts as sub-tabs, one route each. */
 const agentStateRoute = createRoute({
   getParentRoute: () => agentRoute,
   path: "state",
@@ -408,7 +426,12 @@ export const router = createRouter({
     guildRoute.addChildren([
       guildChatRoute,
       guildSettingsRoute,
-      guildStateRoute.addChildren([guildStateIndexRoute, guildFilesRoute, guildAccessRoute]),
+      guildStateRoute.addChildren([
+        guildStateIndexRoute,
+        guildFilesRoute,
+        guildTablesRoute,
+        guildAccessRoute,
+      ]),
       guildRoutinesRoute,
       guildIssuesRoute,
       guildUsageRoute,
@@ -421,6 +444,7 @@ export const router = createRouter({
           agentStateIndexRoute,
           agentMemoryRoute,
           agentNotesRoute,
+          agentTablesRoute,
           agentAccessRoute,
           agentScriptsRoute,
         ]),

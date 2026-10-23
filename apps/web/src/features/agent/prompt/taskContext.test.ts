@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Collection, EmbeddableNote, FileChange } from "../../../api/types";
-import { changeActor, embedIsBroken, pickableNotes } from "./taskContext";
+import { changeActor, embedIsBroken, insertMarkup, pickableNotes } from "./taskContext";
 
 const scope = { orgId: "org_a", guildId: "guild_1", agentId: "a_1" };
 
@@ -93,4 +93,30 @@ test("a change names the person, or the run and the tool it wrote through", () =
     trigger: "routine wake-up",
     tool: "task_write",
   });
+});
+
+const pick = {
+  path: "org/org_a/guilds/guild_1/scoring.md",
+  table: "",
+  column: null,
+  mode: "embed" as const,
+};
+
+test("a picked note is embedded or referenced as the operator chose", () => {
+  assert.equal(insertMarkup("note", pick), "![[org/org_a/guilds/guild_1/scoring.md]]");
+  assert.equal(
+    insertMarkup("note", { ...pick, mode: "reference" }),
+    "[[org/org_a/guilds/guild_1/scoring.md]]",
+  );
+});
+
+test("a picked table is always embedded", () => {
+  const table = { ...pick, path: "org/org_a/collections/orders", mode: "reference" as const };
+  assert.equal(insertMarkup("table", table), "![[org/org_a/collections/orders]]");
+});
+
+test("a picked column is named with its table, and nothing is inserted without a column", () => {
+  const table = { ...pick, path: "org/org_a/collections/orders", table: "orders" };
+  assert.equal(insertMarkup("column", { ...table, column: "status" }), "`orders.status`");
+  assert.equal(insertMarkup("column", table), null);
 });

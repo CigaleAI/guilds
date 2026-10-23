@@ -15,7 +15,7 @@ import { cn } from "../../cn";
 import { CopyButton } from "../actions/CopyButton";
 import { EmbedChip } from "./EmbedChip";
 import { Mention } from "../identity/Mention";
-import { remarkEmbeds } from "./embeds";
+import { remarkEmbeds, type EmbedMode } from "./embeds";
 import { remarkMentions } from "./mentions";
 
 export type MarkdownDensity = "document" | "compact";
@@ -294,18 +294,27 @@ function Strong({ node: _node, className, ...props }: Props<"strong">) {
   return <strong className={cn("font-bold", strongTone[tone], className)} {...props} />;
 }
 
+/** The link a span carries: an `![[path]]` embed or a `[[path]]` reference. */
+function spanLink(node: Props<"span">["node"]): { path: string; mode: EmbedMode } | null {
+  const embed = node?.properties?.dataEmbed;
+  if (typeof embed === "string") return { path: embed, mode: "embed" };
+  const reference = node?.properties?.dataReference;
+  return typeof reference === "string" ? { path: reference, mode: "reference" } : null;
+}
+
 /** Spans only come from the embed and mention plugins; raw HTML never reaches the tree. */
 function Span({ node, className, ...props }: Props<"span">) {
   const { tone, onOpenEmbed, isBrokenEmbed } = useContext(Settings);
   const handle = node?.properties?.dataMention;
   if (typeof handle === "string") return <Mention handle={handle} tone={tone} />;
-  const path = node?.properties?.dataEmbed;
-  if (typeof path === "string") {
+  const link = spanLink(node);
+  if (link) {
     return (
       <EmbedChip
-        path={path}
+        path={link.path}
+        mode={link.mode}
         tone={tone}
-        broken={isBrokenEmbed?.(path) ?? false}
+        broken={isBrokenEmbed?.(link.path) ?? false}
         {...(onOpenEmbed ? { onOpen: onOpenEmbed } : {})}
       />
     );
@@ -346,7 +355,7 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children"> & {
   density?: MarkdownDensity;
   /** Defaults to the surrounding `MarkdownToneContext`. */
   tone?: MarkdownTone;
-  /** Opens an embedded note or table; embeds render as buttons when set. */
+  /** Opens an embedded or referenced note or table; links render as buttons when set. */
   onOpenEmbed?: (path: string) => void;
   /** Marks embeds that are not reachable. */
   isBrokenEmbed?: (path: string) => boolean;
@@ -354,7 +363,7 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children"> & {
   mentions?: readonly string[];
 };
 
-/** Agent- or operator-written Markdown: notes, messages, Task previews. A single line break stays a break; `![[path]]` embeds and tagged `@handles` show as chips. */
+/** Agent- or operator-written Markdown: notes, messages, Task previews. A single line break stays a break; `![[path]]` embeds, `[[path]]` references and tagged `@handles` show as chips. */
 export function Markdown({
   children,
   density = "document",

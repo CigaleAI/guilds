@@ -241,6 +241,7 @@ test("script_run schema from type hints", () => {
   assert.match(windowCreate.function.description, /random times/);
   assert.match(windowCreate.function.description, /schedule_create_cron/);
   assert.deepEqual(schemaRequired("schedule_list"), []);
+  assert.deepEqual(schemaRequired("schedule_update"), ["schedule_id"]);
   assert.deepEqual(schemaRequired("schedule_pause"), ["schedule_id"]);
   assert.deepEqual(schemaRequired("schedule_resume"), ["schedule_id"]);
   assert.deepEqual(schemaRequired("schedule_delete"), ["schedule_id"]);

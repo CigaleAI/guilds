@@ -181,7 +181,7 @@ The tabs, one route each:
 |---|---|
 | **Group chat** | [Group chat](group-chat.md) |
 | **Settings** | Below |
-| **State** (Files, Access) | [Notes](notes.md), [Access](access.md#what-a-guild-or-an-agent-reaches) |
+| **State** (Files, Tables, Access) | [Notes](notes.md), [Collections](collections.md#what-a-guild-or-an-agent-reaches), [Access](access.md#what-a-guild-or-an-agent-reaches) |
 | **Routines** | [Routines](routines.md) |
 | **Issues** | [Inbox and issues](inbox.md) |
 | **Tools**, **Secrets** | [Access](access.md) |

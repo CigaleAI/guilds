@@ -319,7 +319,8 @@ The **Access** sub-tab of a guild's **State** lists the tables and
 notes that guild's agents reach. The **Access** sub-tab of an agent's
 **State** lists what that one agent reaches, its own notes included.
 Each item carries a tag with the mode it ends up with: read, or read
-and write. The listing is read only.
+and write. The listing is read only. Its **Tables** and **Notes**
+sections always show, with **None.** when one is empty.
 
 Each item opens where its access is changed:
 

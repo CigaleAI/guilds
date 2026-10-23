@@ -18,6 +18,8 @@ is what the agent chose to remember.
   different priority.
 - You want a long rule set, or a shared one, in every run: you write
   it in a [note](notes.md) and embed the note in the Task.
+- You want the agent to read a note only when its work needs it: you
+  reference the note in the Task.
 
 The Task is standing guidance. It is not a question for the agent to
 answer, and it is not a reason for the agent to post in
@@ -66,14 +68,28 @@ flowchart LR
   names the path and says the file is not reachable. The run starts,
   and the agent can report the link.
 
-A short `[[name]]` in prose is plain text. It is not an embed and is
-never rewritten. A file name, or a line like "inlined from: …", is
-not an embed either.
+### References
 
-A display path written in the text without `![[…]]` names that file
-without embedding it. The run gets the path, not the file's text.
-Prompt Studio's **References** view draws each named file beside the
+A reference links a note without putting its text in the prompt. It
+is written `[[display-path]]`, without the `!`. The run gets the link
+as written. The agent's Guidelines tell it to read a referenced note
+with `note_get` when its work needs it.
+
+Use an embed for short rules every run needs. Use a reference for a
+long note, a note the agent only needs on some runs, or a note the
+agent revises. A reference adds nothing to the 64 KB of embedded text.
+
+A display path written in the text without brackets names that file
+the same way: the run gets the path, not the file's text. A
+`[[name]]` that is not a display path is plain text. A file name, or a
+line like "inlined from: …", is not an embed either. Prompt Studio's
+**References** view draws each referenced or named file beside the
 embeds ([Prompt Studio](prompt-studio.md#state)).
+
+### Columns
+
+A Task names a table's column as `` `table.column` ``, in code. The
+agent finds the column, its type, and its description in State.
 
 Prompt Studio and the [Guild builder](guild-builder.md) put durable
 rules in notes the operator can inspect, and embed them in the Task
@@ -114,10 +130,18 @@ The agent's **Prompt** tab edits the Task.
 - The editor has **Edit** and **Preview** modes. The tab opens in
   Preview; double-clicking the text switches to Edit. Save, or
   Cmd/Ctrl+S, writes the Task. **Discard** drops the edits.
-- **Insert › Note** and **Insert › Table** open a picker and insert
-  the chosen note or collection at the cursor as `![[display-path]]`.
-  A collection chip shows the collection's name. Clicking an embed
-  opens a preview of it.
+- **Insert › Note** opens a picker of notes. **Embed** or
+  **Reference** above the list chooses how the note is inserted at
+  the cursor: `![[display-path]]` or `[[display-path]]`. The info
+  button next to it explains the difference.
+- **Insert › Table** inserts the chosen collection as
+  `![[display-path]]`. The preview lists its columns.
+- **Insert › Column** lists the tables, then the chosen table's
+  columns with their type and description. The chosen column is
+  inserted as `` `table.column` ``.
+- In Preview an embed shows as a filled chip and a reference as an
+  outlined chip with a link icon. A collection chip shows the
+  collection's name. Clicking a chip opens a preview of the file.
 - An embed the agent cannot reach is marked. A banner, **The Task
   embeds files this agent can't reach**, names each one.
 - The **Version** picker lists the live version and every earlier one,
@@ -150,7 +174,7 @@ run creation, embeds inlined
 | Earlier versions kept | 50 |
 | Saving the same text | nothing changes, no version is added |
 | Embed depth | the Task's embeds and one more hop |
-| Embedded text per run | 64 KB in total |
+| Embedded text per run | 64 KB in total; references do not count |
 | An embed the agent cannot reach | the run starts with a marker in its place |
 | More than 64 KB of embedded text | the agent cannot start a run |
 | Deleting a note a live Task embeds | refused |
@@ -221,9 +245,9 @@ more than 64 KB of note text.
 Deleting a note that a live Task embeds is 409
 `note is embedded in task (<agent ids>)`.
 
-Recipes write embeds in a recipe-local form, `![[guild/…]]`,
-`![[org/…]]`, or `![[agent/<role>/…]]`, which apply rewrites into
-display paths ([Recipe format](recipe-format.md),
+Recipes write embeds and references in a recipe-local form,
+`![[guild/…]]`, `[[org/…]]`, or `![[agent/<role>/…]]`, which apply
+rewrites into display paths ([Recipe format](recipe-format.md),
 [Applying recipes](applying-recipes.md)). A live Task that still
 holds a `recipe:` link or a missing file shows as not reachable.
 

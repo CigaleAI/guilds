@@ -36,9 +36,9 @@ import {
   DialogHeader,
   toast,
 } from "@guildsrun/ui";
-import type { EmbedKind } from "@guildsrun/ui";
+import type { InsertKind } from "@guildsrun/ui";
 import { AccessListPanel } from "../access/AccessListPanel";
-import { EmbedPicker } from "../agent/prompt/EmbedPicker";
+import { InsertPicker } from "../agent/prompt/InsertPicker";
 import { EmbedPreview } from "../agent/prompt/EmbedPreview";
 import { embedIsBroken, pickableNotes } from "../agent/prompt/taskContext";
 import { buildTree, newNotePath } from "./fileTree";
@@ -299,8 +299,8 @@ function NoteView({
   const remove = useDeleteFile(scope.prefix);
   const notes = useEmbeddableNotes();
   const collections = useCollections();
-  const [picking, setPicking] = useState<EmbedKind | null>(null);
-  const resolvePick = useRef<((path: string | null) => void) | null>(null);
+  const [picking, setPicking] = useState<InsertKind | null>(null);
+  const resolvePick = useRef<((markup: string | null) => void) | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -417,7 +417,7 @@ function NoteView({
           }
           {...(file.data?.version !== undefined ? { revision: file.data.version } : {})}
           saving={save.isPending}
-          onPickEmbed={(kind) =>
+          onPickInsert={(kind) =>
             new Promise<string | null>((resolve) => {
               resolvePick.current = resolve;
               setPicking(kind);
@@ -428,14 +428,14 @@ function NoteView({
         />
       )}
 
-      <EmbedPicker
+      <InsertPicker
         kind={picking}
         noteGroups={noteGroups}
         collections={collections.data}
         orgId={org.id}
-        onPick={(path) => {
+        onPick={(markup) => {
           setPicking(null);
-          resolvePick.current?.(path);
+          resolvePick.current?.(markup);
           resolvePick.current = null;
         }}
       />

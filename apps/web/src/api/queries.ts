@@ -450,6 +450,19 @@ export function useCreateSchedule(agentId: string) {
   });
 }
 
+/** A new timing plans the next wake from now; a new description or instruction keeps it. */
+export function useUpdateSchedule(agentId: string) {
+  const refresh = useScheduleRefresh(agentId);
+  return useMutation({
+    mutationFn: ({ scheduleId, input }: { scheduleId: string; input: ScheduleInput }) =>
+      api<Schedule>(`${schedulesPath(agentId)}/${encodeURIComponent(scheduleId)}`, {
+        method: "PATCH",
+        body: input,
+      }),
+    onSuccess: refresh,
+  });
+}
+
 /** Pausing keeps the planned wake; resuming plans the next one from now. */
 export function useSetSchedulePaused(agentId: string) {
   const refresh = useScheduleRefresh(agentId);
@@ -1547,6 +1560,15 @@ function useDatabasesRefresh() {
   return () => void client.invalidateQueries({ queryKey: keys.databases });
 }
 
+/** A table created, changed or deleted also changes what each guild and agent reaches. */
+function useTablesRefresh() {
+  const client = useQueryClient();
+  return () => {
+    void client.invalidateQueries({ queryKey: keys.databases });
+    void client.invalidateQueries({ queryKey: keys.accessLists });
+  };
+}
+
 export type DatabaseInput = {
   name: string;
   purpose: string;
@@ -1555,7 +1577,7 @@ export type DatabaseInput = {
 };
 
 export function useCreateDatabase() {
-  const refresh = useDatabasesRefresh();
+  const refresh = useTablesRefresh();
   return useMutation({
     mutationFn: (input: DatabaseInput) =>
       api<Collection>("/api/collections", { method: "POST", body: input }),
@@ -1565,7 +1587,7 @@ export function useCreateDatabase() {
 
 /** Changes a database's name, purpose, columns or placement; its access list stays as it is. */
 export function useUpdateDatabase(id: string) {
-  const refresh = useDatabasesRefresh();
+  const refresh = useTablesRefresh();
   return useMutation({
     mutationFn: (input: Partial<DatabaseInput>) =>
       api<Collection>(collectionPath(id), { method: "PATCH", body: input }),
@@ -1575,7 +1597,7 @@ export function useUpdateDatabase(id: string) {
 
 /** Deletes a database with its records; every guild and agent loses it at once. */
 export function useDeleteDatabase() {
-  const refresh = useDatabasesRefresh();
+  const refresh = useTablesRefresh();
   return useMutation({
     mutationFn: (id: string) => api<undefined>(collectionPath(id), { method: "DELETE" }),
     onSuccess: refresh,

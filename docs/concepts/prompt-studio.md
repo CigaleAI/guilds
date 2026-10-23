@@ -280,7 +280,8 @@ what embeds or names what:
   they embed follow, one column per hop: **Embedded in a Task**, **One
   hop further**, and **Too deep**, whose text no run gets. A band below
   holds the files no Task reaches. A solid line is an embed; a dotted
-  line is a display path the text names without embedding it. A link
+  line is a display path the text references as `[[…]]` or names
+  without embedding it. A link
   that does not resolve, a file some run that inlines it cannot reach,
   or a Task over the embed budget, is red.
   Selecting a box lights what it pulls in and what pulls it in. Files

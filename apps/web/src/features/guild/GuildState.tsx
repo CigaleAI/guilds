@@ -1,13 +1,14 @@
 import { Link, Navigate, Outlet, useParams } from "@tanstack/react-router";
-import { FileText, ShieldCheck } from "lucide-react";
+import { Database, FileText, ShieldCheck } from "lucide-react";
 import { TabsNav, tabsTrigger, Icon } from "@guildsrun/ui";
 /** The State tab's sub-tabs in order, by route. */
 const stateTabs = [
   { route: "/guilds/$guildId/state/files", label: "Files", icon: FileText },
+  { route: "/guilds/$guildId/state/tables", label: "Tables", icon: Database },
   { route: "/guilds/$guildId/state/access", label: "Access", icon: ShieldCheck },
 ] as const;
 
-/** The guild's State tab: shared notes, and what its agents reach, one route per sub-tab. */
+/** The guild's State tab: shared notes, the tables its agents reach, and their access, one route per sub-tab. */
 export function GuildState() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
   return (

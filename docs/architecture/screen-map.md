@@ -27,8 +27,8 @@ no button.
 ## Markdown
 
 Messages, notes, Tasks, and instructions render as GitHub Markdown
-that keeps single line breaks. `![[…]]` embeds and tagged handles show
-as chips. Code blocks show their language and a copy button.
+that keeps single line breaks. `![[…]]` embeds, `[[…]]` references,
+and tagged handles show as chips. Code blocks show their language and a copy button.
 
 ## Screens
 
@@ -55,6 +55,7 @@ as chips. Code blocks show their language and a copy button.
 | Guild Settings: **Commit author email**, **Repositories** | `/guilds/<id>/settings` | [Repositories](../concepts/coding/repositories.md) |
 | Guild **State › Files** | `/guilds/<id>/state/files` | [Notes](../concepts/notes.md) |
 | Note **Access** button and the **Access to `<path>`** dialog | the header of an open note in the notes browser: Guild **State › Files**, Agent **State › Notes**, Studio | [Access](../concepts/access.md#the-access-panel), [Notes](../concepts/notes.md) |
+| Guild **State › Tables** | `/guilds/<id>/state/tables` | [Collections](../concepts/collections.md#what-a-guild-or-an-agent-reaches) |
 | Guild **State › Access** | `/guilds/<id>/state/access` | [Access](../concepts/access.md#what-a-guild-or-an-agent-reaches), [Notes](../concepts/notes.md), [Collections](../concepts/collections.md) |
 | Guild **Routines** tab | `/guilds/<id>/routines` | [Routines](../concepts/routines.md) |
 | Guild **Issues** tab | `/guilds/<id>/issues` | [Inbox and issues](../concepts/inbox.md) |
@@ -72,6 +73,7 @@ as chips. Code blocks show their language and a copy button.
 | Agent **Prompt** tab | `/guilds/<id>/agents/<id>/prompt` | [Task](../concepts/task.md) |
 | Agent **State › Memory** | `/guilds/<id>/agents/<id>/state/memory` | [Memory](../concepts/memory.md) |
 | Agent **State › Notes** | `/guilds/<id>/agents/<id>/state/notes` | [Notes](../concepts/notes.md) |
+| Agent **State › Tables** | `/guilds/<id>/agents/<id>/state/tables` | [Collections](../concepts/collections.md#what-a-guild-or-an-agent-reaches) |
 | Agent **State › Access** | `/guilds/<id>/agents/<id>/state/access` | [Access](../concepts/access.md#what-a-guild-or-an-agent-reaches), [Notes](../concepts/notes.md), [Collections](../concepts/collections.md) |
 | Agent **State › Scripts** | `/guilds/<id>/agents/<id>/state/scripts` | [Scripts](../concepts/scripts.md) |
 | Agent **Routine** tab | `/guilds/<id>/agents/<id>/routine` | [Routines](../concepts/routines.md) |

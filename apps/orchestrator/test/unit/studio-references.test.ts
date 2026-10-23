@@ -215,3 +215,7 @@ test("namedPaths names a path once however often it appears", () => {
     path("one"),
   ]);
 });
+
+test("namedPaths counts a [[…]] reference as a named path", () => {
+  assert.deepEqual(namedPaths(`Read [[${path("one")}]] when needed.`, new Set([path("one")])), [path("one")]);
+});

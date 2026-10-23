@@ -17,7 +17,7 @@
       "path": "bindings/resolution.json",
       "source": "src/access resolution walk",
       "generator_version": "1",
-      "sha256": "fe66dc0cebac101501fdaaf47f1d69050d793e55cded04dfdaf4f1f231cb80b0"
+      "sha256": "c28f7e4edc3f586ccf18654dd55401e900b5cccd4d514b4903344ba39d2bd25a"
     },
     {
       "path": "codecs/timestamps.json",
@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "83e0759718871cf4803f96658b95d4f1c9aa28634c485ca64969be082c96c9d8"
+      "sha256": "e336cc7b565c9169bde8b9ca4cf3fcca3d26099002aa9cfbc481aa38c486da43"
     },
     {
       "path": "ids/shape.json",
@@ -101,7 +101,7 @@
       "path": "seed/manifest.json",
       "source": "clean-database seed rows: system, dev, runtime bootstrap",
       "generator_version": "1",
-      "sha256": "074857e1be9933094d26e2e2d4f2657f5c5dc82982433134a7d77f8c0cc31b90"
+      "sha256": "e08c6562dc3b02085f69978ad6a9b0ec2cfa83b977f40d9d6ec88ad717078815"
     },
     {
       "path": "sse/channel-split-run.txt",
