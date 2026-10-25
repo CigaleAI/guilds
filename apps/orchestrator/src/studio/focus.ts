@@ -8,6 +8,7 @@ import {
 } from "../artifacts/index.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { jsonObj } from "../db/json.js";
+import { isoOrNull } from "../db/views.js";
 import type { Repositories } from "../db/repositories.js";
 import { buildMemoryTimeline, memoryDiffText, type MemoryTimelineEntry } from "../memory/timeline.js";
 import { issueItem } from "../issues/index.js";
@@ -72,13 +73,6 @@ function excerpt(text: string): string {
   return capBytes(text, STUDIO_FOCUS_EXCERPT_BYTES)[0];
 }
 
-function iso(value: unknown): string | null {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  return typeof value === "string" && value ? value : null;
-}
-
 function runKindLabel(kind: string): string {
   if (kind === "schedule") return "Schedule wake-up";
   if (kind === "group") return "Group delivery";
@@ -126,7 +120,7 @@ async function resolveRun(deps: StudioFocusDeps, input: Record<string, unknown>)
   const errors = jsonObj(run.errors);
   const errorList = Array.isArray(errors) ? (errors as Array<Record<string, unknown>>) : [];
   const kind = String(run.kind ?? "direct");
-  const createdAt = iso(run.created_at);
+  const createdAt = isoOrNull(run.created_at);
   const focus = emptyFocus("run", agent);
   focus.run_id = runId;
   focus.label = `${runKindLabel(kind)} · ${runId}`;

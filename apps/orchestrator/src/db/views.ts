@@ -14,6 +14,14 @@ export function iso(value: unknown): string {
   return formatColumnTimestamp(value);
 }
 
+/** The ISO form of a nullable timestamp column; null when the column is empty. */
+export function isoOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  return iso(value);
+}
+
 export function messageItem(row: Record<string, unknown>): {
   id: unknown;
   seq: unknown;

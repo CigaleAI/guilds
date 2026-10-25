@@ -1,16 +1,6 @@
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { isoOrNull } from "../db/views.js";
 import { jsonObj } from "../db/json.js";
 import { connectorFacts } from "../connectors/view.js";
-
-function iso(value: unknown): unknown {
-  if (value === null || value === undefined) {
-    return value;
-  }
-  if (typeof value === "string") {
-    return formatColumnTimestamp(value);
-  }
-  return value;
-}
 
 export function serverItem(row: Record<string, unknown>): Record<string, unknown> {
   const config = jsonObj(row.config) as { url?: unknown } | null;
@@ -41,9 +31,9 @@ export function connectionMetadata(row: Record<string, unknown>): Record<string,
     owner_id: row.owner_id,
     account_hint: row.account_hint,
     status: row.status,
-    created_at: iso(row.created_at),
-    updated_at: iso(row.updated_at),
-    rotated_at: iso(row.rotated_at),
+    created_at: isoOrNull(row.created_at),
+    updated_at: isoOrNull(row.updated_at),
+    rotated_at: isoOrNull(row.rotated_at),
     settings: settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {},
     needs_settings: row.status === "pending" && !row.oauth_state,
   };

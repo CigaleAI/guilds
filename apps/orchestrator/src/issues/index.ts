@@ -1,4 +1,4 @@
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { isoOrNull } from "../db/views.js";
 import { newId } from "../lib/ids.js";
 
 export const ISSUE_KINDS = ["tool_failure", "truncated", "api", "other"] as const;
@@ -55,16 +55,6 @@ export type IssuesDatabase = {
   countOpenIssues(guildId: string): Promise<number>;
 };
 
-function iso(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    return value.includes("T") ? value : formatColumnTimestamp(value);
-  }
-  throw new TypeError("timestamp must be a string");
-}
-
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], label: string): T {
   if (typeof value === "string" && (allowed as readonly string[]).includes(value)) {
     return value as T;
@@ -116,9 +106,9 @@ export function issueItem(row: Record<string, unknown>): Record<string, unknown>
     summary: row.summary,
     detail: row.detail,
     tool_name: row.tool_name ? String(row.tool_name) : null,
-    created_at: iso(row.created_at),
-    updated_at: iso(row.updated_at),
-    resolved_at: iso(row.resolved_at),
+    created_at: isoOrNull(row.created_at),
+    updated_at: isoOrNull(row.updated_at),
+    resolved_at: isoOrNull(row.resolved_at),
     resolved_by: row.resolved_by ? String(row.resolved_by) : null,
     agent: agentId
       ? {

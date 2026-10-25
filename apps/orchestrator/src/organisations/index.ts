@@ -1,5 +1,5 @@
 import { NAME_RE } from "../lib/names.js";
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { iso } from "../db/views.js";
 
 export const ORG_HEADER = "X-Guilds-Org";
 export const ORG_COOKIE = "guilds_org";
@@ -86,13 +86,6 @@ export function canManageOwners(role: string): boolean {
 
 export function canManageSettings(role: string): boolean {
   return role === "owner" || role === "admin";
-}
-
-function iso(value: unknown): string {
-  if (typeof value === "string") {
-    return value.includes("T") ? value : formatColumnTimestamp(value);
-  }
-  throw new TypeError("timestamp must be a string");
 }
 
 function rowGet(row: Record<string, unknown>, key: string): unknown {

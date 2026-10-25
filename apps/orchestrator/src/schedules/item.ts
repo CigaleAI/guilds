@@ -1,16 +1,6 @@
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { isoOrNull } from "../db/views.js";
 import { promptHash } from "../prompts/index.js";
 import { describeTiming, rowTiming, type ScheduleTiming } from "./timing.js";
-
-function iso(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string") {
-    return value.includes("T") ? value : formatColumnTimestamp(value);
-  }
-  throw new TypeError("timestamp must be a string");
-}
 
 function rowDescription(
   row: Record<string, unknown>,
@@ -53,10 +43,10 @@ export function scheduleItem(row: Record<string, unknown>): Record<string, unkno
     ...("guild_routines_enabled" in row
       ? { guild_routines_enabled: row.guild_routines_enabled !== false }
       : {}),
-    next_run_at: iso(row.next_run_at),
-    last_run_at: iso(row.last_run_at),
-    created_at: iso(row.created_at),
-    updated_at: iso(row.updated_at),
+    next_run_at: isoOrNull(row.next_run_at),
+    last_run_at: isoOrNull(row.last_run_at),
+    created_at: isoOrNull(row.created_at),
+    updated_at: isoOrNull(row.updated_at),
   };
 }
 

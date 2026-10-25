@@ -1,5 +1,5 @@
 import type pg from "pg";
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { isoOrNull } from "../db/views.js";
 import { newId } from "../lib/ids.js";
 import { stamp } from "../db/pg.js";
 import { actorColumns, studioLink, type ChangeLink } from "../db/config-changes.js";
@@ -79,13 +79,6 @@ const CHANGE_SELECT = `
     LEFT JOIN runs r ON r.id = fc.run_id
     LEFT JOIN agents a ON a.id = r.agent_id`;
 
-function isoOf(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return value instanceof Date ? value.toISOString() : formatColumnTimestamp(String(value));
-}
-
 function mapChange(orgId: string, row: Record<string, unknown>): FileChangeView {
   return {
     id: String(row.id),
@@ -108,7 +101,7 @@ function mapChange(orgId: string, row: Record<string, unknown>): FileChangeView 
           kind: row.run_kind ? String(row.run_kind) : null,
           status: row.run_status ? String(row.run_status) : null,
           schedule_id: row.run_schedule_id ? String(row.run_schedule_id) : null,
-          created_at: isoOf(row.run_created_at),
+          created_at: isoOrNull(row.run_created_at),
         }
       : null,
     tool: row.tool_call_id
@@ -118,7 +111,7 @@ function mapChange(orgId: string, row: Record<string, unknown>): FileChangeView 
         }
       : null,
     studio: studioLink(row),
-    created_at: isoOf(row.created_at) ?? "",
+    created_at: isoOrNull(row.created_at) ?? "",
   };
 }
 

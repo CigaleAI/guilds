@@ -1,5 +1,5 @@
 import { NAME_RE } from "../lib/names.js";
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { iso } from "../db/views.js";
 import { normalizeEmail } from "../lib/email.js";
 
 export const USER_HEADER = "X-Guilds-User";
@@ -70,13 +70,6 @@ export function resolveUser<T extends { id: string }>(
     return users[0]!;
   }
   throw new UserIdentityError(400, `${USER_HEADER} is required`);
-}
-
-function iso(value: unknown): string {
-  if (typeof value === "string") {
-    return value.includes("T") ? value : formatColumnTimestamp(value);
-  }
-  throw new TypeError("timestamp must be a string");
 }
 
 /** A person's identity colour: a 6-digit hex, stored lowercase; null clears it. */

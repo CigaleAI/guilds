@@ -1,4 +1,4 @@
-import { formatColumnTimestamp } from "../db/codecs.js";
+import { isoOrNull } from "../db/views.js";
 import { jsonObj } from "../db/json.js";
 
 /** Who gets a secret: every agent of the organisation, or the granted guilds and agents. */
@@ -122,10 +122,6 @@ export function canCreateSecret(
   );
 }
 
-function iso(value: unknown): unknown {
-  return typeof value === "string" ? formatColumnTimestamp(value) : value;
-}
-
 /**
  * A secret's metadata for one caller; never its value. A grant or creating agent
  * in a guild the caller cannot see keeps its kind and loses its id and name.
@@ -161,9 +157,9 @@ export function secretMetadata(row: Record<string, unknown>, viewer: SecretViewe
     org_wide: Boolean(row.org_wide),
     grants,
     created_by: createdBy,
-    created_at: iso(row.created_at),
-    updated_at: iso(row.updated_at),
-    rotated_at: iso(row.rotated_at),
+    created_at: isoOrNull(row.created_at),
+    updated_at: isoOrNull(row.updated_at),
+    rotated_at: isoOrNull(row.rotated_at),
     can_manage: canManageSecret(row, viewer),
   };
 }
