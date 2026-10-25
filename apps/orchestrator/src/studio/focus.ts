@@ -10,7 +10,11 @@ import { wrapEvidence } from "../conversation/trust.js";
 import { jsonObj } from "../db/json.js";
 import { isoOrNull } from "../db/views.js";
 import type { Repositories } from "../db/repositories.js";
-import { buildMemoryTimeline, memoryDiffText, type MemoryTimelineEntry } from "../memory/timeline.js";
+import {
+  buildMemoryTimeline,
+  memoryDiffText,
+  type MemoryTimelineEntry,
+} from "../memory/timeline.js";
 import { issueItem } from "../issues/index.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";
@@ -26,7 +30,14 @@ import { studioReachesParsed } from "./reach.js";
 // fills in what it can, and writes the evidence block the coach reads.
 
 export const STUDIO_FOCUS_SOURCE = "studio_focus";
-export const STUDIO_FOCUS_KINDS = ["run", "memory_version", "routine", "file", "issue", "tool"] as const;
+export const STUDIO_FOCUS_KINDS = [
+  "run",
+  "memory_version",
+  "routine",
+  "file",
+  "issue",
+  "tool",
+] as const;
 export type StudioFocusKind = (typeof STUDIO_FOCUS_KINDS)[number];
 
 export type StudioFocus = {
@@ -55,11 +66,11 @@ export type StudioFocusDeps = {
   user: Record<string, unknown>;
 };
 
-function str(value: unknown): string {
+function trimmedText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function int(value: unknown): number | null {
+function nonNegativeInt(value: unknown): number | null {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
     return value;
   }
@@ -98,20 +109,35 @@ function emptyFocus(kind: StudioFocusKind, agent: Record<string, unknown>): Stud
   };
 }
 
-async function guildAgent(deps: StudioFocusDeps, agentId: string): Promise<Record<string, unknown>> {
+async function guildAgent(
+  deps: StudioFocusDeps,
+  agentId: string,
+): Promise<Record<string, unknown>> {
   const agent = agentId ? await deps.repo.getAgent(agentId) : null;
-  if (!agent || String(agent.guild_id) !== deps.sourceGuildId || String(agent.org_id) !== deps.orgId) {
+  if (
+    !agent ||
+    String(agent.guild_id) !== deps.sourceGuildId ||
+    String(agent.org_id) !== deps.orgId
+  ) {
     throw new StudioUnprocessableError("focus agent is not in the source guild");
   }
   return agent;
 }
 
-function block(source: string, coordinates: Record<string, unknown>, body: string, tail: string): string {
+function evidenceBlock(
+  source: string,
+  coordinates: Record<string, unknown>,
+  body: string,
+  tail: string,
+): string {
   return `${wrapEvidence({ source, coordinates, body })}\n\n${tail}`;
 }
 
-async function resolveRun(deps: StudioFocusDeps, input: Record<string, unknown>): Promise<{ focus: StudioFocus; content: string }> {
-  const runId = str(input.run_id);
+async function resolveRun(
+  deps: StudioFocusDeps,
+  input: Record<string, unknown>,
+): Promise<{ focus: StudioFocus; content: string }> {
+  const runId = trimmedText(input.run_id);
   const run = runId ? await deps.repo.getRun(runId) : null;
   if (!run) {
     throw new StudioUnprocessableError("focus run not found");
@@ -140,13 +166,16 @@ async function resolveRun(deps: StudioFocusDeps, input: Record<string, unknown>)
   if (errorList.length) {
     lines.push(
       `Run errors: ${errorList
-        .map((entry) => `${String(entry.operation ?? "error")}${entry.message ? ` (${String(entry.message)})` : ""}`)
+        .map(
+          (entry) =>
+            `${String(entry.operation ?? "error")}${entry.message ? ` (${String(entry.message)})` : ""}`,
+        )
         .join("; ")}.`,
     );
   }
 
-  const seq = int(input.seq);
-  const callId = str(input.call_id);
+  const seq = nonNegativeInt(input.seq);
+  const callId = trimmedText(input.call_id);
   let tail = `Load the transcript with studio_get_run(run_id="${runId}").`;
   if (seq !== null || callId) {
     const rows = await deps.repo.listMessages(runId);
@@ -159,7 +188,9 @@ async function resolveRun(deps: StudioFocusDeps, input: Record<string, unknown>)
       });
       request = rows.find((row) => {
         const payload = (jsonObj(row.payload) ?? {}) as Record<string, unknown>;
-        const calls = Array.isArray(payload.tool_calls) ? (payload.tool_calls as Array<Record<string, unknown>>) : [];
+        const calls = Array.isArray(payload.tool_calls)
+          ? (payload.tool_calls as Array<Record<string, unknown>>)
+          : [];
         return calls.some((call) => String(call.id ?? "") === callId);
       });
       if (!target && !request) {
@@ -178,41 +209,57 @@ async function resolveRun(deps: StudioFocusDeps, input: Record<string, unknown>)
     coordinates.call_id = callId || null;
     if (request) {
       const payload = (jsonObj(request.payload) ?? {}) as Record<string, unknown>;
-      const call = (Array.isArray(payload.tool_calls) ? (payload.tool_calls as Array<Record<string, unknown>>) : []).find(
-        (item) => String(item.id ?? "") === callId,
-      );
+      const call = (
+        Array.isArray(payload.tool_calls)
+          ? (payload.tool_calls as Array<Record<string, unknown>>)
+          : []
+      ).find((item) => String(item.id ?? "") === callId);
       const fn = (call?.function ?? {}) as Record<string, unknown>;
-      focus.tool_name = str(fn.name) || null;
+      focus.tool_name = trimmedText(fn.name) || null;
       coordinates.tool_name = focus.tool_name;
-      lines.push("", `Requested at seq ${String(request.seq)}: ${String(fn.name ?? "tool")} with arguments`, excerpt(String(fn.arguments ?? "{}")));
+      lines.push(
+        "",
+        `Requested at seq ${String(request.seq)}: ${String(fn.name ?? "tool")} with arguments`,
+        excerpt(String(fn.arguments ?? "{}")),
+      );
     }
     if (target) {
       const payload = (jsonObj(target.payload) ?? {}) as Record<string, unknown>;
       const meta = (jsonObj(target.metadata) ?? {}) as Record<string, unknown>;
       if (!focus.tool_name && payload.role === "tool") {
-        focus.tool_name = str(meta.tool_name) || null;
+        focus.tool_name = trimmedText(meta.tool_name) || null;
         coordinates.tool_name = focus.tool_name;
       }
       const label =
-        payload.role === "tool" ? `Tool result at seq ${String(target.seq)}` : `${String(payload.role ?? "message")} message at seq ${String(target.seq)}`;
-      const content = typeof payload.content === "string" ? payload.content : JSON.stringify(payload);
-      lines.push("", `${label}${meta.error ? ` (error: ${String(meta.error)})` : ""}:`, excerpt(content));
+        payload.role === "tool"
+          ? `Tool result at seq ${String(target.seq)}`
+          : `${String(payload.role ?? "message")} message at seq ${String(target.seq)}`;
+      const content =
+        typeof payload.content === "string" ? payload.content : JSON.stringify(payload);
+      lines.push(
+        "",
+        `${label}${meta.error ? ` (error: ${String(meta.error)})` : ""}:`,
+        excerpt(content),
+      );
     }
     focus.label = `${runKindLabel(kind)} · ${focus.tool_name ? `${focus.tool_name} · ` : ""}seq ${String(focusedSeq)}`;
     tail = `Load the surrounding steps with studio_get_run(run_id="${runId}", seq_start, seq_end) around seq ${String(focusedSeq)}.`;
   }
   return {
     focus,
-    content: block("studio.focus.run", coordinates, lines.join("\n"), tail),
+    content: evidenceBlock("studio.focus.run", coordinates, lines.join("\n"), tail),
   };
 }
 
-function findEntry(entries: MemoryTimelineEntry[], input: Record<string, unknown>): MemoryTimelineEntry | undefined {
-  const revisionId = str(input.revision_id);
+function findEntry(
+  entries: MemoryTimelineEntry[],
+  input: Record<string, unknown>,
+): MemoryTimelineEntry | undefined {
+  const revisionId = trimmedText(input.revision_id);
   if (revisionId && revisionId !== "live") {
     return entries.find((entry) => entry.revision_id === revisionId);
   }
-  const index = int(input.version_index);
+  const index = nonNegativeInt(input.version_index);
   if (index !== null) {
     return entries.find((entry) => entry.index === index);
   }
@@ -223,11 +270,16 @@ async function resolveMemoryVersion(
   deps: StudioFocusDeps,
   input: Record<string, unknown>,
 ): Promise<{ focus: StudioFocus; content: string }> {
-  const agent = await guildAgent(deps, str(input.agent_id));
-  const actor = deps.artifacts.operatorContext(deps.orgId, String(deps.user.id), String(deps.user.name ?? "operator"), {
-    guildId: deps.sourceGuildId,
-    agentId: String(agent.id),
-  });
+  const agent = await guildAgent(deps, trimmedText(input.agent_id));
+  const actor = deps.artifacts.operatorContext(
+    deps.orgId,
+    String(deps.user.id),
+    String(deps.user.name ?? "operator"),
+    {
+      guildId: deps.sourceGuildId,
+      agentId: String(agent.id),
+    },
+  );
   const live = await deps.artifacts.getMemoryRow(actor, String(agent.id));
   const revisions = await deps.artifacts.listRevisions(actor, String(agent.id));
   const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
@@ -240,7 +292,10 @@ async function resolveMemoryVersion(
   focus.version_index = entry.index;
   focus.run_id = entry.run_id;
   focus.label = `Memory v${entry.index}${entry.revision_id === null ? " (live)" : ""}`;
-  const writer = entry.actor.type === "unknown" ? "unknown (oldest archived version)" : entry.actor.detail || `${entry.actor.type} ${entry.actor.name ?? ""}`;
+  const writer =
+    entry.actor.type === "unknown"
+      ? "unknown (oldest archived version)"
+      : entry.actor.detail || `${entry.actor.type} ${entry.actor.name ?? ""}`;
   const body = [
     `Memory version ${entry.index} of ${String(agent.name)}${entry.revision_id === null ? " (the live memory)" : ""}.`,
     `Written by: ${writer}${entry.written_at ? ` at ${entry.written_at}` : ""}.`,
@@ -256,7 +311,9 @@ async function resolveMemoryVersion(
   } else {
     body.push("", "Content:", excerpt(entry.content));
   }
-  const versionRef = entry.revision_id ? `revision_id="${entry.revision_id}"` : `version_index=${entry.index}`;
+  const versionRef = entry.revision_id
+    ? `revision_id="${entry.revision_id}"`
+    : `version_index=${entry.index}`;
   const tail = [
     `Load the full version with studio_get_memory_version(agent_id="${String(agent.id)}", ${versionRef}).`,
     entry.run_id
@@ -267,7 +324,7 @@ async function resolveMemoryVersion(
     .join(" ");
   return {
     focus,
-    content: block(
+    content: evidenceBlock(
       "studio.focus.memory_version",
       {
         agent_id: agent.id,
@@ -285,9 +342,12 @@ async function resolveMemoryVersion(
   };
 }
 
-async function resolveRoutine(deps: StudioFocusDeps, input: Record<string, unknown>): Promise<{ focus: StudioFocus; content: string }> {
-  const agent = await guildAgent(deps, str(input.agent_id));
-  const scheduleId = str(input.schedule_id);
+async function resolveRoutine(
+  deps: StudioFocusDeps,
+  input: Record<string, unknown>,
+): Promise<{ focus: StudioFocus; content: string }> {
+  const agent = await guildAgent(deps, trimmedText(input.agent_id));
+  const scheduleId = trimmedText(input.schedule_id);
   const row = scheduleId ? await deps.repo.getSchedule(String(agent.id), scheduleId) : null;
   if (!row) {
     throw new StudioUnprocessableError("focus routine not found");
@@ -307,7 +367,7 @@ async function resolveRoutine(deps: StudioFocusDeps, input: Record<string, unkno
   ];
   return {
     focus,
-    content: block(
+    content: evidenceBlock(
       "studio.focus.routine",
       {
         schedule_id: scheduleId,
@@ -328,7 +388,12 @@ async function resolveRoutine(deps: StudioFocusDeps, input: Record<string, unkno
 async function loadFileForFocus(
   deps: StudioFocusDeps,
   displayPath: string,
-): Promise<{ agent: Record<string, unknown> | null; kind: string; version: number | null; content: string }> {
+): Promise<{
+  agent: Record<string, unknown> | null;
+  kind: string;
+  version: number | null;
+  content: string;
+}> {
   let parsed;
   try {
     parsed = parseDisplayPath(displayPath);
@@ -348,15 +413,33 @@ async function loadFileForFocus(
   if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
     agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
   } else if (!(await studioReachesParsed(deps, parsed))) {
-    throw new StudioUnprocessableError("focus file is not in the source guild or the organisation's shared files");
+    throw new StudioUnprocessableError(
+      "focus file is not in the source guild or the organisation's shared files",
+    );
   }
-  const actor = deps.artifacts.operatorContext(deps.orgId, String(deps.user.id), String(deps.user.name ?? "operator"), {
-    guildId: deps.sourceGuildId,
-    ...(agent ? { agentId: String(agent.id) } : {}),
-  });
-  if (parsed.kind === "artifact" && parsed.level === "agent" && parsed.path === "" && parsed.key === "task.md" && agent) {
+  const actor = deps.artifacts.operatorContext(
+    deps.orgId,
+    String(deps.user.id),
+    String(deps.user.name ?? "operator"),
+    {
+      guildId: deps.sourceGuildId,
+      ...(agent ? { agentId: String(agent.id) } : {}),
+    },
+  );
+  if (
+    parsed.kind === "artifact" &&
+    parsed.level === "agent" &&
+    parsed.path === "" &&
+    parsed.key === "task.md" &&
+    agent
+  ) {
     const task = await deps.repo.getAgentTask(deps.orgId, String(agent.id));
-    return { agent, kind: "task", version: task?.version ?? null, content: task?.content_text ?? "" };
+    return {
+      agent,
+      kind: "task",
+      version: task?.version ?? null,
+      content: task?.content_text ?? "",
+    };
   }
   let loaded;
   try {
@@ -374,8 +457,16 @@ async function loadFileForFocus(
     throw new StudioUnprocessableError("focus file not found");
   }
   const row = loaded.row;
-  const content = row.kind === "object" ? JSON.stringify(row.content_json ?? {}, null, 2) : String(row.content_text ?? "");
-  return { agent, kind: loaded.tombstone ? `${row.kind} (deleted)` : String(row.kind), version: row.version, content };
+  const content =
+    row.kind === "object"
+      ? JSON.stringify(row.content_json ?? {}, null, 2)
+      : String(row.content_text ?? "");
+  return {
+    agent,
+    kind: loaded.tombstone ? `${row.kind} (deleted)` : String(row.kind),
+    version: row.version,
+    content,
+  };
 }
 
 function changeSummary(change: FileChangeView): string {
@@ -386,15 +477,19 @@ function changeSummary(change: FileChangeView): string {
   return `${change.operation} to v${change.version} by ${who} at ${change.created_at}`;
 }
 
-async function resolveFile(deps: StudioFocusDeps, input: Record<string, unknown>): Promise<{ focus: StudioFocus; content: string }> {
-  const displayPath = str(input.display_path);
+async function resolveFile(
+  deps: StudioFocusDeps,
+  input: Record<string, unknown>,
+): Promise<{ focus: StudioFocus; content: string }> {
+  const displayPath = trimmedText(input.display_path);
   if (!displayPath) {
     throw new StudioUnprocessableError("focus file needs a display_path");
   }
   const file = await loadFileForFocus(deps, displayPath);
-  const agent = file.agent ?? (await guildAgent(deps, str(input.agent_id)).catch(() => null));
+  const agent =
+    file.agent ?? (await guildAgent(deps, trimmedText(input.agent_id)).catch(() => null));
   const changes = await listFileChanges(deps.pool, deps.orgId, displayPath);
-  const changeId = str(input.change_id);
+  const changeId = trimmedText(input.change_id);
   const change = changeId ? changes.find((row) => row.id === changeId) : changes[0];
   if (changeId && !change) {
     throw new StudioUnprocessableError("focus file change not found");
@@ -410,7 +505,9 @@ async function resolveFile(deps: StudioFocusDeps, input: Record<string, unknown>
   focus.label = `File · ${displayPath.split("/").pop() ?? displayPath}`;
   const body = [
     `${file.kind} ${displayPath}${file.version !== null ? ` (v${file.version})` : ""}.`,
-    change ? `${changeId ? "Focused change" : "Latest change"}: ${changeSummary(change)}.` : "No recorded change history for this path.",
+    change
+      ? `${changeId ? "Focused change" : "Latest change"}: ${changeSummary(change)}.`
+      : "No recorded change history for this path.",
     changes.length > 1 ? `${changes.length} recorded changes in total.` : "",
     "",
     "Content:",
@@ -426,7 +523,7 @@ async function resolveFile(deps: StudioFocusDeps, input: Record<string, unknown>
     .join(" ");
   return {
     focus,
-    content: block(
+    content: evidenceBlock(
       "studio.focus.file",
       {
         display_path: displayPath,
@@ -448,8 +545,11 @@ async function resolveFile(deps: StudioFocusDeps, input: Record<string, unknown>
   };
 }
 
-async function resolveIssue(deps: StudioFocusDeps, input: Record<string, unknown>): Promise<{ focus: StudioFocus; content: string }> {
-  const issueId = str(input.issue_id);
+async function resolveIssue(
+  deps: StudioFocusDeps,
+  input: Record<string, unknown>,
+): Promise<{ focus: StudioFocus; content: string }> {
+  const issueId = trimmedText(input.issue_id);
   const row = issueId ? await deps.repo.getIssue(deps.sourceGuildId, issueId) : null;
   if (!row) {
     throw new StudioUnprocessableError("focus issue not found");
@@ -478,7 +578,7 @@ async function resolveIssue(deps: StudioFocusDeps, input: Record<string, unknown
     : "The run that reported this issue no longer exists.";
   return {
     focus,
-    content: block(
+    content: evidenceBlock(
       "studio.focus.issue",
       {
         issue_id: issueId,
@@ -505,26 +605,35 @@ const TOOL_FOCUS_FAILURES = 5;
 function toolUsageLines(stats: Array<Record<string, unknown>>): string[] {
   const lines = stats
     .filter((stat) => stat.agent_id !== null)
-    .map((stat) => `- ${String(stat.agent_id)}: ${String(stat.calls)} calls, ${String(stat.errors)} failed`);
+    .map(
+      (stat) =>
+        `- ${String(stat.agent_id)}: ${String(stat.calls)} calls, ${String(stat.errors)} failed`,
+    );
   return lines.length ? lines : ["- no agent called it"];
 }
 
 function toolFailureLines(rows: Array<Record<string, unknown>>): string[] {
   return rows.map(
-    (row) => `- run ${String(row.run_id)}, call ${String(row.call_id ?? "?")} (${String(row.agent_id)}): ${excerpt(String(row.error ?? ""))}`,
+    (row) =>
+      `- run ${String(row.run_id)}, call ${String(row.call_id ?? "?")} (${String(row.agent_id)}): ${excerpt(String(row.error ?? ""))}`,
   );
 }
 
 // A tool pin: how each agent called the tool over the longest activity window,
 // and its latest failures, with where to read further.
-async function resolveTool(deps: StudioFocusDeps, input: Record<string, unknown>): Promise<{ focus: StudioFocus; content: string }> {
-  const name = str(input.tool_name).trim();
+async function resolveTool(
+  deps: StudioFocusDeps,
+  input: Record<string, unknown>,
+): Promise<{ focus: StudioFocus; content: string }> {
+  const name = trimmedText(input.tool_name).trim();
   if (!TOOL_NAME.test(name)) {
     throw new StudioUnprocessableError("focus tool_name must be a tool name");
   }
   const until = new Date();
   const since = new Date(until.getTime() - ACTIVITY_MAX_HOURS * 3_600_000);
-  const stats = (await deps.repo.listGuildToolCallStats(deps.sourceGuildId, since, until)).filter((stat) => stat.tool_name === name);
+  const stats = (await deps.repo.listGuildToolCallStats(deps.sourceGuildId, since, until)).filter(
+    (stat) => stat.tool_name === name,
+  );
   const failures = await deps.repo.listGuildToolCalls(deps.sourceGuildId, name, {
     since,
     until,
@@ -532,7 +641,11 @@ async function resolveTool(deps: StudioFocusDeps, input: Record<string, unknown>
     before: null,
     limit: TOOL_FOCUS_FAILURES,
   });
-  const focus: StudioFocus = { ...emptyFocus("tool", { id: "", name: "" }), tool_name: name, label: `Tool · ${name}` };
+  const focus: StudioFocus = {
+    ...emptyFocus("tool", { id: "", name: "" }),
+    tool_name: name,
+    label: `Tool · ${name}`,
+  };
   const body = [
     `Tool ${name}, called by the guild's agents in the last ${ACTIVITY_MAX_HOURS / 24} days:`,
     ...toolUsageLines(stats),
@@ -540,7 +653,7 @@ async function resolveTool(deps: StudioFocusDeps, input: Record<string, unknown>
   ];
   return {
     focus,
-    content: block(
+    content: evidenceBlock(
       "studio.focus.tool",
       { tool_name: name, since: since.toISOString(), until: until.toISOString() },
       body.join("\n"),
@@ -553,11 +666,14 @@ export async function resolveStudioFocus(
   deps: StudioFocusDeps,
   input: unknown,
 ): Promise<{ focus: StudioFocus; content: string }> {
-  const raw = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : null;
+  const raw =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : null;
   if (!raw) {
     throw new StudioUnprocessableError("focus must be an object");
   }
-  const kind = str(raw.kind) as StudioFocusKind;
+  const kind = trimmedText(raw.kind) as StudioFocusKind;
   switch (kind) {
     case "run":
       return resolveRun(deps, raw);
@@ -572,6 +688,8 @@ export async function resolveStudioFocus(
     case "tool":
       return resolveTool(deps, raw);
     default:
-      throw new StudioUnprocessableError("focus kind must be run, memory_version, routine, file, issue, or tool");
+      throw new StudioUnprocessableError(
+        "focus kind must be run, memory_version, routine, file, issue, or tool",
+      );
   }
 }
