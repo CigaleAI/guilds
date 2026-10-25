@@ -107,21 +107,24 @@ function useTabRow(row: RefObject<HTMLElement | null>) {
       '[aria-current="page"], [data-state="active"]',
     );
     if (current && current !== lastCurrent.current) {
-      revealInRow(current, lastCurrent.current !== null);
+      revealInRow(current, lastCurrent.current === null ? "instant" : "smooth");
       lastCurrent.current = current;
     }
   });
 }
 
-/** Keeps a newly selected tab inside the scrolled row. */
-function revealInRow(tab: HTMLElement, animate: boolean) {
+/**
+ * Keeps a newly selected tab inside the scrolled row. A smooth scroll becomes instant
+ * when the viewer prefers reduced motion.
+ */
+function revealInRow(tab: HTMLElement, motion: "smooth" | "instant") {
   const row = tab.parentElement;
   if (!row || row.scrollWidth <= row.clientWidth) return;
   const inset = 16;
   const start = tab.offsetLeft;
   const end = start + tab.offsetWidth;
   const behavior =
-    animate && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    motion === "smooth" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
       ? "smooth"
       : "instant";
   if (start < row.scrollLeft + inset) {
@@ -145,7 +148,8 @@ export function TabsTrigger({ icon, count, className, children, ref, ...props }:
   useEffect(() => {
     const tab = node.current;
     const active = tab?.dataset.state === "active";
-    if (tab && active && !wasActive.current) revealInRow(tab, wasActive.current !== null);
+    if (tab && active && !wasActive.current)
+      revealInRow(tab, wasActive.current === null ? "instant" : "smooth");
     wasActive.current = active;
   });
 

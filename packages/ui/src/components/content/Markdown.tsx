@@ -150,14 +150,15 @@ function headingOf(level: 1 | 2 | 3 | 4, tagName: "h1" | "h2" | "h3" | "h4" | "h
   };
 }
 
-function listOf(ordered: boolean) {
+function listOf(tag: "ul" | "ol") {
+  const ordered = tag === "ol";
   return function MarkdownList({ node: _node, className, ...props }: Props<"ul" | "ol">) {
     const { density } = useContext(Settings);
     const parent = useContext(ListKind);
     const depth = parent ? parent.depth + 1 : 0;
     return (
       <ListKind.Provider value={{ ordered, depth }}>
-        {createElement(ordered ? "ol" : "ul", {
+        {createElement(tag, {
           ...props,
           className: cn(
             list({ ordered, density, nested: depth > 0 }),
@@ -331,8 +332,8 @@ const components: Components = {
   h6: headingOf(4, "h6"),
   p: Paragraph,
   a: Link,
-  ul: listOf(false),
-  ol: listOf(true),
+  ul: listOf("ul"),
+  ol: listOf("ol"),
   li: ListItem,
   input: Checkbox,
   code: Code,

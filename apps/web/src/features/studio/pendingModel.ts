@@ -2,7 +2,8 @@ import type { StudioDraft, StudioMessage } from "../../api/types";
 import {
   batchReply,
   connectionLabel,
-  decisionOf,
+  acceptedDecision,
+  declinedDecision,
   draftDecision,
   editTargetLabel,
   widgetOf,
@@ -57,7 +58,10 @@ function turnRequests(messages: readonly StudioMessage[]): ProposalRequest[] {
 function editState(widget: EditWidget, metadata: Record<string, unknown>): Settled {
   const status = metadata.edit_status;
   if (status !== "applied" && status !== "declined") return open;
-  return { state: "decided", decision: decisionOf(widget, status === "applied") };
+  return {
+    state: "decided",
+    decision: status === "applied" ? acceptedDecision(widget) : declinedDecision(widget),
+  };
 }
 
 function loginState(
@@ -67,10 +71,10 @@ function loginState(
 ): Settled {
   const id = widget.connection.id;
   if (metadata.access_status === "granted" || (id && granted.includes(id))) {
-    return { state: "decided", decision: decisionOf(widget, true) };
+    return { state: "decided", decision: acceptedDecision(widget) };
   }
   if (metadata.access_status === "declined") {
-    return { state: "decided", decision: decisionOf(widget, false) };
+    return { state: "decided", decision: declinedDecision(widget) };
   }
   return open;
 }

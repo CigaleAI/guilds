@@ -123,19 +123,22 @@ export function draftDecision(widget: DraftWidget, outcome: DraftOutcome): Reque
   return { accepted: outcome !== "discarded", line: DRAFT_LINES[outcome](widget.agent.name) };
 }
 
-/** One request's answer: an edit applied or declined, a login granted or declined. */
-export function decisionOf(widget: EditWidget | AccessWidget, accepted: boolean): RequestDecision {
+/** One request's answer when it went through: an edit applied, or a login granted. */
+export function acceptedDecision(widget: EditWidget | AccessWidget): RequestDecision {
   if (widget.kind === "edit") {
-    const target = editTargetLabel(widget.edit);
-    return {
-      accepted,
-      line: accepted ? `Applied the edit to ${target}.` : `Declined the edit to ${target}.`,
-    };
+    return { accepted: true, line: `Applied the edit to ${editTargetLabel(widget.edit)}.` };
   }
-  const label = connectionLabel(widget.connection);
+  return { accepted: true, line: `Granted read access to ${connectionLabel(widget.connection)}.` };
+}
+
+/** One request's answer when it was turned down: an edit or a login declined. */
+export function declinedDecision(widget: EditWidget | AccessWidget): RequestDecision {
+  if (widget.kind === "edit") {
+    return { accepted: false, line: `Declined the edit to ${editTargetLabel(widget.edit)}.` };
+  }
   return {
-    accepted,
-    line: accepted ? `Granted read access to ${label}.` : `Declined read access to ${label}.`,
+    accepted: false,
+    line: `Declined read access to ${connectionLabel(widget.connection)}.`,
   };
 }
 

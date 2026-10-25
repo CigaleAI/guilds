@@ -1,8 +1,13 @@
 import { useAgentsByGuild, useGuilds } from "../../api/queries";
 import type { SecretAccessChoice } from "../../api/types";
 import { Checkbox, Toggle } from "@guildsrun/ui";
-function toggled(ids: readonly string[], id: string, on: boolean): string[] {
-  return on ? (ids.includes(id) ? [...ids] : [...ids, id]) : ids.filter((item) => item !== id);
+
+function withId(ids: readonly string[], id: string): string[] {
+  return ids.includes(id) ? [...ids] : [...ids, id];
+}
+
+function withoutId(ids: readonly string[], id: string): string[] {
+  return ids.filter((item) => item !== id);
 }
 
 /**
@@ -55,7 +60,10 @@ export function SecretAccessPicker({
                     onCheckedChange={(checked) =>
                       onChange({
                         ...value,
-                        guild_ids: toggled(value.guild_ids, guild.id, checked === true),
+                        guild_ids:
+                          checked === true
+                            ? withId(value.guild_ids, guild.id)
+                            : withoutId(value.guild_ids, guild.id),
                       })
                     }
                   />
@@ -71,7 +79,10 @@ export function SecretAccessPicker({
                       onCheckedChange={(checked) =>
                         onChange({
                           ...value,
-                          agent_ids: toggled(value.agent_ids, agent.id, checked === true),
+                          agent_ids:
+                            checked === true
+                              ? withId(value.agent_ids, agent.id)
+                              : withoutId(value.agent_ids, agent.id),
                         })
                       }
                     />

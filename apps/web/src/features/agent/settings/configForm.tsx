@@ -264,7 +264,9 @@ export function withHarnessModel(
 ): ConfigForm {
   const entry = form.harness ? catalogFor(catalog, form.harness) : undefined;
   const kept =
-    !entry || !form.harness_effort || harnessEffortsFor(entry, model.trim()).includes(form.harness_effort);
+    !entry ||
+    !form.harness_effort ||
+    harnessEffortsFor(entry, model.trim()).includes(form.harness_effort);
   return { ...form, harness_model: model, harness_effort: kept ? form.harness_effort : "" };
 }
 
@@ -547,12 +549,6 @@ export type SettingsAgent = { guildId: string; agentId: string };
 const DEFAULT_MODEL = "default";
 const CUSTOM_MODEL = "custom";
 
-/** The model select's value: a listed model, the subscription's default, or a custom name. */
-function modelChoice(model: string, listed: boolean, custom: boolean): string {
-  if (custom) return CUSTOM_MODEL;
-  return listed ? model : DEFAULT_MODEL;
-}
-
 /**
  * The model the picked harness runs, from its listed models, the subscription's default, or a
  * custom name typed in; then the effort it runs at, among the ones that model takes.
@@ -574,6 +570,7 @@ function HarnessModelFields({
   const listed = listedHarnessModel(entry, model);
   const [customPicked, setCustomPicked] = useState(false);
   const custom = customPicked || (model !== "" && !listed);
+  const listedChoice = listed === undefined ? DEFAULT_MODEL : model;
   const pick = (value: string) => {
     setCustomPicked(value === CUSTOM_MODEL);
     if (value === CUSTOM_MODEL) return;
@@ -585,7 +582,7 @@ function HarnessModelFields({
         tone="surface"
         label="Harness model"
         hint="Custom takes any model name the subscription offers."
-        value={modelChoice(model, listed !== undefined, custom)}
+        value={custom ? CUSTOM_MODEL : listedChoice}
         onValueChange={pick}
         options={[
           { value: DEFAULT_MODEL, label: "Subscription default" },
@@ -643,7 +640,10 @@ function HarnessEffortField({
       hint="How hard the model reasons before it answers."
       value={form.harness_effort || DEFAULT_EFFORT}
       onValueChange={(value) =>
-        onChange({ ...form, harness_effort: value === DEFAULT_EFFORT ? "" : (value as HarnessEffort) })
+        onChange({
+          ...form,
+          harness_effort: value === DEFAULT_EFFORT ? "" : (value as HarnessEffort),
+        })
       }
       options={[
         { value: DEFAULT_EFFORT, label: defaultEffortLabel(listedHarnessModel(entry, model)) },
@@ -740,7 +740,9 @@ export function HarnessChoiceFields({
       harness_effort: value === form.harness ? form.harness_effort : "",
     });
   const catalog = useHarnessCatalog();
-  const items = HARNESS_ITEMS.filter((item) => harnessOffered(catalog.data, item.value, form.harness));
+  const items = HARNESS_ITEMS.filter((item) =>
+    harnessOffered(catalog.data, item.value, form.harness),
+  );
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">

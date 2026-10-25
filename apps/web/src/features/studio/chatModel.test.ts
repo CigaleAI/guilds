@@ -5,7 +5,8 @@ import {
   applyLabel,
   batchReply,
   connectionLabel,
-  decisionOf,
+  acceptedDecision,
+  declinedDecision,
   draftDecision,
   editTargetLabel,
   focusOf,
@@ -118,17 +119,17 @@ test("a turn's requests are answered by one reply once each is decided", () => {
   };
   const login = { kind: "access" as const, connection: { server: { display_name: "X" } } };
   assert.equal(batchReply([]), null);
-  assert.equal(batchReply([decisionOf(memory, true), null]), null);
+  assert.equal(batchReply([acceptedDecision(memory), null]), null);
   assert.equal(
-    batchReply([decisionOf(memory, true), decisionOf(note, true)]),
+    batchReply([acceptedDecision(memory), acceptedDecision(note)]),
     "Applied the edit to wallet · Memory. Applied the edit to Playbook. Continue.",
   );
   assert.equal(
-    batchReply([decisionOf(memory, true), decisionOf(note, false), decisionOf(login, true)]),
+    batchReply([acceptedDecision(memory), declinedDecision(note), acceptedDecision(login)]),
     "Applied the edit to wallet · Memory. Declined the edit to Playbook. Granted read access to X. Continue without what I declined.",
   );
   assert.equal(
-    batchReply([decisionOf(login, false)]),
+    batchReply([declinedDecision(login)]),
     "Declined read access to X. Continue without it.",
   );
 });
