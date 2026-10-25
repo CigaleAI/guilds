@@ -3,39 +3,49 @@
 These rules apply to everyone who writes code here, humans and
 agents alike.
 
-The goal is simple code. We write small, clear functions. We
-combine them to build bigger behaviour.
+The goal is code a reader can trust without opening it. A reader
+sees a function's name and signature and knows exactly what it
+does, what it needs, and what it returns. The body can be as long
+as that contract needs. Behaviour lives next to the code that uses
+it.
 
 ESLint, Prettier, the boundary rule, and the check enforce what
-they cover. No lint rule enforces the function limits below; review
+they cover. No lint rule enforces the function rules below; review
 checks them. The tooling is in [Development](development.md).
 
 ---
 
 ## Functions
 
-A function does one thing. It should be easy to read in one pass.
+A function has one contract: the name and the signature say
+everything it does. Nothing happens inside that the name does not
+promise, including side effects. If the name needs an "and", it is
+two functions.
 
-- A function has at most **30 lines**.
+- A function has at most **3 parameters**. If you need more, pass
+  one object with named fields.
 - A function has at most **3 branches** (cyclomatic complexity of
   4 or less).
-- A function has at most **3 parameters**. If you need more, pass
-  one object.
 - Nesting goes at most **2 levels** deep. Use early returns to
   stay flat.
+- Parameters are typed for what they are. A function does not take
+  `Record<string, unknown>` or `unknown` when the caller has a type.
+- A function does not take a flag that selects between behaviours.
+  Each behaviour is its own function with its own name.
 
 **What counts as a branch:** `if`, `else if`, `case`, `&&`, `||`,
 ternaries (`a ? b : c`), and `catch`.
 
-A nested condition, a loop with a branch inside, or a second
-`switch` becomes a named function. A chain of `if`s over a value
-is a lookup table. A function that takes a flag to do two things
-is two functions.
+There is no line limit. A long body with one contract is better
+than a short body that calls six helpers a reader has to chase. A
+nested condition, a loop with a branch inside, or a second `switch`
+becomes a named function only when that piece has a contract of
+its own that a reader would want to know by name. A chain of `if`s
+over a value is a lookup table.
 
-Do not split code into tiny pieces just to pass the limits. Every
-function must have a name that makes sense on its own. If you
-need to jump between many files to understand one behaviour, the
-split is wrong.
+A private helper exists because it names a real step, not to make
+its caller shorter. A helper called from one place, whose name is
+only meaningful inside its caller, is inlined.
 
 ## Tests
 
@@ -49,8 +59,19 @@ Where the tests live is [Development](development.md#tests).
 
 A name says what the thing does. A reader does not open the body.
 
+The test is **no surprises**: a reader who knows only the name and
+the signature predicts the result and every effect. A function
+whose name is a step of its caller (`part`, `step`, `apply`,
+`handle`, `process`) and means nothing on its own is not a
+function; it is a block of its caller.
+
 - Functions are a verb over a domain noun (`resolveModelCredentials`,
-  `seedOperator`, `materialiseScripts`).
+  `seedOperator`, `materialiseScripts`). The verb is specific:
+  `resolve`, `load`, `write`, `format`, `validate`, not `get`,
+  `handle`, `process`, `do`.
+- Two functions that differ in behaviour differ in name, in the
+  part of the name that carries the difference
+  (`readAgentFile`, `readAgentFolder`).
 - Types and tables are the domain noun (`Repositories`,
   `artifact_collections`).
 - Booleans read as a question (`isReadOnlyRemote`).
@@ -65,14 +86,25 @@ Abbreviations are the domain's own (`org`, `id`, `mcp`) and
 nothing else. A name that needs a comment to be understood is the
 wrong name.
 
-## Duplication
+## Locality
 
-Do not copy and paste logic.
+Code lives next to the code that uses it. A reader understands one
+behaviour from one file. A jump to another file is a cost, and the
+reader pays it only to reach a contract worth knowing by name.
 
-Follow the **rule of three**: when similar code appears for the
-third time, extract it into a shared function. Similar code in
-two features is acceptable. Merging too early creates coupling
-between features.
+Two pieces of code are the same function only when they have the
+**same contract**: same inputs, same output, same promise. Then
+there is one function, with one name, and both callers use it.
+
+Two pieces of code that look alike but promise different things
+are two functions. Each gets a specific name that says how it
+differs, and the body is repeated. Repeating most of a body is
+cheaper than a shared helper that needs a flag, a mode string, or a
+loose type to serve both callers. That helper has no contract of
+its own, and it couples two behaviours that will change apart.
+
+Code moves out of a feature into a shared directory when a second
+caller with the identical contract exists, not before.
 
 ## Scaffolding
 
@@ -160,8 +192,8 @@ output, no side effects.
 Side effects (database, network, files, time, randomness) live in
 **thin outer functions**. The outer functions call the pure ones.
 
-Pure functions are easy to test, easy to reuse, and easy to
-compose.
+A pure function is easy to test and its contract is complete: the
+signature is the whole promise.
 
 ## Types and errors
 
@@ -258,11 +290,15 @@ The pre-push hook runs the whole check on what is pushed.
 
 Before you submit a change, check:
 
-- [ ] Functions are short, with 3 branches or fewer and 3
-      parameters or fewer.
+- [ ] Each function's name and signature say everything it does.
+      No flag parameters, 3 branches or fewer, 3 parameters or
+      fewer.
+- [ ] No helper exists only to shorten its caller.
 - [ ] Every new branch has a test.
 - [ ] I searched for existing code before writing new code.
 - [ ] Names are clear and do not overlap with existing names.
+- [ ] Code shared between callers has one contract; code that
+      differs has two names.
 - [ ] Shared code meets the shared-code rules.
 - [ ] Side effects are at the edges.
 - [ ] Docs are updated in the same change.
