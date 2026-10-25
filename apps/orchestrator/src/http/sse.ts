@@ -1,10 +1,10 @@
 const FLOAT_KEYS = new Set(["cost_usd"]);
 
 export function dumpsSse(value: unknown): string {
-  return encodeValue(value, false);
+  return encodeValue(value);
 }
 
-function encodeValue(value: unknown, asFloat: boolean): string {
+function encodeValue(value: unknown): string {
   if (value === null || value === undefined) {
     return "null";
   }
@@ -15,13 +15,13 @@ function encodeValue(value: unknown, asFloat: boolean): string {
     return "false";
   }
   if (typeof value === "number") {
-    return encodeNumber(value, asFloat);
+    return encodeNumber(value);
   }
   if (typeof value === "string") {
     return encodeString(value);
   }
   if (Array.isArray(value)) {
-    return `[${value.map((item) => encodeValue(item, false)).join(", ")}]`;
+    return `[${value.map(encodeValue).join(", ")}]`;
   }
   if (typeof value === "object") {
     const parts: string[] = [];
@@ -29,25 +29,38 @@ function encodeValue(value: unknown, asFloat: boolean): string {
       if (item === undefined) {
         continue;
       }
-      parts.push(`${encodeString(key)}: ${encodeValue(item, FLOAT_KEYS.has(key))}`);
+      parts.push(`${encodeString(key)}: ${encodeEntryValue(key, item)}`);
     }
     return `{${parts.join(", ")}}`;
   }
   return encodeString(String(value));
 }
 
-function encodeNumber(value: number, asFloat: boolean): string {
+/** A number under a key listed in FLOAT_KEYS is written as a float even when it is whole. */
+function encodeEntryValue(key: string, item: unknown): string {
+  if (typeof item === "number" && FLOAT_KEYS.has(key)) {
+    return encodeFloat(item);
+  }
+  return encodeValue(item);
+}
+
+function encodeNumber(value: number): string {
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+  return encodeFloat(value);
+}
+
+/** Writes a number with a fraction or exponent so a reader parses it as a float. */
+function encodeFloat(value: number): string {
   if (!Number.isFinite(value)) {
     throw new TypeError("sse json cannot encode non-finite numbers");
   }
-  if (asFloat || !Number.isInteger(value)) {
-    const raw = JSON.stringify(value);
-    if (raw.includes(".") || raw.includes("e") || raw.includes("E")) {
-      return raw;
-    }
-    return `${raw}.0`;
+  const raw = JSON.stringify(value);
+  if (raw.includes(".") || raw.includes("e") || raw.includes("E")) {
+    return raw;
   }
-  return String(value);
+  return `${raw}.0`;
 }
 
 function encodeString(value: string): string {

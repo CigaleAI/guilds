@@ -1303,7 +1303,7 @@ const COLUMN_PROPERTIES = {
   },
 };
 
-function columnsSchema(description: string, rename: boolean): Record<string, unknown> {
+function columnsSchema(description: string): Record<string, unknown> {
   return {
     type: "array",
     description,
@@ -1311,14 +1311,10 @@ function columnsSchema(description: string, rename: boolean): Record<string, unk
       type: "object",
       properties: {
         ...COLUMN_PROPERTIES,
-        ...(rename
-          ? {
-              rename_from: {
-                type: "string",
-                description: "The column's current name when this entry renames it; its values move to the new name.",
-              },
-            }
-          : {}),
+        rename_from: {
+          type: "string",
+          description: "The column's current name when this entry renames it; its values move to the new name.",
+        },
       },
       required: ["name", "type", "description"],
       additionalProperties: false,
@@ -1400,7 +1396,6 @@ export const studioEditCollection: StudioTool = {
       purpose: { type: "string", description: "create and edit: one line, at most 400 characters: what one record is and who writes it." },
       columns: columnsSchema(
         "create: the typed columns, in display order; every record write is validated against them. edit: the complete column list replacing the current one; keep every column you do not mean to change, since a column left out is dropped from every record.",
-        true,
       ),
       scope: {
         type: "string",

@@ -137,11 +137,9 @@ export function validateOauthStrategy(auth: string, raw: unknown): string {
   return raw;
 }
 
-export function validateCatalogDescription(raw: unknown, required: boolean): string {
+/** The trimmed description, or an empty string when none is given. */
+export function validateCatalogDescription(raw: unknown): string {
   const text = typeof raw === "string" ? raw.trim() : "";
-  if (required && !text) {
-    throw new CatalogError("description is required");
-  }
   if (text.length > DESCRIPTION_MAX) {
     throw new CatalogError(`description exceeds ${DESCRIPTION_MAX} characters`);
   }
@@ -272,7 +270,7 @@ export async function createConnector(
     url: validateEndpointUrl(body.url),
     auth,
     oauthStrategy: validateOauthStrategy(auth, body.oauth_strategy),
-    description: validateCatalogDescription(body.description, false),
+    description: validateCatalogDescription(body.description),
     limitations: validateOptionalText(body.limitations, "limitations"),
     setupHint: validateOptionalText(body.setup_hint, "setup_hint"),
   });
@@ -329,7 +327,7 @@ export async function patchConnector(
     const pick = (field: "description" | "limitations" | "setup_hint"): string | null =>
       body[field] !== undefined
         ? field === "description"
-          ? validateCatalogDescription(body[field], false)
+          ? validateCatalogDescription(body[field])
           : validateOptionalText(body[field], field)
         : (current[field] ?? (field === "description" ? "" : null));
     patch.manifest = handManifest({
@@ -360,7 +358,7 @@ export async function patchConnector(
       if (body[field] === null) {
         delete overrides[field];
       } else if (field === "description") {
-        overrides[field] = validateCatalogDescription(body[field], false);
+        overrides[field] = validateCatalogDescription(body[field]);
       } else if (field === "display_name") {
         overrides[field] = String(body[field]).trim();
       } else {
@@ -395,7 +393,7 @@ export async function patchConnectorTool(
     if (body.description === null) {
       delete edit.description;
     } else {
-      edit.description = validateCatalogDescription(body.description, false);
+      edit.description = validateCatalogDescription(body.description);
     }
   }
   if (body.input_schema !== undefined) {

@@ -130,37 +130,54 @@ function guidelinesBody(standing: string): string {
   return text.replace(/\s+$/, "");
 }
 
-function applyCapability(text: string, name: string, on: boolean): string {
-  const block = new RegExp(`<capability name="${name}">\\n([\\s\\S]*?)\\n</capability>\\n?`, "g");
-  const inline = new RegExp(`<capability name="${name}">([\\s\\S]*?)</capability>`, "g");
-  if (on) {
-    return text.replace(block, "$1\n").replace(inline, "$1");
-  }
+function capabilityTagPatterns(name: string): { block: RegExp; inline: RegExp } {
+  return {
+    block: new RegExp(`<capability name="${name}">\\n([\\s\\S]*?)\\n</capability>\\n?`, "g"),
+    inline: new RegExp(`<capability name="${name}">([\\s\\S]*?)</capability>`, "g"),
+  };
+}
+
+/** Removes the named capability tags and keeps their content in place. */
+function unwrapCapability(text: string, name: string): string {
+  const { block, inline } = capabilityTagPatterns(name);
+  return text.replace(block, "$1\n").replace(inline, "$1");
+}
+
+/** Removes the named capability tags together with their content. */
+function stripCapability(text: string, name: string): string {
+  const { block, inline } = capabilityTagPatterns(name);
   return text.replace(block, "").replace(inline, "");
 }
 
-/** Strip or unwrap only the Memory capability tags. Other capability tags stay as they are. */
-export function standingForMemory(standing: string, memory: boolean, memoryWrite = memory): string {
+/**
+ * Resolves each listed capability tag: an enabled one is unwrapped, a disabled
+ * one is stripped. Tags not listed stay as they are.
+ */
+function resolveCapabilities(standing: string, enabled: Record<string, boolean>): string {
   let text = standing.replaceAll("\r\n", "\n");
-  text = applyCapability(text, "memory_write", memoryWrite);
-  text = applyCapability(text, "memory", memory);
-  text = applyCapability(text, "no_memory", !memory);
+  for (const [name, on] of Object.entries(enabled)) {
+    text = on ? unwrapCapability(text, name) : stripCapability(text, name);
+  }
   return text.replace(/\n{3,}/g, "\n\n");
 }
 
+/** Resolves only the Memory capability tags. Other capability tags stay as they are. */
+export function standingForMemory(standing: string, memory: boolean, memoryWrite = memory): string {
+  return resolveCapabilities(standing, { memory_write: memoryWrite, memory, no_memory: !memory });
+}
+
 export function standingForCapabilities(standing: string, caps: StandingCaps): string {
-  let text = standing.replaceAll("\r\n", "\n");
   const memory = memoryOn(caps);
-  const memoryWrite = memoryWriteOn(caps);
-  text = applyCapability(text, "scripts", caps.scripts);
-  text = applyCapability(text, "notes", caps.notes);
-  text = applyCapability(text, "browser", caps.browser);
-  text = applyCapability(text, "coding", caps.coding);
-  text = applyCapability(text, "no_coding", !caps.coding);
-  text = applyCapability(text, "memory_write", memoryWrite);
-  text = applyCapability(text, "memory", memory);
-  text = applyCapability(text, "no_memory", !memory);
-  return text.replace(/\n{3,}/g, "\n\n");
+  return resolveCapabilities(standing, {
+    scripts: caps.scripts,
+    notes: caps.notes,
+    browser: caps.browser,
+    coding: caps.coding,
+    no_coding: !caps.coding,
+    memory_write: memoryWriteOn(caps),
+    memory,
+    no_memory: !memory,
+  });
 }
 
 const PREVIEW_CAPS = {

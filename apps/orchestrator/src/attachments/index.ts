@@ -9,7 +9,7 @@ export {
 export type { AttachmentKind, AttachmentRef, AttachmentRow, BlobStore } from "./types.js";
 export { FileBlobStore, MemoryBlobStore } from "./blob.js";
 export { sniffImage, sanitizeFilename } from "./sniff.js";
-export { AttachmentService, attachmentPayload, contentDisposition } from "./store.js";
+export { AttachmentService, attachmentPayload, attachmentDisposition, inlineDisposition } from "./store.js";
 export type { AttachmentDatabase } from "./store.js";
 export {
   attachmentsOf,

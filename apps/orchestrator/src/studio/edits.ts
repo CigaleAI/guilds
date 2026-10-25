@@ -14,7 +14,7 @@ import type { Repositories } from "../db/repositories.js";
 import type { Schedules } from "../schedules/service.js";
 import { GuildValidationError, validateAbout, validateGuildDescription } from "../guilds/validation.js";
 import { argString } from "../toolbox/schema.js";
-import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess } from "./access.js";
+import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess, reviewAccessRequest } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import type { StudioStore } from "./store.js";
 import type { StudioOrigin } from "../db/config-changes.js";
@@ -553,7 +553,7 @@ export async function accessEditRequest(
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const reason = requireReason(args);
-  const review = await reviewAccess(scope, agentId, args, true);
+  const review = await reviewAccessRequest(scope, agentId, args);
   return awaitOperator(review.title, reason, {
     kind: "access",
     target: review.target,
@@ -678,7 +678,7 @@ export async function viewEdit(scope: EditScope, record: EditRecord): Promise<Re
   }
   if (isAccessTool(record.toolName)) {
     return viewReviewedEdit(record, edit, status, () =>
-      reviewAccess(scope, recordedAgentId(edit), record.args, false),
+      reviewAccess(scope, recordedAgentId(edit), record.args),
     );
   }
   let live: EditBase | null = null;
@@ -787,7 +787,7 @@ export async function applyEdit(
   }
   if (isAccessTool(record.toolName)) {
     const agentId = recordedAgentId(edit);
-    const review = await reviewAccess(scope, agentId, record.args, false);
+    const review = await reviewAccess(scope, agentId, record.args);
     assertBound(review, edit, "access");
     await applyAccess(scope, agentId, review);
     return { version: null };

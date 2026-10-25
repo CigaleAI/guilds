@@ -405,17 +405,20 @@ function requireBooleanField(value: unknown, field: string): boolean {
   return value;
 }
 
-function requireHarness(value: unknown, coding: boolean): Harness | null {
+function requireHarness(value: unknown): Harness | null {
   if (value === null) {
     return null;
   }
   if (!isHarness(value)) {
     throw new AgentValidationError(`harness must be one of: ${HARNESSES.join(", ")}`);
   }
-  if (!coding) {
+  return value;
+}
+
+function rejectHarnessWithoutCoding(harness: Harness | null, coding: boolean): void {
+  if (harness !== null && !coding) {
     throw new AgentValidationError("harness is only for coding agents");
   }
-  return value;
 }
 
 /** The harness's model: null or blank for its subscription's default, else a model name for a set harness. */
@@ -535,7 +538,8 @@ export function validateConfig(config: Record<string, unknown>): AgentConfig {
   const coding = requireBooleanField(filled.coding, "coding");
   const browser = requireBooleanField(filled.browser, "browser");
   rejectCodingOnlyModelWithoutCoding(model, coding);
-  const harness = requireHarness(filled.harness, coding);
+  const harness = requireHarness(filled.harness);
+  rejectHarnessWithoutCoding(harness, coding);
   const harnessModel = requireHarnessModel(filled.harness_model, harness);
   return {
     model,

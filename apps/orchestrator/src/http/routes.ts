@@ -33,8 +33,9 @@ import {
 import {
   AttachmentError,
   MAX_ATTACHMENT_BYTES,
+  attachmentDisposition,
   attachmentPayload,
-  contentDisposition,
+  inlineDisposition,
 } from "../attachments/index.js";
 import type { AttachmentRef } from "../attachments/index.js";
 import { jsonObj } from "../db/json.js";
@@ -609,7 +610,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return reply
         .header("content-type", row.mime)
         .header("x-content-type-options", "nosniff")
-        .header("content-disposition", contentDisposition(row.filename, row.kind === "image"))
+        .header("content-disposition", row.kind === "image" ? inlineDisposition(row.filename) : attachmentDisposition(row.filename))
         .header("cache-control", "private, max-age=3600")
         .send(bytes);
     } catch (error) {

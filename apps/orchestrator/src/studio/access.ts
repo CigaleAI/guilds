@@ -296,16 +296,24 @@ function widensAccess(snapshot: Snapshot, after: Array<Record<string, unknown>>)
 }
 
 /**
- * Checks what an access proposal asks for against the live bindings. A request
- * must change something; a review recomputes the same proposal so a binding
- * that moved since shows as a changed base.
+ * Reviews a new access request against the live bindings. The request must
+ * change something, or it is rejected as unprocessable.
  */
-export async function reviewAccess(scope: EditScope, agentId: string, args: Record<string, unknown>, requesting: boolean): Promise<AccessReview> {
+export async function reviewAccessRequest(scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
+  const review = await reviewAccess(scope, agentId, args);
+  if (!review.changes.length) {
+    throw new StudioUnprocessableError(`the proposal matches ${review.target.agent_name}'s live access; nothing to change`);
+  }
+  return review;
+}
+
+/**
+ * Recomputes what an access proposal asks for against the live bindings, so a
+ * binding that moved since the proposal shows as a changed base.
+ */
+export async function reviewAccess(scope: EditScope, agentId: string, args: Record<string, unknown>): Promise<AccessReview> {
   const snapshot = await loadSnapshot(scope, agentId);
   const changes = parseChanges(snapshot, args);
-  if (requesting && !changes.length) {
-    throw new StudioUnprocessableError(`the proposal matches ${snapshot.agentName}'s live access; nothing to change`);
-  }
   const after = rowsAfter(snapshot, changes);
   const live = render(snapshot, snapshot.rows);
   const proposed = render(snapshot, after);

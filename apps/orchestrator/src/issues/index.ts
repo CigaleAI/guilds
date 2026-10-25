@@ -72,14 +72,20 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], label: s
   throw new IssueError(`${label} must be ${allowed.join(", ")}`);
 }
 
-function clipped(value: unknown, label: string, max: number, required: boolean): string {
+function requiredText(value: unknown, label: string, max: number): string {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) {
-    if (required) {
-      throw new IssueError(`${label} is required`);
-    }
-    return "";
+    throw new IssueError(`${label} is required`);
   }
+  if (text.length > max) {
+    throw new IssueError(`${label} is at most ${max} characters`);
+  }
+  return text;
+}
+
+/** The trimmed text, or an empty string when the value is missing or blank. */
+function optionalText(value: unknown, label: string, max: number): string {
+  const text = typeof value === "string" ? value.trim() : "";
   if (text.length > max) {
     throw new IssueError(`${label} is at most ${max} characters`);
   }
@@ -144,10 +150,10 @@ export class Issues {
       args.severity === undefined || args.severity === null || args.severity === ""
         ? "medium"
         : oneOf(args.severity, ISSUE_SEVERITIES, "severity");
-    const summary = clipped(args.summary, "summary", ISSUE_SUMMARY_MAX, true);
-    const detail = clipped(args.detail, "detail", ISSUE_DETAIL_MAX, true);
-    const toolName = clipped(args.toolName, "tool_name", ISSUE_TOOL_NAME_MAX, false) || null;
-    const agentName = clipped(args.agentName, "agent name", 80, true);
+    const summary = requiredText(args.summary, "summary", ISSUE_SUMMARY_MAX);
+    const detail = requiredText(args.detail, "detail", ISSUE_DETAIL_MAX);
+    const toolName = optionalText(args.toolName, "tool_name", ISSUE_TOOL_NAME_MAX) || null;
+    const agentName = requiredText(args.agentName, "agent name", 80);
     const guild = await this.db.getGuild(args.guildId);
     if (guild === null) {
       throw new IssueError("guild not found");
@@ -201,7 +207,7 @@ export class Issues {
     }
     const now = new Date();
     const resolvedAt = next === "resolved" ? now : null;
-    const resolver = next === "resolved" ? clipped(resolvedBy ?? "", "resolved_by", 80, false) || "user" : null;
+    const resolver = next === "resolved" ? optionalText(resolvedBy ?? "", "resolved_by", 80) || "user" : null;
     const updated = await this.db.setIssueStatus(guildId, token, next, resolvedAt, resolver, now);
     if (updated === null) {
       throw new IssueError("issue not found");
@@ -212,7 +218,7 @@ export class Issues {
   /** Resolves every open issue in the guild. Already-resolved rows stay as they are. */
   async resolveOpen(guildId: string, resolvedBy: string | null): Promise<number> {
     const now = new Date();
-    const resolver = clipped(resolvedBy ?? "", "resolved_by", 80, false) || "user";
+    const resolver = optionalText(resolvedBy ?? "", "resolved_by", 80) || "user";
     return this.db.resolveOpenIssues(guildId, now, resolver, now);
   }
 }

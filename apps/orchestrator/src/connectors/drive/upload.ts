@@ -113,8 +113,9 @@ export async function attachDriveCreateFile(
 
 const TEXT_TO_GOOGLE_DOC = "application/vnd.google-apps.document";
 
-function metadataMimeType(contentMimeType: string, disableConversion: boolean): string {
-  if (disableConversion || contentMimeType !== "text/plain") {
+/** The Drive type a plain-text upload is converted to; any other content keeps its own type. */
+function googleConvertedMimeType(contentMimeType: string): string {
+  if (contentMimeType !== "text/plain") {
     return contentMimeType;
   }
   return TEXT_TO_GOOGLE_DOC;
@@ -193,7 +194,7 @@ export async function createDriveFile(
   }
   const disableConversion =
     prepared.disableConversionToGoogleType === true || prepared.disable_conversion_to_google_type === true;
-  metadata.mimeType = metadataMimeType(contentMimeType, disableConversion);
+  metadata.mimeType = disableConversion ? contentMimeType : googleConvertedMimeType(contentMimeType);
   const part = multipartBody(metadata, bytes, contentMimeType);
   const payload = await driveJson(
     accessToken,

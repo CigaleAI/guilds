@@ -151,9 +151,16 @@ export function attachmentPayload(row: AttachmentRow): Record<string, unknown> {
   };
 }
 
-export function contentDisposition(filename: string, inline: boolean): string {
+/** The Content-Disposition header that shows the file in the browser. */
+export function inlineDisposition(filename: string): string {
   const fallback = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "") || "image";
   const encoded = encodeURIComponent(filename);
-  const kind = inline ? "inline" : "attachment";
-  return `${kind}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+  return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+/** The Content-Disposition header that makes the browser save the file. */
+export function attachmentDisposition(filename: string): string {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "") || "image";
+  const encoded = encodeURIComponent(filename);
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
