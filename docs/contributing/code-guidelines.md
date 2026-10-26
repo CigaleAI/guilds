@@ -24,20 +24,24 @@ two functions.
 
 - A function has at most **3 parameters**. If you need more, pass
   one object with named fields.
-- A function has at most **3 branches** (cyclomatic complexity of
-  4 or less).
+- A function has a **cyclomatic complexity of 10 or less**. A flat
+  body with many early returns is fine; the limit exists to keep one
+  function from holding several contracts.
 - Nesting goes at most **2 levels** deep. Use early returns to
-  stay flat.
+  stay flat. Nesting is what makes a body hard to read, so this
+  limit is the strict one.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.
 - A function does not take a flag that selects between behaviours.
   Each behaviour is its own function with its own name.
 
-**What counts as a branch:** `if`, `else if`, `case`, `&&`, `||`,
-ternaries (`a ? b : c`), and `catch`.
+**What counts towards complexity:** `if`, `else if`, `case`, loops,
+`&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. A JSX
+conditional (`cond && <X />`) counts like any other `&&`.
 
-There is no line limit. A long body with one contract is better
-than a short body that calls six helpers a reader has to chase. A
+A function has no line limit. A long body with one contract is
+better than a short body that calls six helpers a reader has to
+chase. A
 nested condition, a loop with a branch inside, or a second `switch`
 becomes a named function only when that piece has a contract of
 its own that a reader would want to know by name. A chain of `if`s
@@ -117,6 +121,13 @@ that domain named for what they hold (`service.ts`, `timing.ts`,
 `access.ts`). Nothing goes deeper unless the domain has a
 sub-domain of its own.
 
+A file holds one concern and stays under **800 lines**. A file
+that grows past that is split by sub-domain (`routes/agents.ts`,
+`routes/schedules.ts`), never by type (`helpers.ts`, `types.ts`).
+A reader, human or agent, loads one file to understand one
+behaviour, and a file that holds every behaviour of a layer costs
+the whole layer to read and makes every edit collide.
+
 In the operator app each screen is a directory under
 `src/features/`. Code the screens share lives in two directories:
 `src/api/` (the HTTP client, queries, streams, and the API types) and
@@ -143,8 +154,11 @@ src/
   orchestrator, `api/` or `app/` in the operator app) and says which
   two.
 
-HTTP stays thin in `http/`. The domain module owns the logic and
-the validation. A feature's tests are named for the feature.
+HTTP stays thin in `http/`. A route handler reads the request,
+calls one domain function, and writes the reply. It does not
+import `db/` and does not validate, decide, or query on its own.
+The domain module owns the logic and the validation. A feature's
+tests are named for the feature.
 
 The inside of a feature can change freely. Other code reaches it
 through what that feature exports.
@@ -202,6 +216,12 @@ once: TypeBox schemas on routes, a validation module per domain
 for what arrives from the operator or the model.
 
 Inside the domain the types are trusted. `any` does not appear.
+
+A repository returns typed rows. A function in `db/` declares a
+row type per table (`AgentRow`, `ScheduleRow`) and returns it; it
+does not return `Record<string, unknown>`. A domain that receives
+a row reads its fields by name without `String(row.x)` guards,
+because the type is the contract.
 
 Public functions have **explicit types** for inputs and outputs.
 Types are documentation that cannot go out of date.
@@ -291,8 +311,11 @@ The pre-push hook runs the whole check on what is pushed.
 Before you submit a change, check:
 
 - [ ] Each function's name and signature say everything it does.
-      No flag parameters, 3 branches or fewer, 3 parameters or
-      fewer.
+      No flag parameters, complexity of 10 or less, nesting of 2 or
+      less, 3 parameters or fewer.
+- [ ] Every file is under 800 lines and holds one concern.
+- [ ] Rows leave `db/` typed; route handlers call one domain
+      function and never touch `db/`.
 - [ ] No helper exists only to shorten its caller.
 - [ ] Every new branch has a test.
 - [ ] I searched for existing code before writing new code.
