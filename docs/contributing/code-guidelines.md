@@ -196,6 +196,10 @@ root (`compose.ts`, the router, a page that mounts both).
 Core imports nothing from an edition built on it.
 `eslint.boundary.js` fails the file that tries.
 
+A domain module imports nothing from the HTTP framework. Only
+`http/`, the app and composition roots, the extension points and
+the observability hooks import `fastify`.
+
 An edition attaches through the
 [extension points](../architecture/extension-points.md). A need
 it has that core lacks becomes an extension point with a core
@@ -229,10 +233,21 @@ because the type is the contract.
 Public functions have **explicit types** for inputs and outputs.
 Types are documentation that cannot go out of date.
 
+A cast creates no knowledge. `as Type` appears only after a check
+that proves the type, or as `as const`. `as unknown as` and
+`as never` do not appear. A value whose shape is unknown is
+validated or narrowed with a type guard, never asserted.
+
 Use **one error-handling pattern**. A domain throws a named
 error class (`RecipeError`, `MachineConflict`). HTTP maps that
 class to `HttpError` and a status. Do not mix thrown strings,
 ad-hoc objects, and classes for the same kind of failure.
+
+A `catch` does one of two things: it throws a named error, or it
+returns a value whose type says the failure was expected, such as
+`null` from a lookup of something that may be absent. A `catch`
+that logs and continues, or returns a default that hides the
+failure, does not appear.
 
 ## Clean code
 
@@ -319,6 +334,8 @@ Before you submit a change, check:
 - [ ] Every file is under 800 lines and holds one concern.
 - [ ] Rows leave `db/` typed; route handlers call one domain
       function and never touch `db/`.
+- [ ] No cast asserts a shape; every `catch` throws a named error
+      or returns an expected absence.
 - [ ] No helper exists only to shorten its caller.
 - [ ] Every new branch has a test.
 - [ ] I searched for existing code before writing new code.
