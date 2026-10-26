@@ -99,7 +99,12 @@ test("operators upload images, attach them to a run, and cannot read another org
     assert.deepEqual(fetched.rawPayload, PNG);
 
     const otherOrg = String(
-      (await repo.insertOrg(newId("org"), "Elsewhere", "elsewhere", "user_operator", new Date())).id,
+      (
+        await repo.insertOrg(
+          { orgId: newId("org"), name: "Elsewhere", slug: "elsewhere", userId: "user_operator" },
+          new Date(),
+        )
+      ).id,
     );
     const hidden = await app.inject({
       method: "GET",

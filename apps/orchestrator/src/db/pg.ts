@@ -1,9 +1,10 @@
 import type pg from "pg";
 
+/** A pool or a transaction's client: what a read or a single-statement write runs on. */
+export type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
+
 export function isUniqueViolation(error: unknown): boolean {
-  return Boolean(
-    error && typeof error === "object" && "code" in error && (error as { code: string }).code === "23505",
-  );
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
 
 export async function withTransaction<T>(

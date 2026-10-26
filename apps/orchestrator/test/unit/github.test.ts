@@ -434,7 +434,11 @@ test("a repository stored without an id finds it by its path, and one GitHub ren
   const recorded: Array<[string, string, number, string]> = [];
   const db = {
     getMcpConnection: async (id: string) => connection(id, "connected", 11),
-    recordGithubRepository: async (connectionId: string, name: string, repository: { githubId: number; url: string }) => {
+    recordGithubRepository: async (
+      connectionId: string,
+      name: string,
+      repository: { githubId: number; url: string },
+    ) => {
       recorded.push([connectionId, name, repository.githubId, repository.url]);
     },
   };

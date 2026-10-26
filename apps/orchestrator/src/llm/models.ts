@@ -1,4 +1,11 @@
 import { encryptPayload } from "../credentials/crypto.js";
+import type {
+  DeletedOrgModelProviderRow,
+  OrgModelProviderListItemRow,
+  OrgModelProviderRow,
+  OrgModelProviderSummaryRow,
+  NewOrgModelProvider,
+} from "../db/orgs.js";
 import { newId } from "../lib/ids.js";
 import { PolicyError } from "../policy/index.js";
 import { modelCatalog, type ModelCatalog } from "./catalog.js";
@@ -34,16 +41,16 @@ export class ModelsError extends Error {
 }
 
 export type ModelsRepository = {
-  listOrgModelProviders(orgId: string): Promise<Array<Record<string, unknown>>>;
-  getOrgModelProvider(orgId: string, provider: string): Promise<Record<string, unknown> | null>;
+  listOrgModelProviders(orgId: string): Promise<OrgModelProviderListItemRow[]>;
+  getOrgModelProvider(orgId: string, provider: string): Promise<OrgModelProviderRow | null>;
   upsertOrgModelProvider(
-    providerId: string,
+    provider: NewOrgModelProvider,
+    now: Date,
+  ): Promise<OrgModelProviderSummaryRow>;
+  deleteOrgModelProvider(
     orgId: string,
     provider: string,
-    row: { ciphertext: Buffer | null; nonce: Buffer | null; keyHint: string | null; models: string[] },
-    now: Date,
-  ): Promise<Record<string, unknown>>;
-  deleteOrgModelProvider(orgId: string, provider: string): Promise<Record<string, unknown> | null>;
+  ): Promise<DeletedOrgModelProviderRow | null>;
   getOrgDefaultModel(orgId: string): Promise<string | null>;
   setOrgDefaultModel(orgId: string, model: string | null, now: Date): Promise<void>;
 };
@@ -176,7 +183,7 @@ export class ModelsService {
   async read(orgId: string): Promise<OrgModelsPayload> {
     await this.catalog.ensureFresh();
     const rows = new Map(
-      (await this.deps.repo.listOrgModelProviders(orgId)).map((row) => [String(row.provider), row]),
+      (await this.deps.repo.listOrgModelProviders(orgId)).map((row) => [row.provider, row]),
     );
     const providers: ProviderItem[] = [];
     const models: Array<Record<string, unknown>> = [];
@@ -189,12 +196,11 @@ export class ModelsService {
         kind: provider.kind,
         connected: state.connected,
         source: state.connected ? (row?.own_key === true ? "own" : "platform") : null,
-        key_hint: row && typeof row.key_hint === "string" && row.key_hint ? row.key_hint : null,
+        key_hint: row?.key_hint || null,
         base_url: provider.id === "local" ? state.baseURL : null,
       });
       if (row && state.connected) {
-        const chosen = Array.isArray(row.models) ? (row.models as string[]) : [];
-        models.push(...this.chosenEntries(provider, chosen).map(entryPayload));
+        models.push(...this.chosenEntries(provider, row.models).map(entryPayload));
       }
     }
     return { default: await this.deps.repo.getOrgDefaultModel(orgId), providers, models };
@@ -257,7 +263,7 @@ export class ModelsService {
     }
     const models =
       input.models === undefined && existing
-        ? validateChosenModels(provider, existing.models ?? [])
+        ? validateChosenModels(provider, existing.models)
         : validateChosenModels(provider, input.models);
     await this.listModels(provider, apiKey, baseURL);
     const payload: Record<string, unknown> = { api_key: apiKey };
@@ -267,10 +273,15 @@ export class ModelsService {
     const [ciphertext, nonce] = encryptPayload(payload, this.deps.masterKey);
     const now = new Date();
     const row = await this.deps.repo.upsertOrgModelProvider(
-      newId("mp"),
-      orgId,
-      provider.id,
-      { ciphertext, nonce, keyHint: apiKey ? keyHint(apiKey) : null, models },
+      {
+        providerId: newId("mp"),
+        orgId,
+        provider: provider.id,
+        ciphertext,
+        nonce,
+        keyHint: apiKey ? keyHint(apiKey) : null,
+        models,
+      },
       now,
     );
     const current = await this.deps.repo.getOrgDefaultModel(orgId);
@@ -283,7 +294,7 @@ export class ModelsService {
       kind: provider.kind,
       connected: true,
       source: "own",
-      key_hint: typeof row.key_hint === "string" && row.key_hint ? row.key_hint : null,
+      key_hint: row.key_hint || null,
       base_url: baseURL,
     };
   }
@@ -307,7 +318,7 @@ export class ModelsService {
       throw new ModelsError(422, "the default must be a marketplace model");
     }
     const row = await this.deps.repo.getOrgModelProvider(orgId, parsed.provider.id);
-    const chosen = Array.isArray(row?.models) ? (row.models as string[]) : [];
+    const chosen = row?.models ?? [];
     if (!row || !chosen.includes(id)) {
       throw new ModelsError(422, `choose ${id} under ${providerLabel(parsed.provider.id)} on Model keys first`);
     }

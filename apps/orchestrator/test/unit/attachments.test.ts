@@ -11,6 +11,7 @@ import {
   sanitizeFilename,
   sniffImage,
 } from "../../src/attachments/index.js";
+import type { NewAttachment } from "../../src/db/attachments.js";
 import { MemoryBlobStore, type BlobStore } from "../../src/lib/blob-store.js";
 import { countInputTokens } from "../../src/llm/index.js";
 
@@ -123,17 +124,7 @@ test("countRunInputTokens adds a flat image cost and does not encode a data URL"
 test("AttachmentService uploads and resolves only for models that accept images", async () => {
   const rows = new Map<string, Record<string, unknown>>();
   const db = {
-    async insertAttachment(row: {
-      id: string;
-      orgId: string;
-      uploadedBy: string;
-      filename: string;
-      mime: string;
-      bytes: number;
-      sha256: string;
-      kind: string;
-      createdAt: Date;
-    }) {
+    async insertAttachment(row: NewAttachment, now: Date) {
       const stored = {
         id: row.id,
         org_id: row.orgId,
@@ -143,7 +134,7 @@ test("AttachmentService uploads and resolves only for models that accept images"
         bytes: row.bytes,
         sha256: row.sha256,
         kind: row.kind,
-        created_at: row.createdAt.toISOString(),
+        created_at: now.toISOString(),
       };
       rows.set(row.id, stored);
       return stored;

@@ -54,14 +54,15 @@ class MemoryDb {
     return this.rows;
   }
 
-  async insertBindingIfAbsent(
-    bindingId: string,
-    catalogKind: string,
-    catalogId: string,
-    scope: string,
-    scopeId: string | null,
-    enabled: boolean,
-  ) {
+  async insertBindingIfAbsent(input: {
+    bindingId: string;
+    catalogKind: string;
+    catalogId: string;
+    scope: string;
+    scopeId: string | null;
+    enabled: boolean;
+  }) {
+    const { bindingId, catalogKind, catalogId, scope, scopeId, enabled } = input;
     const key = `${catalogKind}:${catalogId}:${scopeId}`;
     const existing = this.bindings.get(key);
     if (existing) {

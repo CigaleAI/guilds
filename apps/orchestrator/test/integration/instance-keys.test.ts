@@ -87,10 +87,20 @@ test("instance keys switch platform logins and the GitHub connector; replacing t
   /** A GitHub login installed with the current App, at the organisation. */
   const seedConnectedGithub = async (): Promise<string> => {
     const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" }, MASTER);
-    const row = await repo.connectMcp("conn_github_seed", "bind_github_seed", GITHUB_SERVER_ID, "org", "org_home", ciphertext, nonce, new Date(), {
-      status: "connected",
-      accountHint: "acme",
-    });
+    const row = await repo.connectMcp(
+      {
+        connectionId: "conn_github_seed",
+        bindingId: "bind_github_seed",
+        serverId: GITHUB_SERVER_ID,
+        ownerScope: "org",
+        ownerId: "org_home",
+        ciphertext,
+        nonce,
+        status: "connected",
+        accountHint: "acme",
+      },
+      new Date(),
+    );
     return String(row.id);
   };
   const connectionStatus = async (id: string) => String((await repo.getMcpConnection(id))?.status);

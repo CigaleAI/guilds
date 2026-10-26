@@ -15,6 +15,7 @@ const routesPath = path.join(repoRoot(import.meta.url), "fixtures/compat/http/ro
 
 /** A connector as a freshly seeded box loads it. */
 function seededServer(entry: ConnectorEntry): Record<string, unknown> {
+  const seededAt = new Date().toISOString();
   return loadConnector({
     id: entry.id,
     slug: entry.manifest.slug,
@@ -24,10 +25,13 @@ function seededServer(entry: ConnectorEntry): Record<string, unknown> {
     source: entry.source,
     version: "",
     verified: entry.verified,
+    experimental: false,
     publisher: entry.publisher,
     enabled: true,
     oauth_client: null,
     overrides: {},
+    installed_at: seededAt,
+    updated_at: seededAt,
   });
 }
 

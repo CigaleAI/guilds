@@ -7,6 +7,7 @@ import {
   type GithubRepositoryRecorder,
   type RepositoryToken,
 } from "../github/tokens.js";
+import type { McpConnectionLogin } from "../db/mcp.js";
 import { markDisconnected } from "../mcp/index.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
@@ -34,14 +35,8 @@ export type RepositoryTokenDb = GithubRepositoryRecorder & {
   getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null>;
   saveMcpConnection?(
     connectionId: string,
-    options: {
-      ciphertext: Buffer;
-      nonce: Buffer;
-      status: string;
-      accountHint: string;
-      oauthState: string | null;
-      now: Date;
-    },
+    login: McpConnectionLogin,
+    now: Date,
   ): Promise<Record<string, unknown> | null>;
 };
 

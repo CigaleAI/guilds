@@ -298,9 +298,9 @@ organisation a row, which an operator of the private guild chose.
 
 **Where:** `DELETE /api/users/:id`, `PUT` and `DELETE
 /api/orgs/:id/members/:user_id` in
-`apps/orchestrator/src/http/routes.ts`; `deleteUser`,
-`updateMemberRole`, and `deleteMember` in
-`apps/orchestrator/src/db/repositories.ts`.
+`apps/orchestrator/src/http/routes.ts`; `deleteUser` in
+`apps/orchestrator/src/db/users.ts`; `updateMemberRole` and
+`deleteMember` in `apps/orchestrator/src/db/orgs.ts`.
 
 **Exposure:** deleting a user refused the last owner only when the
 organisation had guilds. An organisation with other members and no
@@ -326,7 +326,7 @@ without one.
 
 **Where:** `PUT /api/bindings` in
 `apps/orchestrator/src/http/routes.ts`; `isListedMcpTool` in
-`apps/orchestrator/src/db/repositories.ts`.
+`apps/orchestrator/src/db/mcp.ts`.
 
 **Exposure:** an `mcp_tool` binding took any non-empty `catalog_id`.
 A binding written On for a name no server listed took effect when a
@@ -349,7 +349,7 @@ if the server lists the tool once more.
 
 **Where:** `PATCH /api/auth/me` in
 `apps/orchestrator/src/http/me-routes.ts`; `updateUserProfile` in
-`apps/orchestrator/src/db/repositories.ts`.
+`apps/orchestrator/src/db/users.ts`.
 
 **Exposure:** agents and operators share a guild's tags. Adding an
 operator, creating an agent, and renaming an agent refuse a name the

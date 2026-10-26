@@ -75,14 +75,14 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 60
     },
+    "@typescript-eslint/max-params": {
+      "count": 2
+    },
     "complexity": {
       "count": 5
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 3
     }
   },
   "src/artifacts/types.ts": {
@@ -138,8 +138,8 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 4
     },
-    "max-params": {
-      "count": 2
+    "@typescript-eslint/max-params": {
+      "count": 1
     }
   },
   "src/builder/tools.ts": {
@@ -203,9 +203,6 @@
     },
     "max-depth": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/connectors/coingecko/client.ts": {
@@ -217,13 +214,7 @@
     }
   },
   "src/connectors/connect.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
     "complexity": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
@@ -238,9 +229,6 @@
     },
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/connectors/drive/folder.ts": {
@@ -251,9 +239,6 @@
       "count": 6
     },
     "max-depth": {
-      "count": 2
-    },
-    "max-params": {
       "count": 2
     }
   },
@@ -287,7 +272,7 @@
   },
   "src/connectors/load.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
+      "count": 3
     }
   },
   "src/connectors/login.ts": {
@@ -407,18 +392,7 @@
   },
   "src/db/pg.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  },
-  "src/db/repositories.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 65
-    },
-    "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 26
     }
   },
   "src/db/schema/index.ts": {
@@ -436,11 +410,6 @@
       "count": 3
     }
   },
-  "src/directories/index.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/generation/admission.ts": {
     "max-depth": {
       "count": 1
@@ -455,6 +424,9 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 30
     },
+    "@typescript-eslint/max-params": {
+      "count": 7
+    },
     "complexity": {
       "count": 15
     },
@@ -463,9 +435,6 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 11
     }
   },
   "src/github/index.ts": {
@@ -498,9 +467,6 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 2
     }
   },
   "src/guilds/validation.ts": {
@@ -528,11 +494,11 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
+    "@typescript-eslint/max-params": {
+      "count": 3
+    },
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 5
     }
   },
   "src/http/builder-capability-routes.ts": {
@@ -581,7 +547,7 @@
   },
   "src/http/routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 24
+      "count": 21
     },
     "complexity": {
       "count": 18
@@ -597,8 +563,8 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 6
     },
-    "max-params": {
-      "count": 3
+    "@typescript-eslint/max-params": {
+      "count": 1
     }
   },
   "src/http/sse.ts": {
@@ -613,11 +579,6 @@
   },
   "src/http/usage-view.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/instance/changes.ts": {
-    "max-params": {
       "count": 1
     }
   },
@@ -643,9 +604,6 @@
   "src/issues/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
-    },
-    "complexity": {
-      "count": 1
     }
   },
   "src/lib/blob-store.ts": {
@@ -692,10 +650,10 @@
   },
   "src/llm/models.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
+      "count": 1
     },
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/machines/index.ts": {
@@ -709,14 +667,14 @@
     },
     "complexity": {
       "count": 3
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/mcp/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 21
+    },
+    "@typescript-eslint/max-params": {
+      "count": 4
     },
     "complexity": {
       "count": 3
@@ -726,9 +684,6 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 9
     }
   },
   "src/net/endpoints.ts": {
@@ -745,6 +700,9 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
     },
+    "@typescript-eslint/max-params": {
+      "count": 5
+    },
     "complexity": {
       "count": 2
     },
@@ -753,9 +711,6 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 11
     }
   },
   "src/oauth/index.ts": {
@@ -792,25 +747,23 @@
       "count": 2
     }
   },
-  "src/policy/index.ts": {
-    "max-params": {
-      "count": 2
-    }
-  },
   "src/prompts/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
+    "@typescript-eslint/max-params": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 2
     }
   },
   "src/recipes/apply.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 42
+    },
+    "@typescript-eslint/max-params": {
+      "count": 1
     },
     "complexity": {
       "count": 7
@@ -819,9 +772,6 @@
       "count": 3
     },
     "max-lines": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
@@ -854,7 +804,7 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "max-params": {
+    "@typescript-eslint/max-params": {
       "count": 1
     }
   },
@@ -907,28 +857,20 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "complexity": {
+    "@typescript-eslint/max-params": {
       "count": 1
     },
-    "max-params": {
+    "complexity": {
       "count": 1
     }
   },
   "src/schedules/service.ts": {
-    "max-params": {
+    "@typescript-eslint/max-params": {
       "count": 1
-    }
-  },
-  "src/schedules/timing.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
     }
   },
   "src/schedules/window.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
@@ -936,15 +878,12 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
-    "max-params": {
+    "@typescript-eslint/max-params": {
       "count": 1
     }
   },
   "src/scripts/materialise.ts": {
     "complexity": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
@@ -969,9 +908,6 @@
     },
     "complexity": {
       "count": 2
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/studio/access.ts": {
@@ -1009,9 +945,6 @@
     },
     "complexity": {
       "count": 3
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/studio/edits.ts": {
@@ -1022,9 +955,6 @@
       "count": 6
     },
     "max-lines": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },
@@ -1074,11 +1004,11 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 11
     },
-    "complexity": {
+    "@typescript-eslint/max-params": {
       "count": 1
     },
-    "max-params": {
-      "count": 2
+    "complexity": {
+      "count": 1
     }
   },
   "src/studio/system.ts": {
@@ -1124,19 +1054,11 @@
       "count": 1
     }
   },
-  "src/toolbox/browser.ts": {
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/toolbox/code.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
     },
     "complexity": {
-      "count": 1
-    },
-    "max-params": {
       "count": 1
     }
   },

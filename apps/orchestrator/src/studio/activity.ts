@@ -1,4 +1,5 @@
 import type { Repositories } from "../db/repositories.js";
+import type { ScheduleRow } from "../db/schedules.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { rowDescription } from "../schedules/item.js";
@@ -149,7 +150,7 @@ export type ActivityInput = {
   steps: Array<Record<string, unknown>>;
   openings: Array<Record<string, unknown>>;
   messages: Array<Record<string, unknown>>;
-  schedules: Array<Record<string, unknown>>;
+  schedules: ScheduleRow[];
   generating: (runId: string) => boolean;
 };
 
@@ -516,11 +517,11 @@ export function projectActivity(input: ActivityInput): ActivityView {
       avatar_shape: String(agent.avatar_shape ?? ""),
     })),
     routines: input.schedules.map((row) => ({
-      id: String(row.id),
-      agent_id: String(row.agent_id),
+      id: row.id,
+      agent_id: row.agent_id,
       description: rowDescription(row),
       label: describeTiming(rowTiming(row)),
-      instruction: String(row.instruction ?? ""),
+      instruction: row.instruction,
     })),
     messages,
     wakes,

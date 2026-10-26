@@ -1,3 +1,4 @@
+import type { AgentPlacement, NewAgent } from "../db/agents.js";
 import {
   DEFAULT_AVATAR_COLOR,
   DEFAULT_AVATAR_SHAPE,
@@ -18,19 +19,10 @@ export type AgentNotes = {
 
 export type AgentDatabase = {
   insertAgent(
-    agentId: string,
-    guildId: string,
-    name: string,
-    config: AgentConfig | Record<string, unknown>,
+    agent: NewAgent,
     now: Date,
-    focus: string,
-    wakeTriggers: string,
-    avatarShape: string,
-    avatarColor: string,
-    task?: string,
-    taskHash?: string,
     actor?: ArtifactActor,
-    placement?: { machineId?: string | null; maxAgentsPerMachine?: number | null },
+    placement?: AgentPlacement,
   ): Promise<void>;
   deleteAgent(agentId: string): Promise<void>;
 };
@@ -73,19 +65,24 @@ export async function persistAgent(
       }))
     : null;
   await db.insertAgent(
-    args.agentId,
-    args.guildId,
-    args.name,
-    args.config,
+    {
+      agentId: args.agentId,
+      guildId: args.guildId,
+      name: args.name,
+      config: args.config,
+      focus: args.focus ?? "",
+      wakeTriggers: args.wakeTriggers ?? "",
+      avatarShape: args.avatarShape ?? DEFAULT_AVATAR_SHAPE,
+      avatarColor: args.avatarColor ?? DEFAULT_AVATAR_COLOR,
+      task,
+      taskHash,
+    },
     args.now,
-    args.focus ?? "",
-    args.wakeTriggers ?? "",
-    args.avatarShape ?? DEFAULT_AVATAR_SHAPE,
-    args.avatarColor ?? DEFAULT_AVATAR_COLOR,
-    task,
-    taskHash,
     actor ?? undefined,
-    { machineId: args.machineId ?? null, maxAgentsPerMachine: args.maxAgentsPerMachine ?? null },
+    {
+      machineId: args.machineId ?? null,
+      maxAgentsPerMachine: args.maxAgentsPerMachine ?? null,
+    },
   );
   try {
     if (args.artifacts && actor) {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ScheduleDefinition } from "../db/schedules.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
@@ -158,17 +159,7 @@ function firingEffect(rc: RoutineContext, paused: boolean): string[] {
 
 function reviewCreate(rc: RoutineContext, call: RoutineCall): RoutineReview {
   const agent = requireMember(rc, call.agentId);
-  const definition = valid(() =>
-    changedFields(
-      {},
-      {
-        when: scheduleChanges(call.args).when ?? {},
-        description: call.args.description ?? null,
-        instruction: call.args.instruction ?? null,
-        paused: call.args.paused === true,
-      },
-    ),
-  );
+  const definition = valid(() => changedFields(null, scheduleChanges(call.args)));
   return {
     action: "create",
     title: `Create routine for ${agent.name}`,
@@ -229,9 +220,11 @@ function reviewEdit(rc: RoutineContext, routine: Routine, call: RoutineCall): Ro
 }
 
 /** A routine's definition in the shape a stored schedule row has. */
-function routineRow(routine: Routine): Record<string, unknown> {
+function routineRow(routine: Routine): ScheduleDefinition {
   const { timing, ...rest } = routine.definition;
-  return { ...rest, cron: timing.cron, wake_window: timing.window };
+  return timing.window === null
+    ? { ...rest, cron: timing.cron, wake_window: null }
+    : { ...rest, cron: null, wake_window: timing.window };
 }
 
 function reviewDelete(routine: Routine): RoutineReview {

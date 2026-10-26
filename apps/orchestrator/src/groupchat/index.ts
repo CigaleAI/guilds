@@ -1,5 +1,6 @@
 import { jsonObj } from "../db/json.js";
 import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
+import type { NewAgentGroupMessage, NewUserGroupMessage } from "../db/group-chat.js";
 import { groupMessageItem } from "../db/views.js";
 import { guildOperators, type GuildOperator } from "../guilds/validation.js";
 import { AsyncEvent, EventQueue } from "../lib/event.js";
@@ -282,23 +283,11 @@ export type GroupChatDatabase = {
   ): Promise<Array<Record<string, unknown>>>;
   listAgents(guildId: string): Promise<Array<Record<string, unknown>>>;
   postUserGroupMessage(
-    guildId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
+    message: NewUserGroupMessage,
     now: Date,
-    options?: { authorName?: string; authorUserId?: string | null },
   ): Promise<Record<string, unknown> | null>;
   postAgentGroupMessage(
-    guildId: string,
-    agentId: string,
-    authorName: string,
-    sourceRunId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
+    message: NewAgentGroupMessage,
     now: Date,
   ): Promise<Record<string, unknown> | null>;
   getRun(runId: string): Promise<Record<string, unknown> | null>;
@@ -587,13 +576,16 @@ export class GroupChat {
     const text = requireContent(content);
     const tags = await this._tags(guildId, text);
     const row = await this.db.postUserGroupMessage(
-      guildId,
-      text,
-      tags.names,
-      tags.agentIds,
-      tags.userIds,
+      {
+        guildId,
+        content: text,
+        taggedNames: tags.names,
+        taggedAgentIds: tags.agentIds,
+        taggedUserIds: tags.userIds,
+        authorName: options.author_name ?? "user",
+        authorUserId: options.author_user_id ?? null,
+      },
       new Date(),
-      { authorName: options.author_name ?? "user", authorUserId: options.author_user_id ?? null },
     );
     if (row === null) {
       throw new GroupChatError(404, "guild not found");
@@ -640,14 +632,16 @@ export class GroupChat {
     let row: Record<string, unknown> | null;
     try {
       row = await this.db.postAgentGroupMessage(
-        guildId,
-        agentId,
-        agentName,
-        runId,
-        content,
-        tags.names,
-        tags.agentIds,
-        tags.userIds,
+        {
+          guildId,
+          agentId,
+          authorName: agentName,
+          sourceRunId: runId,
+          content,
+          taggedNames: tags.names,
+          taggedAgentIds: tags.agentIds,
+          taggedUserIds: tags.userIds,
+        },
         new Date(),
       );
     } catch (error) {

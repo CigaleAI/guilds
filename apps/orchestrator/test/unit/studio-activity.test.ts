@@ -219,7 +219,22 @@ test("posts, writes, and errors inside the window decide the outcome", () => {
         { run_id: "r_scout", display_path: "org/o/collections/leads/3", operation: "create", tool_name: "record_add", tool_call_id: "call_add", created_at: ts("14:00:40") },
         { run_id: "r_scout", display_path: "org/o/agents/a_scout/memory.md", operation: "update", tool_name: "memory_write", tool_call_id: "call_mem", created_at: ts("14:01:50") },
       ],
-      schedules: [{ id: "sch_1", agent_id: "a_scout", cron: "0 * * * *", description: "Hunt", instruction: "Hunt for leads." }],
+      schedules: [
+        {
+          id: "sch_1",
+          agent_id: "a_scout",
+          cron: "0 * * * *",
+          wake_window: null,
+          window_fires: 0,
+          description: "Hunt",
+          instruction: "Hunt for leads.",
+          paused: false,
+          next_run_at: "2026-09-25T15:00:00.000Z",
+          last_run_at: null,
+          created_at: "2026-09-20T09:00:00.000Z",
+          updated_at: "2026-09-20T09:00:00.000Z",
+        },
+      ],
     }),
   );
   const [wake] = view.wakes;

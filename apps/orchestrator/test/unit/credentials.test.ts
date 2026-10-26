@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
+import type { OrgModelProviderRow } from "../../src/db/orgs.js";
 import {
   ModelNotConnectedError,
   assertModelConnected,
@@ -13,9 +14,19 @@ import {
 import { PolicyError } from "../../src/policy/index.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 
-function row(payload: Record<string, unknown>): Record<string, unknown> {
+function row(payload: Record<string, unknown>): OrgModelProviderRow {
   const [ciphertext, nonce] = encryptPayload(payload, TEST_MASTER_KEY);
-  return { provider: "openrouter", ciphertext, nonce, key_hint: "abcd", models: [] };
+  return {
+    id: "mp_1",
+    org_id: "org_1",
+    provider: "openrouter",
+    ciphertext,
+    nonce,
+    key_hint: "abcd",
+    models: [],
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+  };
 }
 
 test("keyHint keeps the last four characters", () => {
@@ -24,7 +35,7 @@ test("keyHint keeps the last four characters", () => {
 });
 
 test("core's credentials are the organisation's row: its key, and a local endpoint's URL", async () => {
-  const rows = new Map<string, Record<string, unknown>>([
+  const rows = new Map<string, OrgModelProviderRow>([
     ["org_1/openrouter", row({ api_key: " sk-or-key " })],
     ["org_1/local", row({ api_key: "", base_url: "http://127.0.0.1:11434/v1" })],
     ["org_1/xai", row({ api_key: "" })],

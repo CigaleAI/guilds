@@ -28,7 +28,10 @@ test("an organisation connects providers, chooses models, and names a default", 
   const notes = new NotesStore(tempDir("guilds-model-keys-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
-  const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
+  const member = await repo.insertUser(
+    { userId: "user_member", name: "member", image: null, email: "member@example.com" },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(member.id), "member", new Date());
   const probed: string[] = [];
   const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {

@@ -18,6 +18,7 @@ import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";
 import type { Repositories } from "../db/repositories.js";
+import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
 import type { StudioStore } from "./store.js";
 import { previewCurrentState, projectAgentAccess, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
@@ -388,7 +389,7 @@ export const studioListRoutines: StudioTool = {
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, 100);
     const offset = cursorOffset(args.cursor);
-    let rows: Array<Record<string, unknown>>;
+    let rows: AgentScheduleRow[];
     if (studioAgentHandleFromArgs(args)) {
       const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
       rows = await ctx.repo.listSchedules(String(agent.id));

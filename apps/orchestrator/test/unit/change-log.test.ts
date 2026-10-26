@@ -9,6 +9,7 @@ import {
 } from "../../src/artifacts/collection-changes.js";
 import { ArtifactStore } from "../../src/artifacts/store.js";
 import { actorColumns, runActor, studioLink, userActor } from "../../src/db/config-changes.js";
+import type { ScheduleRow } from "../../src/db/schedules.js";
 import { guildTextChange } from "../../src/guilds/changes.js";
 import { routineChange, routineUpdateSummary } from "../../src/schedules/changes.js";
 import { editActor } from "../../src/studio/actor.js";
@@ -19,10 +20,15 @@ const ROUTINE = {
   agent_id: "a_1",
   cron: "0 9 * * 1",
   wake_window: null,
+  window_fires: 0,
   description: "Weekly sweep",
   instruction: "Sweep the feed.",
   paused: false,
-};
+  next_run_at: "2026-10-19T09:00:00.000Z",
+  last_run_at: null,
+  created_at: "2026-10-12T09:00:00.000Z",
+  updated_at: "2026-10-12T09:00:00.000Z",
+} satisfies ScheduleRow;
 
 test("a routine coming into existence is logged as a create against its agent", () => {
   assert.deepEqual(routineChange(null, ROUTINE), {
@@ -68,6 +74,10 @@ test("a routine edit names what it paused, resumed, or changed", () => {
     'Paused and changed the timing, description and instruction of "Daily"',
   );
   assert.equal(routineChange(ROUTINE, { ...ROUTINE, paused: true })?.operation, "update");
+});
+
+test("a routine change with neither a before nor an after logs nothing", () => {
+  assert.equal(routineChange(null, null), null);
 });
 
 test("a routine write that changes nothing logs nothing", () => {

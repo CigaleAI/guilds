@@ -59,18 +59,37 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "diff-desk" } });
     assert.equal(guild.statusCode, 201, guild.body);
     const now = new Date();
-    await repo.insertAgent("a_diff", String(guild.json().id), "coder", { model: "openrouter/openai/gpt-5.6-luna" }, now);
-    await repo.createRun("r_diff", "a_diff", {}, "sys", "task", null, now, {
-      systemPromptHash: "s",
-      taskPromptHash: "t",
-      memoryPromptHash: "m",
-    });
+    await repo.insertAgent(
+      {
+        agentId: "a_diff",
+        guildId: String(guild.json().id),
+        name: "coder",
+        config: { model: "openrouter/openai/gpt-5.6-luna" },
+      },
+      now,
+    );
+    await repo.createRun(
+      {
+        runId: "r_diff",
+        agentId: "a_diff",
+        configSnapshot: {},
+        systemContent: "sys",
+        taskContent: "task",
+        userContent: null,
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
+      },
+      now,
+    );
     const result = (callId: string, metadata: Record<string, unknown>, seq: number) =>
       repo.insertMessage(
-        "r_diff",
-        seq,
-        { role: "tool", tool_call_id: callId, content: "done" },
-        { tool_call_id: callId, ...metadata },
+        {
+          runId: "r_diff",
+          seq,
+          payload: { role: "tool", tool_call_id: callId, content: "done" },
+          metadata: { tool_call_id: callId, ...metadata },
+        },
         now,
       );
     await result(

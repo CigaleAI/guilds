@@ -56,7 +56,10 @@ test("studio activity lists each wake with what started it and what it produced"
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild("guild_act", "activity-guild", now, "org_home", "Activity");
+  await repo.insertGuild(
+    { guildId: "guild_act", name: "activity-guild", orgId: "org_home", about: "Activity" },
+    now,
+  );
   for (const [agentId, name] of [
     ["a_scout", "scout"],
     ["a_desk", "desk"],
@@ -76,49 +79,107 @@ test("studio activity lists each wake with what started it and what it produced"
   }
 
   // The operator tags scout; scout's wake posts a row that tags desk.
-  const first = await repo.postUserGroupMessage("guild_act", "@scout go", ["scout"], ["a_scout"], [], now, {
-    authorName: "operator",
-    authorUserId: "user_operator",
-  });
+  const first = await repo.postUserGroupMessage(
+    {
+      guildId: "guild_act",
+      content: "@scout go",
+      taggedNames: ["scout"],
+      taggedAgentIds: ["a_scout"],
+      taggedUserIds: [],
+      authorName: "operator",
+      authorUserId: "user_operator",
+    },
+    now,
+  );
   const firstSeq = Number(first?.seq);
   await repo.createGroupRun(
-    "r_scout",
-    "a_scout",
-    SNAPSHOT,
-    "system prompt",
-    "task prompt",
-    [
-      [{ role: "user", content: "Group Chat info: {}" }, { generation: 1, source: "group_chat", group_seq: firstSeq, you_were_tagged: true }],
-      [
-        { role: "assistant", content: "", tool_calls: [{ id: "call_post", type: "function", function: { name: "group_post", arguments: "{}" } }] },
-        { generation: 1 },
+    {
+      runId: "r_scout",
+      agentId: "a_scout",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      projected: [
+        [
+          { role: "user", content: "Group Chat info: {}" },
+          { generation: 1, source: "group_chat", group_seq: firstSeq, you_were_tagged: true },
+        ],
+        [
+          {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                id: "call_post",
+                type: "function",
+                function: { name: "group_post", arguments: "{}" },
+              },
+            ],
+          },
+          { generation: 1 },
+        ],
       ],
-    ],
-    firstSeq,
+      throughSeq: firstSeq,
+      ...HASHES,
+      runMetadata: {
+        typesafe: { recipients: { source: "typesafe", choice: "scout", confidence: 0.9 } },
+      },
+    },
     now,
-    { ...HASHES, runMetadata: { typesafe: { recipients: { source: "typesafe", choice: "scout", confidence: 0.9 } } } },
   );
-  const second = await repo.postAgentGroupMessage("guild_act", "a_scout", "scout", "r_scout", "@desk leads ready", ["desk"], ["a_desk"], [], now);
+  const second = await repo.postAgentGroupMessage(
+    {
+      guildId: "guild_act",
+      agentId: "a_scout",
+      authorName: "scout",
+      sourceRunId: "r_scout",
+      content: "@desk leads ready",
+      taggedNames: ["desk"],
+      taggedAgentIds: ["a_desk"],
+      taggedUserIds: [],
+    },
+    now,
+  );
   const secondSeq = Number(second?.seq);
   await repo.insertMessage(
-    "r_scout",
-    3,
-    { role: "tool", tool_call_id: "call_post", content: `posted id=${String(second?.id)} seq=${secondSeq}` },
-    { generation: 1, tool_name: "group_post", tool_call_id: "call_post", duration_ms: 12, error: null },
+    {
+      runId: "r_scout",
+      seq: 3,
+      payload: {
+        role: "tool",
+        tool_call_id: "call_post",
+        content: `posted id=${String(second?.id)} seq=${secondSeq}`,
+      },
+      metadata: {
+        generation: 1,
+        tool_name: "group_post",
+        tool_call_id: "call_post",
+        duration_ms: 12,
+        error: null,
+      },
+    },
     now,
   );
 
   // desk's wake, which stores the row that woke it, writes a note, then runs out of tool calls without posting.
   await repo.createGroupRun(
-    "r_desk",
-    "a_desk",
-    SNAPSHOT,
-    "system prompt",
-    "task prompt",
-    [[{ role: "user", content: "Group Chat info: {}" }, { generation: 1, source: "group_chat", group_seq: secondSeq, you_were_tagged: true }]],
-    secondSeq,
+    {
+      runId: "r_desk",
+      agentId: "a_desk",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      projected: [
+        [
+          { role: "user", content: "Group Chat info: {}" },
+          { generation: 1, source: "group_chat", group_seq: secondSeq, you_were_tagged: true },
+        ],
+      ],
+      throughSeq: secondSeq,
+      ...HASHES,
+      wakeGroupMessageId: Number(second?.id),
+    },
     now,
-    { ...HASHES, wakeGroupMessageId: Number(second?.id) },
   );
   const deskActor = {
     ...agentActor({ orgId: "org_home", guildId: "guild_act", agentId: "a_desk", agentName: "desk", runId: "r_desk" }),
@@ -131,21 +192,38 @@ test("studio activity lists each wake with what started it and what it produced"
   const routine = await schedules.create(TEST_ACTOR, "a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");
   const scheduleId = String(routine.id);
   await repo.createScheduleRun(
-    "r_tick",
-    "a_desk",
-    SNAPSHOT,
-    "system prompt",
-    "task prompt",
-    [[{ role: "user", content: "Schedule wake-up: {}" }, { generation: 1, source: "schedule", schedule_id: scheduleId }]],
+    {
+      runId: "r_tick",
+      agentId: "a_desk",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      projected: [
+        [
+          { role: "user", content: "Schedule wake-up: {}" },
+          { generation: 1, source: "schedule", schedule_id: scheduleId },
+        ],
+      ],
+      ...HASHES,
+      scheduleId,
+    },
     now,
-    { ...HASHES, scheduleId },
   );
 
   // The operator chats with scout directly.
-  await repo.createRun("r_chat", "a_scout", SNAPSHOT, "system prompt", "task prompt", "how are the leads?", now, {
-    ...HASHES,
-    startedByUserId: "user_operator",
-  });
+  await repo.createRun(
+    {
+      runId: "r_chat",
+      agentId: "a_scout",
+      configSnapshot: SNAPSHOT,
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      userContent: "how are the leads?",
+      ...HASHES,
+      startedByUserId: "user_operator",
+    },
+    now,
+  );
 
   try {
     const created = await app.inject({

@@ -112,7 +112,12 @@ function captureDeps(options: {
       listSchedules: async (agentId: string) =>
         agentId === "a_scout"
           ? (options.schedules ?? [
-              { cron: "*/15 * * * *", description: "Poll", instruction: "Ask @writer after @scout." },
+              {
+                cron: "*/15 * * * *",
+                wake_window: null,
+                description: "Poll",
+                instruction: "Ask @writer after @scout.",
+              },
             ])
           : [],
       listBindingsCovering: async () => options.bindings ?? [],

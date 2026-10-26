@@ -1,4 +1,5 @@
-import { asBuffer, decryptPayload } from "../credentials/crypto.js";
+import { decryptPayload } from "../credentials/crypto.js";
+import type { OrgModelProviderRow } from "../db/orgs.js";
 import { writeLog } from "../observability/log.js";
 import { PolicyError } from "../policy/index.js";
 import type { CostSource, TokenUsage } from "./cost.js";
@@ -55,18 +56,18 @@ export class ModelNotConnectedError extends Error {
 }
 
 export type ModelProviderStore = {
-  getOrgModelProvider(orgId: string, provider: string): Promise<Record<string, unknown> | null>;
+  getOrgModelProvider(orgId: string, provider: string): Promise<OrgModelProviderRow | null>;
 };
 
 /** The stored secret of a provider row: its key, and the base URL of a local endpoint. */
 export function decryptProviderRow(
-  row: Record<string, unknown>,
+  row: Pick<OrgModelProviderRow, "ciphertext" | "nonce">,
   masterKey?: Buffer,
 ): { apiKey: string; baseURL: string | null } {
   if (!row.ciphertext || !row.nonce) {
     return { apiKey: "", baseURL: null };
   }
-  const payload = decryptPayload(asBuffer(row.ciphertext), asBuffer(row.nonce), masterKey);
+  const payload = decryptPayload(row.ciphertext, row.nonce, masterKey);
   const apiKey = typeof payload.api_key === "string" ? payload.api_key.trim() : "";
   const baseURL = typeof payload.base_url === "string" && payload.base_url.trim() ? payload.base_url.trim() : null;
   return { apiKey, baseURL };

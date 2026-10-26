@@ -78,7 +78,10 @@ test("studio lists the guild's tools with who is offered each and how their call
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
   try {
     const now = new Date();
-    await repo.insertGuild("guild_tl", "tools-guild", now, "org_home", "Tools");
+    await repo.insertGuild(
+      { guildId: "guild_tl", name: "tools-guild", orgId: "org_home", about: "Tools" },
+      now,
+    );
     for (const [agentId, name] of [
       ["a_scout", "scout"],
       ["a_writer", "writer"],
@@ -97,13 +100,22 @@ test("studio lists the guild's tools with who is offered each and how their call
       });
     }
     const run = (id: string, agentId: string, calls: Call[]) =>
-      repo.createScheduleRun(id, agentId, { ...CONFIG, tools: [], mcp: [] }, "system", "task", steps(calls), now, {
-        systemPromptHash: "s",
-        taskPromptHash: "t",
-        memoryPromptHash: "m",
-        scheduleId: null,
-        runMetadata: {},
-      });
+      repo.createScheduleRun(
+        {
+          runId: id,
+          agentId,
+          configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+          systemContent: "system",
+          taskContent: "task",
+          projected: steps(calls),
+          systemPromptHash: "s",
+          taskPromptHash: "t",
+          memoryPromptHash: "m",
+          scheduleId: null,
+          runMetadata: {},
+        },
+        now,
+      );
     await run("r_scout", "a_scout", [
       { id: "c1", name: "note_get", args: { path: "a.md" }, ms: 100 },
       { id: "c2", name: "note_get", args: { path: "missing.md" }, error: "note not found", ms: 300 },

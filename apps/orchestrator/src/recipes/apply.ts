@@ -1044,13 +1044,15 @@ export class RecipeApplyService {
 
     const bind = async (scope: "guild" | "agent", scopeId: string, spec: { enabled: boolean; tools: Record<string, boolean> }) => {
       await this.deps.repo.upsertBinding(
-        newId("bind"),
-        "mcp",
-        String(serverRow.id),
-        scope,
-        scopeId,
-        spec.enabled,
-        connectionId,
+        {
+          bindingId: newId("bind"),
+          catalogKind: "mcp",
+          catalogId: String(serverRow.id),
+          scope,
+          scopeId,
+          enabled: spec.enabled,
+          connectionId,
+        },
         now,
         actor,
       );
@@ -1058,7 +1060,19 @@ export class RecipeApplyService {
         if (!known.has(tool)) {
           continue;
         }
-        await this.deps.repo.upsertBinding(newId("bind"), "mcp_tool", tool, scope, scopeId, enabled, null, now, actor);
+        await this.deps.repo.upsertBinding(
+          {
+            bindingId: newId("bind"),
+            catalogKind: "mcp_tool",
+            catalogId: tool,
+            scope,
+            scopeId,
+            enabled,
+            connectionId: null,
+          },
+          now,
+          actor,
+        );
       }
     };
 
@@ -1349,7 +1363,19 @@ export class RecipeApplyService {
 
   private async writeNativeAccess(role: RecipeRole, agentId: string, now: Date, actor: ChangeActor): Promise<void> {
     for (const [tool, enabled] of Object.entries(role.native_tools)) {
-      await this.deps.repo.upsertBinding(newId("bind"), "native_tool", tool, "agent", agentId, enabled, null, now, actor);
+      await this.deps.repo.upsertBinding(
+        {
+          bindingId: newId("bind"),
+          catalogKind: "native_tool",
+          catalogId: tool,
+          scope: "agent",
+          scopeId: agentId,
+          enabled,
+          connectionId: null,
+        },
+        now,
+        actor,
+      );
     }
   }
 }

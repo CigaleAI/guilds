@@ -261,12 +261,12 @@ export class StudioDrafts implements StudioDraftService {
       }
       let written;
       try {
-        written = await args.repo.writeAgentTask(
+        written = await args.repo.writeAgentTaskInTransaction(
+          client,
           actor,
           String(draft.target_agent_id),
           String(draft.proposed_content),
           Number(draft.base_version),
-          client,
         );
       } catch (error) {
         if (error instanceof ArtifactError && error.status === 409) {

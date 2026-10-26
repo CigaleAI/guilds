@@ -25,8 +25,25 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **4 parameters**. If you need more, pass
-  one object with named fields.
+- A function has at most **4 parameters**. ESLint warns at 5 and
+  fails at 6.
+- An object parameter is one of two kinds, and its type is always
+  a named type:
+  - A **record** names a thing that exists in the application
+    outside this call (a new row, a patch, a key, a spec, an editing
+    session) and holds only that thing's fields. A settings type is
+    a record when several callers and instances share it.
+  - A **dependencies object** holds the services a module needs. It
+    could be built once at composition and reused by every call, so
+    it never holds a per-call value such as the user or the actor.
+
+  Every other object parameter is an argument bag and is not
+  allowed. That includes an inline object type of optional settings,
+  and a type named after its function that bundles the call's
+  arguments; neither brings a function under the parameter limit.
+  Call context (the clock, the actor, a transaction client, a hook)
+  is a parameter of its own, never a field of a record or a
+  dependencies object.
 - A function has a **cyclomatic complexity of 11 or less**. A flat
   body with many early returns is fine; the limit exists to keep one
   function from holding several contracts.
@@ -36,7 +53,10 @@ two functions.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.
 - A function does not take a flag that selects between behaviours.
-  Each behaviour is its own function with its own name.
+  Each behaviour is its own function with its own name. A boolean
+  that selects a behaviour is a flag wherever it sits, in a
+  parameter of its own or inside an object; a boolean that is data,
+  such as a field of a patch, is not.
 
 **What counts towards complexity:** `if`, `else if`, `case`, loops,
 `&&`, `||`, `??`, ternaries (`a ? b : c`), and `catch`. A JSX
@@ -330,7 +350,8 @@ Before you submit a change, check:
 
 - [ ] Each function's name and signature say everything it does.
       No flag parameters, complexity of 11 or less, nesting of 3 or
-      less, 4 parameters or fewer.
+      less, 4 parameters or fewer, object parameters only for
+      records and dependencies objects.
 - [ ] Every file is under 800 lines and holds one concern.
 - [ ] Rows leave `db/` typed; route handlers call one domain
       function and never touch `db/`.

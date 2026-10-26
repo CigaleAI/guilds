@@ -17,6 +17,10 @@ import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
 import type { PlannedWake } from "../../src/schedules/window.js";
+import type { AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
+import type { ScriptDatabase } from "../../src/scripts/catalog.js";
+import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
+import type { ScheduleRow } from "../../src/db/schedules.js";
 
 export const AGENT_CONFIG = {
   model: "openrouter/openai/gpt-5.6-luna",
@@ -28,33 +32,53 @@ export const AGENT_CONFIG = {
   browser: false,
 };
 
-export class MemoryScriptDB {
-  rows: Array<Record<string, unknown>> = [];
+export function scheduleRow(
+  overrides: Partial<Omit<ScheduleRow, "cron" | "wake_window">> = {},
+): ScheduleRow {
+  return {
+    id: "sch_1",
+    agent_id: "a_1",
+    cron: "*/30 * * * *",
+    wake_window: null,
+    window_fires: 0,
+    description: "",
+    instruction: "ping",
+    paused: false,
+    next_run_at: "2026-10-12T09:30:00.000Z",
+    last_run_at: null,
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+    ...overrides,
+  };
+}
 
-  async listAgentScripts(agentId: string): Promise<Array<Record<string, unknown>>> {
+/** Agent scripts in memory, with the actor of every write. */
+export class MemoryScriptDB implements ScriptDatabase {
+  rows: AgentScriptRow[] = [];
+  actors: ArtifactActor[] = [];
+
+  async listAgentScripts(agentId: string): Promise<AgentScriptRow[]> {
     return this.rows.filter((row) => row.agent_id === agentId);
   }
 
   async upsertAgentScript(
-    _actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
+    script: NewAgentScript,
+    actor: ArtifactActor,
     now: Date,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<AgentScriptRow> {
+    const { scriptId, agentId, name, description, parameters, source, sourceHash } = script;
+    this.actors.push(actor);
+    const stamp = now.toISOString();
     const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index >= 0) {
+    const existing = this.rows[index];
+    if (existing) {
       const updated = {
-        ...this.rows[index],
+        ...existing,
         description,
         parameters,
         source,
         source_hash: sourceHash,
-        updated_at: now,
+        updated_at: stamp,
       };
       this.rows[index] = updated;
       return updated;
@@ -67,14 +91,14 @@ export class MemoryScriptDB {
       parameters,
       source,
       source_hash: sourceHash,
-      created_at: now,
-      updated_at: now,
+      created_at: stamp,
+      updated_at: stamp,
     };
     this.rows.push(row);
     return row;
   }
 
-  async getAgentScript(agentId: string, name: string): Promise<Record<string, unknown> | null> {
+  async getAgentScript(agentId: string, name: string): Promise<AgentScriptRow | null> {
     return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
   }
 
@@ -82,7 +106,7 @@ export class MemoryScriptDB {
     _actor: ArtifactActor,
     agentId: string,
     name: string,
-  ): Promise<Record<string, unknown> | null> {
+  ): Promise<AgentScriptRow | null> {
     const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
     if (index < 0) {
       return null;
@@ -212,7 +236,7 @@ export class FakeDB {
   mcp_connection: Record<string, unknown> | null = null;
   mcp_server: Record<string, unknown> | null = null;
   monthlyUsage: Record<string, unknown> | null = null;
-  due_schedules: Array<Record<string, unknown>> = [];
+  due_schedules: ScheduleRow[] = [];
   fired: Array<Record<string, unknown>> = [];
 
   constructor(snapshot: Record<string, unknown>) {
@@ -361,19 +385,13 @@ export class FakeDB {
     return (gens.length ? Math.max(...gens) : 0) + 1;
   }
 
-  async insertMessage(
-    runId: string,
-    seq: number,
-    payload: Record<string, unknown>,
-    metadata: Record<string, unknown>,
-    now: Date,
-  ) {
+  async insertMessage(input: NewMessage, now: Date) {
     const row = {
       id: this.messages.length + 1,
-      run_id: runId,
-      seq,
-      payload,
-      metadata,
+      run_id: input.runId,
+      seq: input.seq,
+      payload: input.payload,
+      metadata: input.metadata,
       created_at: now,
     };
     this.messages.push(row);
@@ -462,7 +480,7 @@ export class RecordingDB {
   group_messages: Array<Record<string, unknown>> = [];
   bindings: Array<Record<string, unknown>> = [];
   secrets: Array<Record<string, unknown>> = [];
-  due_schedules: Array<Record<string, unknown>> = [];
+  due_schedules: ScheduleRow[] = [];
   fired: Array<Record<string, unknown>> = [];
   delivered: string | undefined;
   mcp_connection: Record<string, unknown> | null = null;
@@ -567,30 +585,28 @@ export class RecordingDB {
     this.run.updated_at = now;
   }
 
-  async createRun(
-    runId: string,
-    agentId: string,
-    configSnapshot: Record<string, unknown>,
-    systemContent: string,
-    taskContent: string,
-    userContent: string | null,
-    now: Date,
-    options: {
-      systemPromptHash: string;
-      taskPromptHash: string;
-      memoryPromptHash: string;
-      extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]>;
-      userMetadata?: Record<string, unknown>;
-    },
-  ) {
-    const extraMessages = options.extraMessages ?? [];
+  async createRun(input: NewDirectRun, now: Date) {
+    const {
+      runId,
+      agentId,
+      configSnapshot,
+      systemContent,
+      taskContent,
+      userContent,
+      systemPromptHash,
+      taskPromptHash,
+      memoryPromptHash,
+      extraMessages: rawExtra,
+      userMetadata,
+    } = input;
+    const extraMessages = rawExtra ?? [];
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
       task_content: taskContent,
       user_content: userContent,
       extra_messages: extraMessages,
-      user_metadata: options.userMetadata,
+      user_metadata: userMetadata,
     };
     this.messages = [
       {
@@ -609,7 +625,7 @@ export class RecordingDB {
       this.messages.push({
         seq,
         payload: { role: "user", content: userContent },
-        metadata: { generation: 1, source: "ui", ...(options.userMetadata ?? {}) },
+        metadata: { generation: 1, source: "ui", ...(userMetadata ?? {}) },
         created_at: now,
       });
     }
@@ -621,9 +637,9 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      system_prompt_hash: options.systemPromptHash,
-      task_prompt_hash: options.taskPromptHash,
-      memory_prompt_hash: options.memoryPromptHash,
+      system_prompt_hash: systemPromptHash,
+      task_prompt_hash: taskPromptHash,
+      memory_prompt_hash: memoryPromptHash,
       metadata: {},
     };
   }
@@ -639,19 +655,13 @@ export class RecordingDB {
     return (gens.length ? Math.max(...gens) : 0) + 1;
   }
 
-  async insertMessage(
-    runId: string,
-    seq: number,
-    payload: Record<string, unknown>,
-    metadata: Record<string, unknown>,
-    now: Date,
-  ) {
+  async insertMessage(input: NewMessage, now: Date) {
     const row = {
       id: this.messages.length + 1,
-      run_id: runId,
-      seq,
-      payload,
-      metadata,
+      run_id: input.runId,
+      seq: input.seq,
+      payload: input.payload,
+      metadata: input.metadata,
       created_at: now,
     };
     this.messages.push(row);
@@ -679,16 +689,18 @@ export class RecordingDB {
     return this.run.errors as unknown[];
   }
 
-  async createScheduleRun(
-    runId: string,
-    agentId: string,
-    configSnapshot: Record<string, unknown>,
-    systemContent: string,
-    taskContent: string,
-    projected: Array<[Record<string, unknown>, Record<string, unknown>]>,
-    now: Date,
-    options: { systemPromptHash: string; taskPromptHash: string; memoryPromptHash: string },
-  ) {
+  async createScheduleRun(input: NewScheduleRun, now: Date) {
+    const {
+      runId,
+      agentId,
+      configSnapshot,
+      systemContent,
+      taskContent,
+      projected,
+      systemPromptHash,
+      taskPromptHash,
+      memoryPromptHash,
+    } = input;
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
@@ -717,24 +729,26 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      system_prompt_hash: options.systemPromptHash,
-      task_prompt_hash: options.taskPromptHash,
-      memory_prompt_hash: options.memoryPromptHash,
+      system_prompt_hash: systemPromptHash,
+      task_prompt_hash: taskPromptHash,
+      memory_prompt_hash: memoryPromptHash,
       metadata: {},
     };
   }
 
-  async createGroupRun(
-    runId: string,
-    agentId: string,
-    configSnapshot: Record<string, unknown>,
-    systemContent: string,
-    taskContent: string,
-    projected: Array<[Record<string, unknown>, Record<string, unknown>]>,
-    throughSeq: number,
-    now: Date,
-    options: { systemPromptHash: string; taskPromptHash: string; memoryPromptHash: string },
-  ) {
+  async createGroupRun(input: NewGroupRun, now: Date) {
+    const {
+      runId,
+      agentId,
+      configSnapshot,
+      systemContent,
+      taskContent,
+      projected,
+      throughSeq,
+      systemPromptHash,
+      taskPromptHash,
+      memoryPromptHash,
+    } = input;
     this.create_args = {
       run_id: runId,
       system_content: systemContent,
@@ -764,9 +778,9 @@ export class RecordingDB {
       errors: [],
       created_at: now,
       updated_at: now,
-      system_prompt_hash: options.systemPromptHash,
-      task_prompt_hash: options.taskPromptHash,
-      memory_prompt_hash: options.memoryPromptHash,
+      system_prompt_hash: systemPromptHash,
+      task_prompt_hash: taskPromptHash,
+      memory_prompt_hash: memoryPromptHash,
       metadata: {},
     };
   }

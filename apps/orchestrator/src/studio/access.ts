@@ -339,14 +339,34 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
   const actor = editActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
-      await scope.repo.deleteBinding(change.kind, change.id, "agent", agentId, actor);
+      await scope.repo.deleteBinding(
+        { catalogKind: change.kind, catalogId: change.id, scope: "agent", scopeId: agentId },
+        actor,
+      );
       continue;
     }
-    const existing = await scope.repo.getBinding(change.kind, change.id, "agent", agentId);
+    const existing = await scope.repo.getBinding({
+      catalogKind: change.kind,
+      catalogId: change.id,
+      scope: "agent",
+      scopeId: agentId,
+    });
     const connectionId =
       change.kind === "mcp" && existing?.connection_id !== null && existing?.connection_id !== undefined
         ? String(existing.connection_id)
         : null;
-    await scope.repo.upsertBinding(newId("bind"), change.kind, change.id, "agent", agentId, change.setting === "on", connectionId, now, actor);
+    await scope.repo.upsertBinding(
+      {
+        bindingId: newId("bind"),
+        catalogKind: change.kind,
+        catalogId: change.id,
+        scope: "agent",
+        scopeId: agentId,
+        enabled: change.setting === "on",
+        connectionId,
+      },
+      now,
+      actor,
+    );
   }
 }

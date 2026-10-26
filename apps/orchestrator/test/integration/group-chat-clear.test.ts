@@ -52,11 +52,13 @@ test(
     });
 
     const teammate = await repo.insertUser(
-      "user_teammate_clear",
-      "teammate-clear",
+      {
+        userId: "user_teammate_clear",
+        name: "teammate-clear",
+        image: null,
+        email: "teammate-clear@example.com",
+      },
       new Date(),
-      null,
-      "teammate-clear@example.com",
     );
     await repo.insertMember("org_home", String(teammate.id), "member", new Date());
     const TEAMMATE = {
@@ -76,21 +78,40 @@ test(
       const base = `/api/guilds/${guildId}/group-chat`;
 
       const started = new Date(Date.now() - 60_000);
-      await repo.insertAgent("a_clear", guildId, "scout", {}, started);
-      await repo.createRun("r_before", "a_clear", {}, "sys", "task", null, started, HASHES);
-      await repo.postUserGroupMessage(guildId, "first", [], [], [], started);
-      await repo.postAgentGroupMessage(
-        guildId,
-        "a_clear",
-        "scout",
-        "r_before",
-        "second",
-        [],
-        [],
-        [],
+      await repo.insertAgent({ agentId: "a_clear", guildId, name: "scout", config: {} }, started);
+      await repo.createRun(
+        {
+          runId: "r_before",
+          agentId: "a_clear",
+          configSnapshot: {},
+          systemContent: "sys",
+          taskContent: "task",
+          userContent: null,
+          ...HASHES,
+        },
         started,
       );
-      await repo.postUserGroupMessage(guildId, "third", [], [], [], started);
+      await repo.postUserGroupMessage(
+        { guildId, content: "first", taggedNames: [], taggedAgentIds: [], taggedUserIds: [] },
+        started,
+      );
+      await repo.postAgentGroupMessage(
+        {
+          guildId,
+          agentId: "a_clear",
+          authorName: "scout",
+          sourceRunId: "r_before",
+          content: "second",
+          taggedNames: [],
+          taggedAgentIds: [],
+          taggedUserIds: [],
+        },
+        started,
+      );
+      await repo.postUserGroupMessage(
+        { guildId, content: "third", taggedNames: [], taggedAgentIds: [], taggedUserIds: [] },
+        started,
+      );
       await repo.markGroupChatSeen(guildId, "user_operator", 2, started);
 
       const denied = await app.inject({
@@ -118,28 +139,43 @@ test(
       await assert.rejects(
         () =>
           repo.postAgentGroupMessage(
-            guildId,
-            "a_clear",
-            "scout",
-            "r_before",
-            "stale",
-            [],
-            [],
-            [],
+            {
+              guildId,
+              agentId: "a_clear",
+              authorName: "scout",
+              sourceRunId: "r_before",
+              content: "stale",
+              taggedNames: [],
+              taggedAgentIds: [],
+              taggedUserIds: [],
+            },
             new Date(),
           ),
         GroupChatCleared,
       );
-      await repo.createRun("r_after", "a_clear", {}, "sys", "task", null, new Date(), HASHES);
+      await repo.createRun(
+        {
+          runId: "r_after",
+          agentId: "a_clear",
+          configSnapshot: {},
+          systemContent: "sys",
+          taskContent: "task",
+          userContent: null,
+          ...HASHES,
+        },
+        new Date(),
+      );
       const fresh = await repo.postAgentGroupMessage(
-        guildId,
-        "a_clear",
-        "scout",
-        "r_after",
-        "fresh",
-        [],
-        [],
-        [],
+        {
+          guildId,
+          agentId: "a_clear",
+          authorName: "scout",
+          sourceRunId: "r_after",
+          content: "fresh",
+          taggedNames: [],
+          taggedAgentIds: [],
+          taggedUserIds: [],
+        },
         new Date(),
       );
       assert.equal(Number(fresh?.seq), 4, "the next message continues the sequence");

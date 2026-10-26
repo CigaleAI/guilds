@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { operatorActor, type ArtifactActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/index.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import {
   SCRIPT_ARGS_ENV,
@@ -30,6 +30,7 @@ import {
   invokeTool,
 } from "../../src/toolbox/index.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
+import { MemoryScriptDB } from "../helpers/generation.js";
 
 const HOME = "/home/a_1";
 const SCRIPTS = scriptsDirectory(HOME);
@@ -41,64 +42,6 @@ type ScriptFixture = {
 
 const fixture = loadJsonFixture<ScriptFixture>("scripts/cases.json");
 
-class MemoryScriptDB {
-  rows: Array<Record<string, unknown>> = [];
-
-  async listAgentScripts(agentId: string) {
-    return this.rows.filter((row) => row.agent_id === agentId);
-  }
-
-  async upsertAgentScript(
-    _actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
-    now: Date,
-  ) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index >= 0) {
-      const updated = {
-        ...this.rows[index],
-        description,
-        parameters,
-        source,
-        source_hash: sourceHash,
-        updated_at: now,
-      };
-      this.rows[index] = updated;
-      return updated;
-    }
-    const row = {
-      id: scriptId,
-      agent_id: agentId,
-      name,
-      description,
-      parameters,
-      source,
-      source_hash: sourceHash,
-      created_at: now,
-      updated_at: now,
-    };
-    this.rows.push(row);
-    return row;
-  }
-
-  async getAgentScript(agentId: string, name: string) {
-    return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
-  }
-
-  async deleteAgentScript(_actor: ArtifactActor, agentId: string, name: string) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index < 0) {
-      return null;
-    }
-    return this.rows.splice(index, 1)[0] ?? null;
-  }
-}
 
 const scriptOperator = operatorActor({
   orgId: "org_1",
@@ -186,7 +129,12 @@ test("snapshot-pin-ignores-live-edit", async () => {
     })),
   );
   const db = new MemoryScriptDB();
-  db.rows = snapshot.map((item) => ({ ...item, agent_id: "a_1" }));
+  db.rows = snapshot.map((item) => ({
+    ...item,
+    agent_id: "a_1",
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+  }));
   const scripts = new Scripts(db);
   await scripts.create(scriptOperator, "a_1", given.live_edit.name, "Sign and send USDC", given.live_edit.source, {
     type: "object",

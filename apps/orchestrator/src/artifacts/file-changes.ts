@@ -1,13 +1,10 @@
-import type pg from "pg";
 import { isoOrNull } from "../db/views.js";
 import { newId } from "../lib/ids.js";
-import { stamp } from "../db/pg.js";
+import { type Queryable, stamp } from "../db/pg.js";
 import { actorColumns, studioLink, type ChangeLink } from "../db/config-changes.js";
 import type { ArtifactActor } from "./types.js";
 
 export type FileChangeOperation = "create" | "update" | "delete";
-
-type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
 export async function recordFileChange(
   db: Queryable,

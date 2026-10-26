@@ -18,7 +18,7 @@ import {
   githubLoginItem,
   githubRepositoriesOf,
   repositoryItem,
-  RepositoryError,
+  RepositoryValidationError,
   validateGithubRepositories,
   validateRepositoryInput,
 } from "../coding/repositories.js";
@@ -172,7 +172,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       input = validateRepositoryInput(bodyOf(request));
     } catch (error) {
-      if (error instanceof RepositoryError) {
+      if (error instanceof RepositoryValidationError) {
         throw new HttpError(error.status, error.message);
       }
       throw error;
@@ -194,16 +194,18 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
       githubId = match.id;
     }
     try {
-      const row = await repo.insertGuildRepository({
-        id: newId("repo"),
-        guildId: String(guild.id),
-        name: input.name,
-        url: input.url,
-        defaultBranch: defaultBranch ?? DEFAULT_BRANCH,
-        connectionId: input.connectionId,
-        githubId,
-        now: new Date(),
-      });
+      const row = await repo.insertGuildRepository(
+        {
+          id: newId("repo"),
+          guildId: String(guild.id),
+          name: input.name,
+          url: input.url,
+          defaultBranch: defaultBranch ?? DEFAULT_BRANCH,
+          connectionId: input.connectionId,
+          githubId,
+        },
+        new Date(),
+      );
       if (input.connectionId !== null) {
         const connection = await repo.getMcpConnection(input.connectionId);
         if (
@@ -284,7 +286,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       selected = validateGithubRepositories(bodyOf(request).repositories);
     } catch (error) {
-      if (error instanceof RepositoryError) {
+      if (error instanceof RepositoryValidationError) {
         throw new HttpError(error.status, error.message);
       }
       throw error;

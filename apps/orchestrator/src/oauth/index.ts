@@ -11,6 +11,7 @@ import {
 } from "../instance/integrations.js";
 import { serverManifest } from "../connectors/load.js";
 import type { Manifest } from "../connectors/manifest.js";
+import type { McpConnectionLogin } from "../db/mcp.js";
 import { connectorIntegration } from "../instance/connectors.js";
 
 /** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */
@@ -607,14 +608,8 @@ type OauthDb = {
   ): Promise<Record<string, unknown> | null>;
   saveMcpConnection?(
     connectionId: string,
-    options: {
-      ciphertext: Buffer;
-      nonce: Buffer;
-      status: string;
-      accountHint: string;
-      oauthState: string | null;
-      now: Date;
-    },
+    login: McpConnectionLogin,
+    now: Date,
   ): Promise<Record<string, unknown> | null>;
 };
 
@@ -689,14 +684,17 @@ export async function refreshConnection(
   if (!db.saveMcpConnection) {
     throw new OAuthError("mcp db cannot save connections");
   }
-  const row = await db.saveMcpConnection(String(connection.id), {
-    ciphertext,
-    nonce,
-    status: String(connection.status || "connected"),
-    accountHint: String(connection.account_hint || accountHint(stored)),
-    oauthState: typeof connection.oauth_state === "string" ? connection.oauth_state : null,
+  const row = await db.saveMcpConnection(
+    String(connection.id),
+    {
+      ciphertext,
+      nonce,
+      status: String(connection.status || "connected"),
+      accountHint: String(connection.account_hint || accountHint(stored)),
+      oauthState: typeof connection.oauth_state === "string" ? connection.oauth_state : null,
+    },
     now,
-  });
+  );
   if (row === null) {
     throw new OAuthError("connection was deleted");
   }

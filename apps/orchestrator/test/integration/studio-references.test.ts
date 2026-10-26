@@ -46,11 +46,13 @@ test(
     });
     const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
     const teammate = await repo.insertUser(
-      "user_teammate_refs",
-      "teammate-refs",
+      {
+        userId: "user_teammate_refs",
+        name: "teammate-refs",
+        image: null,
+        email: "refs@example.com",
+      },
       new Date(),
-      null,
-      "refs@example.com",
     );
     await repo.insertMember("org_home", String(teammate.id), "member", new Date());
     const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };

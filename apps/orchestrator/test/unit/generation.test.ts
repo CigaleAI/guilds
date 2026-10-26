@@ -44,6 +44,7 @@ import {
   makeLoop,
   parsedState,
   RecordingDB as _RecordingDB,
+  scheduleRow,
   seededLoop,
 } from "../helpers/generation.js";
 import { limitedPolicy } from "../helpers/policy.js";
@@ -794,12 +795,9 @@ describe("generation", { concurrency: 1 }, () => {
     loop._spawn = (runId, generation) => {
       started.push([runId, generation]);
     };
-    await loop.deliver_schedule_run({
-      id: "sch_1",
-      agent_id: "a_1",
-      cron: "*/30 * * * *",
-      instruction: "Check the shared notes.",
-    });
+    await loop.deliver_schedule_run(
+      scheduleRow({ instruction: "Check the shared notes." }),
+    );
     assert.deepEqual(started, [[String(db.create_args?.run_id), 1]]);
     assert.ok(loop.agent_is_busy("a_1"));
     assert.equal(db.run?.kind, "schedule");
@@ -831,12 +829,9 @@ describe("generation", { concurrency: 1 }, () => {
     };
     await assert.rejects(
       () =>
-        loop.deliver_schedule_run({
-          id: "sch_1",
-          agent_id: "a_1",
-          cron: "*/30 * * * *",
-          instruction: "Check the shared notes.",
-        }),
+        loop.deliver_schedule_run(
+          scheduleRow({ instruction: "Check the shared notes." }),
+        ),
       /insert failed/,
     );
     assert.deepEqual(busyDuringInsert, [true]);
@@ -853,12 +848,9 @@ describe("generation", { concurrency: 1 }, () => {
     };
     await assert.rejects(
       () =>
-        loop.deliver_schedule_run({
-          id: "sch_1",
-          agent_id: "a_1",
-          cron: "*/30 * * * *",
-          instruction: "Check the shared notes.",
-        }),
+        loop.deliver_schedule_run(
+          scheduleRow({ instruction: "Check the shared notes." }),
+        ),
       (error: unknown) => error instanceof DeliveryBusyError,
     );
     assert.equal(db.run, null);
@@ -866,7 +858,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("fire_due_skips_busy_agent_without_advancing", async () => {
     const { loop, db } = await seededLoop();
-    db.due_schedules = [{ id: "sch_1", agent_id: "a_1", cron: "*/30 * * * *", instruction: "ping" }];
+    db.due_schedules = [scheduleRow()];
     loop._busy_agents.add("a_1");
     loop.deliver_schedule_run = async () => {
       throw new Error("should not fire");
@@ -878,9 +870,9 @@ describe("generation", { concurrency: 1 }, () => {
   test("fire_due_advances_after_start", async () => {
     const { loop, db } = await seededLoop();
     const now = new Date("2026-09-12T16:00:00Z");
-    db.due_schedules = [{ id: "sch_1", agent_id: "a_1", cron: "*/30 * * * *", instruction: "ping" }];
+    db.due_schedules = [scheduleRow()];
     loop.deliver_schedule_run = async (row) => {
-      db.delivered = String(row.id);
+      db.delivered = row.id;
     };
     await loop.fire_due_schedules(now);
     assert.equal(db.delivered, "sch_1");
@@ -2204,12 +2196,7 @@ describe("generation", { concurrency: 1 }, () => {
       calls += 1;
       yield ["done", { payload: { role: "assistant", content: "checked" }, metadata: {} }];
     };
-    await loop.deliver_schedule_run({
-      id: "sch_1",
-      agent_id: "a_1",
-      cron: "*/30 * * * *",
-      instruction: "check inbox",
-    });
+    await loop.deliver_schedule_run(scheduleRow({ instruction: "check inbox" }));
     await waitTask(loop, String(db.run?.id));
     assert.equal(calls, 1);
     assert.ok(!db.messages.some((row) => (row.metadata as Record<string, unknown>).source === "memory"));
@@ -2268,12 +2255,7 @@ describe("generation", { concurrency: 1 }, () => {
       calls += 1;
       yield ["done", { payload: { role: "assistant", content: "checked" }, metadata: {} }];
     };
-    await loop.deliver_schedule_run({
-      id: "sch_1",
-      agent_id: "a_1",
-      cron: "*/30 * * * *",
-      instruction: "check inbox",
-    });
+    await loop.deliver_schedule_run(scheduleRow({ instruction: "check inbox" }));
     await waitTask(loop, String(db.run?.id));
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []

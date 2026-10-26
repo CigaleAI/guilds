@@ -23,11 +23,19 @@ async function orgWithMembers(tag: string, roles: string[]): Promise<{ orgId: st
   const now = new Date();
   const userIds: string[] = [];
   for (const [index] of roles.entries()) {
-    const user = await repo.insertUser(`user_${tag}_${index}`, `${tag}-${index}`, now, null, `${tag}-${index}@example.com`);
+    const user = await repo.insertUser(
+      {
+        userId: `user_${tag}_${index}`,
+        name: `${tag}-${index}`,
+        image: null,
+        email: `${tag}-${index}@example.com`,
+      },
+      now,
+    );
     userIds.push(String(user.id));
   }
   const orgId = `org_${tag}`;
-  await repo.insertOrg(orgId, tag, tag, userIds[0] ?? "", now);
+  await repo.insertOrg({ orgId, name: tag, slug: tag, userId: userIds[0] ?? "" }, now);
   for (const [index, role] of roles.entries()) {
     if (index > 0) {
       await repo.insertMember(orgId, userIds[index] ?? "", role, now);

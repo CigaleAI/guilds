@@ -33,10 +33,19 @@ test("an organisation adds remote servers of its own that no other organisation 
     policy: limitedPolicy({ maxMcpServers: 2 }),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
-  const other = await repo.insertUser("user_other", "other", new Date(), null, "other@example.com");
-  await repo.insertOrg("org_other", "other team", "other-team", String(other.id), new Date());
+  const other = await repo.insertUser(
+    { userId: "user_other", name: "other", image: null, email: "other@example.com" },
+    new Date(),
+  );
+  await repo.insertOrg(
+    { orgId: "org_other", name: "other team", slug: "other-team", userId: String(other.id) },
+    new Date(),
+  );
   const OTHER = { "X-Guilds-User": String(other.id), "X-Guilds-Org": "org_other" };
-  const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
+  const member = await repo.insertUser(
+    { userId: "user_member", name: "member", image: null, email: "member@example.com" },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(member.id), "member", new Date());
   const add = (headers: Record<string, string>, org: string, payload: Record<string, unknown>) =>
     app.inject({

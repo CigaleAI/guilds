@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { modelAcceptsAttachments } from "../llm/catalog.js";
 import { modelNeedsInlineImages } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
+import type { NewAttachment } from "../db/attachments.js";
 import { iso } from "../db/views.js";
 import { sanitizeFilename, sniffImage } from "./sniff.js";
 import { hydrateMessages } from "./hydrate.js";
@@ -16,17 +17,7 @@ import {
 import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
 
 export type AttachmentDatabase = {
-  insertAttachment(row: {
-    id: string;
-    orgId: string;
-    uploadedBy: string;
-    filename: string;
-    mime: string;
-    bytes: number;
-    sha256: string;
-    kind: string;
-    createdAt: Date;
-  }): Promise<Record<string, unknown>>;
+  insertAttachment(attachment: NewAttachment, now: Date): Promise<Record<string, unknown>>;
   getAttachment(id: string): Promise<Record<string, unknown> | null>;
   listAttachmentsByIds(orgId: string, ids: string[]): Promise<Array<Record<string, unknown>>>;
 };
@@ -78,17 +69,19 @@ export class AttachmentService {
     const id = newId("att");
     const sha256 = createHash("sha256").update(args.bytes).digest("hex");
     await this.blobs.put(objectKey(args.orgId, id), args.bytes, sniffed.mime);
-    const created = await this.db.insertAttachment({
-      id,
-      orgId: args.orgId,
-      uploadedBy: args.userId,
-      filename,
-      mime: sniffed.mime,
-      bytes: args.bytes.length,
-      sha256,
-      kind: sniffed.kind,
-      createdAt: new Date(),
-    });
+    const created = await this.db.insertAttachment(
+      {
+        id,
+        orgId: args.orgId,
+        uploadedBy: args.userId,
+        filename,
+        mime: sniffed.mime,
+        bytes: args.bytes.length,
+        sha256,
+        kind: sniffed.kind,
+      },
+      new Date(),
+    );
     return asRow(created);
   }
 

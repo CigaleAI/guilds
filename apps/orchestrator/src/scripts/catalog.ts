@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
+import type { AgentScriptRow, NewAgentScript } from "../db/agents.js";
 import { AsyncLock } from "../lib/lock.js";
 import { newId } from "../lib/ids.js";
 import type { ArtifactActor } from "../artifacts/types.js";
@@ -64,24 +65,18 @@ export function scriptItem(
 }
 
 export type ScriptDatabase = {
-  getAgentScript(agentId: string, name: string): Promise<Record<string, unknown> | null>;
+  getAgentScript(agentId: string, name: string): Promise<AgentScriptRow | null>;
   upsertAgentScript(
+    script: NewAgentScript,
     actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
     now: Date,
-  ): Promise<Record<string, unknown>>;
-  listAgentScripts(agentId: string): Promise<Array<Record<string, unknown>>>;
+  ): Promise<AgentScriptRow>;
+  listAgentScripts(agentId: string): Promise<AgentScriptRow[]>;
   deleteAgentScript(
     actor: ArtifactActor,
     agentId: string,
     name: string,
-  ): Promise<Record<string, unknown> | null>;
+  ): Promise<AgentScriptRow | null>;
 };
 
 export class Scripts {
@@ -115,14 +110,16 @@ export class Scripts {
         }
       }
       const row = await this.db.upsertAgentScript(
+        {
+          scriptId: existing ? existing.id : newId("scr"),
+          agentId,
+          name: token,
+          description: text,
+          parameters: schema,
+          source: body,
+          sourceHash: digest,
+        },
         actor,
-        existing ? String(existing.id) : newId("scr"),
-        agentId,
-        token,
-        text,
-        schema,
-        body,
-        digest,
         now,
       );
       return scriptRow(row);
@@ -161,7 +158,7 @@ export class Scripts {
     return this.lock.run(async () => {
       const deleted: Array<Record<string, unknown>> = [];
       for (const row of await this.db.listAgentScripts(agentId)) {
-        const gone = await this.db.deleteAgentScript(actor, agentId, String(row.name));
+        const gone = await this.db.deleteAgentScript(actor, agentId, row.name);
         if (gone) {
           deleted.push(scriptRow(gone));
         }

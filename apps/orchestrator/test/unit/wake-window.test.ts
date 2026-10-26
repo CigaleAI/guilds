@@ -135,7 +135,20 @@ test("a simulated month never exceeds max_wakes per window", () => {
     perDay.set(day, (perDay.get(day) ?? 0) + 1);
     previous = wake.at;
     wake = planAfterFire(
-      { cron: null, wake_window: PARIS, next_run_at: wake.at, window_fires: wake.windowFires },
+      {
+        id: "sch_1",
+        agent_id: "a_1",
+        cron: null,
+        wake_window: PARIS,
+        window_fires: wake.windowFires,
+        description: "Wander",
+        instruction: "Look around.",
+        paused: false,
+        next_run_at: wake.at.toISOString(),
+        last_run_at: null,
+        created_at: "2026-10-12T09:00:00.000Z",
+        updated_at: "2026-10-12T09:00:00.000Z",
+      },
       wake.at,
       random,
     );

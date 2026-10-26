@@ -106,23 +106,36 @@ export async function syncInstanceLogins(
     if (login === null) {
       if (on) {
         const [ciphertext, nonce] = encryptPayload({}, masterKey);
-        await repo.connectMcp(newId("conn"), newId("bind"), item.id, "platform", null, ciphertext, nonce, now, {
-          status: "connected",
-          accountHint: "platform key",
-        });
+        await repo.connectMcp(
+          {
+            connectionId: newId("conn"),
+            bindingId: newId("bind"),
+            serverId: item.id,
+            ownerScope: "platform",
+            ownerId: null,
+            ciphertext,
+            nonce,
+            status: "connected",
+            accountHint: "platform key",
+          },
+          now,
+        );
       }
       continue;
     }
     const status = on ? "connected" : "disconnected";
     if (login.status !== status) {
-      await repo.saveMcpConnection(String(login.id), {
-        ciphertext: login.ciphertext as Buffer,
-        nonce: login.nonce as Buffer,
-        status,
-        accountHint: String(login.account_hint ?? ""),
-        oauthState: null,
+      await repo.saveMcpConnection(
+        login.id,
+        {
+          ciphertext: login.ciphertext as Buffer,
+          nonce: login.nonce as Buffer,
+          status,
+          accountHint: login.account_hint ?? "",
+          oauthState: null,
+        },
         now,
-      });
+      );
     }
   }
 }

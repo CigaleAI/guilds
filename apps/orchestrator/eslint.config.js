@@ -29,7 +29,8 @@ export default tseslint.config(
     rules: {
       complexity: ["error", 11],
       "max-depth": ["error", 3],
-      "max-params": ["error", 4],
+      "max-params": ["warn", 4],
+      "@typescript-eslint/max-params": ["error", { max: 5 }],
       "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
     },
   },

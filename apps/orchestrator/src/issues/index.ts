@@ -1,4 +1,11 @@
-import { isoOrNull } from "../db/views.js";
+import type { GuildRow } from "../db/guilds.js";
+import type {
+  GuildIssueRow,
+  IssueRow,
+  IssueStatusChange,
+  NewIssue,
+} from "../db/issues.js";
+import { iso, isoOrNull } from "../db/views.js";
 import { newId } from "../lib/ids.js";
 
 export const ISSUE_KINDS = ["tool_failure", "truncated", "api", "other"] as const;
@@ -18,34 +25,16 @@ export class IssueError extends Error {
 }
 
 export type IssuesDatabase = {
-  getGuild(guildId: string): Promise<Record<string, unknown> | null>;
-  insertIssue(
-    issueId: string,
-    guildId: string,
-    orgId: string,
-    agentId: string | null,
-    agentName: string,
-    runId: string | null,
-    kind: string,
-    severity: string,
-    summary: string,
-    detail: string,
-    toolName: string | null,
-    now: Date,
-  ): Promise<Record<string, unknown>>;
-  listIssuesForGuild(
-    guildId: string,
-    status: string | null,
-  ): Promise<Array<Record<string, unknown>>>;
-  getIssue(guildId: string, issueId: string): Promise<Record<string, unknown> | null>;
+  getGuild(guildId: string): Promise<Pick<GuildRow, "org_id"> | null>;
+  insertIssue(issue: NewIssue, now: Date): Promise<IssueRow>;
+  listIssuesForGuild(guildId: string, status: string | null): Promise<GuildIssueRow[]>;
+  getIssue(guildId: string, issueId: string): Promise<GuildIssueRow | null>;
   setIssueStatus(
     guildId: string,
     issueId: string,
-    status: string,
-    resolvedAt: Date | null,
-    resolvedBy: string | null,
+    change: IssueStatusChange,
     now: Date,
-  ): Promise<Record<string, unknown> | null>;
+  ): Promise<GuildIssueRow | null>;
   resolveOpenIssues(
     guildId: string,
     resolvedAt: Date,
@@ -90,32 +79,29 @@ function optionalId(value: unknown): string | null {
   return text || null;
 }
 
-export function issueItem(row: Record<string, unknown>): Record<string, unknown> {
-  const agentId = row.agent_id ? String(row.agent_id) : null;
-  const agentName = String(row.live_agent_name || row.agent_name || "");
-  const hasAvatar = Boolean(row.avatar_shape || row.avatar_color);
+export function issueItem(row: GuildIssueRow): Record<string, unknown> {
   return {
     id: row.id,
     guild_id: row.guild_id,
-    agent_id: agentId,
-    agent_name: String(row.agent_name || ""),
-    run_id: row.run_id ? String(row.run_id) : null,
+    agent_id: row.agent_id,
+    agent_name: row.agent_name,
+    run_id: row.run_id,
     kind: row.kind,
     severity: row.severity,
     status: row.status,
     summary: row.summary,
     detail: row.detail,
-    tool_name: row.tool_name ? String(row.tool_name) : null,
-    created_at: isoOrNull(row.created_at),
-    updated_at: isoOrNull(row.updated_at),
+    tool_name: row.tool_name,
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
     resolved_at: isoOrNull(row.resolved_at),
-    resolved_by: row.resolved_by ? String(row.resolved_by) : null,
-    agent: agentId
+    resolved_by: row.resolved_by,
+    agent: row.agent_id
       ? {
-          id: agentId,
-          name: agentName || String(row.agent_name || ""),
-          avatar_shape: hasAvatar ? String(row.avatar_shape || "teardrop") : "teardrop",
-          avatar_color: hasAvatar ? String(row.avatar_color || "#7c5cff") : "#7c5cff",
+          id: row.agent_id,
+          name: row.live_agent_name || row.agent_name,
+          avatar_shape: row.avatar_shape || "teardrop",
+          avatar_color: row.avatar_color || "#7c5cff",
         }
       : null,
   };
@@ -134,7 +120,7 @@ export class Issues {
     summary: unknown;
     detail: unknown;
     toolName?: unknown;
-  }): Promise<Record<string, unknown>> {
+  }): Promise<IssueRow> {
     const kind = oneOf(args.kind, ISSUE_KINDS, "kind");
     const severity =
       args.severity === undefined || args.severity === null || args.severity === ""
@@ -156,17 +142,19 @@ export class Issues {
     }
     const now = new Date();
     return this.db.insertIssue(
-      newId("iss"),
-      args.guildId,
-      String(guild.org_id),
-      optionalId(args.agentId),
-      agentName,
-      optionalId(args.runId),
-      kind,
-      severity,
-      summary,
-      detail,
-      toolName,
+      {
+        issueId: newId("iss"),
+        guildId: args.guildId,
+        orgId: guild.org_id,
+        agentId: optionalId(args.agentId),
+        agentName,
+        runId: optionalId(args.runId),
+        kind,
+        severity,
+        summary,
+        detail,
+        toolName,
+      },
       now,
     );
   }
@@ -198,7 +186,12 @@ export class Issues {
     const now = new Date();
     const resolvedAt = next === "resolved" ? now : null;
     const resolver = next === "resolved" ? optionalText(resolvedBy ?? "", "resolved_by", 80) || "user" : null;
-    const updated = await this.db.setIssueStatus(guildId, token, next, resolvedAt, resolver, now);
+    const updated = await this.db.setIssueStatus(
+      guildId,
+      token,
+      { status: next, resolvedAt, resolvedBy: resolver },
+      now,
+    );
     if (updated === null) {
       throw new IssueError("issue not found");
     }

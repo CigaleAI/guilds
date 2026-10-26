@@ -265,15 +265,18 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     for (const server of [mailServer, crmServer]) {
       const [ciphertext, nonce] = encryptPayload({ token: `${server.slug}-test` }, key);
       const connection = await repo.connectMcp(
-        newId("conn"),
-        newId("bind"),
-        String(server.id),
-        "org",
-        "org_home",
-        ciphertext,
-        nonce,
+        {
+          connectionId: newId("conn"),
+          bindingId: newId("bind"),
+          serverId: String(server.id),
+          ownerScope: "org",
+          ownerId: "org_home",
+          ciphertext,
+          nonce,
+          status: "connected",
+          bind: false,
+        },
         now,
-        { status: "connected", bind: false },
       );
       const listed = await mcp.syncTools(repo, connection, server, { force: true });
       assert.deepEqual(

@@ -69,8 +69,14 @@ test("studio's State lists the guild's items with who changed and read each one"
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
   try {
     const now = new Date();
-    await repo.insertGuild("guild_st", "state-guild", now, "org_home", "State");
-    await repo.insertGuild("guild_far", "far-guild", now, "org_home", "Far");
+    await repo.insertGuild(
+      { guildId: "guild_st", name: "state-guild", orgId: "org_home", about: "State" },
+      now,
+    );
+    await repo.insertGuild(
+      { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "Far" },
+      now,
+    );
     const agents: Array<[string, string, string]> = [
       ["a_scout", "scout", "guild_st"],
       ["a_writer", "writer", "guild_st"],
@@ -95,14 +101,28 @@ test("studio's State lists the guild's items with who changed and read each one"
       ...agentActor({ orgId: "org_home", guildId, agentId, agentName: name, runId }),
       toolCall: { id: `call_${runId}`, name: "note_write" },
     });
-    const run = (id: string, agentId: string, calls: Call[], taskSource: Record<string, unknown> = {}) =>
-      repo.createScheduleRun(id, agentId, { ...CONFIG, tools: [], mcp: [] }, "system", "task", steps(calls), now, {
-        systemPromptHash: "s",
-        taskPromptHash: "t",
-        memoryPromptHash: "m",
-        scheduleId: null,
-        runMetadata: { task_source: taskSource },
-      });
+    const run = (
+      id: string,
+      agentId: string,
+      calls: Call[],
+      taskSource: Record<string, unknown> = {},
+    ) =>
+      repo.createScheduleRun(
+        {
+          runId: id,
+          agentId,
+          configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+          systemContent: "system",
+          taskContent: "task",
+          projected: steps(calls),
+          systemPromptHash: "s",
+          taskPromptHash: "t",
+          memoryPromptHash: "m",
+          scheduleId: null,
+          runMetadata: { task_source: taskSource },
+        },
+        now,
+      );
 
     const rules = await artifacts.writeNote(operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
     const rulesPath = `${ownerPrefix("org_home", "guild", "guild_st")}${rules.key}`;

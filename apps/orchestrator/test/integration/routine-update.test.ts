@@ -109,11 +109,20 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
     });
     assert.equal(missing.statusCode, 404);
 
-    await repo.createRun("r_edit", agentId, {}, "system prompt", "task prompt", null, new Date(), {
-      systemPromptHash: "s",
-      taskPromptHash: "t",
-      memoryPromptHash: "m",
-    });
+    await repo.createRun(
+      {
+        runId: "r_edit",
+        agentId,
+        configSnapshot: {},
+        systemContent: "system prompt",
+        taskContent: "task prompt",
+        userContent: null,
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
+      },
+      new Date(),
+    );
     const ctx = createToolContext({
       run_id: "r_edit",
       agent_id: agentId,

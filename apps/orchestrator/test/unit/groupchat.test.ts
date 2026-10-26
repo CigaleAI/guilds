@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { AgentMessageLimitReached, GroupChatCleared } from "../../src/db/errors.js";
+import type { NewAgentGroupMessage, NewUserGroupMessage } from "../../src/db/group-chat.js";
 import { groupMessageItem } from "../../src/db/views.js";
 import {
   CLEARED_ERROR,
@@ -184,15 +185,8 @@ class MemoryGroupDB implements GroupChatDatabase {
     return guild.group_chat_errors as unknown[];
   }
 
-  async postUserGroupMessage(
-    guildId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
-    now: Date,
-    options: { authorName?: string } = {},
-  ) {
+  async postUserGroupMessage(input: NewUserGroupMessage, now: Date) {
+    const { guildId, content, taggedNames, taggedAgentIds, taggedUserIds, authorName } = input;
     return this.lock.run(async () => {
       const guild = this.guilds[guildId];
       if (!guild) {
@@ -204,7 +198,7 @@ class MemoryGroupDB implements GroupChatDatabase {
         guildId,
         Number(guild.group_chat_seq),
         "user",
-        options.authorName ?? "user",
+        authorName ?? "user",
         null,
         null,
         content,
@@ -216,17 +210,17 @@ class MemoryGroupDB implements GroupChatDatabase {
     });
   }
 
-  async postAgentGroupMessage(
-    guildId: string,
-    agentId: string,
-    authorName: string,
-    sourceRunId: string,
-    content: string,
-    taggedNames: string[],
-    taggedAgentIds: string[],
-    taggedUserIds: string[],
-    now: Date,
-  ) {
+  async postAgentGroupMessage(input: NewAgentGroupMessage, now: Date) {
+    const {
+      guildId,
+      agentId,
+      authorName,
+      sourceRunId,
+      content,
+      taggedNames,
+      taggedAgentIds,
+      taggedUserIds,
+    } = input;
     return this.lock.run(async () => {
       const guild = this.guilds[guildId];
       if (!guild) {
@@ -770,18 +764,22 @@ describe("groupchat", { concurrency: 1 }, () => {
   });
 
   test("purge_guild_deletes_the_guild_row", () => {
-    const source = readFileSync(
-      path.join(orchestratorRoot(import.meta.url), "src/db/repositories.ts"),
+    const guildsSource = readFileSync(
+      path.join(orchestratorRoot(import.meta.url), "src/db/guilds.ts"),
       "utf8",
     );
-    assert.ok(source.includes("DELETE FROM guilds"));
-    assert.match(source, /group_chat_seq/);
-    assert.match(source, /group_chat_delivered_through/);
+    const groupChatSource = readFileSync(
+      path.join(orchestratorRoot(import.meta.url), "src/db/group-chat.ts"),
+      "utf8",
+    );
+    assert.ok(guildsSource.includes("DELETE FROM guilds"));
+    assert.match(groupChatSource, /group_chat_seq/);
+    assert.match(groupChatSource, /group_chat_delivered_through/);
   });
 
   test("purge_agent_deletes_the_agent_row", () => {
     const source = readFileSync(
-      path.join(orchestratorRoot(import.meta.url), "src/db/repositories.ts"),
+      path.join(orchestratorRoot(import.meta.url), "src/db/agents.ts"),
       "utf8",
     );
     assert.ok(source.includes("DELETE FROM agents"));

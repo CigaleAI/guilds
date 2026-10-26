@@ -40,9 +40,25 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
     generation,
   });
 
-  const teammate = await repo.insertUser("user_teammate_inbox", "teammate-inbox", new Date(), null, "teammate-inbox@example.com");
+  const teammate = await repo.insertUser(
+    {
+      userId: "user_teammate_inbox",
+      name: "teammate-inbox",
+      image: null,
+      email: "teammate-inbox@example.com",
+    },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(teammate.id), "member", new Date());
-  const bystander = await repo.insertUser("user_bystander_inbox", "bystander-inbox", new Date(), null, "bystander-inbox@example.com");
+  const bystander = await repo.insertUser(
+    {
+      userId: "user_bystander_inbox",
+      name: "bystander-inbox",
+      image: null,
+      email: "bystander-inbox@example.com",
+    },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(bystander.id), "member", new Date());
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
   const BYSTANDER = { "X-Guilds-User": String(bystander.id), "X-Guilds-Org": "org_home" };
@@ -164,17 +180,19 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
     assert.deepEqual((await inbox(OWNER)).mentions, [], "another operator's cursor is unchanged");
 
     const issue = await repo.insertIssue(
-      "iss_inbox",
-      guildId,
-      "org_home",
-      null,
-      "scout",
-      null,
-      "api",
-      "high",
-      "Feed login expired",
-      "401 from the feed API",
-      "feed_fetch",
+      {
+        issueId: "iss_inbox",
+        guildId,
+        orgId: "org_home",
+        agentId: null,
+        agentName: "scout",
+        runId: null,
+        kind: "api",
+        severity: "high",
+        summary: "Feed login expired",
+        detail: "401 from the feed API",
+        toolName: "feed_fetch",
+      },
       new Date(),
     );
     const withIssue = await inbox(TEAMMATE);

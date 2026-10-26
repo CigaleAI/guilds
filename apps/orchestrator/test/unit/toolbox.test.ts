@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { operatorActor, type ArtifactActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/index.js";
 import {
   REGISTRY,
   capBytes,
@@ -19,66 +19,9 @@ import {
 import { functionSchema, omitEmptyOptionalStrings } from "../../src/toolbox/schema.js";
 import { HELPER } from "../../src/toolbox/browser.js";
 import { Scripts } from "../../src/scripts/catalog.js";
+import { MemoryScriptDB } from "../helpers/generation.js";
 import { CancelEvent } from "../../src/toolbox/types.js";
 
-class MemoryScriptDB {
-  rows: Array<Record<string, unknown>> = [];
-
-  async listAgentScripts(agentId: string) {
-    return this.rows.filter((row) => row.agent_id === agentId);
-  }
-
-  async upsertAgentScript(
-    _actor: ArtifactActor,
-    scriptId: string,
-    agentId: string,
-    name: string,
-    description: string,
-    parameters: Record<string, unknown> | null,
-    source: string,
-    sourceHash: string,
-    now: Date,
-  ) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index >= 0) {
-      const updated = {
-        ...this.rows[index],
-        description,
-        parameters,
-        source,
-        source_hash: sourceHash,
-        updated_at: now,
-      };
-      this.rows[index] = updated;
-      return updated;
-    }
-    const row = {
-      id: scriptId,
-      agent_id: agentId,
-      name,
-      description,
-      parameters,
-      source,
-      source_hash: sourceHash,
-      created_at: now,
-      updated_at: now,
-    };
-    this.rows.push(row);
-    return row;
-  }
-
-  async getAgentScript(agentId: string, name: string) {
-    return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
-  }
-
-  async deleteAgentScript(_actor: ArtifactActor, agentId: string, name: string) {
-    const index = this.rows.findIndex((row) => row.agent_id === agentId && row.name === name);
-    if (index < 0) {
-      return null;
-    }
-    return this.rows.splice(index, 1)[0] ?? null;
-  }
-}
 
 function schemaRequired(name: string): unknown {
   const schema = REGISTRY[name]?.schema as {

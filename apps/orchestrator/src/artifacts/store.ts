@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type pg from "pg";
 import { formatColumnTimestamp, formatOperationalTimestamp } from "../db/codecs.js";
-import { isUniqueViolation, stamp, withTransaction } from "../db/pg.js";
+import { isUniqueViolation, type Queryable, stamp, withTransaction } from "../db/pg.js";
 import { newId } from "../lib/ids.js";
 import { EMPTY_MEMORY } from "../memory/index.js";
 import {
@@ -87,8 +87,6 @@ import {
   type ArtifactLevel,
   type HiddenGuilds,
 } from "./types.js";
-
-type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
 const ISO_DATETIME_SQL_RE = String.raw`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$`;
 

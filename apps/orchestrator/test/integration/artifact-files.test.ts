@@ -68,8 +68,14 @@ const beta = agentActor({ orgId: "org_home", guildId: "guild_beta", agentId: "a_
 describe("shared files", { concurrency: 1 }, () => {
   before(async () => {
     const now = new Date();
-    await repo.insertGuild("guild_alpha", "alpha", now, "org_home", "");
-    await repo.insertGuild("guild_beta", "beta", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_alpha", name: "alpha", orgId: "org_home", about: "" },
+      now,
+    );
+    await repo.insertGuild(
+      { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_alpha", "guild_alpha", "alpha", "alpha");
     await seedAgent("a_beta", "guild_beta", "beta", "beta");
   });

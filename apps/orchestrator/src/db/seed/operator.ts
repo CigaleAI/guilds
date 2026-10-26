@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { SEED_ORG_FOUNDERS, SEED_ORG_ID, SEED_ORG_NAME, SEED_ORG_SLUG } from "../../organisations/index.js";
 import { SEED_USERS } from "../../users/index.js";
-import { insertDefaultMachine } from "../repositories.js";
+import { insertDefaultMachine } from "../machines.js";
 import { isUniqueViolation, withTransaction } from "../pg.js";
 
 /**

@@ -1,9 +1,6 @@
-import type pg from "pg";
 import { newId } from "../lib/ids.js";
-import { stamp } from "./pg.js";
+import { type Queryable, stamp } from "./pg.js";
 import { iso } from "./views.js";
-
-type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
 /** The coach message an operator applied a change from: its Studio session and sequence. */
 export type StudioOrigin = { sessionId: string; seq: number };

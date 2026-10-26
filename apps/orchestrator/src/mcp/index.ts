@@ -1,4 +1,6 @@
 import { decryptPayload } from "../credentials/crypto.js";
+import type { NewBinding } from "../db/bindings.js";
+import type { McpConnectionLogin } from "../db/mcp.js";
 import { jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
 import { assertPublicHost, EndpointError, type HostLookup } from "../net/endpoints.js";
@@ -576,25 +578,11 @@ type McpDb = GithubRepositoryRecorder & {
   countConnectorCalls?(orgId: string, connectorId: string, month: string): Promise<number>;
   recordConnectorCall?(orgId: string, connectorId: string, month: string, now: Date): Promise<void>;
   replaceMcpTools(connectionId: string, tools: ListedTool[], now: Date): Promise<void>;
-  insertBindingIfAbsent?(
-    bindingId: string,
-    catalogKind: string,
-    catalogId: string,
-    scope: string,
-    scopeId: string | null,
-    enabled: boolean,
-    now: Date,
-  ): Promise<Record<string, unknown>>;
+  insertBindingIfAbsent?(binding: NewBinding, now: Date): Promise<unknown>;
   saveMcpConnection?(
     connectionId: string,
-    options: {
-      ciphertext: Buffer;
-      nonce: Buffer;
-      status: string;
-      accountHint: string;
-      oauthState: string | null;
-      now: Date;
-    },
+    login: McpConnectionLogin,
+    now: Date,
   ): Promise<Record<string, unknown> | null>;
   updateMcpServerConfig?(
     serverId: string,
@@ -616,14 +604,17 @@ export async function markDisconnected(db: LoginDb, connection: Record<string, u
   if (!db.saveMcpConnection) {
     throw new McpError("mcp db cannot save connections");
   }
-  await db.saveMcpConnection(String(connection.id), {
-    ciphertext: connection.ciphertext as Buffer,
-    nonce: connection.nonce as Buffer,
-    status: "disconnected",
-    accountHint: String(connection.account_hint ?? ""),
-    oauthState: null,
-    now: new Date(),
-  });
+  await db.saveMcpConnection(
+    String(connection.id),
+    {
+      ciphertext: connection.ciphertext as Buffer,
+      nonce: connection.nonce as Buffer,
+      status: "disconnected",
+      accountHint: String(connection.account_hint ?? ""),
+      oauthState: null,
+    },
+    new Date(),
+  );
 }
 
 /** A server's connector: its manifest and adapter, or the plain MCP client for a server created by hand. */
@@ -830,12 +821,14 @@ export class McpPool {
     }
     for (const tool of off.values()) {
       await db.insertBindingIfAbsent(
-        newId("bind"),
-        "mcp_tool",
-        tool.namespaced_name,
-        ownerScope,
-        ownerScope === "platform" ? null : (ownerId as string),
-        false,
+        {
+          bindingId: newId("bind"),
+          catalogKind: "mcp_tool",
+          catalogId: tool.namespaced_name,
+          scope: ownerScope,
+          scopeId: ownerScope === "platform" ? null : (ownerId as string),
+          enabled: false,
+        },
         now,
       );
     }

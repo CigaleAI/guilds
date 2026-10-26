@@ -66,7 +66,7 @@ and `trusted-header`. Paths below are under
 | Identity | `IdentityProvider` (`http/identity.ts`) | `ServerExtension.identity` | `compat-cookie` or `trusted-header` |
 | Organisation policy | `OrgPolicy` (`policy/index.ts`) | `ServerExtension.policy` | `OPEN_POLICY`: no cap |
 | Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`) | `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys |
-| Organisation created | `OrgCreatedHook` (`db/repositories.ts`) | `ServerExtension.orgCreated` | Nothing |
+| Organisation created | `OrgCreatedHook` (`db/orgs.ts`) | `ServerExtension.orgCreated` | Nothing |
 | Sandbox provider | `SandboxProvider` (`extension.ts`) | `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) |
 | Blob store | `BlobStore` (`lib/blob-store.ts`) | `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT` |
 | Instance admin | `InstanceAdmin` (`http/instance-admin.ts`) | `ServerExtension.instanceAdmin` | An owner of the seed organisation `org_home` |

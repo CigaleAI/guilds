@@ -61,19 +61,55 @@ before(async () => {
     generation: generation as never,
   });
   const now = new Date();
-  await repo.insertUser("user_secret_admin", "secret-admin", now, null, "secret-admin@example.com");
+  await repo.insertUser(
+    {
+      userId: "user_secret_admin",
+      name: "secret-admin",
+      image: null,
+      email: "secret-admin@example.com",
+    },
+    now,
+  );
   await repo.insertMember("org_home", "user_secret_admin", "admin", now);
-  await repo.insertUser("user_secret_member", "secret-member", now, null, "secret-member@example.com");
+  await repo.insertUser(
+    {
+      userId: "user_secret_member",
+      name: "secret-member",
+      image: null,
+      email: "secret-member@example.com",
+    },
+    now,
+  );
   await repo.insertMember("org_home", "user_secret_member", "member", now);
-  await repo.insertGuild("guild_open", "open-desk", now, "org_home");
-  await repo.insertGuild("guild_side", "side-desk", now, "org_home");
-  await repo.insertGuild("guild_hidden", "hidden-lab", now, "org_home", "", 20, "private", "user_operator");
+  await repo.insertGuild({ guildId: "guild_open", name: "open-desk", orgId: "org_home" }, now);
+  await repo.insertGuild({ guildId: "guild_side", name: "side-desk", orgId: "org_home" }, now);
+  await repo.insertGuild(
+    {
+      guildId: "guild_hidden",
+      name: "hidden-lab",
+      orgId: "org_home",
+      about: "",
+      agentMessageLimit: 20,
+      visibility: "private",
+      creatorUserId: "user_operator",
+    },
+    now,
+  );
   const config = { model: TEST_MODEL };
-  await repo.insertAgent("a_open", "guild_open", "opener", config, now);
-  await repo.insertAgent("a_open_two", "guild_open", "second", config, now);
-  await repo.insertAgent("a_side", "guild_side", "sider", config, now);
-  await repo.insertAgent("a_hidden", "guild_hidden", "hider", config, now);
-  await repo.insertOrg("org_elsewhere", "Elsewhere", "elsewhere", "user_secret_member", now);
+  await repo.insertAgent({ agentId: "a_open", guildId: "guild_open", name: "opener", config }, now);
+  await repo.insertAgent(
+    { agentId: "a_open_two", guildId: "guild_open", name: "second", config },
+    now,
+  );
+  await repo.insertAgent({ agentId: "a_side", guildId: "guild_side", name: "sider", config }, now);
+  await repo.insertAgent(
+    { agentId: "a_hidden", guildId: "guild_hidden", name: "hider", config },
+    now,
+  );
+  await repo.insertOrg(
+    { orgId: "org_elsewhere", name: "Elsewhere", slug: "elsewhere", userId: "user_secret_member" },
+    now,
+  );
 });
 
 after(async () => {
@@ -292,9 +328,12 @@ test("access changes replace the set and refresh the agents they reach", async (
 test("a secret goes with the guild or agent that held its last grant", async () => {
   const now = new Date();
   const config = { model: TEST_MODEL };
-  await repo.insertGuild("guild_doomed", "doomed-desk", now, "org_home");
-  await repo.insertAgent("a_doomed", "guild_doomed", "doomed", config, now);
-  await repo.insertAgent("a_gone", "guild_side", "leaver", config, now);
+  await repo.insertGuild({ guildId: "guild_doomed", name: "doomed-desk", orgId: "org_home" }, now);
+  await repo.insertAgent(
+    { agentId: "a_doomed", guildId: "guild_doomed", name: "doomed", config },
+    now,
+  );
+  await repo.insertAgent({ agentId: "a_gone", guildId: "guild_side", name: "leaver", config }, now);
   const inGuild = (await create(OWNER, { name: "ONLY_DOOMED", guild_ids: ["guild_doomed"], agent_ids: ["a_doomed"] })).json().id;
   const shared = (await create(OWNER, { name: "DOOMED_AND_SIDE", guild_ids: ["guild_doomed", "guild_side"] })).json().id;
   const onlyAgent = (await create(OWNER, { name: "ONLY_LEAVER", agent_ids: ["a_gone"] })).json().id;

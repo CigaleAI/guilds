@@ -647,7 +647,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/users", async (request) => {
     await requireUserDirectory(request);
-    return (await repo.listUsers()).map((row) => userItem(row as never));
+    return (await repo.listUsers()).map((row) => userItem(row));
   });
 
   app.post("/api/users", async (request, reply) => {
@@ -660,8 +660,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const name = validateUserName(String(body.name ?? ""));
       const email = validateUserEmail(body.email ?? null);
-      const row = await repo.insertUser(newId("user"), name, new Date(), null, email);
-      await send(reply, 201, userItem(row as never));
+      const row = await repo.insertUser(
+        { userId: newId("user"), name, image: null, email },
+        new Date(),
+      );
+      await send(reply, 201, userItem(row));
     } catch (error) {
       if (error instanceof UserValidationError) {
         throw new HttpError(422, error.message);
@@ -695,7 +698,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (row === null) {
       throw new HttpError(404, "user not found");
     }
-    return userItem(row as never);
+    return userItem(row);
   });
 
   app.delete("/api/users/:user_id", async (request, reply) => {
@@ -732,7 +735,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const name = validateOrgName(String(body.name ?? ""));
       const slug = validateSlug(String(body.slug ?? ""));
-      const row = await repo.insertOrg(newId("org"), name, slug, String(user.id), new Date());
+      const row = await repo.insertOrg(
+        { orgId: newId("org"), name, slug, userId: String(user.id) },
+        new Date(),
+      );
       const item = orgItem(row);
       item.role = "owner";
       await send(reply, 201, item);
@@ -2001,12 +2007,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       let row: Record<string, unknown> | null;
       try {
         row = await repo.updateAgentConfig(agentId, config, new Date(), {
-          name,
-          avatarShape,
-          avatarColor,
-          focus,
-          wakeTriggers,
-        });
+            name,
+            avatarShape,
+            avatarColor,
+            focus,
+            wakeTriggers,
+          });
       } catch (error) {
         if (moves) {
           await generationOf(deps).moveAgent(agentId, String(existing.machine_id), {
@@ -2984,21 +2990,26 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     now: Date,
   ): Promise<Record<string, unknown> | null> {
     const [ciphertext, nonce] = encrypt(stored);
-    const connected = await repo.saveMcpConnection(String(row.id), {
-      ciphertext,
-      nonce,
-      status: "connected",
-      accountHint: accountHint(stored),
-      oauthState: null,
+    const connected = await repo.saveMcpConnection(
+      String(row.id),
+      {
+        ciphertext,
+        nonce,
+        status: "connected",
+        accountHint: accountHint(stored),
+        oauthState: null,
+      },
       now,
-    });
+    );
     if (connected !== null) {
       await repo.bindMcpConnection(
-        newId("bind"),
-        String(connected.mcp_server_id),
-        String(connected.owner_scope),
-        connected.owner_id === null || connected.owner_id === undefined ? null : String(connected.owner_id),
-        String(connected.id),
+        {
+          bindingId: newId("bind"),
+          serverId: connected.mcp_server_id,
+          ownerScope: connected.owner_scope,
+          ownerId: connected.owner_id,
+          connectionId: connected.id,
+        },
         now,
       );
       try {
@@ -3044,21 +3055,20 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   /** Stores a signed-in login that still needs its settings: pending, bound, with no sign-in under way. */
   async function awaitSettings(row: Record<string, unknown>, stored: Record<string, unknown>, now: Date): Promise<void> {
     const [ciphertext, nonce] = encrypt(stored);
-    const saved = await repo.saveMcpConnection(String(row.id), {
-      ciphertext,
-      nonce,
-      status: "pending",
-      accountHint: accountHint(stored),
-      oauthState: null,
+    const saved = await repo.saveMcpConnection(
+      String(row.id),
+      { ciphertext, nonce, status: "pending", accountHint: accountHint(stored), oauthState: null },
       now,
-    });
+    );
     if (saved !== null) {
       await repo.bindMcpConnection(
-        newId("bind"),
-        String(saved.mcp_server_id),
-        String(saved.owner_scope),
-        saved.owner_id === null || saved.owner_id === undefined ? null : String(saved.owner_id),
-        String(saved.id),
+        {
+          bindingId: newId("bind"),
+          serverId: saved.mcp_server_id,
+          ownerScope: saved.owner_scope,
+          ownerId: saved.owner_id,
+          connectionId: saved.id,
+        },
         now,
       );
     }
@@ -3089,23 +3099,28 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     installation: GithubInstallation,
   ): Promise<void> {
     const [ciphertext, nonce] = encrypt({ installation_id: installation.id, account: installation.account });
-    const connected = await repo.saveMcpConnection(String(row.id), {
-      ciphertext,
-      nonce,
-      status: "connected",
-      accountHint: installation.account,
-      oauthState: null,
-      now: new Date(),
-    });
+    const connected = await repo.saveMcpConnection(
+      String(row.id),
+      {
+        ciphertext,
+        nonce,
+        status: "connected",
+        accountHint: installation.account,
+        oauthState: null,
+      },
+      new Date(),
+    );
     if (connected === null) {
       throw new OAuthError("the pending connection was removed");
     }
     await repo.bindMcpConnection(
-      newId("bind"),
-      String(connected.mcp_server_id),
-      String(connected.owner_scope),
-      connected.owner_id === null || connected.owner_id === undefined ? null : String(connected.owner_id),
-      String(connected.id),
+      {
+        bindingId: newId("bind"),
+        serverId: connected.mcp_server_id,
+        ownerScope: connected.owner_scope,
+        ownerId: connected.owner_id,
+        connectionId: connected.id,
+      },
       new Date(),
     );
   }
@@ -3169,14 +3184,17 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           ? (fields.pending.oauth as Record<string, unknown>)
           : {};
       const [ciphertext, nonce] = encrypt({ ...fields.pending, oauth });
-      await repo.saveMcpConnection(String(row.id), {
-        ciphertext,
-        nonce,
-        status: "pending",
-        accountHint: "",
-        oauthState: String(row.oauth_state ?? ""),
-        now: new Date(),
-      });
+      await repo.saveMcpConnection(
+        String(row.id),
+        {
+          ciphertext,
+          nonce,
+          status: "pending",
+          accountHint: "",
+          oauthState: String(row.oauth_state ?? ""),
+        },
+        new Date(),
+      );
       return { status: "install" };
     }
     const pickerState = newState();
@@ -3190,14 +3208,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         replaces: pendingReplaces(fields.pending),
       },
     });
-    await repo.saveMcpConnection(String(row.id), {
-      ciphertext,
-      nonce,
-      status: "pending",
-      accountHint: "",
-      oauthState: pickerState,
-      now: new Date(),
-    });
+    await repo.saveMcpConnection(
+      String(row.id),
+      { ciphertext, nonce, status: "pending", accountHint: "", oauthState: pickerState },
+      new Date(),
+    );
     return { status: "pick", state: pickerState };
   }
 
@@ -3352,17 +3367,19 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         );
       }
       const [ciphertext, nonce] = encrypt(payload);
-      const row = await repo.insertSecret({
-        secretId: newId("sec"),
-        orgId,
-        name,
-        description,
-        access,
-        ciphertext,
-        nonce,
-        createdByUserId: String(user.id),
-        now: new Date(),
-      });
+      const row = await repo.insertSecret(
+        {
+          secretId: newId("sec"),
+          orgId,
+          name,
+          description,
+          access,
+          ciphertext,
+          nonce,
+          createdByUserId: String(user.id),
+        },
+        new Date(),
+      );
       await deps.generation?.secretAccessChanged(await repo.listAgentIdsReached(orgId, access));
       await send(reply, 201, secretMetadata(row, viewer));
     } catch (error) {
@@ -3537,7 +3554,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       });
       let writeConnectionId = overlay.connection_id;
       if (catalogKind === "mcp" && !replaceConnection) {
-        const existing = await repo.getBinding(catalogKind, catalogId, scope, scopeId);
+        const existing = await repo.getBinding({ catalogKind, catalogId, scope, scopeId });
         if (existing !== null) {
           writeConnectionId =
             existing.connection_id === null || existing.connection_id === undefined
@@ -3549,21 +3566,25 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       const row =
         scope === "platform"
           ? await repo.upsertPlatformBinding(
-              newId("bind"),
-              overlay.catalog_kind,
-              overlay.catalog_id,
-              overlay.enabled,
-              writeConnectionId,
+              {
+                bindingId: newId("bind"),
+                catalogKind: overlay.catalog_kind,
+                catalogId: overlay.catalog_id,
+                enabled: overlay.enabled,
+                connectionId: writeConnectionId,
+              },
               now,
             )
           : await repo.upsertBinding(
-              newId("bind"),
-              overlay.catalog_kind,
-              overlay.catalog_id,
-              overlay.scope,
-              overlay.scope_id,
-              overlay.enabled,
-              writeConnectionId,
+              {
+                bindingId: newId("bind"),
+                catalogKind: overlay.catalog_kind,
+                catalogId: overlay.catalog_id,
+                scope: overlay.scope,
+                scopeId: overlay.scope_id,
+                enabled: overlay.enabled,
+                connectionId: writeConnectionId,
+              },
               now,
               userActor(user),
             );
@@ -3583,7 +3604,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       const [catalogKind, catalogId] = validateCatalog(query.catalog_kind ?? "", query.catalog_id ?? "");
       const [scope, scopeId] = validateScope(query.scope ?? "", query.scope_id ?? null);
       await scopeGuild(repo, scope, scopeId, user);
-      const row = await repo.deleteBinding(catalogKind, catalogId, scope, scopeId, userActor(user));
+      const row = await repo.deleteBinding(
+        { catalogKind, catalogId, scope, scopeId },
+        userActor(user),
+      );
       if (row === null) {
         throw new HttpError(404, "binding not found");
       }
@@ -3747,15 +3771,20 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       [ciphertext, nonce] = encrypt({});
     }
     const row = await repo.connectMcp(
-      newId("conn"),
-      newId("bind"),
-      String(server.id),
-      ownerScope,
-      ownerId,
-      ciphertext,
-      nonce,
+      {
+        connectionId: newId("conn"),
+        bindingId: newId("bind"),
+        serverId: String(server.id),
+        ownerScope,
+        ownerId,
+        ciphertext,
+        nonce,
+        oauthState,
+        bind,
+        status: "pending",
+        accountHint: "",
+      },
       now,
-      { oauthState, bind, status: "pending", accountHint: "" },
     );
     const payload: Record<string, unknown> = connectionMetadata(row);
     if (authorize !== undefined) {
@@ -3861,14 +3890,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
               replaces: pendingReplaces(pending),
             },
           });
-          await repo.saveMcpConnection(String(row.id), {
-            ciphertext,
-            nonce,
-            status: "pending",
-            accountHint: "",
-            oauthState,
-            now: new Date(),
-          });
+          await repo.saveMcpConnection(
+            String(row.id),
+            { ciphertext, nonce, status: "pending", accountHint: "", oauthState },
+            new Date(),
+          );
           return reply.redirect(userAuthorizationUrl(requireGithubApp(), oauthState, redirectUri));
         } catch (caught) {
           await discardAttempt(row);
@@ -4171,9 +4197,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     const connects = awaitingSettings(connection) && settingsComplete(schema, settings);
     const row = await repo.updateMcpConnectionSettings(String(connection.id), settings, new Date(), {
-      connect: connects,
-      accountHint: hint,
-    });
+        connect: connects,
+        accountHint: hint,
+      });
     if (row === null) {
       throw new HttpError(404, "connection not found");
     }

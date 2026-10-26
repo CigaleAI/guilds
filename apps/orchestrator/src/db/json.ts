@@ -11,3 +11,7 @@ export function rowGet(row: Record<string, unknown>, key: string): unknown {
   }
   return undefined;
 }
+
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}

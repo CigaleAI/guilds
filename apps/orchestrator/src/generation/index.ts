@@ -120,10 +120,45 @@ import {
 import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
-import { planAfterFire, rowTiming, type ScheduleTiming } from "../schedules/timing.js";
+import { planAfterFire, rowTiming } from "../schedules/timing.js";
 import type { PlannedWake } from "../schedules/window.js";
 import { instructionHash, scheduleWakeUserMessage } from "../schedules/item.js";
 import { Schedules, type ScheduleDatabase } from "../schedules/service.js";
+import type {
+  AgentRow,
+  AgentScriptRow,
+  GuildAgentRow,
+  NewAgentScript,
+} from "../db/agents.js";
+import type { OrgModelProviderRow } from "../db/orgs.js";
+import type { GuildRepositoryListItemRow, GuildRow } from "../db/guilds.js";
+import type { GroupMessageRow } from "../db/group-chat.js";
+import type { McpConnectionLogin, McpConnectionRow } from "../db/mcp.js";
+import type { OrgMonthlyUsageRow } from "../db/usage.js";
+import type { LoadedConnector } from "../connectors/load.js";
+import type {
+  GuildIssueRow,
+  IssueRow,
+  IssueStatusChange,
+  NewIssue,
+} from "../db/issues.js";
+import type {
+  ActiveRunRow,
+  MessageRow,
+  NewDirectRun,
+  NewGroupRun,
+  NewMessage,
+  NewScheduleRun,
+  RunRow,
+} from "../db/runs.js";
+import type {
+  AgentScheduleRow,
+  GuildScheduleRow,
+  NewSchedule,
+  ScheduleKey,
+  ScheduleRow,
+  ScheduleUpdate,
+} from "../db/schedules.js";
 import { redact } from "../secrets/index.js";
 import { readSecretFile, removeSecretFile, storeAgentSecret, type AgentSecretsDatabase } from "../secrets/agent.js";
 import { collectRunState } from "../state/index.js";
@@ -849,82 +884,33 @@ function preparedRunMetadata(
 export type GenerationDb = AccessDatabase &
   AgentSecretsDatabase &
   GroupChatDatabase & {
-    getRun(runId: string): Promise<Record<string, unknown> | null>;
-    getAgent(agentId: string): Promise<Record<string, unknown> | null>;
-    getGuild(guildId: string): Promise<Record<string, unknown> | null>;
-    listAgents(guildId: string): Promise<Array<Record<string, unknown>>>;
-    listRuns(agentId: string): Promise<Array<Record<string, unknown>>>;
-    listActiveRuns(): Promise<Array<Record<string, unknown>>>;
+    getRun(runId: string): Promise<RunRow | null>;
+    getAgent(agentId: string): Promise<AgentRow | null>;
+    getGuild(guildId: string): Promise<GuildRow | null>;
+    listAgents(guildId: string): Promise<GuildAgentRow[]>;
+    listRuns(agentId: string): Promise<RunRow[]>;
+    listActiveRuns(): Promise<ActiveRunRow[]>;
     listGroupMessages(
       guildId: string,
       options?: { throughSeq?: number | null },
-    ): Promise<Array<Record<string, unknown>>>;
-    createRun(
-      runId: string,
-      agentId: string,
-      configSnapshot: Record<string, unknown>,
-      systemContent: string,
-      taskContent: string,
-      userContent: string | null,
-      now: Date,
-      options: {
-        systemPromptHash: string;
-        taskPromptHash: string;
-        memoryPromptHash: string;
-        extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]>;
-        runMetadata?: Record<string, unknown>;
-        userMetadata?: Record<string, unknown>;
-        startedByUserId?: string | null;
-      },
-    ): Promise<void>;
-    createGroupRun(
-      runId: string,
-      agentId: string,
-      configSnapshot: Record<string, unknown>,
-      systemContent: string,
-      taskContent: string,
-      projected: Array<[Record<string, unknown>, Record<string, unknown>]>,
-      throughSeq: number,
-      now: Date,
-      options: {
-        systemPromptHash: string;
-        taskPromptHash: string;
-        memoryPromptHash: string;
-        runMetadata?: Record<string, unknown>;
-        wakeGroupMessageId?: number | null;
-      },
-    ): Promise<void>;
-    createScheduleRun(
-      runId: string,
-      agentId: string,
-      configSnapshot: Record<string, unknown>,
-      systemContent: string,
-      taskContent: string,
-      projected: Array<[Record<string, unknown>, Record<string, unknown>]>,
-      now: Date,
-      options: {
-        systemPromptHash: string;
-        taskPromptHash: string;
-        memoryPromptHash: string;
-        scheduleId?: string | null;
-        runMetadata?: Record<string, unknown>;
-      },
-    ): Promise<void>;
-    insertMessage(
-      runId: string,
-      seq: number,
-      payload: Record<string, unknown>,
-      metadata: Record<string, unknown>,
-      now: Date,
-    ): Promise<Record<string, unknown>>;
-    listMessages(runId: string): Promise<Array<Record<string, unknown>>>;
+    ): Promise<GroupMessageRow[]>;
+    createRun(run: NewDirectRun, now: Date): Promise<void>;
+    createGroupRun(run: NewGroupRun, now: Date): Promise<void>;
+    createScheduleRun(run: NewScheduleRun, now: Date): Promise<void>;
+    insertMessage(message: NewMessage, now: Date): Promise<MessageRow>;
+    listMessages(runId: string): Promise<MessageRow[]>;
     listPayloads(runId: string): Promise<Array<Record<string, unknown>>>;
     nextSeq(runId: string): Promise<number>;
     nextGeneration(runId: string): Promise<number>;
     appendRunError(runId: string, entry: Record<string, unknown>, now: Date): Promise<unknown[]>;
     mergeRunMetadata(runId: string, extra: Record<string, unknown>, now: Date): Promise<void>;
     /** Records when the agent's harness last found a login in its home. */
-    markHarnessLogin?(agentId: string, harness: Harness, now: Date, account: string | null): Promise<void>;
+    markHarnessLogin?(
+      agentId: string,
+      harness: string,
+      now: Date,
+      account: string | null,
+    ): Promise<void>;
     clearHarnessLogin?(agentId: string, harness: Harness): Promise<void>;
     /** Keeps the harness CLIs a machine's image carries. */
     setMachineHarnesses?(machineId: string, harnesses: string[]): Promise<void>;
@@ -942,89 +928,57 @@ export type GenerationDb = AccessDatabase &
       now: Date,
     ): Promise<void>;
     updateRunScripts(runId: string, scripts: RunScriptSnapshot[], now: Date): Promise<void>;
-    listDueSchedules(now: Date): Promise<Array<Record<string, unknown>>>;
+    listDueSchedules(now: Date): Promise<ScheduleRow[]>;
     markScheduleFired(scheduleId: string, now: Date, wake: PlannedWake): Promise<void>;
     listActiveRunAgentIdsForSecret(secretId: string): Promise<string[]>;
     purgeAgent(agentId: string): Promise<void>;
     purgeGuild(guildId: string): Promise<void>;
-    getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null>;
-    getMcpServer(serverId: string): Promise<Record<string, unknown> | null>;
-    getAgentScript(agentId: string, name: string): Promise<Record<string, unknown> | null>;
+    getMcpConnection(connectionId: string): Promise<McpConnectionRow | null>;
+    getMcpServer(serverId: string): Promise<LoadedConnector | null>;
+    getAgentScript(agentId: string, name: string): Promise<AgentScriptRow | null>;
     upsertAgentScript(
+      script: NewAgentScript,
       actor: ArtifactActor,
-      scriptId: string,
-      agentId: string,
-      name: string,
-      description: string,
-      parameters: Record<string, unknown> | null,
-      source: string,
-      sourceHash: string,
       now: Date,
-    ): Promise<Record<string, unknown>>;
-    listAgentScripts(agentId: string): Promise<Array<Record<string, unknown>>>;
+    ): Promise<AgentScriptRow>;
+    listAgentScripts(agentId: string): Promise<AgentScriptRow[]>;
     deleteAgentScript(
       actor: ArtifactActor,
       agentId: string,
       name: string,
-    ): Promise<Record<string, unknown> | null>;
-    insertSchedule?(
-      scheduleId: string,
+    ): Promise<AgentScriptRow | null>;
+    insertSchedule?(schedule: NewSchedule, now: Date, actor: ChangeActor): Promise<ScheduleRow>;
+    deleteSchedule?(
       agentId: string,
-      timing: ScheduleTiming,
-      description: string,
-      instruction: string,
+      scheduleId: string,
+      actor: ChangeActor,
+    ): Promise<ScheduleRow | null>;
+    getSchedule?(agentId: string, scheduleId: string): Promise<ScheduleRow | null>;
+    pauseSchedule?(key: ScheduleKey, now: Date, actor: ChangeActor): Promise<ScheduleRow | null>;
+    resumeSchedule?(
+      key: ScheduleKey,
       wake: PlannedWake,
       now: Date,
       actor: ChangeActor,
-    ): Promise<Record<string, unknown>>;
-    deleteSchedule?(agentId: string, scheduleId: string, actor: ChangeActor): Promise<Record<string, unknown> | null>;
-    getSchedule?(agentId: string, scheduleId: string): Promise<Record<string, unknown> | null>;
-    setSchedulePaused?(
-      agentId: string,
-      scheduleId: string,
-      paused: boolean,
-      wake: PlannedWake | null,
-      now: Date,
-      actor: ChangeActor,
-    ): Promise<Record<string, unknown> | null>;
-    listSchedules?(agentId: string): Promise<Array<Record<string, unknown>>>;
-    listSchedulesForGuild?(guildId: string): Promise<Array<Record<string, unknown>>>;
+    ): Promise<ScheduleRow | null>;
+    listSchedules?(agentId: string): Promise<AgentScheduleRow[]>;
+    listSchedulesForGuild?(guildId: string): Promise<GuildScheduleRow[]>;
     updateSchedule?(
-      agentId: string,
-      scheduleId: string,
-      fields: { timing: ScheduleTiming; description: string; instruction: string; paused: boolean },
-      wake: PlannedWake | null,
+      key: ScheduleKey,
+      update: ScheduleUpdate,
       now: Date,
       actor: ChangeActor,
-    ): Promise<Record<string, unknown> | null>;
+    ): Promise<ScheduleRow | null>;
     setScheduleNextRun?(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
-    insertIssue?(
-      issueId: string,
-      guildId: string,
-      orgId: string,
-      agentId: string | null,
-      agentName: string,
-      runId: string | null,
-      kind: string,
-      severity: string,
-      summary: string,
-      detail: string,
-      toolName: string | null,
-      now: Date,
-    ): Promise<Record<string, unknown>>;
-    listIssuesForGuild?(
-      guildId: string,
-      status: string | null,
-    ): Promise<Array<Record<string, unknown>>>;
-    getIssue?(guildId: string, issueId: string): Promise<Record<string, unknown> | null>;
+    insertIssue?(issue: NewIssue, now: Date): Promise<IssueRow>;
+    listIssuesForGuild?(guildId: string, status: string | null): Promise<GuildIssueRow[]>;
+    getIssue?(guildId: string, issueId: string): Promise<GuildIssueRow | null>;
     setIssueStatus?(
       guildId: string,
       issueId: string,
-      status: string,
-      resolvedAt: Date | null,
-      resolvedBy: string | null,
+      change: IssueStatusChange,
       now: Date,
-    ): Promise<Record<string, unknown> | null>;
+    ): Promise<GuildIssueRow | null>;
     resolveOpenIssues?(
       guildId: string,
       resolvedAt: Date,
@@ -1038,26 +992,23 @@ export type GenerationDb = AccessDatabase &
       agentId: string,
       machineId: string,
       options?: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds },
-    ): Promise<{ from: { machineId: string; slot: number }; to: { machineId: string; slot: number } } | null>;
-    listGuildRepositories?(guildId: string): Promise<Array<Record<string, unknown>>>;
+    ): Promise<{
+      from: { machineId: string; slot: number };
+      to: { machineId: string; slot: number };
+    } | null>;
+    listGuildRepositories?(guildId: string): Promise<GuildRepositoryListItemRow[]>;
     getMcpConnectionForOwner?(
       serverId: string,
       ownerScope: string,
       ownerId: string | null,
-    ): Promise<Record<string, unknown> | null>;
+    ): Promise<McpConnectionRow | null>;
     saveMcpConnection?(
       connectionId: string,
-      options: {
-        ciphertext: Buffer;
-        nonce: Buffer;
-        status: string;
-        accountHint: string;
-        oauthState: string | null;
-        now: Date;
-      },
-    ): Promise<Record<string, unknown> | null>;
-    getOrgMonthlyUsage?(orgId: string, month: string): Promise<Record<string, unknown> | null>;
-    getOrgModelProvider?(orgId: string, provider: string): Promise<Record<string, unknown> | null>;
+      login: McpConnectionLogin,
+      now: Date,
+    ): Promise<McpConnectionRow | null>;
+    getOrgMonthlyUsage?(orgId: string, month: string): Promise<OrgMonthlyUsageRow | null>;
+    getOrgModelProvider?(orgId: string, provider: string): Promise<OrgModelProviderRow | null>;
   };
 
 export type GenerationNotes = Partial<DirectoryNotes> &
@@ -1302,14 +1253,13 @@ export class GenerationLoop implements GroupRunner {
     const userMetadata = attachments.length ? { attachments } : undefined;
     const create = () =>
       this.db.createRun(
-        runId,
-        agentId,
-        prepared.snapshot({ schedules: true, direct: true }),
-        prepared.system,
-        prepared.task,
-        opening,
-        now,
         {
+          runId,
+          agentId,
+          configSnapshot: prepared.snapshot({ schedules: true, direct: true }),
+          systemContent: prepared.system,
+          taskContent: prepared.task,
+          userContent: opening,
           systemPromptHash: current.system,
           taskPromptHash: current.task,
           memoryPromptHash: current.memory,
@@ -1317,6 +1267,7 @@ export class GenerationLoop implements GroupRunner {
           ...(runMetadata ? { runMetadata } : {}),
           ...(userMetadata ? { userMetadata } : {}),
         },
+        now,
       );
     if (opening === null) {
       await create();
@@ -1371,21 +1322,21 @@ export class GenerationLoop implements GroupRunner {
     const woke = wakeMessage(prepared.history_rows, agentId, deliveredThrough);
     const create = () =>
       this.db.createGroupRun(
-        runId,
-        agentId,
-        prepared.snapshot({ schedules: true }),
-        prepared.system,
-        prepared.task,
-        projected,
-        throughSeq,
-        now,
         {
+          runId,
+          agentId,
+          configSnapshot: prepared.snapshot({ schedules: true }),
+          systemContent: prepared.system,
+          taskContent: prepared.task,
+          projected,
+          throughSeq,
           systemPromptHash: current.system,
           taskPromptHash: current.task,
           memoryPromptHash: current.memory,
           wakeGroupMessageId: woke ? Number(woke.id) : null,
           ...(runMetadata ? { runMetadata } : {}),
         },
+        now,
       );
     try {
       await this._create_started(runId, agentId, create);
@@ -1402,12 +1353,12 @@ export class GenerationLoop implements GroupRunner {
     await this.db.completeGroupDelivery(runId, agentId, throughSeq, new Date());
   }
 
-  async deliver_schedule_run(schedule: Record<string, unknown>): Promise<void> {
+  async deliver_schedule_run(schedule: ScheduleRow): Promise<void> {
     return this.deliverScheduleRun(schedule);
   }
 
-  async deliverScheduleRun(schedule: Record<string, unknown>): Promise<void> {
-    const agentId = String(schedule.agent_id);
+  async deliverScheduleRun(schedule: ScheduleRow): Promise<void> {
+    const agentId = schedule.agent_id;
     let prepared: PreparedRun;
     try {
       prepared = await this._prepare_run(agentId);
@@ -1423,7 +1374,7 @@ export class GenerationLoop implements GroupRunner {
     const instruction = await this.schedules.instructionFor(agentId, schedule);
     const projected = [
       scheduleWakeUserMessage({
-        id: String(schedule.id),
+        id: schedule.id,
         timing: rowTiming(schedule),
         instruction,
         previousRunAt: schedule.last_run_at ? iso(schedule.last_run_at) : null,
@@ -1438,20 +1389,20 @@ export class GenerationLoop implements GroupRunner {
     };
     const create = () =>
       this.db.createScheduleRun(
-        runId,
-        agentId,
-        prepared.snapshot(),
-        prepared.system,
-        prepared.task,
-        projected,
-        now,
         {
+          runId,
+          agentId,
+          configSnapshot: prepared.snapshot(),
+          systemContent: prepared.system,
+          taskContent: prepared.task,
+          projected,
           systemPromptHash: current.system,
           taskPromptHash: current.task,
           memoryPromptHash: current.memory,
-          scheduleId: String(schedule.id),
+          scheduleId: schedule.id,
           runMetadata,
         },
+        now,
       );
     try {
       await this._create_started(runId, agentId, create);
@@ -1470,7 +1421,7 @@ export class GenerationLoop implements GroupRunner {
   async fireDueSchedules(now?: Date): Promise<void> {
     const when = now ?? new Date();
     for (const row of await this.db.listDueSchedules(when)) {
-      if (this._busy_agents.has(String(row.agent_id))) {
+      if (this._busy_agents.has(row.agent_id)) {
         continue;
       }
       try {
@@ -1481,7 +1432,7 @@ export class GenerationLoop implements GroupRunner {
         }
         if (error instanceof DeliveryCreateError) {
           writeLog("error", error.message, {
-            agent_id: String(row.agent_id),
+            agent_id: row.agent_id,
             operation: "schedule.fire",
           });
         } else {
@@ -1489,7 +1440,7 @@ export class GenerationLoop implements GroupRunner {
             "error",
             "schedule wake-up failed",
             {
-              agent_id: String(row.agent_id),
+              agent_id: row.agent_id,
               operation: "schedule.fire",
               error_type: errorName(error),
             },
@@ -1497,7 +1448,7 @@ export class GenerationLoop implements GroupRunner {
           );
         }
       }
-      await this.db.markScheduleFired(String(row.id), when, planAfterFire(row, when));
+      await this.db.markScheduleFired(row.id, when, planAfterFire(row, when));
     }
   }
 
@@ -1697,7 +1648,7 @@ export class GenerationLoop implements GroupRunner {
     if (!agentIds.length) {
       return;
     }
-    const live = new Set((await this.db.listActiveRuns()).map((row) => String(row.agent_id)));
+    const live = new Set((await this.db.listActiveRuns()).map((row) => row.agent_id));
     await this.refreshEnvironments(agentIds.filter((id) => live.has(id)));
   }
 
@@ -1725,7 +1676,7 @@ export class GenerationLoop implements GroupRunner {
       if (JSON.stringify(snapshot.secrets) === JSON.stringify(refs)) {
         continue;
       }
-      await this.db.updateRunSecrets(String(run.id), refs, now);
+      await this.db.updateRunSecrets(run.id, refs, now);
       snapshot.secrets = refs;
       run.config_snapshot = snapshot;
     }
@@ -2317,10 +2268,12 @@ export class GenerationLoop implements GroupRunner {
         await this.syncRunSecrets(agent);
       }
       await this.db.insertMessage(
-        runId,
-        seq,
-        { role: "user", content },
-        { generation, source: "ui", ...(attachments.length ? { attachments } : {}) },
+        {
+          runId,
+          seq,
+          payload: { role: "user", content },
+          metadata: { generation, source: "ui", ...(attachments.length ? { attachments } : {}) },
+        },
         now,
       );
     } catch (error) {
@@ -2381,7 +2334,7 @@ export class GenerationLoop implements GroupRunner {
   async reconcile(): Promise<void> {
     const now = new Date();
     for (const run of await this.db.listActiveRuns()) {
-      await this._resolve_unresolved(String(run.id));
+      await this._resolve_unresolved(run.id);
       const kind = runKind(run);
       if ((kind !== "group" && kind !== "schedule") || runWasResumed(run)) {
         continue;
@@ -2393,17 +2346,12 @@ export class GenerationLoop implements GroupRunner {
         error_type: "Interrupted",
         message: "orchestrator restarted",
       };
-      await this.db.appendRunError(String(run.id), entry, now);
+      await this.db.appendRunError(run.id, entry, now);
       if (kind === "group") {
         const through = run.group_chat_through_seq;
-        await this.db.completeGroupDelivery(
-          String(run.id),
-          String(run.agent_id),
-          Number(through || 0),
-          now,
-        );
+        await this.db.completeGroupDelivery(run.id, run.agent_id, through || 0, now);
       } else {
-        await this.db.completeRun(String(run.id), now);
+        await this.db.completeRun(run.id, now);
       }
     }
     await this.group_chat.resume_all();
@@ -2457,7 +2405,7 @@ export class GenerationLoop implements GroupRunner {
         throw error;
       }
       const operator = operatorActor({
-        orgId: String(agent.org_id),
+        orgId: agent.org_id,
         actorId: "hydrate",
         actorName: "operator",
         guildId: String(agent.guild_id),
@@ -2466,7 +2414,7 @@ export class GenerationLoop implements GroupRunner {
       try {
         const task = await inlineTaskEmbeds(
           this.artifacts,
-          taskEmbedActor(String(agent.org_id), agent),
+          taskEmbedActor(agent.org_id, agent),
           String(agent.task ?? ""),
         );
         const memory = await this.artifacts.readMemory(operator, String(agent.id));
@@ -2590,7 +2538,7 @@ export class GenerationLoop implements GroupRunner {
     if (!this.artifacts || typeof agent.org_id !== "string" || !agent.org_id) {
       return null;
     }
-    const actor = taskEmbedActor(String(agent.org_id), agent);
+    const actor = taskEmbedActor(agent.org_id, agent);
     const source = String(agent.task ?? "");
     const version = Number(agent.task_version ?? 1);
     const hash = String(agent.task_hash ?? "");
@@ -2606,7 +2554,7 @@ export class GenerationLoop implements GroupRunner {
       version,
       hash,
       display_path: displayPathFor({
-        orgId: String(agent.org_id),
+        orgId: agent.org_id,
         level: "agent",
         ownerId: String(agent.id),
         kind: "task",
@@ -2640,7 +2588,7 @@ export class GenerationLoop implements GroupRunner {
     let collections: unknown[] = [];
     if (this.artifacts && typeof agent.org_id === "string" && agent.org_id) {
       const actor = agentActor({
-        orgId: String(agent.org_id),
+        orgId: agent.org_id,
         guildId: String(agent.guild_id),
         agentId: String(agent.id),
         agentName: String(agent.name),
@@ -2833,7 +2781,7 @@ export class GenerationLoop implements GroupRunner {
       if (connection === null) {
         throw new McpDisconnectedError("connection not found");
       }
-      const server = await this.db.getMcpServer(String(connection.mcp_server_id));
+      const server = await this.db.getMcpServer(connection.mcp_server_id);
       if (server === null) {
         throw new McpError("mcp server not found");
       }
@@ -2972,7 +2920,7 @@ export class GenerationLoop implements GroupRunner {
     metadata: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const seq = await this.db.nextSeq(runId);
-    const row = await this.db.insertMessage(runId, seq, payload, metadata, new Date());
+    const row = await this.db.insertMessage({ runId, seq, payload, metadata }, new Date());
     await this.publish(runId, "message.committed", messageItem(row));
     return row;
   }
@@ -3341,7 +3289,7 @@ export class GenerationLoop implements GroupRunner {
       ? (snapshot.scripts as RunScriptSnapshot[])
       : [];
     const scope = {
-      orgId: typeof agent.org_id === "string" && agent.org_id ? String(agent.org_id) : null,
+      orgId: typeof agent.org_id === "string" && agent.org_id ? agent.org_id : null,
       guildId: String(agent.guild_id),
       agentId: String(agent.id),
     };
@@ -3386,7 +3334,7 @@ export class GenerationLoop implements GroupRunner {
       artifact_actor:
         typeof agent.org_id === "string" && agent.org_id
           ? agentActor({
-              orgId: String(agent.org_id),
+              orgId: agent.org_id,
               guildId: String(agent.guild_id),
               agentId: String(agent.id),
               agentName: String(agent.name),
@@ -3879,19 +3827,52 @@ export class GenerationLoop implements GroupRunner {
       runMetadata,
     };
     if (kind === "group") {
-      await this.db.createGroupRun(runId, agentId, prepared.snapshot({ schedules: true }), prepared.system, prepared.task, [opening], Number(throughSeq ?? 0), now, options);
+      await this.db.createGroupRun(
+        {
+          runId,
+          agentId,
+          configSnapshot: prepared.snapshot({ schedules: true }),
+          systemContent: prepared.system,
+          taskContent: prepared.task,
+          projected: [opening],
+          throughSeq: throughSeq ?? 0,
+          ...options,
+        },
+        now,
+      );
     } else if (kind === "schedule") {
       const instruction = asObj(previous.metadata).instruction_hash;
-      await this.db.createScheduleRun(runId, agentId, prepared.snapshot(), prepared.system, prepared.task, [opening], now, {
-        ...options,
-        runMetadata: { ...runMetadata, ...(typeof instruction === "string" ? { instruction_hash: instruction } : {}) },
-        scheduleId: typeof previous.schedule_id === "string" ? previous.schedule_id : null,
-      });
+      await this.db.createScheduleRun(
+        {
+          runId,
+          agentId,
+          configSnapshot: prepared.snapshot(),
+          systemContent: prepared.system,
+          taskContent: prepared.task,
+          projected: [opening],
+          ...options,
+          runMetadata: {
+            ...runMetadata,
+            ...(typeof instruction === "string" ? { instruction_hash: instruction } : {}),
+          },
+          scheduleId: typeof previous.schedule_id === "string" ? previous.schedule_id : null,
+        },
+        now,
+      );
     } else {
-      await this.db.createRun(runId, agentId, prepared.snapshot({ schedules: true, direct: true }), prepared.system, prepared.task, null, now, {
-        ...options,
-        extraMessages: [opening],
-      });
+      await this.db.createRun(
+        {
+          runId,
+          agentId,
+          configSnapshot: prepared.snapshot({ schedules: true, direct: true }),
+          systemContent: prepared.system,
+          taskContent: prepared.task,
+          userContent: null,
+          ...options,
+          extraMessages: [opening],
+        },
+        now,
+      );
     }
     return runId;
   }
@@ -3912,7 +3893,7 @@ export class GenerationLoop implements GroupRunner {
     const orgId = typeof owner?.org_id === "string" && owner.org_id ? owner.org_id : undefined;
     const reads = history
       .filter((row) => asObj(row.payload).role === "tool")
-      .map((row) => ({ seq: Number(row.seq), metadata: asObj(row.metadata) }));
+      .map((row) => ({ seq: row.seq, metadata: asObj(row.metadata) }));
     for (const call of calls) {
       if (this._cancelled(runId)) {
         throw new GenerationCancelled();

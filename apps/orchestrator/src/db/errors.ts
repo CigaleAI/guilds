@@ -61,3 +61,11 @@ export class MachineConflict extends Error {
     this.status = status;
   }
 }
+
+// A write whose RETURNING clause came back empty or violated a repository invariant.
+export class RowMissing extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RowMissing";
+  }
+}

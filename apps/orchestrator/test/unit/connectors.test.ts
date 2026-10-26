@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { decryptPayload, encryptPayload } from "../../src/credentials/crypto.js";
-import { connect, ConnectError } from "../../src/connectors/connect.js";
+import { connect, ConnectError, type ConnectRepo } from "../../src/connectors/connect.js";
+import type { McpConnectionRow, NewMcpConnection } from "../../src/db/mcp.js";
 import { lookupProperties, settingsComplete, validateSettings } from "../../src/connectors/settings.js";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -150,17 +151,20 @@ test("a connector row loads with its overrides applied over the manifest", () =>
     source: "core",
     version: "",
     verified: true,
+    experimental: false,
     publisher: "guilds",
     enabled: false,
     oauth_client: { client_id: "c1" },
     overrides: { description: "Our wiki.", tools: { "notion-search": { default: true, description: "Search it." } } },
+    installed_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
   };
   const server = loadConnector(row);
   assert.equal(server.description, "Our wiki.");
   assert.equal(server.enabled, false);
   assert.deepEqual(server.config, { url: "https://mcp.notion.com/mcp", oauth_client: { client_id: "c1" } });
   assert.equal(server.oauth_strategy, "dynamic");
-  assert.equal((server.upstream as { description: string }).description, notion.manifest.description);
+  assert.equal(server.upstream.description, notion.manifest.description);
   assert.equal(toolStartsOff(server, "notion-search"), false);
   assert.equal(toolStartsOff(server, "notion-create-pages"), true);
   const qonto = loadConnector({ ...row, id: "mcp_qonto", slug: "qonto", manifest: CONNECTORS.bySlug("qonto")!.manifest, overrides: {} });
@@ -423,36 +427,32 @@ test("a state hook that outlives the budget yields unavailable", async (t) => {
   assert.deepEqual(await pending, { quotes: { unavailable: `timed out after ${STATE_TIMEOUT_MS} ms` } });
 });
 
-class ConnectRepoStub {
-  rows = new Map<string, Record<string, unknown>>();
-  tools: unknown[] = [];
+class ConnectRepoStub implements ConnectRepo {
+  rows = new Map<string, McpConnectionRow>();
+  tools: ListedTool[] = [];
 
   async getMcpConnectionForOwner(serverId: string, ownerScope: string, ownerId: string | null) {
     return this.rows.get(`${serverId}:${ownerScope}:${ownerId}`) ?? null;
   }
 
-  async connectMcp(
-    connectionId: string,
-    _bindingId: string,
-    serverId: string,
-    ownerScope: string,
-    ownerId: string | null,
-    ciphertext: Buffer,
-    nonce: Buffer,
-    _now: Date,
-    options: { status?: string; accountHint?: string } = {},
-  ) {
+  async connectMcp(input: NewMcpConnection, now: Date) {
+    const stamp = now.toISOString();
     const row = {
-      id: connectionId,
-      mcp_server_id: serverId,
-      owner_scope: ownerScope,
-      owner_id: ownerId,
-      ciphertext,
-      nonce,
-      status: options.status ?? "pending",
-      account_hint: options.accountHint ?? "",
+      id: input.connectionId,
+      mcp_server_id: input.serverId,
+      owner_scope: input.ownerScope,
+      owner_id: input.ownerId,
+      ciphertext: input.ciphertext,
+      nonce: input.nonce,
+      status: input.status ?? "pending",
+      account_hint: input.accountHint ?? "",
+      oauth_state: input.oauthState ?? null,
+      settings: input.settings ?? {},
+      created_at: stamp,
+      updated_at: stamp,
+      rotated_at: stamp,
     };
-    this.rows.set(`${serverId}:${ownerScope}:${ownerId}`, row);
+    this.rows.set(`${input.serverId}:${input.ownerScope}:${input.ownerId}`, row);
     return row;
   }
 
@@ -473,7 +473,7 @@ class ConnectRepoStub {
     return [];
   }
 
-  async replaceMcpTools(_id: string, tools: unknown[]) {
+  async replaceMcpTools(_id: string, tools: ListedTool[]) {
     this.tools = tools;
   }
 }
@@ -495,12 +495,12 @@ test("connect stores a two-field login under the manifest's names with the valid
   );
   assert.equal(outcome, "installed");
   assert.equal(connection.account_hint, "Elektro");
-  assert.deepEqual(decryptPayload(connection.ciphertext as Buffer, connection.nonce as Buffer, KEY), {
+  assert.deepEqual(decryptPayload(connection.ciphertext, connection.nonce, KEY), {
     login: "org",
     secret_key: "s3",
   });
   assert.deepEqual(
-    (repo.tools as Array<{ remote_name: string }>).map((tool) => tool.remote_name),
+    repo.tools.map((tool) => tool.remote_name),
     CONNECTORS.bySlug("qonto")!.manifest.tools!.map((tool) => tool.name),
   );
   await assert.rejects(
@@ -690,8 +690,8 @@ test("a sync keeps each listed tool's annotations", async () => {
     async replaceMcpTools(_id: string, tools: ListedTool[]) {
       stored.push(...tools);
     },
-    async insertBindingIfAbsent(_bind: string, _kind: string, catalogId: string) {
-      overlays.push(catalogId);
+    async insertBindingIfAbsent(input: { catalogId: string }) {
+      overlays.push(input.catalogId);
       return {};
     },
   };

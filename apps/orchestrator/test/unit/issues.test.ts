@@ -1,34 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { GuildIssueRow, IssueStatusChange, NewIssue } from "../../src/db/issues.js";
 import { Issues, IssueError, ISSUE_OPEN_CAP, issueItem } from "../../src/issues/index.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { validateCatalog, BindingError } from "../../src/access/index.js";
 
 class MemoryIssuesDB {
-  guilds: Record<string, Record<string, unknown>> = {
+  guilds: Record<string, { id: string; org_id: string; name: string }> = {
     guild_1: { id: "guild_1", org_id: "org_1", name: "alpha" },
   };
-  rows: Array<Record<string, unknown>> = [];
+  rows: GuildIssueRow[] = [];
 
   async getGuild(guildId: string) {
     return this.guilds[guildId] ?? null;
   }
 
-  async insertIssue(
-    issueId: string,
-    guildId: string,
-    orgId: string,
-    agentId: string | null,
-    agentName: string,
-    runId: string | null,
-    kind: string,
-    severity: string,
-    summary: string,
-    detail: string,
-    toolName: string | null,
-    now: Date,
-  ) {
-    const row = {
+  async insertIssue(input: NewIssue, now: Date) {
+    const {
+      issueId,
+      guildId,
+      orgId,
+      agentId,
+      agentName,
+      runId,
+      kind,
+      severity,
+      summary,
+      detail,
+      toolName,
+    } = input;
+    const row: GuildIssueRow = {
       id: issueId,
       guild_id: guildId,
       org_id: orgId,
@@ -63,14 +64,8 @@ class MemoryIssuesDB {
     return this.rows.find((row) => row.guild_id === guildId && row.id === issueId) ?? null;
   }
 
-  async setIssueStatus(
-    guildId: string,
-    issueId: string,
-    status: string,
-    resolvedAt: Date | null,
-    resolvedBy: string | null,
-    now: Date,
-  ) {
+  async setIssueStatus(guildId: string, issueId: string, change: IssueStatusChange, now: Date) {
+    const { status, resolvedAt, resolvedBy } = change;
     const row = await this.getIssue(guildId, issueId);
     if (!row) {
       return null;
@@ -263,6 +258,7 @@ test("issueItem snapshots the reporting agent", () => {
   const item = issueItem({
     id: "iss_1",
     guild_id: "guild_1",
+    org_id: "org_1",
     agent_id: "a_1",
     agent_name: "researcher",
     run_id: "r_1",

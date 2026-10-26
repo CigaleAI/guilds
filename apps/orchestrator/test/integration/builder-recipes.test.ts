@@ -105,7 +105,15 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     const listedRow = (listedSessions.json() as Array<Record<string, unknown>>).find((row) => row.id === session.id);
     assert.equal((listedRow?.recipe as { name?: string } | undefined)?.name, "Untitled guild");
 
-    const teammate = await repo.insertUser("user_teammate_b", "teammate-b", now, null, "teammate-b@example.com");
+    const teammate = await repo.insertUser(
+      {
+        userId: "user_teammate_b",
+        name: "teammate-b",
+        image: null,
+        email: "teammate-b@example.com",
+      },
+      now,
+    );
     await repo.insertMember("org_home", String(teammate.id), "member", now);
     const denied = await app.inject({
       method: "GET",
@@ -361,14 +369,10 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
       now,
       artifacts,
     });
-    await repo.writeAgentTask(
-      artifacts.operatorContext("org_home", "user_operator", "operator", {
+    await repo.writeAgentTask(artifacts.operatorContext("org_home", "user_operator", "operator", {
         guildId: "guild_capture",
         agentId: "a_capture",
-      }),
-      "a_capture",
-      "Ping @scout and keep @user.",
-    );
+      }), "a_capture", "Ping @scout and keep @user.");
     const captureActor = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
     await artifacts.createCollection(captureActor, {
       name: "capture-shared",

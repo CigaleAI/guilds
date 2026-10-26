@@ -28,7 +28,15 @@ test("organisation-wide note, table, and change routes keep a private guild to i
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "deepinfra");
   const app = await buildApp(database, { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) });
-  const teammate = await repo.insertUser("user_teammate_vault", "teammate-vault", new Date(), null, "vault@example.com");
+  const teammate = await repo.insertUser(
+    {
+      userId: "user_teammate_vault",
+      name: "teammate-vault",
+      image: null,
+      email: "vault@example.com",
+    },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(teammate.id), "member", new Date());
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 

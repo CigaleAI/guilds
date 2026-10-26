@@ -42,7 +42,15 @@ test("operators upload, list, download, share, and delete files per level", { ti
     scripts: new Scripts(repo),
     schedules: new Schedules(repo),
   });
-  const teammate = await repo.insertUser("user_teammate_files", "teammate-files", new Date(), null, "files@example.com");
+  const teammate = await repo.insertUser(
+    {
+      userId: "user_teammate_files",
+      name: "teammate-files",
+      image: null,
+      email: "files@example.com",
+    },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(teammate.id), "member", new Date());
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 

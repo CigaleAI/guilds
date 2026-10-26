@@ -26,7 +26,10 @@ test("the instance is administered by the seed organisation's owners, or by whom
   const notes = new NotesStore(tempDir("guilds-instance-admin-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
-  const member = await repo.insertUser("user_member", "member", new Date(), null, "member@example.com");
+  const member = await repo.insertUser(
+    { userId: "user_member", name: "member", image: null, email: "member@example.com" },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(member.id), "member", new Date());
   const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
   const core = await buildApp(database, deps);

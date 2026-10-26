@@ -41,9 +41,25 @@ test("guild admins manage operators, and private guilds show only to operators",
     schedules: new Schedules(repo),
   });
 
-  const teammate = await repo.insertUser("user_teammate_ops", "teammate-ops", new Date(), null, "teammate-ops@example.com");
+  const teammate = await repo.insertUser(
+    {
+      userId: "user_teammate_ops",
+      name: "teammate-ops",
+      image: null,
+      email: "teammate-ops@example.com",
+    },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(teammate.id), "member", new Date());
-  const outsider = await repo.insertUser("user_outsider_ops", "outsider-ops", new Date(), null, "outsider-ops@elsewhere.dev");
+  const outsider = await repo.insertUser(
+    {
+      userId: "user_outsider_ops",
+      name: "outsider-ops",
+      image: null,
+      email: "outsider-ops@elsewhere.dev",
+    },
+    new Date(),
+  );
   const TEAMMATE = {
     "X-Guilds-User": String(teammate.id),
     "X-Guilds-Org": "org_home",

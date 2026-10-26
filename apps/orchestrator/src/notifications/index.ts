@@ -1,3 +1,4 @@
+import type { InboxIssueRow } from "../db/issues.js";
 import { iso } from "../db/views.js";
 import { guildOperators } from "../guilds/validation.js";
 import { issueItem } from "../issues/index.js";
@@ -23,7 +24,7 @@ export type NotificationsDatabase = {
   getAgent(agentId: string): Promise<Record<string, unknown> | null>;
   getGuild(guildId: string): Promise<Record<string, unknown> | null>;
   listGuildViewerIds(guildId: string): Promise<string[]>;
-  listInboxIssues(orgId: string, userId: string, limit: number): Promise<Array<Record<string, unknown>>>;
+  listInboxIssues(orgId: string, userId: string, limit: number): Promise<InboxIssueRow[]>;
   listInboxMentions(orgId: string, userId: string, limit: number): Promise<Array<Record<string, unknown>>>;
   listUnreadGroupChats(orgId: string, userId: string): Promise<Array<Record<string, unknown>>>;
   markInboxMentionsRead(orgId: string, userId: string, now: Date): Promise<string[]>;

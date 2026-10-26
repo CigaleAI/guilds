@@ -68,8 +68,14 @@ async function seedAgent(agentId: string, guildId: string, guildName: string, na
 describe("artifact store", { concurrency: 1 }, () => {
   test("tenancy, access lists, reserved paths, embeds, and collections", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_alpha", "alpha", now, "org_home", "");
-    await repo.insertGuild("guild_beta", "beta", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_alpha", name: "alpha", orgId: "org_home", about: "" },
+      now,
+    );
+    await repo.insertGuild(
+      { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_alpha", "guild_alpha", "alpha", "alpha", "art");
     await seedAgent("a_beta", "guild_beta", "beta", "beta", "art-beta");
 
@@ -382,7 +388,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("records: validation, ids, identity merge, where, since, order, and search", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_search", "search", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_search", name: "search", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_search", "guild_search", "search", "searcher", "search");
     const searcher = agentActor({
       orgId: "org_home",
@@ -568,7 +577,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("operator can clear every live record without deleting the collection", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_scratch", "scratch", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_scratch", name: "scratch", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_scratch", "guild_scratch", "scratch", "scratcher", "scratch");
     const writer = agentActor({
       orgId: "org_home",
@@ -619,7 +631,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("an array column stores a list of text and where matches an item like text", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_tags", "tags", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_tags", name: "tags", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_tags", "guild_tags", "tags", "tagger", "tags");
     const tagger = agentActor({
       orgId: "org_home",
@@ -685,8 +700,14 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("a guild's own table: its guild row lets members write, other guilds need a row, it moves and dies with the guild", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_own", "own", now, "org_home", "");
-    await repo.insertGuild("guild_other", "other", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_own", name: "own", orgId: "org_home", about: "" },
+      now,
+    );
+    await repo.insertGuild(
+      { guildId: "guild_other", name: "other", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_own", "guild_own", "own", "owner-agent", "own");
     await seedAgent("a_other", "guild_other", "other", "other-agent", "other");
     const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
@@ -781,8 +802,14 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("note access lists: defaults at creation, guild and org rows, agent rows, writes, and the change log", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_north", "north", now, "org_home", "");
-    await repo.insertGuild("guild_south", "south", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_north", name: "north", orgId: "org_home", about: "" },
+      now,
+    );
+    await repo.insertGuild(
+      { guildId: "guild_south", name: "south", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_north", "guild_north", "north", "north-agent", "north");
     await seedAgent("a_south", "guild_south", "south", "south-agent", "south");
     await seedAgent("a_south2", "guild_south", "south", "south-two", "south2");
@@ -982,7 +1009,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("run tool calls record file create, update, and delete provenance", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_provenance", "provenance", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_provenance", name: "provenance", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_provenance", "guild_provenance", "provenance", "provenance-agent", "provenance");
     assert.equal(
       (
@@ -1005,19 +1035,19 @@ describe("artifact store", { concurrency: 1 }, () => {
       "create",
     );
     await repo.insertRun(
-      "r_provenance",
-      "a_provenance",
-      "direct",
-      CONFIG,
-      "system",
-      "task",
-      [],
-      now,
       {
+        runId: "r_provenance",
+        agentId: "a_provenance",
+        kind: "direct",
+        configSnapshot: CONFIG,
+        systemContent: "system",
+        taskContent: "task",
+        opening: [],
         systemPromptHash: "system-hash",
         taskPromptHash: "task-hash",
         memoryPromptHash: "memory-hash",
       },
+      now,
     );
     const ctx = createToolContext({
       run_id: "r_provenance",
@@ -1098,7 +1128,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("notes sit directly under their owner and the memory archive is the operator's", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_flat", "flat", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_flat", name: "flat", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_flat", "guild_flat", "flat", "flat", "art-notes-flat");
     const alpha = agentActor({
       orgId: "org_home",
@@ -1144,7 +1177,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("memory timeline keeps write order when two writes share a millisecond", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_tl", "timeline", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_tl", name: "timeline", orgId: "org_home", about: "" },
+      now,
+    );
     await seedAgent("a_tl", "guild_tl", "timeline", "timeline", "art-mem-tl");
     const operator = operatorActor({
       orgId: "org_home",
@@ -1174,7 +1210,10 @@ describe("artifact store", { concurrency: 1 }, () => {
 
   test("task writes archive previous versions for restore", async () => {
     const now = new Date();
-    await repo.insertGuild("guild_taskver", "taskver", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_taskver", name: "taskver", orgId: "org_home", about: "" },
+      now,
+    );
     const notes = new NotesStore(tempDir("guilds-art-notes-taskver-"), templatesRoot());
     await persistAgent(repo, notes, {
       agentId: "a_taskver",
@@ -1223,7 +1262,8 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(afterRestore[0]?.content, "second purpose\n");
 
     await assert.rejects(
-      () => repo.writeAgentTask(operator, "a_taskver", "stale editor\n", 3),
+      () =>
+        repo.writeAgentTask(operator, "a_taskver", "stale editor\n", 3),
       (error: unknown) => error instanceof Error && error.message === "version conflict",
     );
     const cas = await repo.writeAgentTask(operator, "a_taskver", "cas purpose\n", 4);

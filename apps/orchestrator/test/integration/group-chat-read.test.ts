@@ -49,11 +49,13 @@ test(
     });
 
     const teammate = await repo.insertUser(
-      "user_teammate_read",
-      "teammate-read",
+      {
+        userId: "user_teammate_read",
+        name: "teammate-read",
+        image: null,
+        email: "teammate-read@example.com",
+      },
       new Date(),
-      null,
-      "teammate-read@example.com",
     );
     await repo.insertMember("org_home", String(teammate.id), "member", new Date());
     const TEAMMATE = {
@@ -125,11 +127,13 @@ test(
       }
 
       const stranger = await repo.insertUser(
-        "user_stranger_read",
-        "stranger-read",
+        {
+          userId: "user_stranger_read",
+          name: "stranger-read",
+          image: null,
+          email: "stranger-read@example.com",
+        },
         new Date(),
-        null,
-        "stranger-read@example.com",
       );
       const denied = await mark(
         { "X-Guilds-User": String(stranger.id), "X-Guilds-Org": "org_home" },

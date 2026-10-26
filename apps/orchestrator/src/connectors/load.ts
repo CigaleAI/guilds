@@ -1,3 +1,4 @@
+import type { ConnectorRow } from "../db/connectors.js";
 import { jsonObj } from "../db/json.js";
 import { namespacedName } from "../mcp/names.js";
 import { nameMutates } from "../mcp/verbs.js";
@@ -56,7 +57,36 @@ export function applyOverrides(manifest: Manifest, overrides: Overrides): Manife
   return next;
 }
 
-function oauthStrategyOf(manifest: Manifest): "none" | "dynamic" | "configured" {
+type OauthStrategy = "none" | "dynamic" | "configured";
+
+/** A `connectors` row as every reader sees it: see `loadConnector`. */
+export type LoadedConnector = {
+  id: string;
+  slug: string;
+  tool_prefix: string;
+  owner_org_id: string | null;
+  display_name: string;
+  transport: "http";
+  config: { url?: string; oauth_client?: unknown };
+  auth: Manifest["auth"]["kind"];
+  oauth_strategy: OauthStrategy;
+  description: string;
+  limitations: string | null;
+  setup_hint: string | null;
+  enabled: boolean;
+  source: string;
+  version: string;
+  verified: boolean;
+  experimental: boolean;
+  publisher: string;
+  manifest: Manifest;
+  upstream: Manifest;
+  overrides: Overrides;
+  created_at: string;
+  updated_at: string;
+};
+
+function oauthStrategyOf(manifest: Manifest): OauthStrategy {
   const strategy = manifest.auth.oauth?.strategy;
   if (manifest.auth.kind !== "oauth" || strategy === undefined) {
     return "none";
@@ -69,16 +99,16 @@ function oauthStrategyOf(manifest: Manifest): "none" | "dynamic" | "configured" 
  * server fields the pool, OAuth, and the API read (`config` holds the endpoint and the registered
  * OAuth client).
  */
-export function loadConnector(row: Record<string, unknown>): Record<string, unknown> {
-  const upstream = record(row.manifest) as Manifest;
-  const overrides = overridesOf(row.overrides);
+export function loadConnector(row: ConnectorRow): LoadedConnector {
+  const upstream = row.manifest;
+  const overrides = row.overrides;
   const manifest = applyOverrides(upstream, overrides);
-  const oauthClient = jsonObj(row.oauth_client);
+  const oauthClient = row.oauth_client;
   return {
     id: row.id,
     slug: row.slug,
     tool_prefix: row.tool_prefix,
-    owner_org_id: row.owner_org_id ?? null,
+    owner_org_id: row.owner_org_id,
     display_name: manifest.display_name,
     transport: "http",
     config: {
@@ -90,12 +120,12 @@ export function loadConnector(row: Record<string, unknown>): Record<string, unkn
     description: manifest.description,
     limitations: manifest.limitations ?? null,
     setup_hint: manifest.setup_hint ?? null,
-    enabled: row.enabled !== false,
+    enabled: row.enabled,
     source: row.source,
-    version: row.version ?? "",
-    verified: row.verified === true,
-    experimental: row.experimental === true,
-    publisher: row.publisher ?? "",
+    version: row.version,
+    verified: row.verified,
+    experimental: row.experimental,
+    publisher: row.publisher,
     manifest,
     upstream,
     overrides,

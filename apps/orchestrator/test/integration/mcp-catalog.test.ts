@@ -46,7 +46,10 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     policy: limitedPolicy({ maxAgents: 25, maxBrowserAgents: 10, maxCodingAgents: 10 }),
   });
 
-  const outsider = await repo.insertUser("user_other", "other", new Date(), null, "other@example.com");
+  const outsider = await repo.insertUser(
+    { userId: "user_other", name: "other", image: null, email: "other@example.com" },
+    new Date(),
+  );
   await repo.insertMember("org_home", String(outsider.id), "member", new Date());
 
   const denied = await app.inject({
@@ -225,15 +228,17 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
 
   const [ciphertext, nonce] = encryptPayload({ token: "coingecko-test" }, Buffer.from(HEX_MASTER_KEY, "hex"));
   const connection = await repo.connectMcp(
-    newId("conn"),
-    newId("bind"),
-    String(coingecko.id),
-    "org",
-    "org_home",
-    ciphertext,
-    nonce,
+    {
+      connectionId: newId("conn"),
+      bindingId: newId("bind"),
+      serverId: String(coingecko.id),
+      ownerScope: "org",
+      ownerId: "org_home",
+      ciphertext,
+      nonce,
+      status: "connected",
+    },
     new Date(),
-    { status: "connected" },
   );
   await repo.replaceMcpTools(
     String(connection.id),
@@ -257,7 +262,10 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   );
   assert.equal(probe?.tool, "coingecko_secret_probe");
   assert.equal(probe?.default_enabled, true);
-  const elsewhere = await repo.insertOrg("org_elsewhere", "elsewhere", "elsewhere", "user_operator", new Date());
+  const elsewhere = await repo.insertOrg(
+    { orgId: "org_elsewhere", name: "elsewhere", slug: "elsewhere", userId: "user_operator" },
+    new Date(),
+  );
   const otherOrg = await app.inject({
     method: "GET",
     url: "/api/builder/capabilities/search?q=secret_probe",

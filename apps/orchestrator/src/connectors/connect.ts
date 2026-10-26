@@ -1,4 +1,10 @@
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
+import type {
+  McpConnectionLogin,
+  McpConnectionRow,
+  McpToolRow,
+  NewMcpConnection,
+} from "../db/mcp.js";
 import { newId } from "../lib/ids.js";
 import type { ListedTool } from "../mcp/index.js";
 import { markDisconnected, McpDisconnectedError, McpError } from "../mcp/index.js";
@@ -36,7 +42,7 @@ export type ConnectInput = {
 };
 
 export type ConnectResult = {
-  connection: Record<string, unknown>;
+  connection: McpConnectionRow;
   outcome: ConnectOutcome;
 };
 
@@ -55,30 +61,15 @@ export type ConnectRepo = {
     serverId: string,
     ownerScope: string,
     ownerId: string | null,
-  ): Promise<Record<string, unknown> | null>;
-  connectMcp(
-    connectionId: string,
-    bindingId: string,
-    serverId: string,
-    ownerScope: string,
-    ownerId: string | null,
-    ciphertext: Buffer,
-    nonce: Buffer,
-    now: Date,
-    options?: {
-      oauthState?: string | null;
-      bind?: boolean;
-      status?: string;
-      accountHint?: string;
-      settings?: Record<string, unknown>;
-    },
-  ): Promise<Record<string, unknown>>;
+  ): Promise<McpConnectionRow | null>;
+  connectMcp(connection: NewMcpConnection, now: Date): Promise<McpConnectionRow>;
   deleteMcpConnection(connectionId: string): Promise<unknown>;
   saveMcpConnection(
     connectionId: string,
-    options: { ciphertext: Buffer; nonce: Buffer; status: string; accountHint: string; oauthState: string | null; now: Date },
-  ): Promise<Record<string, unknown> | null>;
-  listMcpTools(connectionId: string): Promise<Array<Record<string, unknown>>>;
+    login: McpConnectionLogin,
+    now: Date,
+  ): Promise<McpConnectionRow | null>;
+  listMcpTools(connectionId: string): Promise<McpToolRow[]>;
   replaceMcpTools(connectionId: string, tools: ListedTool[], now: Date): Promise<void>;
 };
 
@@ -117,9 +108,12 @@ function sameCredentials(stored: Record<string, unknown>, credentials: Credentia
   return Object.entries(credentials).every(([name, value]) => (stored[name] ?? "") === value);
 }
 
-function storedCredentials(connection: Record<string, unknown>, masterKey: Buffer | undefined): Record<string, unknown> {
+function storedCredentials(
+  connection: Pick<McpConnectionRow, "ciphertext" | "nonce">,
+  masterKey: Buffer | undefined,
+): Record<string, unknown> {
   try {
-    return decryptPayload(connection.ciphertext as Buffer, connection.nonce as Buffer, masterKey);
+    return decryptPayload(connection.ciphertext, connection.nonce, masterKey);
   } catch {
     return {};
   }
@@ -194,15 +188,19 @@ export async function connect(
   }
   const [ciphertext, nonce] = encryptPayload({ ...credentials }, options.masterKey);
   const connection = await repo.connectMcp(
-    newId("conn"),
-    newId("bind"),
-    String(server.id),
-    input.ownerScope,
-    input.ownerId,
-    ciphertext,
-    nonce,
+    {
+      connectionId: newId("conn"),
+      bindingId: newId("bind"),
+      serverId: String(server.id),
+      ownerScope: input.ownerScope,
+      ownerId: input.ownerId,
+      ciphertext,
+      nonce,
+      status: complete ? "connected" : "pending",
+      accountHint: input.accountHint ?? hint,
+      settings,
+    },
     now,
-    { status: complete ? "connected" : "pending", accountHint: input.accountHint ?? hint, settings },
   );
   if (pool === null || !complete) {
     return { connection, outcome: "installed" };
@@ -212,11 +210,11 @@ export async function connect(
   } catch (error) {
     if (error instanceof McpError && (error.status === 401 || error.status === 403)) {
       if (existing === null) {
-        await repo.deleteMcpConnection(String(connection.id));
+        await repo.deleteMcpConnection(connection.id);
       } else {
         await markDisconnected(repo, connection);
       }
-      pool.forget(String(connection.id));
+      pool.forget(connection.id);
       throw new ConnectError(422, "api key was rejected");
     }
   }

@@ -1,5 +1,6 @@
 import { unlink } from "node:fs/promises";
 import { SecretNameTaken } from "../db/errors.js";
+import type { NewSecret } from "../db/secrets.js";
 import { AgentFileError, homeOfDirectory, readAgentFile } from "../lib/agent-file.js";
 import { CredentialError, secretPayload, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
 import { encryptPayload } from "../credentials/crypto.js";
@@ -21,17 +22,7 @@ export class AgentSecretError extends Error {
 export type AgentSecretsDatabase = {
   getSecretByName(orgId: string, name: string): Promise<Record<string, unknown> | null>;
   countSecretsCreatedByAgent(agentId: string): Promise<number>;
-  insertSecret(input: {
-    secretId: string;
-    orgId: string;
-    name: string;
-    description: string;
-    access: { org_wide: boolean; guild_ids: string[]; agent_ids: string[] };
-    ciphertext: Buffer;
-    nonce: Buffer;
-    createdByAgentId?: string | null;
-    now: Date;
-  }): Promise<Record<string, unknown>>;
+  insertSecret(secret: NewSecret, now: Date): Promise<Record<string, unknown>>;
   updateSecret(
     secretId: string,
     changes: { description?: string | null; ciphertext?: Buffer | null; nonce?: Buffer | null },
@@ -125,17 +116,19 @@ export async function storeAgentSecret(
     );
   }
   try {
-    const row = await db.insertSecret({
-      secretId: newId("sec"),
-      orgId: agent.orgId,
-      name,
-      description,
-      access: { org_wide: false, guild_ids: [], agent_ids: [agent.id] },
-      ciphertext,
-      nonce,
-      createdByAgentId: agent.id,
+    const row = await db.insertSecret(
+      {
+        secretId: newId("sec"),
+        orgId: agent.orgId,
+        name,
+        description,
+        access: { org_wide: false, guild_ids: [], agent_ids: [agent.id] },
+        ciphertext,
+        nonce,
+        createdByAgentId: agent.id,
+      },
       now,
-    });
+    );
     return { secretId: String(row.id), name, rotated: false, value: payload.value };
   } catch (error) {
     if (error instanceof SecretNameTaken) {

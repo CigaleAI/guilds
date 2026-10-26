@@ -116,17 +116,19 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
 
   const now = new Date();
   await repo.insertGuild(
-    "guild_studio",
-    "studio-guild",
+    {
+      guildId: "guild_studio",
+      name: "studio-guild",
+      orgId: "org_home",
+      about: "Optimize this guild",
+      description: "Coordinate research and writing across the roster.\n",
+    },
     now,
-    "org_home",
-    "Optimize this guild",
-    undefined,
-    undefined,
-    undefined,
-    "Coordinate research and writing across the roster.\n",
   );
-  await repo.insertGuild("guild_other", "other-guild", now, "org_home", "");
+  await repo.insertGuild(
+    { guildId: "guild_other", name: "other-guild", orgId: "org_home", about: "" },
+    now,
+  );
   await persistAgent(repo, notes, {
     agentId: "a_studio",
     guildId: "guild_studio",
@@ -150,7 +152,10 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     now,
     artifacts,
   });
-  const teammate = await repo.insertUser("user_teammate", "teammate", now, null, "teammate@example.com");
+  const teammate = await repo.insertUser(
+    { userId: "user_teammate", name: "teammate", image: null, email: "teammate@example.com" },
+    now,
+  );
   await repo.insertMember("org_home", String(teammate.id), "member", now);
 
   generationLive.streamCompletion = async function* stream() {
@@ -397,8 +402,19 @@ test("studio reads agent access, script source, and granted connections", { time
   });
 
   const now = new Date();
-  await repo.insertGuild("guild_access", "access-guild", now, "org_home", "Guild with a Notion login");
-  await repo.insertGuild("guild_far", "far-guild", now, "org_home", "");
+  await repo.insertGuild(
+    {
+      guildId: "guild_access",
+      name: "access-guild",
+      orgId: "org_home",
+      about: "Guild with a Notion login",
+    },
+    now,
+  );
+  await repo.insertGuild(
+    { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "" },
+    now,
+  );
   await persistAgent(repo, notes, {
     agentId: "a_access",
     guildId: "guild_access",
@@ -429,15 +445,17 @@ test("studio reads agent access, script source, and granted connections", { time
   assert.ok(server, "seeded Notion catalog row");
   const [ciphertext, nonce] = encryptPayload({ token: "notion-secret-token" }, Buffer.from(HEX_MASTER_KEY, "hex"));
   const connection = await repo.connectMcp(
-    newId("conn"),
-    newId("bind"),
-    String(server.id),
-    "org",
-    "org_home",
-    ciphertext,
-    nonce,
+    {
+      connectionId: newId("conn"),
+      bindingId: newId("bind"),
+      serverId: String(server.id),
+      ownerScope: "org",
+      ownerId: "org_home",
+      ciphertext,
+      nonce,
+      status: "connected",
+    },
     now,
-    { status: "connected" },
   );
   await repo.replaceMcpTools(
     String(connection.id),
@@ -449,15 +467,17 @@ test("studio reads agent access, script source, and granted connections", { time
   );
   const [farCipher, farNonce] = encryptPayload({ token: "far-token" }, Buffer.from(HEX_MASTER_KEY, "hex"));
   const farConnection = await repo.connectMcp(
-    newId("conn"),
-    newId("bind"),
-    String(server.id),
-    "guild",
-    "guild_far",
-    farCipher,
-    farNonce,
+    {
+      connectionId: newId("conn"),
+      bindingId: newId("bind"),
+      serverId: String(server.id),
+      ownerScope: "guild",
+      ownerId: "guild_far",
+      ciphertext: farCipher,
+      nonce: farNonce,
+      status: "connected",
+    },
     now,
-    { status: "connected" },
   );
 
   try {
@@ -666,7 +686,10 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   });
 
   const now = new Date();
-  await repo.insertGuild("guild_ev", "evidence-guild", now, "org_home", "Evidence");
+  await repo.insertGuild(
+    { guildId: "guild_ev", name: "evidence-guild", orgId: "org_home", about: "Evidence" },
+    now,
+  );
   await persistAgent(repo, notes, {
     agentId: "a_ev",
     guildId: "guild_ev",
@@ -694,34 +717,58 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   const routine = await schedules.create(TEST_ACTOR, "a_ev", { cron: "0 9 * * 1" }, "Weekly digest", "Compile the weekly digest.");
   const scheduleId = String(routine.id);
   await repo.createScheduleRun(
-    "r_ev_wake",
-    "a_ev",
-    { ...CONFIG, tools: [], mcp: [] },
-    "system prompt",
-    "task prompt",
-    [
-      [
-        { role: "user", content: "Schedule wake-up: {}" },
-        { generation: 1, source: "schedule", schedule_id: scheduleId, instruction_hash: "h1" },
+    {
+      runId: "r_ev_wake",
+      agentId: "a_ev",
+      configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      projected: [
+        [
+          { role: "user", content: "Schedule wake-up: {}" },
+          { generation: 1, source: "schedule", schedule_id: scheduleId, instruction_hash: "h1" },
+        ],
+        [
+          {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                id: "call_mem",
+                type: "function",
+                function: { name: "memory_write", arguments: "{}" },
+              },
+            ],
+          },
+          { generation: 1 },
+        ],
+        [
+          { role: "tool", tool_call_id: "call_mem", content: "ok" },
+          { generation: 1, tool_name: "memory_write", tool_call_id: "call_mem" },
+        ],
       ],
-      [
-        {
-          role: "assistant",
-          content: "",
-          tool_calls: [{ id: "call_mem", type: "function", function: { name: "memory_write", arguments: "{}" } }],
-        },
-        { generation: 1 },
-      ],
-      [{ role: "tool", tool_call_id: "call_mem", content: "ok" }, { generation: 1, tool_name: "memory_write", tool_call_id: "call_mem" }],
-    ],
+      systemPromptHash: "s",
+      taskPromptHash: "t",
+      memoryPromptHash: "m",
+      scheduleId,
+      runMetadata: { instruction_hash: "h1" },
+    },
     now,
-    { systemPromptHash: "s", taskPromptHash: "t", memoryPromptHash: "m", scheduleId, runMetadata: { instruction_hash: "h1" } },
   );
-  await repo.createRun("r_ev_direct", "a_ev", { ...CONFIG, tools: [], mcp: [] }, "system prompt", "task prompt", "hello", now, {
-    systemPromptHash: "s",
-    taskPromptHash: "t",
-    memoryPromptHash: "m",
-  });
+  await repo.createRun(
+    {
+      runId: "r_ev_direct",
+      agentId: "a_ev",
+      configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+      systemContent: "system prompt",
+      taskContent: "task prompt",
+      userContent: "hello",
+      systemPromptHash: "s",
+      taskPromptHash: "t",
+      memoryPromptHash: "m",
+    },
+    now,
+  );
   const runActor = {
     ...agentActor({ orgId: "org_home", guildId: "guild_ev", agentId: "a_ev", agentName: "curator", runId: "r_ev_wake" }),
     toolCall: { id: "call_mem", name: "memory_write" },
@@ -828,17 +875,19 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     });
     const sessionRow = () => studio.store.getSession(session.id) as Promise<Record<string, unknown>>;
     const issue = await repo.insertIssue(
-      "iss_ev",
-      "guild_ev",
-      "org_home",
-      "a_ev",
-      "curator",
-      "r_ev_wake",
-      "api",
-      "high",
-      "Digest feed returned 401",
-      "The feed login expired while compiling the weekly digest.",
-      "feed_fetch",
+      {
+        issueId: "iss_ev",
+        guildId: "guild_ev",
+        orgId: "org_home",
+        agentId: "a_ev",
+        agentName: "curator",
+        runId: "r_ev_wake",
+        kind: "api",
+        severity: "high",
+        summary: "Digest feed returned 401",
+        detail: "The feed login expired while compiling the weekly digest.",
+        toolName: "feed_fetch",
+      },
       now,
     );
     const pins: Array<Record<string, unknown>> = [
@@ -875,7 +924,10 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal(issuePin.metadata.focus.run_id, "r_ev_wake");
     assert.equal(issuePin.metadata.focus.agent_id, "a_ev");
 
-    await repo.insertGuild("guild_far", "far-guild", now, "org_home", "");
+    await repo.insertGuild(
+      { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "" },
+      now,
+    );
     await persistAgent(repo, notes, {
       agentId: "a_far",
       guildId: "guild_far",
@@ -887,11 +939,20 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       now,
       artifacts,
     });
-    await repo.createRun("r_far", "a_far", { ...CONFIG, tools: [], mcp: [] }, "system", "task", "hi", now, {
-      systemPromptHash: "s",
-      taskPromptHash: "t",
-      memoryPromptHash: "m",
-    });
+    await repo.createRun(
+      {
+        runId: "r_far",
+        agentId: "a_far",
+        configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+        systemContent: "system",
+        taskContent: "task",
+        userContent: "hi",
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
+      },
+      now,
+    );
     const foreign = await app.inject({
       method: "POST",
       url: `/api/studio/sessions/${session.id}/messages`,
@@ -899,7 +960,22 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       payload: { content: "Why?", focus: { kind: "run", run_id: "r_far" } },
     });
     assert.equal(foreign.statusCode, 422, foreign.body);
-    await repo.insertIssue("iss_far", "guild_far", "org_home", "a_far", "stranger", "r_far", "other", "low", "Elsewhere", "Not this guild.", null, now);
+    await repo.insertIssue(
+      {
+        issueId: "iss_far",
+        guildId: "guild_far",
+        orgId: "org_home",
+        agentId: "a_far",
+        agentName: "stranger",
+        runId: "r_far",
+        kind: "other",
+        severity: "low",
+        summary: "Elsewhere",
+        detail: "Not this guild.",
+        toolName: null,
+      },
+      now,
+    );
     const foreignIssue = await app.inject({
       method: "POST",
       url: `/api/studio/sessions/${session.id}/messages`,
@@ -975,15 +1051,14 @@ test("studio proposes memory, note, and guild edits that the operator applies or
 
   const now = new Date();
   await repo.insertGuild(
-    "guild_ed",
-    "edit-guild",
+    {
+      guildId: "guild_ed",
+      name: "edit-guild",
+      orgId: "org_home",
+      about: "Old about",
+      description: "Old description.\n",
+    },
     now,
-    "org_home",
-    "Old about",
-    undefined,
-    undefined,
-    undefined,
-    "Old description.\n",
   );
   await persistAgent(repo, notes, {
     agentId: "a_ed",
@@ -1160,9 +1235,31 @@ test("studio proposes tables to create, change, and delete that the operator app
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild("guild_tb", "table-guild", now, "org_home");
-  await repo.insertGuild("guild_nb", "neighbour-guild", now, "org_home", "Closes the books.", undefined, "org", null, "Writes the monthly report to the shared table.");
-  await repo.insertGuild("guild_pv", "private-guild", now, "org_home", "Unseen.", undefined, "private", null, "Not for this operator.");
+  await repo.insertGuild({ guildId: "guild_tb", name: "table-guild", orgId: "org_home" }, now);
+  await repo.insertGuild(
+    {
+      guildId: "guild_nb",
+      name: "neighbour-guild",
+      orgId: "org_home",
+      about: "Closes the books.",
+      visibility: "org",
+      creatorUserId: null,
+      description: "Writes the monthly report to the shared table.",
+    },
+    now,
+  );
+  await repo.insertGuild(
+    {
+      guildId: "guild_pv",
+      name: "private-guild",
+      orgId: "org_home",
+      about: "Unseen.",
+      visibility: "private",
+      creatorUserId: null,
+      description: "Not for this operator.",
+    },
+    now,
+  );
   for (const [agentId, guildId, guildName, name] of [
     ["a_scout", "guild_tb", "table-guild", "scout"],
     ["a_writer", "guild_tb", "table-guild", "writer"],
@@ -1477,7 +1574,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild("guild_nw", "narrow-guild", now, "org_home");
+  await repo.insertGuild({ guildId: "guild_nw", name: "narrow-guild", orgId: "org_home" }, now);
   const operator = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_nw" });
   const roles = await artifacts.writeNote(operator, {
     level: "guild",
@@ -1508,15 +1605,17 @@ test("studio proposes notes to create and delete and narrows an agent's access",
   assert.ok(server, "seeded Notion catalog row");
   const [ciphertext, nonce] = encryptPayload({ token: "notion-secret-token" }, Buffer.from(HEX_MASTER_KEY, "hex"));
   const connection = await repo.connectMcp(
-    newId("conn"),
-    newId("bind"),
-    String(server.id),
-    "org",
-    "org_home",
-    ciphertext,
-    nonce,
+    {
+      connectionId: newId("conn"),
+      bindingId: newId("bind"),
+      serverId: String(server.id),
+      ownerScope: "org",
+      ownerId: "org_home",
+      ciphertext,
+      nonce,
+      status: "connected",
+    },
     now,
-    { status: "connected" },
   );
   await repo.replaceMcpTools(
     String(connection.id),
@@ -1706,7 +1805,19 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       widenWidget.edit.effects.join(" | "),
     );
     const widenSeq = await commit("studio_edit_access", widenArgs, widenWidget);
-    await repo.upsertBinding(newId("bind"), "native_tool", "schedule_list", "guild", "guild_nw", false, null, new Date(), TEST_ACTOR);
+    await repo.upsertBinding(
+      {
+        bindingId: newId("bind"),
+        catalogKind: "native_tool",
+        catalogId: "schedule_list",
+        scope: "guild",
+        scopeId: "guild_nw",
+        enabled: false,
+        connectionId: null,
+      },
+      new Date(),
+      TEST_ACTOR,
+    );
     assert.equal((await view(widenSeq)).stale, true);
     assert.equal((await resolve(widenSeq, "apply")).statusCode, 409);
     assert.equal((await resolve(widenSeq, "decline")).statusCode, 200);
@@ -1751,7 +1862,7 @@ test("studio proposes routines to create, change, and delete that the operator a
   const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild("guild_rt", "routine-guild", now, "org_home");
+  await repo.insertGuild({ guildId: "guild_rt", name: "routine-guild", orgId: "org_home" }, now);
   await persistAgent(repo, notes, {
     agentId: "a_wt",
     guildId: "guild_rt",
@@ -1948,11 +2059,20 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.ok(history.every((change) => change.agent_id === "a_wt"));
 
     // A routine an agent creates and pauses links to the run step that did it.
-    await repo.createRun("r_wt", "a_wt", {}, "system prompt", "task prompt", null, now, {
-      systemPromptHash: "s",
-      taskPromptHash: "t",
-      memoryPromptHash: "m",
-    });
+    await repo.createRun(
+      {
+        runId: "r_wt",
+        agentId: "a_wt",
+        configSnapshot: {},
+        systemContent: "system prompt",
+        taskContent: "task prompt",
+        userContent: null,
+        systemPromptHash: "s",
+        taskPromptHash: "t",
+        memoryPromptHash: "m",
+      },
+      now,
+    );
     const toolCtx = (callId: string) =>
       createToolContext({
         run_id: "r_wt",

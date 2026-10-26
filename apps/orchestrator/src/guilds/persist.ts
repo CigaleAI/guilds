@@ -1,3 +1,4 @@
+import type { NewGuild } from "../db/guilds.js";
 import {
   DEFAULT_AGENT_MESSAGE_LIMIT,
   DEFAULT_GUILD_AGENTS,
@@ -9,18 +10,7 @@ export type GuildNotes = {
 };
 
 export type GuildDatabase = {
-  insertGuild(
-    guildId: string,
-    name: string,
-    now: Date,
-    orgId: string,
-    about: string,
-    agentMessageLimit?: number,
-    visibility?: string,
-    creatorUserId?: string | null,
-    description?: string,
-    maxAgents?: number,
-  ): Promise<void>;
+  insertGuild(guild: NewGuild, now: Date): Promise<void>;
   deleteGuild(guildId: string): Promise<void>;
 };
 
@@ -45,16 +35,18 @@ export async function persistGuild(
   const description = args.description ?? "";
   const visibility = args.visibility ?? "org";
   await db.insertGuild(
-    args.guildId,
-    args.name,
+    {
+      guildId: args.guildId,
+      name: args.name,
+      orgId: args.orgId,
+      about,
+      agentMessageLimit: args.groupAgentMessageLimit ?? DEFAULT_AGENT_MESSAGE_LIMIT,
+      visibility,
+      creatorUserId: args.creatorUserId,
+      description,
+      maxAgents: args.maxAgents ?? DEFAULT_GUILD_AGENTS,
+    },
     args.now,
-    args.orgId,
-    about,
-    args.groupAgentMessageLimit ?? DEFAULT_AGENT_MESSAGE_LIMIT,
-    visibility,
-    args.creatorUserId,
-    description,
-    args.maxAgents ?? DEFAULT_GUILD_AGENTS,
   );
   try {
     await notes.createGuild(args.orgSlug, args.name);

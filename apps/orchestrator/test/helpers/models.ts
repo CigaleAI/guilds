@@ -1,4 +1,5 @@
 import { encryptPayload } from "../../src/credentials/crypto.js";
+import type { NewOrgModelProvider } from "../../src/db/orgs.js";
 import { newId } from "../../src/lib/ids.js";
 import type { ModelCredentialsProvider } from "../../src/llm/credentials.js";
 import { HEX_MASTER_KEY } from "./env.js";
@@ -16,10 +17,7 @@ export const TEST_CREDENTIALS: ModelCredentialsProvider = {
 
 type ProviderStore = {
   upsertOrgModelProvider(
-    providerId: string,
-    orgId: string,
-    provider: string,
-    row: { ciphertext: Buffer | null; nonce: Buffer | null; keyHint: string | null; models: string[] },
+    provider: NewOrgModelProvider,
     now: Date,
   ): Promise<Record<string, unknown>>;
 };
@@ -42,10 +40,15 @@ export async function connectModelProvider(
   }
   const [ciphertext, nonce] = encryptPayload(payload, TEST_MASTER_KEY);
   await repo.upsertOrgModelProvider(
-    newId("mp"),
-    orgId,
-    provider,
-    { ciphertext, nonce, keyHint: apiKey ? apiKey.slice(-4) : null, models: options.models ?? [] },
+    {
+      providerId: newId("mp"),
+      orgId,
+      provider,
+      ciphertext,
+      nonce,
+      keyHint: apiKey ? apiKey.slice(-4) : null,
+      models: options.models ?? [],
+    },
     new Date(),
   );
 }
