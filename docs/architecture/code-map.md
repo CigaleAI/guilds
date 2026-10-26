@@ -63,7 +63,7 @@ one as a submodule ([Extension points](extension-points.md)).
 | `registry/` | Installing connectors from a registry, and the code tier ([Connector registry](../tools-and-connectors/connector-registry.md)) |
 | `mcp/` | `McpPool`, the catalog and its policy, tool names, and an operator's direct tool call (`operator-call.ts`) |
 | `oauth/` | Connect flows from each manifest's `auth.oauth` |
-| `github/` | The GitHub App and its manifest flow ([GitHub](../tools-and-connectors/github.md)) |
+| `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
 | `coding/` | Guild repositories, a coding run's git side, the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
 | `machines/` | Tiers, sizes, slots, placement access, and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
 | `access/` | Binding resolution and a run's tools, MCP, and secrets ([Access](../concepts/access.md)) |

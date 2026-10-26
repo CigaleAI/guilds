@@ -290,7 +290,9 @@ A coding agent's State carries `repositories`:
 ### Code
 
 `apps/orchestrator/src/coding/repositories.ts` (validation, the clone
-list), `apps/orchestrator/src/coding/git.ts` (tokens, identity, clone
-errors), `apps/orchestrator/src/http/coding-routes.ts` (routes),
+list), `apps/orchestrator/src/coding/git.ts` (the agent's tokens,
+identity, clone errors), `apps/orchestrator/src/github/tokens.ts`
+(minting a login's installation token),
+`apps/orchestrator/src/http/coding-routes.ts` (routes),
 `apps/web/src/features/guild/pages/GuildRepositories.tsx`, and
 `apps/web/src/features/agent/CodingRepositories.tsx`.

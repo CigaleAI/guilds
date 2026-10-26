@@ -371,20 +371,25 @@ export type TokenRepository = { id: number; full_name: string };
 
 export type InstallationToken = { token: string; expiresAt: string; repositories: TokenRepository[] };
 
+/** The permissions a token asks for, by GitHub's permission name; none asks for every one the installation grants. */
+export type TokenPermissions = Readonly<Record<string, "read" | "write">>;
+
 /**
  * An installation access token, valid one hour. With `repositoryIds` it reaches only those
- * repositories, with contents and pull requests write, and lists them under their current
- * names: an id survives a rename of the repository or its owner, a name does not.
+ * repositories and lists them under their current names: an id survives a rename of the
+ * repository or its owner, a name does not. With `permissions` it holds only those.
  */
 export async function installationToken(
   config: GithubAppConfig,
   installationId: number,
-  options: Options & { repositoryIds?: number[]; now?: Date } = {},
+  options: Options & { repositoryIds?: number[]; permissions?: TokenPermissions; now?: Date } = {},
 ): Promise<InstallationToken> {
   const body: Record<string, unknown> = {};
   if (options.repositoryIds) {
     body.repository_ids = options.repositoryIds;
-    body.permissions = { contents: "write", pull_requests: "write" };
+  }
+  if (options.permissions) {
+    body.permissions = options.permissions;
   }
   const response = await fetcher(options)(`${GITHUB_API}/app/installations/${installationId}/access_tokens`, {
     method: "POST",

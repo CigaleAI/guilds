@@ -5,6 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/db/client.js";
 import { Repositories } from "../../src/db/repositories.js";
+import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { Schedules } from "../../src/schedules/service.js";
@@ -370,12 +371,18 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   await notes.ensureSystemPrompt();
   const repo = new Repositories(database.pool);
   await connectModelProvider(repo, "org_home", "openrouter");
+  const mcp = new McpPool();
+  const dropped: string[] = [];
+  mcp.drop = (connectionId: string) => {
+    dropped.push(connectionId);
+  };
   const app = await buildApp(database, {
     repo,
     notes,
     scripts: new Scripts(repo),
     schedules: new Schedules(repo),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
+    mcp,
   });
   try {
     const frontend = await app.inject({
@@ -468,6 +475,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
       account: "acme",
     });
 
+    const droppedBefore = dropped.length;
     const picked = await app.inject({
       method: "PUT",
       url: `/api/mcp/connections/${retryId}/github/selected`,
@@ -478,6 +486,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
     assert.deepEqual(picked.json().repositories, [
       { name: "site", url: "https://github.com/acme/site", default_branch: "main", github_id: 102 },
     ]);
+    assert.deepEqual(dropped.slice(droppedBefore), [retryId], "the login's tool session is reopened for the new selection");
     const guildAccess = await app.inject({
       method: "GET",
       url: `/api/guilds/${backendId}/access`,

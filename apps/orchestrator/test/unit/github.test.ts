@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
-import { RepositoryAccessError, RepositoryTokens, TOKEN_REFRESH_MS } from "../../src/coding/git.js";
+import { RepositoryTokens } from "../../src/coding/git.js";
+import { mintLoginToken, RepositoryAccessError, TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import {
   codingRepositories,
   validateGithubRepositories,
@@ -208,7 +209,7 @@ test("only https://github.com/<owner>/<repository> is a GitHub repository URL", 
   assert.equal(parseGithubUrl("https://gitlab.com/acme/shop"), null);
 });
 
-test("an installation token is scoped to repository ids with contents and pull requests write, and names them as they are now", async () => {
+test("an installation token is scoped to repository ids, holds the permissions asked for, and names them as they are now", async () => {
   const fake = fakeFetch(() =>
     json(201, {
       token: "ghs_abc",
@@ -223,11 +224,10 @@ test("an installation token is scoped to repository ids with contents and pull r
     repositories: [{ id: 101, full_name: "acme/shop" }],
   });
   assert.equal(fake.calls[0]?.url, "https://api.github.com/app/installations/77/access_tokens");
-  assert.deepEqual(JSON.parse(String(fake.calls[0]?.init.body)), {
-    repository_ids: [101],
-    permissions: { contents: "write", pull_requests: "write" },
-  });
+  assert.deepEqual(JSON.parse(String(fake.calls[0]?.init.body)), { repository_ids: [101] }, "every permission the installation grants");
   assert.match(String((fake.calls[0]?.init.headers as Record<string, string>).Authorization), /^Bearer ey/);
+  await installationToken(APP, 77, { repositoryIds: [101], permissions: { issues: "read" }, fetch: fake.fetch });
+  assert.deepEqual(JSON.parse(String(fake.calls[1]?.init.body)), { repository_ids: [101], permissions: { issues: "read" } });
   const gone = fakeFetch(() => json(404, { message: "Not Found" }));
   await assert.rejects(installationToken(APP, 77, { fetch: gone.fetch }), GithubInstallationGoneError);
 });
@@ -369,10 +369,13 @@ test("repository tokens: one per connection, limited to its repositories, refres
     },
   };
   const minted: string[] = [];
+  const permissions: unknown[] = [];
   const names: Record<number, string> = { 101: "acme/shop", 102: "acme/site", 201: "other/infra" };
   const fake = fakeFetch((url, init) => {
     const installation = /installations\/(\d+)\//.exec(url)![1];
-    const ids = (JSON.parse(String(init.body)) as { repository_ids: number[] }).repository_ids;
+    const body = JSON.parse(String(init.body)) as { repository_ids: number[]; permissions: unknown };
+    const ids = body.repository_ids;
+    permissions.push(body.permissions);
     minted.push(`${installation}:${ids.join(",")}`);
     return json(201, {
       token: `ghs_${installation}_${minted.length}`,
@@ -392,6 +395,10 @@ test("repository tokens: one per connection, limited to its repositories, refres
   );
   await tokens.mint();
   assert.deepEqual(minted, ["11:101,102", "22:201"]);
+  assert.deepEqual(permissions, [
+    { contents: "write", pull_requests: "write" },
+    { contents: "write", pull_requests: "write" },
+  ], "what a coding agent's git and gh need");
   assert.deepEqual(Object.keys(tokens.entries).sort(), ["infra", "shop", "site"]);
   assert.deepEqual(tokens.entries.site, {
     token: "ghs_11_1",
@@ -527,6 +534,29 @@ test("a disconnected connection is refused; GitHub refusing the installation dis
   );
   await assert.rejects(gone.mint(), /now disconnected/);
   assert.deepEqual(saved, ["conn_a:disconnected"]);
+});
+
+test("a login token reaches the repositories the login picked with every permission the installation grants; a login with none picked gets none", async () => {
+  const bodies: unknown[] = [];
+  const fake = fakeFetch((_url, init) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return json(201, { token: "ghs_login", expires_at: "2026-09-30T13:00:00Z", repositories: [{ id: 101, full_name: "acme/shop" }] });
+  });
+  const login = (repositories: unknown[]) => ({ ...connection("conn_a", "connected", 11), settings: { repositories } });
+  const minted = await mintLoginToken(
+    {},
+    login([{ name: "shop", url: "https://github.com/acme/shop", github_id: 101 }]),
+    { app: APP, fetch: fake.fetch, masterKey: MASTER },
+  );
+  assert.equal(minted.token, "ghs_login");
+  assert.equal(minted.expiresAt, "2026-09-30T13:00:00Z");
+  assert.deepEqual([...minted.paths], [["shop", "acme/shop"]]);
+  assert.deepEqual(bodies, [{ repository_ids: [101] }]);
+  await assert.rejects(
+    mintLoginToken({}, login([]), { app: APP, fetch: fake.fetch, masterKey: MASTER }),
+    (error: unknown) => error instanceof RepositoryAccessError && /GitHub login for acme has no repositories picked/.test(error.message),
+  );
+  assert.equal(bodies.length, 1);
 });
 
 test("a GitHub login stores the repositories its coding agents clone", () => {

@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
+import { CONNECTORS } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import {
   CALL_TOOL_TIMEOUT_MS,
   ListedTool,
+  McpDisconnectedError,
   McpError,
   McpPool,
   authHeaders,
@@ -12,6 +15,7 @@ import {
   mcpSchema,
   rpcPayload,
 } from "../../src/mcp/index.js";
+import { TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 
@@ -444,4 +448,160 @@ test("sync OpenSea rejects an unauthenticated catalog", async () => {
     () => pool.syncTools(new MemoryDb(), connectionOf("bad"), { id: "mcp_opensea", slug: "opensea", auth: "token" }, { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && /api key was rejected/.test(error.message),
   );
+});
+
+const GITHUB_APP_KEYS = {
+  app_id: "4242",
+  slug: "guilds-test",
+  private_key: generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+  client_id: "Iv1.client",
+  client_secret: "client-secret",
+};
+const GITHUB_ENTRY = CONNECTORS.forServer({ slug: "github" })!;
+const WITH_GITHUB_ENDPOINT = CONNECTORS.replacing({
+  ...GITHUB_ENTRY,
+  manifest: { ...GITHUB_ENTRY.manifest, endpoint: { url: "https://api.githubcopilot.com/mcp/" } },
+});
+const GITHUB_SERVER = { id: "mcp_github", slug: "github", auth: "oauth", config: { url: "https://api.githubcopilot.com/mcp/" } };
+
+function githubLogin(repositories: unknown[]): Record<string, unknown> {
+  const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" }, KEY);
+  return {
+    id: "conn_gh",
+    status: "connected",
+    owner_scope: "guild",
+    owner_id: "guild_1",
+    account_hint: "acme",
+    ciphertext,
+    nonce,
+    settings: { repositories },
+  };
+}
+
+const PICKED = [{ name: "shop", url: "https://github.com/acme/shop", github_id: 101 }];
+
+type GithubFakes = {
+  /** The body of each token GitHub minted. */
+  minted: Array<Record<string, unknown>>;
+  /** The Authorization header of each tool call the endpoint received. */
+  called: string[];
+};
+
+/**
+ * A pool whose GitHub API mints `ghs_<n>` tokens expiring at `expiry(n)`, and whose endpoint
+ * answers every tool call "ok", or 401 for a token `refuse` names.
+ */
+function githubPool(options: {
+  expiry: (n: number) => number;
+  refuse?: (token: string) => boolean;
+  mint?: () => Response;
+}): { pool: McpPool; fakes: GithubFakes } {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  setInstanceKeys(storeKeys({ "github-app": GITHUB_APP_KEYS }));
+  const fakes: GithubFakes = { minted: [], called: [] };
+  const pool = new McpPool();
+  pool.connectors = WITH_GITHUB_ENDPOINT;
+  pool.fetchFn = async (url, init = {}) => {
+    assert.equal(url, "https://api.github.com/app/installations/77/access_tokens");
+    if (options.mint) {
+      return options.mint();
+    }
+    fakes.minted.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+    const n = fakes.minted.length;
+    return new Response(
+      JSON.stringify({
+        token: `ghs_${n}`,
+        expires_at: new Date(options.expiry(n)).toISOString(),
+        repositories: [{ id: 101, full_name: "acme/shop" }],
+      }),
+      { status: 201, headers: { "content-type": "application/json" } },
+    );
+  };
+  pool.endpointFetch = async (_url, init = {}) => {
+    const authorization = String((init.headers as Record<string, string>).Authorization);
+    const body = JSON.parse(String(init.body)) as { id?: number; method: string };
+    if (options.refuse?.(authorization.replace("Bearer ", ""))) {
+      return new Response("", { status: 401 });
+    }
+    if (body.method === "tools/call") {
+      fakes.called.push(authorization);
+    }
+    const result = body.method === "tools/call" ? { content: [{ type: "text", text: "ok" }] } : {};
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  return { pool, fakes };
+}
+
+test("a GitHub App login's session sends a token for its picked repositories, minted again near expiry", async () => {
+  const { pool, fakes } = githubPool({
+    expiry: (n) => Date.now() + (n === 1 ? TOKEN_REFRESH_MS - 1000 : 3_600_000),
+  });
+  try {
+    const db = new MemoryDb();
+    for (let index = 0; index < 3; index += 1) {
+      assert.equal(await pool.call(db as never, githubLogin(PICKED), GITHUB_SERVER, "list_issues", {}), "ok");
+    }
+    assert.deepEqual(fakes.minted, [{ repository_ids: [101] }, { repository_ids: [101] }], "every permission the installation grants");
+    assert.deepEqual(fakes.called, ["Bearer ghs_1", "Bearer ghs_2", "Bearer ghs_2"]);
+  } finally {
+    setInstanceKeys({});
+  }
+});
+
+test("a GitHub App login whose token the endpoint refuses gets a new one and stays connected", async () => {
+  const { pool, fakes } = githubPool({ expiry: () => Date.now() + 3_600_000, refuse: (token) => token === "ghs_1" });
+  const saved: string[] = [];
+  const db = Object.assign(new MemoryDb(), {
+    saveMcpConnection: async (_id: string, options: { status: string }) => {
+      saved.push(options.status);
+      return null;
+    },
+  });
+  try {
+    assert.equal(await pool.call(db as never, githubLogin(PICKED), GITHUB_SERVER, "list_issues", {}), "ok");
+    assert.equal(fakes.minted.length, 2);
+    assert.deepEqual(fakes.called, ["Bearer ghs_2"]);
+    assert.deepEqual(saved, []);
+  } finally {
+    setInstanceKeys({});
+  }
+});
+
+test("GitHub refusing a GitHub App login's installation disconnects the login", async () => {
+  const { pool } = githubPool({
+    expiry: () => Date.now() + 3_600_000,
+    mint: () => new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+  });
+  const saved: string[] = [];
+  const db = Object.assign(new MemoryDb(), {
+    saveMcpConnection: async (id: string, options: { status: string }) => {
+      saved.push(`${id}:${options.status}`);
+      return null;
+    },
+  });
+  try {
+    await assert.rejects(
+      pool.call(db as never, githubLogin(PICKED), GITHUB_SERVER, "list_issues", {}),
+      McpDisconnectedError,
+    );
+    assert.deepEqual(saved, ["conn_gh:disconnected"]);
+  } finally {
+    setInstanceKeys({});
+  }
+});
+
+test("a GitHub App login with no repositories picked gets no token", async () => {
+  const { pool, fakes } = githubPool({ expiry: () => Date.now() + 3_600_000 });
+  try {
+    await assert.rejects(
+      pool.call(new MemoryDb() as never, githubLogin([]), GITHUB_SERVER, "list_issues", {}),
+      (error: unknown) => error instanceof McpError && /GitHub login for acme has no repositories picked/.test(error.message),
+    );
+    assert.deepEqual(fakes.minted, []);
+  } finally {
+    setInstanceKeys({});
+  }
 });

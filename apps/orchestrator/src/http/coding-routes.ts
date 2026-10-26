@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { installationIdOf, RepositoryAccessError } from "../coding/git.js";
+import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import {
   HARNESSES,
   HARNESS_INFO,
@@ -314,6 +314,8 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     if (row === null) {
       throw new HttpError(404, "connection not found");
     }
+    // The login's tool session holds a token scoped to the repositories it picked before.
+    deps.mcp?.drop(String(connection.id));
     if (connection.owner_scope === "guild" && connection.owner_id) {
       try {
         await repo.replaceConnectionGuildRepositories(

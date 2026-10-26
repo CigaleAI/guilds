@@ -3,7 +3,15 @@ import { jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
 import { assertPublicHost, EndpointError, type HostLookup } from "../net/endpoints.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
-import { accessExpired, OAuthReauthError, refreshConnection } from "../oauth/index.js";
+import { GithubInstallationGoneError } from "../github/index.js";
+import {
+  mintLoginToken,
+  RepositoryAccessError,
+  TOKEN_REFRESH_MS,
+  type GithubRepositoryRecorder,
+  type RepositoryToken,
+} from "../github/tokens.js";
+import { accessExpired, isGithubApp, OAuthReauthError, refreshConnection } from "../oauth/index.js";
 import { agentMcpConnection, type AccessDatabase } from "../access/runtime.js";
 import { installedConnectors } from "../connectors/index.js";
 import type { ConnectorRegistry } from "../connectors/registry.js";
@@ -488,7 +496,7 @@ export class McpSession {
   }
 }
 
-type McpDb = {
+type McpDb = GithubRepositoryRecorder & {
   listMcpTools(connectionId: string): Promise<Array<Record<string, unknown>>>;
   countConnectorCalls?(orgId: string, connectorId: string, month: string): Promise<number>;
   recordConnectorCall?(orgId: string, connectorId: string, month: string, now: Date): Promise<void>;
@@ -521,7 +529,13 @@ type McpDb = {
 };
 
 /** What refreshing and disconnecting a login needs. */
-type LoginDb = Pick<McpDb, "saveMcpConnection" | "updateMcpServerConfig">;
+type LoginDb = Pick<McpDb, "saveMcpConnection" | "updateMcpServerConfig" | "recordGithubRepository">;
+
+/** What a login's session sends, and when that stops working; null when it does not expire while the session lives. */
+type SessionAuth = { headers: Record<string, string>; expiresAt: number | null };
+
+/** A pooled session and when the credential it sends expires. */
+type PooledSession = { session: McpSession; expiresAt: number | null };
 
 export async function markDisconnected(db: LoginDb, connection: Record<string, unknown>): Promise<void> {
   if (!db.saveMcpConnection) {
@@ -593,7 +607,7 @@ export async function previewConnectorState(
 }
 
 export class McpPool {
-  private sessions = new Map<string, McpSession>();
+  private sessions = new Map<string, PooledSession>();
   private syncedAt = new Map<string, number>();
   private toolsTtlMs: number;
   proxyUrl: string;
@@ -605,9 +619,11 @@ export class McpPool {
   /** The organisation policy that caps calls on platform logins; none caps nothing. */
   policy: OrgPolicy | null = null;
 
+  /** The login's pooled session, reopened once the credential it sends is within `TOKEN_REFRESH_MS` of expiry. */
   session: (
     connection: Record<string, unknown>,
     server: Record<string, unknown>,
+    db: LoginDb,
   ) => Promise<McpSession>;
 
   constructor(toolsTtlMs = TOOLS_TTL_MS, proxyUrl = "") {
@@ -615,24 +631,49 @@ export class McpPool {
     this.proxyUrl = proxyUrl;
     this.fetchFn = proxyFetch(this.proxyUrl);
     this.endpointFetch = publicOnly(proxyFetch(this.proxyUrl, CALL_TOOL_TIMEOUT_MS));
-    this.session = async (connection, server) => {
+    this.session = async (connection, server, db) => {
       const connectionId = String(connection.id);
       const current = this.sessions.get(connectionId);
-      if (current) {
-        return current;
+      if (current && (current.expiresAt === null || current.expiresAt - Date.now() > TOKEN_REFRESH_MS)) {
+        return current.session;
       }
-      const opened = new McpSession(
-        serverUrl(server),
-        authHeaders(connection, server, this.registry),
-        this.endpointFetch,
-      );
-      this.sessions.set(connectionId, opened);
+      const auth = await this.sessionAuth(db, connection, server);
+      const opened = new McpSession(serverUrl(server), auth.headers, this.endpointFetch);
+      this.sessions.set(connectionId, { session: opened, expiresAt: auth.expiresAt });
       return opened;
     };
   }
 
   private get registry(): ConnectorRegistry {
     return this.connectors ?? installedConnectors();
+  }
+
+  /**
+   * What a login's session sends. A GitHub App login sends an installation token for the
+   * repositories it picked, which expires; any other login sends its stored credential.
+   */
+  private async sessionAuth(
+    db: LoginDb,
+    connection: Record<string, unknown>,
+    server: Record<string, unknown>,
+  ): Promise<SessionAuth> {
+    if (!isGithubApp(server)) {
+      return { headers: authHeaders(connection, server, this.registry), expiresAt: null };
+    }
+    const minted = await this.mintGithubAppToken(db, connection);
+    return { headers: headersFor(minted.token, this.resolve(server).manifest), expiresAt: Date.parse(minted.expiresAt) };
+  }
+
+  /** A GitHub App login's installation token (`mintLoginToken`). GitHub refusing the installation disconnects the login. */
+  private async mintGithubAppToken(db: LoginDb, connection: Record<string, unknown>): Promise<RepositoryToken> {
+    try {
+      return await mintLoginToken(db, connection, { fetch: this.fetchFn });
+    } catch (error) {
+      if (error instanceof GithubInstallationGoneError) {
+        return this.disconnect(db, connection);
+      }
+      throw error instanceof RepositoryAccessError ? new McpError(error.message, 422) : error;
+    }
   }
 
   drop(connectionId: string): void {
@@ -768,21 +809,37 @@ export class McpPool {
     return refreshed;
   }
 
+  /**
+   * The login after its endpoint refused its credential with a 401. A GitHub App login gets a
+   * new installation token with its next session; any other OAuth login refreshes its token.
+   */
+  private async reauthorize(
+    db: LoginDb,
+    connection: Record<string, unknown>,
+    server: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    if (isGithubApp(server)) {
+      this.drop(String(connection.id));
+      return connection;
+    }
+    return this.refresh(db, connection, server);
+  }
+
   private async withAuthRetry<T>(
     db: LoginDb,
     login: Login,
     server: Record<string, unknown>,
     action: (session: McpSession) => Promise<T>,
   ): Promise<T> {
-    let session = await this.session(login.connection, server);
+    let session = await this.session(login.connection, server, db);
     try {
       return await action(session);
     } catch (error) {
       if (!(error instanceof McpError) || error.status !== 401 || !isOauth(server)) {
         throw error;
       }
-      login.connection = await this.refresh(db, login.connection, server);
-      session = await this.session(login.connection, server);
+      login.connection = await this.reauthorize(db, login.connection, server);
+      session = await this.session(login.connection, server, db);
       return await action(session);
     }
   }

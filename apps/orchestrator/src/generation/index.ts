@@ -159,7 +159,8 @@ import {
   withRemainingToolCalls as _withRemainingToolCalls,
   CancelEvent,
 } from "../toolbox/index.js";
-import { agentGitIdentity, cloneFailures, RepositoryAccessError, RepositoryTokens } from "../coding/git.js";
+import { agentGitIdentity, cloneFailures, RepositoryTokens } from "../coding/git.js";
+import { RepositoryAccessError } from "../github/tokens.js";
 import { codingRepositories, stateRepositories } from "../coding/repositories.js";
 import {
   harnessModelOf,

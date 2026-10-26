@@ -1,16 +1,13 @@
-import { decryptPayload } from "../credentials/crypto.js";
+import { GithubInstallationGoneError, parseGithubUrl, type GithubAppConfig, type TokenPermissions } from "../github/index.js";
 import {
-  GithubError,
-  GithubInstallationGoneError,
-  installationRepositories,
-  installationRepository,
-  installationToken,
-  parseGithubUrl,
-  requireGithubApp,
-  type GithubAppConfig,
-} from "../github/index.js";
+  loginAccount,
+  mintRepositoryToken,
+  RepositoryAccessError,
+  TOKEN_REFRESH_MS,
+  type GithubRepositoryRecorder,
+  type RepositoryToken,
+} from "../github/tokens.js";
 import { markDisconnected } from "../mcp/index.js";
-import { githubIdOf } from "./repositories.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
 
@@ -18,15 +15,9 @@ import type { SandboxFiles } from "../toolbox/types.js";
 export function gitTokensPath(agentId: string): string {
   return `/run/guilds/${agentId}/git-tokens.json`;
 }
-/** A token closer than this to expiry is replaced before a shell command. */
-export const TOKEN_REFRESH_MS = 10 * 60 * 1000;
 
-export class RepositoryAccessError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RepositoryAccessError";
-  }
-}
+/** What a coding agent's git and `gh` may do on its repositories. */
+const CODING_PERMISSIONS: TokenPermissions = { contents: "write", pull_requests: "write" };
 
 /** The agent's git identity: its name, and a valid email (guild override or the platform default). */
 export function agentGitIdentity(
@@ -37,18 +28,9 @@ export function agentGitIdentity(
   return { name: String(agent.name), email: email || `${String(agent.id)}@agents.guilds.run` };
 }
 
-export function installationIdOf(connection: Record<string, unknown>, masterKey?: Buffer): number {
-  const payload = decryptPayload(connection.ciphertext as Buffer, connection.nonce as Buffer, masterKey);
-  const id = Number(payload.installation_id);
-  if (!Number.isInteger(id) || id <= 0) {
-    throw new RepositoryAccessError("the GitHub connection has no installation");
-  }
-  return id;
-}
-
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
 
-export type RepositoryTokenDb = {
+export type RepositoryTokenDb = GithubRepositoryRecorder & {
   getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null>;
   saveMcpConnection?(
     connectionId: string,
@@ -61,13 +43,6 @@ export type RepositoryTokenDb = {
       now: Date;
     },
   ): Promise<Record<string, unknown> | null>;
-  /** Records a repository's GitHub id and its current URL wherever this login lists it. */
-  recordGithubRepository?(
-    connectionId: string,
-    name: string,
-    repository: { githubId: number; url: string },
-    now: Date,
-  ): Promise<void>;
 };
 
 /**
@@ -102,12 +77,9 @@ export class RepositoryTokens {
   }
 
   /**
-   * Mints a token for every connection the repositories use, scoped to them by GitHub's ids.
-   * A repository with no id recorded finds it by its path, which GitHub follows across a rename.
-   * A repository GitHub has renamed, or whose owner it has renamed, gets its current URL, here
-   * and where it is stored.
-   * A disconnected connection is refused; GitHub refusing the installation marks the
-   * connection disconnected.
+   * Mints a token for every connection the repositories use, with what a coding agent's git
+   * and `gh` need, scoped to those repositories (`mintRepositoryToken`). A disconnected
+   * connection is refused.
    */
   async mint(): Promise<void> {
     const byConnection = new Map<string, Array<Record<string, unknown>>>();
@@ -118,99 +90,53 @@ export class RepositoryTokens {
     const entries: Record<string, TokenEntry> = {};
     const expiries: number[] = [];
     for (const [connectionId, rows] of byConnection) {
-      const connection = await this.db.getMcpConnection(connectionId);
-      const account = String(connection?.account_hint ?? "");
-      if (connection === null || connection.status !== "connected") {
-        throw new RepositoryAccessError(`the GitHub connection${account ? ` for ${account}` : ""} is disconnected`);
-      }
-      const app = this.options.app ?? requireGithubApp();
-      const installationId = installationIdOf(connection, this.options.masterKey);
-      const call = { ...(this.options.fetch ? { fetch: this.options.fetch } : {}), now: this.now() };
-      const items = rows.map((row) => {
-        const parsed = parseGithubUrl(String(row.url));
-        if (parsed === null) {
-          throw new RepositoryAccessError(`${String(row.name)} is not a GitHub repository URL`);
-        }
-        return { row, path: `${parsed.owner}/${parsed.repository}` };
-      });
-      const changed = new Set<(typeof items)[number]>();
-      const outOfReach = (missing: typeof items) =>
-        new RepositoryAccessError(
-          `the GitHub App installed for ${account || connectionId} does not reach ${missing
-            .map((item) => `${String(item.row.name)} (${item.path})`)
-            .join(", ")}: give the App access to it on GitHub, or pick it again on the GitHub integration`,
-        );
-      let minted;
-      try {
-        const unidentified = items.filter((item) => githubIdOf(item.row) === null);
-        if (unidentified.length) {
-          const { token } = await installationToken(app, installationId, call);
-          for (const item of unidentified) {
-            const found = await installationRepository(token, item.path, call);
-            if (found) {
-              item.row.github_id = found.id;
-              changed.add(item);
-            }
-          }
-          const missing = unidentified.filter((item) => githubIdOf(item.row) === null);
-          if (missing.length) {
-            throw outOfReach(missing);
-          }
-        }
-        const repositoryIds = [...new Set(items.map((item) => githubIdOf(item.row)!))];
-        try {
-          minted = await installationToken(app, installationId, { repositoryIds, ...call });
-        } catch (error) {
-          // GitHub refuses the whole token when one repository is out of the App's reach.
-          if (error instanceof GithubError && !(error instanceof GithubInstallationGoneError) && error.status === 422) {
-            const reached = new Set((await installationRepositories(app, installationId, call)).map((item) => item.id));
-            const missing = items.filter((item) => !reached.has(githubIdOf(item.row)!));
-            if (missing.length) {
-              throw outOfReach(missing);
-            }
-          }
-          throw error;
-        }
-      } catch (error) {
-        if (error instanceof GithubInstallationGoneError) {
-          if (this.db.saveMcpConnection) {
-            await markDisconnected(this.db as never, connection);
-          }
-          throw new RepositoryAccessError(
-            `GitHub refused the installation for ${account || connectionId}; the connection is now disconnected`,
-          );
-        }
-        if (error instanceof GithubError) {
-          throw new RepositoryAccessError(error.message);
-        }
-        throw error;
-      }
+      const minted = await this.mintCodingToken(await this.connectedLogin(connectionId), rows);
       expiries.push(Date.parse(minted.expiresAt));
-      for (const item of items) {
-        const current = minted.repositories.find((repository) => repository.id === githubIdOf(item.row));
-        if (current && current.full_name.toLowerCase() !== item.path.toLowerCase()) {
-          item.row.url = `https://github.com/${current.full_name}`;
-          item.path = current.full_name;
-          changed.add(item);
-        }
-        entries[String(item.row.name)] = {
+      for (const row of rows) {
+        entries[String(row.name)] = {
           token: minted.token,
           expires_at: minted.expiresAt,
           host: "github.com",
-          path: item.path,
+          path: minted.paths.get(String(row.name))!,
         };
-      }
-      for (const item of changed) {
-        await this.db.recordGithubRepository?.(
-          connectionId,
-          String(item.row.name),
-          { githubId: githubIdOf(item.row)!, url: String(item.row.url) },
-          this.now(),
-        );
       }
     }
     this.entries = entries;
     this.expiries = expiries;
+  }
+
+  /** The connection a repository uses, refused unless it is connected. */
+  private async connectedLogin(connectionId: string): Promise<Record<string, unknown>> {
+    const connection = await this.db.getMcpConnection(connectionId);
+    if (connection === null || connection.status !== "connected") {
+      const account = String(connection?.account_hint ?? "");
+      throw new RepositoryAccessError(`the GitHub connection${account ? ` for ${account}` : ""} is disconnected`);
+    }
+    return connection;
+  }
+
+  /** The login's token for its repositories here. GitHub refusing the installation marks the login disconnected. */
+  private async mintCodingToken(
+    connection: Record<string, unknown>,
+    rows: Array<Record<string, unknown>>,
+  ): Promise<RepositoryToken> {
+    try {
+      return await mintRepositoryToken(
+        this.db,
+        { connection, repositories: rows, permissions: CODING_PERMISSIONS },
+        this.options,
+      );
+    } catch (error) {
+      if (!(error instanceof GithubInstallationGoneError)) {
+        throw error;
+      }
+      if (this.db.saveMcpConnection) {
+        await markDisconnected(this.db as never, connection);
+      }
+      throw new RepositoryAccessError(
+        `GitHub refused the installation for ${loginAccount(connection)}; the connection is now disconnected`,
+      );
+    }
   }
 
   /** Writes the agent's tokens under /run/guilds/<agent id> through the sandbox file API, outside every home. */
