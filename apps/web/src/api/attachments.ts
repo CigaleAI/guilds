@@ -1,21 +1,7 @@
-import { ApiError } from "./client";
+import { ApiError, detailText } from "./client";
 import { reportClientError, requestId } from "./clientLog";
 import { authMode, identityHeaders, signInUrl } from "./session";
 import type { ChatAttachment } from "./types";
-
-function detailText(detail: unknown, fallback: string): string {
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    const messages = detail
-      .map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg) : ""))
-      .filter(Boolean);
-    if (messages.length) return messages.join("; ");
-  } else if (detail && typeof detail === "object" && "message" in detail) {
-    const message = String(detail.message ?? "").trim();
-    if (message) return message;
-  }
-  return fallback;
-}
 
 /** Stores image bytes, then returns the id later messages reference. */
 export async function uploadAttachment(file: File): Promise<ChatAttachment> {

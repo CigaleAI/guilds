@@ -3,15 +3,16 @@ import { ArrowLeft, Copy, FilePlus, FileText, Pin, ShieldCheck, Trash2 } from "l
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import {
   useCollections,
-  useDeleteFile,
+  useDeleteNote,
   useEmbeddableNotes,
   useNote,
   useNoteList,
-  useSaveFile,
+  useSaveNote,
   type NotesPrefix,
 } from "../../api/queries";
 import type { NoteItem } from "../../api/types";
 
+import { scopeOfDisplayPath } from "../../app/displayPath";
 import { useIdentity } from "../../app/identity";
 import { useMediaQuery, wideScreen } from "../../app/media";
 import {
@@ -60,13 +61,6 @@ type NotesBrowserProps = {
   onAsk?: ((item: NoteItem) => void) | undefined;
 };
 
-/** The scope a display path belongs to: an agent's notes, a guild's, or the organisation's. */
-function scopeOfPath(path: string): NoteScope["id"] {
-  if (/(^|\/)agents\//.test(path)) return "agent";
-  if (/(^|\/)guilds\//.test(path)) return "guild";
-  return "org";
-}
-
 const noNotes: NoteItem[] = [];
 
 /**
@@ -84,8 +78,8 @@ export function NotesBrowser({
   const wide = useMediaQuery(wideScreen);
   const [listOpen, setListOpen] = useState(!initialPath);
   const initialScope =
-    initialPath && scopes.some((item) => item.id === scopeOfPath(initialPath))
-      ? scopeOfPath(initialPath)
+    initialPath && scopes.some((item) => item.id === scopeOfDisplayPath(initialPath))
+      ? scopeOfDisplayPath(initialPath)
       : undefined;
   const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.id ?? "guild");
   const scope = scopes.find((item) => item.id === scopeId) ?? scopes[0];
@@ -295,8 +289,8 @@ function NoteView({
 }: NoteViewProps) {
   const { org } = useIdentity();
   const file = useNote(scope.prefix, item.path);
-  const save = useSaveFile(scope.prefix);
-  const remove = useDeleteFile(scope.prefix);
+  const save = useSaveNote(scope.prefix);
+  const remove = useDeleteNote(scope.prefix);
   const notes = useEmbeddableNotes();
   const collections = useCollections();
   const [picking, setPicking] = useState<InsertKind | null>(null);
@@ -523,7 +517,7 @@ function NewNoteDialog({
   existing: readonly NoteItem[];
   onCreated: (file: { display_path: string }) => void;
 }) {
-  const save = useSaveFile(scope.prefix);
+  const save = useSaveNote(scope.prefix);
   const [name, setName] = useState("untitled");
   const [touched, setTouched] = useState(false);
   const result = newNotePath(name, existing);

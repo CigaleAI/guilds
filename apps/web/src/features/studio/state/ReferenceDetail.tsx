@@ -1,11 +1,11 @@
 import { ExternalLink, Pin } from "lucide-react";
+import { formatSize } from "../../../app/format";
 import { Banner, Button, cn, Icon } from "@guildsrun/ui";
 import type { ReferenceNode, StudioReferences } from "../../../api/types";
 import { DetailHeader, Empty } from "../MasterDetail";
 import { useStudio } from "../StudioContext";
 import { NodeRow, ReferenceSection as Section } from "./referenceParts";
 import {
-  formatSize,
   isOverBudget,
   linkLabel,
   reachedAgents,

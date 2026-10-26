@@ -87,3 +87,10 @@ export function relativeTime(timestamp: string, now: Date = new Date()): string 
 export function isoTime(timestamp: string): string {
   return toDate(timestamp).toISOString();
 }
+
+/** A size in bytes as people read it: bytes, kilobytes, or megabytes. */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}

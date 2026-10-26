@@ -126,10 +126,12 @@ not-found page (`features/home/NotFound.tsx`).
 | `/guilds/$guildId` | Guild group chat | `seq`: open at that message |
 | `/guilds/$guildId/settings` | Guild settings | |
 | `/guilds/$guildId/state/notes` | Guild State › Notes | `path`: open that note |
+| `/guilds/$guildId/state/files` | Guild State › Files | `path`: open that file |
 | `/guilds/$guildId/state/tables` | Guild State › Tables | |
 | `/guilds/$guildId/state/access` | Guild State › Access | |
 | `/guilds/$guildId/routines`, `…/issues`, `…/usage`, `…/tools`, `…/secrets` | Guild tabs | |
 | `/guilds/$guildId/agents/$agentId` | Agent inspector, Chat tab | `run`: one session; with it `call` or `seq` for a step; `history=true` opens the History drawer |
+| `/guilds/$guildId/agents/$agentId/state/files` | Agent State › Files | `path`: open that file |
 | `…/agents/$agentId/prompt` | Agent Prompt tab | |
 | `…/agents/$agentId/state/memory`, `…/state/notes`, `…/state/tables`, `…/state/access`, `…/state/scripts` | Agent State sub-tabs | `path` on notes |
 | `…/agents/$agentId/history` | Opens Chat with the History drawer | |

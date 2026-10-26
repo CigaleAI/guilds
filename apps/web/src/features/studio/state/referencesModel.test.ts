@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReferenceEdge, ReferenceNode, StudioReferences } from "../../../api/types";
 import {
-  formatSize,
   isBroken,
   isOverBudget,
   layoutReferences,
@@ -217,12 +216,6 @@ test("selecting a node lights what it pulls in, what pulls it in, and what it na
 test("selection follows an embed loop without walking forever", () => {
   const loop: StudioReferences = { ...data, edges: [embed("x", "y"), embed("y", "x")] };
   assert.deepEqual([...litIds(loop, "x")].sort(), ["x", "y"]);
-});
-
-test("formatSize reads bytes and kilobytes", () => {
-  assert.equal(formatSize(512), "512 B");
-  assert.equal(formatSize(1536), "1.5 KB");
-  assert.equal(formatSize(64 * 1024), "64 KB");
 });
 
 test("layoutReferences places columns across the width and the band below them", () => {

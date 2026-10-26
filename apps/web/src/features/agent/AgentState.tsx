@@ -1,5 +1,5 @@
 import { Link, Navigate, Outlet, useParams } from "@tanstack/react-router";
-import { BookOpen, Brain, Database, FileCode, ShieldCheck } from "lucide-react";
+import { BookOpen, Brain, Database, FileCode, Paperclip, ShieldCheck } from "lucide-react";
 import { useAgent } from "../../api/queries";
 import { TabsNav, tabsTrigger, Icon } from "@guildsrun/ui";
 import { capabilityOn } from "./settings/configForm";
@@ -8,6 +8,7 @@ import { capabilityOn } from "./settings/configForm";
 const stateTabs = [
   { route: "/guilds/$guildId/agents/$agentId/state/memory", label: "Memory", icon: Brain },
   { route: "/guilds/$guildId/agents/$agentId/state/notes", label: "Notes", icon: BookOpen },
+  { route: "/guilds/$guildId/agents/$agentId/state/files", label: "Files", icon: Paperclip },
   { route: "/guilds/$guildId/agents/$agentId/state/tables", label: "Tables", icon: Database },
   {
     route: "/guilds/$guildId/agents/$agentId/state/access",

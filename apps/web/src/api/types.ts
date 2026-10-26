@@ -619,7 +619,7 @@ export type Collection = {
 export type AccessMode = "read" | "write";
 
 /** What carries an access list: a note or a table. */
-export type AccessTarget = { kind: "note" | "collection"; id: string };
+export type AccessTarget = { kind: "note" | "collection" | "file"; id: string };
 
 /** Who an access row names: the organisation, a guild, or one agent. */
 export type AccessSubjectType = "org" | "guild" | "agent";
@@ -1026,6 +1026,23 @@ export type NoteItem = {
   version: number;
 };
 
+/** A shared file in a files scope: its bytes live on the server, its row carries what it is. */
+export type FileItem = {
+  /** The file's id, which names it to the download, delete, and access API. */
+  id: string;
+  display_path: string;
+  name: string;
+  description: string;
+  mime: string;
+  bytes: number;
+  level: "agent" | "guild" | "org";
+  owner_id: string;
+  version: number;
+  author: string;
+  updated_at: string;
+  access?: "read" | "write";
+};
+
 /** A file's text; `id` is set for a note, not for task.md or memory.md. */
 export type FileContent = {
   id?: string;
@@ -1242,7 +1259,7 @@ export type StateFlag = "no_agent_read" | "writers" | "deletes_others_rows" | "u
 /** A note, table, script, or Memory of the guild's state, with its changes and reads in the window. */
 export type StateItemRow = {
   display_path: string;
-  kind: "note" | "memory" | "script" | "table";
+  kind: "note" | "memory" | "script" | "file" | "table";
   level: "agent" | "guild" | "org";
   owner_id: string;
   title: string;

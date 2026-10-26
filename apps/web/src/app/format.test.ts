@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dayKey, dayLabel, isoTime, messageTime, relativeTime, upcomingTime } from "./format";
+import { dayKey, dayLabel, formatSize, isoTime, messageTime, relativeTime, upcomingTime } from "./format";
 
 test("server timestamps with microseconds parse", () => {
   assert.equal(isoTime("2026-09-26T09:00:00.123456+00:00"), "2026-09-26T09:00:00.123Z");
@@ -51,4 +51,12 @@ test("times ahead read as a clock today, a weekday this week, then a date", () =
 
 test("Postgres-style timestamps parse too", () => {
   assert.equal(isoTime("2026-09-24 18:56:00.774+00"), "2026-09-24T18:56:00.774Z");
+});
+
+test("formatSize reads bytes, kilobytes, and megabytes", () => {
+  assert.equal(formatSize(512), "512 B");
+  assert.equal(formatSize(1536), "1.5 KB");
+  assert.equal(formatSize(64 * 1024), "64 KB");
+  assert.equal(formatSize(2.5 * 1024 * 1024), "2.5 MB");
+  assert.equal(formatSize(10 * 1024 * 1024), "10 MB");
 });

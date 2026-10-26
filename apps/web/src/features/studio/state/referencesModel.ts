@@ -4,6 +4,7 @@ import type {
   ReferenceNode,
   StudioReferences,
 } from "../../../api/types";
+import { formatSize } from "../../../app/format";
 import type { StudioSearch } from "../location";
 
 const HOP_LABELS = ["Embedded in a Task", "One hop further"];
@@ -270,12 +271,6 @@ export function stateListLocation(node: ReferenceNode): StudioSearch | null {
     tab: "list",
     item: node.id,
   };
-}
-
-/** A size in bytes as people read it. */
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
 }
 
 // ---------------------------------------------------------------------------

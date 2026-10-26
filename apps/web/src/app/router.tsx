@@ -188,7 +188,7 @@ const guildUsageRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/guild/pages/GuildUsage"), "GuildUsage"),
 });
 
-/** The State tab: notes, tables and access as sub-tabs, one route each. */
+/** The State tab: notes, files, tables and access as sub-tabs, one route each. */
 const guildStateRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "state",
@@ -231,7 +231,7 @@ const agentAccessRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/agent/AgentAccessTabs"), "AgentReachTab"),
 });
 
-/** `path` opens that note first, by display path. */
+/** `path` opens that note or file first, by display path. */
 function parseFileSearch(search: Record<string, unknown>): { path?: string } {
   return typeof search.path === "string" && search.path ? { path: search.path } : {};
 }
@@ -240,6 +240,13 @@ const guildNotesRoute = createRoute({
   getParentRoute: () => guildStateRoute,
   path: "notes",
   component: lazyRouteComponent(() => import("../features/notes/NotesTabs"), "GuildNotesTab"),
+  validateSearch: parseFileSearch,
+});
+
+const guildFilesRoute = createRoute({
+  getParentRoute: () => guildStateRoute,
+  path: "files",
+  component: lazyRouteComponent(() => import("../features/files/FilesTabs"), "GuildFilesTab"),
   validateSearch: parseFileSearch,
 });
 
@@ -271,6 +278,13 @@ const agentNotesRoute = createRoute({
   getParentRoute: () => agentStateRoute,
   path: "notes",
   component: lazyRouteComponent(() => import("../features/notes/NotesTabs"), "AgentNotesTab"),
+  validateSearch: parseFileSearch,
+});
+
+const agentFilesRoute = createRoute({
+  getParentRoute: () => agentStateRoute,
+  path: "files",
+  component: lazyRouteComponent(() => import("../features/files/FilesTabs"), "AgentFilesTab"),
   validateSearch: parseFileSearch,
 });
 
@@ -429,6 +443,7 @@ export const router = createRouter({
       guildStateRoute.addChildren([
         guildStateIndexRoute,
         guildNotesRoute,
+        guildFilesRoute,
         guildTablesRoute,
         guildAccessRoute,
       ]),
@@ -444,6 +459,7 @@ export const router = createRouter({
           agentStateIndexRoute,
           agentMemoryRoute,
           agentNotesRoute,
+          agentFilesRoute,
           agentTablesRoute,
           agentAccessRoute,
           agentScriptsRoute,

@@ -126,6 +126,7 @@ One directory per area. The screens are in the
 | `agent/` | Create-agent dialogs and the agent inspector's tabs |
 | `agent/runs/` | A run's rows grouped into generations, steps, and tool calls |
 | `notes/` | The notes browser and the provenance strip |
+| `files/` | The files browser: upload, download, access, and delete of shared files |
 | `access/` | One scope's tools and secrets |
 | `tables/` | The Tables page |
 | `studio/` | Prompt Studio |

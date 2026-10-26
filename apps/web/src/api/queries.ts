@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-query";
 import { attachmentIdsOf } from "./attachments";
 import { ApiError, api } from "./client";
+import { uploadFile, type FilesPrefix } from "./files";
 import type {
   AccessBinding,
   AccessList,
@@ -30,6 +31,7 @@ import type {
   EmbeddableNote,
   EmbedStatus,
   FileContent,
+  FileItem,
   NoteItem,
   FileChange,
   GroupChatState,
@@ -158,6 +160,7 @@ export const keys = {
   reach: (subject: ReachSubject) => ["access-lists", "reach", subject.type, subject.id] as const,
   noteList: (prefix: string) => ["artifacts", "notes", prefix] as const,
   note: (prefix: string, path: string) => ["artifacts", "note", prefix, path] as const,
+  fileList: (prefix: string) => ["artifacts", "files", prefix] as const,
   agentUsage: (agentId: string) => ["agent", agentId, "usage"] as const,
   instance: ["instance"] as const,
   identity: ["identity"] as const,
@@ -1389,7 +1392,7 @@ export function useNote(prefix: NotesPrefix, path: string | null) {
  * Writes a note, creating it when new. Notes are last-writer-wins: a save replaces whatever is
  * there.
  */
-export function useSaveFile(prefix: NotesPrefix) {
+export function useSaveNote(prefix: NotesPrefix) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ path, content }: { path: string; content: string }) =>
@@ -1404,7 +1407,7 @@ export function useSaveFile(prefix: NotesPrefix) {
 }
 
 /** Deletes a note; the server refuses one a Task still embeds. */
-export function useDeleteFile(prefix: NotesPrefix) {
+export function useDeleteNote(prefix: NotesPrefix) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (path: string) => api<undefined>(filePath(prefix, path), { method: "DELETE" }),
@@ -1412,6 +1415,36 @@ export function useDeleteFile(prefix: NotesPrefix) {
       void client.invalidateQueries({ queryKey: keys.noteList(prefix) });
       void client.invalidateQueries({ queryKey: keys.embeddableNotes });
     },
+  });
+}
+
+/** A scope's shared files, or nothing when there is no scope. */
+export function useFileList(prefix: FilesPrefix | null) {
+  return useQuery({
+    queryKey: keys.fileList(prefix ?? ""),
+    queryFn: () => api<FileItem[]>(prefix ?? ""),
+    enabled: Boolean(prefix),
+  });
+}
+
+/** Stores a file under a scope; a file of the same name there is replaced. */
+export function useUploadFile(prefix: FilesPrefix) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, description }: { file: File; description: string }) => uploadFile(prefix, file, description),
+    onSuccess: (item) => {
+      void client.invalidateQueries({ queryKey: keys.fileList(prefix) });
+      void client.invalidateQueries({ queryKey: keys.latestChange(item.display_path) });
+    },
+  });
+}
+
+/** Deletes a shared file by id and refreshes the scope it was listed in. */
+export function useDeleteFile(prefix: FilesPrefix) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<undefined>(`/api/files/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.fileList(prefix) }),
   });
 }
 
@@ -1654,12 +1687,13 @@ export function useClearRecords(id: string) {
 const itemAccessPaths: Record<AccessTarget["kind"], string> = {
   note: "/api/notes",
   collection: "/api/collections",
+  file: "/api/files",
 };
 
 const itemAccessPath = (target: AccessTarget) =>
   `${itemAccessPaths[target.kind]}/${encodeURIComponent(target.id)}/access`;
 
-/** Who reaches a note or a table: its access list. */
+/** Who reaches a note, a table, or a file: its access list. */
 export function useItemAccess(target: AccessTarget) {
   return useQuery({
     queryKey: keys.itemAccess(target),

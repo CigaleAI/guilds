@@ -12,7 +12,8 @@ export class ApiError extends Error {
   }
 }
 
-function detailText(detail: unknown, fallback: string): string {
+/** The server's `detail` as one readable line, or `fallback` when it carries none. */
+export function detailText(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     const messages = detail
