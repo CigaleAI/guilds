@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
 import { ArtifactStore } from "./artifacts/index.js";
-import { AttachmentService, FileBlobStore, MemoryBlobStore } from "./attachments/index.js";
+import { AttachmentService } from "./attachments/index.js";
+import { FileBlobStore, MemoryBlobStore } from "./lib/blob-store.js";
 import { BuilderService } from "./builder/index.js";
 import { CapabilityService } from "./capabilities/index.js";
 import { decodeMasterKey, type AppConfig } from "./config/index.js";

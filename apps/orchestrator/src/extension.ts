@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
-import type { BlobStore } from "./attachments/index.js";
+import type { BlobStore } from "./lib/blob-store.js";
 import type { AppConfig } from "./config/index.js";
 import type { OrgCreatedHook, Repositories } from "./db/repositories.js";
 import type { GenerationSandboxes } from "./generation/index.js";

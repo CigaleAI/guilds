@@ -68,7 +68,7 @@ and `trusted-header`. Paths below are under
 | Model credentials | `ModelCredentialsProvider` (`llm/credentials.ts`) | `ServerExtension.modelCredentials` | The organisation's own row under Settings → Model keys |
 | Organisation created | `OrgCreatedHook` (`db/repositories.ts`) | `ServerExtension.orgCreated` | Nothing |
 | Sandbox provider | `SandboxProvider` (`extension.ts`) | `ServerExtension.sandboxes` | One `RunSandboxes` (`sandbox/`) |
-| Blob store | `BlobStore` (`attachments/`) | `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT` |
+| Blob store | `BlobStore` (`lib/blob-store.ts`) | `ServerExtension.blobStore` | `FileBlobStore` under `ATTACHMENTS_ROOT` |
 | Instance admin | `InstanceAdmin` (`http/instance-admin.ts`) | `ServerExtension.instanceAdmin` | An owner of the seed organisation `org_home` |
 | Instance integrations | `Integration[]` (`instance/integrations.ts`) | `ServerExtension.integrations` | Core's registry ([Instance keys](#instance-keys)) |
 | Connectors | `ConnectorEntry[]` (`connectors/registry.ts`) | `ServerExtension.connectors` | Core's folders under `src/connectors/` |

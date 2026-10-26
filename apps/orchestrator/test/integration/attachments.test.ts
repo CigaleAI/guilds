@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { AttachmentService, MemoryBlobStore } from "../../src/attachments/index.js";
+import { AttachmentService } from "../../src/attachments/index.js";
+import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { connect } from "../../src/db/client.js";

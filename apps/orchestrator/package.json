@@ -34,6 +34,7 @@
     "./http/usage-view.js": "./src/http/usage-view.ts",
     "./instance/integrations.js": "./src/instance/integrations.ts",
     "./lib/agent-file.js": "./src/lib/agent-file.ts",
+    "./lib/blob-store.js": "./src/lib/blob-store.ts",
     "./lib/ids.js": "./src/lib/ids.ts",
     "./lib/lock.js": "./src/lib/lock.ts",
     "./lib/names.js": "./src/lib/names.ts",

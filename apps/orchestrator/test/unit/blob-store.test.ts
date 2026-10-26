@@ -2,11 +2,10 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { FileBlobStore } from "../../src/attachments/index.js";
-import { AttachmentError } from "../../src/attachments/types.js";
+import { BlobMissing, FileBlobStore } from "../../src/lib/blob-store.js";
 import { tempDir } from "../helpers/env.js";
 
-const notFound = (error: unknown) => error instanceof AttachmentError && error.status === 404;
+const notFound = (error: unknown) => error instanceof BlobMissing;
 
 test("the file store keeps an object across instances, as a file under its root", async () => {
   const root = tempDir("guilds-blobs-");

@@ -31,14 +31,6 @@ export class AttachmentError extends Error {
   }
 }
 
-export type BlobStore = {
-  put(key: string, bytes: Buffer, contentType: string): Promise<void>;
-  get(key: string): Promise<Buffer>;
-  delete(key: string): Promise<void>;
-  /** A short-lived HTTPS URL, or null when the store can only serve bytes. */
-  signedReadUrl(key: string, ttlMs: number): Promise<string | null>;
-};
-
 export function objectKey(orgId: string, attachmentId: string): string {
   return `${orgId}/${attachmentId}`;
 }

@@ -12,8 +12,8 @@ import {
   objectKey,
   type AttachmentRef,
   type AttachmentRow,
-  type BlobStore,
 } from "./types.js";
+import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
 
 export type AttachmentDatabase = {
   insertAttachment(row: {
@@ -98,8 +98,14 @@ export class AttachmentService {
       throw new AttachmentError(404, "attachment not found");
     }
     const row = asRow(raw);
-    const bytes = await this.blobs.get(objectKey(orgId, id));
-    return { row, bytes };
+    try {
+      return { row, bytes: await this.blobs.get(objectKey(orgId, id)) };
+    } catch (error) {
+      if (error instanceof BlobMissing) {
+        throw new AttachmentError(404, "attachment not found");
+      }
+      throw error;
+    }
   }
 
   async resolveForMessage(args: {

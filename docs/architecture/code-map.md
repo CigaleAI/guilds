@@ -70,7 +70,7 @@ one as a submodule ([Extension points](extension-points.md)).
 | `credentials/` | AES-GCM, environment fingerprints, connection views, and validation |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, and redaction ([Secrets](../concepts/secrets.md)) |
 | `db/` | Pool, codecs, Drizzle schema, `Repositories`, seeds, and the migration check |
-| `attachments/` | Chat images: sniffing, the blob store, and hydration |
+| `attachments/` | Chat images: sniffing, upload, and hydration |
 | `artifacts/` | `ArtifactStore`: notes, memory, scripts, collections, records, and the access lists of notes and collections ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
 | `notes/` | `NotesStore`: `system.md` and the routine shadow files; the store the generation unit tests use |
 | `directories/` | State listing over `NotesStore` for those tests |
@@ -98,7 +98,7 @@ one as a submodule ([Extension points](extension-points.md)).
 | `cli/` | `seed:system`, `seed:operator`, `migrate`, and `pnpm connector` |
 | `observability/` | Logs, request ids, client-error intake, Sentry, and runtime metrics ([Observability](orchestrator.md#observability)) |
 | `net/` | Outbound HTTP and endpoint validation |
-| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, and an agent's home files (`agent-file.ts`) |
+| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, an agent's home files (`agent-file.ts`), and the blob store under attachments and shared files (`blob-store.ts`) |
 
 ## `apps/web/`
 

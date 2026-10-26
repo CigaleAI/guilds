@@ -5,14 +5,13 @@ import {
   AttachmentService,
   IMAGE_INPUT_TOKENS,
   MAX_ATTACHMENT_BYTES,
-  MemoryBlobStore,
   attachmentImageCount,
   countRunInputTokens,
   hydrateMessages,
   sanitizeFilename,
   sniffImage,
-  type BlobStore,
 } from "../../src/attachments/index.js";
+import { MemoryBlobStore, type BlobStore } from "../../src/lib/blob-store.js";
 import { countInputTokens } from "../../src/llm/index.js";
 
 const PNG = Buffer.from(

@@ -4,8 +4,8 @@ import {
   SIGNED_URL_TTL_MS,
   objectKey,
   type AttachmentRef,
-  type BlobStore,
 } from "./types.js";
+import type { BlobStore } from "../lib/blob-store.js";
 import { isAttachmentKind } from "./sniff.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
