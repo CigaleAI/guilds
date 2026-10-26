@@ -15,6 +15,20 @@ export const GITHUB_MANIFEST_STATE_COOKIE = "guilds_github_manifest";
 /** GitHub caps an App name at 34 characters. */
 export const APP_NAME_MAX = 34;
 
+/**
+ * The repository permissions the App asks for: what coding runs push and open pull requests with,
+ * and what the connector's toolsets read and write.
+ */
+export const GITHUB_APP_PERMISSIONS = {
+  contents: "write",
+  pull_requests: "write",
+  issues: "write",
+  actions: "read",
+  checks: "read",
+  statuses: "read",
+  metadata: "read",
+} as const;
+
 export type GithubAppManifest = {
   name: string;
   url: string;
@@ -23,7 +37,7 @@ export type GithubAppManifest = {
   callback_urls: string[];
   description: string;
   public: false;
-  default_permissions: { contents: "write"; pull_requests: "write"; metadata: "read" };
+  default_permissions: typeof GITHUB_APP_PERMISSIONS;
   request_oauth_on_install: true;
   setup_on_update: true;
 };
@@ -41,8 +55,8 @@ function hostOf(url: string): string {
 }
 
 /**
- * The manifest for this box: the App installs with OAuth and redirects on update, asks for the
- * repository permissions coding agents need, and delivers no webhook. Its callbacks are the box's
+ * The manifest for this box: the App installs with OAuth and redirects on update, asks for
+ * `GITHUB_APP_PERMISSIONS`, and delivers no webhook. Its callbacks are the box's
  * public address and, when the admin reached the box another way, that address too. An inactive
  * webhook is named only when that address is on the public internet: GitHub refuses a hook URL
  * it cannot reach, such as localhost.
@@ -62,9 +76,9 @@ export function githubAppManifest(options: { baseUrl: string; requestOrigin: str
     ...(hook ? { hook_attributes: hook } : {}),
     redirect_url: `${base}${MANIFEST_CALLBACK_PATH}`,
     callback_urls: callbacks,
-    description: "Lets this Guilds box's coding agents clone, push to, and open pull requests on the repositories each guild picks.",
+    description: "Lets this Guilds box's agents work with the issues, pull requests, and CI runs of the repositories each login picks, and its coding agents clone and push them.",
     public: false,
-    default_permissions: { contents: "write", pull_requests: "write", metadata: "read" },
+    default_permissions: GITHUB_APP_PERMISSIONS,
     request_oauth_on_install: true,
     setup_on_update: true,
   };

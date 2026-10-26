@@ -80,8 +80,9 @@ Instead of step 1, you can register the App yourself on GitHub
      after an install, and Connect never completes.
    - **Redirect on update** checked
    - Webhook inactive
-   - Repository permissions: Contents and Pull requests read and
-     write, Metadata read
+   - Repository permissions: Contents, Pull requests, and Issues
+     read and write; Actions, Checks, Commit statuses, and Metadata
+     read
    - **Only on this account** for where it can be installed
 2. Generate a client secret and a private key.
 3. On **Platform keys**, **GitHub App**, enter:
@@ -99,6 +100,15 @@ does not request user authorization during installation. On GitHub,
 open the App's settings, check **Request user authorization (OAuth)
 during installation**, and save. Then uninstall the App from your
 account and click **Connect** again.
+
+**A GitHub tool answers 403.** The App or its installation lacks a
+permission the tool needs. On GitHub, add the permissions listed in
+[Registering the App by hand](#registering-the-app-by-hand) to the
+App's settings. GitHub then asks each installation's owner to accept
+them, under the account's **Installed GitHub Apps**. A tool that
+needs a permission the App does not ask for, such as triggering a
+workflow (Actions write), answers 403 until the App's settings add
+it.
 
 **GitHub sends you to a page that is not the box.** The App's
 callback URL is not the box's address. Set `PUBLIC_BASE_URL`, and
@@ -135,8 +145,9 @@ and sets the `guilds_github_manifest` cookie (HttpOnly, SameSite=Lax,
 
 The manifest carries the settings above: `public: false`,
 `request_oauth_on_install: true`, `setup_on_update: true`, and the
-permissions `contents: write`, `pull_requests: write`, and
-`metadata: read`. It sets no setup URL. Its `url` is the box's
+permissions `contents: write`, `pull_requests: write`,
+`issues: write`, `actions: read`, `checks: read`, `statuses: read`,
+and `metadata: read`. It sets no setup URL. Its `url` is the box's
 address. Its callback URLs are
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback` and, when the admin
 reached the box at another address, that address's callback too. A box on the public internet also names an
