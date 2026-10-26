@@ -128,6 +128,11 @@ export function manifestDefaultOff(manifest: Manifest | null, name: string): boo
   return matchesPattern(name, manifest.policy?.default_off ?? []);
 }
 
+/** Whether the manifest leaves a listed tool out of every login's catalog: a `policy.exclude` pattern matches it. */
+export function manifestExcludes(manifest: Manifest | null, name: string): boolean {
+  return matchesPattern(name, manifest?.policy?.exclude ?? []);
+}
+
 /**
  * Whether a tool of this server starts Off at a new login's owner. An admin's default wins; a
  * manifest tool starts Off when it is mutating or matched by `policy.default_off`. A listed tool

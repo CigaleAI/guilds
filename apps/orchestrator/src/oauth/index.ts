@@ -284,20 +284,23 @@ export function accountHint(payload: Record<string, unknown>): string {
   return "";
 }
 
+/** The payload fields of a login that hold a secret, whatever its connector. */
+export const TOKEN_FIELDS: readonly string[] = [
+  "access_token",
+  "refresh_token",
+  "token",
+  "evm_private_key",
+  "solana_private_key",
+  "alchemy_key",
+  "opensea_key",
+  "uniswap_key",
+  "login",
+  "secret_key",
+];
+
 export function tokenRedactions(payload: Record<string, unknown>, connectionId: string): Record<string, string> {
   const values: Record<string, string> = {};
-  for (const key of [
-    "access_token",
-    "refresh_token",
-    "token",
-    "evm_private_key",
-    "solana_private_key",
-    "alchemy_key",
-    "opensea_key",
-    "uniswap_key",
-    "login",
-    "secret_key",
-  ]) {
+  for (const key of TOKEN_FIELDS) {
     const value = payload[key];
     if (typeof value === "string" && value) {
       values[`mcp_${connectionId}_${key}`] = value;

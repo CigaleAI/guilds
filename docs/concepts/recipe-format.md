@@ -357,8 +357,9 @@ A connection whose server the box lacks is a blocking error:
   newest version
 - `server.unknown` otherwise
 
-The GitHub connection never appears under `connections`.
-`repositories` stands for it.
+A recipe with `repositories` asks for a GitHub login at apply: its
+GitHub connection's step, or a step of its own when `connections`
+has none, says what the repositories need.
 
 ### secrets and external
 

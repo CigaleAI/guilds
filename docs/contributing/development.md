@@ -288,6 +288,17 @@ The orchestrator and the operator app also run the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
 of an edition or a relative path that leaves this repository.
 
+Every package also runs the limits of the
+[code guidelines](code-guidelines.md#functions) on its source,
+tests and stories excepted: `complexity` at 11, `max-depth` at 3,
+`max-params` at 4, and `max-lines` at 800. Violations that predate
+the rules are recorded in the package's `eslint-suppressions.json`
+(ESLint bulk suppressions). Lint fails on a violation that is not
+in the file, and on an entry that no longer matches a violation, so
+a file can only improve. After a fix,
+`pnpm exec eslint <lint args> --prune-suppressions` removes the
+cleared entries.
+
 Prettier formats with semicolons, double quotes, trailing
 commas, and a width of 100 (`pnpm --filter <package> format`).
 

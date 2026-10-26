@@ -9,7 +9,6 @@ import {
   type McpPool,
 } from "../mcp/index.js";
 import { MissingSecretError } from "../secrets/index.js";
-import { GITHUB_SLUG } from "../github/index.js";
 import { serverManifest } from "../connectors/load.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
 
@@ -160,87 +159,99 @@ export async function agentToolConnection(
   return connection;
 }
 
+type RuntimeScope = { orgId: string | null; guildId: string; agentId: string };
+
+type ToolSync = McpPool | { syncTools?: McpPool["syncTools"] } | null;
+
+/** A login and the tools it lists, for one connector the agent has on. */
+type Listing = { connection: Record<string, unknown>; server: Record<string, unknown>; listed: ListedTool[] };
+
+/**
+ * The connected login a connector the agent has on resolves to, or null when it offers nothing:
+ * off, with no login, or a login still pending. A disconnected login throws, except a platform
+ * login an instance key serves, which is off while its integration is.
+ */
+function connectedLogin(
+  item: Resolved,
+  server: Record<string, unknown>,
+  connections: Map<string, Record<string, unknown>>,
+): Record<string, unknown> | null {
+  const connection = item.enabled && item.connection_id !== null ? connections.get(item.connection_id) : undefined;
+  if (connection?.status === "disconnected") {
+    if (connection.owner_scope === "platform" && serverManifest(server)?.auth.instance) {
+      return null;
+    }
+    throw new McpDisconnectedError(`${server.slug} is disconnected`);
+  }
+  return connection?.status === "connected" ? connection : null;
+}
+
+/** The tools a login lists: synced when the pool can, else the stored catalog. A sync that fails falls back to it. */
+async function loginTools(db: AccessDatabase, mcpPool: ToolSync, listing: Omit<Listing, "listed">, agentId: string) {
+  const { connection, server } = listing;
+  try {
+    const synced = await mcpPool?.syncTools?.(db as never, connection, server);
+    if (synced) {
+      return synced;
+    }
+  } catch (error) {
+    if (error instanceof McpDisconnectedError) {
+      throw error;
+    }
+    writeLog("warn", "mcp tool sync failed; using stored catalog", {
+      agent_id: agentId,
+      operation: `mcp.sync.${String(server.slug)}`,
+      error_type: error instanceof Error ? error.name : "Error",
+    }, error);
+  }
+  return listedFromRows(await (db.listMcpTools?.(String(connection.id)) ?? []));
+}
+
+/** The login's entry in the run's MCP access: its tools that resolve On, or null when none does. */
+function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, scope: RuntimeScope): Record<string, unknown> | null {
+  const offered = listing.listed
+    .filter((tool) => resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled)
+    .map((tool) => ({ name: tool.namespaced_name, remote_name: tool.remote_name, schema: mcpSchema(tool) }));
+  if (!offered.length) {
+    return null;
+  }
+  return { connection_id: listing.connection.id, server_id: listing.server.id, slug: listing.server.slug, tools: offered };
+}
+
+/** The logins covering the agent, by id. */
+async function loginsById(db: AccessDatabase, scope: RuntimeScope): Promise<Map<string, Record<string, unknown>>> {
+  const logins = await (db.listMcpConnections?.(scope) ?? []);
+  return new Map(logins.map((connection) => [String(connection.id), connection]));
+}
+
 export async function agentRuntime(
   db: AccessDatabase,
   agent: Record<string, unknown>,
-  options: { mcpPool?: McpPool | { syncTools?: McpPool["syncTools"] } | null } = {},
+  options: { mcpPool?: ToolSync } = {},
 ): Promise<RuntimeAccess> {
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
-  const orgId = (agent.org_id as string | null | undefined) ?? null;
-  const rows = await db.listBindingsCovering({ orgId, guildId, agentId });
-  const tools = enabledToolNames(resolvedTools(rows, { orgId, guildId, agentId }));
+  const scope: RuntimeScope = {
+    orgId: (agent.org_id as string | null | undefined) ?? null,
+    guildId: String(agent.guild_id),
+    agentId: String(agent.id),
+  };
+  const rows = await db.listBindingsCovering(scope);
+  const tools = enabledToolNames(resolvedTools(rows, scope));
   const metas = await agentSecrets(db, agent);
-  const servers = await (db.listMcpServers?.(orgId) ?? []);
-  const connections = new Map<string, Record<string, unknown>>();
-  for (const connection of await (db.listMcpConnections?.({ orgId, guildId, agentId }) ?? [])) {
-    connections.set(String(connection.id), connection);
-  }
-  const mcp: Array<Record<string, unknown>> = [];
-  const mcpPool = options.mcpPool ?? null;
-  for (const [item, server] of resolvedMcp(rows, servers, { orgId, guildId, agentId })) {
-    // GitHub offers no tools: coding runs reach it through their guild's repositories.
-    if (!item.enabled || item.connection_id === null || server.slug === GITHUB_SLUG) {
-      continue;
-    }
-    const connection = connections.get(item.connection_id);
-    if (connection === undefined) {
-      continue;
-    }
-    if (connection.status === "disconnected") {
-      // A platform login an instance key serves is off while its integration is: its tools are left out.
-      if (connection.owner_scope === "platform" && serverManifest(server)?.auth.instance) {
-        continue;
-      }
-      throw new McpDisconnectedError(`${server.slug} is disconnected`);
-    }
-    if (connection.status !== "connected") {
-      continue;
-    }
-    let listed: ListedTool[] | null = null;
-    if (mcpPool?.syncTools) {
-      try {
-        listed = await mcpPool.syncTools(db as never, connection, server);
-      } catch (error) {
-        if (error instanceof McpDisconnectedError) {
-          throw error;
-        }
-        writeLog("warn", "mcp tool sync failed; using stored catalog", {
-          agent_id: agentId,
-          operation: `mcp.sync.${String(server.slug)}`,
-          error_type: error instanceof Error ? error.name : "Error",
-        }, error);
-      }
-    }
-    if (listed === null) {
-      listed = listedFromRows(await (db.listMcpTools?.(String(connection.id)) ?? []));
-    }
-    const offered: Array<Record<string, unknown>> = [];
-    for (const tool of listed) {
-      const resolved = resolveMcpTool(rows, tool.namespaced_name, {
-        serverEnabled: true,
-        orgId,
-        guildId,
-        agentId,
-      });
-      if (!resolved.enabled) {
-        continue;
-      }
-      offered.push({
-        name: tool.namespaced_name,
-        remote_name: tool.remote_name,
-        schema: mcpSchema(tool),
-      });
-    }
-    if (offered.length) {
-      mcp.push({
-        connection_id: connection.id,
-        server_id: server.id,
-        slug: server.slug,
-        tools: offered,
-      });
+  const servers = await (db.listMcpServers?.(scope.orgId) ?? []);
+  const connections = await loginsById(db, scope);
+  const listings: Listing[] = [];
+  for (const [item, server] of resolvedMcp(rows, servers, scope)) {
+    const connection = connectedLogin(item, server, connections);
+    if (connection !== null) {
+      const listed = await loginTools(db, options.mcpPool ?? null, { connection, server }, scope.agentId);
+      listings.push({ connection, server, listed });
     }
   }
+  // A sync writes an Off binding for each tool it lists for the first time: tools resolve against those.
+  const toolRows = listings.length ? await db.listBindingsCovering(scope) : rows;
+  const mcp = listings
+    .map((listing) => offeredLogin(toolRows, listing, scope))
+    .filter((entry): entry is Record<string, unknown> => entry !== null);
   return { tools, secrets: metas, mcp };
 }
 

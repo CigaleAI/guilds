@@ -1,8 +1,9 @@
 # GitHub
 
-Connecting GitHub lets coding agents clone, push to, and open pull
-requests on the repositories you pick. It runs through one GitHub
-App per box. You set it up in three steps:
+Connecting GitHub gives agents tools for the issues, pull requests,
+branches, files, and CI runs of the repositories you pick, and lets
+coding agents clone and push to them. It runs through one GitHub App
+per box. You set it up in three steps:
 
 1. A platform admin creates the App, once per box.
 2. An operator connects their GitHub account under **Tools**.
@@ -79,8 +80,9 @@ Instead of step 1, you can register the App yourself on GitHub
      after an install, and Connect never completes.
    - **Redirect on update** checked
    - Webhook inactive
-   - Repository permissions: Contents and Pull requests read and
-     write, Metadata read
+   - Repository permissions: Contents, Pull requests, and Issues
+     read and write; Actions, Checks, Commit statuses, and Metadata
+     read
    - **Only on this account** for where it can be installed
 2. Generate a client secret and a private key.
 3. On **Platform keys**, **GitHub App**, enter:
@@ -98,6 +100,15 @@ does not request user authorization during installation. On GitHub,
 open the App's settings, check **Request user authorization (OAuth)
 during installation**, and save. Then uninstall the App from your
 account and click **Connect** again.
+
+**A GitHub tool answers 403.** The App or its installation lacks a
+permission the tool needs. On GitHub, add the permissions listed in
+[Registering the App by hand](#registering-the-app-by-hand) to the
+App's settings. GitHub then asks each installation's owner to accept
+them, under the account's **Installed GitHub Apps**. A tool that
+needs a permission the App does not ask for, such as triggering a
+workflow (Actions write), answers 403 until the App's settings add
+it.
 
 **GitHub sends you to a page that is not the box.** The App's
 callback URL is not the box's address. Set `PUBLIC_BASE_URL`, and
@@ -134,8 +145,9 @@ and sets the `guilds_github_manifest` cookie (HttpOnly, SameSite=Lax,
 
 The manifest carries the settings above: `public: false`,
 `request_oauth_on_install: true`, `setup_on_update: true`, and the
-permissions `contents: write`, `pull_requests: write`, and
-`metadata: read`. It sets no setup URL. Its `url` is the box's
+permissions `contents: write`, `pull_requests: write`,
+`issues: write`, `actions: read`, `checks: read`, `statuses: read`,
+and `metadata: read`. It sets no setup URL. Its `url` is the box's
 address. Its callback URLs are
 `<PUBLIC_BASE_URL>/api/mcp/oauth/callback` and, when the admin
 reached the box at another address, that address's callback too. A box on the public internet also names an
@@ -201,8 +213,26 @@ to the picker page. Its `state` is the pending login's.
 An expired or finished sign-in is a 404. An installation the user
 does not reach is a 400.
 
-The connection lists no model tools: agents use `git` and `gh` in the
-sandbox. Tools shows it without an On/Off switch.
+### Tools
+
+A login's tools come from GitHub's hosted MCP server,
+`https://api.githubcopilot.com/mcp/`, with the `repos`, `issues`,
+`pull_requests`, and `actions` toolsets (`X-MCP-Toolsets`).
+`create_repository` and `fork_repository` are left out
+(`policy.exclude`): an installation token limited to picked
+repositories cannot use them. Tools that write start Off
+([What starts Off](connectors.md#what-starts-off)). A login with no
+repositories picked lists no tools.
+
+Tools lists a login's tools like any connector's. The connector's
+On/Off switch turns its tools on or off for that scope. Coding runs
+reach the guild's repositories either way, and also use `git` and
+`gh` in the sandbox.
+
+The connector's State hook puts `github_repositories` in every run of
+an agent that has GitHub on: the login's picked repositories as
+`{ owner, repo, default_branch }`, the `owner` and `repo` the tools
+take. A login with none picked adds no key.
 
 ### Repositories
 
@@ -233,7 +263,15 @@ configuration and again through `GIT_CONFIG_COUNT`, which git reads
 after every configuration file, so a helper the agent configures,
 such as the one `gh auth setup-git` writes, cannot replace it.
 
+A login's tool session sends an installation token for every
+repository the login picked, holding every permission the
+installation grants. The token stays in the orchestrator. The pool
+mints a new one when the current one is within 10 minutes of expiry
+or the endpoint answers 401, and drops the session when the login's
+selection changes. A call on a login with no repositories picked
+fails with a 422.
+
 When GitHub refuses a token because the installation was removed or
-suspended (404 or 403), the connection becomes `disconnected` and the
-coding generation that needed it fails at start. Deleting the
+suspended (404 or 403), the connection becomes `disconnected`, and
+the coding generation or tool call that needed it fails. Deleting the
 connection deletes the guild repositories added through it.

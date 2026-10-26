@@ -9,7 +9,7 @@ signs in, and lists its tools is [Connectors](connectors.md).
 | [Sentry](#sentry) | `sentry` | Browser, dynamic client | Endpoint | None |
 | [Gmail](#gmail) | `gmail` | Browser, box client | Adapter | `google-connectors` |
 | [Google Drive](#google-drive) | `drive` | Browser, box client | Both | `google-connectors` |
-| [GitHub](#github) | `github` | GitHub App | Neither; no tools | `github-app` |
+| [GitHub](#github) | `github` | GitHub App | Endpoint | `github-app` |
 | [Cigale](#cigale) | `cigale` | Token | Endpoint | None |
 | [OpenSea](#opensea) | `opensea` | Token | Both | None |
 | [Etherscan](#etherscan) | `etherscan` | Token | Endpoint | None |
@@ -75,9 +75,14 @@ detail: [Gmail and Drive](google.md#drive).
 
 ## GitHub
 
-The GitHub App gives coding agents `git` and `gh` access to the
-repositories a login picks. It lists no model tools, and **Tools**
-shows it without an On/Off switch ([GitHub](github.md)).
+Endpoint `https://api.githubcopilot.com/mcp/`, with the `repos`,
+`issues`, `pull_requests`, and `actions` toolsets in
+`X-MCP-Toolsets`. The session sends an installation token limited to
+the repositories the login picks; a login with none picked lists no
+tools. `create_repository` and `fork_repository` are left out, as
+`policy.exclude`. Its State hook lists the picked repositories under
+`github_repositories`. Coding agents also get `git` and `gh` access to
+the same repositories ([GitHub](github.md)).
 
 ## Cigale
 

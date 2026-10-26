@@ -8,6 +8,9 @@ export const SLUG_RE = new RegExp(SLUG_PATTERN);
 
 const JsonObject = Type.Record(Type.String(), Type.Unknown());
 
+/** A header an endpoint's session sends beside its credential: a custom `X-` header, letters, digits, and dashes. */
+const HEADER_NAME_PATTERN = "^[Xx]-[A-Za-z0-9-]+$";
+
 const ManifestTool = Type.Object(
   {
     name: Type.String({ minLength: 1 }),
@@ -62,14 +65,32 @@ export const ManifestSchema = Type.Object(
   {
     slug: Type.String({ pattern: SLUG_PATTERN }),
     display_name: Type.String({ minLength: 1 }),
-    endpoint: Type.Optional(Type.Object({ url: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
+    endpoint: Type.Optional(
+      Type.Object(
+        {
+          url: Type.String({ minLength: 1 }),
+          headers: Type.Optional(
+            Type.Record(Type.String({ pattern: HEADER_NAME_PATTERN }), Type.String(), { additionalProperties: false }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     auth: Auth,
     requires: Type.Optional(Type.Object({ integration: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
     description: Type.String(),
     limitations: Type.Optional(Type.String()),
     setup_hint: Type.Optional(Type.String()),
     tools: Type.Optional(Type.Array(ManifestTool)),
-    policy: Type.Optional(Type.Object({ default_off: Type.Array(Type.String({ minLength: 1 })) }, { additionalProperties: false })),
+    policy: Type.Optional(
+      Type.Object(
+        {
+          default_off: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+          exclude: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     settings_schema: Type.Optional(JsonObject),
     state: Type.Optional(
       Type.Object({ key: Type.String({ pattern: "^[a-z][a-z0-9_]*$" }), intro: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
@@ -181,6 +202,21 @@ export function recipeManifestProblem(manifest: Manifest): string | null {
 }
 
 /**
+ * Why the endpoint's headers clash, or null when they do not: header names are case-insensitive,
+ * so two of them may not share a name, and none may take the name the credential travels in.
+ */
+function endpointHeaderProblem(manifest: Manifest): string | null {
+  const taken = new Set([manifest.auth.header?.name.toLowerCase() ?? "authorization"]);
+  for (const name of Object.keys(manifest.endpoint?.headers ?? {})) {
+    if (taken.has(name.toLowerCase())) {
+      return `connector ${manifest.slug} endpoint header ${name} is named twice or carries the credential`;
+    }
+    taken.add(name.toLowerCase());
+  }
+  return null;
+}
+
+/**
  * Checks a parsed `connector.json` against the schema and, when `folder` is given, its slug against
  * the folder name. Returns the manifest; throws `ManifestError` naming the first problem.
  */
@@ -203,6 +239,10 @@ export function loadManifest(raw: unknown, folder?: string): Manifest {
       }
       throw error;
     }
+  }
+  const headerProblem = endpointHeaderProblem(manifest);
+  if (headerProblem !== null) {
+    throw new ManifestError(headerProblem);
   }
   if (manifest.auth.kind === "oauth" && !manifest.auth.oauth) {
     throw new ManifestError(`connector ${manifest.slug} uses oauth with no oauth block`);

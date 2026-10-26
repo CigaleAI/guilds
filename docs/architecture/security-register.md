@@ -9,6 +9,8 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-48](#sec-48--a-run-that-listed-a-logins-tools-for-the-first-time-was-offered-the-ones-that-start-off) | A run that listed a login's tools for the first time was offered the ones that start Off | Fixed 2026-10-26 |
+| [SEC-47](#sec-47--github-content-an-agent-reads-through-its-tools-can-steer-its-writes-to-the-logins-repositories) | GitHub content an agent reads through its tools can steer its writes to the login's repositories | Open |
 | [SEC-46](#sec-46--deleting-an-agent-a-guild-or-an-organisation-leaves-its-files-bytes-in-the-blob-store) | Deleting an agent, a guild, or an organisation leaves its files' bytes in the blob store | Open |
 | [SEC-45](#sec-45--shared-files-carry-arbitrary-bytes-between-agents-and-operators) | Shared files carry arbitrary bytes between agents and operators | Open, accepted |
 | [SEC-44](#sec-44--a-recipe-preview-confirms-a-private-guilds-table-and-its-column-types) | A recipe preview confirms a private guild's table and its column types | Open |
@@ -55,6 +57,70 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-48 — A run that listed a login's tools for the first time was offered the ones that start Off
+
+**Status:** fixed 2026-10-26.
+
+**Found:** 2026-10-26, checking the GitHub connector's tools on a live
+login.
+
+**Where:** `agentRuntime` in `apps/orchestrator/src/access/runtime.ts`
+and `httpAccess` in `apps/orchestrator/src/http/access.ts`.
+
+**Exposure:** both read the bindings covering the agent, then synced
+each login's tools, then resolved those tools against the bindings
+they had read. A sync writes the Off binding of each tool it lists
+for the first time (SEC-16), after that read. A run whose start
+listed a login's tools for the first time, or a tool the server had
+just added, was offered every such tool that starts Off: tools that
+write, delete, send, or merge, on any connector. The run's agent
+could call them. The access view showed them On until the next load.
+
+**Fix:** both read the bindings again after the syncs and resolve
+tools against those.
+
+**Residual risk:** a run or a view that started before the fix and
+listed a tool for the first time was offered it once. The Off binding
+it wrote stands, so later runs are not.
+
+## SEC-47 — GitHub content an agent reads through its tools can steer its writes to the login's repositories
+
+**Status:** open.
+
+**Found:** 2026-10-26, giving the GitHub connector its tools.
+
+**Where:** `apps/orchestrator/src/connectors/github/connector.json`,
+`mintLoginToken` in `apps/orchestrator/src/github/tokens.ts`, and the
+pool's GitHub App session in `apps/orchestrator/src/mcp/index.ts`.
+
+**Exposure:** any agent a GitHub login's connector is on for, coding
+or not, reads issues, pull requests, comments, files, and CI logs
+through GitHub's hosted MCP server. Anyone who can write to those
+repositories, or comment on a public one, writes that text.
+Instructions planted in it can steer the agent to call the writing
+tools that are On: comment, edit issues, open, review, or merge pull
+requests, write files, push, or trigger workflows, on any repository
+the login picked. The token the session sends holds every permission
+the installation grants, which is broader than the coding token's
+`contents` and `pull_requests`. A login at the organisation or a guild
+serves every agent below it.
+
+**Control in place:** the token stays in the orchestrator and never
+enters a sandbox. GitHub limits it to the login's picked repositories
+by id, and it expires within an hour. Tools that write start Off
+([What starts Off](../tools-and-connectors/connectors.md#what-starts-off)).
+Creating and forking repositories are not listed. Branch protection
+and required reviews on GitHub still apply to the App.
+
+**Fix:** not yet. Fixing it takes minting the tool token with only the
+permissions its toolsets use, and keeping writes on untrusted content
+behind an operator's approval.
+
+**Residual risk:** an agent with a GitHub writing tool On can be
+steered to use it on any repository its login picked. Content it
+reads can also steer its other tools, as it can a coding agent's
+commands (SEC-8).
 
 ## SEC-46 — Deleting an agent, a guild, or an organisation leaves its files' bytes in the blob store
 

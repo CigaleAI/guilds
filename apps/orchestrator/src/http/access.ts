@@ -36,7 +36,6 @@ export async function httpAccess(
     guildId: options.guildId ?? null,
     agentId: options.agentId ?? null,
   };
-  const rows = await repo.listBindingsCovering(scope);
   const connections = await repo.listMcpConnections(scope);
   const servers = visibleServers(await repo.listMcpServers(scope.orgId), connections);
   const serversById = new Map(servers.map((server) => [String(server.id), server]));
@@ -56,6 +55,8 @@ export async function httpAccess(
     }
     rawListed[String(connection.id)] = listedFromRows(await repo.listMcpTools(String(connection.id)));
   }
+  // Read after the syncs: a sync writes an Off binding for each tool it lists for the first time.
+  const rows = await repo.listBindingsCovering(scope);
   const listedTools: Record<string, Array<Record<string, unknown>>> = {};
   for (const [item, server] of resolvedMcp(rows, servers, {
     orgId: scope.orgId,

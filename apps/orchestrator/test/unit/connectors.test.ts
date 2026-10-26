@@ -126,6 +126,19 @@ test("manifests keep their tools, endpoints, settings, and state within the rule
   }
 });
 
+test("an endpoint's headers are custom headers, each named once and apart from the credential's", () => {
+  const withHeaders = (headers: Record<string, string>, auth: Record<string, unknown> = { kind: "token" }) =>
+    endpointManifest("portal", { endpoint: { url: "https://mcp.example.com/mcp", headers }, auth });
+  assert.deepEqual(loadManifest(withHeaders({ "X-Toolsets": "a,b" })).endpoint?.headers, { "X-Toolsets": "a,b" });
+  for (const [headers, auth] of [
+    [{ Accept: "text/plain" }, undefined],
+    [{ "X-Toolsets": "a", "x-toolsets": "b" }, undefined],
+    [{ "x-api-key": "other" }, { kind: "token", header: { name: "X-API-Key", prefix: "" } }],
+  ] as const) {
+    assert.throws(() => loadManifest(withHeaders(headers, auth)), ManifestError, JSON.stringify(headers));
+  }
+});
+
 test("a connector row loads with its overrides applied over the manifest", () => {
   const notion = CONNECTORS.bySlug("notion")!;
   const row = {
@@ -362,6 +375,18 @@ test("state quotes pinned symbols under the manifest's key and redacts the key",
   pool.connectors = WITH_QUOTES.withAdapter("quotes", { state: async (creds) => ({ leaked: creds.token }) });
   assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }), AGENT), {
     quotes: { leaked: "[REDACTED:token]" },
+  });
+});
+
+test("state is redacted against a login's secrets, not the rest of its payload", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const [ciphertext, nonce] = encryptPayload({ token: "qk-secret", access_token: "at-secret", account: "acme" }, KEY);
+  const pool = new McpPool();
+  pool.connectors = WITH_QUOTES.withAdapter("quotes", {
+    state: async (creds) => ({ owner: creds.account, token: creds.token, access: creds.access_token }),
+  });
+  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }), AGENT), {
+    quotes: { owner: "acme", token: "[REDACTED:token]", access: "[REDACTED:access_token]" },
   });
 });
 
@@ -680,4 +705,20 @@ test("a sync keeps each listed tool's annotations", async () => {
     [["find", true, null], ["wipe", null, true]],
   );
   assert.deepEqual(overlays, ["acme_wipe"]);
+});
+
+test("GitHub's State names the repositories a login picked as the owner and repo its tools take", async () => {
+  const github = CONNECTORS.bySlug("github")!;
+  const settings = {
+    repositories: [
+      { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 },
+      { name: "docs", url: "https://github.com/acme/docs.git", default_branch: "trunk" },
+    ],
+  };
+  assert.equal(github.manifest.state?.key, "github_repositories");
+  assert.deepEqual(await github.adapter.state!({}, contextOf({ settings })), [
+    { owner: "acme", repo: "shop", default_branch: "main" },
+    { owner: "acme", repo: "docs", default_branch: "trunk" },
+  ]);
+  assert.equal(await github.adapter.state!({}, contextOf({ settings: {} })), null, "a login with none picked adds no key");
 });
