@@ -1,0 +1,177 @@
+{
+  "src/components/content/DiffView.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 2
+    }
+  },
+  "src/components/content/JsonTree.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/content/TaskEditor.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/content/diff.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/content/highlight.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "src/components/content/textNodes.ts": {
+    "max-depth": {
+      "count": 2
+    }
+  },
+  "src/components/controls/Composer.tsx": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "src/components/controls/FormField.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/controls/Slider.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/controls/TextAreaField.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/controls/TextField.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/conversation/AgentMessage.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/conversation/OperatorMessage.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/data/DataTable.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/data/FileTree.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/components/data/IntegrationCard.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/data/IssueCard.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/data/RoutineRow.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/data/VersionBar.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/identity/AvatarStack.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/navigation/AgentHeader.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/navigation/GuildHeader.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/navigation/GuildRow.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/navigation/UtilityLink.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/overlays/ConfirmDialog.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/overlays/Stepper.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/runs/FlowTimeline.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/runs/GenerationHeader.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/runs/GenerationHero.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/components/runs/ToolCall.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/primitives/Row.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/writeDesignSystemDoc.ts": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 9
+    },
+    "max-params": {
+      "count": 1
+    }
+  }
+}

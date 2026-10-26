@@ -1,0 +1,514 @@
+{
+  "src/api/client.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/api/queries.ts": {
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 3
+    }
+  },
+  "src/api/streams.ts": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/api/types.ts": {
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/app/returnTrail.ts": {
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/app/router.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/access/AccessTools.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/access/ConnectDialogs.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/access/GithubRepositories.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/access/ServerCard.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/access/SettingsForm.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/access/TestConnectionDialog.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/access/access.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/features/access/secrets.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/access/toolArgs.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 7
+    }
+  },
+  "src/features/admin/AdminPage.tsx": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/features/admin/InstanceTab.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/admin/RegistryDialog.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/admin/UsersTab.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/AgentInspector.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/CodingRepositories.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/CreateCodingAgent.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/browser/AgentBrowser.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/chat/AgentChat.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/chat/FlowView.tsx": {
+    "complexity": {
+      "count": 5
+    },
+    "max-depth": {
+      "count": 2
+    }
+  },
+  "src/features/agent/chat/SecretRequestCard.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/chat/ToolCallDetail.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/agent/chat/Transcript.tsx": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/features/agent/chat/runContext.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/prompt/AgentPrompt.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/prompt/EmbedPreview.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/prompt/InsertPicker.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/prompt/taskContext.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/routine/AgentRoutines.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/routine/RoutineForm.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/routine/describeTiming.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "max-depth": {
+      "count": 2
+    },
+    "max-params": {
+      "count": 3
+    }
+  },
+  "src/features/agent/runs/runFlowModel.ts": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 9
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/features/agent/runs/toolFormat.ts": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/agent/runs/toolKinds.ts": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "src/features/agent/scripts/AgentScripts.tsx": {
+    "complexity": {
+      "count": 2
+    },
+    "max-depth": {
+      "count": 1
+    }
+  },
+  "src/features/agent/settings/AgentSettings.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/settings/HarnessReadiness.tsx": {
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/features/agent/settings/configForm.tsx": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/features/builder/BuilderChat.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/builder/BuilderWidgets.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/builder/BuilderWorkspace.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/features/builder/widgets.ts": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/coach/CoachLog.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/files/FilesBrowser.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/guild/GroupChat.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/guild/GuildWorkspace.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/guild/pages/GuildIssues.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/guild/pages/GuildRepositories.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/guild/pages/GuildRoutines.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/guild/pages/GuildSettings.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/inbox/Inbox.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/machines/MachineMeters.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/models/ModelProviders.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/models/ModelSetupGate.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/notes/NotesBrowser.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/recipes/ApplyPage.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/recipes/ApplyPreviewPage.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/RecipePage.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/PlanView.tsx": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/features/recipes/plan/planModel.ts": {
+    "complexity": {
+      "count": 8
+    },
+    "max-depth": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 3
+    }
+  },
+  "src/features/settings/SettingsPage.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/shell/AccountMenu.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/ProposalCards.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/StudioChat.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/studio/StudioLanding.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/StudioWorkspace.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/ActivityLedger.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/ActivityMap.tsx": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/features/studio/activity/AgentActivity.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/ChainList.tsx": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "src/features/studio/activity/activityModel.ts": {
+    "complexity": {
+      "count": 4
+    },
+    "max-depth": {
+      "count": 9
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "max-params": {
+      "count": 1
+    }
+  },
+  "src/features/studio/approvals.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/chatModel.ts": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/studio/state/StateItemDetail.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tabs/HistoryTab.tsx": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/features/studio/tabs/TaskTabs.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tabs/VersionsTab.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/studio/tools/ToolDetail.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/tables/CreateTableDialog.tsx": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/tables/RecordDialog.tsx": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "src/features/tables/RecordsPanel.tsx": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/features/tables/TablesPage.tsx": {
+    "complexity": {
+      "count": 3
+    }
+  },
+  "src/features/tables/values.ts": {
+    "complexity": {
+      "count": 5
+    },
+    "max-depth": {
+      "count": 3
+    }
+  }
+}

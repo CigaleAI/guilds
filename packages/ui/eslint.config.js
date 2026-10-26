@@ -23,4 +23,16 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The function and file limits of docs/contributing/code-guidelines.md. Existing violations
+    // are listed in eslint-suppressions.json; that list only shrinks.
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+    rules: {
+      complexity: ["error", 10],
+      "max-depth": ["error", 2],
+      "max-params": ["error", 3],
+      "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
+    },
+  },
 );

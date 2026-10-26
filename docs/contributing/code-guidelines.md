@@ -9,9 +9,12 @@ does, what it needs, and what it returns. The body can be as long
 as that contract needs. Behaviour lives next to the code that uses
 it.
 
-ESLint, Prettier, the boundary rule, and the check enforce what
-they cover. No lint rule enforces the function rules below; review
-checks them. The tooling is in [Development](development.md).
+ESLint enforces the complexity, nesting, parameter, and file-size
+limits below, the boundary rule, and the rest of what it covers.
+Violations that predate the rules are listed per package in
+`eslint-suppressions.json`; that list only shrinks. The other rules
+are checked in review. The tooling is in
+[Development](development.md#lint-and-format).
 
 ---
 
