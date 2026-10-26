@@ -147,11 +147,13 @@ test("native tools group by what they work on, including browser, coding and iss
     binding("code_search"),
     binding("report_issue"),
     binding("new_tool"),
+    binding("file_fetch"),
   ]);
   assert.deepEqual(
     groups.map((group) => [group.label, group.tools.map((tool) => tool.name)]),
     [
       ["Notes", ["note_find"]],
+      ["Files", ["file_fetch"]],
       ["Group chat", ["group_post"]],
       ["Browser", ["browser_navigate"]],
       ["Coding", ["shell", "code_search"]],

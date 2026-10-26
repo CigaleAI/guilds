@@ -226,7 +226,7 @@ The organisation's **Tools** has three sub-tabs:
   the repositories that login's coding agents clone, at organisation,
   guild, or agent.
 - **Native tools**: grouped by family (**Notes**, **Tables** for the
-  record tools, **Memory**, **Scripts**, **Routines**, **Group chat**,
+  record tools, **Files**, **Memory**, **Scripts**, **Routines**, **Group chat**,
   **Secrets**, **Browser**, **Coding**, **Issues**, and **Other**),
   each family collapsible.
 

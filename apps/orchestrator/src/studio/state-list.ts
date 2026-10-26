@@ -43,7 +43,7 @@ export type StateEvent = {
   path: string;
   at: string;
   what: "change" | "read";
-  /** A change's operation, or how a read happened: embed, memory, note_get, record_list, record_search, script. */
+  /** A change's operation, or how a read happened: embed, memory, note_get, file_fetch, record_list, record_search, script. */
   how: string;
   actor: StateActor;
   link: StateLink | null;
@@ -195,6 +195,7 @@ function parseArguments(raw: unknown): Row {
 /** The item one tool call named, by the tool's own argument. */
 const callTargets: Record<string, (args: Row, call: Row, items: StateItem[]) => string | null> = {
   note_get: (args, _call, items) => itemAt(items, (item) => item.display_path === str(args.path)),
+  file_fetch: (args, _call, items) => itemAt(items, (item) => item.display_path === str(args.path)),
   record_list: (args, _call, items) => itemAt(items, (item) => item.kind === "table" && item.title === str(args.collection)),
   record_search: (args, _call, items) =>
     itemAt(items, (item) => item.kind === "table" && item.title === str(args.collection)),

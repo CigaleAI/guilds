@@ -121,6 +121,7 @@ export type AgentNativeCapabilities = {
 const toolFamilies: { label: string; matches: (name: string) => boolean }[] = [
   { label: "Notes", matches: (name) => name.startsWith("note_") },
   { label: "Tables", matches: (name) => name.startsWith("record_") },
+  { label: "Files", matches: (name) => name.startsWith("file_") && name !== "file_read" },
   { label: "Memory", matches: (name) => name.startsWith("memory_") },
   { label: "Scripts", matches: (name) => name.startsWith("script_") },
   { label: "Routines", matches: (name) => name.startsWith("schedule_") },
@@ -132,7 +133,7 @@ const toolFamilies: { label: string; matches: (name: string) => boolean }[] = [
     matches: (name) =>
       name === "shell" ||
       name === "shell_status" ||
-      name.startsWith("file_") ||
+      name === "file_read" ||
       name.startsWith("code_"),
   },
   { label: "Issues", matches: (name) => name === "report_issue" },

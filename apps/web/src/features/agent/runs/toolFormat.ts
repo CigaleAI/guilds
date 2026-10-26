@@ -243,6 +243,18 @@ export function friendlyToolCall(call: ToolCallRequest | null | undefined): stri
   if (name === "note_delete") {
     return args.path ? `Delete ${args.path}` : "Delete note";
   }
+  if (name === "file_find") {
+    return args.query ? `Find files ` : "Find files";
+  }
+  if (name === "file_fetch") {
+    return args.path ? `Fetch ` : "Fetch file";
+  }
+  if (name === "file_put") {
+    return args.home_path ? `Shared ` : "Shared file";
+  }
+  if (name === "file_delete") {
+    return args.path ? `Delete ` : "Delete file";
+  }
   if (name === "note_read") {
     return args.path ? `Read ${args.path}` : "Read note";
   }

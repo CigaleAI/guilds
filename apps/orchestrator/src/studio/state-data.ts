@@ -26,7 +26,7 @@ export type StateDeps = { repo: Repositories; artifacts: ArtifactStore };
 type Row = Record<string, unknown>;
 
 // The tools whose arguments name the item they read.
-const READ_TOOLS = ["note_get", "record_list", "record_search", "script_run"];
+const READ_TOOLS = ["note_get", "file_fetch", "record_list", "record_search", "script_run"];
 
 export const STATE_HISTORY_PAGE = 50;
 

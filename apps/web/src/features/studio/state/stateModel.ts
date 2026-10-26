@@ -91,6 +91,7 @@ const readWords: Record<string, string> = {
   embed: "embedded in its Task",
   memory: "its Memory",
   note_get: "note_get",
+  file_fetch: "file_fetch",
   record_list: "record_list",
   record_search: "record_search",
   script: "ran it",

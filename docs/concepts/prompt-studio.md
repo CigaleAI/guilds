@@ -257,6 +257,7 @@ counts:
 | A read through a Task embed | One per run per embedded note or table |
 | A read of Memory | One per run of its agent |
 | `note_get` | One per call, on the note it names |
+| `file_fetch` | One per call, on the file it names |
 | `record_list`, `record_search` with a table | One per call, on the table |
 | A script run | One per `script_run` call or script-tool call |
 
@@ -677,8 +678,8 @@ private guild's or a hidden item never appears. Changes come from
 (a table's shape and access, a note's access); reads from
 `runs.metadata.task_source` (`embeds` and `collections`, recorded at
 run start), every run of a Memory's agent, and the arguments of
-`note_get`, `record_list`, `record_search`, `script_run`, and script
-tool calls.
+`note_get`, `file_fetch`, `record_list`, `record_search`, `script_run`,
+and script tool calls.
 
 `GET …/state/item?path=&hours=&op=&cursor=` returns `{ item, changes,
 reads, history, next_cursor }` for the item at `path` (404 when the
