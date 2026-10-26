@@ -219,8 +219,6 @@ What capture writes:
   `recommended_role` names the first role only when the scope is
   `agent`. A server the organisation added of its own carries its
   manifest whole, so a box that lacks it can add it.
-- The GitHub connection is not captured under `connections`.
-  `repositories` stands for it.
 - The guild's repositories are captured by name with an empty
   `purpose`. Their URLs, branches, and GitHub connections stay with
   the guild.

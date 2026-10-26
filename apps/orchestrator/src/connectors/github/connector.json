@@ -20,6 +20,13 @@
   "description": "Read and manage issues, pull requests, branches, files, and CI runs on the repositories each login picks from the platform's GitHub App. Coding agents also clone and push them.",
   "limitations": "Tools and coding runs reach only the repositories the login picked, with a one-hour installation token the orchestrator holds. Creating and forking repositories are not offered. Writing tools start Off. Protecting a default branch is set on GitHub.",
   "setup_hint": "Connect at the organisation, a guild, or an agent. The App is installed once per GitHub account; later logins reuse that install. Pick this login's repositories on the GitHub card: a login with none picked lists no tools.",
+  "state": {
+    "key": "github_repositories",
+    "intro": "`github_repositories` lists the repositories your GitHub tools reach, as the `owner` and `repo` they take, with each default branch."
+  },
+  "builder": {
+    "guidance": "A role that triages issues, reviews or merges pull requests, or watches CI without changing code takes GitHub as a connection, not `config.coding`. Its tools reach the repositories the login picks; coding roles clone the guild's `repositories`."
+  },
   "policy": {
     "exclude": ["create_repository", "fork_repository"]
   }

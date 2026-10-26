@@ -694,3 +694,19 @@ test("a sync keeps each listed tool's annotations", async () => {
   );
   assert.deepEqual(overlays, ["acme_wipe"]);
 });
+
+test("GitHub's State names the repositories a login picked as the owner and repo its tools take", async () => {
+  const github = CONNECTORS.bySlug("github")!;
+  const settings = {
+    repositories: [
+      { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 },
+      { name: "docs", url: "https://github.com/acme/docs.git", default_branch: "trunk" },
+    ],
+  };
+  assert.equal(github.manifest.state?.key, "github_repositories");
+  assert.deepEqual(await github.adapter.state!({}, contextOf({ settings })), [
+    { owner: "acme", repo: "shop", default_branch: "main" },
+    { owner: "acme", repo: "docs", default_branch: "trunk" },
+  ]);
+  assert.equal(await github.adapter.state!({}, contextOf({ settings: {} })), null, "a login with none picked adds no key");
+});

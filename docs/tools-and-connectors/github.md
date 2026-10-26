@@ -224,9 +224,15 @@ repositories cannot use them. Tools that write start Off
 ([What starts Off](connectors.md#what-starts-off)). A login with no
 repositories picked lists no tools.
 
-Tools lists a login's tools like any connector's, and shows the
-connector without an On/Off switch. Coding agents also use `git` and
+Tools lists a login's tools like any connector's. The connector's
+On/Off switch turns its tools on or off for that scope. Coding runs
+reach the guild's repositories either way, and also use `git` and
 `gh` in the sandbox.
+
+The connector's State hook puts `github_repositories` in every run of
+an agent that has GitHub on: the login's picked repositories as
+`{ owner, repo, default_branch }`, the `owner` and `repo` the tools
+take. A login with none picked adds no key.
 
 ### Repositories
 

@@ -11,6 +11,7 @@ import driveManifest from "./drive/connector.json" with { type: "json" };
 import drive from "./drive/adapter.js";
 import etherscanManifest from "./etherscan/connector.json" with { type: "json" };
 import githubManifest from "./github/connector.json" with { type: "json" };
+import github from "./github/adapter.js";
 import gmailManifest from "./gmail/connector.json" with { type: "json" };
 import gmail from "./gmail/adapter.js";
 import notionManifest from "./notion/connector.json" with { type: "json" };
@@ -36,7 +37,7 @@ export const CORE_CONNECTORS: readonly ConnectorEntry[] = [
   folderEntry(gmailManifest, gmail, folder("gmail")),
   folderEntry(driveManifest, drive, folder("drive")),
   folderEntry(sentryManifest, {}, folder("sentry")),
-  folderEntry(githubManifest, {}, folder("github")),
+  folderEntry(githubManifest, github, folder("github")),
   folderEntry(cigaleManifest, {}, folder("cigale")),
   folderEntry(coingeckoManifest, coingecko, folder("coingecko")),
   folderEntry(alchemyManifest, alchemy, folder("alchemy")),

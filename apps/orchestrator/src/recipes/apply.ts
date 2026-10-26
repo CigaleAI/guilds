@@ -1410,6 +1410,10 @@ function planSecret(applyRow: Record<string, unknown>, name: string): Record<str
   return ((plan.secrets as Array<Record<string, unknown>>) ?? []).find((item) => item.name === name);
 }
 
+/** What connecting GitHub takes for a recipe's repositories, beside whatever its GitHub connection says. */
+const REPOSITORIES_GITHUB_SETUP =
+  "Install the GitHub App on the account that owns the repositories (once per account; later logins reuse that install), so the coding agents clone, push, and open pull requests. Public repositories clone without it; pushing to them still needs it. On the GitHub card in Tools, pick this guild's or agent's repositories. In the guild's Settings, set Commit author email to a verified email on the GitHub account that owns any deploy project (Vercel, etc.).";
+
 export function checklistFromPlan(recipe: RecipeDocument, plan: Record<string, unknown>): Array<Record<string, unknown>> {
   const steps: Array<Record<string, unknown>> = [];
   for (const connection of (plan.connections as Array<Record<string, unknown>>) ?? []) {
@@ -1430,14 +1434,15 @@ export function checklistFromPlan(recipe: RecipeDocument, plan: Record<string, u
       status: bound ? "verified" : "open",
     });
   }
-  const planned = new Set(steps.map((step) => String(step.id)));
-  if (recipe.repositories.length && !planned.has(`conn:${GITHUB_SLUG}`)) {
+  const github = steps.find((step) => step.id === `conn:${GITHUB_SLUG}`);
+  if (recipe.repositories.length && github) {
+    github.setup = [github.setup, REPOSITORIES_GITHUB_SETUP].filter(Boolean).join(" ");
+  } else if (recipe.repositories.length) {
     steps.push({
       id: `conn:${GITHUB_SLUG}`,
       kind: "connection",
       title: "Connect GitHub",
-      setup:
-        "Install the GitHub App on the account that owns the repositories (once per account; later logins reuse that install), so the coding agents clone, push, and open pull requests. Public repositories clone without it; pushing to them still needs it. On the GitHub card in Tools, pick this guild's or agent's repositories. In the guild's Settings, set Commit author email to a verified email on the GitHub account that owns any deploy project (Vercel, etc.).",
+      setup: REPOSITORIES_GITHUB_SETUP,
       closure: "verified",
       status: "open",
     });

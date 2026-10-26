@@ -1,5 +1,4 @@
 import { newId } from "../lib/ids.js";
-import { GITHUB_SLUG } from "../github/index.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
 import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
@@ -266,10 +265,6 @@ export async function captureGuild(
         continue;
       }
       const slug = String(server.slug);
-      // The repositories list stands for GitHub: apply asks for it with them.
-      if (slug === GITHUB_SLUG) {
-        continue;
-      }
       const scope = recipeScope(server.connection_owner_scope ?? server.source_scope);
       let connection = recipe.connections.find((item) => item.server === slug);
       if (!connection) {

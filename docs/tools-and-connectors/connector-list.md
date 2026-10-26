@@ -80,9 +80,9 @@ Endpoint `https://api.githubcopilot.com/mcp/`, with the `repos`,
 `X-MCP-Toolsets`. The session sends an installation token limited to
 the repositories the login picks; a login with none picked lists no
 tools. `create_repository` and `fork_repository` are left out, as
-`policy.exclude`. Coding agents also get `git` and `gh` access to the
-same repositories. **Tools** shows the connector without an On/Off
-switch ([GitHub](github.md)).
+`policy.exclude`. Its State hook lists the picked repositories under
+`github_repositories`. Coding agents also get `git` and `gh` access to
+the same repositories ([GitHub](github.md)).
 
 ## Cigale
 

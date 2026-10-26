@@ -511,3 +511,42 @@ test("captureGuild refuses an empty roster", async () => {
     /no agents/,
   );
 });
+
+test("captureGuild records an enabled GitHub login as a connection like any other", async () => {
+  const recipe = await captureGuild(
+    captureDeps({
+      agents: [{ id: "a_triage", name: "triage", focus: "Triage issues", config: { model: TEST_MODEL, browser: false } }],
+      servers: [
+        {
+          id: "mcp_github",
+          slug: "github",
+          display_name: "GitHub",
+          publication_state: "published",
+          auth: "oauth",
+          description: "Issues and pull requests",
+          setup_hint: "Pick this login's repositories on the GitHub card.",
+        },
+      ],
+      connections: [
+        { id: "conn_gh", mcp_server_id: "mcp_github", status: "connected", owner_scope: "org", account_hint: "acme" },
+      ],
+      bindings: [
+        {
+          catalog_kind: "mcp",
+          catalog_id: "mcp_github",
+          scope: "org",
+          scope_id: "org_home",
+          enabled: true,
+          connection_id: "conn_gh",
+        },
+      ],
+      tools: [{ namespaced_name: "github_list_issues", name: "github_list_issues", enabled: true }],
+    }),
+    { guild: GUILD, user: USER },
+  );
+  assert.deepEqual(
+    recipe.connections.map((connection) => [connection.server, connection.recommended_scope]),
+    [["github", "org"]],
+  );
+  assert.equal(JSON.stringify(recipe.connections).includes("conn_gh"), false);
+});

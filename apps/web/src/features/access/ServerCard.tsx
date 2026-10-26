@@ -166,14 +166,10 @@ export function ServerCard({
         {...(server.account_hint ? { accountHint: server.account_hint } : {})}
         enabled={server.enabled}
         {...(server.source_scope ? { source: server.source_scope } : {})}
-        {...(server.slug === "github"
-          ? {}
-          : {
-              onEnabledChange: (enabled: boolean) => {
-                if (enabled) setExpanded(true);
-                onServerEnabled(enabled);
-              },
-            })}
+        onEnabledChange={(enabled: boolean) => {
+          if (enabled) setExpanded(true);
+          onServerEnabled(enabled);
+        }}
         switchDisabled={busy}
         actions={actions}
         {...(server.tools.length ? { tools: { active, total: server.tools.length } } : {})}

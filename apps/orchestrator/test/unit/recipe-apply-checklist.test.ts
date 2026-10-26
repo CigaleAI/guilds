@@ -127,13 +127,14 @@ test("a recipe's repositories add a GitHub login and a check per repository", ()
   const skipped = skipApplyChecklistStep(steps, "repo:api");
   assert.equal(skipped.checklist.find((item) => item.id === "repo:api")?.status, "skipped");
 
-  // A recipe that already lists GitHub among its connections keeps that one step.
+  // A recipe that already lists GitHub among its connections keeps that one step, which also
+  // says what the repositories need.
   const listed = checklistFromPlan(recipe, {
     connections: [{ server: "github", action: "create", setup: "Install the App." }],
     secrets: [],
   });
   assert.equal(listed.filter((item) => item.id === "conn:github").length, 1);
-  assert.equal(listed.find((item) => item.id === "conn:github")?.setup, "Install the App.");
+  assert.match(String(listed.find((item) => item.id === "conn:github")?.setup), /^Install the App\. .*Commit author email/);
 });
 
 test("apply carries the coding flag and turns a missing one off", () => {
