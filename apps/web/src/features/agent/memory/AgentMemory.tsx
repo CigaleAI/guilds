@@ -1,7 +1,7 @@
 import { useBlocker, useParams } from "@tanstack/react-router";
 import { Brain } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { agentFilesPrefix, useAgentMemory, useFile, useSaveMemory } from "../../../api/queries";
+import { agentNotesPrefix, useAgentMemory, useNote, useSaveMemory } from "../../../api/queries";
 import type { MemoryVersion } from "../../../api/types";
 import { relativeTime } from "../../../app/format";
 import {
@@ -13,7 +13,7 @@ import {
   ConfirmDialog,
   toast,
 } from "@guildsrun/ui";
-import { LatestChange, useOpenRunStep } from "../../files/LatestChange";
+import { LatestChange, useOpenRunStep } from "../../notes/LatestChange";
 import { DetailHeader, MasterDetail } from "../../studio/MasterDetail";
 import {
   MemoryStepButton,
@@ -160,7 +160,7 @@ type LiveMemoryProps = {
 
 /** The live memory in an editor, with who changed it last and the run step that did it. */
 function LiveMemory({ agentId, guildId, displayPath, entry, draft, onDraft }: LiveMemoryProps) {
-  const file = useFile(agentFilesPrefix(agentId), "memory.md");
+  const file = useNote(agentNotesPrefix(agentId), "memory.md");
   const save = useSaveMemory(agentId);
   const saved = file.data?.content ?? "";
   const value = draft ?? saved;

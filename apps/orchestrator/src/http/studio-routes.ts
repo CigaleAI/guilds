@@ -12,7 +12,7 @@ import { activityWindow, loadGuildActivity } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
 import { loadGuildReferences } from "../studio/references.js";
 import { loadStateHistory, loadStateItem, loadStateList, parseOperation, parseStateKind } from "../studio/state-data.js";
-import { operatorFor } from "./artifact-files.js";
+import { operatorFor } from "./artifact-notes.js";
 import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
 import { viewDraft } from "../studio/drafts.js";

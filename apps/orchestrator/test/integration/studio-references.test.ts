@@ -74,7 +74,7 @@ test(
       return response.statusCode === 204 ? {} : (response.json() as Record<string, unknown>);
     };
     const write = async (prefix: string, name: string, content: string) =>
-      String((await call("PUT", `${prefix}/files/${name}`, OWNER, { content })).display_path);
+      String((await call("PUT", `${prefix}/notes/${name}`, OWNER, { content })).display_path);
 
     try {
       // A private guild the operator does not operate, with a note.
@@ -84,7 +84,7 @@ test(
       });
       const vaultNote = await call(
         "PUT",
-        `/api/guilds/${String(vault.id)}/files/plans.md`,
+        `/api/guilds/${String(vault.id)}/notes/plans.md`,
         TEAMMATE,
         { content: "kept in the vault" },
       );
@@ -114,7 +114,7 @@ test(
       const aside = await write(guild, "aside.md", "Read when asked.");
       const lonely = await write(guild, "lonely.md", "Nobody points here.");
       // Only Task text guards a delete, so a note another note embeds can go.
-      await call("DELETE", `${guild}/files/temp.md`, OWNER);
+      await call("DELETE", `${guild}/notes/temp.md`, OWNER);
       await call("POST", "/api/collections", OWNER, {
         name: "leads",
         purpose: "Leads to follow up",
@@ -122,7 +122,7 @@ test(
       const leads = "org/org_home/collections/leads";
 
       const task = (id: string, content: string) =>
-        call("PUT", `/api/agents/${id}/files/task.md`, OWNER, { content });
+        call("PUT", `/api/agents/${id}/notes/task.md`, OWNER, { content });
       await task(
         writer,
         `![[${rules}]] ![[${leads}]] ![[notes/plan.md]] ![[${vaultPath}]] See ${aside}.`,

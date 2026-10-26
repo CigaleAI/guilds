@@ -235,7 +235,7 @@ row's last-saved facts: `recorded: false`, the saver's name, the
 version, and the time. A Task falls back to its version and time.
 
 Code: `apps/orchestrator/src/artifacts/file-changes.ts`,
-`apps/orchestrator/src/http/artifact-files.ts`.
+`apps/orchestrator/src/http/artifact-notes.ts`.
 
 ### Configuration change log
 

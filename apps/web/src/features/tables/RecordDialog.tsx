@@ -19,7 +19,7 @@ import {
   Icon,
 } from "@guildsrun/ui";
 import { fieldText, fits, parseField } from "./values";
-import { LatestChange, useOpenStepInAgent } from "../files/LatestChange";
+import { LatestChange, useOpenStepInAgent } from "../notes/LatestChange";
 
 const unset = "__unset__";
 

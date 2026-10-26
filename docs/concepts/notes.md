@@ -117,11 +117,11 @@ cannot reach it ([Prompt Studio](prompt-studio.md#state)).
 
 The agent's **State** tab and the guild's **State** tab share one
 notes browser. The agent's view is **State › Notes**. The guild's
-view is **State › Files**.
+view is **State › Notes**.
 
 - The agent's **Notes** view shows three scopes: **Agent**, **Guild**,
   and **Org**.
-- The guild's **Files** view shows **Guild** and **Org**.
+- The guild's **Notes** view shows **Guild** and **Org**.
 
 In both:
 
@@ -148,7 +148,7 @@ their own tabs ([Task](task.md), [Memory](memory.md)). Scripts appear
 on the agent's **State › Scripts** view ([Scripts](scripts.md)).
 
 An open note has an **Access** button in its header, wherever notes
-are browsed: the guild's **State › Files**, the agent's
+are browsed: the guild's **State › Notes**, the agent's
 **State › Notes**, and Studio. It opens a dialog titled
 **Access to `<path>`** with the note's **Access** panel: the
 organisation, the guilds, and the agents on its access list, each
@@ -216,7 +216,7 @@ note_delete  { path }                     returns the display path
   title. `level` and `key` are then ignored.
 - `note_delete` soft-deletes the note. It needs `write`. `task.md` and
   `memory.md` cannot be deleted.
-- A successful write or delete publishes `guild.files.changed`.
+- A successful write or delete publishes `guild.artifacts.changed`.
 
 Crossing tool families fails with a 422 that names the right tool:
 
@@ -260,7 +260,7 @@ Code: `apps/orchestrator/src/artifacts/access.ts`.
 | View | Route |
 |---|---|
 | Agent's notes | `/guilds/<guild_id>/agents/<agent_id>/state/notes?path=<display path>` |
-| Guild's notes | `/guilds/<guild_id>/state/files?path=<display path>` |
+| Guild's notes | `/guilds/<guild_id>/state/notes?path=<display path>` |
 | Open step | the agent's Chat tab with `?run=<run_id>&call=<tool_call_id>` |
 
 `?path=` is optional. It opens that note and its scope first.
@@ -271,18 +271,18 @@ The notes browser reads and writes notes over these routes, acting as
 the operator:
 
 ```text
-GET    /api/agents/:agent_id/files        the agent's notes, by key: id, path, display_path, kind, title, version
-GET    /api/agents/:agent_id/files/*      one note, or task.md or memory.md
-PUT    /api/agents/:agent_id/files/*      { content, expected_version? }
-DELETE /api/agents/:agent_id/files/*      204
-GET    /api/guilds/:guild_id/files        the guild's notes
-GET    /api/guilds/:guild_id/files/*
-PUT    /api/guilds/:guild_id/files/*      { content }
-DELETE /api/guilds/:guild_id/files/*      204
-GET    /api/org/files                     the organisation's notes
-GET    /api/org/files/*
-PUT    /api/org/files/*                   { content }
-DELETE /api/org/files/*                   204
+GET    /api/agents/:agent_id/notes        the agent's notes, by key: id, path, display_path, kind, title, version
+GET    /api/agents/:agent_id/notes/*      one note, or task.md or memory.md
+PUT    /api/agents/:agent_id/notes/*      { content, expected_version? }
+DELETE /api/agents/:agent_id/notes/*      204
+GET    /api/guilds/:guild_id/notes        the guild's notes
+GET    /api/guilds/:guild_id/notes/*
+PUT    /api/guilds/:guild_id/notes/*      { content }
+DELETE /api/guilds/:guild_id/notes/*      204
+GET    /api/org/notes                     the organisation's notes
+GET    /api/org/notes/*
+PUT    /api/org/notes/*                   { content }
+DELETE /api/org/notes/*                   204
 GET    /api/org/embeddable-notes          every live note of the organisation, by level and key (500 at most)
 GET    /api/org/embeddable-notes?display_path=…   one note: display_path, title, level, content; 404 if missing
 ```
@@ -294,7 +294,7 @@ routes. A read or a write answers
 404. The agent route also serves `task.md` and
 `memory.md` ([Task](task.md), [Memory](memory.md)); only `task.md`
 checks `expected_version`. Agent and guild writes and deletes
-publish `guild.files.changed`.
+publish `guild.artifacts.changed`.
 
 The guild and agent routes need a guild the caller can see. The
 `/api/org/…` routes need only organisation membership.

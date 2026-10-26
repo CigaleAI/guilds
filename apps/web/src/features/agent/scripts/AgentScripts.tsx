@@ -31,7 +31,7 @@ import {
   toast,
   Icon,
 } from "@guildsrun/ui";
-import { ChangeHistory, useOpenStepInAgent } from "../../files/LatestChange";
+import { ChangeHistory, useOpenStepInAgent } from "../../notes/LatestChange";
 import { changeActor } from "../prompt/taskContext";
 import { capabilityOn, defaultAgentConfig } from "../settings/configForm";
 

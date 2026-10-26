@@ -125,7 +125,7 @@ export async function createServer(
     policy,
     credentials: modelCredentials,
     publishFilesChanged: async (guildId) => {
-      await generation.group_chat.publish(guildId, "guild.files.changed", {
+      await generation.group_chat.publish(guildId, "guild.artifacts.changed", {
         scope: "agent",
         path: "task.md",
       });

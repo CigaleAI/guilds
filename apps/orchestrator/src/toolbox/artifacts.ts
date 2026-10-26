@@ -26,7 +26,7 @@ function actor(ctx: ToolContext): ArtifactActor {
 
 async function publish(ctx: ToolContext, path: string): Promise<void> {
   if (ctx.group_chat !== null && ctx.guild_id && ctx.group_chat.publish) {
-    await ctx.group_chat.publish(ctx.guild_id, "guild.files.changed", {
+    await ctx.group_chat.publish(ctx.guild_id, "guild.artifacts.changed", {
       path,
       agent_id: ctx.agent_id,
     });

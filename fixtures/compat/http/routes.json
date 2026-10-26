@@ -12501,7 +12501,7 @@
       "name": "guild-files",
       "request": {
         "method": "GET",
-        "path": "/api/guilds/<id:guild:3>/files",
+        "path": "/api/guilds/<id:guild:3>/notes",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -12522,7 +12522,7 @@
       "name": "guild-file-write",
       "request": {
         "method": "PUT",
-        "path": "/api/guilds/<id:guild:3>/files/note.md",
+        "path": "/api/guilds/<id:guild:3>/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -12551,7 +12551,7 @@
       "name": "guild-file-read",
       "request": {
         "method": "GET",
-        "path": "/api/guilds/<id:guild:3>/files/note.md",
+        "path": "/api/guilds/<id:guild:3>/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -12768,7 +12768,7 @@
       "name": "guild-file-escape",
       "request": {
         "method": "PUT",
-        "path": "/api/guilds/<id:guild:3>/files/../escape.md",
+        "path": "/api/guilds/<id:guild:3>/notes/../escape.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -13208,7 +13208,7 @@
       "name": "agent-files",
       "request": {
         "method": "GET",
-        "path": "/api/agents/<id:a:1>/files",
+        "path": "/api/agents/<id:a:1>/notes",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -13229,7 +13229,7 @@
       "name": "agent-file-read",
       "request": {
         "method": "GET",
-        "path": "/api/agents/<id:a:1>/files/task.md",
+        "path": "/api/agents/<id:a:1>/notes/task.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -13256,7 +13256,7 @@
       "name": "agent-file-write",
       "request": {
         "method": "PUT",
-        "path": "/api/agents/<id:a:1>/files/task.md",
+        "path": "/api/agents/<id:a:1>/notes/task.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -13292,7 +13292,7 @@
       "name": "agent-note-missing",
       "request": {
         "method": "PUT",
-        "path": "/api/agents/<id:a:1>/files/scratch.md",
+        "path": "/api/agents/<id:a:1>/notes/scratch.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -27338,7 +27338,7 @@
       "name": "guild-file-delete",
       "request": {
         "method": "DELETE",
-        "path": "/api/guilds/<id:guild:3>/files/note.md",
+        "path": "/api/guilds/<id:guild:3>/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -27357,7 +27357,7 @@
       "name": "guild-file-rewrite",
       "request": {
         "method": "PUT",
-        "path": "/api/guilds/<id:guild:3>/files/note.md",
+        "path": "/api/guilds/<id:guild:3>/notes/note.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -31220,7 +31220,7 @@
       "name": "group-invalidation-file",
       "request": {
         "method": "PUT",
-        "path": "/api/agents/<id:a:1>/files/task.md",
+        "path": "/api/agents/<id:a:1>/notes/task.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"
@@ -32282,7 +32282,7 @@
       "name": "agent-file-delete-task",
       "request": {
         "method": "DELETE",
-        "path": "/api/agents/<id:a:2>/files/task.md",
+        "path": "/api/agents/<id:a:2>/notes/task.md",
         "headers": {
           "X-Guilds-User": "user_operator",
           "X-Guilds-Org": "org_home"

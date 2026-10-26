@@ -31,7 +31,7 @@ import type { InsertKind } from "@guildsrun/ui";
 import { InsertPicker } from "./InsertPicker";
 import { EmbedPreview } from "./EmbedPreview";
 import { embedIsBroken, pickableNotes } from "./taskContext";
-import { LatestChange } from "../../files/LatestChange";
+import { LatestChange } from "../../notes/LatestChange";
 
 /** What the operator is writing, and the version it started from. */
 type Draft = { text: string; base: number | undefined };

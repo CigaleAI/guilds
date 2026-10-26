@@ -188,7 +188,7 @@ const guildUsageRoute = createRoute({
   component: lazyRouteComponent(() => import("../features/guild/pages/GuildUsage"), "GuildUsage"),
 });
 
-/** The State tab: files, tables and access as sub-tabs, one route each. */
+/** The State tab: notes, tables and access as sub-tabs, one route each. */
 const guildStateRoute = createRoute({
   getParentRoute: () => guildRoute,
   path: "state",
@@ -236,10 +236,10 @@ function parseFileSearch(search: Record<string, unknown>): { path?: string } {
   return typeof search.path === "string" && search.path ? { path: search.path } : {};
 }
 
-const guildFilesRoute = createRoute({
+const guildNotesRoute = createRoute({
   getParentRoute: () => guildStateRoute,
-  path: "files",
-  component: lazyRouteComponent(() => import("../features/files/NotesTabs"), "GuildFilesTab"),
+  path: "notes",
+  component: lazyRouteComponent(() => import("../features/notes/NotesTabs"), "GuildNotesTab"),
   validateSearch: parseFileSearch,
 });
 
@@ -270,7 +270,7 @@ const agentCliRoute = createRoute({
 const agentNotesRoute = createRoute({
   getParentRoute: () => agentStateRoute,
   path: "notes",
-  component: lazyRouteComponent(() => import("../features/files/NotesTabs"), "AgentNotesTab"),
+  component: lazyRouteComponent(() => import("../features/notes/NotesTabs"), "AgentNotesTab"),
   validateSearch: parseFileSearch,
 });
 
@@ -428,7 +428,7 @@ export const router = createRouter({
       guildSettingsRoute,
       guildStateRoute.addChildren([
         guildStateIndexRoute,
-        guildFilesRoute,
+        guildNotesRoute,
         guildTablesRoute,
         guildAccessRoute,
       ]),

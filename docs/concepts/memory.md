@@ -165,7 +165,7 @@ memory_write(content: str) -> str
 - When the new content is byte-identical to the live row, the write
   is a no-op and nothing is archived. Otherwise the previous version
   is appended to `memory_revisions` first.
-- It publishes `guild.files.changed` for `memory.md`.
+- It publishes `guild.artifacts.changed` for `memory.md`.
 - It is offered on direct, group-triggered, and schedule-triggered
   runs. It is a native tool binding, with the note and record tools
   ([Access](access.md)): the instance seeds enable it and any scope
@@ -268,6 +268,6 @@ The Studio coach reads the same timeline with
 
 ```text
 GET  /api/agents/:agent_id/memory              the timeline, newest first
-GET  /api/agents/:agent_id/files/memory.md     the live text, with display_path and version
-PUT  /api/agents/:agent_id/files/memory.md     { content }; archives the replaced text with the user as source
+GET  /api/agents/:agent_id/notes/memory.md     the live text, with display_path and version
+PUT  /api/agents/:agent_id/notes/memory.md     { content }; archives the replaced text with the user as source
 ```

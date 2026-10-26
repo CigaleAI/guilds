@@ -1,6 +1,6 @@
 : connected
 
-event: guild.files.changed
+event: guild.artifacts.changed
 data: {"scope": "agent", "agent_id": "<id:a:1>", "path": "task.md"}
 
 event: agent.scripts.changed

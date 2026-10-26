@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { FileItem } from "../../api/types";
-import { buildTree, newNotePath } from "./fileTree";
+import type { NoteItem } from "../../api/types";
+import { buildTree, newNotePath } from "./noteTree";
 
-function file(path: string): FileItem {
+function file(path: string): NoteItem {
   return {
     id: `n_${path}`,
     path,

@@ -5,12 +5,12 @@ import {
   useCollections,
   useDeleteFile,
   useEmbeddableNotes,
-  useFile,
-  useFileList,
+  useNote,
+  useNoteList,
   useSaveFile,
-  type FilesPrefix,
+  type NotesPrefix,
 } from "../../api/queries";
-import type { FileItem } from "../../api/types";
+import type { NoteItem } from "../../api/types";
 
 import { useIdentity } from "../../app/identity";
 import { useMediaQuery, wideScreen } from "../../app/media";
@@ -41,14 +41,14 @@ import { AccessListPanel } from "../access/AccessListPanel";
 import { InsertPicker } from "../agent/prompt/InsertPicker";
 import { EmbedPreview } from "../agent/prompt/EmbedPreview";
 import { embedIsBroken, pickableNotes } from "../agent/prompt/taskContext";
-import { buildTree, newNotePath } from "./fileTree";
+import { buildTree, newNotePath } from "./noteTree";
 import { LatestChange, type OpenChangeStep } from "./LatestChange";
 
-export type FileScope = { id: "agent" | "guild" | "org"; title: string; prefix: FilesPrefix };
+export type NoteScope = { id: "agent" | "guild" | "org"; title: string; prefix: NotesPrefix };
 
-type FileBrowserProps = {
+type NotesBrowserProps = {
   /** The scopes to browse, the first open at start: an agent's, its guild's, the organisation's. */
-  scopes: FileScope[];
+  scopes: NoteScope[];
   guildId: string;
   /** The agent whose notes these are, when browsing from its inspector. */
   agentId?: string;
@@ -57,30 +57,30 @@ type FileBrowserProps = {
   /** A file to open first, by display path; its scope opens with it. */
   initialPath?: string | undefined;
   /** Pins the open file to a question for Studio's coach. */
-  onAsk?: ((item: FileItem) => void) | undefined;
+  onAsk?: ((item: NoteItem) => void) | undefined;
 };
 
-/** The scope a display path belongs to: an agent's files, a guild's, or the organisation's. */
-function scopeOfPath(path: string): FileScope["id"] {
+/** The scope a display path belongs to: an agent's notes, a guild's, or the organisation's. */
+function scopeOfPath(path: string): NoteScope["id"] {
   if (/(^|\/)agents\//.test(path)) return "agent";
   if (/(^|\/)guilds\//.test(path)) return "guild";
   return "org";
 }
 
-const noFiles: FileItem[] = [];
+const noNotes: NoteItem[] = [];
 
 /**
  * Notes by scope: each scope's notes side by side, and the open note in an editor. Notes are
  * last-writer-wins; embeds work as in the Task.
  */
-export function FileBrowser({
+export function NotesBrowser({
   scopes,
   guildId,
   agentId,
   onOpenStep,
   initialPath,
   onAsk,
-}: FileBrowserProps) {
+}: NotesBrowserProps) {
   const wide = useMediaQuery(wideScreen);
   const [listOpen, setListOpen] = useState(!initialPath);
   const initialScope =
@@ -89,21 +89,21 @@ export function FileBrowser({
       : undefined;
   const [scopeId, setScopeId] = useState(initialScope ?? scopes[0]?.id ?? "guild");
   const scope = scopes.find((item) => item.id === scopeId) ?? scopes[0];
-  const prefixOf = (id: FileScope["id"]) => scopes.find((item) => item.id === id)?.prefix ?? null;
+  const prefixOf = (id: NoteScope["id"]) => scopes.find((item) => item.id === id)?.prefix ?? null;
   const lists = {
-    agent: useFileList(prefixOf("agent")),
-    guild: useFileList(prefixOf("guild")),
-    org: useFileList(prefixOf("org")),
+    agent: useNoteList(prefixOf("agent")),
+    guild: useNoteList(prefixOf("guild")),
+    org: useNoteList(prefixOf("org")),
   };
   const list = scope ? lists[scope.id] : undefined;
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Partial<Record<FileScope["id"], string>>>(() =>
+  const [selected, setSelected] = useState<Partial<Record<NoteScope["id"], string>>>(() =>
     initialScope && initialPath ? { [initialScope]: initialPath } : {},
   );
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
 
-  const items = list?.data ?? noFiles;
+  const items = list?.data ?? noNotes;
   const tree = buildTree(items, query);
 
   const chosen = scope ? selected[scope.id] : undefined;
@@ -268,12 +268,12 @@ export function FileBrowser({
 }
 
 type NoteViewProps = {
-  scope: FileScope;
-  item: FileItem;
+  scope: NoteScope;
+  item: NoteItem;
   guildId: string;
   agentId?: string;
   onOpenStep?: OpenChangeStep;
-  onAsk?: (item: FileItem) => void;
+  onAsk?: (item: NoteItem) => void;
   onBack?: () => void;
   draft: string | undefined;
   onDraft: (text: string | null) => void;
@@ -294,7 +294,7 @@ function NoteView({
   onDeleted,
 }: NoteViewProps) {
   const { org } = useIdentity();
-  const file = useFile(scope.prefix, item.path);
+  const file = useNote(scope.prefix, item.path);
   const save = useSaveFile(scope.prefix);
   const remove = useDeleteFile(scope.prefix);
   const notes = useEmbeddableNotes();
@@ -486,7 +486,7 @@ function NoteAccessDialog({
   open,
   onOpenChange,
 }: {
-  item: FileItem;
+  item: NoteItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -519,8 +519,8 @@ function NewNoteDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  scope: FileScope;
-  existing: readonly FileItem[];
+  scope: NoteScope;
+  existing: readonly NoteItem[];
   onCreated: (file: { display_path: string }) => void;
 }) {
   const save = useSaveFile(scope.prefix);

@@ -30,7 +30,7 @@ import type {
   EmbeddableNote,
   EmbedStatus,
   FileContent,
-  FileItem,
+  NoteItem,
   FileChange,
   GroupChatState,
   GroupMessage,
@@ -137,15 +137,15 @@ export const keys = {
   agentHarness: (agentId: string) => ["agent", agentId, "harness"] as const,
   harnesses: ["harnesses"] as const,
   /** Everything read from notes, memory, Tasks and tables; a file change in any guild refreshes it. */
-  files: ["files"] as const,
-  agentTask: (agentId: string) => ["files", "task", agentId] as const,
-  agentMemory: (agentId: string) => ["files", "memory", agentId] as const,
-  embeddableNotes: ["files", "embeddable-notes"] as const,
-  embedStatuses: ["files", "embed-status"] as const,
-  embedStatus: (guildId: string) => ["files", "embed-status", guildId] as const,
-  studioReferences: (id: string) => ["files", "studio-references", id] as const,
-  latestChange: (displayPath: string) => ["files", "latest-change", displayPath] as const,
-  fileChanges: (displayPath: string) => ["files", "changes", displayPath] as const,
+  artifacts: ["artifacts"] as const,
+  agentTask: (agentId: string) => ["artifacts", "task", agentId] as const,
+  agentMemory: (agentId: string) => ["artifacts", "memory", agentId] as const,
+  embeddableNotes: ["artifacts", "embeddable-notes"] as const,
+  embedStatuses: ["artifacts", "embed-status"] as const,
+  embedStatus: (guildId: string) => ["artifacts", "embed-status", guildId] as const,
+  studioReferences: (id: string) => ["artifacts", "studio-references", id] as const,
+  latestChange: (displayPath: string) => ["artifacts", "latest-change", displayPath] as const,
+  fileChanges: (displayPath: string) => ["artifacts", "changes", displayPath] as const,
   accessAll: ["access"] as const,
   agentScripts: (agentId: string) => ["agent", agentId, "scripts"] as const,
   /** Databases and their records; any database write refreshes all of it. */
@@ -156,8 +156,8 @@ export const keys = {
   accessLists: ["access-lists"] as const,
   itemAccess: (target: AccessTarget) => ["access-lists", target.kind, target.id] as const,
   reach: (subject: ReachSubject) => ["access-lists", "reach", subject.type, subject.id] as const,
-  fileList: (prefix: string) => ["files", "list", prefix] as const,
-  file: (prefix: string, path: string) => ["files", "file", prefix, path] as const,
+  noteList: (prefix: string) => ["artifacts", "notes", prefix] as const,
+  note: (prefix: string, path: string) => ["artifacts", "note", prefix, path] as const,
   agentUsage: (agentId: string) => ["agent", agentId, "usage"] as const,
   instance: ["instance"] as const,
   identity: ["identity"] as const,
@@ -595,10 +595,10 @@ export function useResumeRun(agentId: string) {
 }
 
 /** The agent's notes scope; its live memory and its Task are read and written by name inside it. */
-export const agentFilesPrefix = (agentId: string): FilesPrefix =>
-  `/api/agents/${encodeURIComponent(agentId)}/files`;
+export const agentNotesPrefix = (agentId: string): NotesPrefix =>
+  `/api/agents/${encodeURIComponent(agentId)}/notes`;
 
-const taskPath = (agentId: string) => `${agentFilesPrefix(agentId)}/task.md`;
+const taskPath = (agentId: string) => `${agentNotesPrefix(agentId)}/task.md`;
 
 export function useAgentTask(agentId: string) {
   return useQuery({
@@ -634,17 +634,17 @@ export function useAgentMemory(agentId: string) {
 }
 
 /**
- * Writes the agent's live memory, read with `useFile(agentFilesPrefix(agentId), "memory.md")`.
+ * Writes the agent's live memory, read with `useNote(agentNotesPrefix(agentId), "memory.md")`.
  * The server archives the text it replaces, which becomes the previous version.
  */
 export function useSaveMemory(agentId: string) {
   const client = useQueryClient();
-  const prefix = agentFilesPrefix(agentId);
+  const prefix = agentNotesPrefix(agentId);
   return useMutation({
     mutationFn: (content: string) =>
       api<FileContent>(`${prefix}/memory.md`, { method: "PUT", body: { content } }),
     onSuccess: (file) => {
-      client.setQueryData(keys.file(prefix, "memory.md"), file);
+      client.setQueryData(keys.note(prefix, "memory.md"), file);
       void client.invalidateQueries({ queryKey: keys.agentMemory(agentId) });
       void client.invalidateQueries({ queryKey: keys.latestChange(file.display_path) });
     },
@@ -1361,25 +1361,25 @@ export function useDeleteGuild() {
   });
 }
 
-/** A notes scope's API root: `/api/agents/:id/files`, `/api/guilds/:id/files` or `/api/org/files`. */
-export type FilesPrefix = string;
+/** A notes scope's API root: `/api/agents/notes`, `/api/guilds/notes` or `/api/org/notes`. */
+export type NotesPrefix = string;
 
-function filePath(prefix: FilesPrefix, path: string): string {
+function filePath(prefix: NotesPrefix, path: string): string {
   return `${prefix}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 /** A scope's notes, or nothing when there is no scope. */
-export function useFileList(prefix: FilesPrefix | null) {
+export function useNoteList(prefix: NotesPrefix | null) {
   return useQuery({
-    queryKey: keys.fileList(prefix ?? ""),
-    queryFn: () => api<FileItem[]>(prefix ?? ""),
+    queryKey: keys.noteList(prefix ?? ""),
+    queryFn: () => api<NoteItem[]>(prefix ?? ""),
     enabled: Boolean(prefix),
   });
 }
 
-export function useFile(prefix: FilesPrefix, path: string | null) {
+export function useNote(prefix: NotesPrefix, path: string | null) {
   return useQuery({
-    queryKey: keys.file(prefix, path ?? ""),
+    queryKey: keys.note(prefix, path ?? ""),
     queryFn: () => api<FileContent>(filePath(prefix, path ?? "")),
     enabled: Boolean(path),
   });
@@ -1389,14 +1389,14 @@ export function useFile(prefix: FilesPrefix, path: string | null) {
  * Writes a note, creating it when new. Notes are last-writer-wins: a save replaces whatever is
  * there.
  */
-export function useSaveFile(prefix: FilesPrefix) {
+export function useSaveFile(prefix: NotesPrefix) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ path, content }: { path: string; content: string }) =>
       api<FileContent>(filePath(prefix, path), { method: "PUT", body: { content } }),
     onSuccess: (file, { path }) => {
-      client.setQueryData(keys.file(prefix, path), file);
-      void client.invalidateQueries({ queryKey: keys.fileList(prefix) });
+      client.setQueryData(keys.note(prefix, path), file);
+      void client.invalidateQueries({ queryKey: keys.noteList(prefix) });
       void client.invalidateQueries({ queryKey: keys.embeddableNotes });
       void client.invalidateQueries({ queryKey: keys.latestChange(file.display_path) });
     },
@@ -1404,12 +1404,12 @@ export function useSaveFile(prefix: FilesPrefix) {
 }
 
 /** Deletes a note; the server refuses one a Task still embeds. */
-export function useDeleteFile(prefix: FilesPrefix) {
+export function useDeleteFile(prefix: NotesPrefix) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (path: string) => api<undefined>(filePath(prefix, path), { method: "DELETE" }),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: keys.fileList(prefix) });
+      void client.invalidateQueries({ queryKey: keys.noteList(prefix) });
       void client.invalidateQueries({ queryKey: keys.embeddableNotes });
     },
   });

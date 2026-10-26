@@ -45,7 +45,7 @@ test("memory_write stores through artifacts and publishes a file change", async 
   const result = await memoryWrite.handler(ctx, { content: "keep this" });
   assert.equal(result, "org/org_1/agents/a_1/memory.md");
   assert.deepEqual(published, [
-    ["guild.files.changed", { scope: "agent", path: "memory.md", agent_id: "a_1" }],
+    ["guild.artifacts.changed", { scope: "agent", path: "memory.md", agent_id: "a_1" }],
   ]);
 });
 

@@ -3,7 +3,7 @@ import { Database, FileText, ShieldCheck } from "lucide-react";
 import { TabsNav, tabsTrigger, Icon } from "@guildsrun/ui";
 /** The State tab's sub-tabs in order, by route. */
 const stateTabs = [
-  { route: "/guilds/$guildId/state/files", label: "Files", icon: FileText },
+  { route: "/guilds/$guildId/state/notes", label: "Notes", icon: FileText },
   { route: "/guilds/$guildId/state/tables", label: "Tables", icon: Database },
   { route: "/guilds/$guildId/state/access", label: "Access", icon: ShieldCheck },
 ] as const;
@@ -36,5 +36,5 @@ export function GuildState() {
 /** `…/state` on its own opens the first sub-tab. */
 export function GuildStateIndex() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
-  return <Navigate to="/guilds/$guildId/state/files" params={{ guildId }} replace />;
+  return <Navigate to="/guilds/$guildId/state/notes" params={{ guildId }} replace />;
 }

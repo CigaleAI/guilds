@@ -1016,7 +1016,7 @@ export type OrgMember = {
 };
 
 /** A note in a notes scope; `path` is its file name, such as `process.md`. */
-export type FileItem = {
+export type NoteItem = {
   /** The note's id, which names it to the access API. */
   id: string;
   path: string;

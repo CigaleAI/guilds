@@ -186,7 +186,7 @@ import {
   updateCollection,
   updateRecord,
   writeHostFile,
-} from "./artifact-files.js";
+} from "./artifact-notes.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
 import { registerModelProviderRoutes } from "./model-provider-routes.js";
@@ -331,7 +331,7 @@ function filePathParam(request: FastifyRequest): string {
   if (typeof fromParams === "string" && fromParams) {
     return fromParams;
   }
-  const marker = "/files/";
+  const marker = "/notes/";
   const index = pathname.lastIndexOf(marker);
   if (index >= 0) {
     return pathname.slice(index + marker.length);
@@ -1378,7 +1378,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.get("/api/guilds/:guild_id/files", async (request) => {
+  app.get("/api/guilds/:guild_id/notes", async (request) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedGuild(repo, param(request, "guild_id"), user);
     if (!artifacts) {
@@ -1403,7 +1403,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.get("/api/guilds/:guild_id/files/*", async (request) => {
+  app.get("/api/guilds/:guild_id/notes/*", async (request) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedGuild(repo, param(request, "guild_id"), user);
     const filePath = filePathParam(request);
@@ -1433,7 +1433,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.put("/api/guilds/:guild_id/files/*", async (request) => {
+  app.put("/api/guilds/:guild_id/notes/*", async (request) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedGuild(repo, param(request, "guild_id"), user);
     const filePath = filePathParam(request);
@@ -1446,7 +1446,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           filePath,
           String(body.content ?? ""),
         );
-        await publishGroup(deps, String(row.id), "guild.files.changed", {
+        await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
           scope: "shared",
           path: filePath,
         });
@@ -1470,7 +1470,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         filePath,
         String(body.content ?? ""),
       );
-      await publishGroup(deps, String(row.id), "guild.files.changed", {
+      await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
         scope: "guild",
         path: filePath,
       });
@@ -1480,14 +1480,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.delete("/api/guilds/:guild_id/files/*", async (request, reply) => {
+  app.delete("/api/guilds/:guild_id/notes/*", async (request, reply) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedGuild(repo, param(request, "guild_id"), user);
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
         await notes.deleteSharedFile(String(row.org_slug), String(row.name), filePath);
-        await publishGroup(deps, String(row.id), "guild.files.changed", {
+        await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
           scope: "shared",
           path: filePath,
         });
@@ -1508,7 +1508,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         String(row.id),
         filePath,
       );
-      await publishGroup(deps, String(row.id), "guild.files.changed", {
+      await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
         scope: "guild",
         path: filePath,
       });
@@ -1518,7 +1518,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.get("/api/org/files", async (request) => {
+  app.get("/api/org/notes", async (request) => {
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     if (!artifacts) {
@@ -1573,7 +1573,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     return latestFileChanges(store, repo, await operatorFor(repo, user, { orgId: String(org.id) }), paths);
   });
 
-  app.get("/api/org/files/*", async (request) => {
+  app.get("/api/org/notes/*", async (request) => {
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     const filePath = filePathParam(request);
@@ -1587,7 +1587,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.put("/api/org/files/*", async (request) => {
+  app.put("/api/org/notes/*", async (request) => {
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     const filePath = filePathParam(request);
@@ -1609,7 +1609,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.delete("/api/org/files/*", async (request, reply) => {
+  app.delete("/api/org/notes/*", async (request, reply) => {
     const user = await currentUser(repo, request, deps);
     const org = await currentOrg(repo, request, user);
     const filePath = filePathParam(request);
@@ -2327,7 +2327,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.get("/api/agents/:agent_id/files", async (request) => {
+  app.get("/api/agents/:agent_id/notes", async (request) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedAgent(repo, param(request, "agent_id"), user);
     if (!artifacts) {
@@ -2378,7 +2378,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.get("/api/agents/:agent_id/files/*", async (request) => {
+  app.get("/api/agents/:agent_id/notes/*", async (request) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedAgent(repo, param(request, "agent_id"), user);
     const filePath = filePathParam(request);
@@ -2417,7 +2417,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.put("/api/agents/:agent_id/files/*", async (request) => {
+  app.put("/api/agents/:agent_id/notes/*", async (request) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedAgent(repo, param(request, "agent_id"), user);
     const filePath = filePathParam(request);
@@ -2432,7 +2432,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           String(body.content ?? ""),
           { actor: String(user.name) },
         );
-        await publishGroup(deps, String(row.guild_id), "guild.files.changed", {
+        await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
           scope: "agent",
           agent_id: String(row.id),
           path: filePath,
@@ -2474,7 +2474,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         expectedVersionOf(body),
         repo,
       );
-      await publishGroup(deps, String(row.guild_id), "guild.files.changed", {
+      await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
         scope: "agent",
         agent_id: String(row.id),
         path: filePath,
@@ -2485,7 +2485,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.delete("/api/agents/:agent_id/files/*", async (request, reply) => {
+  app.delete("/api/agents/:agent_id/notes/*", async (request, reply) => {
     const user = await currentUser(repo, request, deps);
     const row = await ownedAgent(repo, param(request, "agent_id"), user);
     const filePath = filePathParam(request);
@@ -2497,7 +2497,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           String(row.name),
           filePath,
         );
-        await publishGroup(deps, String(row.guild_id), "guild.files.changed", {
+        await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
           scope: "agent",
           agent_id: String(row.id),
           path: filePath,
@@ -2519,7 +2519,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         String(row.id),
         filePath,
       );
-      await publishGroup(deps, String(row.guild_id), "guild.files.changed", {
+      await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
         scope: "agent",
         agent_id: String(row.id),
         path: filePath,

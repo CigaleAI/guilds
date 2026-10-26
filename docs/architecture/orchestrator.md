@@ -381,7 +381,7 @@ One in-process bus carries every event. Each SSE stream sends
 | `group.limit_reached` | guild | durable | The guild's message budget is spent |
 | `group.idle` | guild | durable | Group dispatch has nothing left to deliver |
 | `group.delivery.started`, `group.delivery.finished`, `group.delivery.failed` | guild | durable | A delivery run's progress |
-| `guild.files.changed` | guild | invalidation | Re-read the guild's files |
+| `guild.artifacts.changed` | guild | invalidation | Re-read the guild's notes, Memory, and records |
 | `guild.issues.changed` | guild | invalidation | Re-read the guild's issues |
 | `agent.scripts.changed` | guild | invalidation | Re-read an agent's scripts |
 | `agent.routines.changed` | guild | invalidation | Re-read an agent's routines |

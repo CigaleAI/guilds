@@ -337,7 +337,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
 
     const hostConflict = await app.inject({
       method: "PUT",
-      url: "/api/agents/a_studio/files/task.md",
+      url: "/api/agents/a_studio/notes/task.md",
       headers: AUTH,
       payload: { content: "host overwrite\n", expected_version: 1 },
     });

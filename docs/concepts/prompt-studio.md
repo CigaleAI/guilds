@@ -200,7 +200,7 @@ selected item on the right.
 | **Scripts** | Script names and descriptions, tagged when offered as a tool | Description, provenance, parameter schema, source; **Edit in agent**. The tab is hidden while the agent's scripting is off |
 | **Versions** | The live Task and archived versions, with who replaced each and when | Diff against the previous version. **Restore from Prompt** opens the agent's Prompt tab |
 
-**Files** and **Tables** after the tabs are links: they open
+**Notes** and **Tables** after the tabs are links: they open
 **State** filtered to the agent, on its notes or its tables.
 
 Studio does not stream a run. A generating run shows its committed

@@ -254,8 +254,8 @@ holds a `recipe:` link or a missing file shows as not reachable.
 ### HTTP
 
 ```text
-GET  /api/agents/:agent_id/files/task.md      { path, display_path, content, version, revisions }
-PUT  /api/agents/:agent_id/files/task.md      { content, expected_version? }
+GET  /api/agents/:agent_id/notes/task.md      { path, display_path, content, version, revisions }
+PUT  /api/agents/:agent_id/notes/task.md      { content, expected_version? }
 GET  /api/guilds/:guild_id/embed-status       { agents: [{ id, broken_embeds }] }
 GET  /api/org/embeddable-notes                the notes the Insert picker offers
 ```

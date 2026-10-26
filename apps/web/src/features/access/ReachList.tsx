@@ -88,7 +88,7 @@ function NoteTitle({ note, guildId }: { note: ReachedNote; guildId: string }) {
   }
   return (
     <Link
-      to="/guilds/$guildId/state/files"
+      to="/guilds/$guildId/state/notes"
       params={{ guildId: link.guildId }}
       search={{ path: link.path }}
       className={className}

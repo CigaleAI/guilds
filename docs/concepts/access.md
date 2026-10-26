@@ -325,8 +325,8 @@ sections always show, with **None.** when one is empty.
 Each item opens where its access is changed:
 
 - a table opens its **Access** tab on the **Tables** page
-- an organisation note opens in the current guild's **State › Files**
-- a guild note opens in that guild's **State › Files**
+- an organisation note opens in the current guild's **State › Notes**
+- a guild note opens in that guild's **State › Notes**
 - an agent note opens in that agent's **State › Notes**
 
 ## Rules and limits

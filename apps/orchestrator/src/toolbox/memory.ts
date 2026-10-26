@@ -8,7 +8,7 @@ async function publishMemoryFileChanged(ctx: ToolContext): Promise<void> {
   if (ctx.group_chat === null || !ctx.guild_id || !ctx.group_chat.publish) {
     return;
   }
-  await ctx.group_chat.publish(ctx.guild_id, "guild.files.changed", {
+  await ctx.group_chat.publish(ctx.guild_id, "guild.artifacts.changed", {
     scope: "agent",
     path: "memory.md",
     agent_id: ctx.agent_id,

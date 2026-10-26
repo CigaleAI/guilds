@@ -394,7 +394,7 @@ record_remove  { collection, id }
   (`null` clears an optional column). It returns
   `{ record, warnings? }`.
 - `record_remove` soft-deletes by `id` and returns `{ removed }`.
-- A successful `record_add` publishes `guild.files.changed` for the
+- A successful `record_add` publishes `guild.artifacts.changed` for the
   collection path. `record_update` and `record_remove` publish it for
   the record path.
 
@@ -545,6 +545,6 @@ PUT    /api/collections/:id/access               { subjects: [{ type, id, mode }
   ([Artifact store](artifacts.md#file-provenance)).
 
 Code: `apps/orchestrator/src/http/routes.ts`,
-`apps/orchestrator/src/http/artifact-files.ts`,
+`apps/orchestrator/src/http/artifact-notes.ts`,
 `apps/orchestrator/src/artifacts/search.ts`,
 `apps/orchestrator/src/toolbox/artifacts.ts`.

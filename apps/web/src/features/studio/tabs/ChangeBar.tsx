@@ -1,4 +1,4 @@
-import { LatestChange } from "../../files/LatestChange";
+import { LatestChange } from "../../notes/LatestChange";
 import { useStudio } from "../StudioContext";
 
 /** Who changed a file last, and every change before, with run steps opened in Studio. */

@@ -2,7 +2,7 @@ import { useDatabase } from "../../../api/queries";
 import type { StudioAgent } from "../../../api/types";
 import { Banner, SkeletonRows } from "@guildsrun/ui";
 import { RecordsPanel } from "../../tables/RecordsPanel";
-import { FileBrowser, type FileScope } from "../../files/FileBrowser";
+import { NotesBrowser, type NoteScope } from "../../notes/NotesBrowser";
 import { useStudio } from "../StudioContext";
 
 const enc = encodeURIComponent;
@@ -14,16 +14,16 @@ const enc = encodeURIComponent;
 export function NoteEditor({ agent, path }: { agent: StudioAgent | null; path: string }) {
   const { session, openStep, ask } = useStudio();
   const guildId = session.source_guild_id;
-  const shared: FileScope[] = [
-    { id: "guild", title: "Guild", prefix: `/api/guilds/${enc(guildId)}/files` },
-    { id: "org", title: "Org", prefix: "/api/org/files" },
+  const shared: NoteScope[] = [
+    { id: "guild", title: "Guild", prefix: `/api/guilds/${enc(guildId)}/notes` },
+    { id: "org", title: "Org", prefix: "/api/org/notes" },
   ];
-  const scopes: FileScope[] = agent
-    ? [{ id: "agent", title: "Agent", prefix: `/api/agents/${enc(agent.id)}/files` }, ...shared]
+  const scopes: NoteScope[] = agent
+    ? [{ id: "agent", title: "Agent", prefix: `/api/agents/${enc(agent.id)}/notes` }, ...shared]
     : shared;
   return (
     <div className="flex min-h-[32rem] flex-col rounded-lg border border-line">
-      <FileBrowser
+      <NotesBrowser
         key={`${agent?.id ?? "guild"}:${path}`}
         guildId={guildId}
         {...(agent ? { agentId: agent.id } : {})}

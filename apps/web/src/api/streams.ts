@@ -80,7 +80,7 @@ const guildEvents = [
   "group.delivery.finished",
   "group.delivery.failed",
   "guild.issues.changed",
-  "guild.files.changed",
+  "guild.artifacts.changed",
   "agent.routines.changed",
   "agent.scripts.changed",
 ] as const;
@@ -123,8 +123,8 @@ export function useGuildStream(guildId: string): void {
       } else if (name === "guild.issues.changed") {
         void client.invalidateQueries({ queryKey: keys.issues(guildId) });
         return;
-      } else if (name === "guild.files.changed") {
-        void client.invalidateQueries({ queryKey: keys.files });
+      } else if (name === "guild.artifacts.changed") {
+        void client.invalidateQueries({ queryKey: keys.artifacts });
         return;
       } else if (name === "agent.scripts.changed") {
         const agentId = (data as { agent_id?: string } | null)?.agent_id;

@@ -1,15 +1,15 @@
-import type { FileItem } from "../../api/types";
+import type { NoteItem } from "../../api/types";
 import type { FileTreeNode } from "@guildsrun/ui";
 /** Names a note cannot take: the agent's Task and memory live under them. */
 const reservedFiles = ["task.md", "memory.md"];
 
-function matches(item: FileItem, query: string): boolean {
+function matches(item: NoteItem, query: string): boolean {
   const needle = query.trim().toLowerCase();
   return !needle || `${item.path} ${item.title ?? ""}`.toLowerCase().includes(needle);
 }
 
 /** A scope's notes that match the search, side by side in the server's order. */
-export function buildTree(items: readonly FileItem[], query = ""): FileTreeNode[] {
+export function buildTree(items: readonly NoteItem[], query = ""): FileTreeNode[] {
   return items
     .filter((item) => matches(item, query))
     .map((item) => ({ id: item.display_path, name: item.path, kind: "file" }));
@@ -21,7 +21,7 @@ export function buildTree(items: readonly FileItem[], query = ""): FileTreeNode[
  */
 export function newNotePath(
   typed: string,
-  existing: readonly Pick<FileItem, "path">[],
+  existing: readonly Pick<NoteItem, "path">[],
 ): { path: string } | { error: string } {
   let path = typed.trim();
   if (!path) return { error: "Enter a file name." };

@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "e336cc7b565c9169bde8b9ca4cf3fcca3d26099002aa9cfbc481aa38c486da43"
+      "sha256": "71810132db8725e4eb8e1360aeeed8070ccf1eec74234498f8e5f3d27a03cc62"
     },
     {
       "path": "ids/shape.json",
@@ -113,7 +113,7 @@
       "path": "sse/group.txt",
       "source": "GET /api/guilds/{guild_id}/group-chat/stream",
       "generator_version": "1",
-      "sha256": "19a4d3773e24a420c01e960e97963ca1f943117840a1c91b939fc8c0616304b3"
+      "sha256": "7d4d2a1783d9e5abc1866c1d6489921b8daaa9f0edac89d7b8d17b4f5b330db2"
     },
     {
       "path": "sse/run-cancel.txt",

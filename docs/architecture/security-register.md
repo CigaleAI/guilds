@@ -283,7 +283,7 @@ reach the harness picks Claude Code or Codex for that agent.
 **Where:** `GET /api/org/embeddable-notes`, `/api/collections` and
 its record routes, and `GET /api/file-changes` in
 `apps/orchestrator/src/http/routes.ts`; `operatorFor` in
-`apps/orchestrator/src/http/artifact-files.ts`; `canReadLevel`,
+`apps/orchestrator/src/http/artifact-notes.ts`; `canReadLevel`,
 `accessibleCollections`, and `readableCollectionsSql` in
 `apps/orchestrator/src/artifacts/store.ts`.
 

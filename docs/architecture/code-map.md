@@ -56,7 +56,7 @@ one as a submodule ([Extension points](extension-points.md)).
 
 | Directory | What it holds |
 | --- | --- |
-| `http/` | Routes (`routes.ts` and the `*-routes.ts` siblings), the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), the Host Finder over the artifact store (`artifact-files.ts`), and the web build (`web-app.ts`) |
+| `http/` | Routes (`routes.ts` and the `*-routes.ts` siblings), the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), the Host Finder over the artifact store (`artifact-notes.ts`), and the web build (`web-app.ts`) |
 | `generation/` | `GenerationLoop`, run chains (`chain.ts`), organisation admission (`admission.ts`), idle stops (`idle.ts`) ([Generation](orchestrator.md#generation)) |
 | `toolbox/` | Native tools, the sandbox command runner (`shell.ts`), and the result pipeline (`output.ts`) ([Native tools](../tools-and-connectors/native.md)) |
 | `connectors/` | One folder per connector, the manifest schema, the adapter contract, and the connector registry ([Connectors](../tools-and-connectors/connectors.md)) |
@@ -125,7 +125,7 @@ One directory per area. The screens are in the
 | `guild/` | Guild workspace, group chat with its message queue, guild menu, and guild pages |
 | `agent/` | Create-agent dialogs and the agent inspector's tabs |
 | `agent/runs/` | A run's rows grouped into generations, steps, and tool calls |
-| `files/` | The notes browser and the provenance strip |
+| `notes/` | The notes browser and the provenance strip |
 | `access/` | One scope's tools and secrets |
 | `tables/` | The Tables page |
 | `studio/` | Prompt Studio |

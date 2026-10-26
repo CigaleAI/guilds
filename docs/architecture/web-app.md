@@ -125,7 +125,7 @@ not-found page (`features/home/NotFound.tsx`).
 | `/tables`, `/tables/$collectionId` | Tables | `tab`: `columns` or `access` (records without it) |
 | `/guilds/$guildId` | Guild group chat | `seq`: open at that message |
 | `/guilds/$guildId/settings` | Guild settings | |
-| `/guilds/$guildId/state/files` | Guild State › Files | `path`: open that note |
+| `/guilds/$guildId/state/notes` | Guild State › Notes | `path`: open that note |
 | `/guilds/$guildId/state/tables` | Guild State › Tables | |
 | `/guilds/$guildId/state/access` | Guild State › Access | |
 | `/guilds/$guildId/routines`, `…/issues`, `…/usage`, `…/tools`, `…/secrets` | Guild tabs | |
@@ -171,7 +171,7 @@ SSE carries transient deltas and newly committed rows
 
 | Stream | URL | What it keeps current |
 |---|---|---|
-| One per open guild | `/api/guilds/:id/group-chat/stream` | Chat, delivery state, issues, files, routines, and scripts |
+| One per open guild | `/api/guilds/:id/group-chat/stream` | Chat, delivery state, issues, notes and records, routines, and scripts |
 | The inbox | `/api/notifications/stream` | The inbox and its badge, each guild's unread count, and the chime for a message posted where the operator is not looking |
 | One per open run | `/api/runs/:id/stream` | The run transcript |
 | One per open Studio session | `/api/studio/sessions/:id/stream` | The coach chat and drafts |

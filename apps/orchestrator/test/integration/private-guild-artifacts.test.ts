@@ -50,7 +50,7 @@ test("organisation-wide note, table, and change routes keep a private guild to i
     assert.equal(agent.statusCode, 201, agent.body);
     const note = await app.inject({
       method: "PUT",
-      url: `/api/guilds/${guildId}/files/plans.md`,
+      url: `/api/guilds/${guildId}/notes/plans.md`,
       headers: { ...OWNER, ...JSON_BODY },
       payload: { content: "# Plans\n\nkept in the vault" },
     });

@@ -1,5 +1,5 @@
 import { useParams, useSearch } from "@tanstack/react-router";
-import { FileBrowser } from "./FileBrowser";
+import { NotesBrowser } from "./NotesBrowser";
 
 const enc = encodeURIComponent;
 
@@ -8,32 +8,32 @@ export function AgentNotesTab() {
   const { guildId, agentId } = useParams({ from: "/guilds/$guildId/agents/$agentId" });
   const { path } = useSearch({ from: "/guilds/$guildId/agents/$agentId/state/notes" });
   return (
-    <FileBrowser
+    <NotesBrowser
       key={path ?? ""}
       guildId={guildId}
       agentId={agentId}
       initialPath={path}
       scopes={[
-        { id: "agent", title: "Agent", prefix: `/api/agents/${enc(agentId)}/files` },
-        { id: "guild", title: "Guild", prefix: `/api/guilds/${enc(guildId)}/files` },
-        { id: "org", title: "Org", prefix: "/api/org/files" },
+        { id: "agent", title: "Agent", prefix: `/api/agents/${enc(agentId)}/notes` },
+        { id: "guild", title: "Guild", prefix: `/api/guilds/${enc(guildId)}/notes` },
+        { id: "org", title: "Org", prefix: "/api/org/notes" },
       ]}
     />
   );
 }
 
-/** The guild's State Files view: notes its agents share, and the organisation's; `?path=` opens one first. */
-export function GuildFilesTab() {
+/** The guild's State Notes view: notes its agents share, and the organisation's; `?path=` opens one first. */
+export function GuildNotesTab() {
   const { guildId } = useParams({ from: "/guilds/$guildId" });
-  const { path } = useSearch({ from: "/guilds/$guildId/state/files" });
+  const { path } = useSearch({ from: "/guilds/$guildId/state/notes" });
   return (
-    <FileBrowser
+    <NotesBrowser
       key={path ?? ""}
       guildId={guildId}
       initialPath={path}
       scopes={[
-        { id: "guild", title: "Guild", prefix: `/api/guilds/${enc(guildId)}/files` },
-        { id: "org", title: "Org", prefix: "/api/org/files" },
+        { id: "guild", title: "Guild", prefix: `/api/guilds/${enc(guildId)}/notes` },
+        { id: "org", title: "Org", prefix: "/api/org/notes" },
       ]}
     />
   );

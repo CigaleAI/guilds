@@ -43,7 +43,7 @@ const GROUP_EVENTS = [
   "group.delivery.started",
   "group.delivery.finished",
   "group.idle",
-  "guild.files.changed",
+  "guild.artifacts.changed",
   "agent.scripts.changed",
   "agent.routines.changed",
 ];
