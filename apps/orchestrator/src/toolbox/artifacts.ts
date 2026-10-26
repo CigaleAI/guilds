@@ -65,6 +65,26 @@ function agentPath(path: string): ReturnType<typeof parseDisplayPath> {
   return parsed;
 }
 
+/** A row `note_get` may show: a script or a file is read with its own family's tool. */
+function assertReadableNote(row: { kind: string } | undefined): void {
+  if (row?.kind === "script") {
+    throw new ArtifactError("use script_read for scripts", 422);
+  }
+  if (row?.kind === "file") {
+    throw new ArtifactError("use file_fetch for files", 422);
+  }
+}
+
+/** A row `note_delete` may delete: a script or a file is deleted with its own family's tool. */
+function assertDeletableNote(row: { kind: string } | undefined): void {
+  if (row?.kind === "script") {
+    throw new ArtifactError("use script_delete for scripts", 422);
+  }
+  if (row?.kind === "file") {
+    throw new ArtifactError("use file_delete for files", 422);
+  }
+}
+
 function renderGet(
   artifacts: ArtifactStore,
   path: string,
@@ -94,9 +114,7 @@ export async function readArtifactText(ctx: ToolContext, path: string): Promise<
   if (!loaded.row || loaded.tombstone) {
     throw new ArtifactError("artifact not found", 404);
   }
-  if (loaded.row.kind === "script") {
-    throw new ArtifactError("use script_read for scripts", 422);
-  }
+  assertReadableNote(loaded.row);
   const view = artifacts.view(loaded.row);
   const shown = typeof view.display_path === "string" ? view.display_path : path;
   if (parsed.kind === "record") {
@@ -149,9 +167,7 @@ export const noteGet: Tool = {
     }
     const artifacts = store(ctx);
     const loaded = await artifacts.getByDisplayPath(actor(ctx), path);
-    if (loaded.row?.kind === "script") {
-      throw new ArtifactError("use script_read for scripts", 422);
-    }
+    assertReadableNote(loaded.row);
     return renderGet(artifacts, path, loaded);
   },
 };
@@ -225,9 +241,7 @@ export const noteDelete: Tool = {
     }
     const artifacts = store(ctx);
     const loaded = await artifacts.getByDisplayPath(actor(ctx), path);
-    if (loaded.row?.kind === "script") {
-      throw new ArtifactError("use script_delete for scripts", 422);
-    }
+    assertDeletableNote(loaded.row);
     await artifacts.deleteByDisplayPath(actor(ctx), path);
     await publish(ctx, path);
     return path;

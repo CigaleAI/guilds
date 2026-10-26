@@ -1,4 +1,4 @@
-import type { ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactFiles, ArtifactStore } from "../artifacts/index.js";
 import type { Database } from "../db/client.js";
 import type { Repositories } from "../db/repositories.js";
 import type { NotesStore } from "../notes/store.js";
@@ -27,6 +27,8 @@ export type AppDeps = {
   repo: Repositories;
   notes: NotesStore;
   artifacts?: ArtifactStore;
+  /** The shared files over `artifacts` and the blob store. */
+  files?: ArtifactFiles;
   scripts: Scripts;
   schedules: Schedules;
   config?: AppConfig;

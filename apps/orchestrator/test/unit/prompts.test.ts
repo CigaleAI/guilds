@@ -346,11 +346,13 @@ test("state intro omits note and script lines when those capabilities are off", 
   });
   assert.ok(off.includes("initial record_list"));
   assert.ok(!off.includes("note_find"));
+  assert.ok(!off.includes("file_find"));
   assert.ok(!off.includes("script_list"));
   assert.ok(!off.includes("scripts/<name>.py"));
   const on = stateIntroForCapabilities({
     scripts: true,
     notes: true,
+    files: true,
     browser: true,
     coding: false,
   });

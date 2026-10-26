@@ -36,6 +36,8 @@ const TASK_INTRO_NO_MEMORY =
 export type StandingCaps = {
   scripts: boolean;
   notes: boolean;
+  /** Whether the file tools are offered. Missing means off. */
+  files?: boolean;
   browser: boolean;
   coding: boolean;
   /** Missing means on, matching agent config. */
@@ -75,7 +77,8 @@ export const STATE_INTRO =
   "(`guild` for a table of this guild, `org` for an organisation table), display " +
   "path, and `columns` (name, type, description, and when set required, " +
   "unique, or the values a text column accepts). Notes are not listed here; " +
-  "search them with note_find. `scripts` are reusable Python files at " +
+  "search them with note_find. Shared files are not listed here; search them with file_find " +
+  "and copy one into your home with file_fetch. `scripts` are reusable Python files at " +
   "`scripts/<name>.py` in your home that read their arguments as JSON from " +
   "stdin; pass them in the `arguments` of script_run, or call a script " +
   "listed with `parameters` as a tool under its name. " +
@@ -98,6 +101,12 @@ export function stateIntroForCapabilities(caps: StandingCaps): string {
   let text = STATE_INTRO.replace("initial note_find, record_list, or script_list", `initial ${listed}`);
   if (!caps.notes) {
     text = text.replace("Notes are not listed here; search them with note_find. ", "");
+  }
+  if (!caps.files) {
+    text = text.replace(
+      "Shared files are not listed here; search them with file_find and copy one into your home with file_fetch. ",
+      "",
+    );
   }
   if (!caps.scripts) {
     text = text.replace(
@@ -171,6 +180,7 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
   return resolveCapabilities(standing, {
     scripts: caps.scripts,
     notes: caps.notes,
+    files: caps.files === true,
     browser: caps.browser,
     coding: caps.coding,
     no_coding: !caps.coding,
@@ -183,6 +193,7 @@ export function standingForCapabilities(standing: string, caps: StandingCaps): s
 const PREVIEW_CAPS = {
   scripts: true,
   notes: true,
+  files: true,
   browser: true,
   coding: true,
 } as const;

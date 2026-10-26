@@ -18,6 +18,13 @@ export const NATIVE_CAPABILITY_GROUPS = [
     tools: ["record_search", "record_list", "record_add", "record_update", "record_remove"],
   },
   {
+    id: "files",
+    label: "Files",
+    description:
+      "Shared files at agent, guild, or organisation level: any bytes an agent produced or needs, such as a report, a dataset, or an image. Each file carries a description and an access list. An agent shares a file from its home and fetches one into it; the bytes never pass through the model.",
+    tools: ["file_find", "file_fetch", "file_put", "file_delete"],
+  },
+  {
     id: "memory",
     label: "Memory",
     description: "Private free-form text the agent carries between runs, capped at 12,000 characters. Not a seen-set.",

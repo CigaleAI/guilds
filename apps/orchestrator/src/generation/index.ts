@@ -15,7 +15,7 @@ import {
   type AgentConfig,
 } from "../agents/validation.js";
 import { enabledToolNames, resolvedTools } from "../access/index.js";
-import { NOTE_TOOLS } from "../db/seed/catalog.js";
+import { FILE_TOOLS, NOTE_TOOLS } from "../db/seed/catalog.js";
 import {
   agentRuntime,
   agentSecrets,
@@ -72,6 +72,7 @@ import { readMemory } from "../memory/index.js";
 import { McpDisconnectedError, McpError, McpPool } from "../mcp/index.js";
 import {
   ArtifactError,
+  ArtifactFiles,
   ArtifactStore,
   agentActor,
   collectTaskEmbeds,
@@ -440,6 +441,10 @@ function hasScriptTools(names: string[]): boolean {
 
 function hasNoteTools(names: string[]): boolean {
   return NOTE_TOOLS.some((name) => names.includes(name));
+}
+
+function hasFileTools(names: string[]): boolean {
+  return FILE_TOOLS.some((name) => names.includes(name));
 }
 
 function hasMemoryTool(names: string[]): boolean {
@@ -1136,6 +1141,7 @@ export class GenerationLoop implements GroupRunner {
   schedules: Schedules;
   scripts: Scripts;
   artifacts: ArtifactStore | null;
+  files: ArtifactFiles | null;
   attachments: AttachmentService | null;
   lock_generation = 0;
   admission = new AdmissionCoordinator();
@@ -1183,6 +1189,7 @@ export class GenerationLoop implements GroupRunner {
       shutdownTimeoutMs?: number;
       mcp?: McpPool | { call: McpPool["call"]; syncTools?: McpPool["syncTools"] } | null;
       artifacts?: ArtifactStore | null;
+      files?: ArtifactFiles | null;
       attachments?: AttachmentService | null;
       admission?: AdmissionCoordinator;
       policy?: OrgPolicy;
@@ -1197,6 +1204,7 @@ export class GenerationLoop implements GroupRunner {
     this.sandboxes = sandboxes;
     this.mcp = options.mcp ?? new McpPool();
     this.artifacts = options.artifacts ?? null;
+    this.files = options.files ?? null;
     this.attachments = options.attachments ?? null;
     if (options.admission) {
       this.admission = options.admission;
@@ -2522,6 +2530,7 @@ export class GenerationLoop implements GroupRunner {
     const caps = {
       scripts: config.scripting && hasScriptTools(access.tools),
       notes: hasNoteTools(access.tools),
+      files: hasFileTools(access.tools),
       browser: Boolean(config.browser),
       coding: Boolean(config.coding),
       memory: memoryOf(config),
@@ -3371,6 +3380,8 @@ export class GenerationLoop implements GroupRunner {
       secrets,
       notes: this.notes as NotesStore,
       artifacts: this.artifacts,
+      files: this.files,
+      workspace_dir: await this.agentWorkspace(agent),
       artifact_actor:
         typeof agent.org_id === "string" && agent.org_id
           ? agentActor({

@@ -61,7 +61,7 @@ The run's own messages follow the system message:
 ### Guidelines fit the agent
 
 The Guidelines template has parts for each capability: notes,
-scripts, the browser, coding, and memory. A part is kept only when
+files, scripts, the browser, coding, and memory. A part is kept only when
 the agent has that capability, so an agent without a browser never
 reads browser instructions.
 
@@ -86,7 +86,8 @@ from spending its first tool calls on looking around. It holds:
 - facts a connector adds for the agent's logins
 
 Notes are not listed. The agent searches them with `note_find`
-([Notes](notes.md)).
+([Notes](notes.md)). Files are not listed either; the agent searches
+them with `file_find` ([Files](files.md)).
 
 State is read only. To act on something, the agent uses tools.
 
@@ -271,15 +272,18 @@ this order:
    returns, `note_get`, `note_write` at a level or by display path, a
    new note only at `agent` or `guild` level, `.md` keys with no
    folders, and `note_delete` ([Notes](notes.md)).
-8. Collections and records: what State lists, the record tools, the
+8. Files, when offered: `file_find`, `file_fetch` into the home,
+   `file_put` at a level with a description, a new file only at `agent`
+   or `guild` level, and `file_delete` ([Files](files.md)).
+9. Collections and records: what State lists, the record tools, the
    `where`, `since`, and `order` filters, `record_search` syntax, and
    queue collections that carry their state in a column
    ([Collections](collections.md)).
-9. Routines: the six schedule tools on direct and group chat runs,
+10. Routines: the six schedule tools on direct and group chat runs,
    cron and window schedules, the Schedule wake-up message, and
    `previous_run_at` as `since` for `record_list`
    ([Routines](routines.md)).
-10. `report_issue`: when to file a tooling problem for the operator
+11. `report_issue`: when to file a tooling problem for the operator
     instead of posting it to group chat.
 
 The generated Memory section owns the `memory_write` guidance.

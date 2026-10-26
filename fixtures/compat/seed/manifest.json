@@ -19,6 +19,22 @@
     ],
     "platform_native_tool_bindings": [
       {
+        "catalog_id": "file_delete",
+        "enabled": true
+      },
+      {
+        "catalog_id": "file_fetch",
+        "enabled": true
+      },
+      {
+        "catalog_id": "file_find",
+        "enabled": true
+      },
+      {
+        "catalog_id": "file_put",
+        "enabled": true
+      },
+      {
         "catalog_id": "group_post",
         "enabled": true
       },
@@ -129,6 +145,10 @@
       "record_add",
       "record_update",
       "record_remove",
+      "file_find",
+      "file_fetch",
+      "file_put",
+      "file_delete",
       "script_create",
       "script_list",
       "script_read",
@@ -157,6 +177,10 @@
       "record_add",
       "record_update",
       "record_remove",
+      "file_find",
+      "file_fetch",
+      "file_put",
+      "file_delete",
       "memory_write",
       "script_create",
       "script_list",
@@ -328,7 +352,7 @@
     "orgs": 1,
     "org_members": 1,
     "connectors": 15,
-    "bindings": 25,
+    "bindings": 29,
     "secrets": 0
   }
 }

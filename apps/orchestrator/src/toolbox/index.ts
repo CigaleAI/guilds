@@ -15,6 +15,7 @@ import { browserClick, browserEval, browserFill, browserNavigate, browserScreens
 import { codeSearch, fileRead, shell, shellStatus } from "./code.js";
 import { groupPost } from "./group.js";
 import { codeTask } from "./harness.js";
+import { fileDelete, fileFetch, fileFind, filePut } from "./file.js";
 import { memoryWrite } from "./memory.js";
 import { reportIssue } from "./report.js";
 import { scheduleCreateCron, scheduleCreateWindow, scheduleDelete, scheduleList, schedulePause, scheduleResume, scheduleUpdate } from "./schedule.js";
@@ -37,6 +38,10 @@ register(recordList);
 register(recordAdd);
 register(recordUpdate);
 register(recordRemove);
+register(fileFind);
+register(fileFetch);
+register(filePut);
+register(fileDelete);
 register(memoryWrite);
 register(groupPost);
 register(reportIssue);

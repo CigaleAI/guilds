@@ -17,7 +17,7 @@
       "path": "bindings/resolution.json",
       "source": "src/access resolution walk",
       "generator_version": "1",
-      "sha256": "c28f7e4edc3f586ccf18654dd55401e900b5cccd4d514b4903344ba39d2bd25a"
+      "sha256": "1ed29c3084680246d60a54865ff52d66d60d6c8ace2a2bc2f9304d27fa1df297"
     },
     {
       "path": "codecs/timestamps.json",
@@ -47,7 +47,7 @@
       "path": "http/routes.json",
       "source": "recorded HTTP request/response pairs",
       "generator_version": "1",
-      "sha256": "71810132db8725e4eb8e1360aeeed8070ccf1eec74234498f8e5f3d27a03cc62"
+      "sha256": "c9f63082b91f98005b8787118e205aae5b3cb4adc2c9a2a1f1c80436ac52852b"
     },
     {
       "path": "ids/shape.json",
@@ -71,13 +71,13 @@
       "path": "prompts/compose.txt",
       "source": "src/prompts composeSystemPrompt",
       "generator_version": "1",
-      "sha256": "04ad957c6f0e39ff9714fe6ca071d7276dbfaf2b3de6cb0d50ed0e1d23edc0cb"
+      "sha256": "2d11c771e32717f731ac0556bc445864b4fcc4106fff447f360759e3acee47cd"
     },
     {
       "path": "prompts/hashes.json",
       "source": "src/prompts promptHash",
       "generator_version": "1",
-      "sha256": "1780ad78c7f19baece29ffe74ea3990f1fae0ec0557bcc61acd8922181b3ab54"
+      "sha256": "de005e59d808420a8fdcb66281b4b0fb2bd401dd3727e095eb6b4ee4bb42f8ad"
     },
     {
       "path": "prompts/hydrate.json",
@@ -101,7 +101,7 @@
       "path": "seed/manifest.json",
       "source": "clean-database seed rows: system, dev, runtime bootstrap",
       "generator_version": "1",
-      "sha256": "150896bb3e8c0a152c512c398fea33717495a3e67931498b6085ca54661cb68c"
+      "sha256": "4d51251be1d14b871008f0988ea4508505aa70feb5f0f4116c5b74e21a796f50"
     },
     {
       "path": "sse/channel-split-run.txt",

@@ -35,6 +35,8 @@ mounts the machine's folder at `/home`, so an agent sees its home at
 The home holds:
 
 - `scripts/`, the agent's [scripts](scripts.md) as files
+- `shared/`, where `file_fetch` lands a shared file unless the agent
+  names another place ([Files](files.md))
 - `.browser/`, its Chrome profile, with its logins
   ([Browser](browser.md))
 - `repos/`, a coding agent's clones ([Coding agents](coding/index.md))
@@ -94,7 +96,8 @@ where the operator frees disk space, or logs a coding harness in
 ### Files the orchestrator reads and writes
 
 Some tools take a path in the home: Drive `create_file` and
-`download_file_content`, Qonto `upload_invoice`, and `secret_store`.
+`download_file_content`, Qonto `upload_invoice`, `secret_store`,
+`file_put`, and `file_fetch`.
 For those, the orchestrator opens the folder on the host directly.
 It guards that access: a path must stay inside the home, and a link
 cannot lead out of it ([Agent home files](#agent-home-files)).
@@ -232,7 +235,8 @@ has the CLI tab and the CLI API; no config key turns them off.
 ### Agent home files
 
 Tools that take a path in the home (Drive `create_file` and
-`download_file_content`, Qonto `upload_invoice`, and `secret_store`)
+`download_file_content`, Qonto `upload_invoice`, `secret_store`,
+`file_put`, and `file_fetch`)
 open the folder on the orchestrator's host directly. A link there
 resolves against the orchestrator's own filesystem. `readAgentFile`
 and `writeAgentFile` in `apps/orchestrator/src/lib/agent-file.ts` are

@@ -14,6 +14,10 @@ export const NOTE_TOOLS = [
   "record_add",
   "record_update",
   "record_remove",
+  "file_find",
+  "file_fetch",
+  "file_put",
+  "file_delete",
   "memory_write",
 ] as const;
 export const SCRIPT_TOOLS = [

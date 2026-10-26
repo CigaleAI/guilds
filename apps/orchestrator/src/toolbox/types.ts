@@ -2,6 +2,7 @@ import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
+import type { ArtifactFiles } from "../artifacts/files.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Issues } from "../issues/index.js";
 import type { Schedules } from "../schedules/service.js";
@@ -122,6 +123,10 @@ export type ToolContext = {
   notes: NotesStore | null;
   artifacts: ArtifactStore | null;
   artifact_actor: ArtifactActor | null;
+  /** The shared files, reached with `artifact_actor`. */
+  files: ArtifactFiles | null;
+  /** The agent's home on the orchestrator's host, where the file tools read and write. */
+  workspace_dir: string | null;
   guild_name: string;
   agent_name: string;
   org_slug: string;
@@ -190,6 +195,8 @@ export function createToolContext(
     notes: null,
     artifacts: null,
     artifact_actor: null,
+    files: null,
+    workspace_dir: null,
     guild_name: "",
     agent_name: "",
     org_slug: "",

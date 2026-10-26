@@ -12,7 +12,9 @@ export const RECORD_TOOLS = [
   "record_remove",
 ] as const;
 
-export const ARTIFACT_TOOLS = [...NOTE_TOOLS, ...RECORD_TOOLS, "memory_write"] as const;
+export const FILE_TOOLS = ["file_find", "file_fetch", "file_put", "file_delete"] as const;
+
+export const ARTIFACT_TOOLS = [...NOTE_TOOLS, ...RECORD_TOOLS, ...FILE_TOOLS, "memory_write"] as const;
 
 export const SCRIPT_TOOLS = [
   "script_create",
@@ -66,6 +68,7 @@ export const DROPPED_MCP_SERVERS: ReadonlyArray<{ id: string; slug: string; tool
 export const PLATFORM_NATIVE_TOOLS = [
   ...NOTE_TOOLS,
   ...RECORD_TOOLS,
+  ...FILE_TOOLS,
   ...SCRIPT_TOOLS,
   ...SCHEDULE_TOOLS,
   "memory_write",

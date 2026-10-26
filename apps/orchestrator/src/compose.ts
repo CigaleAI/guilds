@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
-import { ArtifactStore } from "./artifacts/index.js";
+import { ArtifactFiles, ArtifactStore } from "./artifacts/index.js";
 import { AttachmentService } from "./attachments/index.js";
 import { FileBlobStore, MemoryBlobStore } from "./lib/blob-store.js";
 import { BuilderService } from "./builder/index.js";
@@ -100,14 +100,15 @@ export async function createServer(
       (await sandboxes.machineHost?.(machineId))?.workspaceRoot ?? config.workspaceRoot,
     destroyAgentSandboxes: sandboxes.destroyAgentSandboxes?.bind(sandboxes),
   });
-  const attachments = new AttachmentService(
-    repo,
+  const blobs =
     extensionBlobStore(extensions, { config }) ??
-      (config.attachmentsRoot ? new FileBlobStore(config.attachmentsRoot) : new MemoryBlobStore()),
-  );
+    (config.attachmentsRoot ? new FileBlobStore(config.attachmentsRoot) : new MemoryBlobStore());
+  const attachments = new AttachmentService(repo, blobs);
+  const files = new ArtifactFiles(artifacts, blobs);
   const generation = new GenerationLoop(repo, notes, config.workspaceRoot, sandboxes, {
     mcp,
     artifacts,
+    files,
     attachments,
     admission: new AdmissionCoordinator(config.maxConcurrentGenerations),
     policy,
@@ -171,6 +172,7 @@ export async function createServer(
       repo,
       notes,
       artifacts,
+      files,
       scripts,
       schedules,
       config,

@@ -132,6 +132,19 @@ side by side, so pick a key that names the note's subject. Soft-delete a
 note with `note_delete`.
 
 </capability>
+<capability name="files">
+Shared files hold bytes that are not Markdown: a report, a dataset, an
+image, an archive. Search the ones you may read with `file_find`: it
+matches names and descriptions and returns each file's display path and
+`access` (`read` or `write`). Copy one into your home with `file_fetch`,
+then work on it there with a script. Share a file from your home with
+`file_put` at an explicit level (`agent`, `guild`, or `org`) with a
+`description` that says what it is; a new file is created only at `agent`
+or `guild` level, and a file of the same name is replaced when you have
+write access to it. File contents never pass through this conversation.
+Delete a file with `file_delete`.
+
+</capability>
 Collections are tables the operator defines. State lists the ones you can
 read, each with its `access` (`read` or `write`), its `scope` (`guild` for
 a table placed in your guild; `org` for an organisation table), its

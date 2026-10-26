@@ -1,9 +1,9 @@
 # Native tools
 
 Native tools ship in the box. The orchestrator runs each one, some
-through a helper in the agent's sandbox. Notes, collections, memory,
-and scripts share one artifact store, but each keeps its own tool
-family.
+through a helper in the agent's sandbox. Notes, collections, files,
+memory, and scripts share one artifact store, but each keeps its own
+tool family.
 
 Which of these a run offers is
 [What a run offers](tools-in-a-run.md#what-a-run-offers). Every result
@@ -27,11 +27,28 @@ tools do not reach the memory archive.
 | `note_delete` | `path` (required) | Soft-deletes a note the agent may write. `task.md` and `memory.md` cannot be deleted |
 
 A collection or record path is refused with a pointer to the record
-tools. A script is refused with a pointer to the script tools.
+tools. A script is refused with a pointer to the script tools, and a
+file with a pointer to the file tools.
 
 An agent always reaches its own agent-level notes. Every other note
 is reached through its access list
-([Access](../concepts/access.md#access-lists-for-notes-and-collections)).
+([Access](../concepts/access.md#access-lists-for-notes-collections-and-files)).
+
+## Files
+
+Bytes in the artifact store, at agent, guild, or organisation level
+([Files](../concepts/files.md)). The bytes move between the agent's
+home and the store; they never pass through the model.
+
+| Tool | Parameters | Does |
+|---|---|---|
+| `file_find` | `query`, `level`, `limit` (default 20) | Searches the files the agent may read by name and description. An empty `query` lists them. `level` is `agent`, `guild`, or `org`; omitted, every level. Returns `{ files }`, each with its `access`: `read` or `write` |
+| `file_fetch` | `path` (required), `home_path` | Copies the file into the agent's home, at `home_path` or `shared/<name>`. Returns that path with the file's name, description, media type, and size |
+| `file_put` | `home_path`, `level`, `description` (required), `name`, `mime` | Copies a file from the home into the store at `level` under `name`, its own name by default. A new file only at `agent` or `guild` level; a file of that name is replaced with `write` on it. Returns the display path |
+| `file_delete` | `path` (required) | Deletes a file the agent may write |
+
+A file is at most 10 MiB. An agent always reaches its own agent-level
+files; every other file is reached through its access list.
 
 ## Records
 
