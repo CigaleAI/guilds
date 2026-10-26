@@ -5,14 +5,8 @@
     }
   },
   "src/api/queries.ts": {
-    "max-depth": {
-      "count": 1
-    },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 3
     }
   },
   "src/api/streams.ts": {
@@ -52,7 +46,7 @@
   },
   "src/features/access/ServerCard.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/access/SettingsForm.tsx": {
@@ -68,9 +62,6 @@
   "src/features/access/access.ts": {
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/features/access/secrets.ts": {
@@ -83,12 +74,12 @@
       "count": 1
     },
     "max-depth": {
-      "count": 7
+      "count": 1
     }
   },
   "src/features/admin/AdminPage.tsx": {
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/features/admin/InstanceTab.tsx": {
@@ -98,7 +89,7 @@
   },
   "src/features/admin/RegistryDialog.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/admin/UsersTab.tsx": {
@@ -134,19 +125,11 @@
   "src/features/agent/chat/FlowView.tsx": {
     "complexity": {
       "count": 5
-    },
-    "max-depth": {
-      "count": 2
     }
   },
   "src/features/agent/chat/SecretRequestCard.tsx": {
     "complexity": {
       "count": 1
-    }
-  },
-  "src/features/agent/chat/ToolCallDetail.tsx": {
-    "complexity": {
-      "count": 2
     }
   },
   "src/features/agent/chat/Transcript.tsx": {
@@ -193,43 +176,28 @@
     "complexity": {
       "count": 1
     },
-    "max-depth": {
-      "count": 2
-    },
     "max-params": {
-      "count": 3
+      "count": 1
     }
   },
   "src/features/agent/runs/runFlowModel.ts": {
     "complexity": {
       "count": 2
-    },
-    "max-depth": {
-      "count": 9
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/features/agent/runs/toolFormat.ts": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/agent/runs/toolKinds.ts": {
     "complexity": {
-      "count": 2
-    },
-    "max-depth": {
       "count": 1
     }
   },
   "src/features/agent/scripts/AgentScripts.tsx": {
     "complexity": {
       "count": 2
-    },
-    "max-depth": {
-      "count": 1
     }
   },
   "src/features/agent/settings/AgentSettings.tsx": {
@@ -237,21 +205,11 @@
       "count": 1
     }
   },
-  "src/features/agent/settings/HarnessReadiness.tsx": {
-    "max-params": {
-      "count": 1
-    }
-  },
   "src/features/agent/settings/configForm.tsx": {
     "complexity": {
-      "count": 3
+      "count": 2
     },
     "max-lines": {
-      "count": 1
-    }
-  },
-  "src/features/builder/BuilderChat.tsx": {
-    "complexity": {
       "count": 1
     }
   },
@@ -263,19 +221,16 @@
   "src/features/builder/BuilderWorkspace.tsx": {
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/features/builder/widgets.ts": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/coach/CoachLog.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/files/FilesBrowser.tsx": {
@@ -313,19 +268,9 @@
       "count": 1
     }
   },
-  "src/features/inbox/Inbox.tsx": {
-    "complexity": {
-      "count": 2
-    }
-  },
-  "src/features/machines/MachineMeters.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/features/models/ModelProviders.tsx": {
     "complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/models/ModelSetupGate.tsx": {
@@ -351,9 +296,6 @@
   "src/features/recipes/RecipePage.tsx": {
     "complexity": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/features/recipes/plan/PlanView.tsx": {
@@ -362,23 +304,14 @@
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 1
     }
   },
   "src/features/recipes/plan/planModel.ts": {
     "complexity": {
-      "count": 8
-    },
-    "max-depth": {
-      "count": 1
+      "count": 6
     },
     "max-lines": {
       "count": 1
-    },
-    "max-params": {
-      "count": 3
     }
   },
   "src/features/settings/SettingsPage.tsx": {
@@ -418,7 +351,7 @@
   },
   "src/features/studio/activity/ActivityMap.tsx": {
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/features/studio/activity/AgentActivity.tsx": {
@@ -438,18 +371,10 @@
     "complexity": {
       "count": 4
     },
-    "max-depth": {
-      "count": 9
-    },
     "max-lines": {
       "count": 1
     },
     "max-params": {
-      "count": 1
-    }
-  },
-  "src/features/studio/approvals.ts": {
-    "complexity": {
       "count": 1
     }
   },
@@ -465,7 +390,7 @@
   },
   "src/features/studio/tabs/HistoryTab.tsx": {
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/features/studio/tabs/TaskTabs.tsx": {
@@ -474,11 +399,6 @@
     }
   },
   "src/features/studio/tabs/VersionsTab.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/features/studio/tools/ToolDetail.tsx": {
     "complexity": {
       "count": 1
     }
@@ -495,7 +415,7 @@
   },
   "src/features/tables/RecordsPanel.tsx": {
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/features/tables/TablesPage.tsx": {
@@ -505,9 +425,6 @@
   },
   "src/features/tables/values.ts": {
     "complexity": {
-      "count": 5
-    },
-    "max-depth": {
       "count": 3
     }
   }

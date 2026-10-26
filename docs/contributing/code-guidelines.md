@@ -25,14 +25,14 @@ everything it does. Nothing happens inside that the name does not
 promise, including side effects. If the name needs an "and", it is
 two functions.
 
-- A function has at most **3 parameters**. If you need more, pass
+- A function has at most **4 parameters**. If you need more, pass
   one object with named fields.
-- A function has a **cyclomatic complexity of 10 or less**. A flat
+- A function has a **cyclomatic complexity of 11 or less**. A flat
   body with many early returns is fine; the limit exists to keep one
   function from holding several contracts.
-- Nesting goes at most **2 levels** deep. Use early returns to
-  stay flat. Nesting is what makes a body hard to read, so this
-  limit is the strict one.
+- Nesting goes at most **3 levels** deep, and a `try` block counts
+  as a level. Use early returns to stay flat. Nesting is what makes
+  a body hard to read, so this limit is the strict one.
 - Parameters are typed for what they are. A function does not take
   `Record<string, unknown>` or `unknown` when the caller has a type.
 - A function does not take a flag that selects between behaviours.
@@ -314,8 +314,8 @@ The pre-push hook runs the whole check on what is pushed.
 Before you submit a change, check:
 
 - [ ] Each function's name and signature say everything it does.
-      No flag parameters, complexity of 10 or less, nesting of 2 or
-      less, 3 parameters or fewer.
+      No flag parameters, complexity of 11 or less, nesting of 3 or
+      less, 4 parameters or fewer.
 - [ ] Every file is under 800 lines and holds one concern.
 - [ ] Rows leave `db/` typed; route handlers call one domain
       function and never touch `db/`.

@@ -2,14 +2,6 @@
   "src/components/content/DiffView.tsx": {
     "complexity": {
       "count": 1
-    },
-    "max-depth": {
-      "count": 2
-    }
-  },
-  "src/components/content/JsonTree.tsx": {
-    "complexity": {
-      "count": 1
     }
   },
   "src/components/content/TaskEditor.tsx": {
@@ -25,22 +17,11 @@
   "src/components/content/highlight.ts": {
     "complexity": {
       "count": 1
-    },
-    "max-depth": {
-      "count": 1
-    }
-  },
-  "src/components/content/textNodes.ts": {
-    "max-depth": {
-      "count": 2
     }
   },
   "src/components/controls/Composer.tsx": {
     "complexity": {
       "count": 2
-    },
-    "max-depth": {
-      "count": 1
     }
   },
   "src/components/controls/FormField.tsx": {
@@ -73,11 +54,6 @@
       "count": 1
     }
   },
-  "src/components/data/DataTable.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/components/data/FileTree.tsx": {
     "complexity": {
       "count": 2
@@ -93,22 +69,7 @@
       "count": 1
     }
   },
-  "src/components/data/RoutineRow.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/data/VersionBar.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/components/identity/AvatarStack.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/components/navigation/AgentHeader.tsx": {
     "complexity": {
       "count": 1
     }
@@ -133,11 +94,6 @@
       "count": 1
     }
   },
-  "src/components/overlays/Stepper.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/components/runs/FlowTimeline.tsx": {
     "complexity": {
       "count": 1
@@ -158,19 +114,11 @@
       "count": 1
     }
   },
-  "src/primitives/Row.tsx": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/writeDesignSystemDoc.ts": {
     "complexity": {
-      "count": 4
+      "count": 3
     },
     "max-depth": {
-      "count": 9
-    },
-    "max-params": {
       "count": 1
     }
   }

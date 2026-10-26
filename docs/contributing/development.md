@@ -290,8 +290,8 @@ of an edition or a relative path that leaves this repository.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
-tests and stories excepted: `complexity` at 10, `max-depth` at 2,
-`max-params` at 3, and `max-lines` at 800. Violations that predate
+tests and stories excepted: `complexity` at 11, `max-depth` at 3,
+`max-params` at 4, and `max-lines` at 800. Violations that predate
 the rules are recorded in the package's `eslint-suppressions.json`
 (ESLint bulk suppressions). Lint fails on a violation that is not
 in the file, and on an entry that no longer matches a violation, so

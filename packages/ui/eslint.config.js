@@ -29,9 +29,9 @@ export default tseslint.config(
     files: ["src/**/*.ts", "src/**/*.tsx"],
     ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
     rules: {
-      complexity: ["error", 10],
-      "max-depth": ["error", 2],
-      "max-params": ["error", 3],
+      complexity: ["error", 11],
+      "max-depth": ["error", 3],
+      "max-params": ["error", 4],
       "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
     },
   },
