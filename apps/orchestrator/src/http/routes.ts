@@ -124,6 +124,8 @@ import { Notifications } from "../notifications/index.js";
 import { usageFields } from "../usage.js";
 import { usageForOrg } from "./usage-view.js";
 import { registerStudioRoutes } from "./studio-routes.js";
+import { registerFileRoutes } from "./file-routes.js";
+import { publishGroup } from "./publish.js";
 import {
   SEED_USER_IDS,
   userItem,
@@ -381,19 +383,6 @@ function routineAction(changes: ScheduleChanges): string {
   return changes.paused ? "pause" : "resume";
 }
 
-async function publishGroup(
-  deps: AppDeps,
-  guildId: string,
-  event: string,
-  data: Record<string, unknown>,
-): Promise<void> {
-  const chat = deps.generation?.group_chat;
-  if (!chat) {
-    return;
-  }
-  await chat.publish(guildId, event, data);
-}
-
 async function scopeGuild(
   repo: AppDeps["repo"],
   scope: string,
@@ -544,6 +533,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerCodingRoutes(app, deps);
   await registerModelProviderRoutes(app, deps);
   await registerStudioRoutes(app, deps);
+  await registerFileRoutes(app, deps);
   await registerAdminMcpRoutes(app, deps);
   await registerAdminRegistryRoutes(app, deps);
   await registerAdminInstanceRoutes(app, deps);
@@ -1815,10 +1805,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  // An item's access list: notes and tables take the same routes.
+  // An item's access list: notes, tables, and files take the same routes.
   const accessTargets = [
     { path: "/api/notes/:note_id/access", kind: "note", param: "note_id" },
     { path: "/api/collections/:collection_id/access", kind: "collection", param: "collection_id" },
+    { path: "/api/files/:file_id/access", kind: "file", param: "file_id" },
   ] as const;
   for (const target of accessTargets) {
     app.get(target.path, async (request) => {

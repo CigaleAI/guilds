@@ -56,7 +56,7 @@ one as a submodule ([Extension points](extension-points.md)).
 
 | Directory | What it holds |
 | --- | --- |
-| `http/` | Routes (`routes.ts` and the `*-routes.ts` siblings), the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), the Host Finder over the artifact store (`artifact-notes.ts`), and the web build (`web-app.ts`) |
+| `http/` | Routes (`routes.ts` and the `*-routes.ts` siblings), the `AUTH_MODE` seam (`identity.ts`), the host and origin check (`origin.ts`), SSE, the sandbox proxies (`sandbox-proxy.ts`), the Host Finder over the artifact store (`artifact-notes.ts`), the files API (`file-routes.ts`), the group-stream publisher (`publish.ts`), and the web build (`web-app.ts`) |
 | `generation/` | `GenerationLoop`, run chains (`chain.ts`), organisation admission (`admission.ts`), idle stops (`idle.ts`) ([Generation](orchestrator.md#generation)) |
 | `toolbox/` | Native tools, the sandbox command runner (`shell.ts`), and the result pipeline (`output.ts`) ([Native tools](../tools-and-connectors/native.md)) |
 | `connectors/` | One folder per connector, the manifest schema, the adapter contract, and the connector registry ([Connectors](../tools-and-connectors/connectors.md)) |
@@ -71,7 +71,7 @@ one as a submodule ([Extension points](extension-points.md)).
 | `secrets/` | Who reaches and manages a secret, `secret_store`, and redaction ([Secrets](../concepts/secrets.md)) |
 | `db/` | Pool, codecs, Drizzle schema, `Repositories`, seeds, and the migration check |
 | `attachments/` | Chat images: sniffing, upload, and hydration |
-| `artifacts/` | `ArtifactStore`: notes, memory, scripts, collections, records, and the access lists of notes and collections ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
+| `artifacts/` | `ArtifactStore` and `ArtifactFiles` (`files.ts`): notes, memory, scripts, files, collections, records, and the access lists of notes, collections, and files ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
 | `notes/` | `NotesStore`: `system.md` and the routine shadow files; the store the generation unit tests use |
 | `directories/` | State listing over `NotesStore` for those tests |
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |
