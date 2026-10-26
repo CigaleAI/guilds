@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { test } from "node:test";
 import { agentRuntime, snapshotEnvValues } from "../../src/access/runtime.js";
+import { httpAccess } from "../../src/http/access.js";
 import { encryptPayload, environmentFingerprint } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import {
@@ -376,5 +377,53 @@ test("a GitHub login's listed tools are offered to its agents like any connector
   assert.deepEqual(
     runtime.mcp.map((entry) => [entry.slug, (entry.tools as Array<{ name: string }>).map((tool) => tool.name)]),
     [["github", ["github_list_issues"]]],
+  );
+});
+
+test("a run that lists a login's tools for the first time is not offered the ones that start Off", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const pool = new McpPool();
+  pool.session = async () =>
+    ({
+      async listTools() {
+        return [
+          { name: "ping", description: "Ping", inputSchema: { type: "object" } },
+          { name: "send_ping", description: "Send a ping", inputSchema: { type: "object" } },
+        ];
+      },
+    }) as never;
+  const db = new MemoryDb();
+  db.servers = [{ id: "mcp_fixture", slug: "fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } }];
+  db.connections = [connectionOf("mcp-test")];
+  const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
+  assert.equal(db.bindings.get("mcp_tool:fixture_send_ping:org_1")?.enabled, false);
+  assert.deepEqual(
+    runtime.mcp.map((entry) => (entry.tools as Array<{ name: string }>).map((tool) => tool.name)),
+    [["fixture_ping"]],
+  );
+});
+
+test("the access view that lists a login's tools for the first time shows the ones that start Off as Off", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const pool = new McpPool();
+  pool.session = async () =>
+    ({
+      async listTools() {
+        return [
+          { name: "ping", description: "Ping", inputSchema: { type: "object" } },
+          { name: "send_ping", description: "Send a ping", inputSchema: { type: "object" } },
+        ];
+      },
+    }) as never;
+  const db = new MemoryDb();
+  db.servers = [{ id: "mcp_fixture", slug: "fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } }];
+  db.connections = [connectionOf("mcp-test")];
+  const view = await httpAccess(db as never, { orgId: "org_1", guildId: "guild_1", agentId: "a_1", viewScope: "agent", mcp: pool });
+  const fixture = (view.mcp as Array<{ slug: string; tools: Array<{ name: string; enabled: boolean }> }>).find(
+    (server) => server.slug === "fixture",
+  );
+  assert.deepEqual(
+    fixture?.tools.map((tool) => [tool.name, tool.enabled]),
+    [["fixture_ping", true], ["fixture_send_ping", false]],
   );
 });

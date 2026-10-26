@@ -11,7 +11,7 @@ import {
   type GithubRepositoryRecorder,
   type RepositoryToken,
 } from "../github/tokens.js";
-import { accessExpired, isGithubApp, OAuthReauthError, refreshConnection } from "../oauth/index.js";
+import { accessExpired, isGithubApp, OAuthReauthError, refreshConnection, TOKEN_FIELDS } from "../oauth/index.js";
 import { agentMcpConnection, type AccessDatabase } from "../access/runtime.js";
 import { installedConnectors } from "../connectors/index.js";
 import type { ConnectorRegistry } from "../connectors/registry.js";
@@ -61,6 +61,17 @@ export class McpError extends Error {
     super(message);
     this.name = "McpError";
     this.status = status;
+  }
+}
+
+/**
+ * The server no longer knows the session a request carried: a 404, as the protocol says, or a 400
+ * with no JSON-RPC body, as some servers answer. It ran nothing; a new session may retry.
+ */
+export class McpSessionGoneError extends McpError {
+  constructor(status: number) {
+    super(`mcp ${status}: the server no longer knows the session`, status);
+    this.name = "McpSessionGoneError";
   }
 }
 
@@ -204,12 +215,22 @@ function parseBody(contentType: string, text: string): unknown {
   return JSON.parse(text);
 }
 
+/** The body as JSON-RPC, or an `McpError` with the status and the start of the body when it is not JSON. */
+function parsedPayload(contentType: string, response: { status: number; body: string }): unknown {
+  try {
+    return parseBody(contentType, response.body);
+  } catch {
+    const said = response.body.trim().slice(0, 200);
+    throw new McpError(`mcp ${response.status}: ${said || "a body that is not JSON"}`, response.status);
+  }
+}
+
 export function rpcPayload(response: { status: number; headers?: Headers | Record<string, string>; body: string }): unknown {
   const headerValue =
     response.headers instanceof Headers
       ? response.headers.get("content-type") ?? ""
       : String((response.headers ?? {})["content-type"] ?? "");
-  const payload = parseBody(headerValue, response.body);
+  const payload = parsedPayload(headerValue, response);
   if (response.status < 400) {
     return payload;
   }
@@ -286,6 +307,26 @@ export function connectionCredentials(connection: Record<string, unknown>): Cred
   return credentials;
 }
 
+/**
+ * The values a login's State is redacted against: the token fields runs redact, each credential
+ * field its manifest does not mark `secret: false`, and the instance key serving a platform login.
+ * The rest of its payload, such as the account a login names, is not secret.
+ */
+function loginSecrets(connection: Record<string, unknown>, manifest: Manifest | null): Record<string, string> {
+  const credentials = connectionCredentials(connection);
+  const fields = [...TOKEN_FIELDS, ...(manifest ? authFields(manifest) : []).filter((field) => field.secret !== false).map((field) => field.name)];
+  const secrets: Record<string, string> = {};
+  for (const name of fields) {
+    if (credentials[name]) {
+      secrets[name] = credentials[name]!;
+    }
+  }
+  if (connection.owner_scope === "platform" && manifest?.auth.instance) {
+    Object.assign(secrets, instanceCredentials(manifest));
+  }
+  return secrets;
+}
+
 /** What an endpoint session sends: an OAuth access token, else the login's `token`, else its first credential field. */
 function credentialToken(credentials: Credentials, manifest: Manifest | null): string {
   if (credentials.access_token) {
@@ -359,6 +400,22 @@ export function publicOnly(fetchFn: FetchFn, resolve?: HostLookup): FetchFn {
   };
 }
 
+/** Whether a reply to a request that carried a session says the server no longer knows it. */
+function sessionGone(status: number, contentType: string, body: string): boolean {
+  if (status === 404) {
+    return true;
+  }
+  if (status !== 400) {
+    return false;
+  }
+  try {
+    const payload = parseBody(contentType, body);
+    return !payload || typeof payload !== "object" || !("jsonrpc" in payload);
+  } catch {
+    return true;
+  }
+}
+
 export class McpSession {
   url: string;
   headers: Record<string, string>;
@@ -390,14 +447,31 @@ export class McpSession {
     };
   }
 
-  async listTools(): Promise<Array<Record<string, unknown>>> {
-    if (!this.initialized) {
+  /** Runs `work` on a started session. A session the server no longer knows starts over, once. */
+  private async onSession<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+      return await work();
+    } catch (error) {
+      if (!(error instanceof McpSessionGoneError)) {
+        throw error;
+      }
+      this.sessionId = null;
+      this.initialized = false;
       await this.initialize();
+      return work();
     }
-    const result = await this.rpc("tools/list", {}, {
-      timeoutMs: LIST_TOOLS_TIMEOUT_MS,
-      maxBytes: LIST_TOOLS_MAX_BYTES,
-    });
+  }
+
+  async listTools(): Promise<Array<Record<string, unknown>>> {
+    const result = await this.onSession(() =>
+      this.rpc("tools/list", {}, {
+        timeoutMs: LIST_TOOLS_TIMEOUT_MS,
+        maxBytes: LIST_TOOLS_MAX_BYTES,
+      }),
+    );
     const tools = result && typeof result === "object" && !Array.isArray(result)
       ? (result as { tools?: unknown }).tools
       : undefined;
@@ -412,10 +486,7 @@ export class McpSession {
   }
 
   async callToolResult(name: string, arguments_: Record<string, unknown>): Promise<unknown> {
-    if (!this.initialized) {
-      await this.initialize();
-    }
-    return this.rpc("tools/call", { name, arguments: arguments_ });
+    return this.onSession(() => this.rpc("tools/call", { name, arguments: arguments_ }));
   }
 
   async callTool(name: string, arguments_: Record<string, unknown>): Promise<string> {
@@ -455,8 +526,9 @@ export class McpSession {
       Accept: "application/json, text/event-stream",
       ...this.headers,
     };
-    if (this.sessionId) {
-      headers["Mcp-Session-Id"] = this.sessionId;
+    const carried = this.sessionId;
+    if (carried) {
+      headers["Mcp-Session-Id"] = carried;
     }
     const controller = options.timeoutMs ? new AbortController() : null;
     const timer = controller && options.timeoutMs
@@ -487,6 +559,9 @@ export class McpSession {
     const text = await response.text();
     if (options.maxBytes !== undefined && Buffer.byteLength(text, "utf8") > options.maxBytes) {
       throw new McpError("mcp tools/list response exceeded byte limit");
+    }
+    if (carried && sessionGone(response.status, response.headers.get("content-type") ?? "", text)) {
+      throw new McpSessionGoneError(response.status);
     }
     return rpcPayload({
       status: response.status,
@@ -1204,7 +1279,7 @@ export class McpPool {
         if (!server || !connection) {
           return null;
         }
-        const credentials = connectionCredentials(connection);
+        const secrets = loginSecrets(connection, entry.manifest);
         try {
           const value = await withTimeout(
             this.onLogin(db, { connection }, server, this.resolve(server), (creds, ctx) => entry.adapter.state!(creds, ctx)),
@@ -1214,7 +1289,7 @@ export class McpPool {
           if (value === null || value === undefined) {
             return null;
           }
-          const text = redact(JSON.stringify(value), { ...credentials });
+          const text = redact(JSON.stringify(value), secrets);
           if (Buffer.byteLength(text, "utf8") > STATE_MAX_BYTES) {
             throw new Error(`value exceeds ${STATE_MAX_BYTES} bytes`);
           }

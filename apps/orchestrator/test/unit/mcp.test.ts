@@ -10,6 +10,7 @@ import {
   McpDisconnectedError,
   McpError,
   McpPool,
+  McpSession,
   authHeaders,
   isReadOnlyRemote,
   mcpSchema,
@@ -259,6 +260,83 @@ test("isReadOnlyRemote classifies tools Studio may proxy", () => {
   assert.equal(isReadOnlyRemote("github", "merge_pull_request"), false);
   assert.equal(isReadOnlyRemote("github", "actions_run_trigger"), false);
   assert.equal(isReadOnlyRemote("github", "pull_request_read"), true);
+});
+
+type Reply = { status: number; body: string; type?: string };
+
+/**
+ * An endpoint that opens session `s<n>` at each initialize, accepts its notification, and
+ * answers each other request from `answer` with the session it carried. Records each method.
+ */
+function sessionEndpoint(answer: (method: string, session: string | undefined, n: number) => Reply) {
+  const seen: string[] = [];
+  let opened = 0;
+  const fetchFn = async (_url: unknown, init: RequestInit = {}) => {
+    const body = JSON.parse(String(init.body)) as { id?: number; method: string };
+    const session = (init.headers as Record<string, string>)["Mcp-Session-Id"];
+    seen.push(`${body.method}@${session ?? "-"}`);
+    if (body.method === "initialize") {
+      opened += 1;
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: {} }), {
+        status: 200,
+        headers: { "content-type": "application/json", "mcp-session-id": `s${opened}` },
+      });
+    }
+    const reply = body.method === "notifications/initialized" ? { status: 202, body: "" } : answer(body.method, session, opened);
+    return new Response(reply.body, { status: reply.status, headers: { "content-type": reply.type ?? "application/json" } });
+  };
+  return { seen, fetchFn: fetchFn as never };
+}
+
+const OK_CALL: Reply = { status: 200, body: JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: "ok" }] } }) };
+
+test("a session the server no longer knows starts over once, and the call goes through on the new one", async () => {
+  const endpoint = sessionEndpoint((_method, session) =>
+    session === "s1" ? { status: 400, body: "invalid session\n", type: "text/plain" } : OK_CALL,
+  );
+  const session = new McpSession("https://mcp.example.com/mcp", {}, endpoint.fetchFn);
+  assert.equal(await session.callTool("ping", {}), "ok");
+  assert.deepEqual(endpoint.seen, [
+    "initialize@-",
+    "notifications/initialized@s1",
+    "tools/call@s1",
+    "initialize@-",
+    "notifications/initialized@s2",
+    "tools/call@s2",
+  ]);
+});
+
+test("a 404 on a session's request starts it over; a JSON-RPC 400 or a second refusal does not", async () => {
+  const gone = sessionEndpoint((_method, session) => (session === "s1" ? { status: 404, body: "" } : OK_CALL));
+  assert.equal(await new McpSession("https://mcp.example.com/mcp", {}, gone.fetchFn).callTool("ping", {}), "ok");
+
+  const invalid = sessionEndpoint(() => ({
+    status: 400,
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, error: { code: -32602, message: "bad arguments" } }),
+  }));
+  await assert.rejects(
+    new McpSession("https://mcp.example.com/mcp", {}, invalid.fetchFn).callTool("ping", {}),
+    (error: unknown) => error instanceof McpError && error.status === 400,
+  );
+  assert.equal(invalid.seen.filter((method) => method.startsWith("tools/call")).length, 1);
+
+  const always = sessionEndpoint(() => ({ status: 404, body: "" }));
+  await assert.rejects(
+    new McpSession("https://mcp.example.com/mcp", {}, always.fetchFn).callTool("ping", {}),
+    (error: unknown) => error instanceof McpError && error.status === 404,
+  );
+  assert.equal(always.seen.filter((method) => method.startsWith("tools/call")).length, 2);
+});
+
+test("rpc payload that is not JSON is an McpError with its status and what it said", () => {
+  assert.throws(
+    () => rpcPayload({ status: 502, headers: { "content-type": "text/plain" }, body: "upstream down\n" }),
+    (error: unknown) => error instanceof McpError && error.status === 502 && error.message === "mcp 502: upstream down",
+  );
+  assert.throws(
+    () => rpcPayload({ status: 200, headers: { "content-type": "application/json" }, body: "<html>" }),
+    (error: unknown) => error instanceof McpError && error.status === 200,
+  );
 });
 
 test("rpc payload keeps jsonrpc result on 403", () => {

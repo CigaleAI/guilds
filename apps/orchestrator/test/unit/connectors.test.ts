@@ -378,6 +378,18 @@ test("state quotes pinned symbols under the manifest's key and redacts the key",
   });
 });
 
+test("state is redacted against a login's secrets, not the rest of its payload", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const [ciphertext, nonce] = encryptPayload({ token: "qk-secret", access_token: "at-secret", account: "acme" }, KEY);
+  const pool = new McpPool();
+  pool.connectors = WITH_QUOTES.withAdapter("quotes", {
+    state: async (creds) => ({ owner: creds.account, token: creds.token, access: creds.access_token }),
+  });
+  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }), AGENT), {
+    quotes: { owner: "acme", token: "[REDACTED:token]", access: "[REDACTED:access_token]" },
+  });
+});
+
 test("state leaves out a login with no value and marks a failing hook unavailable", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ token: "qk" }, KEY);

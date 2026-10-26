@@ -232,7 +232,8 @@ remote name.
 ### What starts Off
 
 When a tool first appears on a login, it is written Off or On at the
-login owner's scope. The first rule that applies wins:
+login owner's scope, before the run or the view that listed it
+resolves it. The first rule that applies wins:
 
 1. The instance admin's default for that tool.
 2. Off when the manifest marks it `mutating`.
@@ -261,6 +262,11 @@ that login's credentials and byte-capped.
 
 The orchestrator holds every MCP session. It never starts an MCP
 server inside a sandbox. The pool is keyed by login id.
+
+A server that no longer knows a session answers its next request
+with a 404, or a 400 with no JSON-RPC body. The session then starts
+over and sends that request once more. A reply that is not JSON is an
+error with its status and the start of what the server said.
 
 The pool knows no connector by name. It asks the connector lookup
 (`src/connectors/registry.ts`) for the server's entry and dispatches
@@ -305,8 +311,10 @@ A `state` hook runs at every run start for each connector the agent
 has on with a connected login. The hooks run in parallel under one
 5-second budget. A value over 32,000 serialised bytes, a failure, or a
 timeout puts `{ unavailable: <reason> }` under the key and logs. The
-value is redacted against the login's credentials before it enters
-State, and a key core uses is dropped. The prompt renders the
+value is redacted against the login's secrets before it enters
+State: its token fields, each credential field the manifest does not
+mark `secret: false`, and the instance key serving a platform login.
+A key core uses is dropped. The prompt renders the
 manifest's `state.intro` for each key present.
 
 ### Limits

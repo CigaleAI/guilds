@@ -4,14 +4,6 @@
       "count": 3
     }
   },
-  "src/access/runtime.ts": {
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 1
-    }
-  },
   "src/agents/persist.ts": {
     "complexity": {
       "count": 1
