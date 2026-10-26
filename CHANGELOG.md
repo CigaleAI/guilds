@@ -8,6 +8,23 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Agents share whole files. A file is an artifact at agent,
+guild, or organisation level with a description and an access list;
+its bytes sit in the blob store under `ATTACHMENTS_ROOT`. Agents move
+files between their home and the store with `file_find`, `file_fetch`,
+`file_put`, and `file_delete`, offered to every agent by platform
+binding. Operators upload, download, share, and delete files from the
+new **State › Files** view of a guild and of an agent, and give each
+file an access list like a note's ([Files](docs/concepts/files.md)).
+Migration 0013 adds the `file` kind.
+
+**Breaking for API clients.** The notes routes moved from `/files` to
+`/notes`: `/api/agents/:id/notes`, `/api/guilds/:id/notes`, and
+`/api/org/notes`. The guild's notes view is **State › Notes** at
+`/guilds/<id>/state/notes`. The live event `guild.files.changed` is
+`guild.artifacts.changed`. An edition that imported `BlobStore` from
+`attachments/types.js` imports it from `lib/blob-store.js`.
+
 **Breaking.** Agents run on machines: containers an organisation
 sizes and shares between its agents. A box whose agents each run in
 a sandbox of their own moves them onto machines.

@@ -9,6 +9,8 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-46](#sec-46--deleting-an-agent-a-guild-or-an-organisation-leaves-its-files-bytes-in-the-blob-store) | Deleting an agent, a guild, or an organisation leaves its files' bytes in the blob store | Open |
+| [SEC-45](#sec-45--shared-files-carry-arbitrary-bytes-between-agents-and-operators) | Shared files carry arbitrary bytes between agents and operators | Open, accepted |
 | [SEC-44](#sec-44--a-recipe-preview-confirms-a-private-guilds-table-and-its-column-types) | A recipe preview confirms a private guild's table and its column types | Open |
 | [SEC-43](#sec-43--studio-shows-a-private-guilds-tables-and-records-to-operators-who-cannot-see-that-guild) | Studio shows a private guild's tables and records to operators who cannot see that guild | Fixed 2026-10-21 |
 | [SEC-42](#sec-42--a-task-can-embed-a-private-guilds-note-that-its-runs-and-studio-then-show) | A Task can embed a private guild's note that its runs and Studio then show | Fixed 2026-10-22 |
@@ -53,6 +55,73 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-46 — Deleting an agent, a guild, or an organisation leaves its files' bytes in the blob store
+
+**Status:** open.
+
+**Found:** 2026-10-26, designing shared files.
+
+**Where:** `ArtifactFiles` in `apps/orchestrator/src/artifacts/files.ts`
+writes each file version to the blob store under
+`<org_id>/files/<artifact id>/v<version>`; agent, guild, and
+organisation deletion in `apps/orchestrator/src/http/routes.ts` and
+`apps/orchestrator/src/db/` removes `artifacts` rows by cascade.
+
+**Exposure:** `file_delete`, `DELETE /api/files/:file_id`, and a replace
+remove the object they retire. A cascade does not: the rows go, the
+objects stay. Bytes an operator meant to remove by deleting an agent or
+a guild survive on disk or in the bucket, unreferenced, until someone
+removes them by hand. Nothing serves them: every read goes through a
+live row and its access list.
+
+**Control in place:** the objects cannot be reached through the API.
+The per-organisation cap counts live rows only, so orphans do not
+block new files.
+
+**Fix:** not yet. Fixing it takes removing a file's objects when its
+owner is deleted, or a sweep that removes objects no live row names.
+
+**Residual risk:** until then, deleted owners' file bytes stay in the
+blob store.
+
+## SEC-45 — Shared files carry arbitrary bytes between agents and operators
+
+**Status:** open, accepted.
+
+**Found:** 2026-10-26, designing shared files.
+
+**Where:** `apps/orchestrator/src/artifacts/files.ts`,
+`apps/orchestrator/src/toolbox/file.ts`,
+`apps/orchestrator/src/http/file-routes.ts`.
+
+**Exposure:** a file is any bytes up to 10 MiB. Unlike a chat image,
+its content is not sniffed: the media type is what the uploader said or
+what the name's extension says. A file one agent shares lands, through
+`file_fetch`, in another agent's home, where a script or a coding
+harness opens it: text inside can steer that agent the way content a
+coding agent reads can (SEC-8), and an executable or an archive can
+carry anything. An operator downloads a file an agent produced and
+opens it on their own machine. Every operator of a guild reaches every
+file the guild reaches.
+
+**Control in place:** the orchestrator never opens a file's bytes.
+Downloads are served with `Content-Disposition: attachment` and
+`X-Content-Type-Options: nosniff`, so the browser saves the file and
+never renders it, whatever its type says. The agent-side copy goes
+through `readAgentFile` and `writeAgentFile`, which keep both ends
+inside the agent's home (SEC-1, SEC-3). Each file carries a required
+description and an access list, and every write is in the file
+change log with its run and tool call. Size is capped per file and
+per organisation. The system prompt says file content is data.
+
+**Fix:** none planned. Scanning or sniffing bytes would not make them
+safe to run, and a shared-file feature that refuses unknown types is
+not one.
+
+**Residual risk:** an agent that fetches a file and runs or parses it
+trusts its sharer. An operator who opens a downloaded file trusts the
+agent that made it.
 
 ## SEC-44 — A recipe preview confirms a private guild's table and its column types
 
