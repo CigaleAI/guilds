@@ -7,12 +7,13 @@ them in the app.
 
 A note sits at one of three levels: one agent, one guild, or the
 whole organisation. The level is where the note lives. Its
-[access list](access.md#access-lists-for-notes-and-collections)
+[access list](access.md#access-lists-for-notes-collections-and-files)
 decides who reads and writes it. A new guild-level note starts
 written by that guild's agents, and a new organisation-level note
 starts read by every agent. Structured rows belong in a
-[collection](collections.md) instead, and what an agent wants its
-next runs to remember belongs in its [Memory](memory.md).
+[collection](collections.md) instead, bytes that are not Markdown in a
+[file](files.md), and what an agent wants its next runs to remember
+in its [Memory](memory.md).
 
 ## When you use it
 
@@ -46,7 +47,7 @@ An agent always reads and writes its own agent-level notes. Every
 other note is reached through its access list: the agent's own row
 when it has one, otherwise the better of its guild's row and the
 organisation's row. No row is no access
-([Access](access.md#access-lists-for-notes-and-collections)).
+([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 A note starts with these rows:
 
@@ -227,6 +228,8 @@ Crossing tool families fails with a 422 that names the right tool:
 | `note_delete` on a record path | `use record_remove for collection records` |
 | `note_delete` on a collection path | `collections are managed by the operator` |
 | `note_delete` on a script | `use script_delete for scripts` |
+| `note_get` on a file | `use file_fetch for files` |
+| `note_delete` on a file | `use file_delete for files` |
 
 `note_get` and `note_delete` answer a `history-archive/…` path as
 unknown (404). The Memory archive is not the agent's to read

@@ -143,13 +143,13 @@ async function loadStateEvents(deps: StateDeps, scope: StateScope): Promise<{ it
   return { items, events: [...changeEvents(files, configs, context), ...readEvents(runs, calls, context)] };
 }
 
-const STATE_KINDS: readonly StateKind[] = ["note", "memory", "script", "table"];
+const STATE_KINDS: readonly StateKind[] = ["note", "memory", "script", "file", "table"];
 
 /** A kind filter from the query: one of the item kinds, or none. */
 export function parseStateKind(value: unknown): StateKind | null {
   if (value === undefined || value === null || value === "") return null;
   const kind = STATE_KINDS.find((entry) => entry === value);
-  if (!kind) throw new StudioUnprocessableError("kind must be note, memory, script, or table");
+  if (!kind) throw new StudioUnprocessableError("kind must be note, memory, script, file, or table");
   return kind;
 }
 

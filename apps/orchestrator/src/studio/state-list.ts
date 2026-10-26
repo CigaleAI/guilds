@@ -7,7 +7,7 @@ import { iso } from "../db/views.js";
 // run history; both are projected here, on read. Pure: the loaders in
 // state-data.ts fetch the rows.
 
-export type StateKind = "note" | "memory" | "script" | "table";
+export type StateKind = "note" | "memory" | "script" | "file" | "table";
 export type StateLevel = "agent" | "guild" | "org";
 
 export type StateItem = {

@@ -1,16 +1,17 @@
 # Artifact store
 
 The artifact store is the storage layer under an organisation's
-[notes](notes.md), [collection](collections.md) records, each agent's
-[Memory](memory.md), and each agent's [scripts](scripts.md). Every
+[notes](notes.md), [files](files.md), [collection](collections.md)
+records, each agent's [Memory](memory.md), and each agent's
+[scripts](scripts.md). Every
 organisation has one store. Agents read and write it with tools, and
 operators read and edit it in the app.
 
 Each item has a level: the organisation, one guild, or one agent.
 The level says where it sits. Each item also has a display path, a
-text address that names it exactly. Notes and collections each carry
-an access list that decides which agents read and write them
-([Access](access.md#access-lists-for-notes-and-collections)).
+text address that names it exactly. Notes, collections, and files each
+carry an access list that decides which agents read and write them
+([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 ## Why it exists
 
@@ -29,6 +30,7 @@ and where to write:
 | Long-form knowledge for one agent's work | agent-level [notes](notes.md) |
 | Long-form knowledge shared by a team | guild- and organisation-level [notes](notes.md) |
 | Structured records | [collections](collections.md) |
+| Bytes that are not Markdown: a report, a dataset, an image | [files](files.md) at any level |
 | Python the agent runs in its sandbox | agent-level [scripts](scripts.md) |
 | The exact messages of a conversation | run and group-chat history ([Runs](runs.md), [Group chat](group-chat.md)) |
 
@@ -41,32 +43,36 @@ exact transcript stays in the run or group history.
 
 ```mermaid
 flowchart TD
-  O["Organisation<br/>org-level notes<br/>collections and their records"]
-  G["Guild<br/>guild-level notes<br/>owns some collections"]
-  A["Agent<br/>agent-level notes<br/>Memory<br/>scripts"]
+  O["Organisation<br/>org-level notes and files<br/>collections and their records"]
+  G["Guild<br/>guild-level notes and files<br/>owns some collections"]
+  A["Agent<br/>agent-level notes and files<br/>Memory<br/>scripts"]
   O --> G --> A
 ```
 
 - **Notes** exist at all three levels. Each note's access list decides
   who reaches it beyond its owner agent ([Notes](notes.md#how-far-an-agent-reaches)).
+- **Files** exist at all three levels. Each file's access list decides
+  who reaches it ([Files](files.md#how-far-an-agent-reaches)).
 - **Collections** live at the organisation. Some belong to one guild.
   Each collection's access list decides who reaches it ([Collections](collections.md#who-reaches-a-collection)).
 - **Memory** and **scripts** belong to one agent. They have no access
   list: only that agent and the operators reach them.
 
-The level is placement. A note's level and a collection's guild set
+The level is placement. A note's or a file's level and a collection's guild set
 its display path and where it is listed. The access list alone
 decides who reads and writes it.
 
-### Agents use tools, never files
+### Agents use tools, never a folder
 
 Agents never see the store as a folder. The orchestrator's tools
 read and write it: note tools for notes, record tools for records,
-`memory_write` for Memory, script tools for scripts. The families
-stay separate so the model does not mix Markdown, records, memory,
-and executable source.
+file tools for files, `memory_write` for Memory, script tools for
+scripts. The families stay separate so the model does not mix
+Markdown, records, bytes, memory, and executable source.
 
-A record reaches the agent's sandbox only inside a tool result.
+A record reaches the agent's sandbox only inside a tool result. A
+file reaches it only through `file_fetch`, as a file in the agent's
+home ([Files](files.md)).
 
 At the start of each run the system prompt carries a read-only
 snapshot, State, that lists the collections and scripts the agent
@@ -96,7 +102,7 @@ sends the collection name and the record id.
 
 ### Every change is recorded
 
-A write to a note, Memory, a record, a script, or the Task records a
+A write to a note, a file, Memory, a record, a script, or the Task records a
 change: which item, what operation, the version it produced, who did
 it, and when. A change made by a run also records the run and the
 exact tool call. A change the operator applies from a Prompt Studio
@@ -131,7 +137,9 @@ in the agent's Chat tab, or in Studio's History tab inside Studio.
 | Rule | Value or behaviour |
 |---|---|
 | Size of one write | 256 KB |
-| Live notes, Memory, and scripts per owner | 10 000 |
+| Size of one file | 10 MiB ([Files](files.md)) |
+| Live files of an organisation together | 1 GiB |
+| Live notes, Memory, scripts, and files per owner | 10 000 |
 | Live records per collection | 10 000 ([Collections](collections.md)) |
 | `task.md` and `memory.md` | reserved names at the agent root; neither can be deleted |
 | Previous Memory versions | read only, and only by the operator |
@@ -149,6 +157,7 @@ One PostgreSQL table, `artifacts`, holds every item. Its `kind` is:
 | `object` | a collection record | org |
 | `memory` | an agent's Memory | agent |
 | `script` | an agent's Python script | agent |
+| `file` | a shared file; its bytes sit in the blob store | agent, guild, org |
 
 A collection itself is an `artifact_collections` row, not an
 artifact kind. The live Task is `agents.task`.
@@ -164,6 +173,9 @@ org/<org_id>/agents/<agent_id>/task.md
 org/<org_id>/agents/<agent_id>/memory.md
 org/<org_id>/agents/<agent_id>/history-archive/<stamp>-<source>.md
 org/<org_id>/agents/<agent_id>/scripts/<name>
+org/<org_id>/agents/<agent_id>/files/<name>
+org/<org_id>/guilds/<guild_id>/files/<name>
+org/<org_id>/files/<name>
 org/<org_id>/agents/<agent_id>/<note>.md
 org/<org_id>/guilds/<guild_id>/<note>.md
 org/<org_id>/collections/<name>
@@ -176,11 +188,12 @@ org/<org_id>/<note>.md
   or `org/<org_id>/`.
 - Notes are flat: `{ownerPrefix}{key}`, where `key` is one `.md`
   file name with no `/`. Because a note key ends in `.md`, it never
-  shadows `collections/`, `agents/`, `guilds/`, `scripts/`, or
-  `history-archive/`.
+  shadows `collections/`, `agents/`, `guilds/`, `scripts/`, `files/`,
+  or `history-archive/`.
 - A collection is `org/<org_id>/collections/<name>`. A record is that
   path plus the record id.
 - Scripts are `{ownerPrefix}scripts/{name}`, at the agent level only.
+- Files are `{ownerPrefix}files/{name}`, at every level ([Files](files.md#storage)).
 - `task.md` is a virtual path over `agents.task`. `memory.md` is the
   agent's `memory` artifact. Neither is deletable (422
   `cannot delete this file`).
@@ -193,7 +206,7 @@ Code: `apps/orchestrator/src/artifacts/paths.ts`.
 
 ### File provenance
 
-Every note, memory, record, script, or task create, update, or
+Every note, file, memory, record, script, or task create, update, or
 delete appends a `file_changes` row in the same transaction as the
 write. **Delete all** (`DELETE /api/collections/:id/records`),
 deleting a collection, and a column rename or removal append a
@@ -278,10 +291,12 @@ Code: `apps/orchestrator/src/db/config-changes.ts`.
   50 kept ([Task](task.md)).
 - Previous Memory versions: `memory_revisions`, 50 kept
   ([Memory](memory.md)).
-- Access lists of notes and collections: `artifact_access` rows
+- Access lists of notes, collections, and files: `artifact_access` rows
   ([Access](access.md#access-lists)).
+- The bytes of files: the blob store ([Files](files.md#storage)).
 - Run transcripts: run rows ([Runs](runs.md)).
 
-`note_find` and `record_search` search the store only. Scripts are
-an artifact kind with their own tools. Note and record search skip
-them, and the notes browser does not list them ([Scripts](scripts.md)).
+`note_find` and `record_search` search the store only. Scripts and
+files are artifact kinds with their own tools. Note and record search
+skip them, and the notes browser does not list them
+([Scripts](scripts.md), [Files](files.md)).

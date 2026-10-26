@@ -63,7 +63,7 @@ flowchart LR
 - An embed is resolved as the agent. A note or collection is
   inlined only when its access list gives the agent, its guild, or
   the organisation `read` or `write`
-  ([Access](access.md#access-lists-for-notes-and-collections)).
+  ([Access](access.md#access-lists-for-notes-collections-and-files)).
 - An embed the agent cannot reach is replaced by a short marker that
   names the path and says the file is not reachable. The run starts,
   and the agent can report the link.

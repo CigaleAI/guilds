@@ -20,7 +20,7 @@ export type ChangeActor = {
   studio?: StudioOrigin;
 };
 
-export type ConfigTargetKind = "routine" | "access" | "guild_text" | "collection" | "note";
+export type ConfigTargetKind = "routine" | "access" | "guild_text" | "collection" | "note" | "file";
 export type ConfigOperation = "create" | "update" | "delete";
 
 /**

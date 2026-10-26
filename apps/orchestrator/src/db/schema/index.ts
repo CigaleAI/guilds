@@ -890,7 +890,7 @@ export const artifactAccess = pgTable(
     updatedAt: timestamptz("updated_at").notNull(),
   },
   (table) => [
-    check("artifact_access_target_check", sql`${table.targetKind} IN ('note', 'collection')`),
+    check("artifact_access_target_check", sql`${table.targetKind} IN ('note', 'collection', 'file')`),
     check("artifact_access_subject_check", sql`${table.subjectType} IN ('org', 'guild', 'agent')`),
     check("artifact_access_mode_check", sql`${table.mode} IN ('read', 'write', 'none')`),
     check("artifact_access_none_is_agent", sql`${table.mode} <> 'none' OR ${table.subjectType} = 'agent'`),
@@ -925,6 +925,8 @@ export const artifacts = pgTable(
     searchBlob: text("search_blob"),
     identity: text("identity"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    mime: text("mime"),
+    bytes: integer("bytes"),
     contentHash: text("content_hash").notNull(),
     version: integer("version").notNull().default(1),
     createdByType: text("created_by_type").notNull(),
@@ -939,7 +941,7 @@ export const artifacts = pgTable(
   },
   (table) => [
     check("artifacts_level_check", sql`${table.level} IN ('agent', 'guild', 'org')`),
-    check("artifacts_kind_check", sql`${table.kind} IN ('note', 'object', 'memory', 'script')`),
+    check("artifacts_kind_check", sql`${table.kind} IN ('note', 'object', 'memory', 'script', 'file')`),
     foreignKey({
       columns: [table.orgId],
       foreignColumns: [orgs.id],
@@ -1046,7 +1048,7 @@ export const configChanges = pgTable(
   (table) => [
     check(
       "config_changes_target_kind_check",
-      sql`${table.targetKind} IN ('routine', 'access', 'guild_text', 'collection', 'note')`,
+      sql`${table.targetKind} IN ('routine', 'access', 'guild_text', 'collection', 'note', 'file')`,
     ),
     check("config_changes_operation_check", sql`${table.operation} IN ('create', 'update', 'delete')`),
     check("config_changes_actor_type_check", sql`${table.actorType} IN ('user', 'agent', 'run')`),

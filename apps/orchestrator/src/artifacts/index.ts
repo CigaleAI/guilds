@@ -20,6 +20,7 @@ export {
   type RecordView,
   type StateArtifact,
 } from "./store.js";
+export { ArtifactFiles, fileBlobKey, mimeForName, normalizeMime, validateFileDescription, type FileView } from "./files.js";
 export { agentActor, operatorActor } from "./actors.js";
 export { type AccessEntry, type AccessList } from "./access.js";
 export {
@@ -54,6 +55,9 @@ export {
   ARTIFACT_KINDS,
   ARTIFACT_LEVELS,
   EMBED_BUDGET,
+  FILE_DESCRIPTION_MAX,
+  FILE_MAX_BYTES,
+  ORG_FILE_BYTES_MAX,
   resolveAccess,
   isAccessMode,
   isAgentAccessMode,
@@ -72,9 +76,12 @@ export {
   assertNoteKeyFree,
   collectionDisplayPath,
   displayPathFor,
+  fileDisplayPath,
+  FILES_SEGMENT,
   hostFileDisplayPath,
   isDisplayPath,
   MEMORY_KEY,
+  normalizeFileName,
   normalizeNoteKey,
   ownerPrefix,
   parseDisplayPath,

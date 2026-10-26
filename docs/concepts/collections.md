@@ -8,7 +8,7 @@ collections.
 
 Collections live in the organisation's [artifact store](artifacts.md).
 A collection belongs either to the whole organisation or to one
-guild. Its [access list](access.md#access-lists-for-notes-and-collections)
+guild. Its [access list](access.md#access-lists-for-notes-collections-and-files)
 decides which agents read it and which write it. Agents read and
 write records with record tools. They never
 create, change, or delete a collection itself. Long-form text belongs
@@ -100,7 +100,7 @@ A collection's access list gives the organisation, a guild, or one
 agent a mode on it. An agent's mode is its own row when it has one,
 otherwise the better of its guild's row and the organisation's row.
 No row is no access. The rule is the same for notes
-([Access](access.md#access-lists-for-notes-and-collections)).
+([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 So one agent can be held back or raised:
 

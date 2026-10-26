@@ -47,7 +47,7 @@ flowchart TD
 
 Which notes and collections an agent reaches is set on each item,
 in its access list. A row for the guild covers every agent of the
-guild ([Access](access.md#access-lists-for-notes-and-collections)).
+guild ([Access](access.md#access-lists-for-notes-collections-and-files)).
 
 ### Purpose: short description and description
 

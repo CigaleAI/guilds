@@ -3,7 +3,7 @@ import type { ChangeActor } from "../db/config-changes.js";
 export const ARTIFACT_LEVELS = ["agent", "guild", "org"] as const;
 export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];
 
-export const ARTIFACT_KINDS = ["note", "object", "memory", "script"] as const;
+export const ARTIFACT_KINDS = ["note", "object", "memory", "script", "file"] as const;
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 
 /** The private guilds of the organisation an operator does not operate, with their agents. */
@@ -32,12 +32,17 @@ export const AGENT_ACCESS_MODES = ["none", "read", "write"] as const;
 export type AgentAccessMode = (typeof AGENT_ACCESS_MODES)[number];
 export const ACCESS_SUBJECTS = ["org", "guild", "agent"] as const;
 export type AccessSubject = (typeof ACCESS_SUBJECTS)[number];
-/** What carries an access list: a note or a collection. */
-export const ACCESS_TARGETS = ["note", "collection"] as const;
+/** What carries an access list: a note, a collection, or a file. */
+export const ACCESS_TARGETS = ["note", "collection", "file"] as const;
 export type AccessTargetKind = (typeof ACCESS_TARGETS)[number];
 export type AccessTarget = { kind: AccessTargetKind; id: string };
 
 export const WRITE_MAX_BYTES = 256 * 1024;
+/** The largest file one put may store. */
+export const FILE_MAX_BYTES = 10 * 1024 * 1024;
+/** The bytes an organisation's live files may hold together. */
+export const ORG_FILE_BYTES_MAX = 1024 * 1024 * 1024;
+export const FILE_DESCRIPTION_MAX = 400;
 export const LIVE_ARTIFACTS_MAX = 10_000;
 export const LIVE_RECORDS_MAX = 10_000;
 export const LIVE_COLLECTIONS_MAX = 100;

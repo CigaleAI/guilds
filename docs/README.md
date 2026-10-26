@@ -128,6 +128,8 @@ How the product works, for the operator. Start with
   paths
 - [Notes](concepts/notes.md) — markdown at agent, guild, and
   organisation level
+- [Files](concepts/files.md) — bytes agents share at agent, guild,
+  and organisation level
 - [Collections](concepts/collections.md) — typed records agents
   read and write
 

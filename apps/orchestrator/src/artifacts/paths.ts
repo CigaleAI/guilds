@@ -6,9 +6,11 @@ export const TASK_KEY = "task.md";
 export const MEMORY_KEY = "memory.md";
 export const COLLECTIONS_SEGMENT = "collections";
 export const SCRIPTS_SEGMENT = "scripts";
+export const FILES_SEGMENT = "files";
 export const HISTORY_ARCHIVE_SEGMENT = "history-archive";
 
 const NOTE_KEY_RE = /^[^/\\]+\.md$/;
+const FILE_NAME_MAX = 255;
 
 export type ParsedDisplayPath =
   | {
@@ -171,4 +173,25 @@ export function parseDisplayPath(raw: string): ParsedDisplayPath {
     path,
     key,
   };
+}
+
+/** A file name is one path segment: no folder, no `.` or `..`, no control character, at most 255 characters. */
+export function normalizeFileName(raw: string): string {
+  const name = (raw || "").trim();
+  if (!name || name === "." || name === ".." || /[/\\]/.test(name) || hasControlCharacter(name)) {
+    throw new ArtifactError("file name must be one file name; files have no folders", 422);
+  }
+  if (name.length > FILE_NAME_MAX) {
+    throw new ArtifactError(`file name must be at most ${FILE_NAME_MAX} characters`, 422);
+  }
+  return name;
+}
+
+/** The display path of a file inside one owner: `{ownerPrefix}files/<name>`. */
+export function fileDisplayPath(orgId: string, level: ArtifactLevel, ownerId: string, name: string): string {
+  return `${ownerPrefix(orgId, level, ownerId)}${FILES_SEGMENT}/${normalizeFileName(name)}`;
+}
+
+function hasControlCharacter(text: string): boolean {
+  return [...text].some((char) => char.charCodeAt(0) < 0x20);
 }

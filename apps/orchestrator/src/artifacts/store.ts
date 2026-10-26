@@ -109,6 +109,10 @@ export type ArtifactRow = {
   content_text: string | null;
   content_json: unknown;
   search_text: string | null;
+  /** A file's media type; null for every other kind. */
+  mime: string | null;
+  /** A file's size in bytes; null for every other kind. */
+  bytes: number | null;
   version: number;
   created_by_name: string;
   updated_by_name: string;
@@ -160,10 +164,10 @@ export type CollectionView = {
 
 export type RecordView = Record<string, unknown>;
 
-/** A note, Memory, or script as a guild's state lists it. */
+/** A note, Memory, script, or file as a guild's state lists it. */
 export type StateArtifact = {
   display_path: string;
-  kind: "note" | "memory" | "script";
+  kind: "note" | "memory" | "script" | "file";
   level: ArtifactLevel;
   owner_id: string;
   title: string;
@@ -1148,6 +1152,9 @@ export class ArtifactStore {
     if (row.kind === "memory") {
       throw new ArtifactError("cannot delete this file", 422);
     }
+    if (row.kind === "file") {
+      throw new ArtifactError("use file_delete for files", 422);
+    }
     await this.assertNotEmbedded(actor.orgId, displayPathFor(rowAsDisplay(row)));
     await withTransaction(this.pool, async (client) => {
       const now = new Date();
@@ -1263,7 +1270,9 @@ export class ArtifactStore {
   ): Promise<{ notes: Array<Record<string, unknown>> }> {
     const limit = Math.min(Math.max(args.limit ?? FIND_DEFAULT, 1), FIND_MAX);
     const query = (args.query ?? "").trim();
-    const rows = query ? await this.searchNotes(actor, query, args.level, limit) : await this.listNotes(actor, args.level, limit);
+    const rows = query
+      ? await this.searchByKind(actor, "note", { query, level: args.level, limit })
+      : await this.listByKind(actor, "note", { level: args.level, limit });
     return { notes: rows.map((row) => this.view(row)) };
   }
 
@@ -1283,7 +1292,7 @@ export class ArtifactStore {
         ORDER BY a.key`,
       values,
     );
-    return (result.rows as Array<Record<string, unknown>>).map((row) => this.fileView(mapRow(row)));
+    return (result.rows as Array<Record<string, unknown>>).map((row) => this.hostNoteView(mapRow(row)));
   }
 
   /** Previous memory versions, newest first. Only the operator reads them; agents never see the archive. */
@@ -1319,8 +1328,8 @@ export class ArtifactStore {
   }
 
   /**
-   * The notes, Memory, and scripts of one guild's state the actor can read: its own, its
-   * agents', and the organisation's.
+   * The notes, Memory, scripts, and files of one guild's state the actor can read: its own,
+   * its agents', and the organisation's.
    */
   async listStateArtifacts(
     actor: ArtifactActor,
@@ -1331,7 +1340,7 @@ export class ArtifactStore {
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
-        WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind IN ('note', 'memory', 'script')
+        WHERE a.org_id = $1 AND a.deleted_at IS NULL AND a.kind IN ('note', 'memory', 'script', 'file')
           AND (a.level = 'org'
                OR (a.level = 'guild' AND a.owner_id = $2)
                OR (a.level = 'agent' AND a.owner_id = ANY($3::text[])))
@@ -1346,9 +1355,9 @@ export class ArtifactStore {
         kind: row.kind as StateArtifact["kind"],
         level: row.level,
         owner_id: row.owner_id,
-        // A script's title column holds its description; its key is its name.
-        title: row.kind === "script" ? row.key : (row.title ?? row.key),
-        size: Buffer.byteLength(row.content_text ?? JSON.stringify(row.content_json ?? ""), "utf8"),
+        // A script's or a file's title column holds its description; its key is its name.
+        title: row.kind === "script" || row.kind === "file" ? row.key : (row.title ?? row.key),
+        size: row.bytes ?? Buffer.byteLength(row.content_text ?? JSON.stringify(row.content_json ?? ""), "utf8"),
         version: row.version,
         created_by: row.created_by_name,
         created_at: row.created_at,
@@ -1408,7 +1417,7 @@ export class ArtifactStore {
   }
 
   /** A note as the Host lists it: `path` is its file name, `id` names it to the access API. */
-  fileView(row: ArtifactRow): Record<string, unknown> {
+  hostNoteView(row: ArtifactRow): Record<string, unknown> {
     return {
       id: row.id,
       path: row.key,
@@ -1494,7 +1503,7 @@ export class ArtifactStore {
     return `c.org_id = $${org} AND ${agentModeSql("collection", "a.collection_id", actor, values)} IN ('read', 'write')`;
   }
 
-  /** The note or live collection an access call names, or a 404. */
+  /** The note, file, or live collection an access call names, or a 404. */
   private async requireTarget(actor: ArtifactActor, target: AccessTarget): Promise<AccessItem> {
     if (target.kind === "collection") {
       const collection = await this.loadCollectionById(actor, target.id);
@@ -1513,19 +1522,19 @@ export class ArtifactStore {
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
-        WHERE a.id = $1 AND a.org_id = $2 AND a.kind = 'note' AND a.deleted_at IS NULL`,
-      [target.id, actor.orgId],
+        WHERE a.id = $1 AND a.org_id = $2 AND a.kind = $3 AND a.deleted_at IS NULL`,
+      [target.id, actor.orgId, target.kind],
     );
     const row = result.rows[0] ? mapRow(result.rows[0] as Record<string, unknown>) : null;
     if (!row || !reachesOwner(actor, row.level, row.owner_id)) {
-      throw new ArtifactError("note not found", 404);
+      throw new ArtifactError(`${target.kind} not found`, 404);
     }
     return {
       target,
       orgId: row.org_id,
       guildId: row.guild_id,
       ownerAgentId: row.level === "agent" ? row.owner_id : null,
-      label: `the note ${displayPathFor(rowAsDisplay(row))}`,
+      label: `the ${target.kind} ${displayPathFor(rowAsDisplay(row))}`,
     };
   }
 
@@ -1566,7 +1575,8 @@ export class ArtifactStore {
     return visibleEntries(actor, result.rows as AccessEntry[]);
   }
 
-  private async writeGrants(db: Queryable, actor: ArtifactActor, target: AccessTarget, grants: AccessGrant[]): Promise<void> {
+  /** Writes or replaces the rows of `grants` on an item's access list. */
+  async writeGrants(db: Queryable, actor: ArtifactActor, target: AccessTarget, grants: AccessGrant[]): Promise<void> {
     for (const grant of grants) {
       await db.query(
         `INSERT INTO artifact_access (
@@ -1844,26 +1854,27 @@ export class ArtifactStore {
   }
 
   /**
-   * The actor's mode on a note, Memory, or script: the operator writes all but
-   * hidden guilds' files, an agent writes its own, and a note follows its
-   * access list. Null when the actor does not reach it.
+   * The actor's mode on a note, file, Memory, or script: the operator writes all
+   * but hidden guilds' items, an agent writes its own, and a note or a file
+   * follows its access list. Null when the actor does not reach it.
    */
-  private async artifactMode(actor: ArtifactActor, row: ArtifactRow): Promise<AccessMode | null> {
+  async artifactMode(actor: ArtifactActor, row: ArtifactRow): Promise<AccessMode | null> {
     if (row.org_id !== actor.orgId) {
       return null;
     }
     if (actor.operator || (row.level === "agent" && row.owner_id === actor.agentId)) {
       return reachesOwner(actor, row.level, row.owner_id) ? "write" : null;
     }
-    if (row.kind !== "note") {
+    if (row.kind !== "note" && row.kind !== "file") {
       return null;
     }
     const values: unknown[] = [row.id];
-    const result = await this.pool.query(`SELECT ${agentModeSql("note", "$1", actor, values)} AS mode`, values);
+    const result = await this.pool.query(`SELECT ${agentModeSql(row.kind, "$1", actor, values)} AS mode`, values);
     return reachedMode(result.rows[0]?.mode);
   }
 
-  private async assertRead(actor: ArtifactActor, row: ArtifactRow): Promise<AccessMode> {
+  /** The actor's mode on the row, or a 404 when it does not reach it. */
+  async assertRead(actor: ArtifactActor, row: ArtifactRow): Promise<AccessMode> {
     const mode = await this.artifactMode(actor, row);
     if (!mode) {
       throw new ArtifactError("artifact not found", 404);
@@ -1871,13 +1882,15 @@ export class ArtifactStore {
     return mode;
   }
 
-  private async assertWrite(actor: ArtifactActor, row: ArtifactRow): Promise<void> {
+  /** A 404 when the actor does not reach the row, a 422 when it only reads it. */
+  async assertWrite(actor: ArtifactActor, row: ArtifactRow): Promise<void> {
     if ((await this.assertRead(actor, row)) !== "write") {
       throw new ArtifactError("write not allowed", 422);
     }
   }
 
-  private ownerFor(
+  /** The owner a level names for the actor: itself, its own guild, or the organisation. */
+  ownerFor(
     actor: ArtifactActor,
     level: ArtifactLevel,
   ): { orgId: string; ownerId: string; guildId: string | null; agentId: string | null } {
@@ -1898,7 +1911,8 @@ export class ArtifactStore {
     }
   }
 
-  private async assertLiveCount(orgId: string, level: ArtifactLevel, ownerId: string): Promise<void> {
+  /** A 422 when the owner already holds the most live notes, Memory, scripts, and files it may. */
+  async assertLiveCount(orgId: string, level: ArtifactLevel, ownerId: string): Promise<void> {
     const result = await this.pool.query(
       `SELECT COUNT(*)::int AS n FROM artifacts
         WHERE org_id = $1 AND level = $2 AND owner_id = $3 AND deleted_at IS NULL AND kind <> 'object'`,
@@ -2113,7 +2127,8 @@ export class ArtifactStore {
     });
   }
 
-  private async loadParsed(
+  /** The row a parsed display path names, live only unless `includeDeleted`. */
+  async loadParsed(
     parsed: Extract<ReturnType<typeof parseDisplayPath>, { kind: "artifact" }>,
     includeDeleted = false,
   ): Promise<(ArtifactRow & { deleted_at?: string | null }) | null> {
@@ -2146,11 +2161,12 @@ export class ArtifactStore {
     values.push(actor.agentId ?? "");
     const own = values.length;
     return `CASE WHEN a.level = 'agent' AND a.owner_id = $${own} THEN 'write'
-                 WHEN a.kind = 'note' THEN ${agentModeSql("note", "a.id", actor, values)} END`;
+                 WHEN a.kind = 'note' THEN ${agentModeSql("note", "a.id", actor, values)}
+                 WHEN a.kind = 'file' THEN ${agentModeSql("file", "a.id", actor, values)} END`;
   }
 
-  /** The predicate over the artifact `a` for every note, Memory, and script the actor may read. */
-  private readScope(actor: ArtifactActor, values: unknown[]): string {
+  /** The predicate over the artifact `a` for every note, file, Memory, and script the actor may read. */
+  readScope(actor: ArtifactActor, values: unknown[]): string {
     if (actor.operator) {
       return hiddenScope(actor, values);
     }
@@ -2175,18 +2191,19 @@ export class ArtifactStore {
     return ` AND a.level = $${values.length}`;
   }
 
-  private async searchNotes(
+  /** The notes or files the actor may read whose search document or search text matches `query`, best first. */
+  async searchByKind(
     actor: ArtifactActor,
-    query: string,
-    level: ArtifactLevel | undefined,
-    limit: number,
+    kind: "note" | "file",
+    search: { query: string; level: ArtifactLevel | undefined; limit: number },
   ): Promise<ArtifactRow[]> {
-    const values: unknown[] = [actor.orgId];
+    const { query, level, limit } = search;
+    const values: unknown[] = [actor.orgId, kind];
     let sql = `SELECT ${ARTIFACT_SELECT}, m.access_mode
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
          ${this.modeJoin(actor, values)}
-        WHERE a.deleted_at IS NULL AND a.kind = 'note' AND a.org_id = $1
+        WHERE a.deleted_at IS NULL AND a.kind = $2 AND a.org_id = $1
           AND (${this.joinedReadScope(actor, values)})`;
     sql += this.levelFilter(level, values);
     values.push(query);
@@ -2202,13 +2219,19 @@ export class ArtifactStore {
     return (result.rows as Array<Record<string, unknown>>).map((row) => mapRow(row));
   }
 
-  private async listNotes(actor: ArtifactActor, level: ArtifactLevel | undefined, limit: number): Promise<ArtifactRow[]> {
-    const values: unknown[] = [actor.orgId];
+  /** The notes or files the actor may read, by level then key. */
+  async listByKind(
+    actor: ArtifactActor,
+    kind: "note" | "file",
+    listing: { level: ArtifactLevel | undefined; limit: number },
+  ): Promise<ArtifactRow[]> {
+    const { level, limit } = listing;
+    const values: unknown[] = [actor.orgId, kind];
     let sql = `SELECT ${ARTIFACT_SELECT}, m.access_mode
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
          ${this.modeJoin(actor, values)}
-        WHERE a.deleted_at IS NULL AND a.kind = 'note' AND a.org_id = $1
+        WHERE a.deleted_at IS NULL AND a.kind = $2 AND a.org_id = $1
           AND (${this.joinedReadScope(actor, values)})`;
     sql += this.levelFilter(level, values);
     values.push(limit);
@@ -2231,18 +2254,20 @@ const OWNER_NAME_SQL = `COALESCE(CASE a.level
     WHEN 'guild' THEN (SELECT g.name FROM guilds g WHERE g.id = a.owner_id)
     ELSE (SELECT ag.name FROM agents ag WHERE ag.id = a.owner_id) END, a.owner_id)`;
 
-const ARTIFACT_SELECT = `
+/** The columns of the artifact `a` that make an `ArtifactRow`, with its collection `c` joined. */
+export const ARTIFACT_SELECT = `
   a.id, a.org_id, a.level, a.owner_id, a.guild_id, a.agent_id, a.origin_guild_id,
   a.kind, a.collection_id, c.name AS collection_name, a.path, a.key, a.title,
-  a.content_text, a.content_json, a.search_text, a.version,
+  a.content_text, a.content_json, a.search_text, a.mime, a.bytes, a.version,
   a.created_by_name, a.updated_by_name, a.created_at, a.updated_at
 `;
 
-const ARTIFACT_RETURNING = `
+/** The RETURNING list of an artifact write that makes an `ArtifactRow`. */
+export const ARTIFACT_RETURNING = `
   id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind, collection_id,
   (SELECT name FROM artifact_collections WHERE id = collection_id) AS collection_name,
   path, key, title, content_text, content_json,
-  search_text, version, created_by_name, updated_by_name, created_at, updated_at
+  search_text, mime, bytes, version, created_by_name, updated_by_name, created_at, updated_at
 `;
 
 /** The name of an access subject in the organisation, and the guild it sits in. */
@@ -2260,7 +2285,6 @@ const COLLECTION_SELECT = `
   artifact_collections.created_by_name, artifact_collections.created_at, artifact_collections.updated_at
 `;
 
-/** The owner of a note or file path; a Memory revision belongs to its agent. */
 /** Whether a guild- or agent-level owner sits in a private guild the operator actor cannot see. */
 function isHiddenOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
   if (level === "guild") {
@@ -2288,7 +2312,7 @@ function visibleEntries(actor: ArtifactActor, entries: AccessEntry[]): AccessEnt
  * Task, a Memory, a script, a Memory revision. The operator reaches all but
  * hidden guilds'; an agent reaches its own.
  */
-function reachesOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
+export function reachesOwner(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): boolean {
   if (actor.operator) {
     return !isHiddenOwner(actor, level, ownerId);
   }
@@ -2310,10 +2334,10 @@ type AccessItem = {
   label: string;
 };
 
-/** Refuses a row naming the agent that owns the item: it always writes its own note. */
+/** Refuses a row naming the agent that owns the item: it always writes its own note or file. */
 function assertNotOwner(item: AccessItem, grant: AccessGrant, where = ""): void {
   if (grant.type === "agent" && grant.id === item.ownerAgentId) {
-    throw new ArtifactError(`${where}the agent that owns the note always writes it`, 422);
+    throw new ArtifactError(`${where}the agent that owns the ${item.target.kind} always writes it`, 422);
   }
 }
 
@@ -2352,7 +2376,8 @@ function mapReturned(row: Record<string, unknown>, collectionName?: string | nul
   return mapped;
 }
 
-function mapRow(row: Record<string, unknown>): ArtifactRow {
+/** An `ArtifactRow` from a row selected with `ARTIFACT_SELECT` or returned with `ARTIFACT_RETURNING`. */
+export function mapRow(row: Record<string, unknown>): ArtifactRow {
   return {
     id: String(row.id),
     org_id: String(row.org_id),
@@ -2370,6 +2395,8 @@ function mapRow(row: Record<string, unknown>): ArtifactRow {
     content_text: (row.content_text as string | null) ?? null,
     content_json: row.content_json ?? null,
     search_text: (row.search_text as string | null) ?? null,
+    mime: (row.mime as string | null) ?? null,
+    bytes: row.bytes === null || row.bytes === undefined ? null : Number(row.bytes),
     version: Number(row.version),
     created_by_name: String(row.created_by_name),
     updated_by_name: String(row.updated_by_name),
@@ -2385,7 +2412,8 @@ function bodyOf(row: ArtifactRow): Record<string, unknown> {
     : {};
 }
 
-function rowAsDisplay(row: ArtifactRow): {
+/** What `displayPathFor` needs of a row. */
+export function rowAsDisplay(row: ArtifactRow): {
   orgId: string;
   level: ArtifactLevel;
   ownerId: string;

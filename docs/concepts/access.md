@@ -15,7 +15,7 @@ inside it, and a narrower scope can change it for itself. The tools
 themselves are listed in
 [Tools in a run](../tools-and-connectors/tools-in-a-run.md).
 
-Notes and collections work differently. Each note and each collection
+Notes, collections, and files work differently. Each note, collection, and file
 carries its own **access list**. A row of the list gives the
 organisation, one guild, or one agent a mode on that one item.
 
@@ -27,7 +27,7 @@ adjusts that for its own agents, and one agent can be held back or
 given something extra. Nobody has to repeat a setting for each agent,
 and narrowing one agent never touches the others.
 
-Notes and collections are shared knowledge. Who reads them and who
+Notes, collections, and files are shared knowledge. Who reads them and who
 writes them is decided item by item. A guild can open one note to a
 second guild without opening all its notes, and one table can be
 written by two guilds while the rest of the organisation reads it.
@@ -72,7 +72,7 @@ That one walk covers every pattern an operator needs:
 | Native tools | A switch per tool, inherited down the chain | instance, organisation, guild, agent | [Tools in a run](../tools-and-connectors/tools-in-a-run.md), [Native tools](../tools-and-connectors/native.md) |
 | Connectors and their tools | A switch per connector and per listed tool, inherited down the chain | instance, organisation, guild, agent | [Connectors](../tools-and-connectors/connectors.md) |
 | Logins (connections) | Owned at one scope, usable at that scope and below | instance, organisation, guild, agent | [below](#logins) |
-| Notes and collections | An access list on each item: a mode for the organisation, a guild, or an agent | organisation, guild, agent | [below](#access-lists-for-notes-and-collections) |
+| Notes, collections, and files | An access list on each item: a mode for the organisation, a guild, or an agent | organisation, guild, agent | [below](#access-lists-for-notes-collections-and-files) |
 | Secrets | Organisation-wide, or granted to guilds and agents; grants add up, with no switch to turn one off | organisation, guild, agent | [Secrets](secrets.md#who-gets-a-secret) |
 
 The switches for tools and connectors are **bindings**: one row per
@@ -142,10 +142,10 @@ A login can carry settings, such as the one folder a Drive login
 reads or the repositories a GitHub login picks. They live on the
 login and show on its card in the **Tools** view.
 
-### Access lists for notes and collections
+### Access lists for notes, collections, and files
 
-Every [note](notes.md) and every [collection](collections.md) carries
-one access list. A row of the list names a subject and gives it a
+Every [note](notes.md), every [collection](collections.md), and every
+[file](files.md) carries one access list. A row of the list names a subject and gives it a
 mode:
 
 | Subject | Modes | Covers |
@@ -165,7 +165,7 @@ An agent's mode on one item is decided like this:
 
 ```mermaid
 flowchart TD
-  Q["An agent reads or writes a note or a collection"] --> A{"Does the list have<br/>a row for this agent?"}
+  Q["An agent reads or writes a note, a collection, or a file"] --> A{"Does the list have<br/>a row for this agent?"}
   A -->|"yes, none"| N["No access"]
   A -->|"yes, read or write"| M["That mode"]
   A -->|"no"| B{"A row for its guild<br/>or for the organisation?"}
@@ -177,7 +177,7 @@ So an agent row can hold one agent back below its guild, with `none`
 or `read`, or raise it above its guild, with `write`. An item an agent
 cannot read behaves for it as if it did not exist.
 
-A note's level and a collection's owning guild are placement only.
+A note's or a file's level and a collection's owning guild are placement only.
 They decide the item's display path and where it is listed. They do
 not decide who reaches it. Moving a collection between a guild and
 the organisation leaves its access list as it is.
@@ -189,16 +189,16 @@ rows, shown and changed like any other:
 | --- | --- |
 | in a guild | that guild at `write` |
 | at the organisation | the organisation at `read` |
-| on one agent (a note) | none |
+| on one agent (a note or a file) | none |
 
 Some things sit outside the access lists:
 
-- An agent always reads and writes its own agent-level notes, its
-  [Memory](memory.md), and its [scripts](scripts.md). Memory and
+- An agent always reads and writes its own agent-level notes and
+  files, its [Memory](memory.md), and its [scripts](scripts.md). Memory and
   scripts belong to one agent and have no access list.
-- Operators reach every note and every collection, except those of a
-  private guild they do not operate: its guild-level notes, its
-  agents' notes, and its own collections ([Guilds](guilds.md#visibility)).
+- Operators reach every note, collection, and file, except those of a
+  private guild they do not operate: its guild-level notes and files,
+  its agents' notes and files, and its own collections ([Guilds](guilds.md#visibility)).
 
 Agents never change an access list. Only an operator does.
 
@@ -341,10 +341,10 @@ Each item opens where its access is changed:
 | Never a switch | `report_issue`, the browser tools, the code tools |
 | Who writes an organisation's switch | Any member of the organisation |
 | Who writes a guild's or an agent's switch | Any member of the organisation who can see the guild |
-| An agent's mode on a note or a collection | Its own row when it has one; otherwise the better of its guild's row and the organisation's row; no row is no access |
+| An agent's mode on a note, a collection, or a file | Its own row when it has one; otherwise the better of its guild's row and the organisation's row; no row is no access |
 | `none` | Agent rows only |
-| Starting rows | Placed in a guild: the guild at `write`. Placed at the organisation: the organisation at `read`. An agent's note: none |
-| Always reached | An agent's own notes, Memory, and scripts |
+| Starting rows | Placed in a guild: the guild at `write`. Placed at the organisation: the organisation at `read`. An agent's note or file: none |
+| Always reached | An agent's own notes, files, Memory, and scripts |
 | Who changes an access list | Any member of the organisation, on items they can see; never an agent |
 
 What an operator relies on about secrets, machines, and redaction is
@@ -362,7 +362,7 @@ Access is built on three objects:
 - **Bindings**: which scope offers which catalog item
   ([Bindings](#bindings)).
 
-Notes and collections are reached through their access lists
+Notes, collections, and files are reached through their access lists
 ([Access lists](#access-lists)), not through bindings.
 
 The connector catalog, the manifest keys, the `connectors` table, an
@@ -494,7 +494,7 @@ An access list is the set of `artifact_access` rows of one item:
 | --- | --- |
 | `id` | The row id (`aacc_…`) |
 | `org_id` | The organisation; deleting it deletes the row |
-| `target_kind`, `target_id` | `note` with the note's artifact id, or `collection` with the collection id |
+| `target_kind`, `target_id` | `note` with the note's artifact id, `file` with the file's artifact id, or `collection` with the collection id |
 | `subject_type`, `subject_id` | `org` with the organisation id, `guild` with a guild id, or `agent` with an agent id |
 | `mode` | `read` or `write`; `none` only when `subject_type` is `agent` |
 | `created_by_type`, `created_by_id`, `created_by_name`, `created_at` | Who first wrote the row, and when |
@@ -509,15 +509,15 @@ An agent's mode on an item is one SQL expression
 (`agentModeSql` in `apps/orchestrator/src/artifacts/access.ts`): the
 agent's own row; when there is none, the greater of its guild's row
 and the organisation's row; when there is neither, no access. `none`
-and no row both mean no access. Every note and record tool, State,
-and every listing an agent gets apply it. An operator actor skips it
+and no row both mean no access. Every note, file, and record tool,
+State, and every listing an agent gets apply it. An operator actor skips it
 and reaches every item except those of the private guilds it does
 not operate.
 
-An agent reaches its own agent-level notes, its Memory, and its
-scripts without a row. Memory and scripts never have rows. An agent's
-note can still be given rows, which open it to other agents; no row
-names the agent that owns it.
+An agent reaches its own agent-level notes and files, its Memory, and
+its scripts without a row. Memory and scripts never have rows. An
+agent's note or file can still be given rows, which open it to other
+agents; no row names the agent that owns it.
 
 Creating an item writes its starting rows in the same transaction:
 `guild` at `write` for a guild note or a guild's own collection,
