@@ -1,17 +1,46 @@
 {
+  "src/api/attachments.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
   "src/api/client.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    },
     "complexity": {
       "count": 1
     }
   },
+  "src/api/files.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
+  "src/api/liveTurn.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
   "src/api/queries.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "max-lines": {
       "count": 1
     }
   },
   "src/api/streams.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 12
+    },
     "complexity": {
       "count": 3
+    }
+  },
+  "src/api/toolProgress.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
     }
   },
   "src/api/types.ts": {
@@ -25,7 +54,15 @@
     }
   },
   "src/app/router.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/app/slots.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -40,7 +77,15 @@
     }
   },
   "src/features/access/GithubRepositories.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/access/OrgServerDialog.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -50,6 +95,9 @@
     }
   },
   "src/features/access/SettingsForm.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
@@ -60,11 +108,17 @@
     }
   },
   "src/features/access/access.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 4
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/features/access/secrets.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
@@ -78,11 +132,17 @@
     }
   },
   "src/features/admin/AdminPage.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 8
+    },
     "complexity": {
       "count": 2
     }
   },
   "src/features/admin/InstanceTab.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -103,6 +163,9 @@
     }
   },
   "src/features/agent/CodingRepositories.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -113,6 +176,9 @@
     }
   },
   "src/features/agent/browser/AgentBrowser.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -123,6 +189,9 @@
     }
   },
   "src/features/agent/chat/FlowView.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 5
+    },
     "complexity": {
       "count": 5
     }
@@ -133,12 +202,25 @@
     }
   },
   "src/features/agent/chat/Transcript.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 3
     }
   },
+  "src/features/agent/chat/callDetail.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
   "src/features/agent/chat/runContext.ts": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/agent/harness.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -173,6 +255,9 @@
     }
   },
   "src/features/agent/routine/describeTiming.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     },
@@ -181,21 +266,33 @@
     }
   },
   "src/features/agent/runs/runFlowModel.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 2
     }
   },
   "src/features/agent/runs/toolFormat.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 6
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/features/agent/runs/toolKinds.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/features/agent/scripts/AgentScripts.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
       "count": 2
     }
@@ -206,6 +303,9 @@
     }
   },
   "src/features/agent/settings/configForm.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 3
+    },
     "complexity": {
       "count": 2
     },
@@ -214,6 +314,9 @@
     }
   },
   "src/features/builder/BuilderWidgets.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -224,6 +327,9 @@
     }
   },
   "src/features/builder/widgets.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 5
+    },
     "complexity": {
       "count": 1
     }
@@ -234,6 +340,9 @@
     }
   },
   "src/features/files/FilesBrowser.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -264,7 +373,15 @@
     }
   },
   "src/features/guild/pages/GuildSettings.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    },
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/machines/MachineDialog.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -289,6 +406,9 @@
     }
   },
   "src/features/recipes/ApplyPreviewPage.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -307,6 +427,9 @@
     }
   },
   "src/features/recipes/plan/planModel.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 5
+    },
     "complexity": {
       "count": 6
     },
@@ -314,13 +437,31 @@
       "count": 1
     }
   },
+  "src/features/settings/MembersTab.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 2
+    }
+  },
   "src/features/settings/SettingsPage.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
   },
   "src/features/shell/AccountMenu.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/shell/GuildSidebar.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/features/studio/AgentsSection.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -335,6 +476,9 @@
     }
   },
   "src/features/studio/StudioLanding.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -355,6 +499,9 @@
     }
   },
   "src/features/studio/activity/AgentActivity.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 1
     }
@@ -368,6 +515,9 @@
     }
   },
   "src/features/studio/activity/activityModel.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 9
+    },
     "complexity": {
       "count": 4
     },
@@ -378,9 +528,32 @@
       "count": 1
     }
   },
+  "src/features/studio/approvals.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
   "src/features/studio/chatModel.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 8
+    },
     "complexity": {
       "count": 2
+    }
+  },
+  "src/features/studio/investigate.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/features/studio/location.ts": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    }
+  },
+  "src/features/studio/state/ReferencesMap.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
     }
   },
   "src/features/studio/state/StateItemDetail.tsx": {
@@ -389,6 +562,9 @@
     }
   },
   "src/features/studio/tabs/HistoryTab.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 2
     }
@@ -400,6 +576,11 @@
   },
   "src/features/studio/tabs/VersionsTab.tsx": {
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/features/tables/ColumnsEditor.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },
@@ -419,6 +600,9 @@
     }
   },
   "src/features/tables/TablesPage.tsx": {
+    "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
     "complexity": {
       "count": 3
     }

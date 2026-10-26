@@ -39,6 +39,14 @@ export default tseslint.config(
       "max-lines": ["error", { max: 800, skipBlankLines: false, skipComments: false }],
     },
   },
+  {
+    // A cast creates no knowledge (docs/contributing/code-guidelines.md, Types and errors).
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "test/**", "scripts/**"],
+    rules: {
+      "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+    },
+  },
   boundary({
     files: ["**/*.{ts,tsx}"],
     source: ".",

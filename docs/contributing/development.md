@@ -291,7 +291,10 @@ of an edition or a relative path that leaves this repository.
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,
 tests and stories excepted: `complexity` at 11, `max-depth` at 3,
-`max-params` at 4, and `max-lines` at 800. Violations that predate
+`max-params` at 4, and `max-lines` at 800, and it refuses every
+type assertion except `as const`. The orchestrator also refuses an
+import of `fastify` outside `http/`, the roots, the extension points
+and the observability hooks. Violations that predate
 the rules are recorded in the package's `eslint-suppressions.json`
 (ESLint bulk suppressions). Lint fails on a violation that is not
 in the file, and on an entry that no longer matches a violation, so
