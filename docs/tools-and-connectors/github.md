@@ -1,8 +1,9 @@
 # GitHub
 
-Connecting GitHub lets coding agents clone, push to, and open pull
-requests on the repositories you pick. It runs through one GitHub
-App per box. You set it up in three steps:
+Connecting GitHub gives agents tools for the issues, pull requests,
+branches, files, and CI runs of the repositories you pick, and lets
+coding agents clone and push to them. It runs through one GitHub App
+per box. You set it up in three steps:
 
 1. A platform admin creates the App, once per box.
 2. An operator connects their GitHub account under **Tools**.
@@ -201,8 +202,20 @@ to the picker page. Its `state` is the pending login's.
 An expired or finished sign-in is a 404. An installation the user
 does not reach is a 400.
 
-The connection lists no model tools: agents use `git` and `gh` in the
-sandbox. Tools shows it without an On/Off switch.
+### Tools
+
+A login's tools come from GitHub's hosted MCP server,
+`https://api.githubcopilot.com/mcp/`, with the `repos`, `issues`,
+`pull_requests`, and `actions` toolsets (`X-MCP-Toolsets`).
+`create_repository` and `fork_repository` are left out
+(`policy.exclude`): an installation token limited to picked
+repositories cannot use them. Tools that write start Off
+([What starts Off](connectors.md#what-starts-off)). A login with no
+repositories picked lists no tools.
+
+Tools lists a login's tools like any connector's, and shows the
+connector without an On/Off switch. Coding agents also use `git` and
+`gh` in the sandbox.
 
 ### Repositories
 
@@ -233,7 +246,15 @@ configuration and again through `GIT_CONFIG_COUNT`, which git reads
 after every configuration file, so a helper the agent configures,
 such as the one `gh auth setup-git` writes, cannot replace it.
 
+A login's tool session sends an installation token for every
+repository the login picked, holding every permission the
+installation grants. The token stays in the orchestrator. The pool
+mints a new one when the current one is within 10 minutes of expiry
+or the endpoint answers 401, and drops the session when the login's
+selection changes. A call on a login with no repositories picked
+fails with a 422.
+
 When GitHub refuses a token because the installation was removed or
-suspended (404 or 403), the connection becomes `disconnected` and the
-coding generation that needed it fails at start. Deleting the
+suspended (404 or 403), the connection becomes `disconnected`, and
+the coding generation or tool call that needed it fails. Deleting the
 connection deletes the guild repositories added through it.

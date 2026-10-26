@@ -9,7 +9,6 @@ import {
   type McpPool,
 } from "../mcp/index.js";
 import { MissingSecretError } from "../secrets/index.js";
-import { GITHUB_SLUG } from "../github/index.js";
 import { serverManifest } from "../connectors/load.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
 
@@ -179,8 +178,7 @@ export async function agentRuntime(
   const mcp: Array<Record<string, unknown>> = [];
   const mcpPool = options.mcpPool ?? null;
   for (const [item, server] of resolvedMcp(rows, servers, { orgId, guildId, agentId })) {
-    // GitHub offers no tools: coding runs reach it through their guild's repositories.
-    if (!item.enabled || item.connection_id === null || server.slug === GITHUB_SLUG) {
+    if (!item.enabled || item.connection_id === null) {
       continue;
     }
     const connection = connections.get(item.connection_id);

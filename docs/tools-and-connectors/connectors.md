@@ -61,6 +61,7 @@ A connector has an endpoint, an adapter, or both:
 | `slug` | Equals the folder name. The server id is `mcp_<slug>` |
 | `display_name`, `description`, `limitations`, `setup_hint` | Operator copy |
 | `endpoint.url` | The remote MCP server, public HTTPS |
+| `endpoint.headers` | Custom `X-` headers every request to the endpoint sends. Names are case-insensitive: each appears once, and none is `auth.header`'s |
 | `auth.kind` | `token`, `oauth`, or `none` |
 | `auth.fields` | A token login's inputs `{ name, label, secret, optional, multiline, placeholder }`. `multiline` is a text area. Omitted, one secret field named `token` |
 | `auth.header` | `{ name, prefix }`, the header an endpoint's token travels in. Default: `Authorization: Bearer` |
@@ -69,6 +70,7 @@ A connector has an endpoint, an adapter, or both:
 | `requires.integration` | The integration the connector needs ([Platform keys](platform-keys.md)) |
 | `tools[]` | `{ name, description, input_schema, mutating }`, the curated list |
 | `policy.default_off` | Name patterns that start Off; `*` matches any run of characters |
+| `policy.exclude` | Name patterns of listed tools no login's catalog keeps |
 | `settings_schema` | The login's settings document ([Login settings](#login-settings)) |
 | `state` | `{ key, intro }`: the State key the adapter's `state` hook fills |
 | `builder` | `{ searchable, role, guidance }` for the guild builder |
@@ -237,7 +239,8 @@ login owner's scope. The first rule that applies wins:
 3. Off when a `policy.default_off` pattern matches it.
 4. For a listed tool the manifest does not name: Off when its listing
    marks it `destructiveHint`, or its name carries a writing verb
-   (`src/mcp/verbs.ts`: create, update, delete, send, and the like).
+   (`src/mcp/verbs.ts`: create, update, delete, send, merge, push,
+   and the like).
 5. On.
 
 An absent hint decides nothing, and `readOnlyHint` never turns a tool

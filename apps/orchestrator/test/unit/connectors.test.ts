@@ -126,6 +126,19 @@ test("manifests keep their tools, endpoints, settings, and state within the rule
   }
 });
 
+test("an endpoint's headers are custom headers, each named once and apart from the credential's", () => {
+  const withHeaders = (headers: Record<string, string>, auth: Record<string, unknown> = { kind: "token" }) =>
+    endpointManifest("portal", { endpoint: { url: "https://mcp.example.com/mcp", headers }, auth });
+  assert.deepEqual(loadManifest(withHeaders({ "X-Toolsets": "a,b" })).endpoint?.headers, { "X-Toolsets": "a,b" });
+  for (const [headers, auth] of [
+    [{ Accept: "text/plain" }, undefined],
+    [{ "X-Toolsets": "a", "x-toolsets": "b" }, undefined],
+    [{ "x-api-key": "other" }, { kind: "token", header: { name: "X-API-Key", prefix: "" } }],
+  ] as const) {
+    assert.throws(() => loadManifest(withHeaders(headers, auth)), ManifestError, JSON.stringify(headers));
+  }
+});
+
 test("a connector row loads with its overrides applied over the manifest", () => {
   const notion = CONNECTORS.bySlug("notion")!;
   const row = {

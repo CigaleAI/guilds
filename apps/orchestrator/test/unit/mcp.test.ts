@@ -255,6 +255,10 @@ test("isReadOnlyRemote classifies tools Studio may proxy", () => {
   assert.equal(isReadOnlyRemote("qonto", "list_missing_invoices"), true);
   assert.equal(isReadOnlyRemote("qonto", "get_transaction"), true);
   assert.equal(isReadOnlyRemote("qonto", "upload_invoice"), false);
+  assert.equal(isReadOnlyRemote("github", "push_files"), false);
+  assert.equal(isReadOnlyRemote("github", "merge_pull_request"), false);
+  assert.equal(isReadOnlyRemote("github", "actions_run_trigger"), false);
+  assert.equal(isReadOnlyRemote("github", "pull_request_read"), true);
 });
 
 test("rpc payload keeps jsonrpc result on 403", () => {
@@ -457,11 +461,6 @@ const GITHUB_APP_KEYS = {
   client_id: "Iv1.client",
   client_secret: "client-secret",
 };
-const GITHUB_ENTRY = CONNECTORS.forServer({ slug: "github" })!;
-const WITH_GITHUB_ENDPOINT = CONNECTORS.replacing({
-  ...GITHUB_ENTRY,
-  manifest: { ...GITHUB_ENTRY.manifest, endpoint: { url: "https://api.githubcopilot.com/mcp/" } },
-});
 const GITHUB_SERVER = { id: "mcp_github", slug: "github", auth: "oauth", config: { url: "https://api.githubcopilot.com/mcp/" } };
 
 function githubLogin(repositories: unknown[]): Record<string, unknown> {
@@ -485,22 +484,25 @@ type GithubFakes = {
   minted: Array<Record<string, unknown>>;
   /** The Authorization header of each tool call the endpoint received. */
   called: string[];
+  /** The headers of every request the endpoint received. */
+  sent: Array<Record<string, string>>;
 };
 
 /**
  * A pool whose GitHub API mints `ghs_<n>` tokens expiring at `expiry(n)`, and whose endpoint
- * answers every tool call "ok", or 401 for a token `refuse` names.
+ * lists `tools` and answers every tool call "ok", or 401 for a token `refuse` names.
  */
 function githubPool(options: {
   expiry: (n: number) => number;
   refuse?: (token: string) => boolean;
   mint?: () => Response;
+  tools?: Array<Record<string, unknown>>;
 }): { pool: McpPool; fakes: GithubFakes } {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   setInstanceKeys(storeKeys({ "github-app": GITHUB_APP_KEYS }));
-  const fakes: GithubFakes = { minted: [], called: [] };
+  const fakes: GithubFakes = { minted: [], called: [], sent: [] };
   const pool = new McpPool();
-  pool.connectors = WITH_GITHUB_ENDPOINT;
+  pool.connectors = CONNECTORS;
   pool.fetchFn = async (url, init = {}) => {
     assert.equal(url, "https://api.github.com/app/installations/77/access_tokens");
     if (options.mint) {
@@ -518,6 +520,7 @@ function githubPool(options: {
     );
   };
   pool.endpointFetch = async (_url, init = {}) => {
+    fakes.sent.push(init.headers as Record<string, string>);
     const authorization = String((init.headers as Record<string, string>).Authorization);
     const body = JSON.parse(String(init.body)) as { id?: number; method: string };
     if (options.refuse?.(authorization.replace("Bearer ", ""))) {
@@ -526,7 +529,11 @@ function githubPool(options: {
     if (body.method === "tools/call") {
       fakes.called.push(authorization);
     }
-    const result = body.method === "tools/call" ? { content: [{ type: "text", text: "ok" }] } : {};
+    const results: Record<string, unknown> = {
+      "tools/call": { content: [{ type: "text", text: "ok" }] },
+      "tools/list": { tools: options.tools ?? [] },
+    };
+    const result = results[body.method] ?? {};
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -588,6 +595,43 @@ test("GitHub refusing a GitHub App login's installation disconnects the login", 
       McpDisconnectedError,
     );
     assert.deepEqual(saved, ["conn_gh:disconnected"]);
+  } finally {
+    setInstanceKeys({});
+  }
+});
+
+test("a GitHub App login lists the connector's toolsets, without the tools its manifest excludes, writes Off", async () => {
+  const listed = (name: string, readOnly: boolean) => ({
+    name,
+    description: name,
+    inputSchema: { type: "object" },
+    annotations: readOnly ? { readOnlyHint: true } : {},
+  });
+  const { pool, fakes } = githubPool({
+    expiry: () => Date.now() + 3_600_000,
+    tools: [
+      listed("list_issues", true),
+      listed("issue_write", false),
+      listed("merge_pull_request", false),
+      listed("create_repository", false),
+      listed("fork_repository", false),
+    ],
+  });
+  const db = new MemoryDb();
+  try {
+    const tools = await pool.syncTools(db as never, githubLogin(PICKED), GITHUB_SERVER, { force: true });
+    assert.deepEqual(
+      tools.map((tool) => tool.namespaced_name),
+      ["github_list_issues", "github_issue_write", "github_merge_pull_request"],
+    );
+    assert.equal(db.bindings.has("mcp_tool:github_list_issues:guild_1"), false);
+    assert.equal(db.bindings.get("mcp_tool:github_issue_write:guild_1")?.enabled, false);
+    assert.equal(db.bindings.get("mcp_tool:github_merge_pull_request:guild_1")?.enabled, false);
+    assert.ok(fakes.sent.length > 0);
+    for (const headers of fakes.sent) {
+      assert.equal(headers["X-MCP-Toolsets"], "repos,issues,pull_requests,actions");
+      assert.equal(headers.Authorization, "Bearer ghs_1");
+    }
   } finally {
     setInstanceKeys({});
   }

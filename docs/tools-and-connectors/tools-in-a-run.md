@@ -57,9 +57,9 @@ A connected login lists its tools again when its stored list is 10
 minutes old. A listing that fails keeps the stored list
 ([Tools of a login](connectors.md#tools-of-a-login)).
 
-GitHub offers no tools and is left out of this step. A coding run
-reaches it through its guild's repositories. A disconnected GitHub
-login fails that coding run alone ([GitHub](github.md)).
+A GitHub login with no repositories picked lists no tools, so the run
+starts without them. A coding run also reaches GitHub through its
+guild's repositories ([GitHub](github.md)).
 
 ### Browser calls
 

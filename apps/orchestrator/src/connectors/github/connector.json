@@ -1,6 +1,12 @@
 {
   "slug": "github",
   "display_name": "GitHub",
+  "endpoint": {
+    "url": "https://api.githubcopilot.com/mcp/",
+    "headers": {
+      "X-MCP-Toolsets": "repos,issues,pull_requests,actions"
+    }
+  },
   "auth": {
     "kind": "oauth",
     "oauth": {
@@ -11,7 +17,10 @@
   "requires": {
     "integration": "github-app"
   },
-  "description": "Lets coding agents clone, push to, and open pull requests on the repositories each guild picks in Settings from the platform's GitHub App.",
-  "limitations": "No model tools: agents use git and gh in their sandbox with a one-hour installation token limited to the guild's repositories. Protecting a default branch is set on GitHub.",
-  "setup_hint": "Connect at the organisation, a guild, or an agent. The App is installed once per GitHub account; later logins reuse that install. Pick this login's repositories on the GitHub card."
+  "description": "Read and manage issues, pull requests, branches, files, and CI runs on the repositories each login picks from the platform's GitHub App. Coding agents also clone and push them.",
+  "limitations": "Tools and coding runs reach only the repositories the login picked, with a one-hour installation token the orchestrator holds. Creating and forking repositories are not offered. Writing tools start Off. Protecting a default branch is set on GitHub.",
+  "setup_hint": "Connect at the organisation, a guild, or an agent. The App is installed once per GitHub account; later logins reuse that install. Pick this login's repositories on the GitHub card: a login with none picked lists no tools.",
+  "policy": {
+    "exclude": ["create_repository", "fork_repository"]
+  }
 }

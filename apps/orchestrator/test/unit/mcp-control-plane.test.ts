@@ -357,3 +357,24 @@ test("gmail send stays Off and the sandbox env has no Gmail token", async () => 
   assert.equal(Object.keys(env).length, 0);
   assert.ok(!JSON.stringify(env).includes(token));
 });
+
+test("a GitHub login's listed tools are offered to its agents like any connector's", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const db = new MemoryDb();
+  db.servers = [{ id: "mcp_github", slug: "github", display_name: "GitHub", auth: "oauth" }];
+  db.connections = [connectionOf("unused", { id: "conn_github", mcp_server_id: "mcp_github" })];
+  db.rows = [
+    {
+      remote_name: "list_issues",
+      namespaced_name: "github_list_issues",
+      description: "List issues",
+      input_schema: { type: "object" },
+      listed_at: new Date().toISOString(),
+    },
+  ];
+  const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" });
+  assert.deepEqual(
+    runtime.mcp.map((entry) => [entry.slug, (entry.tools as Array<{ name: string }>).map((tool) => tool.name)]),
+    [["github", ["github_list_issues"]]],
+  );
+});

@@ -32,7 +32,7 @@ import type { OrgPolicy } from "../policy/index.js";
 import { utcMonth } from "../usage.js";
 
 import { namespacedName } from "./names.js";
-import { overriddenTool, serverManifest, toolStartsOff } from "../connectors/load.js";
+import { manifestExcludes, overriddenTool, serverManifest, toolStartsOff } from "../connectors/load.js";
 import { awaitingSettings, connectionSettings } from "../connectors/login.js";
 import { instanceCredentials } from "../connectors/instance.js";
 
@@ -286,8 +286,6 @@ export function connectionCredentials(connection: Record<string, unknown>): Cred
   return credentials;
 }
 
-
-
 /** What an endpoint session sends: an OAuth access token, else the login's `token`, else its first credential field. */
 function credentialToken(credentials: Credentials, manifest: Manifest | null): string {
   if (credentials.access_token) {
@@ -301,12 +299,14 @@ function credentialToken(credentials: Credentials, manifest: Manifest | null): s
   return typeof value === "string" ? value : "";
 }
 
+/** What an endpoint session sends: the manifest's endpoint headers, and the token in its auth header. */
 function headersFor(token: string, manifest: Manifest | null): Record<string, string> {
+  const fixed = { ...manifest?.endpoint?.headers };
   if (!token) {
-    return {};
+    return fixed;
   }
   const header = manifest?.auth.header ?? { name: "Authorization", prefix: "Bearer " };
-  return { [header.name]: `${header.prefix}${token}` };
+  return { ...fixed, [header.name]: `${header.prefix}${token}` };
 }
 
 export function authHeaders(
@@ -661,7 +661,8 @@ export class McpPool {
       return { headers: authHeaders(connection, server, this.registry), expiresAt: null };
     }
     const minted = await this.mintGithubAppToken(db, connection);
-    return { headers: headersFor(minted.token, this.resolve(server).manifest), expiresAt: Date.parse(minted.expiresAt) };
+    const manifest = this.resolve(server).manifest ?? serverManifest(server);
+    return { headers: headersFor(minted.token, manifest), expiresAt: Date.parse(minted.expiresAt) };
   }
 
   /** A GitHub App login's installation token (`mintLoginToken`). GitHub refusing the installation disconnects the login. */
@@ -869,7 +870,7 @@ export class McpPool {
   private remoteForCredentials(server: Record<string, unknown>, resolved: Resolved, credentials: Credentials): RemoteSession {
     const session = new McpSession(
       serverUrl(server),
-      headersFor(credentialToken(credentials, resolved.manifest), resolved.manifest),
+      headersFor(credentialToken(credentials, resolved.manifest), resolved.manifest ?? serverManifest(server)),
       this.endpointFetch,
     );
     return {
@@ -1069,7 +1070,8 @@ export class McpPool {
       }
       return this.listWith(resolved, credentials, ctx);
     });
-    const listed = tools.map((tool) => {
+    const manifest = resolved.manifest ?? serverManifest(server);
+    const listed = tools.filter((tool) => !manifestExcludes(manifest, tool.name)).map((tool) => {
       const edited = overriddenTool(server, {
         remote_name: tool.name,
         description: tool.description,
