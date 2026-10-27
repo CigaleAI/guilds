@@ -149,17 +149,6 @@
       "count": 1
     }
   },
-  "src/connectors/alchemy/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 20
-    },
-    "complexity": {
-      "count": 5
-    },
-    "max-depth": {
-      "count": 1
-    }
-  },
   "src/connectors/coingecko/client.ts": {
     "complexity": {
       "count": 1

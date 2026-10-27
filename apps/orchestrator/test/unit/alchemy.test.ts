@@ -35,30 +35,28 @@ class MemoryDb {
 }
 
 test("formatHoldings drops images and descriptions", () => {
-  const stored = formatHoldings(
-    {
-      ownedNfts: [{
-        contract: {
-          address: "0x0beed7099af7514ccedf642cfea435731176fb02",
-          name: "DuskBreakers",
-          symbol: "DUSK",
-          tokenType: "ERC721",
-          isSpam: null,
-          openSeaMetadata: { floorPrice: 0.0582, imageUrl: "https://example.com/col.png", description: "long html" },
-        },
-        tokenId: "28",
+  const payload = {
+    ownedNfts: [{
+      contract: {
+        address: "0x0beed7099af7514ccedf642cfea435731176fb02",
+        name: "DuskBreakers",
+        symbol: "DUSK",
         tokenType: "ERC721",
-        name: "DuskBreaker #28",
-        description: "Breakers have the honor of serving humanity.",
-        image: { cachedUrl: "https://example.com/28.png", originalUrl: "https://duskbreakers.gg/28.png" },
-        tokenUri: "https://api.duskbreakers.gg/metadata/28",
-        balance: "1",
-      }],
-      totalCount: 12,
-      pageKey: "next-page",
-    },
-    { owner: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", chain: "ethereum" },
-  );
+        isSpam: null,
+        openSeaMetadata: { floorPrice: 0.0582, imageUrl: "https://example.com/col.png", description: "long html" },
+      },
+      tokenId: "28",
+      tokenType: "ERC721",
+      name: "DuskBreaker #28",
+      description: "Breakers have the honor of serving humanity.",
+      image: { cachedUrl: "https://example.com/28.png", originalUrl: "https://duskbreakers.gg/28.png" },
+      tokenUri: "https://api.duskbreakers.gg/metadata/28",
+      balance: "1",
+    }],
+    totalCount: 12,
+    pageKey: "next-page",
+  };
+  const stored = formatHoldings(payload, { owner: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045", chain: "ethereum" });
   assert.equal(
     stored,
     "0xd8da6bf26964af9d7eed9e03e53415d37aa96045  ethereum  total=12\n"
@@ -90,7 +88,7 @@ test("formatHoldings caps rows and marks spam", () => {
 });
 
 test("formatNft and formatCollection keep floor", () => {
-  const nft = formatNft({
+  const payload = {
     contract: {
       address: "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
       name: "Bored Ape Yacht Club",
@@ -102,7 +100,8 @@ test("formatNft and formatCollection keep floor", () => {
     name: "Bored Ape #1",
     description: "long",
     image: { cachedUrl: "https://example.com/1.png" },
-  });
+  };
+  const nft = formatNft(payload);
   assert.equal(
     nft,
     "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d  BAYC  Bored Ape Yacht Club  "
@@ -110,14 +109,15 @@ test("formatNft and formatCollection keep floor", () => {
       + "floor=12.5",
   );
   assert.ok(!nft.includes("example.com"));
-  const collection = formatCollection({
+  const contract = {
     address: "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d",
     name: "Bored Ape Yacht Club",
     symbol: "BAYC",
     tokenType: "ERC721",
     totalSupply: "10000",
     openseaMetadata: { floorPrice: 12.5, description: "long" },
-  });
+  };
+  const collection = formatCollection(contract);
   assert.equal(
     collection,
     "0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d  BAYC  Bored Ape Yacht Club  "
