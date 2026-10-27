@@ -793,7 +793,7 @@ describe("generation", { concurrency: 1 }, () => {
     loop.generateInBackground = (runId, generation) => {
       started.push([runId, generation]);
     };
-    await loop.deliverScheduleRun(
+    await loop.runs.deliverScheduleRun(
       scheduleRow({ instruction: "Check the shared notes." }),
     );
     assert.deepEqual(started, [[String(db.create_args?.run_id), 1]]);
@@ -827,7 +827,7 @@ describe("generation", { concurrency: 1 }, () => {
     };
     await assert.rejects(
       () =>
-        loop.deliverScheduleRun(
+        loop.runs.deliverScheduleRun(
           scheduleRow({ instruction: "Check the shared notes." }),
         ),
       /insert failed/,
@@ -846,7 +846,7 @@ describe("generation", { concurrency: 1 }, () => {
     };
     await assert.rejects(
       () =>
-        loop.deliverScheduleRun(
+        loop.runs.deliverScheduleRun(
           scheduleRow({ instruction: "Check the shared notes." }),
         ),
       (error: unknown) => error instanceof DeliveryBusyError,
@@ -858,10 +858,10 @@ describe("generation", { concurrency: 1 }, () => {
     const { loop, db } = await seededLoop();
     db.due_schedules = [scheduleRow()];
     loop.generations.holdAgent("a_1");
-    loop.deliverScheduleRun = async () => {
+    loop.runs.deliverScheduleRun = async () => {
       throw new Error("should not fire");
     };
-    await loop.fireDueSchedules(new Date());
+    await loop.runs.fireDueSchedules(new Date());
     assert.deepEqual(db.fired, []);
   });
 
@@ -869,10 +869,10 @@ describe("generation", { concurrency: 1 }, () => {
     const { loop, db } = await seededLoop();
     const now = new Date("2026-09-12T16:00:00Z");
     db.due_schedules = [scheduleRow()];
-    loop.deliverScheduleRun = async (row) => {
+    loop.runs.deliverScheduleRun = async (row) => {
       db.delivered = row.id;
     };
-    await loop.fireDueSchedules(now);
+    await loop.runs.fireDueSchedules(now);
     assert.equal(db.delivered, "sch_1");
     assert.equal(db.fired[0]?.id, "sch_1");
     assert.equal((db.fired[0]?.next_run_at as Date).getTime(), nextRunAt(now, "*/30 * * * *").getTime());
@@ -886,7 +886,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, notes, tmp, new FakeSandboxes());
     notes.deleteGuild = async () => {
       try {
-        await loop.createRun("a_1", null);
+        await loop.runs.createRun("a_1", null);
       } catch (error) {
         if (error instanceof RunRequestError) {
           notes.rejected = error;
@@ -958,7 +958,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("create_run_without_message_stores_task_as_system_and_stays_idle", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const result = await loop.createRun("a_1", null);
+    const result = await loop.runs.createRun("a_1", null);
     assert.ok(db.create_args);
     const system = String(db.create_args.system_content);
     assert.ok(system.includes("You are an agent in a work guild"));
@@ -1009,7 +1009,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("create_run_offers_artifact_tools_not_database_tools", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     assert.equal((db.run?.config_snapshot as Record<string, unknown>).database, false);
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []
@@ -1065,7 +1065,7 @@ describe("generation", { concurrency: 1 }, () => {
         connection_id: null,
       },
     ];
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []
     ).map((item) => item.function.name);
@@ -1086,7 +1086,7 @@ describe("generation", { concurrency: 1 }, () => {
       enabled: false,
       connection_id: null,
     }));
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []
     ).map((item) => item.function.name);
@@ -1114,7 +1114,7 @@ describe("generation", { concurrency: 1 }, () => {
       enabled: false,
       connection_id: null,
     }));
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []
     ).map((item) => item.function.name);
@@ -1191,7 +1191,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("create_run_with_message_appends_user_and_starts_generation", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const result = await loop.createRun("a_1", "hello");
+    const result = await loop.runs.createRun("a_1", "hello");
     assert.equal(db.create_args?.user_content, "hello");
     assert.deepEqual(
       db.messages.map((row) => (row.metadata as Record<string, unknown>).source),
@@ -1209,7 +1209,7 @@ describe("generation", { concurrency: 1 }, () => {
     const attachments = [
       { id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const },
     ];
-    await loop.createRun("a_1", "", { attachments });
+    await loop.runs.createRun("a_1", "", attachments);
     assert.equal(db.create_args?.user_content, "");
     assert.deepEqual(db.messages[1]?.payload, { role: "user", content: "" });
     assert.deepEqual(db.messages[1]?.metadata, {
@@ -1222,7 +1222,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("add_message_stores_attachment_refs", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", null);
+    const created = await loop.runs.createRun("a_1", null);
     const attachments = [
       { id: "att_2", filename: "note.jpg", mime: "image/jpeg", kind: "image" as const },
     ];
@@ -1246,7 +1246,7 @@ describe("generation", { concurrency: 1 }, () => {
       tagged_names: [],
       tagged_agent_ids: [],
     }));
-    await loop.createRun("a_1", "hello");
+    await loop.runs.createRun("a_1", "hello");
     const state = parsedState(String(db.create_args?.system_content));
     const history = (state.group as { history: Array<{ content: string }> }).history;
     assert.deepEqual(
@@ -1286,7 +1286,7 @@ describe("generation", { concurrency: 1 }, () => {
       groupRouter: keepLatestAndOne,
     });
     loop.generateInBackground = () => undefined;
-    await loop.createRun("a_1", "hello");
+    await loop.runs.createRun("a_1", "hello");
     const state = parsedState(String(db.create_args?.system_content));
     const history = (state.group as { history: Array<{ content: string }> }).history;
     assert.deepEqual(
@@ -1299,7 +1299,7 @@ describe("generation", { concurrency: 1 }, () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
     await loop.beginGeneration("r_other", "a_1");
-    const result = await loop.createRun("a_1", null);
+    const result = await loop.runs.createRun("a_1", null);
     assert.equal(db.create_args?.user_content, null);
     assert.equal(result.generating, false);
     assert.ok(!loop.generations.isGenerating(String(result.id)));
@@ -1308,7 +1308,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("list_run_payloads_only_marks_active_run_as_generating", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const pastRun = { ...db.run, id: "r_past" };
     const activeRun = { ...db.run, id: "r_active" };
     db.listRuns = async () => [activeRun as Record<string, unknown>, pastRun as Record<string, unknown>];
@@ -1322,7 +1322,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("create_run_with_message_conflicts_while_agent_is_busy", async () => {
     const { loop } = await seededLoop();
     await loop.beginGeneration("r_other", "a_1");
-    await assert.rejects(() => loop.createRun("a_1", "hello"), (error: unknown) => {
+    await assert.rejects(() => loop.runs.createRun("a_1", "hello"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /already generating/);
       assert.equal(error.status, 409);
@@ -1333,7 +1333,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("first_user_message_on_idle_run_is_generation_one", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", null);
+    const created = await loop.runs.createRun("a_1", null);
     await loop.addMessage(String(created.id), "hello");
     const user = db.messages[db.messages.length - 1];
     assert.deepEqual(
@@ -1348,7 +1348,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("later_turn_does_not_reinject_state", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", "hello");
+    const created = await loop.runs.createRun("a_1", "hello");
     loop.endGeneration(String(created.id));
     await loop.addMessage(String(created.id), "again");
     assert.deepEqual(
@@ -1362,7 +1362,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("later_turn_keeps_opening_state_when_notes_change", async () => {
     const { loop, db, notes } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", "hello");
+    const created = await loop.runs.createRun("a_1", "hello");
     const opening = parsedState(String(db.create_args?.system_content));
     loop.endGeneration(String(created.id));
     await notes.writeNote("private", "acme", "research", "researcher", "hello.md", "note");
@@ -1403,7 +1403,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("cancel_idle_run_is_noop", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", null);
+    const created = await loop.runs.createRun("a_1", null);
     assert.equal(await loop.cancel(String(created.id)), null);
     assert.ok(db.run);
     assert.deepEqual(db.run.errors, []);
@@ -1416,7 +1416,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("add_message_conflicts_while_same_run_generating", async () => {
     const { loop } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", null);
+    const created = await loop.runs.createRun("a_1", null);
     await loop.beginGeneration(String(created.id), "a_1");
     await assert.rejects(() => loop.addMessage(String(created.id), "hello"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
@@ -1435,7 +1435,7 @@ describe("generation", { concurrency: 1 }, () => {
       await hangForever(options.signal);
       yield ["done", completionReply("nope")];
     };
-    const created = await loop.createRun("a_1", "hello");
+    const created = await loop.runs.createRun("a_1", "hello");
     const queue = loop.events.subscribe(String(created.id));
     await started.promise;
     const cancelled = await loop.cancel(String(created.id));
@@ -1461,7 +1461,7 @@ describe("generation", { concurrency: 1 }, () => {
       throw new LLMError("request timed out");
       yield ["done", completionReply("nope")];
     };
-    const created = await loop.createRun("a_1", "hello");
+    const created = await loop.runs.createRun("a_1", "hello");
     await waitTask(loop, String(created.id));
     const errors = db.run?.errors as Array<Record<string, unknown>>;
     assert.equal(errors[errors.length - 1]?.operation, "llm.complete");
@@ -1473,7 +1473,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("reconcile_fills_unresolved_tool_calls", async () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     db.messages.push({
       seq: 3,
       payload: {
@@ -1503,7 +1503,7 @@ describe("generation", { concurrency: 1 }, () => {
   ) {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const run = db.run!;
     run.config_snapshot = { ...(run.config_snapshot as Record<string, unknown>), harness: "claude-code" };
     run.metadata = {
@@ -1831,7 +1831,7 @@ describe("generation", { concurrency: 1 }, () => {
     loop.generateInBackground = () => undefined;
     db.agent.config = { ...AGENT_CONFIG, scripting: false };
     await loop.scripts.create(scriptOperator, "a_1", "keep", "why", "print(1)\n");
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []
     ).map((item) => item.function.name);
@@ -1857,7 +1857,7 @@ describe("generation", { concurrency: 1 }, () => {
       "import json,sys; print(json.load(sys.stdin)['symbol'])\n",
       schema,
     );
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const tools = (db.run?.config_snapshot as { tools: Array<Record<string, unknown>> }).tools ?? [];
     const priced = tools.find((tool) => {
       const fn = tool.function as { name?: string } | undefined;
@@ -1967,7 +1967,7 @@ describe("generation", { concurrency: 1 }, () => {
         connection_id: null,
       },
     ];
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []
     ).map((item) => item.function.name);
@@ -1982,7 +1982,7 @@ describe("generation", { concurrency: 1 }, () => {
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
     db.agent.config = { ...AGENT_CONFIG, memory: false };
-    await loop.createRun("a_1", null);
+    await loop.runs.createRun("a_1", null);
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []
     ).map((item) => item.function.name);
@@ -2151,7 +2151,7 @@ describe("generation", { concurrency: 1 }, () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
     const { loop, db } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", "hello");
+    const created = await loop.runs.createRun("a_1", "hello");
     loop.endGeneration(String(created.id));
     db.secrets = [liveSecret()];
     await loop.addMessage(String(created.id), "again");
@@ -2167,7 +2167,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("later_turn_keeps_opening_memory", async () => {
     const { loop, db, notes } = await seededLoop();
     loop.generateInBackground = () => undefined;
-    const created = await loop.createRun("a_1", "hello");
+    const created = await loop.runs.createRun("a_1", "hello");
     loop.endGeneration(String(created.id));
     await notes.writeMemory("acme", "research", "researcher", "inbox", {
       source: "r_test",
@@ -2190,7 +2190,7 @@ describe("generation", { concurrency: 1 }, () => {
       calls += 1;
       yield ["done", { payload: { role: "assistant", content: "checked" }, metadata: {} }];
     };
-    await loop.deliverScheduleRun(scheduleRow({ instruction: "check inbox" }));
+    await loop.runs.deliverScheduleRun(scheduleRow({ instruction: "check inbox" }));
     await waitTask(loop, String(db.run?.id));
     assert.equal(calls, 1);
     assert.ok(!db.messages.some((row) => (row.metadata as Record<string, unknown>).source === "memory"));
@@ -2213,7 +2213,7 @@ describe("generation", { concurrency: 1 }, () => {
       published.push([event, data]);
       await publish(runId, event, data);
     };
-    const created = await loop.createRun("a_1", "hello");
+    const created = await loop.runs.createRun("a_1", "hello");
     await waitTask(loop, String(created.id));
     assert.deepEqual(
       published.filter(([event]) => event === "assistant.reasoning.delta").map(([, data]) => data.text),
@@ -2249,7 +2249,7 @@ describe("generation", { concurrency: 1 }, () => {
       calls += 1;
       yield ["done", { payload: { role: "assistant", content: "checked" }, metadata: {} }];
     };
-    await loop.deliverScheduleRun(scheduleRow({ instruction: "check inbox" }));
+    await loop.runs.deliverScheduleRun(scheduleRow({ instruction: "check inbox" }));
     await waitTask(loop, String(db.run?.id));
     const names = (
       (db.run?.config_snapshot as { tools: Array<{ function: { name: string } }> }).tools ?? []

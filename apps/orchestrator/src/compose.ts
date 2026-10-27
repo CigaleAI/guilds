@@ -140,7 +140,7 @@ export async function createServer(
   });
   // Runs the restart cut off are settled before the scheduler can fire.
   await generation.reconcile();
-  generation.startScheduler();
+  generation.runs.startScheduler();
   // An edit is published on the guild's group chat, and a session waits while its agent is
   // already generating.
   const studio = new StudioService({

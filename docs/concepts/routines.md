@@ -240,7 +240,7 @@ are in [Artifacts](artifacts.md#configuration-change-log).
 
 ### Firing
 
-`fireDueSchedules` (`apps/orchestrator/src/generation/index.ts`) runs
+`fireDueSchedules` (`apps/orchestrator/src/generation/runs.ts`) runs
 on the 30-second tick (`SCHEDULER_TICK_MS`). It skips a busy agent and
 does not advance `next_run_at`, so the routine is delayed, not queued
 as a second job and not skipped forever. Every other outcome, a failed

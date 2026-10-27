@@ -16,16 +16,12 @@ import {
 } from "../access/runtime.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { isPlainRecord, recordOf } from "../db/json.js";
-import { iso, runItem } from "../db/views.js";
+import { runItem } from "../db/views.js";
 import {
-  DeliveryBusyError,
-  DeliveryCreateError,
   GroupChat,
   groupChatDatabase,
-  groupChatUserMessage,
   type GroupDelivery,
   type GroupRunner,
-  wakeMessage,
 } from "../groupchat/index.js";
 
 import { OPEN_POLICY, PolicyError, type OrgPolicy } from "../policy/index.js";
@@ -47,7 +43,7 @@ import {
   type ModelCredentials,
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
-import { newId } from "../lib/ids.js";
+
 import { sleep } from "../lib/event.js";
 import {
   LLMError,
@@ -82,12 +78,9 @@ import {
 import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
-import { planAfterFire, rowTiming } from "../schedules/timing.js";
-import { instructionHash, scheduleWakeUserMessage } from "../schedules/item.js";
+
 import { Schedules } from "../schedules/service.js";
-import type {
-  ScheduleRow,
-} from "../db/schedules.js";
+
 import { redact } from "../secrets/index.js";
 import { readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
 
@@ -100,10 +93,10 @@ import { ActiveGenerations, AdmissionCoordinator } from "./admission.js";
 import { guildRepositories } from "./coding.js";
 import { RunEvents } from "./events.js";
 import { RunPreparation, type ConnectorPool } from "./prepare.js";
+import { Runs } from "./runs.js";
 import { AgentMachines, agentMachine, agentSeat, type GenerationSandboxes } from "./machines.js";
 import {
   chainOf,
-  continuationMessage,
   continuedBy,
   HANDOFF_FRACTION,
   HANDOFF_REQUEST,
@@ -180,6 +173,7 @@ import {
   reopenRun,
   updateRunScripts,
   updateRunSecrets,
+  type RunRow,
 } from "../db/runs.js";
 import {
   clearHarnessLogin,
@@ -232,13 +226,7 @@ import {
   RunLimitError,
   RunRequestError,
 } from "./errors.js";
-import {
-  positiveInt,
-  preparedPromptHashes,
-  preparedRunMetadata,
-  preparedSnapshot,
-  type PreparedRun,
-} from "./snapshot.js";
+import { positiveInt } from "./snapshot.js";
 import {
   liveOfferedNames,
   mcpIndex,
@@ -455,11 +443,9 @@ export class GenerationLoop implements GroupRunner {
   events: RunEvents;
   machines: AgentMachines;
   preparation: RunPreparation;
+  runs: Runs;
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
-  _scheduler_tick_ms: number;
-  _scheduler_abort: AbortController | null = null;
-  _scheduler_task: Promise<void> | null = null;
 
   constructor(
     db: GenerationDatabase,
@@ -496,7 +482,6 @@ export class GenerationLoop implements GroupRunner {
       { db, sandboxes, workspaceRoot, generations: this.generations },
       options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS,
     );
-    this._scheduler_tick_ms = options.schedulerTickMs ?? SCHEDULER_TICK_MS;
     if (options.cancelGraceMs !== undefined) {
       generationLive.cancelGraceMs = options.cancelGraceMs;
     }
@@ -522,6 +507,16 @@ export class GenerationLoop implements GroupRunner {
       generations: this.generations,
       machines: this.machines,
     });
+    this.runs = new Runs(
+      {
+        db,
+        preparation: this.preparation,
+        generations: this.generations,
+        schedules: this.schedules,
+        starter: this,
+      },
+      options.schedulerTickMs ?? SCHEDULER_TICK_MS,
+    );
   }
 
   isGenerating(runId: string): boolean {
@@ -532,223 +527,14 @@ export class GenerationLoop implements GroupRunner {
     return this.generations.lockGeneration;
   }
 
-  /** Opens a direct run; `startedByUserId` is the person who opened it. */
-  async createRun(
-    agentId: string,
-    message: string | null,
-    options: { attachments?: AttachmentRef[]; startedByUserId?: string } = {},
-  ): Promise<Record<string, unknown>> {
-    const attachments = options.attachments ?? [];
-    const opening = message === null && attachments.length ? "" : message;
-    const prepared = await this.preparation.prepare(agentId, null);
-    if (opening !== null && this.generations.isAgentBusy(agentId)) {
-      throw new RunRequestError(409, "agent is already generating");
-    }
-    const runId = newId("r");
-    const now = new Date();
-    const runMetadata = preparedRunMetadata(prepared);
-    const userMetadata = attachments.length ? { attachments } : undefined;
-    const create = () =>
-      this.db.createRun(
-        {
-          runId,
-          agentId,
-          configSnapshot: preparedSnapshot(prepared, "direct"),
-          systemContent: prepared.system,
-          taskContent: prepared.task,
-          userContent: opening,
-          ...preparedPromptHashes(prepared),
-          startedByUserId: options.startedByUserId ?? null,
-          ...(runMetadata ? { runMetadata } : {}),
-          ...(userMetadata ? { userMetadata } : {}),
-        },
-        now,
-      );
-    if (opening === null) {
-      await create();
-    } else {
-      try {
-        await this._create_started(runId, agentId, create);
-      } catch (error) {
-        if (error instanceof ConflictError) {
-          throw new RunRequestError(409, error.message);
-        }
-        throw error;
-      }
-    }
-    const row = await this.db.getRun(runId);
-    if (row === null) {
-      throw new RunRequestError(404, "run not found");
-    }
-    return this.runView(row);
-  }
-
   async deliverGroupRun(delivery: GroupDelivery): Promise<void> {
-    const { agentId, throughSeq, deliveredThrough, recipients } = delivery;
-    let prepared: PreparedRun;
-    try {
-      prepared = await this.preparation.prepare(agentId, throughSeq);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new DeliveryCreateError(error.detail);
-      }
-      throw error;
-    }
-    const agent = prepared.agent;
-    if (this.generations.isAgentBusy(agentId)) {
-      throw new DeliveryBusyError();
-    }
-    const projected = [
-      groupChatUserMessage({
-        members: prepared.members,
-        rows: prepared.historyRows,
-        viewerName: String(agent.name),
-        deliveredThrough,
-      }),
-    ];
-    const runId = newId("r");
-    const now = new Date();
-    const runMetadata = preparedRunMetadata(prepared, recipients ? { recipients } : null);
-    const woke = wakeMessage(prepared.historyRows, agentId, deliveredThrough);
-    const create = () =>
-      this.db.createGroupRun(
-        {
-          runId,
-          agentId,
-          configSnapshot: preparedSnapshot(prepared, "group"),
-          systemContent: prepared.system,
-          taskContent: prepared.task,
-          projected,
-          throughSeq,
-          ...preparedPromptHashes(prepared),
-          wakeGroupMessageId: woke ? Number(woke.id) : null,
-          ...(runMetadata ? { runMetadata } : {}),
-        },
-        now,
-      );
-    try {
-      await this._create_started(runId, agentId, create);
-    } catch (error) {
-      if (error instanceof ConflictError) {
-        throw new DeliveryBusyError();
-      }
-      throw error;
-    }
-    const task = this.generations.task(runId);
-    if (task) {
-      await task;
-    }
-    await this.db.completeGroupDelivery(runId, agentId, throughSeq, new Date());
-  }
-
-  async deliverScheduleRun(schedule: ScheduleRow): Promise<void> {
-    const agentId = schedule.agent_id;
-    let prepared: PreparedRun;
-    try {
-      prepared = await this.preparation.prepare(agentId, null);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new DeliveryCreateError(error.detail);
-      }
-      throw error;
-    }
-    if (this.generations.isAgentBusy(agentId)) {
-      throw new DeliveryBusyError();
-    }
-    const instruction = await this.schedules.instructionFor(agentId, schedule);
-    const projected = [
-      scheduleWakeUserMessage({
-        id: schedule.id,
-        timing: rowTiming(schedule),
-        instruction,
-        previousRunAt: schedule.last_run_at ? iso(schedule.last_run_at) : null,
-      }),
-    ];
-    const runId = newId("r");
-    const now = new Date();
-    const runMetadata = {
-      ...(preparedRunMetadata(prepared) ?? {}),
-      instruction_hash: instructionHash(instruction),
-    };
-    const create = () =>
-      this.db.createScheduleRun(
-        {
-          runId,
-          agentId,
-          configSnapshot: preparedSnapshot(prepared, "schedule"),
-          systemContent: prepared.system,
-          taskContent: prepared.task,
-          projected,
-          ...preparedPromptHashes(prepared),
-          scheduleId: schedule.id,
-          runMetadata,
-        },
-        now,
-      );
-    try {
-      await this._create_started(runId, agentId, create);
-    } catch (error) {
-      if (error instanceof ConflictError) {
-        throw new DeliveryBusyError();
-      }
-      throw error;
-    }
-  }
-
-  async fireDueSchedules(now?: Date): Promise<void> {
-    const when = now ?? new Date();
-    for (const row of await this.db.listDueSchedules(when)) {
-      if (this.generations.isAgentBusy(row.agent_id)) {
-        continue;
-      }
-      try {
-        await this.deliverScheduleRun(row);
-      } catch (error) {
-        if (error instanceof DeliveryBusyError) {
-          continue;
-        }
-        if (error instanceof DeliveryCreateError) {
-          writeLog("error", error.message, {
-            agent_id: row.agent_id,
-            operation: "schedule.fire",
-          });
-        } else {
-          writeLog(
-            "error",
-            "schedule wake-up failed",
-            {
-              agent_id: row.agent_id,
-              operation: "schedule.fire",
-              error_type: errorName(error),
-            },
-            error,
-          );
-        }
-      }
-      await this.db.markScheduleFired(row.id, when, planAfterFire(row, when));
-    }
-  }
-
-  startScheduler(): void {
-    if (this._scheduler_abort && !this._scheduler_abort.signal.aborted) {
-      return;
-    }
-    const abort = new AbortController();
-    this._scheduler_abort = abort;
-    this._scheduler_task = this._scheduler_loop(abort.signal);
+    await this.runs.deliverGroupRun(delivery);
   }
 
   async close(): Promise<void> {
-    const abort = this._scheduler_abort;
-    this._scheduler_abort = null;
-    abort?.abort();
+    const scheduler = this.runs.stopScheduler();
     this.machines.cancelTimers();
-    if (this._scheduler_task) {
-      const abortWait = new AbortController();
-      await Promise.race([this._scheduler_task, sleep(50, abortWait.signal)]);
-      abortWait.abort();
-      this._scheduler_task = null;
-    }
+    await scheduler;
     await this.groupChat.stopDispatchers();
     const runIds = this.generations.runIds();
     for (const runId of runIds) {
@@ -1162,21 +948,6 @@ export class GenerationLoop implements GroupRunner {
     if (machineId !== null && !this.generations.isMachineBusy(machineId)) {
       this.machines.releaseMachine(machineId);
     }
-  }
-
-  async _create_started(
-    runId: string,
-    agentId: string,
-    create: () => Promise<void>,
-  ): Promise<void> {
-    await this.beginGeneration(runId, agentId);
-    try {
-      await create();
-    } catch (error) {
-      this.endGeneration(runId);
-      throw error;
-    }
-    this.generateInBackground(runId, 1);
   }
 
   /** Generates the run without waiting for it; a failure the generation does not record is logged. */
@@ -1622,7 +1393,7 @@ export class GenerationLoop implements GroupRunner {
   async _generate_steps(
     runId: string,
     generation: number,
-    run: Record<string, unknown>,
+    run: RunRow,
     agent: AgentRow,
     extra: Record<string, string>,
   ): Promise<void> {
@@ -1940,7 +1711,7 @@ export class GenerationLoop implements GroupRunner {
   async _run_steps(
     runId: string,
     generation: number,
-    run: Record<string, unknown>,
+    run: RunRow,
     snapshot: Record<string, unknown>,
     ctx: ReturnType<typeof createToolContext>,
     tools: unknown[],
@@ -2068,7 +1839,7 @@ export class GenerationLoop implements GroupRunner {
   async _handoff(
     runId: string,
     generation: number,
-    run: Record<string, unknown>,
+    run: RunRow,
     snapshot: Record<string, unknown>,
     tools: unknown[],
     maxInputTokens: number,
@@ -2152,7 +1923,7 @@ export class GenerationLoop implements GroupRunner {
     }
     let next: string;
     try {
-      next = await this._create_continuation(run, handoffText(completion.payload), position);
+      next = await this.runs.createContinuation(run, handoffText(completion.payload), position);
     } catch (error) {
       await this._fail(runId, generation, "generation.continue", error, extra);
       return;
@@ -2160,85 +1931,6 @@ export class GenerationLoop implements GroupRunner {
     await this.db.mergeRunMetadata(runId, { continued_by_run_id: next }, new Date());
     await this.db.completeRun(runId, new Date());
     this._continuations.set(runId, next);
-  }
-
-  /**
-   * The next run of a chain: same agent and kind, a freshly composed prompt, and one user
-   * message carrying the hand-off. A group continuation keeps the delivery's snapshot, a
-   * schedule continuation its routine.
-   */
-  async _create_continuation(
-    previous: Record<string, unknown>,
-    handoff: string,
-    position: { root_run_id: string; index: number },
-  ): Promise<string> {
-    const agentId = String(previous.agent_id);
-    const kind = runKind(previous);
-    const throughSeq =
-      previous.group_chat_through_seq === null || previous.group_chat_through_seq === undefined
-        ? null
-        : Number(previous.group_chat_through_seq);
-    const prepared = await this.preparation.prepare(agentId, kind === "group" ? throughSeq : null);
-    const runId = newId("r");
-    const now = new Date();
-    const opening = continuationMessage(String(previous.id), handoff);
-    const runMetadata: Record<string, unknown> = {
-      ...(preparedRunMetadata(prepared) ?? {}),
-      chain: { root_run_id: position.root_run_id, index: position.index + 1, previous_run_id: String(previous.id) },
-    };
-    const options = {
-      ...preparedPromptHashes(prepared),
-      runMetadata,
-    };
-    if (kind === "group") {
-      await this.db.createGroupRun(
-        {
-          runId,
-          agentId,
-          configSnapshot: preparedSnapshot(prepared, "group"),
-          systemContent: prepared.system,
-          taskContent: prepared.task,
-          projected: [opening],
-          throughSeq: throughSeq ?? 0,
-          ...options,
-        },
-        now,
-      );
-    } else if (kind === "schedule") {
-      const instruction = recordOf(previous.metadata).instruction_hash;
-      await this.db.createScheduleRun(
-        {
-          runId,
-          agentId,
-          configSnapshot: preparedSnapshot(prepared, "schedule"),
-          systemContent: prepared.system,
-          taskContent: prepared.task,
-          projected: [opening],
-          ...options,
-          runMetadata: {
-            ...runMetadata,
-            ...(typeof instruction === "string" ? { instruction_hash: instruction } : {}),
-          },
-          scheduleId: typeof previous.schedule_id === "string" ? previous.schedule_id : null,
-        },
-        now,
-      );
-    } else {
-      await this.db.createRun(
-        {
-          runId,
-          agentId,
-          configSnapshot: preparedSnapshot(prepared, "direct"),
-          systemContent: prepared.system,
-          taskContent: prepared.task,
-          userContent: null,
-          ...options,
-          extraMessages: [opening],
-        },
-        now,
-      );
-    }
-    return runId;
   }
 
   async _execute_tool_calls(
@@ -2462,25 +2154,6 @@ export class GenerationLoop implements GroupRunner {
     extra?: Record<string, string>,
   ): Promise<void> {
     await this.events.recordError({ runId, generation, log: extra ?? { run_id: runId } }, operation, error);
-  }
-
-  private async _scheduler_loop(signal: AbortSignal): Promise<void> {
-    while (!signal.aborted) {
-      await sleep(this._scheduler_tick_ms, signal);
-      if (signal.aborted) {
-        return;
-      }
-      try {
-        await this.fireDueSchedules();
-      } catch (error) {
-        writeLog(
-          "error",
-          "schedule tick failed",
-          { operation: "schedule.tick", error_type: errorName(error) },
-          error,
-        );
-      }
-    }
   }
 
   /**

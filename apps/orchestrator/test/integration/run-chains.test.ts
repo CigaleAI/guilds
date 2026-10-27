@@ -149,7 +149,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
       }
       return shellCall(`c${messages.length}`);
     });
-    const created = await loop.createRun(agentId, "start the task");
+    const created = await loop.runs.createRun(agentId, "start the task");
     const first = String(created.id);
     const continued: string[] = [];
     const queue = loop.events.subscribe(first);
@@ -206,7 +206,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
       }
       return shellCall(`c${messages.length}`);
     });
-    const third = String((await loop.createRun(agentId, "again")).id);
+    const third = String((await loop.runs.createRun(agentId, "again")).id);
     await loop.generations.task(third);
     const rowsC = await listMessages(db, third);
     const refused = rowsC.find((row) => (row.payload as Record<string, unknown>).tool_call_id === "c_handoff");
@@ -219,7 +219,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
 
     // The fifth run of a chain completes at the hand-off point instead of starting a sixth.
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
-    const fifth = String((await loop.createRun(agentId, null)).id);
+    const fifth = String((await loop.runs.createRun(agentId, null)).id);
     await mergeRunMetadata(db, fifth, { chain: { root_run_id: first, index: 5, previous_run_id: second } }, new Date());
     await loop.addMessage(fifth, "go on");
     await loop.generations.task(fifth);
@@ -268,7 +268,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     // A run without coding keeps the terminal cap.
     await updateAgentConfig(db, agentId, { ...config, coding: false, harness: null }, new Date(), {});
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
-    const plain = String((await loop.createRun(agentId, "plain")).id);
+    const plain = String((await loop.runs.createRun(agentId, "plain")).id);
     await loop.generations.task(plain);
     const runF = (await getRun(db, plain))!;
     assert.equal((runF.metadata as Record<string, unknown>).continued_by_run_id, undefined);

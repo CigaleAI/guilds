@@ -11,6 +11,7 @@ import {
 import { harnessEffortOf } from "../coding/harness-models.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
+import type { AgentRow } from "../db/agents.js";
 import { isPlainRecord } from "../db/json.js";
 import type { RunRow } from "../db/runs.js";
 import { promptHash } from "../prompts/index.js";
@@ -114,7 +115,7 @@ export function configSnapshot(
 
 /** A run about to be created: its agent, its config and access, and the prompts composed for it. */
 export type PreparedRun = {
-  agent: Record<string, unknown>;
+  agent: AgentRow;
   config: AgentConfig;
   access: RuntimeAccess;
   members: Array<Record<string, unknown>>;
