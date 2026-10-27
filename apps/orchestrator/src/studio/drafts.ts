@@ -31,13 +31,7 @@ import { excerptBytes } from "./system.js";
 import { getAgent, getAgentTask, listAgents } from "../db/agents.js";
 import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
-import {
-  getStudioDraft,
-  insertStudioDraft,
-  listStudioDraftHeads,
-  lockStudioDraft,
-  updateStudioDraft,
-} from "../db/studio.js";
+import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioSessionRow } from "../db/studio.js";
 import { listConversationMessages } from "../db/conversations.js";
 import type { UserRow } from "../db/users.js";
 
@@ -94,14 +88,14 @@ export class StudioDrafts implements StudioDraftService {
       if (session.generation_state !== "generating" && session.generation_state !== "idle") {
         throw new StudioConflictError("session cannot accept a draft");
       }
-      const heads = (await listStudioDraftHeads(this.db, String(session.id))).filter(
+      const heads = (await listStudioDraftHeads(this.db, session.id)).filter(
         (row) => row.target_agent_id === targetId && row.status === "draft",
       );
       const previous = heads[0] ?? null;
       if (previous) {
         await updateStudioDraft(client, String(previous.id), { status: "superseded", resolved_at: now });
       }
-      const seq = await nextConversationSeq(client, "studio", String(session.id));
+      const seq = await nextConversationSeq(client, "studio", session.id);
       const draft = await insertStudioDraft(
         client,
         {
@@ -154,7 +148,7 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   async revise(
-    session: Record<string, unknown>,
+    session: StudioSessionRow,
     user: UserRow,
     draftId: string,
     proposed: string,
@@ -164,7 +158,7 @@ export class StudioDrafts implements StudioDraftService {
       throw new StudioUnprocessableError("proposed_content exceeds the 256 KiB artifact write limit");
     }
     const now = new Date();
-    return withLockedSession(this.db, String(session.id), async (client) => {
+    return withLockedSession(this.db, session.id, async (client) => {
       const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
         throw new StudioError(404, "draft not found");
@@ -195,12 +189,12 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   async discard(
-    session: Record<string, unknown>,
+    session: StudioSessionRow,
     user: UserRow,
     draftId: string,
   ): Promise<Record<string, unknown>> {
     const now = new Date();
-    return withLockedSession(this.db, String(session.id), async (client) => {
+    return withLockedSession(this.db, session.id, async (client) => {
       const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
         throw new StudioError(404, "draft not found");
@@ -218,7 +212,7 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   async publish(args: {
-    session: Record<string, unknown>;
+    session: StudioSessionRow;
     user: UserRow;
     draftId: string;
     db: StudioToolContext["db"];
@@ -230,7 +224,7 @@ export class StudioDrafts implements StudioDraftService {
     const { session, user, draftId } = args;
     const now = new Date();
     const preflight = await this.preflight(args);
-    return withLockedSession(this.db, String(session.id), async (client) => {
+    return withLockedSession(this.db, session.id, async (client) => {
       const draft = await lockStudioDraft(client, draftId);
       if (!draft) {
         throw new StudioError(404, "draft not found");
@@ -254,12 +248,12 @@ export class StudioDrafts implements StudioDraftService {
         Object.assign(preflight, again);
       }
       const actor = this.artifacts.operatorContext(
-        String(session.org_id),
+        session.org_id,
         String(user.id ?? "orphan"),
         user.name,
         { guildId: String(draft.source_guild_id), agentId: String(draft.target_agent_id) },
       );
-      const live = await getAgentTask(client ?? args.db, String(session.org_id), String(draft.target_agent_id));
+      const live = await getAgentTask(client ?? args.db, session.org_id, String(draft.target_agent_id));
       if (!live) {
         throw new StudioUnprocessableError("task.md not found");
       }
@@ -309,7 +303,7 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   async preflight(args: {
-    session: Record<string, unknown>;
+    session: StudioSessionRow;
     draftId: string;
     db: StudioToolContext["db"];
     preview: StudioToolContext["preview"];

@@ -17,6 +17,7 @@ import { getMcpConnection, listMcpTools } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import type { StudioSessionRow } from "../db/studio.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";
 
@@ -110,7 +111,7 @@ export async function reachableConnection(
   return { connection, server };
 }
 
-export function grantedConnectionIds(session: Record<string, unknown>): string[] {
+export function grantedConnectionIds(session: StudioSessionRow): string[] {
   const raw = session.granted_connection_ids;
   return Array.isArray(raw) ? raw.map((id) => String(id)) : [];
 }

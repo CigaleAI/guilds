@@ -121,11 +121,6 @@
       "count": 2
     }
   },
-  "src/builder/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/builder/tools.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -322,7 +317,7 @@
   },
   "src/conversation/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 11
+      "count": 10
     },
     "complexity": {
       "count": 1
@@ -784,7 +779,7 @@
   },
   "src/studio/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 8
+      "count": 4
     },
     "complexity": {
       "count": 4
@@ -803,7 +798,7 @@
   },
   "src/studio/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
+      "count": 2
     }
   },
   "src/studio/state-data.ts": {

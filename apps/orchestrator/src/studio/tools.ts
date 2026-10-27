@@ -64,11 +64,11 @@ import { getRun, listMessages, listRunHeaders, routineRunStats } from "../db/run
 import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { getStudioSession } from "../db/studio.js";
+import { getStudioSession, type StudioSessionRow } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
 
 export type StudioToolContext = {
-  session: Record<string, unknown>;
+  session: StudioSessionRow;
   user: UserRow;
   orgId: string;
   sourceGuildId: string;
@@ -152,7 +152,7 @@ export async function resolveSourceGuildAgent(
   const normalized = normalizeAgentHandle(needle);
   const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
   const match =
-    live.find((row) => String(row.id) === needle || String(row.name).toLowerCase() === lower) ??
+    live.find((row) => row.id === needle || String(row.name).toLowerCase() === lower) ??
     live.find((row) => normalizeAgentHandle(String(row.name)) === normalized) ??
     null;
   // The roster query omits org and guild columns; projections need the full row.
@@ -417,17 +417,17 @@ export const studioListRoutines: StudioTool = {
       return Boolean(row.paused) === Boolean(args.paused);
     });
     const slice = filtered.slice(offset, offset + limit);
-    const stats = await routineRunStats(ctx.db, slice.map((row) => String(row.id)));
+    const stats = await routineRunStats(ctx.db, slice.map((row) => row.id));
     const routines = [];
     for (const row of slice) {
-      const mine = stats.get(String(row.id));
+      const mine = stats.get(row.id);
       routines.push({
         ...scheduleItem(row),
         run_count: mine?.count ?? 0,
         latest_run: mine ? runHeader(mine.latest) : null,
         instruction: wrapEvidence({
           source: "routine",
-          coordinates: { schedule_id: String(row.id) },
+          coordinates: { schedule_id: row.id },
           body: String(row.instruction ?? ""),
         }),
       });
@@ -1158,7 +1158,7 @@ export const studioListGuilds: StudioTool = {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(args.cursor);
     const others = (await listGuildsForUser(ctx.db, ctx.orgId, String(ctx.user.id))).filter(
-      (row) => String(row.id) !== String(ctx.sourceGuildId),
+      (row) => row.id !== String(ctx.sourceGuildId),
     );
     // A page ends at the limit or where the next guild would pass the byte cap.
     const guilds: Array<Record<string, unknown>> = [];
@@ -1166,11 +1166,11 @@ export const studioListGuilds: StudioTool = {
     for (const row of others.slice(offset, offset + limit)) {
       const item = {
         guild_id: row.id,
-        name: wrapEvidence({ source: "guild_name", coordinates: { guild_id: String(row.id) }, body: String(row.name ?? "") }),
-        about: wrapEvidence({ source: "guild_about", coordinates: { guild_id: String(row.id) }, body: String(row.about ?? "") }),
+        name: wrapEvidence({ source: "guild_name", coordinates: { guild_id: row.id }, body: String(row.name ?? "") }),
+        about: wrapEvidence({ source: "guild_about", coordinates: { guild_id: row.id }, body: String(row.about ?? "") }),
         description: wrapEvidence({
           source: "guild_description",
-          coordinates: { guild_id: String(row.id) },
+          coordinates: { guild_id: row.id },
           body: String(row.description ?? ""),
         }),
       };

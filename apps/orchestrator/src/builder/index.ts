@@ -1,11 +1,4 @@
-import {
-  getBuilderSession,
-  insertBuilderSession,
-  listBuilderSessions,
-  listGeneratingBuilderSessions,
-  lockBuilderSession,
-  updateBuilderSession,
-} from "../db/builder.js";
+import { getBuilderSession, insertBuilderSession, listBuilderSessions, listGeneratingBuilderSessions, lockBuilderSession, updateBuilderSession, type BuilderSessionRow } from "../db/builder.js";
 import {
   type ConversationMessageRow,
   type ConversationUsageRow,
@@ -101,7 +94,7 @@ export class BuilderService {
   }
 
   viewSession(
-    session: Record<string, unknown>,
+    session: BuilderSessionRow,
     recipe?: Record<string, unknown> | null,
   ): Record<string, unknown> {
     return {
@@ -122,12 +115,12 @@ export class BuilderService {
     sessionId: string,
     user: UserRow,
     org: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<BuilderSessionRow> {
     const session = await getBuilderSession(this.deps.db, sessionId);
-    if (!session || String(session.org_id) !== String(org.id)) {
+    if (!session || session.org_id !== String(org.id)) {
       throw new BuilderError(404, "builder session not found");
     }
-    if (session.created_by_user_id && String(session.created_by_user_id) !== user.id) {
+    if (session.created_by_user_id && session.created_by_user_id !== user.id) {
       throw new BuilderError(404, "builder session not found");
     }
     return session;
@@ -243,7 +236,7 @@ export class BuilderService {
     return this.viewSession(session, recipe);
   }
 
-  async recipeFor(session: Record<string, unknown>): Promise<RecipeRow> {
+  async recipeFor(session: BuilderSessionRow): Promise<RecipeRow> {
     const recipe = await getRecipe(this.deps.db, String(session.recipe_id));
     if (!recipe) {
       throw new BuilderError(404, "recipe not found");
@@ -251,21 +244,21 @@ export class BuilderService {
     return recipe;
   }
 
-  toolContext(session: Record<string, unknown>): BuilderToolContext {
+  toolContext(session: BuilderSessionRow): BuilderToolContext {
     return {
-      orgId: String(session.org_id),
+      orgId: session.org_id,
       capabilities: this.deps.capabilities,
       db: connectedDatabase(this.deps.db),
       mcp: this.deps.mcp ?? null,
       recipeId: String(session.recipe_id),
       connection: this.deps.db,
-      coachModel: String((session.config_snapshot as Record<string, unknown> | null)?.model ?? ""),
-      validationContext: () => this.deps.apply.validationContext(String(session.org_id)),
+      coachModel: String(session.config_snapshot.model ?? ""),
+      validationContext: () => this.deps.apply.validationContext(session.org_id),
     };
   }
 
   async postMessage(
-    session: Record<string, unknown>,
+    session: BuilderSessionRow,
     user: UserRow,
     content: string,
   ): Promise<Record<string, unknown>> {
@@ -276,7 +269,7 @@ export class BuilderService {
       throw new BuilderConflictError("session cannot generate");
     }
     const started = await withTransaction(this.deps.db, async (client) => {
-      const locked = await lockBuilderSession(client, String(session.id));
+      const locked = await lockBuilderSession(client, session.id);
       if (!locked) {
         throw new BuilderError(404, "builder session not found");
       }
@@ -284,11 +277,11 @@ export class BuilderService {
         throw new BuilderConflictError("builder session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, coachRunClaims(client), String(locked.org_id), now);
+      await claimCoachRun(this.policy, coachRunClaims(client), locked.org_id, now);
       const recipe = await getRecipe(client, String(locked.recipe_id));
       const parsed = parseRecipe(recipe?.body);
       const expectedBodyVersion = Number(recipe?.body_version ?? 1);
-      const config = (locked.config_snapshot ?? {}) as Record<string, unknown>;
+      const config = locked.config_snapshot;
       const system = composeBuilderSystemMessage({
         config,
         recipe: parsed,
@@ -335,10 +328,10 @@ export class BuilderService {
         userMessage,
       };
     });
-    await this.runner.publish(String(started.session.id), "message.committed", {
+    await this.runner.publish(started.session.id, "message.committed", {
       message: started.userMessage,
     });
-    const limits = (await this.policy.standing(String(started.session.org_id))).limits.coach
+    const limits = (await this.policy.standing(started.session.org_id)).limits.coach
       .builder;
     this.runner.start({
       session: started.session,
@@ -359,15 +352,15 @@ export class BuilderService {
     return this.viewSession(started.session, await this.recipeFor(started.session));
   }
 
-  async cancel(session: Record<string, unknown>): Promise<Record<string, unknown>> {
-    await updateBuilderSession(this.deps.db, String(session.id), { generation_state: "cancelling" }, new Date());
-    this.runner.cancel(String(session.id));
+  async cancel(session: BuilderSessionRow): Promise<Record<string, unknown>> {
+    await updateBuilderSession(this.deps.db, session.id, { generation_state: "cancelling" }, new Date());
+    this.runner.cancel(session.id);
     return this.viewSession({ ...session, generation_state: "cancelling" });
   }
 
   /** The session's conversation, in order. */
-  messages(session: Record<string, unknown>): Promise<ConversationMessageRow[]> {
-    return listConversationMessages(this.deps.db, "builder", String(session.id));
+  messages(session: BuilderSessionRow): Promise<ConversationMessageRow[]> {
+    return listConversationMessages(this.deps.db, "builder", session.id);
   }
 
   /** What Builder sessions spent, per organisation. */
@@ -384,7 +377,7 @@ export class BuilderService {
   }
 
   async writeRecipe(
-    session: Record<string, unknown>,
+    session: BuilderSessionRow,
     expectedVersion: number,
     body: unknown,
   ): Promise<Record<string, unknown>> {
@@ -398,7 +391,7 @@ export class BuilderService {
   }
 
   async reviewField(
-    session: Record<string, unknown>,
+    session: BuilderSessionRow,
     path: string,
     action: "confirm" | "edit",
     value?: string,
@@ -410,7 +403,7 @@ export class BuilderService {
   }
 
   async editAccess(
-    session: Record<string, unknown>,
+    session: BuilderSessionRow,
     input: unknown,
   ): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
@@ -420,10 +413,10 @@ export class BuilderService {
     return { ...written, access_cuts: cuts };
   }
 
-  async validate(session: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async validate(session: BuilderSessionRow): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
-    const ctx = await this.deps.apply.validationContext(String(session.org_id));
+    const ctx = await this.deps.apply.validationContext(session.org_id);
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const findings = validateRecipe(recipe, ctx);
     return {
@@ -436,14 +429,14 @@ export class BuilderService {
     };
   }
 
-  async publish(session: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async publish(session: BuilderSessionRow): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
     let current = row;
     if (assignGuildLooks(recipe.roles)) {
       current = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
     }
-    const ctx = await this.deps.apply.validationContext(String(session.org_id));
+    const ctx = await this.deps.apply.validationContext(session.org_id);
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const errors = blockingErrors(validateRecipe(recipe, ctx));
     if (errors.length) {
@@ -453,7 +446,7 @@ export class BuilderService {
   }
 
   async deploy(
-    session: Record<string, unknown>,
+    session: BuilderSessionRow,
     org: Record<string, unknown>,
     user: UserRow,
     choices: ApplyChoices = {},

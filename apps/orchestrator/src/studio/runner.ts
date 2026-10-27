@@ -19,6 +19,7 @@ import type { ModelCredentialsProvider } from "../llm/credentials.js";
 import type { Queryable } from "../db/pg.js";
 import { studioToolMap, type StudioTool, type StudioToolContext } from "./tools.js";
 import type { UserRow } from "../db/users.js";
+import type { StudioSessionRow } from "../db/studio.js";
 
 export { generationLive };
 
@@ -84,14 +85,14 @@ export class StudioRunner {
   }
 
   start(args: {
-    session: Record<string, unknown>;
+    session: StudioSessionRow;
     user: UserRow;
     toolContext: Omit<StudioToolContext, "generation">;
     generation: number;
     generationContext: string;
     systemContent?: string;
   }): void {
-    const config = (args.session.config_snapshot ?? {}) as Record<string, unknown>;
+    const config = args.session.config_snapshot;
     this.inner.start({
       session: args.session,
       user: args.user,
@@ -114,7 +115,7 @@ export class StudioRunner {
     });
   }
 
-  async reconcile(session: Record<string, unknown>): Promise<void> {
+  async reconcile(session: StudioSessionRow): Promise<void> {
     await this.inner.reconcile(session);
   }
 }

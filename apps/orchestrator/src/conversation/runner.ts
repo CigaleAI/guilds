@@ -38,6 +38,8 @@ import {
 } from "./projection.js";
 import { writeLog } from "../observability/log.js";
 import type { UserRow } from "../db/users.js";
+import type { StudioSessionRow } from "../db/studio.js";
+import type { BuilderSessionRow } from "../db/builder.js";
 
 export const generationLive = {
   streamCompletion,
@@ -122,7 +124,7 @@ export class ConversationRunner {
   }
 
   start(args: {
-    session: Record<string, unknown>;
+    session: StudioSessionRow | BuilderSessionRow;
     user: UserRow;
     generation: number;
     generationContext: string;
@@ -136,7 +138,7 @@ export class ConversationRunner {
     maxInput: number;
     minUnstubbed?: number;
   }): void {
-    const sessionId = String(args.session.id);
+    const sessionId = args.session.id;
     const task = this.run(args).finally(() => {
       if (this.tasks.get(sessionId) === task) {
         this.tasks.delete(sessionId);
@@ -145,16 +147,16 @@ export class ConversationRunner {
     this.tasks.set(sessionId, task);
   }
 
-  async reconcile(session: Record<string, unknown>): Promise<void> {
+  async reconcile(session: StudioSessionRow | BuilderSessionRow): Promise<void> {
     if (session.generation_state !== "generating" && session.generation_state !== "cancelling") {
       return;
     }
-    await this.repair(String(session.id), Number(session.generation_number || 1), "execution interrupted");
-    await updateConversationSession(this.deps.db, this.session(String(session.id)), { generation_state: "idle", generation_token: null }, new Date());
+    await this.repair(session.id, Number(session.generation_number || 1), "execution interrupted");
+    await updateConversationSession(this.deps.db, this.session(session.id), { generation_state: "idle", generation_token: null }, new Date());
   }
 
   private async run(args: {
-    session: Record<string, unknown>;
+    session: StudioSessionRow | BuilderSessionRow;
     user: UserRow;
     generation: number;
     generationContext: string;
@@ -168,15 +170,15 @@ export class ConversationRunner {
     maxInput: number;
     minUnstubbed?: number;
   }): Promise<void> {
-    const sessionId = String(args.session.id);
-    const orgId = String(args.session.org_id);
+    const sessionId = args.session.id;
+    const orgId = args.session.org_id;
     const cancel = new CancelEvent();
     this.cancels.set(sessionId, cancel);
     await this.publish(sessionId, "generation.started", {
       session_id: sessionId,
       generation: args.generation,
     });
-    const config = (args.session.config_snapshot ?? {}) as Record<string, unknown>;
+    const config = args.session.config_snapshot;
     const model = String(config.model ?? "");
     const temperature = Number(config.temperature ?? 0.2);
     const maxTokens = args.maxTokens;

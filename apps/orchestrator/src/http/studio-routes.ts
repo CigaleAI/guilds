@@ -18,6 +18,7 @@ import { bodyOf, param, queryOf } from "./request.js";
 import { isOrgManager } from "../organisations/service.js";
 import { listAgentRoutines, listAgentRunHeaders, readGuildRun, type InspectorServices } from "../studio/inspector.js";
 import type { UserRow } from "../db/users.js";
+import type { StudioSessionRow } from "../db/studio.js";
 
 
 function studioOf(deps: AppDeps): StudioService {
@@ -87,7 +88,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.archive(session);
     } catch (error) {
@@ -99,7 +100,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return { connections: await studio.listConnections(session) };
     } catch (error) {
@@ -112,7 +113,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.setConnectionGrant(session, param(request, "connection_id"), body.granted !== false);
     } catch (error) {
@@ -128,7 +129,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(422, "decision must be grant or decline");
     }
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.resolveLogin(session, user, Number(param(request, "seq")), body.decision);
     } catch (error) {
@@ -140,7 +141,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.getEdit(session, user, Number(param(request, "seq")));
     } catch (error) {
@@ -156,7 +157,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(422, "decision must be apply or decline");
     }
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.resolveEdit(session, user, Number(param(request, "seq")), body.decision);
     } catch (error) {
@@ -170,7 +171,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     const agentId = body.agent_id === null || body.agent_id === undefined ? null : String(body.agent_id);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.setTarget(session, agentId);
     } catch (error) {
@@ -181,7 +182,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/studio/guilds/:guild_id/inventory", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    const studio = studioOf(deps);
+    const studio: StudioService = studioOf(deps);
     const rows = await studio.guildInventory(String(guild.id));
     return rows.map((row) => studio.inventoryItem(row));
   });
@@ -190,7 +191,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.inventory(session);
     } catch (error) {
@@ -202,7 +203,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.inspector(session, user, param(request, "agent_id"));
     } catch (error) {
@@ -214,7 +215,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.messages(session);
     } catch (error) {
@@ -227,7 +228,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.postMessage(session, user, String(body.content ?? ""), body.focus);
     } catch (error) {
@@ -239,7 +240,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.cancel(session);
     } catch (error) {
@@ -251,7 +252,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.continueSession(session, user, org);
     } catch (error) {
@@ -262,10 +263,10 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/studio/sessions/:session_id/stream", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    const studio = studioOf(deps);
+    const studio: StudioService = studioOf(deps);
     try {
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
-      const sessionId = String(session.id);
+      const sessionId = session.id;
       await pipeSse(
         request,
         reply,
@@ -281,7 +282,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return (await studio.sessionDrafts(session)).map(viewDraft);
     } catch (error) {
@@ -357,7 +358,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const agent = await studio.requireGuildAgent(session, param(request, "agent_id"));
@@ -377,12 +378,12 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const now = new Date();
       const window = activityWindow(request.query as { hours?: unknown; until?: unknown }, now);
-      return await loadGuildActivity(db, String(session.source_guild_id), {
+      return await loadGuildActivity(db, session.source_guild_id, {
         ...window,
         now,
         generating: (runId) => (deps.generation ? deps.generation.isGenerating(runId) : false),
@@ -397,11 +398,11 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
   const stateScope = async (request: FastifyRequest) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    const studio = studioOf(deps);
+    const studio: StudioService = studioOf(deps);
     const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
     studio.assertLive(session);
-    const guildId = String(session.source_guild_id);
-    const actor = await loadOperatorActor(db, user, { orgId: String(session.org_id), guildId });
+    const guildId = session.source_guild_id;
+    const actor = await loadOperatorActor(db, user, { orgId: session.org_id, guildId });
     return { actor, guildId, deps: { db, artifacts: studio.deps.artifacts } };
   };
 
@@ -443,11 +444,11 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const window = activityWindow(request.query as { hours?: unknown }, new Date());
-      return await loadGuildTools({ db, preview: studio.previewDeps() }, String(session.source_guild_id), window);
+      return await loadGuildTools({ db, preview: studio.previewDeps() }, session.source_guild_id, window);
     } catch (error) {
       mapStudioError(error);
     }
@@ -458,10 +459,10 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     const query = request.query as { hours?: unknown; errors?: unknown; cursor?: unknown };
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
-      return await loadToolCalls(db, String(session.source_guild_id), {
+      return await loadToolCalls(db, session.source_guild_id, {
         tool: param(request, "name"),
         window: activityWindow({ hours: query.hours }, new Date()),
         query: {
@@ -478,11 +479,11 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
-      const guildId = String(session.source_guild_id);
-      const actor = await loadOperatorActor(db, user, { orgId: String(session.org_id), guildId });
+      const guildId = session.source_guild_id;
+      const actor = await loadOperatorActor(db, user, { orgId: session.org_id, guildId });
       return await loadGuildReferences({ db, artifacts: studio.deps.artifacts }, actor, guildId);
     } catch (error) {
       mapStudioError(error);
@@ -493,10 +494,10 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
-      return await readGuildRun(inspector, String(session.source_guild_id), param(request, "run_id"));
+      return await readGuildRun(inspector, session.source_guild_id, param(request, "run_id"));
     } catch (error) {
       mapStudioError(error);
     }
@@ -506,7 +507,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const agent = await studio.requireGuildAgent(session, param(request, "agent_id"));
@@ -520,7 +521,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     try {
-      const studio = studioOf(deps);
+      const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       return await studio.memoryTimeline(session, user, param(request, "agent_id"));
     } catch (error) {
@@ -544,8 +545,8 @@ async function loadDraftContext(
   user: UserRow,
   org: Record<string, unknown>,
   draftId: string,
-): Promise<{ session: Record<string, unknown>; draft: Record<string, unknown>; user: UserRow; orphan: boolean }> {
-  const studio = studioOf(deps);
+): Promise<{ session: StudioSessionRow; draft: Record<string, unknown>; user: UserRow; orphan: boolean }> {
+  const studio: StudioService = studioOf(deps);
   const found = await studio.orgDraft(String(org.id), draftId);
   if (!found) {
     throw new HttpError(404, "draft not found");
@@ -554,7 +555,7 @@ async function loadDraftContext(
   if (!session) {
     throw new HttpError(404, "studio session not found");
   }
-  if (session.created_by_user_id && String(session.created_by_user_id) === user.id) {
+  if (session.created_by_user_id && session.created_by_user_id === user.id) {
     return { session, draft, user, orphan: false };
   }
   if (!session.created_by_user_id) {

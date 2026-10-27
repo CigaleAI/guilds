@@ -287,7 +287,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     const liveTask = await getAgentTask(db, "org_home", "a_studio");
     const createdDraft = await studio.drafts.createFromTool(
       {
-        session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
+        session: (await getStudioSession(db, session.id))!,
         user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
@@ -328,7 +328,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
 
     const second = await studio.drafts.createFromTool(
       {
-        session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
+        session: (await getStudioSession(db, session.id))!,
         user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
@@ -506,7 +506,7 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.deepEqual(session.granted_connection_ids, []);
 
     const toolContext = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id))!,
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_access",
@@ -872,8 +872,9 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal(latestMap[sharedPath]?.actor.type, "user");
 
     // Focus pins: each kind inserts an evidence row before the question; foreign ids are refused.
+    const evidenceSession = (await getStudioSession(db, session.id))!;
     const toolCtx = (): StudioToolContext => ({
-      session: { id: session.id, org_id: "org_home", source_guild_id: "guild_ev" },
+      session: evidenceSession,
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_ev",
@@ -885,7 +886,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
     });
-    const sessionRow = () => getStudioSession(db, session.id) as Promise<Record<string, unknown>>;
+    const sessionRow = async () => (await getStudioSession(db, session.id))!;
     const issue = await insertIssue(db,
       {
         issueId: "iss_ev",
@@ -1102,7 +1103,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id))!,
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_ed",
@@ -1321,7 +1322,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id))!,
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_tb",
@@ -1662,7 +1663,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id))!,
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_nw",
@@ -1920,7 +1921,7 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id))!,
       user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_rt",
