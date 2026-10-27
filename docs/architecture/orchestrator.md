@@ -226,7 +226,7 @@ and exits 1.
 flowchart TD
   UI["React app"] --> API["/api/*"]
   API --> ID["identity: cookie / trusted-header / an extension's provider"]
-  ID --> R["http/routes.ts and siblings"]
+  ID --> R["http/*-routes.ts, one per domain"]
   R --> CRUD["guilds / agents / artifacts / secrets / MCP"]
   R --> Run["POST /api/agents/:agent_id/runs"]
   R --> Group["POST .../group-chat/messages"]
@@ -245,6 +245,11 @@ CRUD writes PostgreSQL and returns JSON. Runs go through
 `GenerationLoop`. The UI follows on `GET /api/runs/:id/stream`
 (SSE). Studio and Builder use the shared conversation runner and
 their own streams.
+
+A route reads the request, calls its domain, and writes the reply.
+A domain refuses a request with a named error that carries the HTTP
+status it answers with, or with a validation error, which is a 422.
+`domainHttp` in `http/errors.ts` turns either into the reply.
 
 ## Generation
 

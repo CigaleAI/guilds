@@ -469,6 +469,8 @@ The name may be reused.
 - `apps/orchestrator/src/agents/validation.ts`: configuration keys,
   defaults, and name, focus, and avatar rules
 - `apps/orchestrator/src/agents/persist.ts`: create
-- `apps/orchestrator/src/http/routes.ts`: agent routes
+- `apps/orchestrator/src/agents/service.ts`: create, configure, move,
+  and delete
+- `apps/orchestrator/src/http/agent-routes.ts`: agent routes
 - `apps/web/src/features/agent/`: the create dialog, inspector, and
   Settings

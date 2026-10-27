@@ -292,7 +292,9 @@ that has a tag there ([Inbox and issues](inbox.md)).
 - `apps/orchestrator/src/generation/`: `deliverGroupRun`, the busy
   lock
 - `apps/orchestrator/src/toolbox/group.ts`: `group_post`
-- HTTP in `apps/orchestrator/src/http/routes.ts`
+- `apps/orchestrator/src/groupchat/operator.ts`: what an operator
+  reads and posts
+- HTTP in `apps/orchestrator/src/http/group-chat-routes.ts`
 
 ### Public message
 

@@ -544,7 +544,7 @@ PUT    /api/collections/:id/access               { subjects: [{ type, id, mode }
   removal record no file change
   ([Artifact store](artifacts.md#file-provenance)).
 
-Code: `apps/orchestrator/src/http/routes.ts`,
+Code: `apps/orchestrator/src/http/collection-routes.ts`,
 `apps/orchestrator/src/artifacts/collection-views.ts`,
 `apps/orchestrator/src/artifacts/search.ts`,
 `apps/orchestrator/src/toolbox/artifacts.ts`.
