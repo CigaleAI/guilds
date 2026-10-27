@@ -11,7 +11,8 @@ import {
 } from "../secrets/service.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param, queryOf } from "./request.js";
 
 /** An organisation's secrets: listed, created, changed, granted, and deleted by its members. */

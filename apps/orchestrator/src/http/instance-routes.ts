@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import type { AppDeps } from "./deps.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 
 /** What this box is, for whoever reaches it. */

@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { removeBinding, setBinding, type BindingRequest } from "../access/operator.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, queryOf } from "./request.js";
 
 /** Bindings: a tool or connector turned on or off at a scope, with the login a connector uses there. */

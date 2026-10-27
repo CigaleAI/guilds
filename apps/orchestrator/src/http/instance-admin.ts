@@ -1,7 +1,8 @@
 import { ownsSeedOrg } from "../organisations/service.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser, identityDatabase, type IdentityRequest } from "./identity.js";
+import { currentUser, type IdentityRequest } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 
 /** Decides whether a user may administer the instance, in place of core's rule. */
 export type InstanceAdmin = (userId: string) => Promise<boolean>;

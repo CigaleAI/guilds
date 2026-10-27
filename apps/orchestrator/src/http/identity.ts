@@ -4,9 +4,7 @@ import { USER_COOKIE, USER_HEADER, resolveUser } from "../users/index.js";
 import type { AppDeps } from "./deps.js";
 import { requestCookies } from "./cookies.js";
 import { HttpError } from "./errors.js";
-import { getUserByEmail, listUsers } from "../db/users.js";
-import { listOrgsForUser } from "../db/orgs.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import type { IdentityDatabase } from "../users/identity.js";
 
 export type IdentityRequest = {
   headers: IncomingHttpHeaders;
@@ -33,17 +31,6 @@ function headerOrCookie(request: IdentityRequest, headerName: string, cookieName
   }
   return requestCookies(request)[cookieName] ?? null;
 }
-
-/** The db/ functions core's sign-in modes resolve a request's user and organisation through, on `db`. */
-export function identityDatabase(db: Queryable) {
-  return {
-    listUsers: bindQuery(db, listUsers),
-    listOrgsForUser: bindQuery(db, listOrgsForUser),
-    getUserByEmail: bindQuery(db, getUserByEmail),
-  };
-}
-
-export type IdentityDatabase = ReturnType<typeof identityDatabase>;
 
 export async function currentUser(
   db: IdentityDatabase,

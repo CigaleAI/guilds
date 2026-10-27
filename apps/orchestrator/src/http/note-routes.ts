@@ -18,7 +18,8 @@ import {
 } from "../notes/operator.js";
 import type { RouteDeps } from "./deps.js";
 import { notesRead, notesWrite } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, filePathParam, param, queryOf } from "./request.js";
 
 /** The paths a comma-separated query value or a JSON array in a body lists. */

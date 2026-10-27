@@ -42,7 +42,8 @@ import { newId } from "../lib/ids.js";
 import { markDisconnected, mcpDatabase } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { agentConfigObject } from "../agents/view.js";
 import { bodyOf, param } from "./request.js";
 import {

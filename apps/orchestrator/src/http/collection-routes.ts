@@ -16,7 +16,8 @@ import {
 } from "../artifacts/collection-views.js";
 import type { RouteDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param, queryOf } from "./request.js";
 
 /** Collections live at the organisation: the Tables page builds them and browses their records. */

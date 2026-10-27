@@ -11,11 +11,14 @@ import type { Queryable } from "../db/pg.js";
 /** A write the store refuses: an env-sourced integration, a missing required field, a field the integration lacks. */
 export class InstanceKeyError extends Error {
   status: number;
+  /** What the refusal answers with, when it says more than its message. */
+  detail: Record<string, unknown> | undefined;
 
-  constructor(message: string, status = 400) {
+  constructor(message: string, status = 400, detail?: Record<string, unknown>) {
     super(message);
     this.name = "InstanceKeyError";
     this.status = status;
+    this.detail = detail;
   }
 }
 

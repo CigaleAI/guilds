@@ -422,9 +422,6 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     }
@@ -451,19 +448,10 @@
   "src/http/identity.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 5
-    },
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 3
     }
   },
   "src/http/me-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 2
-    },
-    "complexity": {
       "count": 1
     }
   },

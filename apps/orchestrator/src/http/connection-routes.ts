@@ -13,7 +13,8 @@ import {
   type ConnectionServices,
 } from "../mcp/connections.js";
 import type { AppDeps } from "./deps.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param, queryOf } from "./request.js";
 
 /** The connectors an organisation sees, and its members' logins to them: read, used, set up, and removed. */

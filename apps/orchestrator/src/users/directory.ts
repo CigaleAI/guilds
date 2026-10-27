@@ -1,16 +1,32 @@
-import { LastOrgOwner } from "../db/errors.js";
+import { GuildNameTaken, LastOrgOwner } from "../db/errors.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
-import { deleteUser, getUser, insertUser, listUsers, setUserEmail } from "../db/users.js";
+import {
+  deleteUser,
+  getUser,
+  insertUser,
+  listUsers,
+  setUserEmail,
+  updateUserProfile,
+  type UserProfilePatch,
+  type UserRow,
+} from "../db/users.js";
 import { assertNotSoleGuildAdmin } from "../guilds/operators.js";
 import { newId } from "../lib/ids.js";
-import { SEED_USER_IDS, userItem, validateUserEmail, validateUserName } from "./index.js";
+import { validateTimezone } from "../schedules/window.js";
+import {
+  SEED_USER_IDS,
+  userItem,
+  validateUserColor,
+  validateUserEmail,
+  validateUserName,
+} from "./index.js";
 
 /** A change to the user directory refused, with the HTTP status it answers with. */
 export class UserError extends Error {
-  status: 400 | 404 | 409;
+  status: 400 | 404 | 409 | 422;
 
-  constructor(status: 400 | 404 | 409, message: string) {
+  constructor(status: 400 | 404 | 409 | 422, message: string) {
     super(message);
     this.name = "UserError";
     this.status = status;
@@ -97,4 +113,44 @@ export async function removeUser(db: Queryable, userId: string): Promise<void> {
   if (deleted === null) {
     throw new UserError(404, "user not found");
   }
+}
+
+/** A user's change to their own profile, before validation; an absent field stays as it is. */
+export type ProfileChange = { name?: unknown; timezone?: unknown; color?: unknown };
+
+/** The profile patch a change asks for, each present field validated; a null timezone or color clears it. */
+function validateProfile(change: ProfileChange): UserProfilePatch {
+  return {
+    ...("name" in change ? { name: validateUserName(String(change.name ?? "").trim()) } : {}),
+    ...("color" in change ? { color: validateUserColor(change.color) } : {}),
+    ...("timezone" in change
+      ? { timezone: change.timezone === null ? null : validateTimezone(change.timezone) }
+      : {}),
+  };
+}
+
+/**
+ * Changes the user's own name, timezone, or color. A name is unique, and is no agent's name in a
+ * guild the user operates.
+ */
+export async function changeOwnProfile(db: Queryable, userId: string, change: ProfileChange): Promise<UserRow> {
+  if (!("name" in change) && !("timezone" in change) && !("color" in change)) {
+    throw new UserError(422, "name, timezone, or color is required");
+  }
+  const profile = validateProfile(change);
+  let row;
+  try {
+    row = await updateUserProfile(db, userId, profile, new Date());
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new UserError(409, "that name is taken");
+    }
+    throw error instanceof GuildNameTaken
+      ? new UserError(409, `${String(profile.name)} is already an agent in a guild you operate`)
+      : error;
+  }
+  if (row === null) {
+    throw new UserError(404, "user not found");
+  }
+  return row;
 }

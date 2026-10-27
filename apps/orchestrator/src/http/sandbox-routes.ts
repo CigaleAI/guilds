@@ -4,7 +4,8 @@ import { requireVisibleAgent } from "../agents/access.js";
 import { RunRequestError } from "../generation/index.js";
 import { generationLoopOf } from "../generation/operator.js";
 import type { AppDeps } from "./deps.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { filePathParam, param } from "./request.js";
 import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 

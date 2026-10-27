@@ -4,7 +4,8 @@ import { loadOperatorActor } from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import type { RouteDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 
 /** The items whose access lists the same routes read and replace. */

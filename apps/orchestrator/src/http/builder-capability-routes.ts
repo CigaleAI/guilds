@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { CapabilityService } from "../capabilities/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { param } from "./request.js";
 
 function queryString(request: FastifyRequest, name: string): string {

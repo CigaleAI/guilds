@@ -3,7 +3,8 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import { Issues, issuesDatabase } from "../issues/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param, queryOf } from "./request.js";
 

@@ -20,7 +20,8 @@ import {
 import { cookieSecure, requestCookies } from "./cookies.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, queryOf } from "./request.js";
 
 function sendPage(reply: FastifyReply, page: CallbackPage): FastifyReply {

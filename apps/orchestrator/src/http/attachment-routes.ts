@@ -9,7 +9,8 @@ import {
 } from "../attachments/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { param } from "./request.js";
 
 /** Chat images: uploaded by an organisation's members and served back to them. */

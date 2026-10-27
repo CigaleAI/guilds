@@ -13,7 +13,8 @@ import {
 import { OPEN_POLICY } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields, notesWrite } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { guildItem } from "../guilds/view.js";
 import { bodyOf, param } from "./request.js";
 

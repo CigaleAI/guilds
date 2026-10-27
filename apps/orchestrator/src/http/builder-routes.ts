@@ -5,7 +5,8 @@ import { PolicyError } from "../policy/index.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError, recipeConflictHttp } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { bodyOf, param } from "./request.js";
 

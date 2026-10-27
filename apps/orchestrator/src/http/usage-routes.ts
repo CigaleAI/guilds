@@ -3,7 +3,8 @@ import { requireVisibleAgent } from "../agents/access.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { usageForAgent, usageForGuild, usageForOrg, type UsageServices } from "../usage/view.js";
 import type { AppDeps } from "./deps.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { param } from "./request.js";
 
 /** What the request's organisation, a guild and an agent spent. */

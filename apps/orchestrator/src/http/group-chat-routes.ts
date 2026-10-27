@@ -10,7 +10,8 @@ import {
 import type { Notifications } from "../notifications/index.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 import { pipeSse } from "./sse.js";
 

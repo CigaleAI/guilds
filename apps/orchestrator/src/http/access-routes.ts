@@ -5,7 +5,8 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import { mcpDatabase } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { param } from "./request.js";
 

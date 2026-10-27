@@ -29,7 +29,8 @@ import type { AppDeps } from "./deps.js";
 import { pickEntry, RegistryError } from "../registry/index.js";
 import { latestEntries, registryHttp, registryOf } from "./admin-registry-routes.js";
 import { HttpError, recipeConflictHttp } from "./errors.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 
 function mapError(error: unknown): never {

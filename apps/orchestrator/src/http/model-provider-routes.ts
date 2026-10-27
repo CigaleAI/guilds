@@ -5,7 +5,8 @@ import { isProvider } from "../llm/providers.js";
 import { requireMembership, requireOrgManager } from "../organisations/service.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 
 async function requireMember(deps: AppDeps, request: FastifyRequest, orgId: string): Promise<void> {

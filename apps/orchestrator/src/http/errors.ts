@@ -12,6 +12,7 @@ import { GuildError } from "../guilds/errors.js";
 import { GuildValidationError } from "../guilds/validation.js";
 import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
+import { InstanceKeyError } from "../instance/keys.js";
 import { MachineError } from "../machines/index.js";
 import { CatalogError } from "../mcp/catalog.js";
 import { OperatorCallError } from "../mcp/operator-call.js";
@@ -133,6 +134,7 @@ const REFUSALS = [
   ConnectError,
   OperatorCallError,
   CatalogError,
+  InstanceKeyError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
@@ -147,16 +149,14 @@ const INVALID = [
 ] as const;
 
 /**
- * The HTTP answer for a refusal a domain module raises: one with its own status, or a value its
- * validator refused. Any other error is null.
+ * The HTTP answer for a refusal a domain module raises: one with its own status, answered with its
+ * detail when it carries one, or a value its validator refused. Any other error is null.
  */
 export function domainHttp(error: unknown): HttpError | null {
   for (const kind of REFUSALS) {
     if (error instanceof kind) {
-      return new HttpError(
-        error.status,
-        error instanceof ConnectionError ? error.detail : error.message,
-      );
+      const detail = "detail" in error && error.detail !== undefined ? error.detail : error.message;
+      return new HttpError(error.status, detail);
     }
   }
   for (const kind of INVALID) {

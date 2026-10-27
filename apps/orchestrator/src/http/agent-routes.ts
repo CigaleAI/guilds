@@ -17,7 +17,8 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import { OPEN_POLICY } from "../policy/index.js";
 import type { RouteDeps } from "./deps.js";
 import { missingBodyFields, notesWrite } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 
 /** A guild's agents: listed, created, configured, moved between machines, and deleted. */

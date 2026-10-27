@@ -6,7 +6,8 @@ import { scheduleItem } from "../schedules/item.js";
 import { scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
-import { currentUser, identityDatabase } from "./identity.js";
+import { currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param } from "./request.js";
 

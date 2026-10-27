@@ -2,7 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { changeUserEmail, createUser, listDirectoryUsers, removeUser } from "../users/directory.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError, missingBodyFields } from "./errors.js";
-import { currentUser, identityDatabase, type IdentityRequest } from "./identity.js";
+import { currentUser, type IdentityRequest } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { bodyOf, param } from "./request.js";
 

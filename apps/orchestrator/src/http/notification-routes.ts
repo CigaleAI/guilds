@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type { Notifications } from "../notifications/index.js";
 import type { AppDeps } from "./deps.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentOrg, currentUser } from "./identity.js";
+import { identityDatabase } from "../users/identity.js";
 import { pipeSse } from "./sse.js";
 
 /** The request's inbox in its organisation: open issues, mentions and unread group chats. */
