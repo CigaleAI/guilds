@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { requireVisibleGuild } from "../guilds/access.js";
+import { requireVisibleAgent, requireVisibleRun } from "../agents/access.js";
 import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import {
   HARNESSES,
@@ -41,7 +43,7 @@ import { markDisconnected, mcpDatabase } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser, identityDatabase } from "./identity.js";
-import { agentConfigObject, ownedAgent, ownedGuild, ownedRun } from "./items.js";
+import { agentConfigObject } from "./items.js";
 import { bodyOf, param } from "./request.js";
 import {
   getMcpConnection,
@@ -170,7 +172,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/repositories", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const visible = await listGuildsForUser(db, String(guild.org_id), String(user.id));
     const connections = await listVisibleGithubConnections(db,
       GITHUB_SERVER_ID,
@@ -185,7 +187,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/guilds/:guild_id/repositories", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     let input;
     try {
       input = validateRepositoryInput(bodyOf(request));
@@ -261,7 +263,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/guilds/:guild_id/repositories/:repository_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const deleted = await deleteGuildRepository(db, String(guild.id), param(request, "repository_id"));
     if (deleted === null) {
       throw new HttpError(404, "repository not found");
@@ -367,7 +369,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/harness", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await ownedAgent(db, param(request, "agent_id"), user);
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     const config = agentConfigObject(agent);
     const granted = new Set((await agentSecrets(accessDatabase(db), agent)).map((secret) => secret.name));
     const aliases = secretAliasesOf(config);
@@ -400,7 +402,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/agents/:agent_id/harness/check", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await ownedAgent(db, param(request, "agent_id"), user);
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     const harness = bodyOf(request).harness;
     if (!isHarness(harness)) {
       throw new HttpError(422, `harness must be one of: ${HARNESSES.join(", ")}`);
@@ -420,7 +422,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/runs/:run_id/changes", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await ownedRun(db, param(request, "run_id"), user);
+    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     const metadata = jsonObj(run.metadata) as Record<string, unknown> | null;
     const repos = metadata && Array.isArray(metadata.repos) ? metadata.repos : [];
     return { repositories: repos };
@@ -428,7 +430,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/runs/:run_id/tasks/:call_id/diff", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await ownedRun(db, param(request, "run_id"), user);
+    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     const callId = param(request, "call_id");
     const repository = taskDiffRepository(await getToolResultMetadata(db, String(run.id), callId));
     if (repository === null) {
@@ -450,7 +452,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/runs/:run_id/tasks/:call_id/log", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await ownedRun(db, param(request, "run_id"), user);
+    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     const callId = param(request, "call_id");
     const harness = taskLogHarness(await getToolResultMetadata(db, String(run.id), callId));
     if (harness === null) {
@@ -471,7 +473,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/runs/:run_id/changes/:repository/diff", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await ownedRun(db, param(request, "run_id"), user);
+    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     const repository = param(request, "repository");
     const metadata = jsonObj(run.metadata) as Record<string, unknown> | null;
     const repos = metadata && Array.isArray(metadata.repos) ? (metadata.repos as Array<Record<string, unknown>>) : [];

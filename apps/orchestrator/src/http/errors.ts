@@ -1,5 +1,6 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { GuildOperatorError } from "../guilds/operators.js";
+import { AgentError } from "../agents/errors.js";
+import { GuildError } from "../guilds/errors.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
 import { MachineError } from "../machines/index.js";
 import { OrgValidationError } from "../organisations/index.js";
@@ -75,7 +76,15 @@ export function notesReadHttp(error: Error): HttpError {
 }
 
 /** Domain errors that carry the status they answer with. */
-const REFUSALS = [MachineError, PolicyError, ModelNotConnectedError, UserError, OrgError, GuildOperatorError] as const;
+const REFUSALS = [
+  MachineError,
+  PolicyError,
+  ModelNotConnectedError,
+  UserError,
+  OrgError,
+  GuildError,
+  AgentError,
+] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
 const INVALID = [UserValidationError, OrgValidationError] as const;

@@ -7,6 +7,7 @@ import {
   writeRecipe,
 } from "../recipes/library.js";
 import type { FastifyInstance } from "fastify";
+import { requireVisibleGuild } from "../guilds/access.js";
 import { userActor } from "../db/config-changes.js";
 import { newId } from "../lib/ids.js";
 import { captureDatabase, captureGuild } from "../recipes/capture.js";
@@ -29,7 +30,6 @@ import { pickEntry, RegistryError } from "../registry/index.js";
 import { latestEntries, registryHttp, registryOf } from "./admin-registry-routes.js";
 import { HttpError, recipeConflictHttp } from "./errors.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
-import { ownedGuild } from "./items.js";
 import { bodyOf, param } from "./request.js";
 
 function mapError(error: unknown): never {
@@ -173,7 +173,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(422, "recipes are not available");
     }
     try {
-      const guild = await ownedGuild(db, param(request, "guild_id"), user);
+      const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
       const body = bodyOf(request);
       const parsed = await captureGuild(
         {
@@ -362,7 +362,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/apply", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     return applyOf(deps).guildApplyState(String(guild.id));
   });
 

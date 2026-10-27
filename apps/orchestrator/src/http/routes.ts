@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { requireAdministeredGuild, requireVisibleGuild } from "../guilds/access.js";
+import { requireVisibleAgent, requireVisibleRun } from "../agents/access.js";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
 import {
   AgentValidationError,
@@ -216,13 +218,9 @@ import { cookieSecure, requestCookies } from "./cookies.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import {
-  administeredGuild,
   agentConfigObject,
   agentItem,
   agentWithAccess,
-  ownedAgent,
-  ownedGuild,
-  ownedRun,
   guildItem,
 } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
@@ -444,10 +442,10 @@ async function scopeGuild(
     return null;
   }
   if (scope === "guild") {
-    const row = await ownedGuild(db, scopeId || "", user);
+    const row = await requireVisibleGuild(db, scopeId || "", String(user.id));
     return String(row.id);
   }
-  const row = await ownedAgent(db, scopeId || "", user);
+  const row = await requireVisibleAgent(db, scopeId || "", String(user.id));
   return String(row.guild_id);
 }
 
@@ -691,13 +689,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    return guildItem(await ownedGuild(db, param(request, "guild_id"), user));
+    return guildItem(await requireVisibleGuild(db, param(request, "guild_id"), String(user.id)));
   });
 
   app.put("/api/guilds/:guild_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    const existing = await ownedGuild(db, guildId, user);
+    const existing = await requireVisibleGuild(db, guildId, String(user.id));
     const body = bodyOf(request);
     try {
       const name = body.name !== undefined ? validateGuildName(String(body.name ?? "")) : null;
@@ -731,7 +729,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         visibility = validateVisibility(body.visibility);
         patch.visibility = visibility;
         if (visibility !== String(existing.visibility ?? "org")) {
-          await administeredGuild(db, guildId, user);
+          await requireAdministeredGuild(db, guildId, String(user.id));
         }
       }
       const previousName = String(existing.name);
@@ -778,7 +776,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.delete("/api/guilds/:guild_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    await administeredGuild(db, guildId, user);
+    await requireAdministeredGuild(db, guildId, String(user.id));
     try {
       await generationOf(deps).delete_guild(guildId);
       await send(reply, 204);
@@ -795,7 +793,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.put("/api/guilds/:guild_id/operators/:user_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await administeredGuild(db, param(request, "guild_id"), user);
+    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
     const userId = param(request, "user_id");
     let role;
     try {
@@ -814,7 +812,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/guilds/:guild_id/operators/:user_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await administeredGuild(db, param(request, "guild_id"), user);
+    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
     const userId = param(request, "user_id");
     if (!guildOperators(guild).some((operator) => operator.user_id === userId)) {
       throw new HttpError(404, "operator not found");
@@ -825,7 +823,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/guilds/:guild_id/group-chat", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    await ownedGuild(db, guildId, user);
+    await requireVisibleGuild(db, guildId, String(user.id));
     try {
       const chat = await generationOf(deps).group_chat.state(guildId);
       return {
@@ -843,7 +841,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.put("/api/guilds/:guild_id/group-chat/read", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    await ownedGuild(db, guildId, user);
+    await requireVisibleGuild(db, guildId, String(user.id));
     const value = bodyOf(request).seen_through_seq;
     const seq = typeof value === "number" ? value : Number.NaN;
     if (!Number.isInteger(seq) || seq < 0) {
@@ -856,7 +854,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.put("/api/guilds/:guild_id/group-chat", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedGuild(db, param(request, "guild_id"), user);
+    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const body = bodyOf(request);
     try {
       return await generationOf(deps).group_chat.set_limit(
@@ -873,7 +871,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/group-chat/messages", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedGuild(db, param(request, "guild_id"), user);
+    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     try {
       return await generationOf(deps).group_chat.list_messages(param(request, "guild_id"));
     } catch (error) {
@@ -886,7 +884,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/guilds/:guild_id/group-chat/messages", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await administeredGuild(db, param(request, "guild_id"), user);
+    await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
     try {
       return await generationOf(deps).group_chat.clear(param(request, "guild_id"));
     } catch (error) {
@@ -899,7 +897,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/guilds/:guild_id/group-chat/messages", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedGuild(db, param(request, "guild_id"), user);
+    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const missing = missingBodyFields(request.body, ["content"]);
     if (missing) {
       throw missing;
@@ -928,7 +926,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/group-chat/stream", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedGuild(db, param(request, "guild_id"), user);
+    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const chat = generationOf(deps).group_chat;
     await pipeSse(
       request,
@@ -964,13 +962,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/agents", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     return (await listAgents(db, String(guild.id))).map((row) => agentItem(row, busy(deps, String(row.id))));
   });
 
   app.get("/api/guilds/:guild_id/embed-status", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const agents = await listAgents(db, String(guild.id));
     if (!artifacts) {
       return { agents: agents.map((row) => ({ id: row.id, broken_embeds: [] as string[] })) };
@@ -989,7 +987,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/guilds/:guild_id/agents", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     if (deps.generation?.deleting_guild(String(guild.id))) {
       throw new HttpError(409, "guild is being deleted");
     }
@@ -1074,7 +1072,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/notes", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedGuild(db, param(request, "guild_id"), user);
+    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     if (!artifacts) {
       try {
         return notes.listSharedFiles(String(row.org_slug), String(row.name));
@@ -1099,7 +1097,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/notes/*", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedGuild(db, param(request, "guild_id"), user);
+    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -1129,7 +1127,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.put("/api/guilds/:guild_id/notes/*", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedGuild(db, param(request, "guild_id"), user);
+    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const filePath = filePathParam(request);
     const body = bodyOf(request);
     if (!artifacts) {
@@ -1176,7 +1174,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/guilds/:guild_id/notes/*", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedGuild(db, param(request, "guild_id"), user);
+    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -1548,7 +1546,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/guilds/:guild_id/reach", async (request) => {
     const store = requireArtifacts(artifacts);
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedGuild(db, param(request, "guild_id"), user);
+    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     try {
       const actor = await operatorFor(db, user, { orgId: String(row.org_id) });
       return await store.reachOf(actor, { type: "guild", id: String(row.id), guildId: String(row.id) });
@@ -1560,7 +1558,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/agents/:agent_id/reach", async (request) => {
     const store = requireArtifacts(artifacts);
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     try {
       const actor = await operatorFor(db, user, { orgId: String(row.org_id) });
       return await store.reachOf(actor, { type: "agent", id: String(row.id), guildId: String(row.guild_id) });
@@ -1571,13 +1569,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/schedules", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedGuild(db, param(request, "guild_id"), user);
+    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     return schedules.listForGuild(param(request, "guild_id"));
   });
 
   app.get("/api/guilds/:guild_id/issues", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedGuild(db, param(request, "guild_id"), user);
+    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     try {
       return await issues.listForGuild(param(request, "guild_id"), queryOf(request).status);
     } catch (error) {
@@ -1590,7 +1588,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/guilds/:guild_id/issues/resolve", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     try {
       const resolved = await issues.resolveOpen(
         String(guild.id),
@@ -1612,7 +1610,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.patch("/api/guilds/:guild_id/issues/:issue_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const body = bodyOf(request);
     if (body.status === undefined) {
       throw new HttpError(422, "status is required");
@@ -1639,14 +1637,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     return agentPayload(deps, row);
   });
 
   app.delete("/api/agents/:agent_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    await ownedAgent(db, agentId, user);
+    await requireVisibleAgent(db, agentId, String(user.id));
     try {
       await generationOf(deps).delete_agent(agentId);
       await send(reply, 204);
@@ -1664,7 +1662,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.put("/api/agents/:agent_id/config", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const existing = await ownedAgent(db, agentId, user);
+    const existing = await requireVisibleAgent(db, agentId, String(user.id));
     const body = bodyOf(request);
     try {
       const config = validateConfig((body.config ?? {}) as Record<string, unknown>);
@@ -1772,7 +1770,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.put("/api/agents/:agent_id/machine", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const existing = await ownedAgent(db, agentId, user);
+    const existing = await requireVisibleAgent(db, agentId, String(user.id));
     const body = bodyOf(request);
     if (machineIdOf(body.machine_id) === null) {
       throw new HttpError(422, "machine_id is required");
@@ -1804,7 +1802,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/agents/:agent_id/schedules", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    await ownedAgent(db, agentId, user);
+    await requireVisibleAgent(db, agentId, String(user.id));
     const items = [];
     for (const row of await listSchedules(db, agentId)) {
       items.push(await schedules.view(row));
@@ -1815,7 +1813,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.post("/api/agents/:agent_id/schedules", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(db, agentId, user);
+    const agent = await requireVisibleAgent(db, agentId, String(user.id));
     const missing = missingBodyFields(request.body, ["description", "instruction"]);
     if (missing) {
       throw missing;
@@ -1847,7 +1845,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const scheduleId = param(request, "schedule_id");
-    const agent = await ownedAgent(db, agentId, user);
+    const agent = await requireVisibleAgent(db, agentId, String(user.id));
     if ((await getSchedule(db, agentId, scheduleId)) === null) {
       throw new HttpError(404, "schedule not found");
     }
@@ -1872,7 +1870,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const scheduleId = param(request, "schedule_id");
-    const agent = await ownedAgent(db, agentId, user);
+    const agent = await requireVisibleAgent(db, agentId, String(user.id));
     try {
       await schedules.delete(userActor(user), agentId, scheduleId);
       await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
@@ -1892,7 +1890,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/agents/:agent_id/scripts", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(db, agentId, user);
+    const agent = await requireVisibleAgent(db, agentId, String(user.id));
     try {
       const rows = await scripts.listForAgent(agentId);
       return rows.map((row) => ({
@@ -1917,7 +1915,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.post("/api/agents/:agent_id/scripts", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(db, agentId, user);
+    const agent = await requireVisibleAgent(db, agentId, String(user.id));
     const missing = missingBodyFields(request.body, ["name", "description", "source"]);
     if (missing) {
       throw missing;
@@ -1954,7 +1952,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.delete("/api/agents/:agent_id/scripts", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(db, agentId, user);
+    const agent = await requireVisibleAgent(db, agentId, String(user.id));
     try {
       await scripts.deleteAll(
         await operatorFor(db, user, {
@@ -1981,7 +1979,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const name = param(request, "name");
-    await ownedAgent(db, agentId, user);
+    await requireVisibleAgent(db, agentId, String(user.id));
     try {
       const row = await scripts.get(agentId, name);
       return scriptItem(row);
@@ -1997,7 +1995,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const name = param(request, "name");
-    const agent = await ownedAgent(db, agentId, user);
+    const agent = await requireVisibleAgent(db, agentId, String(user.id));
     try {
       await scripts.delete(
         await operatorFor(db, user, {
@@ -2024,7 +2022,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/notes", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     if (!artifacts) {
       try {
         return notes.listAgentFiles(String(row.org_slug), String(row.guild_name), String(row.name));
@@ -2054,7 +2052,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/memory", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     try {
       const store = requireArtifacts(artifacts);
       const actor = await operatorFor(db, user, {
@@ -2075,7 +2073,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/notes/*", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -2114,7 +2112,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.put("/api/agents/:agent_id/notes/*", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     const filePath = filePathParam(request);
     const body = bodyOf(request);
     if (!artifacts) {
@@ -2182,7 +2180,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/agents/:agent_id/notes/*", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -2235,7 +2233,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     pathPart: string,
   ): Promise<void> {
     const user = await currentUser(identityDb, request, deps);
-    await ownedAgent(db, param(request, "agent_id"), user);
+    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     try {
       const [base, headers] = await target(param(request, "agent_id"));
       await proxyHttp(request, reply, base, headers, pathPart);
@@ -2259,7 +2257,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       request,
       async () => {
         const user = await currentUser(identityDb, request, deps);
-        await ownedAgent(db, agentId, user);
+        await requireVisibleAgent(db, agentId, String(user.id));
         const [base, extraHeaders] = await target(agentId);
         return { base, extraHeaders, pathPart: filePathParam(request) };
       },
@@ -2311,7 +2309,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/browser", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedAgent(db, param(request, "agent_id"), user);
+    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     try {
       await generationOf(deps).ensure_browser(param(request, "agent_id"));
     } catch (error) {
@@ -2329,7 +2327,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/agents/:agent_id/cli", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedAgent(db, param(request, "agent_id"), user);
+    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     try {
       await generationOf(deps).ensure_cli(param(request, "agent_id"));
     } catch (error) {
@@ -2347,13 +2345,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/runs", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedAgent(db, param(request, "agent_id"), user);
+    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     return generationOf(deps).list_run_payloads(param(request, "agent_id"));
   });
 
   app.post("/api/agents/:agent_id/runs", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await ownedAgent(db, param(request, "agent_id"), user);
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     const body = bodyOf(request);
     const ids = attachmentIdsOf(body);
     const raw = body.message;
@@ -2383,19 +2381,19 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/runs/:run_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedRun(db, param(request, "run_id"), user);
+    const row = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     return generationOf(deps).run_payload(row);
   });
 
   app.get("/api/runs/:run_id/messages", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedRun(db, param(request, "run_id"), user);
+    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     return (await listMessages(db, param(request, "run_id"))).map((row) => messageItem(row));
   });
 
   app.post("/api/runs/:run_id/resume", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedRun(db, param(request, "run_id"), user);
+    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     try {
       return await generationOf(deps).resume_run(param(request, "run_id"));
     } catch (error) {
@@ -2408,7 +2406,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/runs/:run_id/messages", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await ownedRun(db, param(request, "run_id"), user);
+    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     const agent = await getAgent(db, String(run.agent_id));
     if (agent === null) {
       throw new HttpError(404, "run not found");
@@ -2444,7 +2442,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/runs/:run_id/cancel", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedRun(db, param(request, "run_id"), user);
+    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     try {
       const run = await generationOf(deps).cancel(param(request, "run_id"));
       if (run === null) {
@@ -2462,7 +2460,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/runs/:run_id/stream", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    await ownedRun(db, param(request, "run_id"), user);
+    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
     const loop = generationOf(deps);
     const runId = param(request, "run_id");
     await pipeSse(
@@ -2481,7 +2479,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/usage", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const agents = await listAgents(db, String(guild.id));
     return {
       id: guild.id,
@@ -2501,7 +2499,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/usage", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await ownedAgent(db, param(request, "agent_id"), user);
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     return {
       id: agent.id,
       name: agent.name,
@@ -2541,7 +2539,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     return httpAccess(mcpDatabase(db), {
       orgId: String(guild.org_id),
       guildId: String(guild.id),
@@ -2552,7 +2550,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
     return httpAccess(mcpDatabase(db), {
       orgId: String(row.org_id),
       guildId: String(row.guild_id),
@@ -2624,10 +2622,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return null;
     }
     if (ownerScope === "guild") {
-      const row = await ownedGuild(db, ownerId || "", user);
+      const row = await requireVisibleGuild(db, ownerId || "", String(user.id));
       return String(row.id);
     }
-    const row = await ownedAgent(db, ownerId || "", user);
+    const row = await requireVisibleAgent(db, ownerId || "", String(user.id));
     return String(row.guild_id);
   }
 
@@ -3022,10 +3020,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     const orgId = String(org.id);
     const query = request.query as { guild_id?: string; agent_id?: string };
-    if (query.guild_id && String((await ownedGuild(db, query.guild_id, user)).org_id) !== orgId) {
+    if (query.guild_id && String((await requireVisibleGuild(db, query.guild_id, String(user.id))).org_id) !== orgId) {
       throw new HttpError(404, "guild not found");
     }
-    if (query.agent_id && String((await ownedAgent(db, query.agent_id, user)).org_id) !== orgId) {
+    if (query.agent_id && String((await requireVisibleAgent(db, query.agent_id, String(user.id))).org_id) !== orgId) {
       throw new HttpError(404, "agent not found");
     }
     const viewer = await secretViewer(orgId, user);
@@ -3347,10 +3345,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const guildId = query.guild_id;
     const agentId = query.agent_id;
     if (guildId) {
-      await ownedGuild(db, guildId, user);
+      await requireVisibleGuild(db, guildId, String(user.id));
     }
     if (agentId) {
-      await ownedAgent(db, agentId, user);
+      await requireVisibleAgent(db, agentId, String(user.id));
     }
     const rows = await listMcpConnections(db, {
       orgId: String(org.id),

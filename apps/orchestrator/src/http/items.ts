@@ -9,15 +9,10 @@ import {
 import { jsonObj } from "../db/json.js";
 import { accessPayload } from "../access/index.js";
 import { accessDatabase, agentSecrets } from "../access/runtime.js";
-import { canSeeGuild, DEFAULT_GUILD_AGENTS, guildOperators, guildRole } from "../guilds/validation.js";
-import { HttpError } from "./errors.js";
-import { getGuild } from "../db/guilds.js";
-import { getMembership } from "../db/orgs.js";
-import { getAgent } from "../db/agents.js";
+import { DEFAULT_GUILD_AGENTS, guildOperators } from "../guilds/validation.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections } from "../db/mcp.js";
-import { getRun } from "../db/runs.js";
 import type { Queryable } from "../db/pg.js";
 
 function agentConfig(row: Record<string, unknown>): Record<string, unknown> {
@@ -83,54 +78,8 @@ export function agentConfigObject(row: Record<string, unknown>): Record<string, 
   return agentConfig(row);
 }
 
-export async function ownedGuild(
-  db: Queryable,
-  guildId: string,
-  user: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const row = await getGuild(db, guildId);
-  if (row === null) {
-    throw new HttpError(404, "guild not found");
-  }
-  const membership = await getMembership(db, String(row.org_id), String(user.id));
-  if (membership === null || !canSeeGuild(row, String(user.id))) {
-    throw new HttpError(404, "guild not found");
-  }
-  return row;
-}
 
-/** A guild the user can see and administers; otherwise the same 404 as an unseen guild. */
-export async function administeredGuild(
-  db: Queryable,
-  guildId: string,
-  user: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const row = await ownedGuild(db, guildId, user);
-  if (guildRole(row, String(user.id)) !== "admin") {
-    throw new HttpError(403, "only a guild admin can do this");
-  }
-  return row;
-}
 
-export async function ownedAgent(
-  db: Queryable,
-  agentId: string,
-  user: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const row = await getAgent(db, agentId);
-  if (row === null) {
-    throw new HttpError(404, "agent not found");
-  }
-  const membership = await getMembership(db, String(row.org_id), String(user.id));
-  if (membership === null) {
-    throw new HttpError(404, "agent not found");
-  }
-  const guild = await getGuild(db, String(row.guild_id));
-  if (guild === null || !canSeeGuild(guild, String(user.id))) {
-    throw new HttpError(404, "agent not found");
-  }
-  return row;
-}
 
 export async function agentWithAccess(
   db: Queryable,
@@ -166,27 +115,3 @@ export async function agentWithAccess(
   };
 }
 
-/** A run the user may see: a member of its organisation who can see its guild. */
-export async function ownedRun(
-  db: Queryable,
-  runId: string,
-  user: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const row = await getRun(db, runId);
-  if (row === null) {
-    throw new HttpError(404, "run not found");
-  }
-  const agent = await getAgent(db, String(row.agent_id));
-  if (agent === null) {
-    throw new HttpError(404, "run not found");
-  }
-  const membership = await getMembership(db, String(agent.org_id), String(user.id));
-  if (membership === null) {
-    throw new HttpError(404, "run not found");
-  }
-  const guild = await getGuild(db, String(agent.guild_id));
-  if (guild === null || !canSeeGuild(guild, String(user.id))) {
-    throw new HttpError(404, "run not found");
-  }
-  return row;
-}

@@ -498,7 +498,7 @@
       "count": 1
     },
     "@typescript-eslint/no-restricted-imports": {
-      "count": 8
+      "count": 4
     }
   },
   "src/http/machine-routes.ts": {

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { requireVisibleGuild } from "../guilds/access.js";
 import { canManageSettings } from "../organisations/index.js";
 import { ArtifactError, collectTaskEmbeds } from "../artifacts/index.js";
 import { jsonObj } from "../db/json.js";
@@ -6,7 +7,6 @@ import { iso } from "../db/views.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
-import { ownedGuild } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { activityWindow, loadGuildActivity } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
@@ -183,7 +183,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/studio/guilds/:guild_id/inventory", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
     const studio = studioOf(deps);
     const rows = await studio.guildInventory(String(guild.id));
     return rows.map((row) => studio.inventoryItem(row));
