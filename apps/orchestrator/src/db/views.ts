@@ -1,5 +1,5 @@
 import { formatColumnTimestamp } from "./codecs.js";
-import { jsonObj, rowGet } from "./json.js";
+import { isPlainRecord, jsonObj, rowGet } from "./json.js";
 
 export function iso(value: unknown): string {
   if (value instanceof Date) {
@@ -40,10 +40,10 @@ export function messageItem(row: Record<string, unknown>): {
 
 function publicConfigSnapshot(value: unknown): unknown {
   const snapshot = jsonObj(value);
-  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+  if (!isPlainRecord(snapshot)) {
     return snapshot;
   }
-  const { scripts: _scripts, ...rest } = snapshot as Record<string, unknown>;
+  const { scripts: _scripts, ...rest } = snapshot;
   return rest;
 }
 
@@ -79,14 +79,10 @@ function codingFields(metadata: unknown): {
   chain?: unknown;
   continued_by_run_id?: string;
 } {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+  if (!isPlainRecord(metadata)) {
     return {};
   }
-  const { repos, chain, continued_by_run_id: continuedBy } = metadata as {
-    repos?: unknown;
-    chain?: unknown;
-    continued_by_run_id?: unknown;
-  };
+  const { repos, chain, continued_by_run_id: continuedBy } = metadata;
   return {
     ...(Array.isArray(repos) ? { repos } : {}),
     ...(chain && typeof chain === "object" ? { chain } : {}),
@@ -104,10 +100,7 @@ function scheduleFields(
   if (typeof scheduleId !== "string" || !scheduleId) {
     return {};
   }
-  const hash =
-    metadata && typeof metadata === "object" && !Array.isArray(metadata)
-      ? (metadata as { instruction_hash?: unknown }).instruction_hash
-      : undefined;
+  const hash = isPlainRecord(metadata) ? metadata.instruction_hash : undefined;
   return {
     schedule_id: scheduleId,
     instruction_hash: typeof hash === "string" ? hash : null,

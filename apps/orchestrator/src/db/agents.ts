@@ -8,7 +8,7 @@ import {
   type AgentTaskRow,
 } from "../agents/task.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { recordFileChange } from "../artifacts/file-changes.js";
+import { recordFileChange } from "./file-changes.js";
 import { displayPathFor } from "../artifacts/paths.js";
 import { TASK_REVISIONS_MAX, WRITE_MAX_BYTES, type ArtifactActor } from "../artifacts/types.js";
 import { newId } from "../lib/ids.js";

@@ -6,7 +6,7 @@ import { newId } from "../lib/ids.js";
 import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
 import { createsWritable, defaultGrants } from "./access.js";
 import { ArtifactError } from "./errors.js";
-import { recordFileChange } from "./file-changes.js";
+import { recordFileChange } from "../db/file-changes.js";
 import { displayPathFor, FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
 import {
   ARTIFACT_RETURNING,

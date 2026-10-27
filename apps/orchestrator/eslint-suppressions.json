@@ -45,14 +45,6 @@
       "count": 1
     }
   },
-  "src/artifacts/file-changes.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/artifacts/files.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 5
@@ -362,29 +354,9 @@
       "count": 1
     }
   },
-  "src/db/config-changes.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    }
-  },
-  "src/db/migrations.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/db/schema/index.ts": {
     "max-lines": {
       "count": 1
-    }
-  },
-  "src/db/seed/system.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/db/views.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
     }
   },
   "src/generation/admission.ts": {

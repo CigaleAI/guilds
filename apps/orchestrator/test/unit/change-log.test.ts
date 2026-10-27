@@ -194,7 +194,7 @@ test("change actors fill the shared actor, run, call, and coach columns", () => 
 });
 
 test("a stored change links to its coach message only when it has both session and sequence", () => {
-  assert.deepEqual(studioLink({ studio_session_id: "ss_1", studio_seq: "7" }), {
+  assert.deepEqual(studioLink({ studio_session_id: "ss_1", studio_seq: 7 }), {
     session_id: "ss_1",
     seq: 7,
   });

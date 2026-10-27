@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type pg from "pg";
+import { isPlainRecord } from "./json.js";
 
 /**
  * Core's committed migrations, and the checks around applying them. The migrator applies a
@@ -32,14 +33,19 @@ export class MigrationsNotApplied extends Error {
 
 /** The migrations in `folder` in journal order: each one's tag, the hash of its SQL, and its stamp. */
 export function committedMigrations(folder: string): CommittedMigration[] {
-  const journal = JSON.parse(readFileSync(path.join(folder, "meta", "_journal.json"), "utf8")) as {
-    entries: Array<{ tag: string }>;
-  };
+  const tags = journalTags(folder);
   return readMigrationFiles({ migrationsFolder: folder }).map((migration, index) => ({
-    tag: journal.entries[index]?.tag ?? `#${index + 1}`,
+    tag: tags[index] ?? `#${index + 1}`,
     hash: migration.hash,
     stamp: migration.folderMillis,
   }));
+}
+
+/** The tag of each entry of the folder's journal, in order; an entry without one has none. */
+function journalTags(folder: string): Array<string | undefined> {
+  const journal: unknown = JSON.parse(readFileSync(path.join(folder, "meta", "_journal.json"), "utf8"));
+  const entries: unknown[] = isPlainRecord(journal) && Array.isArray(journal.entries) ? journal.entries : [];
+  return entries.map((entry) => (isPlainRecord(entry) && typeof entry.tag === "string" ? entry.tag : undefined));
 }
 
 async function recordedStamps(pool: pg.Pool): Promise<Map<string, number>> {

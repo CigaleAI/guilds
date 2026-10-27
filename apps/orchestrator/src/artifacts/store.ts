@@ -19,7 +19,7 @@ import {
   type CollectionColumn,
 } from "./columns.js";
 import { ArtifactError } from "./errors.js";
-import { recordFileChange } from "./file-changes.js";
+import { recordFileChange } from "../db/file-changes.js";
 import { collectionCleared, collectionColumnsChanged, collectionDeleted, type CollectionRef } from "./collection-changes.js";
 import { recordChangeIfAny, recordConfigChange, type ConfigChange } from "../db/config-changes.js";
 import {

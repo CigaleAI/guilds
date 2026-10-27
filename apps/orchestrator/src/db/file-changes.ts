@@ -1,14 +1,27 @@
-import { isoOrNull } from "../db/views.js";
+import type { InferSelectModel } from "drizzle-orm";
 import { newId } from "../lib/ids.js";
-import { type Queryable, stamp } from "../db/pg.js";
-import { actorColumns, studioLink, type ChangeLink } from "../db/config-changes.js";
-import type { ArtifactActor } from "./types.js";
+import { actorColumns, type ChangeActor, type ChangeLink, studioLink } from "./config-changes.js";
+import { type Queryable, stamp } from "./pg.js";
+import type { agents, fileChanges, runs } from "./schema/index.js";
+import { iso, isoOrNull } from "./views.js";
 
-export type FileChangeOperation = "create" | "update" | "delete";
+type Run = InferSelectModel<typeof runs>;
+
+/** A change with the run that made it, when a run did. */
+type FileChangeRow = Omit<InferSelectModel<typeof fileChanges>, "org_id"> & {
+  run_agent_id: Run["agent_id"] | null;
+  run_kind: Run["kind"] | null;
+  run_status: Run["status"] | null;
+  run_schedule_id: Run["schedule_id"] | null;
+  run_created_at: Run["created_at"] | null;
+  run_guild_id: InferSelectModel<typeof agents>["guild_id"] | null;
+};
+
+export type FileChangeOperation = FileChangeRow["operation"];
 
 export async function recordFileChange(
   db: Queryable,
-  actor: ArtifactActor,
+  actor: ChangeActor,
   args: {
     orgId: string;
     artifactId?: string;
@@ -76,50 +89,41 @@ const CHANGE_SELECT = `
     LEFT JOIN runs r ON r.id = fc.run_id
     LEFT JOIN agents a ON a.id = r.agent_id`;
 
-function mapChange(orgId: string, row: Record<string, unknown>): FileChangeView {
+function mapChange(orgId: string, row: FileChangeRow): FileChangeView {
   return {
-    id: String(row.id),
-    artifact_id: row.artifact_id === null || row.artifact_id === undefined ? null : String(row.artifact_id),
-    task_agent_id: row.task_agent_id === null || row.task_agent_id === undefined ? null : String(row.task_agent_id),
-    display_path: String(row.display_path),
-    operation: String(row.operation) as FileChangeOperation,
-    version: Number(row.version),
-    actor: {
-      type: String(row.actor_type),
-      id: String(row.actor_id),
-      name: String(row.actor_name),
-    },
+    id: row.id,
+    artifact_id: row.artifact_id,
+    task_agent_id: row.task_agent_id,
+    display_path: row.display_path,
+    operation: row.operation,
+    version: row.version,
+    actor: { type: row.actor_type, id: row.actor_id, name: row.actor_name },
     run: row.run_id
       ? {
-          id: String(row.run_id),
-          agent_id: row.run_agent_id ? String(row.run_agent_id) : null,
-          guild_id: row.run_guild_id ? String(row.run_guild_id) : null,
+          id: row.run_id,
+          agent_id: row.run_agent_id || null,
+          guild_id: row.run_guild_id || null,
           org_id: orgId,
-          kind: row.run_kind ? String(row.run_kind) : null,
-          status: row.run_status ? String(row.run_status) : null,
-          schedule_id: row.run_schedule_id ? String(row.run_schedule_id) : null,
+          kind: row.run_kind || null,
+          status: row.run_status || null,
+          schedule_id: row.run_schedule_id || null,
           created_at: isoOrNull(row.run_created_at),
         }
       : null,
-    tool: row.tool_call_id
-      ? {
-          call_id: String(row.tool_call_id),
-          name: row.tool_name ? String(row.tool_name) : null,
-        }
-      : null,
+    tool: row.tool_call_id ? { call_id: row.tool_call_id, name: row.tool_name || null } : null,
     studio: studioLink(row),
-    created_at: isoOrNull(row.created_at) ?? "",
+    created_at: iso(row.created_at),
   };
 }
 
 export async function listFileChanges(db: Queryable, orgId: string, displayPath: string): Promise<FileChangeView[]> {
-  const result = await db.query(
+  const result = await db.query<FileChangeRow>(
     `${CHANGE_SELECT}
       WHERE fc.org_id = $1 AND fc.display_path = $2
       ORDER BY fc.created_at DESC, fc.id DESC`,
     [orgId, displayPath],
   );
-  return (result.rows as Array<Record<string, unknown>>).map((row) => mapChange(orgId, row));
+  return result.rows.map((row) => mapChange(orgId, row));
 }
 
 // The newest change for each of several display paths, so a listing can
@@ -133,7 +137,7 @@ export async function listLatestFileChanges(
   if (!unique.length) {
     return {};
   }
-  const result = await db.query(
+  const result = await db.query<FileChangeRow>(
     `${CHANGE_SELECT}
       WHERE fc.id IN (
         SELECT DISTINCT ON (display_path) id
@@ -144,7 +148,7 @@ export async function listLatestFileChanges(
     [orgId, unique],
   );
   const latest: Record<string, FileChangeView> = {};
-  for (const row of result.rows as Array<Record<string, unknown>>) {
+  for (const row of result.rows) {
     const change = mapChange(orgId, row);
     latest[change.display_path] = change;
   }

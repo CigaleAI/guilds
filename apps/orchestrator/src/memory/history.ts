@@ -1,6 +1,6 @@
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import { listFileChanges } from "../artifacts/file-changes.js";
+import { listFileChanges } from "../db/file-changes.js";
 import { displayPathFor, MEMORY_KEY } from "../artifacts/paths.js";
 import { iso } from "../db/views.js";
 import { buildMemoryTimeline, type MemoryTimelineEntry } from "./timeline.js";

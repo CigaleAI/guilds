@@ -5,7 +5,7 @@ export {
   recordFileChange,
   type FileChangeOperation,
   type FileChangeView,
-} from "./file-changes.js";
+} from "../db/file-changes.js";
 export {
   ArtifactStore,
   hashArtifactContent,

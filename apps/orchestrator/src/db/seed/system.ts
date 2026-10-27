@@ -51,11 +51,11 @@ export async function projectConnectors(pool: pg.Pool, now = new Date()): Promis
  * decrypt, is left as it is.
  */
 export async function moveDriveFolders(pool: pg.Pool, now = new Date()): Promise<void> {
-  const rows = await pool.query(
+  const rows = await pool.query<{ id: string; ciphertext: Buffer; nonce: Buffer }>(
     `SELECT id, ciphertext, nonce FROM mcp_connections
      WHERE mcp_server_id = 'mcp_drive' AND NOT (settings ? 'folder_id')`,
   );
-  for (const row of rows.rows as Array<{ id: string; ciphertext: Buffer; nonce: Buffer }>) {
+  for (const row of rows.rows) {
     let payload: Record<string, unknown>;
     try {
       payload = decryptPayload(row.ciphertext, row.nonce);
