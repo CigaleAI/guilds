@@ -27,7 +27,7 @@ flowchart LR
 | `docker-compose.yml`, `docker-compose.watch.yml`, `docker-compose.dev.yml` | The shipped stack, the development overlay, and the two merged ([Deployment](deployment.md#compose-stacks-and-images)) |
 | `setup.sh` | Writes `.env` (state path and generated secrets) and builds the OpenSandbox and runtime images |
 | `.env.example` | Core's settings, by integration ([Configure](../operations/configure.md)) |
-| `scripts/` | `check.sh` (the whole check; with `EDITION_ROOT` it checks an extending repository), `images.sh` (the OpenSandbox and runtime images), `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
+| `scripts/` | `check.sh` (the whole check; with `CHECK_ROOT` it checks an extending repository), `images.sh` (the OpenSandbox and runtime images), `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
 | `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract`, `compat-verify`, `soak`; an extending repository's Makefile includes it, with `CORE` naming core's path |
 | `eslint.boundary.js` | The lint rule holding core code inside core ([Extension points](extension-points.md#how-an-extending-repository-holds-core)) |
 | `.github/workflows/` | `verify` (every push: `scripts/check.sh`), `images` (a version tag publishes the orchestrator, runtime, and OpenSandbox server images on ghcr.io) |

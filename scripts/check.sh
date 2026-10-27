@@ -9,14 +9,14 @@
 # The orchestrator, web, and core-stack lanes run side by side. Each step logs to its own file; a
 # failing step prints its log.
 #
-# A repository that extends core holds core in a subdirectory and runs this script with EDITION_ROOT
+# A repository that extends core holds core in a subdirectory and runs this script with CHECK_ROOT
 # set to its own root. The checkout, the install and every step then happen in that root, with core
 # and every other submodule at the commit it pins, and its check.steps adds steps, one per line: the
 # lane it joins (orchestrator or web), a name, and the command.
 set -euo pipefail
 
 core="$(cd "$(dirname "$0")/.." && pwd -P)"
-repo="$(cd "${EDITION_ROOT:-$core}" && pwd -P)"
+repo="$(cd "${CHECK_ROOT:-$core}" && pwd -P)"
 # Core's path under the root the check runs in: `.` when that root is core itself.
 core_path="${core#"$repo"}"
 core_path="${core_path#/}"

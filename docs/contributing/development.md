@@ -170,7 +170,7 @@ tip of every pushed ref and stops the push when it fails.
 `git push --no-verify` skips it.
 
 A repository that extends core runs the same script from its own
-root with `EDITION_ROOT` set. It adds its steps through a
+root with `CHECK_ROOT` set. It adds its steps through a
 `check.steps` file
 ([Extension points](../architecture/extension-points.md)).
 

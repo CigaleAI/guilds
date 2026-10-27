@@ -198,16 +198,16 @@ operator app.
 - **Makefile.** Core's `Makefile` runs in whichever root includes
   it. `CORE` is core's path under that root (`.` in core's
   repository). The extending repository's Makefile sets `CORE`,
-  `EDITION`, its development stack (`COMPOSE_DEV`, `DEV_BASE_IMAGE`,
+  its development stack (`DEV_STACK`, `COMPOSE_DEV`, `DEV_BASE_IMAGE`,
   `WEB_PACKAGE`, `SEED_USER`, `SEED_ORG_SLUG`,
-  `EDITION_TEST_PACKAGES`, `EDITION_COMPOSE_FILES`), and
+  `EXTENSION_TEST_PACKAGES`, `EXTENSION_COMPOSE_FILES`), and
   `SECRET_GOALS`, the goals that start a box with real secrets and
   therefore get no development default. It then includes core's
   and adds its own targets. In that repository `make up` and
   `make dev` start its stack. `make -C <core directory> up` starts
   core alone.
 - **Check.** `scripts/check.sh` checks that repository when
-  `EDITION_ROOT` names its root. The checkout, the install, and
+  `CHECK_ROOT` names its root. The checkout, the install, and
   every step happen there, with core and any other submodule at
   the commit it pins. Its `check.steps` adds steps, one per line: the
   lane it joins (`orchestrator` or `web`), a name, and the command

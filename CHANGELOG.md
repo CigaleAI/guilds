@@ -35,6 +35,12 @@ organisation's hook is `AppDeps.orgCreated`. `ModelsRepository` is
 `ModelsDatabase`, built with `modelsDatabase(db)`
 ([Extension points](docs/architecture/extension-points.md)).
 
+**Breaking for extending repositories.** The Makefile variables
+`EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are
+`DEV_STACK`, `EXTENSION_TEST_PACKAGES`, and `EXTENSION_COMPOSE_FILES`.
+`scripts/check.sh` reads the root it checks from `CHECK_ROOT` in
+place of `EDITION_ROOT`.
+
 **Breaking.** Agents run on machines: containers an organisation
 sizes and shares between its agents. A box whose agents each run in
 a sandbox of their own moves them onto machines.
