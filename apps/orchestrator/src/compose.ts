@@ -127,12 +127,14 @@ export async function createServer(
     (config.attachmentsRoot ? new FileBlobStore(config.attachmentsRoot) : new MemoryBlobStore());
   const attachments = new AttachmentService(attachmentDatabase(db), blobs);
   const files = new ArtifactFiles(artifacts, blobs);
+  // Agent runs, Studio sessions and Builder sessions share one cap on the generations in progress.
+  const admission = new AdmissionCoordinator(config.maxConcurrentGenerations);
   const generation = new GenerationLoop(generationDatabase(db), notes, config.workspaceRoot, sandboxes, {
     mcp,
     artifacts,
     files,
     attachments,
-    admission: new AdmissionCoordinator(config.maxConcurrentGenerations),
+    admission,
     policy,
     credentials: modelCredentials,
   });
@@ -148,7 +150,7 @@ export async function createServer(
     schedules,
     notesSystemPath: notes.systemPath(),
     mcp,
-    admission: generation.admission,
+    admission,
     policy,
     credentials: modelCredentials,
     publishFilesChanged: async (guildId) => {
@@ -182,7 +184,7 @@ export async function createServer(
     db,
     capabilities,
     apply,
-    admission: generation.admission,
+    admission,
     policy,
     credentials: modelCredentials,
     mcp,

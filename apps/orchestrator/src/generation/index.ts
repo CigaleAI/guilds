@@ -24,7 +24,7 @@ import {
 } from "../access/runtime.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { isPlainRecord, recordOf } from "../db/json.js";
-import { iso, messageItem, runItem } from "../db/views.js";
+import { iso, runItem } from "../db/views.js";
 import {
   DeliveryBusyError,
   DeliveryCreateError,
@@ -56,7 +56,7 @@ import {
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
 import { newId } from "../lib/ids.js";
-import { AsyncEvent, EventQueue, sleep } from "../lib/event.js";
+import { sleep } from "../lib/event.js";
 import { IdleTimers } from "./idle.js";
 import {
   LLMError,
@@ -82,7 +82,7 @@ import {
 } from "../artifacts/index.js";
 import { NotesError, type NotesStore } from "../notes/store.js";
 import { tokenRedactions } from "../oauth/index.js";
-import { writeLog, redactText } from "../observability/log.js";
+import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import {
   PromptError,
   composeSystemPrompt,
@@ -129,7 +129,8 @@ import {
   serializeHistoryDecision,
   type GroupRouter,
 } from "../typesafe/index.js";
-import { AdmissionConflictError, AdmissionCoordinator } from "./admission.js";
+import { ActiveGenerations, AdmissionCoordinator } from "./admission.js";
+import { RunEvents } from "./events.js";
 import {
   chainOf,
   continuationMessage,
@@ -151,7 +152,6 @@ import {
   stampToolResult,
   toolResultMaxBytes,
   withRemainingToolCalls as _withRemainingToolCalls,
-  CancelEvent,
 } from "../toolbox/index.js";
 import { agentGitIdentity, cloneFailures, RepositoryTokens } from "../coding/git.js";
 import { RepositoryAccessError } from "../github/tokens.js";
@@ -294,7 +294,6 @@ export const SHUTDOWN_TIMEOUT_MS = 15_000;
 export const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 export const INPUT_TOKEN_LIMIT_MESSAGE = "Input token limit reached. Start a new run to continue.";
 export const REMAINING_TOOL_CALLS_PREFIX = "remaining_tool_calls: ";
-const EVENT_QUEUE_LIMIT = 4096;
 export const DEFAULT_WORKSPACE_MAX_MIB = DEFAULT_MAX_WORKSPACE_MIB;
 export const RUN_DIFF_MAX_BYTES = 256 * 1024;
 
@@ -367,26 +366,6 @@ function runHitTerminalCap(run: Record<string, unknown>): boolean {
 
 function isDir(value: string): boolean {
   return Boolean(value) && existsSync(value) && statSync(value).isDirectory();
-}
-
-function errorName(error: unknown): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "name" in error &&
-    typeof error.name === "string" &&
-    error.name
-  ) {
-    return error.name;
-  }
-  return "Error";
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
 }
 
 function hasScriptTools(names: string[]): boolean {
@@ -592,28 +571,16 @@ export class GenerationLoop implements GroupRunner {
   artifacts: ArtifactStore | null;
   files: ArtifactFiles | null;
   attachments: AttachmentService | null;
-  lockGeneration = 0;
-  admission = new AdmissionCoordinator();
   policy: OrgPolicy;
   credentials: ModelCredentialsProvider;
-  _busy = new Set<string>();
-  _busy_agents = new Set<string>();
-  _deleting_guilds = new Set<string>();
-  _run_agent = new Map<string, string>();
-  _begin_mutex: Promise<void> = Promise.resolve();
-  _tasks = new Map<string, Promise<void>>();
+  generations: ActiveGenerations;
+  events: RunEvents;
   /** Each running machine's idle stop, by machine id. */
   _idle_tasks: IdleTimers;
   /** Each running Chrome's idle stop, by agent id. */
   _browser_idle: IdleTimers;
-  /** The machine of each agent that generates. */
-  _agent_machine = new Map<string, string>();
   /** The machine of each agent whose Browser or CLI view started or had input, until it moves or goes. */
   _touched_machine = new Map<string, string>();
-  _subs = new Map<string, Set<EventQueue<[string, Record<string, unknown>]>>>();
-  _cancels = new Map<string, CancelEvent>();
-  _cancel_tasks = new Map<string, Promise<void>>();
-  _commands = new Map<string, [SandboxHandle, string]>();
   /** Machines whose tier or size changed while an agent on them generated. */
   _stale_machines = new Set<string>();
   /** The harness list each machine's row was last given. */
@@ -623,7 +590,6 @@ export class GenerationLoop implements GroupRunner {
   _scheduler_tick_ms: number;
   _scheduler_abort: AbortController | null = null;
   _scheduler_task: Promise<void> | null = null;
-  _lock_event = new AsyncEvent();
   _group_router: GroupRouter;
 
   constructor(
@@ -655,10 +621,9 @@ export class GenerationLoop implements GroupRunner {
     this.artifacts = options.artifacts ?? null;
     this.files = options.files ?? null;
     this.attachments = options.attachments ?? null;
-    if (options.admission) {
-      this.admission = options.admission;
-    }
     this.policy = options.policy ?? OPEN_POLICY;
+    this.generations = new ActiveGenerations(db, options.admission ?? new AdmissionCoordinator(), this.policy);
+    this.events = new RunEvents(db);
     this.credentials = options.credentials ?? coreModelCredentials(db);
     const idleTimeoutMs = options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS;
     this._idle_tasks = new IdleTimers(idleTimeoutMs);
@@ -683,35 +648,11 @@ export class GenerationLoop implements GroupRunner {
   }
 
   isGenerating(runId: string): boolean {
-    return this._busy.has(runId);
+    return this.generations.isGenerating(runId);
   }
 
-  subscribe(runId: string): EventQueue<[string, Record<string, unknown>]> {
-    const queue = new EventQueue<[string, Record<string, unknown>]>();
-    const listeners = this._subs.get(runId) ?? new Set();
-    listeners.add(queue);
-    this._subs.set(runId, listeners);
-    return queue;
-  }
-
-  unsubscribe(runId: string, queue: EventQueue<[string, Record<string, unknown>]>): void {
-    const listeners = this._subs.get(runId);
-    if (listeners) {
-      listeners.delete(queue);
-      if (!listeners.size) {
-        this._subs.delete(runId);
-      }
-    }
-  }
-
-  async publish(runId: string, event: string, data: Record<string, unknown>): Promise<void> {
-    for (const queue of [...(this._subs.get(runId) ?? [])]) {
-      if (queue.size >= EVENT_QUEUE_LIMIT) {
-        this.unsubscribe(runId, queue);
-        continue;
-      }
-      await queue.put([event, data]);
-    }
+  get lockGeneration(): number {
+    return this.generations.lockGeneration;
   }
 
   /** Opens a direct run; `startedByUserId` is the person who opened it. */
@@ -723,7 +664,7 @@ export class GenerationLoop implements GroupRunner {
     const attachments = options.attachments ?? [];
     const opening = message === null && attachments.length ? "" : message;
     const prepared = await this._prepare_run(agentId);
-    if (opening !== null && this._busy_agents.has(agentId)) {
+    if (opening !== null && this.generations.isAgentBusy(agentId)) {
       throw new RunRequestError(409, "agent is already generating");
     }
     const runId = newId("r");
@@ -777,7 +718,7 @@ export class GenerationLoop implements GroupRunner {
       throw error;
     }
     const agent = prepared.agent;
-    if (this._busy_agents.has(agentId)) {
+    if (this.generations.isAgentBusy(agentId)) {
       throw new DeliveryBusyError();
     }
     const projected = [
@@ -816,7 +757,7 @@ export class GenerationLoop implements GroupRunner {
       }
       throw error;
     }
-    const task = this._tasks.get(runId);
+    const task = this.generations.task(runId);
     if (task) {
       await task;
     }
@@ -834,7 +775,7 @@ export class GenerationLoop implements GroupRunner {
       }
       throw error;
     }
-    if (this._busy_agents.has(agentId)) {
+    if (this.generations.isAgentBusy(agentId)) {
       throw new DeliveryBusyError();
     }
     const instruction = await this.schedules.instructionFor(agentId, schedule);
@@ -880,7 +821,7 @@ export class GenerationLoop implements GroupRunner {
   async fireDueSchedules(now?: Date): Promise<void> {
     const when = now ?? new Date();
     for (const row of await this.db.listDueSchedules(when)) {
-      if (this._busy_agents.has(row.agent_id)) {
+      if (this.generations.isAgentBusy(row.agent_id)) {
         continue;
       }
       try {
@@ -937,30 +878,13 @@ export class GenerationLoop implements GroupRunner {
       this._scheduler_task = null;
     }
     await this.groupChat.stopDispatchers();
-    const runIds = [...this._busy];
+    const runIds = this.generations.runIds();
     for (const runId of runIds) {
-      this._cancels.get(runId)?.set();
-      const command = this._commands.get(runId);
-      if (command) {
-        try {
-          await command[0].commands.interrupt?.(command[1]);
-        } catch (error) {
-          writeLog(
-            "error",
-            "command.interrupt failed",
-            {
-              run_id: runId,
-              agent_id: this._run_agent.get(runId) ?? null,
-              operation: "command.interrupt",
-              error_type: errorName(error),
-            },
-            error,
-          );
-        }
-      }
+      this.generations.cancelEvent(runId)?.set();
+      await this.interruptCommand(runId);
     }
     const tasks = runIds.flatMap((runId) => {
-      const task = this._tasks.get(runId);
+      const task = this.generations.task(runId);
       return task ? [task] : [];
     });
     if (tasks.length) {
@@ -973,17 +897,39 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
+  /** Interrupts the command the run waits on in its sandbox, when there is one. */
+  private async interruptCommand(runId: string): Promise<void> {
+    const command = this.generations.command(runId);
+    if (command === null) {
+      return;
+    }
+    try {
+      await command[0].commands.interrupt?.(command[1]);
+    } catch (error) {
+      writeLog(
+        "error",
+        "command.interrupt failed",
+        {
+          run_id: runId,
+          agent_id: this.generations.agentOf(runId),
+          operation: "command.interrupt",
+          error_type: errorName(error),
+        },
+        error,
+      );
+    }
+  }
+
   isDeletingGuild(guildId: string): boolean {
-    return this._deleting_guilds.has(guildId);
+    return this.generations.isDeletingGuild(guildId);
   }
 
   isAgentBusy(agentId: string): boolean {
-    return this._busy_agents.has(agentId);
+    return this.generations.isAgentBusy(agentId);
   }
 
   async cancelAgentRuns(agentId: string): Promise<void> {
-    const runIds = [...this._run_agent].filter(([, owner]) => owner === agentId).map(([runId]) => runId);
-    for (const runId of runIds) {
+    for (const runId of this.generations.runIdsOf(agentId)) {
       try {
         await this.cancel(runId);
       } catch (error) {
@@ -996,28 +942,7 @@ export class GenerationLoop implements GroupRunner {
   }
 
   async waitForLockRelease(seen: number): Promise<void> {
-    while (this.lockGeneration <= seen) {
-      this._lock_event.clear();
-      if (this.lockGeneration > seen) {
-        return;
-      }
-      await this._lock_event.wait();
-    }
-  }
-
-  _notify_lock_release(): void {
-    this.lockGeneration += 1;
-    this._lock_event.set();
-  }
-
-  /** Whether an agent on this machine generates, `except` aside. */
-  isMachineBusy(machineId: string, except?: string): boolean {
-    for (const [agentId, machine] of this._agent_machine) {
-      if (machine === machineId && agentId !== except && this._busy_agents.has(agentId)) {
-        return true;
-      }
-    }
-    return false;
+    return this.generations.waitForLockRelease(seen);
   }
 
   _cancel_idle(machineId: string): void {
@@ -1031,7 +956,7 @@ export class GenerationLoop implements GroupRunner {
 
   async _idle_stop(machineId: string): Promise<void> {
     try {
-      if (this.isMachineBusy(machineId)) {
+      if (this.generations.isMachineBusy(machineId)) {
         return;
       }
       await this.sandboxes.destroy(machineId);
@@ -1128,7 +1053,7 @@ export class GenerationLoop implements GroupRunner {
    */
   async machineChanged(machineId: string): Promise<void> {
     this._stale_machines.add(machineId);
-    if (this.isMachineBusy(machineId)) {
+    if (this.generations.isMachineBusy(machineId)) {
       return;
     }
     this._cancel_idle(machineId);
@@ -1179,7 +1104,7 @@ export class GenerationLoop implements GroupRunner {
 
   /** The agent's Chrome for the Browser tab: its machine woken, its display and noVNC up. */
   async ensureBrowser(agentId: string): Promise<unknown> {
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const config = this._valid_config(agent);
     if (!config.browser) {
       throw new RunRequestError(409, "browser is not enabled");
@@ -1205,7 +1130,7 @@ export class GenerationLoop implements GroupRunner {
   }
 
   async browserProxyTarget(agentId: string): Promise<[string, Record<string, string>]> {
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
     if (sandbox === null) {
       throw new RunRequestError(503, "sandbox is not running");
@@ -1219,7 +1144,7 @@ export class GenerationLoop implements GroupRunner {
 
   /** Wakes the agent's machine and starts the agent's terminal in its home. */
   async ensureCli(agentId: string): Promise<unknown> {
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.wakeSandbox(agentId);
     this._touched_machine.set(agentId, String(agent.machine_id));
     await this.startCliOn(sandbox, agent);
@@ -1243,7 +1168,7 @@ export class GenerationLoop implements GroupRunner {
    * ensured, with the agent's home ready and the machine's idle timer armed.
    */
   async wakeSandbox(agentId: string): Promise<SandboxHandle> {
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const config = this._valid_config(agent);
     const machine = agentMachine(agent);
     try {
@@ -1251,7 +1176,7 @@ export class GenerationLoop implements GroupRunner {
     } catch (error) {
       throw new RunRequestError(503, errorMessage(error));
     }
-    if (this.isMachineBusy(machine.id)) {
+    if (this.generations.isMachineBusy(machine.id)) {
       const sandbox = await this.sandboxes.connectRunning(machine.id);
       if (sandbox === null) {
         throw new RunRequestError(503, "sandbox is not running");
@@ -1303,7 +1228,7 @@ export class GenerationLoop implements GroupRunner {
       throw new RunRequestError(404, "run not found");
     }
     const agentId = String(run.agent_id);
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.wakeSandbox(agentId);
     let result;
     try {
@@ -1334,7 +1259,7 @@ export class GenerationLoop implements GroupRunner {
       throw new RunRequestError(404, "run not found");
     }
     const agentId = String(run.agent_id);
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.wakeSandbox(agentId);
     let secrets: Record<string, string>;
     try {
@@ -1365,7 +1290,7 @@ export class GenerationLoop implements GroupRunner {
    * the login as seen, or forgets it when none is left.
    */
   async checkHarness(agentId: string, harness: Harness): Promise<HarnessCheck> {
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.wakeSandbox(agentId);
     let check: HarnessCheck;
     try {
@@ -1382,7 +1307,7 @@ export class GenerationLoop implements GroupRunner {
   }
 
   async cliProxyTarget(agentId: string): Promise<[string, Record<string, string>]> {
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
     if (sandbox === null) {
       throw new RunRequestError(503, "sandbox is not running");
@@ -1432,7 +1357,7 @@ export class GenerationLoop implements GroupRunner {
 
   /** Input on a running machine's views arms its idle stop again. */
   private touchMachine(machineId: string): void {
-    if (!this.isMachineBusy(machineId) && this._idle_tasks.has(machineId)) {
+    if (!this.generations.isMachineBusy(machineId) && this._idle_tasks.has(machineId)) {
       this._schedule_idle(machineId);
     }
   }
@@ -1470,10 +1395,7 @@ export class GenerationLoop implements GroupRunner {
     if (agent === null) {
       throw new RunRequestError(404, "agent not found");
     }
-    if (this._busy_agents.has(agentId)) {
-      throw new RunRequestError(409, "agent is already generating");
-    }
-    this._busy_agents.add(agentId);
+    this.generations.holdAgent(agentId);
     try {
       await this.removeAgentFromMachine(agent);
       await this.notes.deleteAgent?.(
@@ -1483,8 +1405,7 @@ export class GenerationLoop implements GroupRunner {
       );
       await this.db.deleteAgent(agentId);
     } finally {
-      this._busy_agents.delete(agentId);
-      this._notify_lock_release();
+      this.generations.releaseAgent(agentId);
     }
   }
 
@@ -1493,20 +1414,14 @@ export class GenerationLoop implements GroupRunner {
     if (guild === null) {
       throw new RunRequestError(404, "guild not found");
     }
-    if (this._deleting_guilds.has(guildId)) {
+    if (this.generations.isDeletingGuild(guildId)) {
       throw new RunRequestError(409, "guild is already being deleted");
     }
     if (this.groupChat.is_dispatching(guildId)) {
       throw new RunRequestError(409, "guild group chat is delivering");
     }
-    const agentIds = (await this.db.listAgents(guildId)).map((row) => String(row.id));
-    if (agentIds.some((agentId) => this._busy_agents.has(agentId))) {
-      throw new RunRequestError(409, "a member agent is already generating");
-    }
-    this._deleting_guilds.add(guildId);
-    for (const agentId of agentIds) {
-      this._busy_agents.add(agentId);
-    }
+    const agentIds = (await this.db.listAgents(guildId)).map((row) => row.id);
+    this.generations.holdGuild(guildId, agentIds);
     try {
       for (const agentId of agentIds) {
         const agent = await this.db.getAgent(agentId);
@@ -1517,11 +1432,7 @@ export class GenerationLoop implements GroupRunner {
       await this.notes.deleteGuild?.(String(guild.org_slug), String(guild.name));
       await this.db.deleteGuild(guildId);
     } finally {
-      for (const agentId of agentIds) {
-        this._busy_agents.delete(agentId);
-      }
-      this._deleting_guilds.delete(guildId);
-      this._notify_lock_release();
+      this.generations.releaseGuild(guildId, agentIds);
     }
   }
 
@@ -1545,7 +1456,7 @@ export class GenerationLoop implements GroupRunner {
       return;
     }
     const { source, target, move } = await this.assertMovable(agentId, from, machineId);
-    this._busy_agents.add(agentId);
+    this.generations.holdAgent(agentId);
     this._touched_machine.delete(agentId);
     try {
       this._cancel_browser_idle(agentId);
@@ -1569,8 +1480,7 @@ export class GenerationLoop implements GroupRunner {
         throw error;
       }
     } finally {
-      this._busy_agents.delete(agentId);
-      this._notify_lock_release();
+      this.generations.releaseAgent(agentId);
     }
   }
 
@@ -1580,7 +1490,7 @@ export class GenerationLoop implements GroupRunner {
     from: string,
     to: string,
   ): Promise<{ source: string; target: string; move: NonNullable<GenerationDatabase["moveAgent"]> }> {
-    if (this._busy_agents.has(agentId)) {
+    if (this.generations.isAgentBusy(agentId)) {
       throw new RunRequestError(409, "agent is already generating");
     }
     if (!this.db.moveAgent) {
@@ -1650,7 +1560,7 @@ export class GenerationLoop implements GroupRunner {
       throw new RunRequestError(409, "this run has ended; resume it to continue");
     }
     try {
-      await this._begin(runId, String(run.agent_id));
+      await this.beginGeneration(runId, String(run.agent_id));
     } catch (error) {
       if (error instanceof ConflictError) {
         throw new RunRequestError(409, error.message);
@@ -1676,10 +1586,10 @@ export class GenerationLoop implements GroupRunner {
         now,
       );
     } catch (error) {
-      this._end(runId);
+      this.endGeneration(runId);
       throw error;
     }
-    this._spawn(runId, generation);
+    this.generateInBackground(runId, generation);
     const row = await this.db.getRun(runId);
     if (row === null) {
       throw new RunRequestError(404, "run not found");
@@ -1695,31 +1605,12 @@ export class GenerationLoop implements GroupRunner {
     if (run.status !== "active") {
       throw new RunRequestError(409, "run is not active");
     }
-    if (!this._busy.has(runId)) {
+    if (!this.generations.isGenerating(runId)) {
       return null;
     }
-    const event = this._cancels.get(runId);
-    event?.set();
-    const command = this._commands.get(runId);
-    if (command) {
-      const [sandbox, executionId] = command;
-      try {
-        await sandbox.commands.interrupt?.(executionId);
-      } catch (error) {
-        writeLog(
-          "error",
-          "command.interrupt failed",
-          {
-            run_id: runId,
-            agent_id: String(run.agent_id),
-            operation: "command.interrupt",
-            error_type: errorName(error),
-          },
-          error,
-        );
-      }
-    }
-    const task = this._tasks.get(runId);
+    this.generations.cancelEvent(runId)?.set();
+    await this.interruptCommand(runId);
+    const task = this.generations.task(runId);
     if (task) {
       const abortWait = new AbortController();
       await Promise.race([task, sleep(generationLive.cancelGraceMs, abortWait.signal)]);
@@ -1755,7 +1646,7 @@ export class GenerationLoop implements GroupRunner {
     }
     await this.groupChat.resume_all();
     for (const machineId of await this.sandboxes.listRunningMachineIds()) {
-      if (!this.isMachineBusy(machineId)) {
+      if (!this.generations.isMachineBusy(machineId)) {
         this._schedule_idle(machineId);
       }
     }
@@ -1767,17 +1658,6 @@ export class GenerationLoop implements GroupRunner {
 
   runView(row: Record<string, unknown>): Record<string, unknown> {
     return runItem(row, { generating: this.isGenerating(String(row.id)) });
-  }
-
-  async _runnable_agent(agentId: string): Promise<Record<string, unknown>> {
-    const agent = await this.db.getAgent(agentId);
-    if (agent === null) {
-      throw new RunRequestError(404, "agent not found");
-    }
-    if (this._deleting_guilds.has(String(agent.guild_id))) {
-      throw new RunRequestError(409, "guild is being deleted");
-    }
-    return agent;
   }
 
   async _hydrate(agent: Record<string, unknown>): Promise<[string, string, string]> {
@@ -1853,7 +1733,7 @@ export class GenerationLoop implements GroupRunner {
     agentId: string,
     options: { throughSeq?: number | null } = {},
   ): Promise<PreparedRun> {
-    const agent = await this._runnable_agent(agentId);
+    const agent = await this.generations.runnableAgent(agentId);
     let config: AgentConfig;
     let access;
     try {
@@ -2022,88 +1902,28 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  async _begin(runId: string, agentId: string): Promise<void> {
-    const previous = this._begin_mutex;
-    let release: (() => void) | undefined;
-    this._begin_mutex = new Promise((resolve) => {
-      release = resolve;
-    });
-    await previous;
-    try {
-      if (this._busy.has(runId)) {
-        throw new ConflictError("generation already in progress");
-      }
-      if (this._busy_agents.has(agentId)) {
-        throw new ConflictError("agent is already generating");
-      }
-      const agent = this.db.getAgent ? await this.db.getAgent(agentId) : null;
-      const orgId = String(agent?.org_id ?? "");
-      const machineId = agent?.machine_id === undefined || agent?.machine_id === null ? null : String(agent.machine_id);
-      const max = orgId
-        ? ((await this.policy.standing(orgId)).limits.maxConcurrentRuns ?? undefined)
-        : undefined;
-      try {
-        await this.admission.acquire("agent", agentId, orgId, max);
-      } catch (error) {
-        if (error instanceof AdmissionConflictError) {
-          throw new ConflictError(error.message);
-        }
-        throw error;
-      }
-      if (machineId !== null) {
-        this._cancel_idle(machineId);
-        this._agent_machine.set(agentId, machineId);
-      }
-      this._busy.add(runId);
-      this._busy_agents.add(agentId);
-      this._run_agent.set(runId, agentId);
-      this._cancels.set(runId, new CancelEvent());
-    } finally {
-      release?.();
+  /** Admits a generation of the run on its agent; the agent's machine stops counting down to its idle stop. */
+  async beginGeneration(runId: string, agentId: string): Promise<void> {
+    const machineId = await this.generations.begin(runId, agentId);
+    if (machineId !== null) {
+      this._cancel_idle(machineId);
     }
   }
 
-  _end(runId: string): void {
-    this._busy.delete(runId);
-    const agentId = this._run_agent.get(runId);
-    this._run_agent.delete(runId);
-    if (agentId !== undefined) {
-      this._busy_agents.delete(agentId);
-      this.admission.release("agent", agentId);
-      const machineId = this._agent_machine.get(agentId);
-      this._agent_machine.delete(agentId);
-      if (machineId !== undefined && !this.isMachineBusy(machineId)) {
-        if (this._stale_machines.has(machineId)) {
-          void this.machineChanged(machineId);
-        } else {
-          this._schedule_idle(machineId);
-        }
-      }
+  /**
+   * Ends the run's generation. The machine it ran on, once no agent generates there, goes when
+   * it changed meanwhile and otherwise counts down to its idle stop.
+   */
+  endGeneration(runId: string): void {
+    const machineId = this.generations.end(runId);
+    if (machineId === null || this.generations.isMachineBusy(machineId)) {
+      return;
     }
-    this._tasks.delete(runId);
-    this._cancels.delete(runId);
-    this._cancel_tasks.delete(runId);
-    this._commands.delete(runId);
-    this._notify_lock_release();
-  }
-
-  _start(runId: string, agentId: string, generation: number): void {
-    void this._begin(runId, agentId).then(
-      () => this._spawn(runId, generation),
-      (error: unknown) => {
-        writeLog(
-          "error",
-          errorMessage(error),
-          {
-            run_id: runId,
-            agent_id: agentId,
-            operation: "generation.begin",
-            error_type: errorName(error),
-          },
-          error,
-        );
-      },
-    );
+    if (this._stale_machines.has(machineId)) {
+      void this.machineChanged(machineId);
+    } else {
+      this._schedule_idle(machineId);
+    }
   }
 
   async _create_started(
@@ -2111,18 +1931,19 @@ export class GenerationLoop implements GroupRunner {
     agentId: string,
     create: () => Promise<void>,
   ): Promise<void> {
-    await this._begin(runId, agentId);
+    await this.beginGeneration(runId, agentId);
     try {
       await create();
     } catch (error) {
-      this._end(runId);
+      this.endGeneration(runId);
       throw error;
     }
-    this._spawn(runId, 1);
+    this.generateInBackground(runId, 1);
   }
 
-  _spawn = (runId: string, generation: number): void => {
-    this._tasks.set(
+  /** Generates the run without waiting for it; a failure the generation does not record is logged. */
+  generateInBackground = (runId: string, generation: number): void => {
+    this.generations.setTask(
       runId,
       this._generate(runId, generation).catch((error) => {
         writeLog(
@@ -2134,19 +1955,6 @@ export class GenerationLoop implements GroupRunner {
       }),
     );
   };
-
-  _cancelled(runId: string): boolean {
-    const event = this._cancels.get(runId);
-    return event !== undefined && event.aborted;
-  }
-
-  _track_command(runId: string, sandbox: SandboxHandle, executionId: string | null): void {
-    if (executionId) {
-      this._commands.set(runId, [sandbox, executionId]);
-    } else {
-      this._commands.delete(runId);
-    }
-  }
 
   async _invoke_mcp(
     target: [string, string],
@@ -2231,7 +2039,7 @@ export class GenerationLoop implements GroupRunner {
       executed += 1;
       const remaining = remainingAfter(maxToolCalls, executed);
       [payload, metadata] = stampToolResult(payload, metadata, remaining);
-      await this._commit_message(runId, payload, metadata);
+      await this.events.commitMessage(runId, payload, metadata);
     }
     return pending.length;
   }
@@ -2305,17 +2113,6 @@ export class GenerationLoop implements GroupRunner {
     return sandbox === null ? null : { agent, sandbox };
   }
 
-  async _commit_message(
-    runId: string,
-    payload: Record<string, unknown>,
-    metadata: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    const seq = await this.db.nextSeq(runId);
-    const row = await this.db.insertMessage({ runId, seq, payload, metadata }, new Date());
-    await this.publish(runId, "message.committed", messageItem(row));
-    return row;
-  }
-
   async _modelMessages(
     runId: string,
     agent: Record<string, unknown>,
@@ -2375,10 +2172,9 @@ export class GenerationLoop implements GroupRunner {
       thinking_level?: string;
     },
   ): Promise<Completion> {
-    const cancelEvent = this._cancels.get(runId);
+    const cancelEvent = this.generations.cancelEvent(runId);
     const abort = new AbortController();
-    const agentId = this._run_agent.get(runId);
-    const orgId = agentId ? this.admission.orgId("agent", agentId) : undefined;
+    const orgId = this.generations.orgOf(runId);
     if (orgId) {
       const { blocked } = await this.policy.standing(orgId);
       if (blocked) {
@@ -2444,9 +2240,9 @@ export class GenerationLoop implements GroupRunner {
         }
         const [kind, value] = result.value;
         if (kind === "delta") {
-          await this.publish(runId, "assistant.delta", { text: value });
+          await this.events.publish(runId, "assistant.delta", { text: value });
         } else if (kind === "reasoning") {
-          await this.publish(runId, "assistant.reasoning.delta", { text: value });
+          await this.events.publish(runId, "assistant.reasoning.delta", { text: value });
         } else {
           completion = value;
         }
@@ -2494,13 +2290,8 @@ export class GenerationLoop implements GroupRunner {
     generation: number,
     extra: Record<string, string>,
   ): Promise<void> {
-    let task = this._cancel_tasks.get(runId);
-    if (task === undefined) {
-      task = this._on_cancel(runId, generation, extra);
-      this._cancel_tasks.set(runId, task);
-    }
     try {
-      await task;
+      await this.generations.settlement(runId, () => this._on_cancel(runId, generation, extra));
     } catch (error) {
       writeLog(
         "error",
@@ -2515,7 +2306,7 @@ export class GenerationLoop implements GroupRunner {
     let extra: Record<string, string> = { run_id: runId };
     let cancelled = false;
     try {
-      await this.publish(runId, "generation.started", { generation });
+      await this.events.publish(runId, "generation.started", { generation });
       const run = await this.db.getRun(runId);
       if (run === null) {
         return;
@@ -2542,7 +2333,7 @@ export class GenerationLoop implements GroupRunner {
         if (cancelled) {
           await this._settle_cancel(runId, generation, extra);
         }
-        await this.publish(runId, "generation.finished", { generation });
+        await this.events.publish(runId, "generation.finished", { generation });
         const finished = await this.db.getRun(runId);
         if (finished !== null && !runWasResumed(finished)) {
           const kind = runKind(finished);
@@ -2557,7 +2348,7 @@ export class GenerationLoop implements GroupRunner {
         if (next !== undefined && !cancelled) {
           await this._continue(runId, next);
         } else {
-          this._end(runId);
+          this.endGeneration(runId);
         }
       }
     }
@@ -2569,21 +2360,10 @@ export class GenerationLoop implements GroupRunner {
    * The agent stays busy across the chain.
    */
   async _continue(fromRunId: string, toRunId: string): Promise<void> {
-    const agentId = this._run_agent.get(fromRunId);
-    this._busy.delete(fromRunId);
-    this._run_agent.delete(fromRunId);
-    this._cancels.delete(fromRunId);
-    this._cancel_tasks.delete(fromRunId);
-    this._commands.delete(fromRunId);
-    this._tasks.delete(fromRunId);
-    this._busy.add(toRunId);
-    if (agentId !== undefined) {
-      this._run_agent.set(toRunId, agentId);
-    }
-    this._cancels.set(toRunId, new CancelEvent());
-    await this.publish(fromRunId, "run.continued", { run_id: toRunId });
+    this.generations.handOver(fromRunId, toRunId);
+    await this.events.publish(fromRunId, "run.continued", { run_id: toRunId });
     const task = this._generate(toRunId, 1);
-    this._tasks.set(toRunId, task);
+    this.generations.setTask(toRunId, task);
     await task;
   }
 
@@ -2655,7 +2435,7 @@ export class GenerationLoop implements GroupRunner {
       const liveRows = await this.scripts.listForAgent(String(agent.id));
       // While another agent on the machine generates, its container stays as it is, even when
       // the machine was resized: the new size comes once the last generation on it ends.
-      const shared = this.isMachineBusy(machine.id, seat.agentId)
+      const shared = this.generations.isMachineBusy(machine.id, seat.agentId)
         ? await this.sandboxes.connectRunning(machine.id)
         : null;
       if (shared !== null) {
@@ -2735,8 +2515,8 @@ export class GenerationLoop implements GroupRunner {
       guild_name: String(agent.guild_name),
       agent_name: String(agent.name),
       org_slug: String(agent.org_slug),
-      cancel_event: this._cancels.get(runId) ?? null,
-      track_command: (executionId) => this._track_command(runId, sandbox, executionId),
+      cancel_event: this.generations.cancelEvent(runId),
+      track_command: (executionId) => this.generations.trackCommand(runId, sandbox, executionId),
       agent_home: agentHome(seat.agentId),
       cdp_port: snapshot.browser ? slotPorts(seat.slot).cdp : null,
       ensure_browser: snapshot.browser
@@ -2770,7 +2550,7 @@ export class GenerationLoop implements GroupRunner {
       secret_aliases: secretAliasesOf(snapshot),
       // `secrets` holds the run's values and, once minted, its GitHub tokens.
       publish_progress: async (toolCallId, update) => {
-        await this.publish(runId, "tool.progress", {
+        await this.events.publish(runId, "tool.progress", {
           run_id: runId,
           tool_call_id: toolCallId,
           lines: shownProgressLines(update.lines, secrets),
@@ -2804,7 +2584,7 @@ export class GenerationLoop implements GroupRunner {
       if (coding) {
         await this._record_checkpoints(runId, agent, machineSandbox);
       }
-      if (!this._cancelled(runId)) {
+      if (!this.generations.isCancelled(runId)) {
         await this._record_workspace_size(runId, agent, machineSandbox);
       }
     }
@@ -3006,7 +2786,7 @@ export class GenerationLoop implements GroupRunner {
         tools: (tools as unknown[]).length ? (tools as unknown[]) : null,
         ...(snapshot.thinking_level ? { thinking_level: String(snapshot.thinking_level) } : {}),
       });
-      await this._commit_message(runId, completion.payload, { generation, ...completion.metadata });
+      await this.events.commitMessage(runId, completion.payload, { generation, ...completion.metadata });
       const calls = toolCallsOf(completion.payload);
       if (calls.length) {
         await this._execute_tool_calls(
@@ -3024,7 +2804,7 @@ export class GenerationLoop implements GroupRunner {
     };
 
     for (let step = 0; step < maxSteps; step += 1) {
-      if (this._cancelled(runId)) {
+      if (this.generations.isCancelled(runId)) {
         throw new GenerationCancelled();
       }
       if (executedToolCalls(await this.db.listMessages(runId)) >= maxToolCalls) {
@@ -3104,7 +2884,7 @@ export class GenerationLoop implements GroupRunner {
       await this._end_run(runId);
       return;
     }
-    await this._commit_message(
+    await this.events.commitMessage(
       runId,
       { role: "user", content: HANDOFF_REQUEST },
       { generation, source: "handoff" },
@@ -3150,7 +2930,7 @@ export class GenerationLoop implements GroupRunner {
       await this._fail(runId, generation, "llm.complete", error, extra);
       return;
     }
-    await this._commit_message(runId, completion.payload, { generation, ...completion.metadata });
+    await this.events.commitMessage(runId, completion.payload, { generation, ...completion.metadata });
     // Tool schemas stay fixed for the run, so the model may still call one: each call gets a
     // refusal, which keeps the history valid, and is not run.
     const maxToolCalls = positiveInt(snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
@@ -3172,7 +2952,7 @@ export class GenerationLoop implements GroupRunner {
         },
         remainingAfter(maxToolCalls, executed),
       );
-      await this._commit_message(runId, payload, { generation, ...metadata });
+      await this.events.commitMessage(runId, payload, { generation, ...metadata });
     }
     let next: string;
     try {
@@ -3283,7 +3063,7 @@ export class GenerationLoop implements GroupRunner {
       .filter((row) => recordOf(row.payload).role === "tool")
       .map((row) => ({ seq: row.seq, metadata: recordOf(row.metadata) }));
     for (const call of calls) {
-      if (this._cancelled(runId)) {
+      if (this.generations.isCancelled(runId)) {
         throw new GenerationCancelled();
       }
       if (!call || typeof call !== "object") {
@@ -3321,7 +3101,7 @@ export class GenerationLoop implements GroupRunner {
       executed += 1;
       const remaining = remainingAfter(maxToolCalls, executed);
       [payload, metadata] = stampToolResult(payload, metadata, remaining);
-      const row = await this._commit_message(runId, payload, { generation, ...metadata });
+      const row = await this.events.commitMessage(runId, payload, { generation, ...metadata });
       reads.push({ seq: Number(row.seq), metadata });
     }
   }
@@ -3485,29 +3265,7 @@ export class GenerationLoop implements GroupRunner {
     error: unknown,
     extra?: Record<string, string>,
   ): Promise<void> {
-    const fields = extra ?? { run_id: runId };
-    writeLog(
-      "error",
-      errorMessage(error),
-      {
-        run_id: fields.run_id ?? runId,
-        agent_id: fields.agent_id ?? null,
-        guild_id: fields.guild_id ?? null,
-        operation,
-        error_type: errorName(error),
-      },
-      error,
-    );
-    const now = new Date();
-    const entry = {
-      at: now.toISOString(),
-      generation,
-      operation,
-      error_type: errorName(error),
-      message: redactText(errorMessage(error)),
-    };
-    await this.db.appendRunError(runId, entry, now);
-    await this.publish(runId, "run.error", entry);
+    await this.events.recordError({ runId, generation, log: extra ?? { run_id: runId } }, operation, error);
   }
 
   private async _scheduler_loop(signal: AbortSignal): Promise<void> {

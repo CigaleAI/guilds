@@ -243,3 +243,25 @@ export function configureLogging(): Logger {
   unblockStdio();
   return createLogger();
 }
+
+/** An error's class name for a log line's `error_type`; `Error` when it has none. */
+export function errorName(error: unknown): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "name" in error &&
+    typeof error.name === "string" &&
+    error.name
+  ) {
+    return error.name;
+  }
+  return "Error";
+}
+
+/** An error's message, or the thrown value as text. */
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}

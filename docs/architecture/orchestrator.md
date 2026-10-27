@@ -255,8 +255,8 @@ status it answers with, or with a validation error, which is a 422.
 
 ### Work queuing
 
-An agent runs at most one generation at a time (`GenerationLoop`
-busy registry). Direct, group, and schedule work all take that same
+An agent runs at most one generation at a time (`ActiveGenerations`
+in `generation/admission.ts`). Direct, group, and schedule work all take that same
 lock. Work waits in that registry, in group dispatch, and in the
 schedule's `next_run_at`, never in a job table.
 

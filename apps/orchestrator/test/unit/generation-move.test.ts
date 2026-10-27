@@ -64,9 +64,9 @@ test("a move is refused for an unknown agent, a busy one, and where the database
   const db = movableDb();
   const loop = makeLoop(db, {}, root, new FakeSandboxes());
   await assert.rejects(() => loop.moveAgent("a_404", "mach_2"), refusal(404, /agent not found/));
-  await loop._begin("r_1", "a_1");
+  await loop.beginGeneration("r_1", "a_1");
   await assert.rejects(() => loop.moveAgent("a_1", "mach_2"), refusal(409, /already generating/));
-  loop._end("r_1");
+  loop.endGeneration("r_1");
   await assert.rejects(
     () => makeLoop(new FakeDB({}), {}, root, new FakeSandboxes()).moveAgent("a_1", "mach_2"),
     refusal(501, /agents cannot move here/),

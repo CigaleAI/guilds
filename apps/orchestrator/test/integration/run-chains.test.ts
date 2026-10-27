@@ -152,8 +152,8 @@ test("a coding run near its input limit hands off and continues in a new run", {
     const created = await loop.createRun(agentId, "start the task");
     const first = String(created.id);
     const continued: string[] = [];
-    const queue = loop.subscribe(first);
-    await loop._tasks.get(first);
+    const queue = loop.events.subscribe(first);
+    await loop.generations.task(first);
     while (queue.size) {
       const [event, data] = await queue.get();
       if (event === "run.continued") {
@@ -207,7 +207,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
       return shellCall(`c${messages.length}`);
     });
     const third = String((await loop.createRun(agentId, "again")).id);
-    await loop._tasks.get(third);
+    await loop.generations.task(third);
     const rowsC = await listMessages(db, third);
     const refused = rowsC.find((row) => (row.payload as Record<string, unknown>).tool_call_id === "c_handoff");
     assert.match(String((refused?.payload as Record<string, unknown>).content), new RegExp(`^${HANDOFF_TOOL_REFUSED}`));
@@ -222,7 +222,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     const fifth = String((await loop.createRun(agentId, null)).id);
     await mergeRunMetadata(db, fifth, { chain: { root_run_id: first, index: 5, previous_run_id: second } }, new Date());
     await loop.addMessage(fifth, "go on");
-    await loop._tasks.get(fifth);
+    await loop.generations.task(fifth);
     const runE = (await getRun(db, fifth))!;
     assert.equal(runE.status, "completed");
     assert.equal((runE.metadata as Record<string, unknown>).continued_by_run_id, undefined);
@@ -269,7 +269,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     await updateAgentConfig(db, agentId, { ...config, coding: false, harness: null }, new Date(), {});
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
     const plain = String((await loop.createRun(agentId, "plain")).id);
-    await loop._tasks.get(plain);
+    await loop.generations.task(plain);
     const runF = (await getRun(db, plain))!;
     assert.equal((runF.metadata as Record<string, unknown>).continued_by_run_id, undefined);
     assert.equal((runF.errors as Array<Record<string, unknown>>).at(-1)?.operation, "generation.max_input_tokens");

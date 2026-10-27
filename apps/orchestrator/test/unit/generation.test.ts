@@ -100,7 +100,7 @@ async function waitTask(
   runId: string,
   timeoutMs = 2000,
 ): Promise<void> {
-  const task = loop._tasks.get(runId);
+  const task = loop.generations.task(runId);
   if (!task) {
     return;
   }
@@ -350,7 +350,7 @@ describe("generation", { concurrency: 1 }, () => {
     assert.equal(view.status, "active");
     assert.equal(db.run.status, "active");
     assert.equal(typeof (db.run.metadata as Record<string, unknown>).resumed_at, "string");
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     await loop.addMessage("r_1", "keep going");
     const last = db.messages[db.messages.length - 1];
     assert.equal((last?.payload as Record<string, unknown>).content, "keep going");
@@ -526,16 +526,16 @@ describe("generation", { concurrency: 1 }, () => {
   });
 
   test("agent_lock_serializes_generations", async () => {
-    const loop = makeLoop({}, {}, tempDir("guilds-gen-"), {});
-    await loop._begin("r_1", "a_1");
-    await assert.rejects(() => loop._begin("r_2", "a_1"), (error: unknown) => {
+    const loop = makeLoop({ getAgent: async () => null }, {}, tempDir("guilds-gen-"), {});
+    await loop.beginGeneration("r_1", "a_1");
+    await assert.rejects(() => loop.beginGeneration("r_2", "a_1"), (error: unknown) => {
       assert.ok(error instanceof ConflictError);
       assert.match(error.message, /already generating/);
       return true;
     });
-    await loop._begin("r_3", "a_2");
-    loop._end("r_1");
-    await loop._begin("r_2", "a_1");
+    await loop.beginGeneration("r_3", "a_2");
+    loop.endGeneration("r_1");
+    await loop.beginGeneration("r_2", "a_1");
   });
 
   test("secret_change_resyncs_active_runs_and_replaces_no_container", async () => {
@@ -561,11 +561,11 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.machineChanged("mach_2");
     assert.deepEqual(sandboxes.destroyed, ["mach_2"]);
     assert.ok(!loop._stale_machines.has("mach_2"));
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     await loop.machineChanged("mach_1");
     assert.deepEqual(sandboxes.destroyed, ["mach_2"], "a busy machine keeps its container");
     assert.ok(loop._stale_machines.has("mach_1"));
-    loop._end("r_1");
+    loop.endGeneration("r_1");
     await sleep(10);
     assert.deepEqual(sandboxes.destroyed, ["mach_2", "mach_1"], "the last generation on it ends");
     assert.ok(!loop._stale_machines.has("mach_1"));
@@ -575,8 +575,8 @@ describe("generation", { concurrency: 1 }, () => {
     const db = new FakeDB({});
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 20 });
-    await loop._begin("r_1", "a_1");
-    loop._end("r_1");
+    await loop.beginGeneration("r_1", "a_1");
+    loop.endGeneration("r_1");
     assert.ok(loop._idle_tasks.has("mach_1"));
     await loop._idle_tasks.get("mach_1")?.promise;
     assert.deepEqual(sandboxes.destroyed, ["mach_1"]);
@@ -590,12 +590,12 @@ describe("generation", { concurrency: 1 }, () => {
     db.getAgent = async (agentId: string) => (agentId === "a_2" ? other : getAgent(agentId));
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 20 });
-    await loop._begin("r_1", "a_1");
-    await loop._begin("r_2", "a_2");
-    loop._end("r_1");
+    await loop.beginGeneration("r_1", "a_1");
+    await loop.beginGeneration("r_2", "a_2");
+    loop.endGeneration("r_1");
     assert.ok(!loop._idle_tasks.has("mach_1"), "a_2 still generates on mach_1");
-    assert.ok(loop.isMachineBusy("mach_1"));
-    loop._end("r_2");
+    assert.ok(loop.generations.isMachineBusy("mach_1"));
+    loop.endGeneration("r_2");
     await loop._idle_tasks.get("mach_1")?.promise;
     assert.deepEqual(sandboxes.destroyed, ["mach_1"]);
   });
@@ -604,16 +604,16 @@ describe("generation", { concurrency: 1 }, () => {
     const db = new FakeDB({});
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 50 });
-    await loop._begin("r_1", "a_1");
-    loop._end("r_1");
+    await loop.beginGeneration("r_1", "a_1");
+    loop.endGeneration("r_1");
     const armed = loop._idle_tasks.get("mach_1");
     assert.ok(armed);
-    await loop._begin("r_2", "a_1");
+    await loop.beginGeneration("r_2", "a_1");
     assert.ok(armed.abort.signal.aborted);
     assert.ok(!loop._idle_tasks.has("mach_1"));
     await armed.promise;
     assert.deepEqual(sandboxes.destroyed, []);
-    loop._end("r_2");
+    loop.endGeneration("r_2");
     loop._cancel_idle("mach_1");
   });
 
@@ -671,7 +671,7 @@ describe("generation", { concurrency: 1 }, () => {
       },
     };
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(() => loop.deleteAgent("a_1"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /already generating/);
@@ -726,7 +726,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("delete_guild_conflicts_while_member_generating", async () => {
     const loop = makeLoop(guildDb(["a_1", "a_2"]), guildNotes(), tempDir("guilds-gen-"), new FakeSandboxes());
-    await loop._begin("r_1", "a_2");
+    await loop.beginGeneration("r_1", "a_2");
     await assert.rejects(() => loop.deleteGuild("guild_1"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /already generating/);
@@ -789,7 +789,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("deliver_schedule_run_inserts_wake_message", async () => {
     const { loop, db } = await seededLoop();
     const started: Array<[string, number]> = [];
-    loop._spawn = (runId, generation) => {
+    loop.generateInBackground = (runId, generation) => {
       started.push([runId, generation]);
     };
     await loop.deliverScheduleRun(
@@ -840,7 +840,7 @@ describe("generation", { concurrency: 1 }, () => {
     const { loop, db } = await seededLoop();
     const original = db.listGroupMessages.bind(db);
     db.listGroupMessages = async (...args) => {
-      await loop._begin("r_other", "a_1");
+      await loop.beginGeneration("r_other", "a_1");
       return original(...args);
     };
     await assert.rejects(
@@ -856,7 +856,7 @@ describe("generation", { concurrency: 1 }, () => {
   test("fire_due_skips_busy_agent_without_advancing", async () => {
     const { loop, db } = await seededLoop();
     db.due_schedules = [scheduleRow()];
-    loop._busy_agents.add("a_1");
+    loop.generations.holdAgent("a_1");
     loop.deliverScheduleRun = async () => {
       throw new Error("should not fire");
     };
@@ -964,7 +964,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_without_message_stores_task_as_system_and_stays_idle", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const result = await loop.createRun("a_1", null);
     assert.ok(db.create_args);
     const system = String(db.create_args.system_content);
@@ -1010,12 +1010,12 @@ describe("generation", { concurrency: 1 }, () => {
       ["system"],
     );
     assert.equal(result.generating, false);
-    assert.ok(!loop._busy_agents.has("a_1"));
+    assert.ok(!loop.generations.isAgentBusy("a_1"));
   });
 
   test("create_run_offers_artifact_tools_not_database_tools", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     await loop.createRun("a_1", null);
     assert.equal((db.run?.config_snapshot as Record<string, unknown>).database, false);
     const names = (
@@ -1060,7 +1060,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_omits_group_post_when_binding_is_off", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     db.bindings = [
       {
         id: "bind_off",
@@ -1082,7 +1082,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_omits_script_tools_when_bindings_are_off", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     await loop.scripts.create(scriptOperator, "a_1", "keep", "why", "print(1)\n");
     db.bindings = SCRIPT_TOOLS.map((name) => ({
       id: `bind_off_${name}`,
@@ -1111,7 +1111,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_omits_note_guides_when_bindings_are_off", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     db.bindings = NOTE_TOOLS.map((name) => ({
       id: `bind_off_${name}`,
       catalog_kind: "native_tool",
@@ -1197,7 +1197,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_with_message_appends_user_and_starts_generation", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const result = await loop.createRun("a_1", "hello");
     assert.equal(db.create_args?.user_content, "hello");
     assert.deepEqual(
@@ -1207,12 +1207,12 @@ describe("generation", { concurrency: 1 }, () => {
     assert.deepEqual(db.messages[1]?.payload, { role: "user", content: "hello" });
     assert.deepEqual(db.messages[1]?.metadata, { generation: 1, source: "ui" });
     assert.equal(result.generating, true);
-    assert.ok(loop._busy_agents.has("a_1"));
+    assert.ok(loop.generations.isAgentBusy("a_1"));
   });
 
   test("create_run_stores_attachment_refs_on_the_user_row", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const attachments = [
       { id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const },
     ];
@@ -1228,7 +1228,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("add_message_stores_attachment_refs", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", null);
     const attachments = [
       { id: "att_2", filename: "note.jpg", mime: "image/jpeg", kind: "image" as const },
@@ -1241,7 +1241,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_group_context_keeps_last_ten", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     db.group_messages = Array.from({ length: 12 }, (_, index) => ({
       id: index + 1,
       guild_id: "guild_1",
@@ -1265,7 +1265,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_group_context_uses_typesafe_history_and_falls_back", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     db.group_messages = Array.from({ length: 15 }, (_, index) => ({
       id: index + 1,
       guild_id: "guild_1",
@@ -1302,22 +1302,22 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_without_message_is_allowed_while_agent_is_busy", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
-    await loop._begin("r_other", "a_1");
+    loop.generateInBackground = () => undefined;
+    await loop.beginGeneration("r_other", "a_1");
     const result = await loop.createRun("a_1", null);
     assert.equal(db.create_args?.user_content, null);
     assert.equal(result.generating, false);
-    assert.ok(!loop._busy.has(String(result.id)));
+    assert.ok(!loop.generations.isGenerating(String(result.id)));
   });
 
   test("list_run_payloads_only_marks_active_run_as_generating", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     await loop.createRun("a_1", null);
     const pastRun = { ...db.run, id: "r_past" };
     const activeRun = { ...db.run, id: "r_active" };
     db.listRuns = async () => [activeRun as Record<string, unknown>, pastRun as Record<string, unknown>];
-    await loop._begin("r_active", "a_1");
+    await loop.beginGeneration("r_active", "a_1");
     const payloads = await loop.listRunViews("a_1");
     const byId = Object.fromEntries(payloads.map((item) => [String(item.id), item]));
     assert.equal(byId.r_active?.generating, true);
@@ -1326,7 +1326,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_with_message_conflicts_while_agent_is_busy", async () => {
     const { loop } = await seededLoop();
-    await loop._begin("r_other", "a_1");
+    await loop.beginGeneration("r_other", "a_1");
     await assert.rejects(() => loop.createRun("a_1", "hello"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.match(error.detail, /already generating/);
@@ -1337,7 +1337,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("first_user_message_on_idle_run_is_generation_one", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", null);
     await loop.addMessage(String(created.id), "hello");
     const user = db.messages[db.messages.length - 1];
@@ -1352,9 +1352,9 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("later_turn_does_not_reinject_state", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", "hello");
-    loop._end(String(created.id));
+    loop.endGeneration(String(created.id));
     await loop.addMessage(String(created.id), "again");
     assert.deepEqual(
       db.messages.map((row) => (row.metadata as Record<string, unknown>).source),
@@ -1366,10 +1366,10 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("later_turn_keeps_opening_state_when_notes_change", async () => {
     const { loop, db, notes } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", "hello");
     const opening = parsedState(String(db.create_args?.system_content));
-    loop._end(String(created.id));
+    loop.endGeneration(String(created.id));
     await notes.writeNote("private", "acme", "research", "researcher", "hello.md", "note");
     await loop.addMessage(String(created.id), "again");
     assert.deepEqual(
@@ -1407,7 +1407,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("cancel_idle_run_is_noop", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", null);
     assert.equal(await loop.cancel(String(created.id)), null);
     assert.ok(db.run);
@@ -1420,9 +1420,9 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("add_message_conflicts_while_same_run_generating", async () => {
     const { loop } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", null);
-    await loop._begin(String(created.id), "a_1");
+    await loop.beginGeneration(String(created.id), "a_1");
     await assert.rejects(() => loop.addMessage(String(created.id), "hello"), (error: unknown) => {
       assert.ok(error instanceof RunRequestError);
       assert.equal(error.detail, "generation already in progress");
@@ -1441,7 +1441,7 @@ describe("generation", { concurrency: 1 }, () => {
       yield ["done", completionReply("nope")];
     };
     const created = await loop.createRun("a_1", "hello");
-    const queue = loop.subscribe(String(created.id));
+    const queue = loop.events.subscribe(String(created.id));
     await started.promise;
     const cancelled = await loop.cancel(String(created.id));
     assert.ok(cancelled);
@@ -1471,13 +1471,13 @@ describe("generation", { concurrency: 1 }, () => {
     const errors = db.run?.errors as Array<Record<string, unknown>>;
     assert.equal(errors[errors.length - 1]?.operation, "llm.complete");
     assert.ok(db.messages.every((row) => (row.payload as Record<string, unknown>).role !== "assistant"));
-    assert.ok(!loop._busy.has(String(created.id)));
+    assert.ok(!loop.generations.isGenerating(String(created.id)));
     restoreBindings();
   });
 
   test("reconcile_fills_unresolved_tool_calls", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     await loop.createRun("a_1", null);
     db.messages.push({
       seq: 3,
@@ -1507,7 +1507,7 @@ describe("generation", { concurrency: 1 }, () => {
     machine: { running: boolean; connect?: () => Promise<never> } = { running: true },
   ) {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     await loop.createRun("a_1", null);
     const run = db.run!;
     run.config_snapshot = { ...(run.config_snapshot as Record<string, unknown>), harness: "claude-code" };
@@ -1651,7 +1651,8 @@ describe("generation", { concurrency: 1 }, () => {
       { id: "call_1", function: { name: "script_run", arguments: '{"name":"slow"}' } },
       { id: "call_2", function: { name: "script_run", arguments: '{"name":"two"}' } },
     ]);
-    loop._start("r_1", "a_1", 1);
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
     await started.promise;
     const cancelled = await loop.cancel("r_1");
     assert.ok(cancelled);
@@ -1701,7 +1702,8 @@ describe("generation", { concurrency: 1 }, () => {
       { id: "call_1", function: { name: "script_run", arguments: '{"name":"slow"}' } },
       { id: "call_2", function: { name: "script_run", arguments: '{"name":"two"}' } },
     ]);
-    loop._start("r_1", "a_1", 1);
+    await loop.beginGeneration("r_1", "a_1");
+    loop.generateInBackground("r_1", 1);
     await started.promise;
     const cancelled = await loop.cancel("r_1");
     assert.ok(cancelled);
@@ -1795,7 +1797,7 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
     sandboxes.running.add("mach_1");
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     const sandbox = await loop.ensureBrowser("a_1");
     assert.ok(sandbox);
     assert.deepEqual(sandboxes.created, []);
@@ -1810,12 +1812,12 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { idleTimeoutMs: 30 });
     sandboxes.running.add("mach_1");
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     await loop.ensureBrowser("a_1");
     await sleep(90);
     assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "browser" }]);
     assert.deepEqual(sandboxes.destroyed, [], "the machine stays while the agent generates");
-    loop._end("r_1");
+    loop.endGeneration("r_1");
     loop._cancel_idle("mach_1");
   });
 
@@ -1831,7 +1833,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_omits_script_tools_when_scripting_is_off", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     db.agent.config = { ...AGENT_CONFIG, scripting: false };
     await loop.scripts.create(scriptOperator, "a_1", "keep", "why", "print(1)\n");
     await loop.createRun("a_1", null);
@@ -1846,7 +1848,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_offers_parameterised_script_as_a_tool", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const schema = {
       type: "object",
       properties: { symbol: { type: "string" } },
@@ -1958,7 +1960,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_omits_memory_write_when_binding_is_off", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     db.bindings = [
       {
         id: "bind_off_memory_write",
@@ -1983,7 +1985,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("create_run_omits_memory_when_memory_is_off", async () => {
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     db.agent.config = { ...AGENT_CONFIG, memory: false };
     await loop.createRun("a_1", null);
     const names = (
@@ -2031,7 +2033,7 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
     sandboxes.running.add("mach_1");
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     const sandbox = await loop.ensureCli("a_1");
     assert.ok(sandbox);
     assert.deepEqual(sandboxes.created, []);
@@ -2090,7 +2092,7 @@ describe("generation", { concurrency: 1 }, () => {
     assert.ok(restarted);
     assert.notEqual(restarted, armed);
     assert.notEqual(loop._browser_idle.get("a_1"), chrome, "pane input keeps the agent's Chrome up");
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     loop._schedule_idle("mach_1");
     const duringRun = loop._idle_tasks.get("mach_1");
     loop.touchSandbox("a_1");
@@ -2153,9 +2155,9 @@ describe("generation", { concurrency: 1 }, () => {
   test("later_turn_lists_secret_granted_after_run_start", async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
     const { loop, db } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", "hello");
-    loop._end(String(created.id));
+    loop.endGeneration(String(created.id));
     db.secrets = [liveSecret()];
     await loop.addMessage(String(created.id), "again");
     assert.deepEqual(
@@ -2169,9 +2171,9 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("later_turn_keeps_opening_memory", async () => {
     const { loop, db, notes } = await seededLoop();
-    loop._spawn = () => undefined;
+    loop.generateInBackground = () => undefined;
     const created = await loop.createRun("a_1", "hello");
-    loop._end(String(created.id));
+    loop.endGeneration(String(created.id));
     await notes.writeMemory("acme", "research", "researcher", "inbox", {
       source: "r_test",
       replacedBy: "run r_test (direct)",
@@ -2211,8 +2213,8 @@ describe("generation", { concurrency: 1 }, () => {
       yield ["done", { ...reply, metadata: { ...reply.metadata, reasoning: "weigh options" } }];
     };
     const published: Array<[string, Record<string, unknown>]> = [];
-    const publish = loop.publish.bind(loop);
-    loop.publish = async (runId, event, data) => {
+    const publish = loop.events.publish.bind(loop.events);
+    loop.events.publish = async (runId, event, data) => {
       published.push([event, data]);
       await publish(runId, event, data);
     };
@@ -2275,8 +2277,8 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), {}, {
       policy: limitedPolicy({ maxConcurrentRuns: 1 }),
     });
-    await loop._begin("r_1", "a_1");
-    await assert.rejects(() => loop._begin("r_2", "a_2"), (error: unknown) => {
+    await loop.beginGeneration("r_1", "a_1");
+    await assert.rejects(() => loop.beginGeneration("r_2", "a_2"), (error: unknown) => {
       assert.ok(error instanceof ConflictError);
       assert.match(error.message, /plan limit reached: concurrent generations/);
       return true;
@@ -2288,7 +2290,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), {}, {
       credentials: { modelCredentials: async () => null },
     });
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(
       () =>
         loop._llm_completion("r_1", {
@@ -2316,7 +2318,7 @@ describe("generation", { concurrency: 1 }, () => {
         },
       },
     });
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(
       () =>
         loop._llm_completion("r_1", {
@@ -2356,7 +2358,7 @@ describe("generation", { concurrency: 1 }, () => {
         }),
       },
     });
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     const completion = await loop._llm_completion("r_1", {
       model: "openrouter/openai/gpt-5.6-luna",
       messages: [],
@@ -2378,7 +2380,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), {}, {
       policy: limitedPolicy({}, new PolicyError(402, "subscription required: the trial has ended")),
     });
-    await loop._begin("r_1", "a_1");
+    await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(
       () =>
         loop._llm_completion("r_1", {
@@ -2430,11 +2432,11 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("event bus drops stalled subscribers", async () => {
     const loop = makeLoop({}, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    const queue = loop.subscribe("r_1");
+    const queue = loop.events.subscribe("r_1");
     for (let index = 0; index < 4096; index += 1) {
       await queue.put(["stalled", {}]);
     }
-    await loop.publish("r_1", "run.error", { operation: "generation.cancelled" });
+    await loop.events.publish("r_1", "run.error", { operation: "generation.cancelled" });
     assert.equal(queue.size, 4096);
   });
 });

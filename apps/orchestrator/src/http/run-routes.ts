@@ -95,8 +95,8 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
     await pipeSse(
       request,
       reply,
-      () => generation.subscribe(run.id),
-      (queue) => generation.unsubscribe(run.id, queue),
+      () => generation.events.subscribe(run.id),
+      (queue) => generation.events.unsubscribe(run.id, queue),
     );
   });
 }

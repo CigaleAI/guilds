@@ -51,7 +51,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     attachments,
     artifacts,
   });
-  generation._spawn = () => undefined;
+  generation.generateInBackground = () => undefined;
   const app = await buildApp(database, {
     db,
     notes,
