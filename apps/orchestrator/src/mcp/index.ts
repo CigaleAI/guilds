@@ -37,7 +37,7 @@ import {
 import { authFields, type Manifest } from "../connectors/manifest.js";
 import { redact } from "../secrets/index.js";
 import type { OrgPolicy } from "../policy/index.js";
-import { utcMonth } from "../usage.js";
+import { utcMonth } from "../usage/index.js";
 
 import { namespacedName } from "./names.js";
 import { manifestExcludes, overriddenTool, serverManifest, toolStartsOff } from "../connectors/load.js";

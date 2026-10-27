@@ -162,7 +162,7 @@ gate.
 
 ### Code
 
-- `apps/orchestrator/src/usage.ts`: counters, totals, the usage tree
+- `apps/orchestrator/src/usage/index.ts`: counters, totals, the usage tree
 - `apps/orchestrator/src/llm/cost.ts`: catalog pricing
 - `apps/orchestrator/src/llm/credentials.ts`: `onUsage`
-- `apps/orchestrator/src/http/usage-view.ts`: the organisation listing
+- `apps/orchestrator/src/usage/view.ts`: the organisation, guild, and agent listings

@@ -5,7 +5,7 @@ import { manifestTools, overriddenTool, toolStartsOff } from "../connectors/load
 import { connectorFacts } from "../connectors/view.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
-import { usageFields, utcMonth } from "../usage.js";
+import { usageFields, utcMonth } from "../usage/index.js";
 import {
   ALWAYS_OFFERED_TOOLS,
   BROWSER_CAPABILITY,

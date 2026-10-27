@@ -1,6 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
-import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, type UsageDelta, usageDelta, utcMonth } from "../usage.js";
+import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, type UsageDelta, usageDelta, utcMonth } from "../usage/index.js";
 import { type Queryable, stamp } from "./pg.js";
 import { orgMonthlyUsage, usageCounters } from "./schema/index.js";
 

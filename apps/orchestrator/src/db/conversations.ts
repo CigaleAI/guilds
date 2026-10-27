@@ -1,5 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { usageDelta } from "../usage.js";
+import { usageDelta } from "../usage/index.js";
 import { patchAssignments } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";

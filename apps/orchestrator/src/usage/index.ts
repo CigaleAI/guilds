@@ -1,4 +1,4 @@
-import { formatColumnTimestamp } from "./db/codecs.js";
+import { formatColumnTimestamp } from "../db/codecs.js";
 
 export const GLOBAL_SCOPE = "global";
 export const GLOBAL_SCOPE_ID = "";

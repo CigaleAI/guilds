@@ -6,9 +6,6 @@ import {
 } from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
-import {
-  maxWorkspaceMibOf,
-} from "../agents/validation.js";
 import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import {
   bindingItem,
@@ -23,13 +20,6 @@ import {
   validateSecretDescription,
   validateSecretName,
 } from "../credentials/validate.js";
-import {
-  AttachmentError,
-  MAX_ATTACHMENT_BYTES,
-  attachmentDisposition,
-  attachmentPayload,
-  inlineDisposition,
-} from "../attachments/index.js";
 import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { awaitingSettings, markDisconnected, mcpDatabase } from "../mcp/index.js";
@@ -79,8 +69,9 @@ import { NotesError } from "../notes/store.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
 import { Notifications, notificationsDatabase } from "../notifications/index.js";
-import { usageFields } from "../usage.js";
-import { usageForOrg } from "./usage-view.js";
+import { registerAccessRoutes } from "./access-routes.js";
+import { registerAttachmentRoutes } from "./attachment-routes.js";
+import { registerUsageRoutes } from "./usage-routes.js";
 import { registerStudioRoutes } from "./studio-routes.js";
 import { registerFileRoutes } from "./file-routes.js";
 import { publishGroup } from "./publish.js";
@@ -99,7 +90,6 @@ import {
   type SecretViewer,
 } from "../secrets/access.js";
 import type { AppDeps } from "./deps.js";
-import { loadAccessView } from "../access/view.js";
 import { HttpError, missingBodyFields, notesReadHttp, notesWriteHttp } from "./errors.js";
 import {
   addRecord,
@@ -162,7 +152,6 @@ import { registerRecipeRoutes } from "./recipe-routes.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-import { agentConfigObject } from "../agents/view.js";
 import { bodyOf, filePathParam, param, queryOf } from "./request.js";
 import {
   getMembership,
@@ -171,8 +160,7 @@ import {
   getGuild,
   listGuildsForUser,
 } from "../db/guilds.js";
-import { getAgent, listAgents } from "../db/agents.js";
-import { getUsage } from "../db/usage.js";
+import { getAgent } from "../db/agents.js";
 import {
   bindMcpConnection,
   connectMcp,
@@ -220,13 +208,6 @@ function failure(error: unknown, server: Record<string, unknown>): never {
 /** Whether an organisation sees a server: the platform's, or one of its own. */
 function serverVisible(server: Record<string, unknown>, orgId: string | null): boolean {
   return !server.owner_org_id || server.owner_org_id === orgId;
-}
-
-function attachmentsOf(deps: AppDeps) {
-  if (!deps.attachments) {
-    throw new HttpError(503, "attachments are not configured");
-  }
-  return deps.attachments;
 }
 
 function expectedVersionOf(body: Record<string, unknown>): number | undefined {
@@ -307,6 +288,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerAgentRoutes(app, deps);
   await registerRunRoutes(app, deps);
   await registerSandboxRoutes(app, deps);
+  await registerUsageRoutes(app, deps);
+  await registerAccessRoutes(app, deps);
+  await registerAttachmentRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -319,56 +303,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       auth_mode: deps.config?.authMode ?? "compat-cookie",
       integrations: integrationStatuses(deps.integrations ?? installedIntegrations(), undefined, undefined, { audit }),
     };
-  });
-
-  app.post(
-    "/api/attachments",
-    { bodyLimit: MAX_ATTACHMENT_BYTES + 4096 },
-    async (request, reply) => {
-      const user = await currentUser(identityDb, request, deps);
-      const org = await currentOrg(identityDb, request, user);
-      const bytes = Buffer.isBuffer(request.body) ? request.body : null;
-      if (!bytes) {
-        throw new HttpError(422, "body must be the file bytes");
-      }
-      const filename = String(request.headers["x-filename"] ?? "");
-      try {
-        const row = await attachmentsOf(deps).upload({
-          orgId: String(org.id),
-          userId: String(user.id),
-          filename,
-          bytes,
-        });
-        await send(reply, 201, attachmentPayload(row));
-      } catch (error) {
-        if (error instanceof AttachmentError) {
-          throw new HttpError(error.status, error.message);
-        }
-        throw error;
-      }
-    },
-  );
-
-  app.get("/api/attachments/:attachment_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    try {
-      const { row, bytes } = await attachmentsOf(deps).getForOrg(
-        String(org.id),
-        param(request, "attachment_id"),
-      );
-      return reply
-        .header("content-type", row.mime)
-        .header("x-content-type-options", "nosniff")
-        .header("content-disposition", row.kind === "image" ? inlineDisposition(row.filename) : attachmentDisposition(row.filename))
-        .header("cache-control", "private, max-age=3600")
-        .send(bytes);
-    } catch (error) {
-      if (error instanceof AttachmentError) {
-        throw new HttpError(error.status, error.message);
-      }
-      throw error;
-    }
   });
 
   app.get("/api/guilds/:guild_id/notes", async (request) => {
@@ -1069,96 +1003,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     } catch (error) {
       catchArtifact(error);
     }
-  });
-
-  /** Where a sandbox daemon answers for this agent: its base URL and the headers the proxy adds. */
-  app.get("/api/usage", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return { organisation: await usageForOrg(deps, org, String(user.id)) };
-  });
-
-  app.get("/api/guilds/:guild_id/usage", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const agents = await listAgents(db, String(guild.id));
-    return {
-      id: guild.id,
-      name: guild.name,
-      ...usageFields(await getUsage(db, "guild", String(guild.id))),
-      agents: await Promise.all(
-        agents.map(async (agent) => ({
-          id: agent.id,
-          name: agent.name,
-          avatar_shape: agent.avatar_shape || "teardrop",
-          avatar_color: agent.avatar_color || "#7c5cff",
-          ...usageFields(await getUsage(db, "agent", String(agent.id))),
-        })),
-      ),
-    };
-  });
-
-  app.get("/api/agents/:agent_id/usage", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    return {
-      id: agent.id,
-      name: agent.name,
-      guild_id: agent.guild_id,
-      guild_name: agent.guild_name,
-      workspace_mib:
-        agent.workspace_mib === null || agent.workspace_mib === undefined
-          ? null
-          : Number(agent.workspace_mib),
-      max_workspace_mib: maxWorkspaceMibOf(agentConfigObject(agent)),
-      machine: {
-        id: agent.machine_id,
-        name: agent.machine_name,
-        workspace_mib:
-          agent.machine_workspace_mib === null || agent.machine_workspace_mib === undefined
-            ? null
-            : Number(agent.machine_workspace_mib),
-        max_workspace_mib: Number(agent.machine_max_workspace_mib),
-      },
-      ...usageFields(await getUsage(db, "agent", String(agent.id))),
-    };
-  });
-
-  app.get("/api/platform", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    if (!(await isInstanceAdmin(deps, String(user.id)))) {
-      throw new HttpError(404, "Not Found");
-    }
-    return loadAccessView(mcpDatabase(db), { viewScope: "platform", mcp: deps.mcp ?? null });
-  });
-
-  app.get("/api/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return loadAccessView(mcpDatabase(db), { orgId: String(org.id), viewScope: "org", mcp: deps.mcp ?? null });
-  });
-
-  app.get("/api/guilds/:guild_id/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    return loadAccessView(mcpDatabase(db), {
-      orgId: String(guild.org_id),
-      guildId: String(guild.id),
-      viewScope: "guild",
-      mcp: deps.mcp ?? null,
-    });
-  });
-
-  app.get("/api/agents/:agent_id/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    return loadAccessView(mcpDatabase(db), {
-      orgId: String(row.org_id),
-      guildId: String(row.guild_id),
-      agentId: String(row.id),
-      viewScope: "agent",
-      mcp: deps.mcp ?? null,
-    });
   });
 
   async function visibleCredential(row: Record<string, unknown>, user: Record<string, unknown>): Promise<boolean> {

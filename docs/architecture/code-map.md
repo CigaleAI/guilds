@@ -45,7 +45,6 @@ A repository that extends core holds this one as a submodule
 | `src/compose.ts` | `createServer`, the composition root ([Startup](orchestrator.md#startup-and-shutdown)) |
 | `src/extension.ts` | `ServerExtension`, what an extension adds ([Extension points](extension-points.md)) |
 | `src/app.ts` | The Fastify app: the web build, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
-| `src/usage.ts` | Usage counter keys, deltas, and tree |
 | `drizzle/` | `0001_baseline` (with `0001.notes.md`), then numbered migrations ([PostgreSQL](orchestrator.md#postgresql)) |
 | `test/` | `unit/`, `integration/`, `contract/`, `helpers/` ([Tests](orchestrator.md#tests)) |
 | `scripts/` | `compat-verify`, `compat-digest`, `dump-baseline-schema`, `patch-http-mcp-catalog`, `build-connector`, `models-dev-snapshot`, `sweep-workspaces`, `typesafe-replay` |
@@ -87,6 +86,7 @@ A repository that extends core holds this one as a submodule
 | `avatars/` | [DiceBear](https://www.dicebear.com/) SVGs in seven styles (critters, cameo, pixelbot, bottts-neutral, clay, cutouts, voxel-bot); `looks.ts` assigns a guild family and a variant per builder role |
 | `issues/` | Guild issues from `report_issue` |
 | `notifications/` | The inbox view and its per-user stream |
+| `usage/` | Usage counter keys, deltas, and tree (`index.ts`), and the organisation, guild, and agent listings (`view.ts`) |
 | `studio/` | Prompt Studio: sessions, tools, drafts, edit, table, and routine requests, focus pins, and the activity ledger ([Prompt Studio](../concepts/prompt-studio.md)) |
 | `builder/` | The guild builder: sessions, tools, widgets, and workspace search ([Guild builder](../concepts/guild-builder.md)) |
 | `recipes/` | The `guilds.recipe` schema, capture, rewrite, validation, and apply ([Recipes](../concepts/recipes.md)) |

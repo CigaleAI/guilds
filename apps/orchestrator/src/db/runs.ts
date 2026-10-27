@@ -1,5 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { messageCostUsd } from "../usage.js";
+import { messageCostUsd } from "../usage/index.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import { messages, runs } from "./schema/index.js";

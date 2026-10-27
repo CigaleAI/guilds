@@ -217,6 +217,18 @@ test(
         headers: OWNER,
       });
       assert.equal(messages.statusCode, 200, messages.body);
+      const usage = await app.inject({ method: "GET", url: `${guild}/usage`, headers: OWNER });
+      assert.equal(usage.statusCode, 200, usage.body);
+      assert.deepEqual(
+        [usage.json().name, usage.json().agents.map((row: { name: string }) => row.name)],
+        ["items-desk", ["keeper"]],
+      );
+      const image = await app.inject({
+        method: "GET",
+        url: "/api/attachments/att_1",
+        headers: OWNER,
+      });
+      assert.equal(image.statusCode, 503, "a box without an image store serves none");
     } finally {
       await app.close();
       await database.close();

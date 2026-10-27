@@ -7,7 +7,7 @@ import {
   usageFields,
   usageTree,
   utcMonth,
-} from "../../src/usage.js";
+} from "../../src/usage/index.js";
 
 test("usage_delta_reads_assistant_metadata", () => {
   const delta = usageDelta({
