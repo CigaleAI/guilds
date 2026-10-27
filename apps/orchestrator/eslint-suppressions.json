@@ -169,14 +169,6 @@
       "count": 1
     }
   },
-  "src/connectors/gmail/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 9
-    },
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/connectors/instance.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
