@@ -73,6 +73,12 @@ test("guild settings change within the guild's state and roles", { timeout: 60_0
     const capped = { ...services, policy: limitedPolicy({ maxGuilds: 0 }) };
     await assert.rejects(createGuild(capped, HOME, OPERATOR, draft), LimitError);
     const guild = await createGuild(services, HOME, OPERATOR, draft);
+    const chat = await app.inject({
+      method: "GET",
+      url: `/api/guilds/${guild.id}/group-chat`,
+      headers: { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" },
+    });
+    assert.equal(chat.statusCode, 503, "a box without a generation loop has no group chat");
     await assert.rejects(
       createGuild(services, HOME, OPERATOR, draft),
       refusedWith(409, /already exists/),

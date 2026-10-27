@@ -1,3 +1,6 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
+import type { EventQueue } from "../lib/event.js";
+
 const FLOAT_KEYS = new Set(["cost_usd"]);
 
 export function dumpsSse(value: unknown): string {
@@ -81,3 +84,32 @@ export const SSE_HEADERS = {
   Connection: "keep-alive",
   "X-Accel-Buffering": "no",
 } as const;
+
+/** Streams a subscription's events to the request as SSE until the client goes away. */
+export async function pipeSse(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  subscribe: () => EventQueue<[string, Record<string, unknown>]>,
+  unsubscribe: (queue: EventQueue<[string, Record<string, unknown>]>) => void,
+): Promise<void> {
+  const queue = subscribe();
+  reply.hijack();
+  reply.raw.writeHead(200, SSE_HEADERS);
+  reply.raw.write(": connected\n\n");
+  const abort = new AbortController();
+  const onClose = () => {
+    abort.abort();
+  };
+  request.raw.on("close", onClose);
+  try {
+    while (!abort.signal.aborted) {
+      const [event, data] = await queue.get(abort.signal);
+      reply.raw.write(frameSse(event, data));
+    }
+  } catch {
+    /* client disconnected or aborted */
+  } finally {
+    request.raw.off("close", onClose);
+    unsubscribe(queue);
+  }
+}

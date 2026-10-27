@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { requireAdministeredGuild, requireVisibleGuild } from "../guilds/access.js";
+import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent, requireVisibleRun } from "../agents/access.js";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
 import {
@@ -42,7 +42,6 @@ import type { AttachmentRef } from "../attachments/index.js";
 import { jsonObj } from "../db/json.js";
 import { userActor } from "../db/config-changes.js";
 import { newId } from "../lib/ids.js";
-import { EventQueue } from "../lib/event.js";
 import { awaitingSettings, markDisconnected, mcpDatabase } from "../mcp/index.js";
 import {
   connect,
@@ -84,7 +83,6 @@ import {
   validateScope,
 } from "../access/index.js";
 import { RunRequestError, type GenerationLoop } from "../generation/index.js";
-import { GroupChatError } from "../groupchat/index.js";
 import {
   assertGuildAgentRoom,
   canSeeGuild,
@@ -176,7 +174,9 @@ import {
 } from "./artifact-notes.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
+import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
+import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOrgRoutes } from "./org-routes.js";
 import { registerUserRoutes } from "./user-routes.js";
 import { registerModelProviderRoutes } from "./model-provider-routes.js";
@@ -210,7 +210,7 @@ import {
   agentItem,
   agentWithAccess,
 } from "./items.js";
-import { frameSse, SSE_HEADERS } from "./sse.js";
+import { pipeSse } from "./sse.js";
 import { bodyOf, param } from "./request.js";
 import {
   getMembership,
@@ -221,7 +221,6 @@ import {
 } from "../db/guilds.js";
 import { placementMachine } from "../db/machines.js";
 import { getAgent, listAgents, updateAgentConfig } from "../db/agents.js";
-import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import { getSchedule, listSchedules } from "../db/schedules.js";
 import { listMessages } from "../db/runs.js";
 import { getUsage } from "../db/usage.js";
@@ -397,10 +396,6 @@ function generationOf(deps: AppDeps): GenerationLoop {
   return deps.generation;
 }
 
-function groupHttp(error: GroupChatError): HttpError {
-  return new HttpError(error.status, error.detail);
-}
-
 /** How a routine change reads on the guild's stream: a pause or resume alone, or an edit. */
 function routineAction(changes: ScheduleChanges): string {
   const fields = Object.keys(changes).filter((key) => key !== "paused");
@@ -455,34 +450,6 @@ async function agentPayload(
   });
 }
 
-async function pipeSse(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  subscribe: () => EventQueue<[string, Record<string, unknown>]>,
-  unsubscribe: (queue: EventQueue<[string, Record<string, unknown>]>) => void,
-): Promise<void> {
-  const queue = subscribe();
-  reply.hijack();
-  reply.raw.writeHead(200, SSE_HEADERS);
-  reply.raw.write(": connected\n\n");
-  const abort = new AbortController();
-  const onClose = () => {
-    abort.abort();
-  };
-  request.raw.on("close", onClose);
-  try {
-    while (!abort.signal.aborted) {
-      const [event, data] = await queue.get(abort.signal);
-      reply.raw.write(frameSse(event, data));
-    }
-  } catch {
-    /* client disconnected or aborted */
-  } finally {
-    request.raw.off("close", onClose);
-    unsubscribe(queue);
-  }
-}
-
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, notes, scripts, schedules, artifacts } = deps;
   const identityDb = identityDatabase(db);
@@ -532,6 +499,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerUserRoutes(app, deps);
   await registerOrgRoutes(app, deps);
   await registerGuildRoutes(app, deps);
+  await registerGroupChatRoutes(app, deps, notifications);
+  await registerNotificationRoutes(app, deps, notifications);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -594,146 +563,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
-  });
-
-  app.get("/api/guilds/:guild_id/group-chat", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guildId = param(request, "guild_id");
-    await requireVisibleGuild(db, guildId, String(user.id));
-    try {
-      const chat = await generationOf(deps).group_chat.state(guildId);
-      return {
-        ...chat,
-        seen_through_seq: await getGroupChatSeenThrough(db, guildId, String(user.id)),
-      };
-    } catch (error) {
-      if (error instanceof GroupChatError) {
-        throw groupHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.put("/api/guilds/:guild_id/group-chat/read", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guildId = param(request, "guild_id");
-    await requireVisibleGuild(db, guildId, String(user.id));
-    const value = bodyOf(request).seen_through_seq;
-    const seq = typeof value === "number" ? value : Number.NaN;
-    if (!Number.isInteger(seq) || seq < 0) {
-      throw new HttpError(422, "seen_through_seq must be a non-negative integer");
-    }
-    const seen = await markGroupChatSeen(db, guildId, String(user.id), seq, new Date());
-    await notifications.ping([String(user.id)]);
-    return { seen_through_seq: seen };
-  });
-
-  app.put("/api/guilds/:guild_id/group-chat", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const body = bodyOf(request);
-    try {
-      return await generationOf(deps).group_chat.set_limit(
-        param(request, "guild_id"),
-        Number(body.agent_message_limit),
-      );
-    } catch (error) {
-      if (error instanceof GroupChatError) {
-        throw groupHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/guilds/:guild_id/group-chat/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    try {
-      return await generationOf(deps).group_chat.list_messages(param(request, "guild_id"));
-    } catch (error) {
-      if (error instanceof GroupChatError) {
-        throw groupHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.delete("/api/guilds/:guild_id/group-chat/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
-    try {
-      return await generationOf(deps).group_chat.clear(param(request, "guild_id"));
-    } catch (error) {
-      if (error instanceof GroupChatError) {
-        throw groupHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.post("/api/guilds/:guild_id/group-chat/messages", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const missing = missingBodyFields(request.body, ["content"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    const guildId = param(request, "guild_id");
-    if (body.interrupt !== undefined && typeof body.interrupt !== "boolean") {
-      throw new HttpError(422, "interrupt must be a boolean");
-    }
-    try {
-      const message = await generationOf(deps).group_chat.post_user(guildId, String(body.content ?? ""), {
-        author_name: String(user.name),
-        author_user_id: String(user.id),
-        interrupt: body.interrupt === true,
-      });
-      await markGroupChatSeen(db, guildId, String(user.id), Number(message.seq), new Date());
-      await notifications.ping([String(user.id)]);
-      await send(reply, 202, message);
-    } catch (error) {
-      if (error instanceof GroupChatError) {
-        throw groupHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/guilds/:guild_id/group-chat/stream", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const chat = generationOf(deps).group_chat;
-    await pipeSse(
-      request,
-      reply,
-      () => chat.subscribe(param(request, "guild_id")),
-      (queue) => chat.unsubscribe(param(request, "guild_id"), queue),
-    );
-  });
-
-  app.get("/api/notifications", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return notifications.list(String(org.id), String(user.id));
-  });
-
-  app.post("/api/notifications/read", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return notifications.markMentionsRead(String(org.id), String(user.id));
-  });
-
-  app.get("/api/notifications/stream", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const userId = String(user.id);
-    await pipeSse(
-      request,
-      reply,
-      () => notifications.subscribe(userId, String(org.id)),
-      (queue) => notifications.unsubscribe(userId, queue),
-    );
   });
 
   app.get("/api/guilds/:guild_id/agents", async (request) => {
