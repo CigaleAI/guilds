@@ -14,7 +14,8 @@ import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
 import { emptyRecipe } from "../recipes/minimal.js";
-import { RecipeStore } from "../recipes/store.js";
+import { addRecipeDraft, linkRecipeToBuilder, markRecipeReady, writeRecipe } from "../recipes/library.js";
+import { getRecipe, type RecipeRow } from "../db/recipes.js";
 import { RecipeApplyService, type ApplyChoices } from "../recipes/apply.js";
 import {
   applyAccessEdits,
@@ -36,11 +37,10 @@ import { builderConversationTools, builderToolSchemas, type BuilderToolContext }
 import type { BuilderMcpClient } from "./connected.js";
 import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
 import { connectedDatabase } from "./connected.js";
-import type { Queryable } from "../db/pg.js";
+import { type Queryable, withTransaction } from "../db/pg.js";
 
 export type BuilderServiceDeps = {
   db: Queryable;
-  recipes: RecipeStore;
   capabilities: CapabilityService;
   apply: RecipeApplyService;
   admission?: AdmissionCoordinator;
@@ -182,23 +182,19 @@ export class BuilderService {
       guidelinesPath: this.deps.guidelinesPath,
       now,
     });
-    const session = await this.deps.recipes.withTransaction(async (client) => {
-      await this.deps.recipes.insert(
+    const session = await withTransaction(this.deps.db, async (client) => {
+      await addRecipeDraft(
+        client,
         {
-          id: recipeId,
-          org_id: args.org.id,
-          created_by_user_id: args.user.id,
+          recipeId,
+          orgId: String(args.org.id),
+          createdByUserId: String(args.user.id),
           name: recipeBody.meta.name,
           description: "",
-          visibility: "private",
-          status: "draft",
           body: recipeBody,
-          body_version: 1,
-          source_kind: "builder",
-          source_builder_session_id: null,
-          now,
+          sourceKind: "builder",
         },
-        client,
+        now,
       );
       const created = await this.store.insertSession(
         {
@@ -217,7 +213,7 @@ export class BuilderService {
         },
         client,
       );
-      await this.deps.recipes.linkBuilderSession(recipeId, sessionId, now, client);
+      await linkRecipeToBuilder(client, recipeId, sessionId, now);
       return created;
     });
     await this.store.insertMessage(
@@ -228,12 +224,12 @@ export class BuilderService {
       { source: "builder_system", system_prompt_hash: system.hash },
       now,
     );
-    const recipe = await this.deps.recipes.get(recipeId);
+    const recipe = await getRecipe(this.deps.db, recipeId);
     return this.viewSession(session, recipe);
   }
 
-  async recipeFor(session: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const recipe = await this.deps.recipes.get(String(session.recipe_id));
+  async recipeFor(session: Record<string, unknown>): Promise<RecipeRow> {
+    const recipe = await getRecipe(this.deps.db, String(session.recipe_id));
     if (!recipe) {
       throw new BuilderError(404, "recipe not found");
     }
@@ -247,7 +243,7 @@ export class BuilderService {
       db: connectedDatabase(this.deps.db),
       mcp: this.deps.mcp ?? null,
       recipeId: String(session.recipe_id),
-      recipes: this.deps.recipes,
+      connection: this.deps.db,
       coachModel: String((session.config_snapshot as Record<string, unknown> | null)?.model ?? ""),
       validationContext: () => this.deps.apply.validationContext(String(session.org_id)),
     };
@@ -270,7 +266,7 @@ export class BuilderService {
       }
       const now = new Date();
       await claimCoachRun(this.policy, coachRunClaims(client), String(locked.org_id), now);
-      const recipe = await this.deps.recipes.get(String(locked.recipe_id), client);
+      const recipe = await getRecipe(client, String(locked.recipe_id));
       const parsed = parseRecipe(recipe?.body);
       const expectedBodyVersion = Number(recipe?.body_version ?? 1);
       const config = (locked.config_snapshot ?? {}) as Record<string, unknown>;
@@ -366,14 +362,12 @@ export class BuilderService {
     body: unknown,
   ): Promise<Record<string, unknown>> {
     const parsed = parseRecipe(body);
-    const written = await this.deps.recipes.writeBody(
-      String(session.recipe_id),
-      expectedVersion,
-      parsed,
-      { name: parsed.meta.name, description: parsed.meta.description },
+    return writeRecipe(
+      this.deps.db,
+      { id: String(session.recipe_id), body_version: expectedVersion },
+      { body: parsed, name: parsed.meta.name, description: parsed.meta.description },
       new Date(),
     );
-    return written;
   }
 
   async reviewField(
@@ -385,13 +379,7 @@ export class BuilderService {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
     applyReview(recipe, path, action, value);
-    return this.deps.recipes.writeBody(
-      String(row.id),
-      Number(row.body_version),
-      recipe,
-      {},
-      new Date(),
-    );
+    return writeRecipe(this.deps.db, row, { body: recipe }, new Date());
   }
 
   async editAccess(
@@ -401,13 +389,7 @@ export class BuilderService {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
     const cuts = applyAccessEdits(recipe, parseAccessEdits(input));
-    const written = await this.deps.recipes.writeBody(
-      String(row.id),
-      Number(row.body_version),
-      recipe,
-      {},
-      new Date(),
-    );
+    const written = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
     return { ...written, access_cuts: cuts };
   }
 
@@ -432,13 +414,7 @@ export class BuilderService {
     const recipe = parseRecipe(row.body);
     let current = row;
     if (assignGuildLooks(recipe.roles)) {
-      current = await this.deps.recipes.writeBody(
-        String(row.id),
-        Number(row.body_version),
-        recipe,
-        {},
-        new Date(),
-      );
+      current = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
     }
     const ctx = await this.deps.apply.validationContext(String(session.org_id));
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
@@ -446,7 +422,7 @@ export class BuilderService {
     if (errors.length) {
       throw new BuilderError(422, errors.map((item) => item.message).join("; "));
     }
-    return (await this.deps.recipes.setStatus(String(current.id), "ready", new Date())) ?? current;
+    return markRecipeReady(this.deps.db, current, new Date());
   }
 
   async deploy(

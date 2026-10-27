@@ -20,7 +20,9 @@ import {
   type RecipeDocument,
 } from "../recipes/schema.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
-import type { RecipeStore } from "../recipes/store.js";
+import type { Queryable } from "../db/pg.js";
+import { getRecipe } from "../db/recipes.js";
+import { writeRecipe } from "../recipes/library.js";
 import { validateRecipe, type ValidationContext } from "../recipes/validate.js";
 
 export type BuilderCapabilityContext = {
@@ -33,7 +35,8 @@ export type BuilderCapabilityContext = {
 export type BuilderToolContext = BuilderCapabilityContext & {
   recipeId: string;
   expectedWrite?: boolean;
-  recipes: RecipeStore;
+  /** The connection the recipe is read and written on. */
+  connection: Queryable;
   /** The coach's own model: the recommendation a role without one is written with. */
   coachModel?: string;
   validationContext: () => Promise<ValidationContext>;
@@ -444,11 +447,11 @@ export const builderWriteRecipe = {
       };
     }
     try {
-      const row = await ctx.recipes.get(ctx.recipeId);
+      const row = await getRecipe(ctx.connection, ctx.recipeId);
       if (!row) {
         return { error: "recipe not found" };
       }
-      const currentVersion = Number(row.body_version);
+      const currentVersion = row.body_version;
       if (expected !== currentVersion) {
         return {
           error: "recipe body_version conflict",
@@ -465,11 +468,10 @@ export const builderWriteRecipe = {
       }
       const stamped = stampBuilderWrite(next, previous);
       assignGuildLooks(stamped.roles, previous.roles);
-      const written = await ctx.recipes.writeBody(
-        ctx.recipeId,
-        expected,
-        stamped,
-        { name: stamped.meta.name, description: stamped.meta.description },
+      const written = await writeRecipe(
+        ctx.connection,
+        { id: ctx.recipeId, body_version: expected },
+        { body: stamped, name: stamped.meta.name, description: stamped.meta.description },
         new Date(),
       );
       if (ctx.onRecipeChanged) {
@@ -512,7 +514,7 @@ export const builderValidateRecipe = {
     [],
   ),
   async handler(ctx: BuilderToolContext) {
-    const row = await ctx.recipes.get(ctx.recipeId);
+    const row = await getRecipe(ctx.connection, ctx.recipeId);
     if (!row) {
       return { error: "recipe not found" };
     }

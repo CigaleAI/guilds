@@ -90,7 +90,7 @@ import {
 import { applyBlockingErrors, validateRecipe, type RecipeFinding, type ValidationContext } from "./validate.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
-import type { RecipeStore } from "./store.js";
+import { getRecipe } from "../db/recipes.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import {
   countOrgAgents,
@@ -111,7 +111,6 @@ import type { Queryable } from "../db/pg.js";
 
 export type ApplyDeps = {
   db: Queryable;
-  recipes: RecipeStore;
   artifacts: ArtifactStore;
   notes: NotesStore;
   scripts: Scripts;
@@ -984,7 +983,7 @@ export class RecipeApplyService {
     const plan = (applyRow.plan ?? {}) as Record<string, unknown>;
     const names = (plan.names as Array<{ role: string; agent_id?: string }>) ?? [];
     const ctx = await this.validationContext(String(applyRow.org_id));
-    const recipe = prepareRecipeForApply(parseRecipe((await this.deps.recipes.get(String(applyRow.recipe_id)))?.body), ctx.publishedServers);
+    const recipe = prepareRecipeForApply(parseRecipe((await getRecipe(this.deps.db, String(applyRow.recipe_id)))?.body), ctx.publishedServers);
     const activate = new Set((plan.activate_keys as string[]) ?? []);
     for (const role of recipe.roles) {
       const agentId = names.find((item) => item.role === role.role)?.agent_id;
@@ -1041,7 +1040,7 @@ export class RecipeApplyService {
     actor: ChangeActor,
   ): Promise<void> {
     const ctx = await this.validationContext(String(applyRow.org_id));
-    const recipe = prepareRecipeForApply(parseRecipe((await this.deps.recipes.get(String(applyRow.recipe_id)))?.body), ctx.publishedServers);
+    const recipe = prepareRecipeForApply(parseRecipe((await getRecipe(this.deps.db, String(applyRow.recipe_id)))?.body), ctx.publishedServers);
     const connection = recipe.connections.find((item) => item.server === server);
     if (!connection) return;
     const serverRow = await getMcpServerBySlug(this.deps.db, server, String(applyRow.org_id));

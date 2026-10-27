@@ -11,7 +11,6 @@ import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
 import { RecipeApplyService } from "../../src/recipes/apply.js";
-import { RecipeStore } from "../../src/recipes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { tempDir } from "../helpers/env.js";
@@ -54,7 +53,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => {
+test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-builder-notes-"), templatesRoot());
@@ -64,12 +63,11 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
-  const recipes = new RecipeStore(db);
   const caps = { maxAgents: 25 };
   const policy = limitedPolicy(caps);
   const capabilities = new CapabilityService(db, policy);
-  const apply = new RecipeApplyService({ db, recipes, artifacts, notes, scripts, schedules, policy, registry: null });
-  const builder = new BuilderService({ db, recipes, capabilities, apply, policy });
+  const apply = new RecipeApplyService({ db, artifacts, notes, scripts, schedules, policy, registry: null });
+  const builder = new BuilderService({ db, capabilities, apply, policy });
   const app = await buildApp(database, {
     db,
     notes,
@@ -77,7 +75,6 @@ test("builder, recipes, apply, and LinkedIn to Notion", { timeout: 90_000 }, asy
     scripts,
     schedules,
     capabilities,
-    recipes,
     apply,
     builder,
   });

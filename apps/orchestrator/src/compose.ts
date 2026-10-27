@@ -27,7 +27,6 @@ import { NotesStore } from "./notes/store.js";
 import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
 import { RecipeApplyService } from "./recipes/apply.js";
-import { RecipeStore } from "./recipes/store.js";
 import { RunSandboxes } from "./sandbox/index.js";
 import { scheduleDatabase, Schedules } from "./schedules/service.js";
 import { scriptDatabase, Scripts } from "./scripts/catalog.js";
@@ -169,11 +168,9 @@ export async function createServer(
   });
   // A studio session left generating is continued by this process.
   await studio.reconcile();
-  const recipes = new RecipeStore(db);
   const capabilities = new CapabilityService(db, policy, models);
   const apply = new RecipeApplyService({
     db,
-    recipes,
     artifacts,
     notes,
     scripts,
@@ -183,7 +180,6 @@ export async function createServer(
   });
   const builder = new BuilderService({
     db,
-    recipes,
     capabilities,
     apply,
     admission: generation.admission,
@@ -212,7 +208,6 @@ export async function createServer(
       sandboxes,
       studio,
       capabilities,
-      recipes,
       apply,
       builder,
       policy,

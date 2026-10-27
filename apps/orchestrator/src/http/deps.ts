@@ -9,7 +9,6 @@ import type { McpPool } from "../mcp/index.js";
 import type { GenerationLoop, GenerationSandboxes } from "../generation/index.js";
 import type { StudioService } from "../studio/index.js";
 import type { BuilderService } from "../builder/index.js";
-import type { RecipeStore } from "../recipes/store.js";
 import type { RecipeApplyService } from "../recipes/apply.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import type { AttachmentService } from "../attachments/index.js";
@@ -40,7 +39,6 @@ export type AppDeps = {
   sandboxes?: GenerationSandboxes;
   studio?: StudioService;
   capabilities?: CapabilityService;
-  recipes?: RecipeStore;
   apply?: RecipeApplyService;
   builder?: BuilderService;
   /** Identifies a request's user in place of core's modes. */
