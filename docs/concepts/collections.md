@@ -545,6 +545,6 @@ PUT    /api/collections/:id/access               { subjects: [{ type, id, mode }
   ([Artifact store](artifacts.md#file-provenance)).
 
 Code: `apps/orchestrator/src/http/routes.ts`,
-`apps/orchestrator/src/http/artifact-notes.ts`,
+`apps/orchestrator/src/artifacts/collection-views.ts`,
 `apps/orchestrator/src/artifacts/search.ts`,
 `apps/orchestrator/src/toolbox/artifacts.ts`.

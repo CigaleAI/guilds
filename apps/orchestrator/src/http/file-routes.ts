@@ -9,7 +9,6 @@ import {
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { attachmentDisposition } from "../attachments/index.js";
-import { catchArtifact } from "./artifact-notes.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
@@ -86,25 +85,17 @@ function registerOwnerRoutes(
 ): void {
   app.get(path, async (request) => {
     const { level, ownerId, actor } = await owner(deps, request);
-    try {
-      return await filesOf(deps).listOwnerFiles(actor, level, ownerId);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await filesOf(deps).listOwnerFiles(actor, level, ownerId);
   });
 
   app.post(path, { bodyLimit: FILE_MAX_BYTES + 4096 }, async (request, reply) => {
     const { level, guildId, actor } = await owner(deps, request);
     const files = filesOf(deps);
     const bytes = uploadBytes(request);
-    try {
-      const row = await files.putFile(actor, { level, ...uploadHeaders(request), bytes });
-      const view = files.view(row);
-      await publishFileChanged(deps, guildId, view.display_path);
-      return reply.code(201).send(view);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const row = await files.putFile(actor, { level, ...uploadHeaders(request), bytes });
+    const view = files.view(row);
+    await publishFileChanged(deps, guildId, view.display_path);
+    return reply.code(201).send(view);
   });
 }
 
@@ -126,24 +117,16 @@ export async function registerFileRoutes(app: FastifyInstance, deps: AppDeps): P
   app.get("/api/files/:file_id", async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
     const files = filesOf(deps);
-    try {
-      const row = await files.loadFileById(actor, param(request, "file_id"));
-      return sendBytes(reply, files.view(row), await files.readBytes(row));
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const row = await files.loadFileById(actor, param(request, "file_id"));
+    return sendBytes(reply, files.view(row), await files.readBytes(row));
   });
 
   app.delete("/api/files/:file_id", async (request, reply) => {
     const { actor } = await orgOwner(deps, request);
     const files = filesOf(deps);
-    try {
-      const row = await files.loadFileById(actor, param(request, "file_id"));
-      await files.deleteFile(actor, row);
-      await publishFileChanged(deps, row.guild_id, files.view(row).display_path);
-      return reply.code(204).send();
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const row = await files.loadFileById(actor, param(request, "file_id"));
+    await files.deleteFile(actor, row);
+    await publishFileChanged(deps, row.guild_id, files.view(row).display_path);
+    return reply.code(204).send();
   });
 }

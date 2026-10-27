@@ -22,6 +22,14 @@ import type { OrgPolicy } from "../policy/index.js";
 import type { RegistryClient } from "../registry/client.js";
 import type { Queryable } from "../db/pg.js";
 
+/** The services the routes run with: the app's, with the ones `buildApp` fills in when its caller leaves them out. */
+export type RouteDeps = AppDeps & {
+  artifacts: ArtifactStore;
+  instanceKeys: InstanceKeys;
+  modelCredentials: ModelCredentialsProvider;
+  models: ModelsService;
+};
+
 export type AppDeps = {
   database: Database;
   db: Queryable;

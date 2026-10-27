@@ -14,24 +14,22 @@ import { loadAgentView } from "../agents/view.js";
 import { loadOperatorActor } from "../artifacts/index.js";
 import type { AgentRow } from "../db/agents.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { OPEN_POLICY } from "../policy/index.js";
-import type { AppDeps } from "./deps.js";
+import type { RouteDeps } from "./deps.js";
 import { missingBodyFields, notesWrite } from "./errors.js";
 import { currentUser, identityDatabase } from "./identity.js";
 import { bodyOf, param } from "./request.js";
 
 /** A guild's agents: listed, created, configured, moved between machines, and deleted. */
-export async function registerAgentRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
+export async function registerAgentRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
   const { db } = deps;
   const identityDb = identityDatabase(db);
   const services: AgentServices = {
     db,
     notes: deps.notes,
-    artifacts: deps.artifacts ?? null,
+    artifacts: deps.artifacts,
     policy: deps.policy ?? OPEN_POLICY,
-    modelCredentials:
-      deps.modelCredentials ?? coreModelCredentials(modelProviderStore(db), deps.masterKey),
+    modelCredentials: deps.modelCredentials,
     generation: deps.generation ?? null,
   };
 

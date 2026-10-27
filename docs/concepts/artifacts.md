@@ -247,8 +247,8 @@ A path with no recorded change but a live row falls back to that
 row's last-saved facts: `recorded: false`, the saver's name, the
 version, and the time. A Task falls back to its version and time.
 
-Code: `apps/orchestrator/src/artifacts/file-changes.ts`,
-`apps/orchestrator/src/http/artifact-notes.ts`.
+Code: `apps/orchestrator/src/db/file-changes.ts`,
+`apps/orchestrator/src/artifacts/host-files.ts`.
 
 ### Configuration change log
 

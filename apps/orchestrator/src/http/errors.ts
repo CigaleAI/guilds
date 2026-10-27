@@ -68,6 +68,15 @@ export function notesWriteHttp(error: Error): HttpError {
   return new HttpError(status, message);
 }
 
+/** Awaits a read of the notes folder, answering a refused one as `notesReadHttp` does. */
+export async function notesRead<T>(read: Promise<T>): Promise<T> {
+  try {
+    return await read;
+  } catch (error) {
+    throw error instanceof NotesError ? notesReadHttp(error) : error;
+  }
+}
+
 /** Awaits a write that touches the notes folder, answering a refused one as `notesWriteHttp` does. */
 export async function notesWrite<T>(write: Promise<T>): Promise<T> {
   try {

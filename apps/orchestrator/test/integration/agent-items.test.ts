@@ -23,7 +23,7 @@ after(async () => {
 });
 
 test(
-  "an agent's scripts and routines and a guild's issues answer for what is not there",
+  "an operator's scripts, routines, issues, runs and notes answer for what is there and what is not",
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -229,6 +229,42 @@ test(
         headers: OWNER,
       });
       assert.equal(image.statusCode, 503, "a box without an image store serves none");
+
+      const get = (url: string) => app.inject({ method: "GET", url, headers: OWNER });
+      const put = (url: string, payload: object) =>
+        app.inject({ method: "PUT", url, headers: JSON_OWNER, payload });
+      const remove = (url: string) => app.inject({ method: "DELETE", url, headers: OWNER });
+      const brief = "/api/org/notes/brief.md";
+      const written = await put(brief, { content: "# Brief\n" });
+      assert.equal(written.statusCode, 200, written.body);
+      const displayPath = String(written.json().display_path);
+      assert.equal((await get(brief)).json().content, "# Brief\n");
+      assert.deepEqual(
+        (await get("/api/org/notes")).json().map((row: { path: string }) => row.path),
+        ["brief.md"],
+      );
+      const embeddable = await get(
+        `/api/org/embeddable-notes?display_path=${encodeURIComponent(displayPath)}`,
+      );
+      assert.equal(embeddable.json().content, "# Brief\n");
+      assert.equal(
+        (await get("/api/org/embeddable-notes?display_path=org%2Fmissing")).statusCode,
+        404,
+      );
+      assert.equal((await get("/api/file-changes")).statusCode, 422, "a change log names its path");
+      const changes = await get(
+        `/api/file-changes?display_path=${encodeURIComponent(displayPath)}`,
+      );
+      assert.equal(changes.json().length, 1);
+      assert.equal((await remove(brief)).statusCode, 204);
+      assert.equal((await get(brief)).statusCode, 404);
+
+      const log = `${agent}/notes/log.md`;
+      const stale = await put(log, { content: "day one\n", expected_version: "first" });
+      assert.equal(stale.statusCode, 422, "an expected version is a number");
+      assert.equal((await put(log, { content: "day one\n" })).statusCode, 200);
+      assert.equal((await remove(log)).statusCode, 204);
+      assert.equal((await get(`${agent}/memory`)).statusCode, 200);
     } finally {
       await app.close();
       await database.close();

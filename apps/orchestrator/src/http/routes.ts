@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   loadOperatorActor,
-  listFileChanges,
 } from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
@@ -65,7 +64,6 @@ import {
 import {
   canSeeGuild,
 } from "../guilds/validation.js";
-import { NotesError } from "../notes/store.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
 import { Notifications, notificationsDatabase } from "../notifications/index.js";
@@ -74,8 +72,6 @@ import { registerAttachmentRoutes } from "./attachment-routes.js";
 import { registerUsageRoutes } from "./usage-routes.js";
 import { registerStudioRoutes } from "./studio-routes.js";
 import { registerFileRoutes } from "./file-routes.js";
-import { publishGroup } from "./publish.js";
-import { memoryHistory } from "../memory/history.js";
 import { SecretNameTaken } from "../db/errors.js";
 import {
   SecretAccessError,
@@ -89,36 +85,32 @@ import {
   type SecretAccess,
   type SecretViewer,
 } from "../secrets/access.js";
-import type { AppDeps } from "./deps.js";
-import { HttpError, missingBodyFields, notesReadHttp, notesWriteHttp } from "./errors.js";
+import type { AppDeps, RouteDeps } from "./deps.js";
+import { HttpError, missingBodyFields } from "./errors.js";
+import {
+  requireArtifactStore,
+} from "../artifacts/host-files.js";
 import {
   addRecord,
-  catchArtifact,
   clearRecords,
   createCollection,
   deleteCollection,
-  deleteHostFile,
-  ensureAgentArtifacts,
   exportCollection,
   getCollection,
   getRecord,
   listCollections,
-  listHostFiles,
   listRecords,
-  latestFileChanges,
-  readHostFile,
   removeRecord,
-  requireArtifacts,
   updateCollection,
   updateRecord,
-  writeHostFile,
-} from "./artifact-notes.js";
+} from "../artifacts/collection-views.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
 import { registerAgentRoutes } from "./agent-routes.js";
 import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
 import { registerIssueRoutes } from "./issue-routes.js";
+import { registerNoteRoutes } from "./note-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOrgRoutes } from "./org-routes.js";
 import { registerRunRoutes } from "./run-routes.js";
@@ -152,7 +144,7 @@ import { registerRecipeRoutes } from "./recipe-routes.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-import { bodyOf, filePathParam, param, queryOf } from "./request.js";
+import { bodyOf, param, queryOf } from "./request.js";
 import {
   getMembership,
 } from "../db/orgs.js";
@@ -210,18 +202,6 @@ function serverVisible(server: Record<string, unknown>, orgId: string | null): b
   return !server.owner_org_id || server.owner_org_id === orgId;
 }
 
-function expectedVersionOf(body: Record<string, unknown>): number | undefined {
-  const value = body.expected_version;
-  if (value === undefined || value === null || value === "") {
-    return undefined;
-  }
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < 0) {
-    throw new HttpError(422, "expected_version must be an integer");
-  }
-  return n;
-}
-
 async function send(reply: FastifyReply, status: number, payload?: unknown): Promise<FastifyReply> {
   if (status === 204) {
     return reply.code(204).send();
@@ -253,8 +233,8 @@ async function scopeGuild(
   return String(row.guild_id);
 }
 
-export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { db, notes, artifacts } = deps;
+export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
+  const { db, artifacts } = deps;
   const identityDb = identityDatabase(db);
   const notifications = new Notifications(notificationsDatabase(db));
 
@@ -291,6 +271,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerUsageRoutes(app, deps);
   await registerAccessRoutes(app, deps);
   await registerAttachmentRoutes(app, deps);
+  await registerNoteRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -305,441 +286,117 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     };
   });
 
-  app.get("/api/guilds/:guild_id/notes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    if (!artifacts) {
-      try {
-        return notes.listSharedFiles(String(row.org_slug), String(row.name));
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesReadHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      return await listHostFiles(
-        artifacts,
-        await loadOperatorActor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
-        "guild",
-        String(row.id),
-      );
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/guilds/:guild_id/notes/*", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const filePath = filePathParam(request);
-    if (!artifacts) {
-      try {
-        return {
-          path: filePath,
-          content: notes.readSharedFile(String(row.org_slug), String(row.name), filePath),
-        };
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesReadHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      return await readHostFile(
-        artifacts,
-        await loadOperatorActor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
-        "guild",
-        String(row.id),
-        filePath,
-      );
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.put("/api/guilds/:guild_id/notes/*", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const filePath = filePathParam(request);
-    const body = bodyOf(request);
-    if (!artifacts) {
-      try {
-        await notes.writeSharedFile(
-          String(row.org_slug),
-          String(row.name),
-          filePath,
-          String(body.content ?? ""),
-        );
-        await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
-          scope: "shared",
-          path: filePath,
-        });
-        return {
-          path: filePath,
-          content: notes.readSharedFile(String(row.org_slug), String(row.name), filePath),
-        };
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesWriteHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      const written = await writeHostFile(
-        artifacts,
-        await loadOperatorActor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
-        "guild",
-        String(row.id),
-        filePath,
-        String(body.content ?? ""),
-      );
-      await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
-        scope: "guild",
-        path: filePath,
-      });
-      return written;
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.delete("/api/guilds/:guild_id/notes/*", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const filePath = filePathParam(request);
-    if (!artifacts) {
-      try {
-        await notes.deleteSharedFile(String(row.org_slug), String(row.name), filePath);
-        await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
-          scope: "shared",
-          path: filePath,
-        });
-        await send(reply, 204);
-        return;
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesWriteHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      await deleteHostFile(
-        artifacts,
-        await loadOperatorActor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
-        "guild",
-        String(row.id),
-        filePath,
-      );
-      await publishGroup(deps, String(row.id), "guild.artifacts.changed", {
-        scope: "guild",
-        path: filePath,
-      });
-      await send(reply, 204);
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/org/notes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    if (!artifacts) {
-      return [];
-    }
-    try {
-      return await listHostFiles(artifacts, await loadOperatorActor(db, user, { orgId: String(org.id) }), "org", String(org.id));
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/file-changes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const displayPath = String(
-      (request.query as { display_path?: unknown }).display_path ?? "",
-    ).trim();
-    if (!displayPath) {
-      throw new HttpError(422, "display_path is required");
-    }
-    const store = requireArtifacts(artifacts);
-    const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
-    if (!(await store.canReadDisplayPath(actor, displayPath))) {
-      return [];
-    }
-    return listFileChanges(db, String(org.id), displayPath);
-  });
-
-  // Newest change per display path. `display_paths` is comma-separated in
-  // the query, or a JSON array in a POST body when the list is long.
-  app.get("/api/file-changes/latest", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const raw = String((request.query as { display_paths?: unknown }).display_paths ?? "");
-    const paths = raw
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const store = requireArtifacts(artifacts);
-    return latestFileChanges(store, db, await loadOperatorActor(db, user, { orgId: String(org.id) }), paths);
-  });
-
-  app.post("/api/file-changes/latest", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const body = bodyOf(request);
-    const paths = Array.isArray(body.display_paths)
-      ? body.display_paths.map((item) => String(item ?? "").trim()).filter(Boolean)
-      : [];
-    const store = requireArtifacts(artifacts);
-    return latestFileChanges(store, db, await loadOperatorActor(db, user, { orgId: String(org.id) }), paths);
-  });
-
-  app.get("/api/org/notes/*", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const filePath = filePathParam(request);
-    if (!artifacts) {
-      throw new HttpError(404, "artifact not found");
-    }
-    try {
-      return await readHostFile(artifacts, await loadOperatorActor(db, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.put("/api/org/notes/*", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const filePath = filePathParam(request);
-    const body = bodyOf(request);
-    if (!artifacts) {
-      throw new HttpError(422, "artifact store is not available");
-    }
-    try {
-      return await writeHostFile(
-        artifacts,
-        await loadOperatorActor(db, user, { orgId: String(org.id) }),
-        "org",
-        String(org.id),
-        filePath,
-        String(body.content ?? ""),
-      );
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.delete("/api/org/notes/*", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const filePath = filePathParam(request);
-    if (!artifacts) {
-      throw new HttpError(422, "artifact store is not available");
-    }
-    try {
-      await deleteHostFile(artifacts, await loadOperatorActor(db, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
-      await send(reply, 204);
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/org/embeddable-notes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const displayPath = String((request.query as { display_path?: string }).display_path ?? "").trim();
-    if (!artifacts) {
-      if (displayPath) {
-        throw new HttpError(404, "note not found");
-      }
-      return [];
-    }
-    const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
-    try {
-      if (!displayPath) {
-        return await artifacts.listEmbeddableNotes(actor);
-      }
-      const loaded = await artifacts.getByDisplayPath(actor, displayPath);
-      if (loaded.tombstone || loaded.revision || !loaded.row || loaded.row.kind !== "note") {
-        throw new HttpError(404, "note not found");
-      }
-      return {
-        display_path: displayPath,
-        title: loaded.row.title || loaded.row.key.replace(/\.md$/, ""),
-        level: loaded.row.level,
-        content: loaded.row.content_text ?? "",
-      };
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
   // Collections live at the organisation: the Tables page builds them and
   // browses their records and edits their access lists.
   app.get("/api/collections", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      return await listCollections(store, await loadOperatorActor(db, user, { orgId: String(org.id) }));
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await listCollections(store, await loadOperatorActor(db, user, { orgId: String(org.id) }));
   });
 
   app.post("/api/collections", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     const missing = missingBodyFields(request.body, ["name", "purpose"]);
     if (missing) {
       throw missing;
     }
-    try {
-      const created = await createCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), bodyOf(request));
-      return await send(reply, 201, created);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const created = await createCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), bodyOf(request));
+    return await send(reply, 201, created);
   });
 
   app.get("/api/collections/:collection_id", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      return await getCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await getCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
   });
 
   app.patch("/api/collections/:collection_id", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      return await updateCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request));
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await updateCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request));
   });
 
   app.delete("/api/collections/:collection_id", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      await deleteCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-      await send(reply, 204);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    await deleteCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
+    await send(reply, 204);
   });
 
   app.get("/api/collections/:collection_id/export", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      const exported = await exportCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-      reply
-        .header("content-disposition", `attachment; filename="${exported.name}.jsonl"`)
-        .type("application/jsonl")
-        .send(exported.body);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const exported = await exportCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
+    reply
+      .header("content-disposition", `attachment; filename="${exported.name}.jsonl"`)
+      .type("application/jsonl")
+      .send(exported.body);
   });
 
   app.get("/api/collections/:collection_id/records", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      return await listRecords(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), queryOf(request));
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await listRecords(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), queryOf(request));
   });
 
   app.post("/api/collections/:collection_id/records", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     const missing = missingBodyFields(request.body, ["body"]);
     if (missing) {
       throw missing;
     }
-    try {
-      const added = await addRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request).body);
-      return await send(reply, 201, added);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const added = await addRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request).body);
+    return await send(reply, 201, added);
   });
 
   app.delete("/api/collections/:collection_id/records", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      await clearRecords(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-      await send(reply, 204);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    await clearRecords(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
+    await send(reply, 204);
   });
 
   app.get("/api/collections/:collection_id/records/:record_id", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      return await getRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await getRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
   });
 
   app.patch("/api/collections/:collection_id/records/:record_id", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
     const missing = missingBodyFields(request.body, ["body"]);
     if (missing) {
       throw missing;
     }
-    try {
-      return await updateRecord(
-        store,
-        await loadOperatorActor(db, user, { orgId: String(org.id) }),
-        param(request, "collection_id"),
-        param(request, "record_id"),
-        bodyOf(request).body,
-      );
-    } catch (error) {
-      catchArtifact(error);
-    }
+    return await updateRecord(
+      store,
+      await loadOperatorActor(db, user, { orgId: String(org.id) }),
+      param(request, "collection_id"),
+      param(request, "record_id"),
+      bodyOf(request).body,
+    );
   });
 
   app.delete("/api/collections/:collection_id/records/:record_id", async (request, reply) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    try {
-      await removeRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
-      await send(reply, 204);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    await removeRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
+    await send(reply, 204);
   });
 
   // An item's access list: notes, tables, and files take the same routes.
@@ -750,259 +407,40 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   ] as const;
   for (const target of accessTargets) {
     app.get(target.path, async (request) => {
-      const store = requireArtifacts(artifacts);
+      const store = requireArtifactStore(artifacts);
       const user = await currentUser(identityDb, request, deps);
       const org = await currentOrg(identityDb, request, user);
-      try {
-        const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
-        return await store.accessList(actor, { kind: target.kind, id: param(request, target.param) });
-      } catch (error) {
-        catchArtifact(error);
-      }
+      const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
+      return await store.accessList(actor, { kind: target.kind, id: param(request, target.param) });
     });
 
     app.put(target.path, async (request) => {
-      const store = requireArtifacts(artifacts);
+      const store = requireArtifactStore(artifacts);
       const user = await currentUser(identityDb, request, deps);
       const org = await currentOrg(identityDb, request, user);
       const missing = missingBodyFields(request.body, ["subjects"]);
       if (missing) {
         throw missing;
       }
-      try {
-        const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
-        return await store.replaceAccess(actor, { kind: target.kind, id: param(request, target.param) }, bodyOf(request).subjects);
-      } catch (error) {
-        catchArtifact(error);
-      }
+      const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
+      return await store.replaceAccess(actor, { kind: target.kind, id: param(request, target.param) }, bodyOf(request).subjects);
     });
   }
 
   app.get("/api/guilds/:guild_id/reach", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    try {
-      const actor = await loadOperatorActor(db, user, { orgId: String(row.org_id) });
-      return await store.reachOf(actor, { type: "guild", id: String(row.id), guildId: String(row.id) });
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const actor = await loadOperatorActor(db, user, { orgId: String(row.org_id) });
+    return await store.reachOf(actor, { type: "guild", id: String(row.id), guildId: String(row.id) });
   });
 
   app.get("/api/agents/:agent_id/reach", async (request) => {
-    const store = requireArtifacts(artifacts);
+    const store = requireArtifactStore(artifacts);
     const user = await currentUser(identityDb, request, deps);
     const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    try {
-      const actor = await loadOperatorActor(db, user, { orgId: String(row.org_id) });
-      return await store.reachOf(actor, { type: "agent", id: String(row.id), guildId: String(row.guild_id) });
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/agents/:agent_id/notes", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    if (!artifacts) {
-      try {
-        return notes.listAgentFiles(String(row.org_slug), String(row.guild_name), String(row.name));
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesReadHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      const actor = await loadOperatorActor(db, user, {
-        orgId: String(row.org_id),
-        guildId: String(row.guild_id),
-        agentId: String(row.id),
-      });
-      await ensureAgentArtifacts(artifacts, actor, {
-        id: row.id,
-        guild_id: row.guild_id,
-        org_id: row.org_id,
-      });
-      return await listHostFiles(artifacts, actor, "agent", String(row.id));
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/agents/:agent_id/memory", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    try {
-      const store = requireArtifacts(artifacts);
-      const actor = await loadOperatorActor(db, user, {
-        orgId: String(row.org_id),
-        guildId: String(row.guild_id),
-        agentId: String(row.id),
-      });
-      await ensureAgentArtifacts(store, actor, {
-        id: row.id,
-        guild_id: row.guild_id,
-        org_id: row.org_id,
-      });
-      return await memoryHistory({ artifacts: store, db }, actor, { id: String(row.id), name: String(row.name) });
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.get("/api/agents/:agent_id/notes/*", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    const filePath = filePathParam(request);
-    if (!artifacts) {
-      try {
-        return {
-          path: filePath,
-          content: notes.readAgentFile(
-            String(row.org_slug),
-            String(row.guild_name),
-            String(row.name),
-            filePath,
-          ),
-        };
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesReadHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      const actor = await loadOperatorActor(db, user, {
-        orgId: String(row.org_id),
-        guildId: String(row.guild_id),
-        agentId: String(row.id),
-      });
-      await ensureAgentArtifacts(artifacts, actor, {
-        id: row.id,
-        guild_id: row.guild_id,
-        org_id: row.org_id,
-      });
-      return await readHostFile(artifacts, actor, "agent", String(row.id), filePath, db);
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.put("/api/agents/:agent_id/notes/*", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    const filePath = filePathParam(request);
-    const body = bodyOf(request);
-    if (!artifacts) {
-      try {
-        await notes.writeAgentFile(
-          String(row.org_slug),
-          String(row.guild_name),
-          String(row.name),
-          filePath,
-          String(body.content ?? ""),
-          { actor: String(user.name) },
-        );
-        await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
-          scope: "agent",
-          agent_id: String(row.id),
-          path: filePath,
-        });
-        return {
-          path: filePath,
-          content: notes.readAgentFile(
-            String(row.org_slug),
-            String(row.guild_name),
-            String(row.name),
-            filePath,
-          ),
-        };
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesWriteHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      const actor = await loadOperatorActor(db, user, {
-        orgId: String(row.org_id),
-        guildId: String(row.guild_id),
-        agentId: String(row.id),
-      });
-      await ensureAgentArtifacts(artifacts, actor, {
-        id: row.id,
-        guild_id: row.guild_id,
-        org_id: row.org_id,
-      });
-      const written = await writeHostFile(
-        artifacts,
-        actor,
-        "agent",
-        String(row.id),
-        filePath,
-        String(body.content ?? ""),
-        expectedVersionOf(body),
-        db,
-      );
-      await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
-        scope: "agent",
-        agent_id: String(row.id),
-        path: filePath,
-      });
-      return written;
-    } catch (error) {
-      catchArtifact(error);
-    }
-  });
-
-  app.delete("/api/agents/:agent_id/notes/*", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    const filePath = filePathParam(request);
-    if (!artifacts) {
-      try {
-        await notes.deleteAgentFile(
-          String(row.org_slug),
-          String(row.guild_name),
-          String(row.name),
-          filePath,
-        );
-        await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
-          scope: "agent",
-          agent_id: String(row.id),
-          path: filePath,
-        });
-        await send(reply, 204);
-        return;
-      } catch (error) {
-        if (error instanceof NotesError) {
-          throw notesWriteHttp(error);
-        }
-        throw error;
-      }
-    }
-    try {
-      await deleteHostFile(
-        artifacts,
-        await loadOperatorActor(db, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
-        "agent",
-        String(row.id),
-        filePath,
-      );
-      await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
-        scope: "agent",
-        agent_id: String(row.id),
-        path: filePath,
-      });
-      await send(reply, 204);
-    } catch (error) {
-      catchArtifact(error);
-    }
+    const actor = await loadOperatorActor(db, user, { orgId: String(row.org_id) });
+    return await store.reachOf(actor, { type: "agent", id: String(row.id), guildId: String(row.guild_id) });
   });
 
   async function visibleCredential(row: Record<string, unknown>, user: Record<string, unknown>): Promise<boolean> {
