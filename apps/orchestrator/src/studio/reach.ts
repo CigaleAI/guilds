@@ -1,6 +1,8 @@
 import { parseDisplayPath, type ArtifactStore, type ParsedDisplayPath } from "../artifacts/index.js";
 import { listAgents } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
+import { operatorContext } from "../artifacts/store.js";
+import { describeCollection } from "../artifacts/collections.js";
 
 // What a Studio session reaches outside its own transcript: the source
 // guild, its agents, the organisation's notes, and the tables the source
@@ -25,8 +27,9 @@ export async function studioReachesParsed(scope: StudioReachScope, parsed: Parse
     return false;
   }
   if (parsed.kind === "collection" || parsed.kind === "record") {
-    const table = await scope.artifacts.describeCollection(
-      scope.artifacts.operatorContext(scope.orgId, "studio", "studio", { guildId: scope.sourceGuildId }),
+    const table = await describeCollection(
+      scope.artifacts,
+      operatorContext(scope.orgId, "studio", "studio", { guildId: scope.sourceGuildId }),
       parsed.collectionName,
     );
     return Boolean(table) && studioReachesTable(scope.sourceGuildId, table?.guild_id);

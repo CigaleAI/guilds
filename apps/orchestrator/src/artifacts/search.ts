@@ -1,17 +1,12 @@
-import { checkValue, columnNamed, type CollectionColumn, type ColumnType } from "./columns.js";
+import type { CollectionColumn } from "../db/collections.js";
+import { checkValue, columnNamed } from "./columns.js";
+import type { OrderClause, WhereClause } from "../db/collections.js";
 import { ArtifactError } from "./errors.js";
 
 /** Byte cap for the flattened value text that `record_search` indexes. */
 export const SEARCH_BLOB_MAX_BYTES = 32 * 1024;
 export const WHERE_COLUMNS_MAX = 8;
 export const WHERE_TERM_MAX = 200;
-/**
- * Lowest `word_similarity` that still counts as similar spelling. Below 0.5
- * any two words sharing their first two letters qualify, because pg_trgm
- * pads a word with two leading spaces.
- */
-export const FUZZY_THRESHOLD = 0.5;
-
 export const SYSTEM_ORDER_COLUMNS = ["id", "created_at", "updated_at"] as const;
 
 /**
@@ -39,19 +34,6 @@ export function searchBlobFor(id: string, body: unknown): string {
   visit(body);
   return truncateUtf8(parts.join(" "), SEARCH_BLOB_MAX_BYTES);
 }
-
-export type WhereClause =
-  | { column: "id"; op: "id"; id: number }
-  | { column: string; type: ColumnType; op: "null" }
-  | { column: string; type: "text"; op: "like"; term: string }
-  | { column: string; type: "text"; op: "eq"; term: string }
-  | { column: string; type: "number"; op: "eq"; term: number }
-  | { column: string; type: "number"; op: "range"; gte: number | null; lte: number | null }
-  | { column: string; type: "datetime"; op: "eq"; term: string }
-  | { column: string; type: "datetime"; op: "range"; gte: string | null; lte: string | null }
-  | { column: string; type: "boolean"; op: "eq"; term: boolean }
-  | { column: string; type: "array"; op: "like"; term: string }
-  | { column: string; type: "array"; op: "contains"; term: string };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -183,8 +165,6 @@ function gotText(value: unknown): string {
   return `got ${JSON.stringify(value)}`;
 }
 
-export type OrderClause = { column: string; direction: "asc" | "desc" };
-
 /**
  * The `order` argument: `{ column, direction }` over a declared column that
  * is not an array, `id`, `created_at`, or `updated_at`; a string `"column"`
@@ -253,20 +233,6 @@ export function parseOffset(value: unknown): number {
     throw new ArtifactError("offset must be a non-negative integer", 422);
   }
   return Number(text);
-}
-
-/** A query with no whitespace is one token: it also matches by substring. */
-export function isSingleToken(query: string): boolean {
-  return query.length > 0 && !/\s/.test(query);
-}
-
-/**
- * Similar-spelling matches are for words and names. A term with a digit is
- * an identifier (date, hash, address, version) where neighbouring values
- * look alike, so it matches by substring only.
- */
-export function allowsSimilarSpelling(term: string): boolean {
-  return !/\d/.test(term);
 }
 
 function truncateUtf8(text: string, maxBytes: number): string {

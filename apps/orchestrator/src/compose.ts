@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "./app.js";
-import { ArtifactFiles, ArtifactStore } from "./artifacts/index.js";
+import { ArtifactFiles, artifactStore } from "./artifacts/index.js";
 import { AttachmentService } from "./attachments/index.js";
 import { FileBlobStore, MemoryBlobStore } from "./lib/blob-store.js";
 import { BuilderService } from "./builder/index.js";
@@ -40,6 +40,7 @@ import { installHarnessesOff } from "./coding/harnesses.js";
 import { syncInstanceLogins } from "./connectors/instance.js";
 import { listMachinePlacements } from "./db/machines.js";
 import { attachmentDatabase } from "./attachments/store.js";
+import { generationArtifacts } from "./generation/prepare.js";
 
 export type Server = {
   app: FastifyInstance;
@@ -90,7 +91,7 @@ export async function createServer(
   await syncInstanceLogins(db, masterKey);
   // Core caps nothing. An extension supplies the policy that does.
   const policy = extensionPolicy(extensions, { db }) ?? OPEN_POLICY;
-  const artifacts = new ArtifactStore(db, config.templatesRoot);
+  const artifacts = artifactStore(db, config.templatesRoot);
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   // Core reads the key stored for each organisation. An extension can answer with its own.
@@ -135,7 +136,7 @@ export async function createServer(
     workspaceRoot: config.workspaceRoot,
     sandboxes,
     mcp,
-    artifacts,
+    artifacts: generationArtifacts(artifacts),
     files,
     attachments,
     admission,

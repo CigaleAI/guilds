@@ -1,10 +1,4 @@
-import {
-  ArtifactError,
-  listFileChanges,
-  parseDisplayPath,
-  type ArtifactStore,
-  type FileChangeView,
-} from "../artifacts/index.js";
+import { ArtifactError, listFileChanges, parseDisplayPath, type ArtifactStore, type FileChangeView } from "../artifacts/index.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { jsonObj } from "../db/json.js";
 import { isoOrNull } from "../db/views.js";
@@ -27,6 +21,9 @@ import { getIssue } from "../db/issues.js";
 import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
+import { getByDisplayPath } from "../artifacts/notes.js";
+import { operatorContext } from "../artifacts/store.js";
+import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -275,7 +272,7 @@ async function resolveMemoryVersion(
   input: Record<string, unknown>,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
-  const actor = deps.artifacts.operatorContext(
+  const actor = operatorContext(
     deps.orgId,
     String(deps.user.id),
     String(deps.user.name ?? "operator"),
@@ -284,8 +281,8 @@ async function resolveMemoryVersion(
       agentId: agent.id,
     },
   );
-  const live = await deps.artifacts.getMemoryRow(actor, agent.id);
-  const revisions = await deps.artifacts.listRevisions(actor, agent.id);
+  const live = await getMemoryRow(deps.artifacts, actor, agent.id);
+  const revisions = await listRevisions(deps.artifacts, actor, agent.id);
   const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
   const entry = findEntry(entries, input);
   if (!entry) {
@@ -421,7 +418,7 @@ async function loadFileForFocus(
       "focus file is not in the source guild or the organisation's shared files",
     );
   }
-  const actor = deps.artifacts.operatorContext(
+  const actor = operatorContext(
     deps.orgId,
     String(deps.user.id),
     String(deps.user.name ?? "operator"),
@@ -447,7 +444,7 @@ async function loadFileForFocus(
   }
   let loaded;
   try {
-    loaded = await deps.artifacts.getByDisplayPath(actor, displayPath);
+    loaded = await getByDisplayPath(deps.artifacts, actor, displayPath);
   } catch (error) {
     if (error instanceof ArtifactError) {
       throw new StudioUnprocessableError(error.message);

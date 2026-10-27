@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { agentActor, ArtifactStore } from "../../src/artifacts/index.js";
+import { agentActor, artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
@@ -24,6 +24,7 @@ import {
   insertMessage,
 } from "../../src/db/runs.js";
 import { agentConfig } from "../helpers/generation.js";
+import { writeNote } from "../../src/artifacts/notes.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -58,7 +59,7 @@ test("studio activity lists each wake with what started it and what it produced"
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
@@ -194,7 +195,7 @@ test("studio activity lists each wake with what started it and what it produced"
     ...agentActor({ orgId: "org_home", guildId: "guild_act", agentId: "a_desk", agentName: "desk", runId: "r_desk" }),
     toolCall: { id: "call_note", name: "note_write" },
   };
-  await artifacts.writeNote(deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });
+  await writeNote(artifacts, deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });
   await appendRunError(db, "r_desk", { at: now.toISOString(), operation: "generation.max_tool_calls", message: "Tool call limit reached." }, now);
 
   // A routine wake for desk that changes nothing.

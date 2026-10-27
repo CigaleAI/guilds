@@ -1,13 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  ArtifactError,
-  assertNoteKeyFree,
-  hashArtifactContent,
-  normalizeNoteKey,
-  ownerPrefix,
-  parseDisplayPath,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { ArtifactError, assertNoteKeyFree, hashArtifactContent, normalizeNoteKey, ownerPrefix, parseDisplayPath, type ArtifactStore } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj } from "../db/json.js";
 import { changeGuild } from "../guilds/changes.js";
@@ -26,6 +18,8 @@ import { getGuild } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage } from "../db/conversations.js";
 import type { UserRow } from "../db/users.js";
+import { deleteByDisplayPath, getByDisplayPath, writeNote } from "../artifacts/notes.js";
+import { getMemoryRow, writeMemory } from "../artifacts/memory.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -112,7 +106,7 @@ async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
 
 export async function loadMemoryBase(scope: EditScope, agent: Pick<AgentRow, "id" | "name">): Promise<EditBase> {
   const agentId = agent.id;
-  const row = await scope.artifacts.getMemoryRow(editActor(scope, { agentId }), agentId);
+  const row = await getMemoryRow(scope.artifacts, editActor(scope, { agentId }), agentId);
   return {
     kind: "memory",
     agentId,
@@ -144,7 +138,7 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
   }
   let loaded;
   try {
-    loaded = await scope.artifacts.getByDisplayPath(editActor(scope), displayPath);
+    loaded = await getByDisplayPath(scope.artifacts, editActor(scope), displayPath);
   } catch (error) {
     artifactFailure(error);
   }
@@ -370,7 +364,7 @@ function names(rows: Array<Record<string, unknown>>): string {
 /** A note at a display path, or null when none is live there. */
 async function liveNoteAt(scope: EditScope, displayPath: string): Promise<{ version: number } | null> {
   try {
-    const loaded = await scope.artifacts.getByDisplayPath(editActor(scope), displayPath);
+    const loaded = await getByDisplayPath(scope.artifacts, editActor(scope), displayPath);
     return loaded.row && !loaded.tombstone ? { version: Number(loaded.row.version) } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
@@ -501,7 +495,7 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
   });
   try {
     if (plan.action === "create") {
-      const row = await scope.artifacts.writeNote(toolActor, {
+      const row = await writeNote(scope.artifacts, toolActor, {
         level: plan.level,
         key: plan.key,
         content: plan.content,
@@ -511,7 +505,7 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
       });
       return row.version;
     }
-    await scope.artifacts.deleteByDisplayPath(toolActor, plan.displayPath);
+    await deleteByDisplayPath(scope.artifacts, toolActor, plan.displayPath);
     return null;
   } catch (error) {
     artifactFailure(error);
@@ -808,13 +802,7 @@ export async function applyEdit(
   if (base.kind === "memory") {
     const actor = { ...editActor(scope, { agentId: base.agentId }), toolCall };
     try {
-      const row = await scope.artifacts.writeMemory(
-        actor,
-        base.agentId,
-        proposed as string,
-        record.toolName,
-        base.version > 0 ? base.version : undefined,
-      );
+      const row = await writeMemory(scope.artifacts, actor, base.agentId, { content: proposed as string, detail: record.toolName, ...(base.version > 0 ? { expectedVersion: base.version } : {}) });
       return { version: row.version };
     } catch (error) {
       artifactFailure(error);
@@ -833,7 +821,7 @@ export async function applyEdit(
       toolCall,
     };
     try {
-      const row = await scope.artifacts.writeNote(actor, {
+      const row = await writeNote(scope.artifacts, actor, {
         level: base.level,
         key: parsed.key,
         content: proposed as string,

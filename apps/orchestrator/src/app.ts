@@ -10,7 +10,7 @@ import {
   validateAvatarColor,
   validateAvatarShape,
 } from "./agents/validation.js";
-import { ArtifactStore } from "./artifacts/index.js";
+import { artifactStore } from "./artifacts/index.js";
 import { renderAvatarSvg } from "./avatars/index.js";
 import type { Database } from "./db/client.js";
 import {
@@ -151,7 +151,7 @@ export async function buildApp(
   if (deps) {
     // Fill what the caller left out. An extension's value replaces core's where the extension
     // offers one.
-    const artifacts = deps.artifacts ?? new ArtifactStore(database.pool, deps.notes.templates);
+    const artifacts = deps.artifacts ?? artifactStore(database.pool, deps.notes.templates);
     // Tests call buildApp on its own, so an extension's integrations are installed here too.
     installIntegrations(extensions.flatMap((extension) => extension.integrations ?? []));
     const policy = deps.policy ?? extensionPolicy(extensions, deps);

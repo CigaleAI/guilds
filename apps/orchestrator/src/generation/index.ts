@@ -1,5 +1,5 @@
 import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
-import type { ArtifactFiles, ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactFiles } from "../artifacts/index.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
@@ -43,6 +43,7 @@ import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
 import { Runs, runsDatabase } from "./runs.js";
 import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
 import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
+import type { GenerationArtifacts } from "./prepare.js";
 
 export { RunRequestError } from "./errors.js";
 
@@ -120,7 +121,7 @@ export type GenerationLoopServices = {
   workspaceRoot: string;
   sandboxes: GenerationSandboxes;
   mcp?: ConnectorPool;
-  artifacts?: ArtifactStore | null;
+  artifacts?: GenerationArtifacts | null;
   files?: ArtifactFiles | null;
   attachments?: AttachmentService | null;
   /** The cap on generations this loop shares with Studio and Builder sessions. */
@@ -144,7 +145,7 @@ export class GenerationLoop implements GroupRunner {
   issues: Issues;
   schedules: Schedules;
   scripts: Scripts;
-  artifacts: ArtifactStore | null;
+  artifacts: GenerationArtifacts | null;
   files: ArtifactFiles | null;
   attachments: AttachmentService | null;
   policy: OrgPolicy;

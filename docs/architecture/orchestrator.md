@@ -175,7 +175,7 @@ sequenceDiagram
    the connector-declared integrations (`instance/connectors.ts`),
    load the instance keys into their snapshot (`instance/keys.ts`),
    and sync the platform logins (`connectors/instance.ts`)
-5. construct `ArtifactStore`, `Scripts`, `Schedules`, the model
+5. build the artifact store (`artifactStore`), `Scripts`, `Schedules`, the model
    service, and `McpPool`
 6. start the sandbox provider: one `RunSandboxes` manager on
    `OPENSANDBOX_URL`, or the one an extension supplies; then lay out

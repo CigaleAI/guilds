@@ -1,3 +1,4 @@
+import type { CollectionColumn } from "../db/collections.js";
 import { HARNESSES, EFFORTS } from "../db/schema/index.js";
 import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS, secretAliasesOf } from "../agents/validation.js";
@@ -6,7 +7,6 @@ import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../seed/catalog.js";
-import type { CollectionColumn } from "../artifacts/columns.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { isDisplayPath } from "../artifacts/paths.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";

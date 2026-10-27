@@ -5,7 +5,7 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import type { GenerationLoop } from "../../src/generation/index.js";
 import { McpPool } from "../../src/mcp/index.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -52,7 +52,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
   const app = await buildApp(database, {
     db,
     notes,
-    artifacts: new ArtifactStore(database.pool, notes.templates),
+    artifacts: artifactStore(database.pool, notes.templates),
     scripts: new Scripts(scriptDatabase(db)),
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),

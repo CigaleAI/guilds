@@ -1,3 +1,4 @@
+import { COLUMN_TYPES, type CollectionColumn, type ColumnType } from "../db/collections.js";
 import { ArtifactError } from "./errors.js";
 
 /**
@@ -5,18 +6,6 @@ import { ArtifactError } from "./errors.js";
  * operator declares its columns, every record write is validated against
  * them, and State prints them to the agents that can read the collection.
  */
-export const COLUMN_TYPES = ["text", "number", "boolean", "datetime", "array"] as const;
-export type ColumnType = (typeof COLUMN_TYPES)[number];
-
-export type CollectionColumn = {
-  name: string;
-  type: ColumnType;
-  description: string;
-  required: boolean;
-  unique: boolean;
-  /** `text` or `array` only: the closed list of accepted values. */
-  values?: string[];
-};
 
 export const COLUMN_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/;
 export const RESERVED_COLUMN_NAMES = ["id", "created_at", "updated_at", "created_by", "updated_by"] as const;

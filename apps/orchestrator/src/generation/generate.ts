@@ -5,7 +5,7 @@ import {
   maxScriptsOf,
   secretAliasesOf,
 } from "../agents/validation.js";
-import { agentActor, type ArtifactFiles, type ArtifactStore } from "../artifacts/index.js";
+import { agentActor, type ArtifactFiles } from "../artifacts/index.js";
 import { harnessEffortOf } from "../coding/harness-models.js";
 import {
   harnessModelOf,
@@ -52,6 +52,7 @@ import type { GenerationStarter } from "./runs.js";
 import { positiveInt } from "./snapshot.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 import type { WorkspaceLimits } from "./workspace.js";
+import type { GenerationArtifacts } from "./prepare.js";
 
 const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 const SCHEDULE_WAKE_PREFIX = "Schedule wake-up: ";
@@ -158,7 +159,7 @@ async function memoryReplacedBy(db: Pick<RunGeneratorDatabase, "listMessages">, 
 export type RunGeneratorServices = {
   db: RunGeneratorDatabase;
   notes: NotesStore;
-  artifacts: ArtifactStore | null;
+  artifacts: GenerationArtifacts | null;
   files: ArtifactFiles | null;
   groupChat: GroupChat;
   issues: Issues;

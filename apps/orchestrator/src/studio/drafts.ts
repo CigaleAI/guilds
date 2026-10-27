@@ -1,13 +1,5 @@
 import { writeAgentTaskInTransaction } from "../agents/task.js";
-import {
-  ArtifactError,
-  collectTaskEmbeds,
-  displayPathFor,
-  hashArtifactContent,
-  inlineTaskEmbeds,
-  taskEmbedActor,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { ArtifactError, collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds, taskEmbedActor, type ArtifactStore } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj as _jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
@@ -34,6 +26,9 @@ import type { Queryable } from "../db/pg.js";
 import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioSessionRow } from "../db/studio.js";
 import { listConversationMessages } from "../db/conversations.js";
 import type { UserRow } from "../db/users.js";
+import { getMemoryRow } from "../artifacts/memory.js";
+import { operatorContext } from "../artifacts/store.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioDraftService = {
   createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -247,7 +242,7 @@ export class StudioDrafts implements StudioDraftService {
         const again = await this.runPreflight(agent, String(draft.proposed_content), args);
         Object.assign(preflight, again);
       }
-      const actor = this.artifacts.operatorContext(
+      const actor = operatorContext(
         session.org_id,
         String(user.id ?? "orphan"),
         user.name,
@@ -325,7 +320,7 @@ export class StudioDrafts implements StudioDraftService {
     proposed: string,
     args: { preview: StudioToolContext["preview"]; notesSystemPath: string },
   ): Promise<Record<string, unknown>> {
-    const actor = this.artifacts.operatorContext(
+    const actor = operatorContext(
       agent.org_id,
       "studio-preflight",
       "studio",
@@ -333,7 +328,7 @@ export class StudioDrafts implements StudioDraftService {
     );
     let expanded: string;
     try {
-      expanded = await inlineTaskEmbeds(this.artifacts, taskEmbedActor(agent.org_id, agent), proposed);
+      expanded = await inlineTaskEmbeds(embedSource(this.artifacts), taskEmbedActor(agent.org_id, agent), proposed);
     } catch (error) {
       if (error instanceof ArtifactError) {
         throw new StudioUnprocessableError(error.message);
@@ -345,7 +340,7 @@ export class StudioDrafts implements StudioDraftService {
       agentName: agent.name,
       agentId: agent.id,
     });
-    const memoryRow = await this.artifacts.getMemoryRow(actor, agent.id);
+    const memoryRow = await getMemoryRow(this.artifacts, actor, agent.id);
     const preview = await previewCurrentState(args.preview, agent);
     const tools = await projectOfferedToolSchemas(args.preview, agent);
     const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
@@ -368,7 +363,7 @@ export class StudioDrafts implements StudioDraftService {
     if (liveContent) {
       try {
         priorEffective = promptHash(
-          await inlineTaskEmbeds(this.artifacts, taskEmbedActor(agent.org_id, agent), liveContent),
+          await inlineTaskEmbeds(embedSource(this.artifacts), taskEmbedActor(agent.org_id, agent), liveContent),
         );
       } catch {
         priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;

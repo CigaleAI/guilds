@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
-import { ArtifactStore } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -32,7 +32,7 @@ test("operators upload, list, download, share, and delete files per level", { ti
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const blobs = new MemoryBlobStore();
   const files = new ArtifactFiles(artifacts, blobs);
   const app = await buildApp(database, {

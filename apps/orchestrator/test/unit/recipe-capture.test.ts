@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
-import {
-  captureGuild,
+import { captureGuild,
   portableRoleConfig,
   preferRecipeScope,
   recipeScope,
-  type CaptureDeps,
-} from "../../src/recipes/capture.js";
-import type { ArtifactStore } from "../../src/artifacts/index.js";
+  type CaptureDeps, type CaptureArtifacts } from "../../src/recipes/capture.js";
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
 import { userRow } from "../helpers/users.js";
@@ -166,7 +163,7 @@ function captureDeps(options: {
             content: "lived memory",
           },
         ],
-    } as unknown as ArtifactStore,
+    } as unknown as CaptureArtifacts,
     scripts: {
       listForAgent: async (agentId: string) =>
         agentId === "a_scout"

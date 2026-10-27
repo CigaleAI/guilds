@@ -6,6 +6,7 @@ import { iso } from "../db/views.js";
 import { buildMemoryTimeline, type MemoryTimelineEntry } from "./timeline.js";
 import { getRun } from "../db/runs.js";
 import type { Queryable } from "../db/pg.js";
+import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 export type MemoryWriteCall = { call_id: string; name: string | null };
 
@@ -86,8 +87,8 @@ export async function memoryHistory(
   actor: ArtifactActor,
   agent: { id: string; name: string },
 ): Promise<Record<string, unknown>> {
-  const live = await deps.artifacts.getMemoryRow(actor, agent.id);
-  const revisions = await deps.artifacts.listRevisions(actor, agent.id);
+  const live = await getMemoryRow(deps.artifacts, actor, agent.id);
+  const revisions = await listRevisions(deps.artifacts, actor, agent.id);
   const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
   const memoryPath = displayPathFor({
     orgId: actor.orgId,

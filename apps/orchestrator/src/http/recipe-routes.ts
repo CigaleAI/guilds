@@ -10,7 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
-import { captureDatabase, captureGuild } from "../recipes/capture.js";
+import { captureArtifacts, captureDatabase, captureGuild } from "../recipes/capture.js";
 import {
   applyAccessEdits,
   applyReview,
@@ -181,7 +181,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
       const parsed = await captureGuild(
         {
           db: captureDatabase(db),
-          artifacts: deps.artifacts,
+          artifacts: captureArtifacts(deps.artifacts),
           scripts: deps.scripts,
           schedules: deps.schedules,
         },

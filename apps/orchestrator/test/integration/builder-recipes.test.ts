@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { writeAgentTask } from "../../src/agents/task.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
 import { CapabilityService } from "../../src/capabilities/index.js";
@@ -31,6 +31,10 @@ import { getAgentTask, listAgents } from "../../src/db/agents.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { agentConfig } from "../helpers/generation.js";
+import { grantAccess } from "../../src/artifacts/access-lists.js";
+import { writeNote } from "../../src/artifacts/notes.js";
+import { createCollection } from "../../src/artifacts/collections.js";
+import { operatorContext } from "../../src/artifacts/store.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -62,7 +66,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const caps = { maxAgents: 25 };
@@ -370,22 +374,22 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       now,
       artifacts,
     });
-    await writeAgentTask(db, artifacts.operatorContext("org_home", "user_operator", "operator", {
+    await writeAgentTask(db, operatorContext("org_home", "user_operator", "operator", {
         guildId: "guild_capture",
         agentId: "a_capture",
       }), "a_capture", "Ping @scout and keep @user.");
-    const captureActor = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
-    await artifacts.createCollection(captureActor, {
+    const captureActor = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
+    await createCollection(artifacts, captureActor, {
       name: "capture-shared",
       purpose: "One record per lead the organisation shares.",
       columns: [{ name: "email", type: "text", description: "the lead's email", required: true, unique: true }],
     });
-    const glossary = await artifacts.writeNote(captureActor, {
+    const glossary = await writeNote(artifacts, captureActor, {
       level: "org",
       key: "capture-glossary.md",
       content: "Lead: a person worth a reply.\n",
     });
-    await artifacts.grantAccess(captureActor, { kind: "note", id: String(glossary.id) }, { type: "guild", id: "guild_capture" }, "write");
+    await grantAccess(artifacts, captureActor, { kind: "note", id: String(glossary.id) }, { type: "guild", id: "guild_capture", mode: "write" });
     const captured = await app.inject({
       method: "POST",
       url: "/api/guilds/guild_capture/recipes",

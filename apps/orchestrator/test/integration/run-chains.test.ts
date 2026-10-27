@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { HANDOFF_REQUEST, HANDOFF_TOOL_REFUSED } from "../../src/generation/chain.js";
 import { generationDatabase, GenerationLoop, LOOP_TIMINGS, RunRequestError } from "../../src/generation/index.js";
@@ -24,6 +24,7 @@ import { codeDefaultMachine } from "../helpers/machines.js";
 import { getRun, listMessages, listRuns, mergeRunMetadata } from "../../src/db/runs.js";
 import { updateAgentConfig } from "../../src/db/agents.js";
 import { agentConfig } from "../helpers/generation.js";
+import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -74,7 +75,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
-  const artifacts = new ArtifactStore(database.pool, notes.templates);
+  const artifacts = artifactStore(database.pool, notes.templates);
   const sandbox = new HostCodeSandbox();
   // The harness is ready, and the guild's repository is already in the home: nothing is cloned.
   mkdirSync(path.join(sandbox.home, "repos", "shop"), { recursive: true });
@@ -95,7 +96,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
       workspaceRoot: tempDir("guilds-chain-ws-"),
       sandboxes: sandboxes as unknown as GenerationSandboxes,
       mcp: new McpPool(),
-      artifacts,
+      artifacts: generationArtifacts(artifacts),
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
   );

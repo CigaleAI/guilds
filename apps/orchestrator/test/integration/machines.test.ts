@@ -8,7 +8,7 @@ import { connect } from "../../src/seed/connect.js";
 import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -16,6 +16,7 @@ import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -36,7 +37,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, notes.templates);
+  const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = env.WORKSPACE_ROOT ?? "";
   const sandboxes = new ExportSandboxes(workspaceRoot);
   const generation = new GenerationLoop(
@@ -46,7 +47,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       workspaceRoot,
       sandboxes,
       mcp: new McpPool(),
-      artifacts,
+      artifacts: generationArtifacts(artifacts),
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
   );

@@ -1,9 +1,10 @@
+import type { CollectionColumn } from "../db/collections.js";
 import type { Manifest, WakeWindow } from "../db/schema/index.js";
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { WAKE_TRIGGERS_MAX } from "../agents/validation.js";
 import { NAME_RE } from "../lib/names.js";
-import { parseColumns, type CollectionColumn } from "../artifacts/columns.js";
+import { parseColumns } from "../artifacts/columns.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";
 import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode, type AccessMode } from "../artifacts/types.js";

@@ -13,6 +13,7 @@ import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { LoadedConnector } from "../connectors/load.js";
 import type { McpConnectionRow } from "../db/mcp.js";
+import { listCollections } from "../artifacts/collections.js";
 
 /** The db/ functions a preview of an agent's run state reads, on `db`. */
 export function previewDatabase(db: Queryable) {
@@ -43,7 +44,7 @@ export async function previewCurrentState(
   const actor = agentActor({ orgId, guildId, agentId, agentName: agent.name });
   let collections: unknown[] = [];
   try {
-    collections = await deps.artifacts.listCollections(actor);
+    collections = await listCollections(deps.artifacts, actor);
   } catch {
     /* keep empty collections */
   }

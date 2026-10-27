@@ -47,6 +47,7 @@ import {
   seededLoop,
 } from "../helpers/generation.js";
 import { limitedPolicy } from "../helpers/policy.js";
+import { noteRowAt } from "../helpers/artifacts.js";
 
 const HOME = "/home/a_1";
 
@@ -929,16 +930,8 @@ describe("generation", { concurrency: 1 }, () => {
       },
     ];
     const artifacts = {
-      async writeNote(
-        actor: { orgId: string; agentId: string | null },
-        args: { path: string; key: string },
-      ) {
-        return {
-          display_path: `org/${actor.orgId}/agents/${actor.agentId}/${args.path ? `${args.path}/` : ""}${args.key}`,
-        };
-      },
-      view(row: { display_path: string }) {
-        return { display_path: row.display_path };
+      async writeNote(actor: { orgId: string; agentId: string | null }, args: { key: string; content: string }) {
+        return noteRowAt(`org/${actor.orgId}/agents/${actor.agentId}/${args.key}`, args.content);
       },
     };
     const loop = makeLoop(db, notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
@@ -2410,7 +2403,7 @@ describe("generation", { concurrency: 1 }, () => {
         }
         throw new ArtifactError("artifact not found", 404);
       },
-      async readMemory() {
+      async readStoredMemory() {
         return "";
       },
     };

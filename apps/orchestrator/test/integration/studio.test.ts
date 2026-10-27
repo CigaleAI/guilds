@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { writeBinding } from "../../src/access/bindings.js";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { writeAgentTask } from "../../src/agents/task.js";
-import { agentActor, ArtifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
+import { agentActor, artifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { runItem } from "../../src/db/views.js";
 import { buildApp } from "../../src/app.js";
@@ -66,6 +66,12 @@ import { getConversationMessage, insertConversationMessage, listConversationMess
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig } from "../helpers/generation.js";
+import { getByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
+import { operatorContext } from "../../src/artifacts/store.js";
+import { createCollection, describeCollection, updateCollection } from "../../src/artifacts/collections.js";
+import { grantAccess, listAccess, reachOf } from "../../src/artifacts/access-lists.js";
+import { addRecord, listRecords } from "../../src/artifacts/records.js";
+import { getMemoryRow, readStoredMemory, writeMemory } from "../../src/artifacts/memory.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -111,7 +117,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({
@@ -379,7 +385,7 @@ test("studio reads agent access, script source, and granted connections", { time
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const calls: Array<{ remote: string; args: Record<string, unknown> }> = [];
@@ -680,7 +686,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({
@@ -716,12 +722,13 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     now,
     artifacts,
   });
-  const operator = artifacts.operatorContext("org_home", "user_operator", "operator", {
+  const operator = operatorContext("org_home", "user_operator", "operator", {
     guildId: "guild_ev",
     agentId: "a_ev",
   });
-  const shared = await artifacts.writeNote(
-    artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ev" }),
+  const shared = await writeNote(
+    artifacts,
+    operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ev" }),
     { level: "guild", key: "house-rules.md", content: "Always cite the source.\n", title: "House rules" },
   );
   const sharedPath = `${ownerPrefix("org_home", "guild", "guild_ev")}${shared.key}`;
@@ -787,8 +794,8 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     ...agentActor({ orgId: "org_home", guildId: "guild_ev", agentId: "a_ev", agentName: "curator", runId: "r_ev_wake" }),
     toolCall: { id: "call_mem", name: "memory_write" },
   };
-  await artifacts.writeMemory(operator, "a_ev", "- be brief (operator)\n- nothing yet", "user operator (Files pane)");
-  await artifacts.writeMemory(runActor, "a_ev", "- be brief (operator)\n- digest lives in notes/digest.md\n- send Monday", "run r_ev_wake (schedule wake-up: \"Compile the weekly digest.\")");
+  await writeMemory(artifacts, operator, "a_ev", { content: "- be brief (operator)\n- nothing yet", detail: "user operator (Files pane)" });
+  await writeMemory(artifacts, runActor, "a_ev", { content: "- be brief (operator)\n- digest lives in notes/digest.md\n- send Monday", detail: "run r_ev_wake (schedule wake-up: \"Compile the weekly digest.\")" });
 
   try {
     const created = await app.inject({
@@ -1057,7 +1064,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
@@ -1086,10 +1093,11 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     now,
     artifacts,
   });
-  const operator = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed", agentId: "a_ed" });
-  await artifacts.writeMemory(operator, "a_ed", "- be brief\n- digest in notes\n- nothing yet", "seed");
-  const note = await artifacts.writeNote(
-    artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed" }),
+  const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed", agentId: "a_ed" });
+  await writeMemory(artifacts, operator, "a_ed", { content: "- be brief\n- digest in notes\n- nothing yet", detail: "seed" });
+  const note = await writeNote(
+    artifacts,
+    operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed" }),
     { level: "guild", key: "house-rules.md", content: "Always cite.\n", title: "House rules" },
   );
   const notePath = `${ownerPrefix("org_home", "guild", "guild_ed")}${note.key}`;
@@ -1185,7 +1193,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     assert.equal((await resolve(guildSeq, "apply")).statusCode, 409);
 
     // Memory: a stale base_version is refused; a current one pauses, and apply writes as the operator.
-    const memory = await artifacts.getMemoryRow(operator, "a_ed");
+    const memory = await getMemoryRow(artifacts, operator, "a_ed");
     await assert.rejects(
       studioEditMemory.handler(await ctx(), { agent_id: "curator", content: "x", base_version: Number(memory?.version) - 1, reason: "r" }),
       /stale/,
@@ -1201,7 +1209,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const memoryApplied = await resolve(memorySeq, "apply");
     assert.equal(memoryApplied.statusCode, 200, memoryApplied.body);
     assert.equal((memoryApplied.json() as { applied_version: number }).applied_version, Number(memory?.version) + 1);
-    assert.match(await artifacts.readMemory(operator, "a_ed"), /notes\/digest\.md/);
+    assert.match(await readStoredMemory(artifacts, operator, "a_ed"), /notes\/digest\.md/);
     const memoryPath = displayPathFor({ orgId: "org_home", level: "agent", ownerId: "a_ed", kind: "memory", path: "", key: "memory.md" });
     const memoryChanges = (await studioListFileChanges.handler(await ctx(), { display_path: memoryPath })) as {
       changes: Array<{ actor: { type: string; name: string }; tool: { name: string } | null; studio: unknown }>;
@@ -1216,8 +1224,9 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const noteArgs = { action: "edit", display_path: notePath, content: "Always cite the source URL.\n", base_version: note.version, reason: "Rule is vague." };
     const noteEdit = (await studioEditNote.handler(await ctx(), noteArgs)) as Record<string, unknown>;
     const noteSeq = await commit("studio_edit_note", noteArgs, noteEdit);
-    await artifacts.writeNote(
-      artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed" }),
+    await writeNote(
+      artifacts,
+      operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed" }),
       { level: "guild", key: "house-rules.md", content: "Always cite, twice.\n", title: "House rules" },
     );
     const staleView = await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${noteSeq}`, headers: AUTH });
@@ -1226,7 +1235,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const declined = await resolve(noteSeq, "decline");
     assert.equal(declined.statusCode, 200, declined.body);
     assert.equal((declined.json() as { status: string }).status, "declined");
-    const liveNote = await artifacts.getByDisplayPath(operator, notePath);
+    const liveNote = await getByDisplayPath(artifacts, operator, notePath);
     assert.equal(liveNote.row?.content_text, "Always cite, twice.\n");
 
     // Memory is not a note, and a tool message that is not an edit request cannot be resolved.
@@ -1249,7 +1258,7 @@ test("studio proposes tables to create, change, and delete that the operator app
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
@@ -1300,18 +1309,18 @@ test("studio proposes tables to create, change, and delete that the operator app
       artifacts,
     });
   }
-  const operator = artifacts.operatorContext("org_home", "user_operator", "operator");
+  const operator = operatorContext("org_home", "user_operator", "operator");
   const column = (name: string, type: string, extra: Record<string, unknown> = {}) => ({ name, type, description: `The ${name}.`, ...extra });
-  const shared = await artifacts.createCollection(operator, { name: "shared", purpose: "Shared facts.", columns: [column("fact", "text")] });
-  await artifacts.grantAccess(operator, { kind: "collection", id: shared.id }, { type: "guild", id: "guild_nb" }, "read");
-  await artifacts.grantAccess(operator, { kind: "collection", id: shared.id }, { type: "guild", id: "guild_pv" }, "read");
-  await artifacts.createCollection(operator, {
+  const shared = await createCollection(artifacts, operator, { name: "shared", purpose: "Shared facts.", columns: [column("fact", "text")] });
+  await grantAccess(artifacts, operator, { kind: "collection", id: shared.id }, { type: "guild", id: "guild_nb", mode: "read" });
+  await grantAccess(artifacts, operator, { kind: "collection", id: shared.id }, { type: "guild", id: "guild_pv", mode: "read" });
+  await createCollection(artifacts, operator, {
     name: "their-queue",
     purpose: "The neighbour's queue.",
     columns: [column("item", "text")],
     guildId: "guild_nb",
   });
-  const theirRecord = await artifacts.addRecord(operator, { collection: "their-queue", body: { item: "private work" } });
+  const theirRecord = await addRecord(artifacts, operator, { collection: "their-queue", body: { item: "private work" } });
 
   try {
     const created = await app.inject({
@@ -1429,7 +1438,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal(createWidget.edit.kind, "collection");
     assert.equal(createWidget.edit.action, "create");
     assert.match(createWidget.edit.effects[0] ?? "", /table-guild's own table/);
-    assert.equal(await artifacts.describeCollection(operator, "leads"), null);
+    assert.equal(await describeCollection(artifacts, operator, "leads"), null);
     const createSeq = await commit("studio_edit_collection", createArgs, createWidget as unknown as Record<string, unknown>);
     const createView = await view(createSeq);
     assert.equal(createView.stale, false);
@@ -1439,9 +1448,9 @@ test("studio proposes tables to create, change, and delete that the operator app
     const applied = await resolve(createSeq, "apply");
     assert.equal(applied.statusCode, 200, applied.body);
     assert.equal((applied.json() as { status: string }).status, "applied");
-    const leads = await artifacts.describeCollection(operator, "leads");
+    const leads = await describeCollection(artifacts, operator, "leads");
     assert.equal(leads?.guild_id, "guild_tb");
-    const leadsAccess = await artifacts.listAccess(operator, { kind: "collection", id: String(leads?.id) });
+    const leadsAccess = await listAccess(artifacts, operator, { kind: "collection", id: String(leads?.id) });
     assert.deepEqual(
       leadsAccess.map((row) => [row.type, row.name, row.mode]),
       [
@@ -1452,8 +1461,8 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal((await resolve(createSeq, "apply")).statusCode, 409);
 
     // Read: the definition, who reaches it, and the latest records.
-    await artifacts.addRecord(operator, { collection: "leads", body: { email: "a@example.com", status: "new" } });
-    await artifacts.addRecord(operator, { collection: "leads", body: { email: "b@example.com", status: "won" } });
+    await addRecord(artifacts, operator, { collection: "leads", body: { email: "a@example.com", status: "new" } });
+    await addRecord(artifacts, operator, { collection: "leads", body: { email: "b@example.com", status: "won" } });
     const read = (await studioGetCollection.handler(await ctx(), { collection: "leads" })) as {
       updated_at: string;
       records: number;
@@ -1507,7 +1516,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.deepEqual(accessChange?.studio, { session_id: session.id, seq: editSeq });
     assert.equal(columnChange?.summary, "Renamed the column email to contact, removed the column status in leads");
     assert.deepEqual(columnChange?.studio, { session_id: session.id, seq: editSeq });
-    const records = await artifacts.listRecords(operator, { collection: "leads" });
+    const records = await listRecords(artifacts, operator, { collection: "leads" });
     assert.deepEqual(
       records.records.map((record) => [record.contact, record.status]),
       [
@@ -1515,7 +1524,7 @@ test("studio proposes tables to create, change, and delete that the operator app
         ["b@example.com", undefined],
       ],
     );
-    const afterEdit = await artifacts.listAccess(operator, { kind: "collection", id: String(leads?.id) });
+    const afterEdit = await listAccess(artifacts, operator, { kind: "collection", id: String(leads?.id) });
     assert.equal(afterEdit.find((row) => row.name === "writer"), undefined);
 
     // A proposal goes stale when the table changes underneath it, and declining leaves the table alone.
@@ -1523,11 +1532,11 @@ test("studio proposes tables to create, change, and delete that the operator app
     const purposeArgs = { action: "edit", collection: "leads", base_updated_at: current.updated_at, purpose: "Leads worth a call.", reason: "Sharper." };
     const purposeWidget = (await studioEditCollection.handler(await ctx(), purposeArgs)) as Record<string, unknown>;
     const purposeSeq = await commit("studio_edit_collection", purposeArgs, purposeWidget);
-    await artifacts.updateCollection(operator, String(leads?.id), { purpose: "Changed on the Tables page." });
+    await updateCollection(artifacts, operator, String(leads?.id), { purpose: "Changed on the Tables page." });
     assert.equal((await view(purposeSeq)).stale, true);
     assert.equal((await resolve(purposeSeq, "apply")).statusCode, 409);
     assert.equal((await resolve(purposeSeq, "decline")).statusCode, 200);
-    assert.equal((await artifacts.describeCollection(operator, "leads"))?.purpose, "Changed on the Tables page.");
+    assert.equal((await describeCollection(artifacts, operator, "leads"))?.purpose, "Changed on the Tables page.");
 
     // An organisation table: the guild's row changes; rows outside the guild are shown, never changed,
     // and a private guild the operator does not operate is left out of them.
@@ -1539,7 +1548,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     const grantSeq = await commit("studio_edit_collection", grantArgs, grantWidget);
     assert.equal((await resolve(grantSeq, "apply")).statusCode, 200);
     const sharedMode = async (guildId: string) =>
-      (await artifacts.reachOf(operator, { type: "guild", id: guildId, guildId })).tables.find((row) => row.name === "shared")?.mode;
+      (await reachOf(artifacts, operator, { type: "guild", id: guildId, guildId })).tables.find((row) => row.name === "shared")?.mode;
     assert.equal(await sharedMode("guild_tb"), "write");
     assert.equal(await sharedMode("guild_nb"), "read");
 
@@ -1559,7 +1568,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     const addSeq = await commit("studio_edit_collection", addArgs, addWidget);
     assert.equal((await resolve(addSeq, "apply")).statusCode, 200);
     assert.deepEqual(
-      (await artifacts.describeCollection(operator, "shared"))?.columns.map((item) => item.name),
+      (await describeCollection(artifacts, operator, "shared"))?.columns.map((item) => item.name),
       ["fact", "source"],
     );
     const sharedAdded = (await studioGetCollection.handler(await ctx(), { collection: "shared" })) as { updated_at: string };
@@ -1581,7 +1590,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal(deleteView.proposed, "");
     assert.match(String(deleteView.live), /leads · table-guild's own table/);
     assert.equal((await resolve(deleteSeq, "apply")).statusCode, 200);
-    assert.equal(await artifacts.describeCollection(operator, "leads"), null);
+    assert.equal(await describeCollection(artifacts, operator, "leads"), null);
   } finally {
     await app.close();
     await database.close();
@@ -1595,7 +1604,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
@@ -1603,8 +1612,8 @@ test("studio proposes notes to create and delete and narrows an agent's access",
 
   const now = new Date();
   await insertGuild(db, { guildId: "guild_nw", name: "narrow-guild", orgId: "org_home" }, now);
-  const operator = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_nw" });
-  const roles = await artifacts.writeNote(operator, {
+  const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_nw" });
+  const roles = await writeNote(artifacts, operator, {
     level: "guild",
     key: "roles.md",
     content: "The scout finds candidates.\nThe archivist files them.\n",
@@ -1750,7 +1759,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     const createApplied = await resolve(createSeq, "apply");
     assert.equal(createApplied.statusCode, 200, createApplied.body);
     assert.equal((createApplied.json() as { applied_version: number }).applied_version, 1);
-    assert.equal((await artifacts.getByDisplayPath(operator, playbookPath)).row?.content_text, "A real candidate names its source.\n");
+    assert.equal((await getByDisplayPath(artifacts, operator, playbookPath)).row?.content_text, "A real candidate names its source.\n");
     await assert.rejects(studioEditNote.handler(await ctx(), createArgs), /already exists/);
 
     // Delete: refused while a Task embeds the note, applied once none does.
@@ -1765,7 +1774,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     const deleted = await resolve(deleteSeq, "apply");
     assert.equal(deleted.statusCode, 200, deleted.body);
     assert.equal((deleted.json() as { status: string }).status, "applied");
-    const gone = await artifacts.getByDisplayPath(operator, rolesPath).catch(() => null);
+    const gone = await getByDisplayPath(artifacts, operator, rolesPath).catch(() => null);
     assert.ok(!gone?.row || gone.tombstone);
 
     // Access: the archivist loses tools it never calls; the card shows what changes.
@@ -1880,7 +1889,7 @@ test("studio proposes routines to create, change, and delete that the operator a
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const published: Array<{ guildId: string; action: string; scheduleId: string }> = [];

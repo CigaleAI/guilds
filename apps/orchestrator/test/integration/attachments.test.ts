@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { AttachmentService } from "../../src/attachments/index.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { newId } from "../../src/lib/ids.js";
@@ -17,6 +17,7 @@ import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertOrg } from "../../src/db/orgs.js";
 import { attachmentDatabase } from "../../src/attachments/store.js";
+import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -45,7 +46,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     models: [TEST_MODEL, "deepinfra/Qwen/Qwen3.8-2.4T-A95B"],
   });
   const attachments = new AttachmentService(attachmentDatabase(db), new MemoryBlobStore());
-  const artifacts = new ArtifactStore(database.pool, notes.templates);
+  const artifacts = artifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
   const generation = new GenerationLoop({
     db: generationDatabase(db),
@@ -53,7 +54,7 @@ test("operators upload images, attach them to a run, and cannot read another org
     workspaceRoot,
     sandboxes: new ExportSandboxes(workspaceRoot),
     attachments,
-    artifacts,
+    artifacts: generationArtifacts(artifacts),
   });
   generation.generateInBackground = () => undefined;
   const app = await buildApp(database, {

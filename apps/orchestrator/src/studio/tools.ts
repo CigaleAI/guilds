@@ -1,14 +1,4 @@
-import {
-  ArtifactError,
-  collectTaskEmbeds,
-  displayPathFor,
-  hashArtifactContent,
-  inlineTaskEmbeds,
-  listFileChanges,
-  parseDisplayPath,
-  taskEmbedActor,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { ArtifactError, collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds, listFileChanges, parseDisplayPath, taskEmbedActor, type ArtifactStore } from "../artifacts/index.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { buildMemoryTimeline, memoryDiffText, type MemoryTimelineEntry } from "../memory/timeline.js";
@@ -66,6 +56,10 @@ import { listGuildsForUser } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getStudioSession, type StudioSessionRow } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
+import { findNotes, getByDisplayPath } from "../artifacts/notes.js";
+import { operatorContext } from "../artifacts/store.js";
+import { getMemoryRow, listRevisions, readStoredMemory } from "../artifacts/memory.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioToolContext = {
   session: StudioSessionRow;
@@ -276,12 +270,12 @@ export const studioGetAgentContext: StudioTool = {
       : [...STUDIO_DEFAULT_CONTEXT_SECTIONS];
     const want = new Set(requested);
     const cursor = args.cursor;
-    const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
       agentId: agent.id,
     });
     const task = await getAgentTask(ctx.db, ctx.orgId, agent.id);
-    const memory = await ctx.artifacts.getMemoryRow(actor, agent.id);
+    const memory = await getMemoryRow(ctx.artifacts, actor, agent.id);
     // state and effective_prompt read the same projection; take it once.
     let statePreview: ReturnType<typeof previewCurrentState> | null = null;
     const currentState = () => (statePreview ??= previewCurrentState(ctx.preview, agent));
@@ -347,13 +341,13 @@ export const studioGetAgentContext: StudioTool = {
       let effectiveTask = task?.content_text ?? "";
       let embedWarning: string | null = null;
       try {
-        effectiveTask = await inlineTaskEmbeds(ctx.artifacts, taskEmbedActor(ctx.orgId, agent), effectiveTask);
+        effectiveTask = await inlineTaskEmbeds(embedSource(ctx.artifacts), taskEmbedActor(ctx.orgId, agent), effectiveTask);
       } catch (error) {
         embedWarning = error instanceof Error ? error.message : "embed preflight failed";
       }
       const preview = await currentState();
       const tools = await projectOfferedToolSchemas(ctx.preview, agent);
-      const memoryText = await ctx.artifacts.readMemory(actor, agent.id);
+      const memoryText = await readStoredMemory(ctx.artifacts, actor, agent.id);
       const memoryEnabled = memoryOf(jsonObj(agent.config));
       const composed = composeAgentSystemPrompt(
         standing,
@@ -642,12 +636,12 @@ export const studioListTaskRevisions: StudioTool = {
 };
 
 async function memoryTimelineFor(ctx: StudioToolContext, agent: Pick<AgentRow, "id">): Promise<MemoryTimelineEntry[]> {
-  const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+  const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
     guildId: ctx.sourceGuildId,
     agentId: agent.id,
   });
-  const live = await ctx.artifacts.getMemoryRow(actor, agent.id);
-  const revisions = await ctx.artifacts.listRevisions(actor, agent.id);
+  const live = await getMemoryRow(ctx.artifacts, actor, agent.id);
+  const revisions = await listRevisions(ctx.artifacts, actor, agent.id);
   return buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
 }
 
@@ -751,7 +745,7 @@ export const studioFindArtifacts: StudioTool = {
   ),
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
-    const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
     });
     const findArgs: {
@@ -764,7 +758,7 @@ export const studioFindArtifacts: StudioTool = {
     };
     const level = argString(args, "level");
     if (level === "agent" || level === "guild" || level === "org") findArgs.level = level;
-    const found = await ctx.artifacts.find(actor, findArgs);
+    const found = await findNotes(ctx.artifacts, actor, findArgs);
     const allowed = [];
     for (const item of found.notes) {
       if (await studioReachesPath(ctx, String(item.display_path ?? ""))) allowed.push(item);
@@ -814,12 +808,12 @@ export const studioGetArtifact: StudioTool = {
     if (!(await studioReachesParsed(ctx, parsed))) {
       throw new StudioUnprocessableError("artifact is not in the source guild or the organisation's shared files");
     }
-    const actor = ctx.artifacts.operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
     });
     let loaded;
     try {
-      loaded = await ctx.artifacts.getByDisplayPath(actor, displayPath);
+      loaded = await getByDisplayPath(ctx.artifacts, actor, displayPath);
     } catch (error) {
       if (error instanceof ArtifactError) {
         throw new StudioUnprocessableError(error.message);

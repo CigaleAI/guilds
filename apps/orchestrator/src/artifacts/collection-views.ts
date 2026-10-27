@@ -1,12 +1,14 @@
 // Collections and their records as the Tables page and the settings surfaces show them.
 import { isPlainRecord } from "../db/json.js";
 import { ArtifactError, type ArtifactActor, type ArtifactStore } from "./index.js";
+import * as collections from "./collections.js";
+import * as recordStore from "./records.js";
 
 export async function listCollections(
   store: ArtifactStore,
   actor: ArtifactActor,
 ): Promise<Array<Record<string, unknown>>> {
-  return store.listCollections(actor, { counts: true });
+  return collections.listCollectionsWithCounts(store, actor);
 }
 
 export async function createCollection(
@@ -14,7 +16,7 @@ export async function createCollection(
   actor: ArtifactActor,
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  return store.createCollection(actor, {
+  return collections.createCollection(store, actor, {
     name: String(body.name ?? ""),
     purpose: String(body.purpose ?? ""),
     columns: body.columns ?? [],
@@ -29,7 +31,7 @@ export async function getCollection(
   actor: ArtifactActor,
   collectionId: string,
 ): Promise<Record<string, unknown>> {
-  return store.getCollection(actor, collectionId);
+  return collections.getCollection(store, actor, collectionId);
 }
 
 export async function updateCollection(
@@ -38,7 +40,7 @@ export async function updateCollection(
   collectionId: string,
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  return store.updateCollection(actor, collectionId, {
+  return collections.updateCollection(store, actor, collectionId, {
     ...(body.name !== undefined ? { name: String(body.name) } : {}),
     ...(body.purpose !== undefined ? { purpose: String(body.purpose) } : {}),
     ...(body.columns !== undefined ? { columns: body.columns } : {}),
@@ -53,7 +55,7 @@ export async function deleteCollection(
   actor: ArtifactActor,
   collectionId: string,
 ): Promise<void> {
-  await store.deleteCollection(actor, collectionId);
+  await collections.deleteCollection(store, actor, collectionId);
 }
 
 export async function clearRecords(
@@ -61,7 +63,7 @@ export async function clearRecords(
   actor: ArtifactActor,
   collectionId: string,
 ): Promise<void> {
-  await store.clearRecords(actor, collectionId);
+  await collections.clearRecords(store, actor, collectionId);
 }
 
 function parseJsonQuery(raw: string | undefined, label: string): unknown {
@@ -85,10 +87,10 @@ export async function listRecords(
   collectionId: string,
   query: Record<string, string>,
 ): Promise<Record<string, unknown>> {
-  const collection = await store.getCollection(actor, collectionId);
+  const collection = await collections.getCollection(store, actor, collectionId);
   const text = (query.query ?? "").trim();
   if (text) {
-    const found = await store.searchRecords(actor, {
+    const found = await recordStore.searchRecords(store, actor, {
       collection: collection.name,
       query: text,
       where: parseJsonQuery(query.where, "where"),
@@ -99,7 +101,7 @@ export async function listRecords(
     );
     return { total: records.length, records, columns: collection.columns };
   }
-  const listed = await store.listRecords(actor, {
+  const listed = await recordStore.listRecords(store, actor, {
     collection: collection.name,
     where: parseJsonQuery(query.where, "where"),
     since: query.since,
@@ -135,8 +137,8 @@ export async function getRecord(
   collectionId: string,
   recordId: string,
 ): Promise<Record<string, unknown>> {
-  const collection = await store.getCollection(actor, collectionId);
-  const record = await store.getRecord(actor, collection.name, recordId);
+  const collection = await collections.getCollection(store, actor, collectionId);
+  const record = await recordStore.getRecord(store, actor, collection.name, recordId);
   return withDisplayPath(actor.orgId, collection.name, record);
 }
 
@@ -146,8 +148,8 @@ export async function addRecord(
   collectionId: string,
   body: unknown,
 ): Promise<Record<string, unknown>> {
-  const collection = await store.getCollection(actor, collectionId);
-  const result = await store.addRecord(actor, {
+  const collection = await collections.getCollection(store, actor, collectionId);
+  const result = await recordStore.addRecord(store, actor, {
     collection: collection.name,
     body: asRecord(body),
   });
@@ -166,8 +168,8 @@ export async function updateRecord(
   key: RecordKey,
   body: unknown,
 ): Promise<Record<string, unknown>> {
-  const collection = await store.getCollection(actor, key.collectionId);
-  const result = await store.updateRecord(actor, {
+  const collection = await collections.getCollection(store, actor, key.collectionId);
+  const result = await recordStore.updateRecord(store, actor, {
     collection: collection.name,
     id: key.recordId,
     body: asRecord(body),
@@ -184,8 +186,8 @@ export async function removeRecord(
   collectionId: string,
   recordId: string,
 ): Promise<void> {
-  const collection = await store.getCollection(actor, collectionId);
-  await store.removeRecord(actor, { collection: collection.name, id: recordId });
+  const collection = await collections.getCollection(store, actor, collectionId);
+  await recordStore.removeRecord(store, actor, { collection: collection.name, id: recordId });
 }
 
 export async function exportCollection(
@@ -193,7 +195,7 @@ export async function exportCollection(
   actor: ArtifactActor,
   collectionId: string,
 ): Promise<{ name: string; body: string }> {
-  const exported = await store.exportRecords(actor, collectionId);
+  const exported = await recordStore.exportRecords(store, actor, collectionId);
   const lines = exported.records.map((record) => {
     const { collection: _collection, version: _version, ...rest } = record;
     return JSON.stringify(rest);

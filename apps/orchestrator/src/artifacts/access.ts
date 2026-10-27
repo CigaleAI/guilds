@@ -5,9 +5,7 @@ import {
   isAgentAccessMode,
   type AccessMode,
   type AccessSubject,
-  type AccessTargetKind,
   type AgentAccessMode,
-  type ArtifactActor,
   type ArtifactLevel,
 } from "./types.js";
 
@@ -30,27 +28,6 @@ export type AccessGrant = { type: AccessSubject; id: string; mode: AgentAccessMo
  * list takes no row for it. Null for every other item.
  */
 export type AccessList = { subjects: AccessEntry[]; owner_agent_id: string | null };
-
-/**
- * The SQL expression for an agent's mode on the item of `kind` whose id is
- * the SQL `targetId`: its own row when it has one, otherwise the better of its
- * guild's row and its organisation's. It yields `none` for an agent row that
- * shuts the agent out, and NULL when no row reaches it. `max` picks `write`
- * over `read`, and guild and organisation rows are never `none`.
- */
-export function agentModeSql(kind: AccessTargetKind, targetId: string, actor: ArtifactActor, values: unknown[]): string {
-  values.push(kind, actor.agentId ?? "", actor.guildId ?? "", actor.orgId);
-  const org = values.length;
-  const [target, agent, guild] = [org - 3, org - 2, org - 1];
-  return `COALESCE(
-      (SELECT x.mode FROM artifact_access x
-        WHERE x.target_kind = $${target} AND x.target_id = ${targetId}
-          AND x.subject_type = 'agent' AND x.subject_id = $${agent}),
-      (SELECT max(x.mode) FROM artifact_access x
-        WHERE x.target_kind = $${target} AND x.target_id = ${targetId}
-          AND ((x.subject_type = 'guild' AND x.subject_id = $${guild})
-               OR (x.subject_type = 'org' AND x.subject_id = $${org}))))`;
-}
 
 /** A mode read back from SQL: `read` or `write`, null for `none` or no row. */
 export function reachedMode(value: unknown): AccessMode | null {

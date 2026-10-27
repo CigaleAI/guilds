@@ -1,18 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { accessDatabase, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
 import { AgentValidationError, memoryOf, validateConfig } from "../agents/validation.js";
-import {
-  ArtifactError,
-  agentActor,
-  collectTaskEmbeds,
-  displayPathFor,
-  inlineTaskEmbeds,
-  operatorActor,
-  snapshotTaskCollections,
-  snapshotTaskEmbeds,
-  taskEmbedActor,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { ArtifactError, agentActor, collectTaskEmbeds, displayPathFor, inlineTaskEmbeds, operatorActor, snapshotTaskCollections, snapshotTaskEmbeds, taskEmbedActor } from "../artifacts/index.js";
 import { stateRepositories } from "../coding/repositories.js";
 import type { AgentConfig } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
@@ -41,6 +30,23 @@ import { codingRepositoriesDatabase, guildRepositories } from "./coding.js";
 import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
+import { collectionCatalog } from "../artifacts/collections.js";
+import { embedSource } from "../artifacts/embeds.js";
+import { readStoredMemory } from "../artifacts/memory.js";
+import type { ArtifactStore } from "../artifacts/store.js";
+import { toolArtifacts } from "../toolbox/artifacts.js";
+
+/** The artifact functions a generation calls: its tools', and the reads of its prompts, on `store`. */
+export function generationArtifacts(store: ArtifactStore) {
+  return {
+    ...toolArtifacts(store),
+    ...embedSource(store),
+    readStoredMemory: bindQuery(store, readStoredMemory),
+    collectionCatalog: bindQuery(store, collectionCatalog),
+  };
+}
+
+export type GenerationArtifacts = ReturnType<typeof generationArtifacts>;
 
 /** The db/ functions a run is prepared through, on `db`. */
 export function runPreparationDatabase(db: Queryable) {
@@ -62,7 +68,7 @@ export type ConnectorPool = Pick<McpPool, "call"> & Partial<Pick<McpPool, "syncT
 export type RunPreparationServices = {
   db: RunPreparationDatabase;
   notes: NotesStore;
-  artifacts: ArtifactStore | null;
+  artifacts: GenerationArtifacts | null;
   mcp: ConnectorPool;
   scripts: Scripts;
   groupRouter: GroupRouter;
@@ -200,7 +206,7 @@ export class RunPreparation {
     return [system, task, readMemory(agentDir)];
   }
 
-  private async storedPrompts(artifacts: ArtifactStore, agent: AgentRow): Promise<[string, string, string]> {
+  private async storedPrompts(artifacts: GenerationArtifacts, agent: AgentRow): Promise<[string, string, string]> {
     let system: string;
     try {
       system = hydrateStanding({
@@ -223,7 +229,7 @@ export class RunPreparation {
     });
     try {
       const task = await inlineTaskEmbeds(artifacts, taskEmbedActor(agent.org_id, agent), agent.task);
-      const memory = await artifacts.readMemory(operator, agent.id);
+      const memory = await artifacts.readStoredMemory(operator, agent.id);
       return [system, task, memory];
     } catch (error) {
       if (error instanceof ArtifactError) {
@@ -247,7 +253,7 @@ export class RunPreparation {
     }
     const actor = agentActor({ orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id, agentName: agent.name });
     try {
-      return await artifacts.catalog(actor);
+      return await artifacts.collectionCatalog(actor);
     } catch (error) {
       if (error instanceof ArtifactError) {
         return [];

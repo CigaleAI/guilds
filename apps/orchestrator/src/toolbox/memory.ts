@@ -3,6 +3,7 @@ import { validateMemory } from "../memory/index.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolContext } from "./types.js";
+import { artifactView } from "../artifacts/store.js";
 
 async function publishMemoryFileChanged(ctx: ToolContext): Promise<void> {
   if (ctx.group_chat === null || !ctx.guild_id || !ctx.group_chat.publish) {
@@ -23,9 +24,9 @@ async function writeMemoryThroughArtifacts(
   if (!ctx.artifacts || !ctx.artifact_actor) {
     return null;
   }
-  const row = await ctx.artifacts.writeMemory(ctx.artifact_actor, ctx.agent_id, content, detail);
+  const row = await ctx.artifacts.writeMemory(ctx.artifact_actor, ctx.agent_id, { content, detail });
   await publishMemoryFileChanged(ctx);
-  return String(ctx.artifacts.view(row).display_path);
+  return String(artifactView(row).display_path);
 }
 
 async function writeMemoryThroughNotes(

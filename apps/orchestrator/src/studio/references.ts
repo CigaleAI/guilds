@@ -1,23 +1,10 @@
-import {
-  EMBED_BUDGET,
-  EMBED_DEPTH,
-  collectTaskEmbeds,
-  inspectEmbed,
-  parseDisplayPath,
-  storeNoteReader,
-  taskEmbedActor,
-  walkTaskEmbeds,
-  withoutEmbeds,
-  type ArtifactActor,
-  type ArtifactLevel,
-  type ArtifactRow,
-  type ArtifactStore,
-  type CollectionView,
-  type EmbedStep,
-} from "../artifacts/index.js";
+import { EMBED_BUDGET, EMBED_DEPTH, collectTaskEmbeds, inspectEmbed, parseDisplayPath, noteReader, taskEmbedActor, walkTaskEmbeds, withoutEmbeds, type ArtifactActor, type ArtifactLevel, type ArtifactRow, type ArtifactStore, type CollectionView, type EmbedStep } from "../artifacts/index.js";
 import { taskDisplayPath } from "../agents/task.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
+import { describeCollection, listCollections } from "../artifacts/collections.js";
+import { getByDisplayPath, listOwnerNotes } from "../artifacts/notes.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
 
@@ -371,12 +358,12 @@ async function loadStateFiles(
     ["org", actor.orgId],
   ];
   const listed = await Promise.all(
-    owners.map(([level, ownerId]) => store.listOwnerNotes(actor, level, ownerId)),
+    owners.map(([level, ownerId]) => listOwnerNotes(store, actor, level, ownerId)),
   );
   const notes = await Promise.all(
     listed.flat().map((item) => loadNoteFile(store, actor, String(item.display_path))),
   );
-  const tables = (await store.listCollections(actor)).filter(
+  const tables = (await listCollections(store, actor)).filter(
     (table) => table.guild === null || table.guild.id === scope.guildId,
   );
   return [
@@ -391,7 +378,7 @@ async function loadNoteFile(
   displayPath: string,
 ): Promise<ReferenceFile | null> {
   try {
-    const loaded = await store.getByDisplayPath(actor, displayPath);
+    const loaded = await getByDisplayPath(store, actor, displayPath);
     const row = loaded.tombstone ? undefined : loaded.row;
     return row?.kind === "note" ? noteFile(displayPath, row) : null;
   } catch {
@@ -463,7 +450,7 @@ async function resolveHref(
   actor: ArtifactActor,
   target: { href: string; readText: boolean },
 ): Promise<Resolved> {
-  const inspection = await inspectEmbed(store, actor, target.href);
+  const inspection = await inspectEmbed(embedSource(store), actor, target.href);
   if (!inspection.ok)
     return { unresolved: { href: target.href, reason: inspection.reason ?? "missing" } };
   const parsed = parseDisplayPath(target.href);
@@ -480,7 +467,7 @@ async function reachedTable(
   actor: ArtifactActor,
   table: { href: string; name: string },
 ): Promise<ReferenceFile | null> {
-  const described = await store.describeCollection(actor, table.name);
+  const described = await describeCollection(store, actor, table.name);
   if (!described) return null;
   const scope = described.guild_id ? "guild" : "org";
   return tableFile(
@@ -502,7 +489,7 @@ async function walkAgentRuns(
     const actor = taskEmbedActor(orgId, agent);
     const steps = await walkTaskEmbeds(
       String(agent.task ?? ""),
-      storeNoteReader(store, actor),
+      noteReader(embedSource(store), actor),
       EMBED_DEPTH + 1,
     );
     runs.walks.set(agent.id, steps);
@@ -517,6 +504,6 @@ async function unreachableEmbeds(
   steps: EmbedStep[],
 ): Promise<Set<string>> {
   const hrefs = [...new Set(steps.filter((step) => step.inlined).map((step) => step.href))];
-  const inspected = await Promise.all(hrefs.map((href) => inspectEmbed(store, actor, href)));
+  const inspected = await Promise.all(hrefs.map((href) => inspectEmbed(embedSource(store), actor, href)));
   return new Set(inspected.filter((item) => !item.ok).map((item) => item.href));
 }

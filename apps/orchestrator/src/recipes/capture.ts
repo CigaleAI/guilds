@@ -35,6 +35,9 @@ import { listSecrets } from "../db/secrets.js";
 import { listGuildRepositories } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
+import { getByDisplayPath, listEmbeddableNotes } from "../artifacts/notes.js";
+import { listAccess } from "../artifacts/access-lists.js";
+import { listCollections } from "../artifacts/collections.js";
 
 /** The db/ functions a guild is captured into a recipe through, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -49,9 +52,21 @@ export function captureDatabase(db: Queryable) {
   };
 }
 
+/** The artifact functions a capture reads notes, tables, and their access lists through, on `store`. */
+export function captureArtifacts(store: ArtifactStore) {
+  return {
+    getByDisplayPath: bindQuery(store, getByDisplayPath),
+    listAccess: bindQuery(store, listAccess),
+    listCollections: bindQuery(store, listCollections),
+    listEmbeddableNotes: bindQuery(store, listEmbeddableNotes),
+  };
+}
+
+export type CaptureArtifacts = ReturnType<typeof captureArtifacts>;
+
 export type CaptureDeps = {
   db: ReturnType<typeof captureDatabase>;
-  artifacts: ArtifactStore;
+  artifacts: CaptureArtifacts;
   scripts: Scripts;
   schedules: Schedules;
 };
@@ -106,7 +121,7 @@ function clippedHint(value: unknown): string {
 }
 
 /** The access list of the live note at `displayPath`; empty when there is none. */
-async function noteAccessEntries(artifacts: ArtifactStore, actor: ArtifactActor, displayPath: string): Promise<AccessEntry[]> {
+async function noteAccessEntries(artifacts: CaptureArtifacts, actor: ArtifactActor, displayPath: string): Promise<AccessEntry[]> {
   const found = await artifacts.getByDisplayPath(actor, displayPath);
   return found.row ? artifacts.listAccess(actor, { kind: "note", id: found.row.id }) : [];
 }

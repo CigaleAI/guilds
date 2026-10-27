@@ -1,21 +1,12 @@
 // The files an operator's pages list, read and write at each level, and their provenance.
-import {
-  ArtifactError,
-  ArtifactStore,
-  hostFileDisplayPath,
-  listFileChanges,
-  listLatestFileChanges,
-  normalizeNoteKey,
-  parseDisplayPath,
-  type ArtifactActor,
-  type ArtifactLevel,
-  MEMORY_KEY,
-  TASK_KEY,
-} from "./index.js";
+import { ArtifactError, type ArtifactStore, hostFileDisplayPath, listFileChanges, listLatestFileChanges, normalizeNoteKey, parseDisplayPath, type ArtifactActor, type ArtifactLevel, MEMORY_KEY, TASK_KEY } from "./index.js";
 import { taskDisplayPath, writeAgentTask } from "../agents/task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
+import { canReadDisplayPath, deleteByDisplayPath, getByDisplayPath, listEmbeddableNotes, listOwnerNotes, writeNote } from "./notes.js";
+import { artifactView } from "./store.js";
+import { ensureAgentRows, writeMemory } from "./memory.js";
 
 /** What host files are read and written through: the artifact store, and the database an agent's Task lives in. */
 export type HostFileServices = { store: ArtifactStore; db: Queryable };
@@ -49,7 +40,7 @@ export async function ensureAgentArtifacts(
   actor: ArtifactActor,
   agent: Pick<AgentRow, "id" | "guild_id" | "org_id">,
 ): Promise<void> {
-  await store.ensureAgentRows({
+  await ensureAgentRows(store, {
     orgId: agent.org_id,
     guildId: agent.guild_id,
     agentId: agent.id,
@@ -64,7 +55,7 @@ async function readablePaths(
   displayPaths: string[],
 ): Promise<string[]> {
   const readable = await Promise.all(
-    displayPaths.map((path) => store.canReadDisplayPath(actor, path)),
+    displayPaths.map((path) => canReadDisplayPath(store, actor, path)),
   );
   return displayPaths.filter((_, index) => readable[index]);
 }
@@ -115,7 +106,7 @@ async function lastSavedRow(
   path: string,
 ): Promise<Record<string, unknown> | null> {
   try {
-    const loaded = await store.getByDisplayPath(actor, path);
+    const loaded = await getByDisplayPath(store, actor, path);
     const live = loaded.row && !loaded.tombstone ? loaded.row : null;
     return live ? fallbackChange(path, live.version, live.updated_by_name, live.updated_at) : null;
   } catch {
@@ -181,7 +172,7 @@ export async function listHostFiles(
   actor: ArtifactActor,
   owner: HostFileOwner,
 ): Promise<Array<Record<string, unknown>>> {
-  return store.listOwnerNotes(actor, owner.level, owner.ownerId);
+  return listOwnerNotes(store, actor, owner.level, owner.ownerId);
 }
 
 /** The payload with its version, and for an agent's Task the versions it replaced. */
@@ -228,7 +219,7 @@ export async function readHostFile(
     return withFileMeta(services, actor, owner, { payload, kind: "task", version: row.version });
   }
   const displayPath = hostFileDisplayPath(actor.orgId, owner.level, owner.ownerId, name);
-  const loaded = await services.store.getByDisplayPath(actor, displayPath);
+  const loaded = await getByDisplayPath(services.store, actor, displayPath);
   if (loaded.tombstone || !loaded.row) {
     throw new ArtifactError("artifact not found", 404);
   }
@@ -264,16 +255,16 @@ export async function writeHostFile(
     return withFileMeta(services, actor, owner, { payload, kind: "task", version: row.version });
   }
   if (owner.level === "agent" && name === MEMORY_KEY) {
-    const row = await store.writeMemory(actor, owner.ownerId, content, `host ${actor.actorName}`);
-    const payload = { path: name, content, display_path: String(store.view(row).display_path) };
+    const row = await writeMemory(store, actor, owner.ownerId, { content: content, detail: `host ${actor.actorName}` });
+    const payload = { path: name, content, display_path: String(artifactView(row).display_path) };
     return withFileMeta(services, actor, owner, { payload, kind: "memory", version: row.version });
   }
-  const row = await store.writeNote(actor, { level: owner.level, key: name, content });
+  const row = await writeNote(store, actor, { level: owner.level, key: name, content });
   const payload = {
     id: row.id,
     path: name,
     content,
-    display_path: String(store.view(row).display_path),
+    display_path: String(artifactView(row).display_path),
   };
   return withFileMeta(services, actor, owner, { payload, kind: row.kind, version: row.version });
 }
@@ -290,7 +281,7 @@ export async function deleteHostFile(
     owner.ownerId,
     hostFileName(relative),
   );
-  await store.deleteByDisplayPath(actor, displayPath);
+  await deleteByDisplayPath(store, actor, displayPath);
 }
 
 /** The recorded changes of one display path, newest first; none for a path the actor may not read. */
@@ -302,7 +293,7 @@ export async function listPathChanges(
   if (!displayPath) {
     throw new ArtifactError("display_path is required", 422);
   }
-  if (!(await services.store.canReadDisplayPath(actor, displayPath))) {
+  if (!(await canReadDisplayPath(services.store, actor, displayPath))) {
     return [];
   }
   return listFileChanges(services.db, actor.orgId, displayPath);
@@ -317,9 +308,9 @@ export async function readEmbeddableNotes(
   displayPath: string,
 ): Promise<unknown> {
   if (!displayPath) {
-    return store.listEmbeddableNotes(actor);
+    return listEmbeddableNotes(store, actor);
   }
-  const loaded = await store.getByDisplayPath(actor, displayPath);
+  const loaded = await getByDisplayPath(store, actor, displayPath);
   const row = !loaded.tombstone && !loaded.revision ? loaded.row : null;
   if (!row || row.kind !== "note") {
     throw new ArtifactError("note not found", 404);

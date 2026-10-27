@@ -7,7 +7,7 @@ import {
   collectionColumnsChanged,
   collectionDeleted,
 } from "../../src/artifacts/collection-changes.js";
-import { ArtifactStore } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { actorColumns, studioLink } from "../../src/db/config-changes.js";
 import { runActor, userActor } from "../../src/lib/change-actor.js";
 import type { ScheduleRow } from "../../src/db/schedules.js";
@@ -209,7 +209,7 @@ test("a Studio edit writes as the operator, linked to the coach message being ap
     sourceGuildId: "g_1",
     sessionId: "ss_1",
     user: { id: "user_ada", name: "ada" },
-    artifacts: new ArtifactStore({} as pg.Pool),
+    artifacts: artifactStore({} as pg.Pool),
   } as unknown as EditScope;
   const reading = editActor(scope, { agentId: "a_1" });
   assert.equal(reading.studio, undefined);

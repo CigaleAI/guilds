@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
@@ -28,6 +28,8 @@ import { getAgentTask, listAgentTaskRevisions, listAgents } from "../../src/db/a
 import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
+import { getByDisplayPath } from "../../src/artifacts/notes.js";
+import { operatorContext } from "../../src/artifacts/store.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -60,7 +62,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "deepinfra");
-  const artifacts = new ArtifactStore(database.pool, templatesRoot());
+  const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const apply = new RecipeApplyService({ db, artifacts, notes, scripts, schedules, registry: null });
@@ -501,15 +503,15 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.ok(mixedWriterTask?.content_text.includes(`Then note_get ${rulesPath}.`));
     const mixedWriterSchedules = await listSchedules(db, String(mixedWriter.id));
     assert.ok(mixedWriterSchedules.some((row) => String(row.instruction).includes(`Read ${mapPath} first.`)));
-    const noteReader = artifacts.operatorContext("org_home", "user_operator", "operator", {
+    const noteReader = operatorContext("org_home", "user_operator", "operator", {
       guildId: mixedApply.guild_id,
       agentId: String(mixedWriter.id),
     });
-    const rulesNote = await artifacts.getByDisplayPath(noteReader, rulesPath);
+    const rulesNote = await getByDisplayPath(artifacts, noteReader, rulesPath);
     assert.equal(rulesNote.row?.key, "desk-rules.md");
     assert.equal(rulesNote.row?.path, "");
     assert.equal(rulesNote.row?.content_text, "Skip thread ids already in seen-ids.\n");
-    const mapNote = await artifacts.getByDisplayPath(noteReader, mapPath);
+    const mapNote = await getByDisplayPath(artifacts, noteReader, mapPath);
     assert.equal(mapNote.row?.key, "crm-map.md");
     assert.equal(mapNote.row?.path, "");
     // Each note's access list gains the recipe's guild mode and writers on top of its level's rows.
@@ -518,7 +520,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.equal(modeOf(mapAccess, mixedGuild), "read");
     assert.equal(modeOf(mapAccess, { type: "agent", id: String(mixedReader.id) }), "write");
     assert.equal(modeOf(await noteAccess(String(rulesNote.row?.id)), mixedGuild), "write");
-    const glossary = await artifacts.getByDisplayPath(noteReader, "org/org_home/mixed-glossary.md");
+    const glossary = await getByDisplayPath(artifacts, noteReader, "org/org_home/mixed-glossary.md");
     const glossaryAccess = await noteAccess(String(glossary.row?.id));
     assert.equal(modeOf(glossaryAccess, { type: "org", id: "org_home" }), "read");
     assert.equal(modeOf(glossaryAccess, mixedGuild), "write");

@@ -88,6 +88,9 @@ import {
 import type { UserRow } from "../db/users.js";
 import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
+import { operatorContext } from "../artifacts/store.js";
+import { getMemoryRow, readStoredMemory } from "../artifacts/memory.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -538,14 +541,14 @@ export class StudioService {
   async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = this.deps.artifacts.operatorContext(
+    const actor = operatorContext(
       session.org_id,
       user.id,
       user.name,
       { guildId: session.source_guild_id, agentId },
     );
     const task = await getAgentTask(this.deps.db, session.org_id, agentId);
-    const memory = await this.deps.artifacts.getMemoryRow(actor, agentId);
+    const memory = await getMemoryRow(this.deps.artifacts, actor, agentId);
     const standing = hydrateStanding({
       systemPath: this.deps.notesSystemPath,
       agentName: agent.name,
@@ -556,7 +559,7 @@ export class StudioService {
     let embedWarning: string | null = null;
     try {
       effectiveTask = await inlineTaskEmbeds(
-        this.deps.artifacts,
+        embedSource(this.deps.artifacts),
         taskEmbedActor(session.org_id, agent),
         task?.content_text ?? "",
       );
@@ -566,7 +569,7 @@ export class StudioService {
     const sourceHash = task?.content_hash ?? hashArtifactContent("");
     const effectiveHash = promptHash(effectiveTask);
     const tools = await projectOfferedToolSchemas(this.previewDeps(), agent);
-    const memoryText = await this.deps.artifacts.readMemory(actor, agentId);
+    const memoryText = await readStoredMemory(this.deps.artifacts, actor, agentId);
     const memoryEnabled = memoryOf(jsonObj(agent.config));
     const composed = composeAgentSystemPrompt(
       standing,
@@ -661,7 +664,7 @@ export class StudioService {
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = this.deps.artifacts.operatorContext(
+    const actor = operatorContext(
       session.org_id,
       user.id,
       user.name,

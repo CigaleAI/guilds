@@ -1,9 +1,4 @@
-import {
-  inspectTaskEmbeds,
-  taskEmbedActor,
-  type ArtifactActor,
-  type ArtifactStore,
-} from "../artifacts/index.js";
+import { inspectTaskEmbeds, taskEmbedActor, type ArtifactActor, type ArtifactStore } from "../artifacts/index.js";
 import {
   getAgent,
   listAgents,
@@ -45,6 +40,7 @@ import {
   withCodingLimits,
 } from "./validation.js";
 import { agentItem } from "./view.js";
+import { embedSource } from "../artifacts/embeds.js";
 
 /** What agents are created, changed, moved and deleted through, built once from the app's services. */
 export type AgentServices = {
@@ -136,7 +132,7 @@ export async function listBrokenTaskEmbeds(
   const items = [];
   for (const row of agents) {
     const inspected = store
-      ? await inspectTaskEmbeds(store, taskEmbedActor(guild.org_id, row), row.task ?? "")
+      ? await inspectTaskEmbeds(embedSource(store), taskEmbedActor(guild.org_id, row), row.task ?? "")
       : [];
     items.push({
       id: row.id,

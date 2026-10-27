@@ -15,6 +15,7 @@ import { recordFileChange } from "../db/file-changes.js";
 import { getGuild } from "../db/guilds.js";
 import { bindQuery, type Queryable, withTransaction } from "../db/pg.js";
 import { freeSlot, placementMachine } from "../machines/placement.js";
+import { ensureAgentRows } from "../artifacts/memory.js";
 
 export type AgentNotes = {
   createAgent(
@@ -142,7 +143,7 @@ export async function persistAgent(
   );
   try {
     if (args.artifacts && actor) {
-      await args.artifacts.ensureAgentRows({
+      await ensureAgentRows(args.artifacts, {
         orgId: actor.orgId,
         guildId: args.guildId,
         agentId: args.agentId,

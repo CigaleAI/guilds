@@ -7,7 +7,7 @@ import { generationLive } from "../../src/generation/completion.js";
 import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
 import { McpPool } from "../../src/mcp/index.js";
-import { ArtifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -28,6 +28,7 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
+import { generationArtifacts } from "../../src/generation/prepare.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -84,7 +85,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
-  const artifacts = new ArtifactStore(database.pool, notes.templates);
+  const artifacts = artifactStore(database.pool, notes.templates);
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const upstream = await startSandboxUpstream();
@@ -100,7 +101,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
     workspaceRoot: env.WORKSPACE_ROOT ?? "",
     sandboxes,
     mcp: new McpPool(),
-    artifacts,
+    artifacts: generationArtifacts(artifacts),
   });
   await generation.reconcile();
   const app = await buildApp(database, {

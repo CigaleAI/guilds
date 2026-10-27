@@ -16,7 +16,7 @@ import {
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import { EMBED_BUDGET } from "../../src/artifacts/types.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
-import type { ArtifactStore } from "../../src/artifacts/store.js";
+import type { EmbedSource } from "../../src/artifacts/embeds.js";
 
 test("collectTaskEmbeds keeps unique hrefs in order", () => {
   assert.deepEqual(
@@ -55,7 +55,7 @@ test("inlineTaskEmbeds expands one nested hop", async () => {
   };
   const actor = operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" });
   const inlined = await inlineTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     actor,
     "Follow ![[org/org_1/schema.md]] and again ![[org/org_1/schema.md]]\n",
   );
@@ -87,7 +87,7 @@ test("inlineTaskEmbeds puts the unreachable marker in place of a nested note it 
     },
   };
   const inlined = await inlineTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
     "![[org/org_1/schema.md]]",
   );
@@ -118,7 +118,7 @@ test("inlineTaskEmbeds replaces a nested collection path with the table name", a
     },
   };
   const inlined = await inlineTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
     "Follow ![[org/org_1/process.md]]\n",
   );
@@ -141,7 +141,7 @@ test("inlineTaskEmbeds replaces each unique embed in place", async () => {
     },
   };
   const inlined = await inlineTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
     "Start ![[org/org_1/a.md]] middle ![[org/org_1/b.md]] end\n",
   );
@@ -171,7 +171,7 @@ test("inlineTaskEmbeds marks every embed that does not resolve to a readable not
   };
   const hrefs = ["org/org_1/record", "org/org_1/gone.md", "org/org_1/hidden.md", "recipe:desk", "notes/plan.md"];
   const inlined = await inlineTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
     hrefs.map((href) => `![[${href}]]`).join("\n"),
   );
@@ -194,7 +194,7 @@ test("inlineTaskEmbeds still refuses a Task past the embed budget", async () => 
   await assert.rejects(
     () =>
       inlineTaskEmbeds(
-        store as unknown as ArtifactStore,
+        store as unknown as EmbedSource,
         operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
         "![[org/org_1/big.md]]",
       ),
@@ -209,7 +209,7 @@ test("inlineTaskEmbeds marks a collection the actor cannot read and names one it
     },
   };
   const inlined = await inlineTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
     "![[org/org_1/collections/leads]] ![[org/org_1/collections/shut]] ![[org/org_2/collections/leads]]",
   );
@@ -229,7 +229,7 @@ test("inlineTaskEmbeds reads each embed as the actor it is given", async () => {
     },
   };
   const agent = agentActor({ orgId: "org_1", guildId: "g_1", agentId: "a_1", agentName: "Ada" });
-  const inlined = await inlineTaskEmbeds(store as unknown as ArtifactStore, agent, "Follow ![[org/org_1/rules.md]]");
+  const inlined = await inlineTaskEmbeds(store as unknown as EmbedSource, agent, "Follow ![[org/org_1/rules.md]]");
   assert.equal(inlined, `Follow ${unreachableMarker("org/org_1/rules.md")}`);
   assert.deepEqual(seen, [false]);
 });
@@ -246,9 +246,9 @@ test("snapshotTaskEmbeds and snapshotTaskCollections keep only what the actor ca
   };
   const actor = operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" });
   const task = "![[org/org_1/a.md]] ![[org/org_1/b.md]] ![[org/org_1/collections/leads]] ![[org/org_1/collections/shut]]";
-  const notes = await snapshotTaskEmbeds(store as unknown as ArtifactStore, actor, task);
+  const notes = await snapshotTaskEmbeds(store as unknown as EmbedSource, actor, task);
   assert.deepEqual(notes.map((item) => [item.display_path, item.version]), [["org/org_1/a.md", 2]]);
-  assert.deepEqual(await snapshotTaskCollections(store as unknown as ArtifactStore, actor, task), [
+  assert.deepEqual(await snapshotTaskCollections(store as unknown as EmbedSource, actor, task), [
     "org/org_1/collections/leads",
   ]);
 });
@@ -263,7 +263,7 @@ test("inlineTaskEmbeds replaces a collection path with the table name", async ()
     },
   };
   const inlined = await inlineTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
     "Write to ![[org/org_1/collections/leads]] then list ![[org/org_1/collections/leads]]\n",
   );
@@ -281,7 +281,7 @@ test("inspectTaskEmbeds accepts a readable collection and flags one that is not 
   };
   const actor = operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" });
   const inspected = await inspectTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     actor,
     "See ![[org/org_1/collections/leads]] and ![[org/org_1/collections/missing]]",
   );
@@ -305,7 +305,7 @@ test("inspectTaskEmbeds flags leftover recipe links and files that are not reach
   };
   const actor = operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" });
   const inspected = await inspectTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     actor,
     "See ![[recipe:desk-protocol]] and ![[org/org_1/schema.md]] and ![[org/org_1/missing.md]]",
   );
@@ -343,7 +343,7 @@ test("inspectTaskEmbeds walks one nested hop", async () => {
     },
   };
   const inspected = await inspectTaskEmbeds(
-    store as unknown as ArtifactStore,
+    store as unknown as EmbedSource,
     operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" }),
     "Follow ![[org/org_1/process.md]]",
   );
@@ -427,7 +427,7 @@ test("inspectEmbed names why a link does not resolve", async () => {
       if (href === "org/org_1/gone.md") return { tombstone: true, row: { kind: "note" } };
       throw new ArtifactError("artifact not found", 404);
     },
-  } as unknown as ArtifactStore;
+  } as unknown as EmbedSource;
   const actor = operatorActor({ orgId: "org_1", actorId: "u", actorName: "op" });
   const reasons = await Promise.all(
     [

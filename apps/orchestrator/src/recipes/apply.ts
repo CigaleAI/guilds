@@ -41,14 +41,7 @@ import {
 } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { operatorActor } from "../artifacts/actors.js";
-import {
-  ArtifactError,
-  ownerPrefix,
-  type ArtifactActor,
-  type ArtifactStore,
-  type CollectionColumn,
-  type CollectionView,
-} from "../artifacts/index.js";
+import { ArtifactError, ownerPrefix, type ArtifactActor, type ArtifactStore, type CollectionColumn, type CollectionView } from "../artifacts/index.js";
 import { newId } from "../lib/ids.js";
 import { hostsOnlyVisible, visibleGuildIds } from "../machines/access.js";
 import {
@@ -108,6 +101,8 @@ import { getSecretByName, listAgentSecrets, listSecrets, setSecretAccess } from 
 import { mcpDatabase } from "../mcp/index.js";
 import type { Queryable } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
+import { createCollection, deleteCollection, listCollections } from "../artifacts/collections.js";
+import { writeNote } from "../artifacts/notes.js";
 
 export type ApplyDeps = {
   db: Queryable;
@@ -647,7 +642,7 @@ export class RecipeApplyService {
           continue;
         }
         const ownerId = note.level === "guild" ? guildId : org.id;
-        const written = await this.deps.artifacts.writeNote(actor, {
+        const written = await writeNote(this.deps.artifacts, actor, {
           level: note.level,
           key: note.key,
           content: note.body,
@@ -686,7 +681,8 @@ export class RecipeApplyService {
       for (const note of recipe.notes.filter((item) => item.level === "agent")) {
         const agentId = note.role ? roleToAgent.get(note.role) : createdAgents[0];
         if (!agentId) continue;
-        const written = await this.deps.artifacts.writeNote(
+        const written = await writeNote(
+          this.deps.artifacts,
           operatorActor({
             orgId: org.id,
             actorId: user.id,
@@ -781,7 +777,7 @@ export class RecipeApplyService {
         if (item.action === "create") {
           let created: CollectionView;
           try {
-            created = await this.deps.artifacts.createCollection(actor, {
+            created = await createCollection(this.deps.artifacts, actor, {
               name: item.name,
               purpose: item.purpose,
               columns: item.columns,
@@ -876,7 +872,7 @@ export class RecipeApplyService {
         await deleteGuild(this.deps.db, guildId).catch(() => undefined);
       }
       for (const collectionId of createdCollections.reverse()) {
-        await this.deps.artifacts.deleteCollection(actor, collectionId).catch(() => undefined);
+        await deleteCollection(this.deps.artifacts, actor, collectionId).catch(() => undefined);
       }
       throw error;
     }
@@ -1022,7 +1018,7 @@ export class RecipeApplyService {
       });
       for (const item of (plan.collections as Array<Record<string, unknown>>) ?? []) {
         if (item.action === "create" && typeof item.collection_id === "string") {
-          await this.deps.artifacts.deleteCollection(actor, item.collection_id).catch(() => undefined);
+          await deleteCollection(this.deps.artifacts, actor, item.collection_id).catch(() => undefined);
         }
       }
     }
@@ -1133,7 +1129,7 @@ export class RecipeApplyService {
     if (!recipe.collections.length) {
       return [];
     }
-    const live = await this.deps.artifacts.listCollections(this.operator(org, user));
+    const live = await listCollections(this.deps.artifacts, this.operator(org, user));
     const byName = new Map(live.map((item) => [item.name, item]));
     return recipe.collections.map((collection) => {
       const existing = byName.get(collection.name);

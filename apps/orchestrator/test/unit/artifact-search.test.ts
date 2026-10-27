@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseColumns } from "../../src/artifacts/columns.js";
 import {
-  allowsSimilarSpelling,
-  isSingleToken,
   parseLimit,
   parseOffset,
   parseOrder,
@@ -13,6 +11,7 @@ import {
   SEARCH_BLOB_MAX_BYTES,
   searchBlobFor,
 } from "../../src/artifacts/search.js";
+import { allowsSimilarSpelling, isSingleToken } from "../../src/db/collections.js";
 
 const columns = parseColumns([
   { name: "project", type: "text", description: "project name" },
