@@ -157,17 +157,19 @@ export async function addRecord(
   };
 }
 
+/** A record by its collection's id and its own. */
+export type RecordKey = { collectionId: string; recordId: string };
+
 export async function updateRecord(
   store: ArtifactStore,
   actor: ArtifactActor,
-  collectionId: string,
-  recordId: string,
+  key: RecordKey,
   body: unknown,
 ): Promise<Record<string, unknown>> {
-  const collection = await store.getCollection(actor, collectionId);
+  const collection = await store.getCollection(actor, key.collectionId);
   const result = await store.updateRecord(actor, {
     collection: collection.name,
-    id: recordId,
+    id: key.recordId,
     body: asRecord(body),
   });
   return {

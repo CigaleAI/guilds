@@ -1,8 +1,5 @@
 import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import {
-  loadOperatorActor,
-} from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
@@ -87,26 +84,11 @@ import {
 } from "../secrets/access.js";
 import type { AppDeps, RouteDeps } from "./deps.js";
 import { HttpError, missingBodyFields } from "./errors.js";
-import {
-  requireArtifactStore,
-} from "../artifacts/host-files.js";
-import {
-  addRecord,
-  clearRecords,
-  createCollection,
-  deleteCollection,
-  exportCollection,
-  getCollection,
-  getRecord,
-  listCollections,
-  listRecords,
-  removeRecord,
-  updateCollection,
-  updateRecord,
-} from "../artifacts/collection-views.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
 import { registerAgentRoutes } from "./agent-routes.js";
+import { registerArtifactAccessRoutes } from "./artifact-access-routes.js";
+import { registerCollectionRoutes } from "./collection-routes.js";
 import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
 import { registerIssueRoutes } from "./issue-routes.js";
@@ -234,7 +216,7 @@ async function scopeGuild(
 }
 
 export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
-  const { db, artifacts } = deps;
+  const { db } = deps;
   const identityDb = identityDatabase(db);
   const notifications = new Notifications(notificationsDatabase(db));
 
@@ -272,6 +254,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
   await registerAccessRoutes(app, deps);
   await registerAttachmentRoutes(app, deps);
   await registerNoteRoutes(app, deps);
+  await registerCollectionRoutes(app, deps);
+  await registerArtifactAccessRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -284,163 +268,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
       auth_mode: deps.config?.authMode ?? "compat-cookie",
       integrations: integrationStatuses(deps.integrations ?? installedIntegrations(), undefined, undefined, { audit }),
     };
-  });
-
-  // Collections live at the organisation: the Tables page builds them and
-  // browses their records and edits their access lists.
-  app.get("/api/collections", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return await listCollections(store, await loadOperatorActor(db, user, { orgId: String(org.id) }));
-  });
-
-  app.post("/api/collections", async (request, reply) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const missing = missingBodyFields(request.body, ["name", "purpose"]);
-    if (missing) {
-      throw missing;
-    }
-    const created = await createCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), bodyOf(request));
-    return await send(reply, 201, created);
-  });
-
-  app.get("/api/collections/:collection_id", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return await getCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-  });
-
-  app.patch("/api/collections/:collection_id", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return await updateCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request));
-  });
-
-  app.delete("/api/collections/:collection_id", async (request, reply) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    await deleteCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-    await send(reply, 204);
-  });
-
-  app.get("/api/collections/:collection_id/export", async (request, reply) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const exported = await exportCollection(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-    reply
-      .header("content-disposition", `attachment; filename="${exported.name}.jsonl"`)
-      .type("application/jsonl")
-      .send(exported.body);
-  });
-
-  app.get("/api/collections/:collection_id/records", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return await listRecords(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), queryOf(request));
-  });
-
-  app.post("/api/collections/:collection_id/records", async (request, reply) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const missing = missingBodyFields(request.body, ["body"]);
-    if (missing) {
-      throw missing;
-    }
-    const added = await addRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request).body);
-    return await send(reply, 201, added);
-  });
-
-  app.delete("/api/collections/:collection_id/records", async (request, reply) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    await clearRecords(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
-    await send(reply, 204);
-  });
-
-  app.get("/api/collections/:collection_id/records/:record_id", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return await getRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
-  });
-
-  app.patch("/api/collections/:collection_id/records/:record_id", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const missing = missingBodyFields(request.body, ["body"]);
-    if (missing) {
-      throw missing;
-    }
-    return await updateRecord(
-      store,
-      await loadOperatorActor(db, user, { orgId: String(org.id) }),
-      param(request, "collection_id"),
-      param(request, "record_id"),
-      bodyOf(request).body,
-    );
-  });
-
-  app.delete("/api/collections/:collection_id/records/:record_id", async (request, reply) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    await removeRecord(store, await loadOperatorActor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
-    await send(reply, 204);
-  });
-
-  // An item's access list: notes, tables, and files take the same routes.
-  const accessTargets = [
-    { path: "/api/notes/:note_id/access", kind: "note", param: "note_id" },
-    { path: "/api/collections/:collection_id/access", kind: "collection", param: "collection_id" },
-    { path: "/api/files/:file_id/access", kind: "file", param: "file_id" },
-  ] as const;
-  for (const target of accessTargets) {
-    app.get(target.path, async (request) => {
-      const store = requireArtifactStore(artifacts);
-      const user = await currentUser(identityDb, request, deps);
-      const org = await currentOrg(identityDb, request, user);
-      const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
-      return await store.accessList(actor, { kind: target.kind, id: param(request, target.param) });
-    });
-
-    app.put(target.path, async (request) => {
-      const store = requireArtifactStore(artifacts);
-      const user = await currentUser(identityDb, request, deps);
-      const org = await currentOrg(identityDb, request, user);
-      const missing = missingBodyFields(request.body, ["subjects"]);
-      if (missing) {
-        throw missing;
-      }
-      const actor = await loadOperatorActor(db, user, { orgId: String(org.id) });
-      return await store.replaceAccess(actor, { kind: target.kind, id: param(request, target.param) }, bodyOf(request).subjects);
-    });
-  }
-
-  app.get("/api/guilds/:guild_id/reach", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const actor = await loadOperatorActor(db, user, { orgId: String(row.org_id) });
-    return await store.reachOf(actor, { type: "guild", id: String(row.id), guildId: String(row.id) });
-  });
-
-  app.get("/api/agents/:agent_id/reach", async (request) => {
-    const store = requireArtifactStore(artifacts);
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    const actor = await loadOperatorActor(db, user, { orgId: String(row.org_id) });
-    return await store.reachOf(actor, { type: "agent", id: String(row.id), guildId: String(row.guild_id) });
   });
 
   async function visibleCredential(row: Record<string, unknown>, user: Record<string, unknown>): Promise<boolean> {

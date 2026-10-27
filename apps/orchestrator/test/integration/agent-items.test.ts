@@ -23,7 +23,7 @@ after(async () => {
 });
 
 test(
-  "an operator's scripts, routines, issues, runs and notes answer for what is there and what is not",
+  "an operator's scripts, routines, issues, runs, notes and tables answer for what is there and what is not",
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -229,6 +229,66 @@ test(
         headers: OWNER,
       });
       assert.equal(image.statusCode, 503, "a box without an image store serves none");
+
+      const table = await app.inject({
+        method: "POST",
+        url: "/api/collections",
+        headers: JSON_OWNER,
+        payload: {
+          name: "leads",
+          purpose: "people to call",
+          columns: [{ name: "who", type: "text", description: "their name", required: true }],
+        },
+      });
+      assert.equal(table.statusCode, 201, table.body);
+      const records = `/api/collections/${String(table.json().id)}/records`;
+      const added = await app.inject({
+        method: "POST",
+        url: records,
+        headers: JSON_OWNER,
+        payload: { body: { who: "Ada" } },
+      });
+      assert.equal(added.statusCode, 201, added.body);
+      const recordId = String(added.json().record.id);
+      const changed = await app.inject({
+        method: "PATCH",
+        url: `${records}/${recordId}`,
+        headers: JSON_OWNER,
+        payload: { body: { who: "Grace" } },
+      });
+      assert.equal(changed.json().record.who, "Grace", changed.body);
+      assert.equal(
+        (await app.inject({ method: "GET", url: `${records}/${recordId}`, headers: OWNER })).json()
+          .who,
+        "Grace",
+      );
+      assert.equal(
+        (await app.inject({ method: "GET", url: records, headers: OWNER })).json().total,
+        1,
+      );
+      const exported = await app.inject({
+        method: "GET",
+        url: `/api/collections/${String(table.json().id)}/export`,
+        headers: OWNER,
+      });
+      assert.match(String(exported.headers["content-disposition"]), /leads\.jsonl/);
+      assert.equal(
+        (await app.inject({ method: "DELETE", url: `${records}/${recordId}`, headers: OWNER }))
+          .statusCode,
+        204,
+      );
+      assert.equal(
+        (await app.inject({ method: "DELETE", url: records, headers: OWNER })).statusCode,
+        204,
+      );
+      assert.equal(
+        (await app.inject({ method: "GET", url: `${guild}/reach`, headers: OWNER })).statusCode,
+        200,
+      );
+      assert.equal(
+        (await app.inject({ method: "GET", url: `${agent}/reach`, headers: OWNER })).statusCode,
+        200,
+      );
 
       const get = (url: string) => app.inject({ method: "GET", url, headers: OWNER });
       const put = (url: string, payload: object) =>

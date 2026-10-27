@@ -49,14 +49,6 @@ type HostFilePayload = {
   }>;
 };
 
-/** The artifact store; a box without one answers with a 422. */
-export function requireArtifactStore(store: ArtifactStore | null | undefined): ArtifactStore {
-  if (!store) {
-    throw new ArtifactError("artifact store is not available", 422);
-  }
-  return store;
-}
-
 export async function ensureAgentArtifacts(
   store: ArtifactStore,
   actor: ArtifactActor,
