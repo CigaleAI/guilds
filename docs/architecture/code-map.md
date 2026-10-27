@@ -66,7 +66,7 @@ A repository that extends core holds this one as a submodule
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
 | `coding/` | Guild repositories, a coding run's git side, the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
 | `machines/` | Tiers, sizes, slots, placement access, and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
-| `access/` | Binding resolution and a run's tools, MCP, and secrets ([Access](../concepts/access.md)) |
+| `access/` | Binding resolution, a run's tools, MCP, and secrets, and the access view a scope's page shows (`view.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM, environment fingerprints, connection views, and validation |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, and redaction ([Secrets](../concepts/secrets.md)) |
 | `db/` | Pool, codecs, Drizzle schema, one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …), seeds, and the migration check |

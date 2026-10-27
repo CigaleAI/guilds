@@ -43,7 +43,7 @@ import { markDisconnected, mcpDatabase } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser, identityDatabase } from "./identity.js";
-import { agentConfigObject } from "./items.js";
+import { agentConfigObject } from "../agents/view.js";
 import { bodyOf, param } from "./request.js";
 import {
   getMcpConnection,

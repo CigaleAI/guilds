@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { test } from "node:test";
 import { agentRuntime, snapshotEnvValues } from "../../src/access/runtime.js";
-import { httpAccess } from "../../src/http/access.js";
+import { loadAccessView } from "../../src/access/view.js";
 import { encryptPayload, environmentFingerprint } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import {
@@ -419,7 +419,7 @@ test("the access view that lists a login's tools for the first time shows the on
   const db = new MemoryDb();
   db.servers = [{ id: "mcp_fixture", slug: "fixture", display_name: "Fixture", auth: "token", config: { url: "https://mcp.example.com/mcp" } }];
   db.connections = [connectionOf("mcp-test")];
-  const view = await httpAccess(db as never, { orgId: "org_1", guildId: "guild_1", agentId: "a_1", viewScope: "agent", mcp: pool });
+  const view = await loadAccessView(db as never, { orgId: "org_1", guildId: "guild_1", agentId: "a_1", viewScope: "agent", mcp: pool });
   const fixture = (view.mcp as Array<{ slug: string; tools: Array<{ name: string; enabled: boolean }> }>).find(
     (server) => server.slug === "fixture",
   );

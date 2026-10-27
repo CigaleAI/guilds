@@ -138,7 +138,8 @@ import {
   PolicyError,
 } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
-import { httpAccess } from "./access.js";
+import type { AgentRow } from "../db/agents.js";
+import { loadAccessView } from "../access/view.js";
 import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 import { HttpError, missingBodyFields, notesReadHttp, notesWriteHttp } from "./errors.js";
 import {
@@ -200,11 +201,7 @@ import { registerRecipeRoutes } from "./recipe-routes.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-import {
-  agentConfigObject,
-  agentItem,
-  agentWithAccess,
-} from "./items.js";
+import { agentConfigObject, agentItem, loadAgentView } from "../agents/view.js";
 import { pipeSse } from "./sse.js";
 import { bodyOf, param, queryOf } from "./request.js";
 import {
@@ -403,21 +400,8 @@ function busy(deps: AppDeps, agentId: string): boolean {
   return deps.generation?.agent_is_busy(agentId) ?? false;
 }
 
-async function agentPayload(
-  deps: AppDeps,
-  row: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const access = await httpAccess(mcpDatabase(deps.db), {
-    orgId: String(row.org_id),
-    guildId: String(row.guild_id),
-    agentId: String(row.id),
-    viewScope: "agent",
-    mcp: deps.mcp ?? null,
-  });
-  return agentWithAccess(deps.db, row, {
-    generating: busy(deps, String(row.id)),
-    access,
-  });
+async function agentPayload(deps: AppDeps, row: AgentRow): Promise<Record<string, unknown>> {
+  return loadAgentView(deps.db, deps.mcp ?? null, row, busy(deps, row.id));
 }
 
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
@@ -1816,19 +1800,19 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (!(await isInstanceAdmin(deps, String(user.id)))) {
       throw new HttpError(404, "Not Found");
     }
-    return httpAccess(mcpDatabase(db), { viewScope: "platform", mcp: deps.mcp ?? null });
+    return loadAccessView(mcpDatabase(db), { viewScope: "platform", mcp: deps.mcp ?? null });
   });
 
   app.get("/api/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return httpAccess(mcpDatabase(db), { orgId: String(org.id), viewScope: "org", mcp: deps.mcp ?? null });
+    return loadAccessView(mcpDatabase(db), { orgId: String(org.id), viewScope: "org", mcp: deps.mcp ?? null });
   });
 
   app.get("/api/guilds/:guild_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    return httpAccess(mcpDatabase(db), {
+    return loadAccessView(mcpDatabase(db), {
       orgId: String(guild.org_id),
       guildId: String(guild.id),
       viewScope: "guild",
@@ -1839,7 +1823,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/agents/:agent_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    return httpAccess(mcpDatabase(db), {
+    return loadAccessView(mcpDatabase(db), {
       orgId: String(row.org_id),
       guildId: String(row.guild_id),
       agentId: String(row.id),

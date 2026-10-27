@@ -8,7 +8,7 @@ import { operatorFor } from "./artifact-notes.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser, identityDatabase } from "./identity.js";
-import { agentConfigObject } from "./items.js";
+import { agentConfigObject } from "../agents/view.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param } from "./request.js";
 

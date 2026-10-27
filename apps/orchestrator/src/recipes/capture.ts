@@ -2,7 +2,7 @@ import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
 import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
-import { httpAccess } from "../http/access.js";
+import { loadAccessView } from "../access/view.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -230,7 +230,7 @@ export async function captureGuild(
     const config = (jsonObj(agent.config) ?? {}) as Record<string, unknown>;
     const taskRow = await deps.db.getAgentTask(orgId, agentId);
     const taskBody = String(taskRow?.content_text ?? "");
-    const access = await httpAccess(deps.db, { orgId, guildId, agentId, viewScope: "agent" });
+    const access = await loadAccessView(deps.db, { orgId, guildId, agentId, viewScope: "agent" });
     const nativeTools = Object.fromEntries(
       (access.tools as Array<Record<string, unknown>>).map((item) => [String(item.name), Boolean(item.enabled)]),
     );

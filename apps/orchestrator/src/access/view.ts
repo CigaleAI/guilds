@@ -1,26 +1,50 @@
-import { accessPayload, mcpToolView, resolvedMcp } from "../access/index.js";
-import { resolveMcpTool } from "../access/runtime.js";
+import { accessPayload, mcpToolView, resolvedMcp } from "./index.js";
+import { resolveMcpTool } from "./runtime.js";
 import { manifestTools } from "../connectors/load.js";
+import { isPlainRecord } from "../db/json.js";
 import { listedFromRows, type McpDatabase, type McpPool } from "../mcp/index.js";
-
-function listedRecord(tool: unknown): Record<string, unknown> {
-  if (tool && typeof tool === "object" && !Array.isArray(tool)) {
-    return tool as Record<string, unknown>;
-  }
-  return {};
-}
 
 function visibleServers(
   servers: Array<Record<string, unknown>>,
   connections: Array<Record<string, unknown>>,
 ): Array<Record<string, unknown>> {
   const connected = new Set(connections.map((row) => String(row.mcp_server_id)));
-  return servers.filter(
-    (server) => server.enabled !== false || connected.has(String(server.id)),
-  );
+  return servers.filter((server) => server.enabled !== false || connected.has(String(server.id)));
 }
 
-export async function httpAccess(
+/**
+ * Each connection's listed tools, by connection id: synced from its server while it is connected
+ * and the pool can sync, else as last stored. A connection whose server the scope does not see is
+ * left out.
+ */
+async function listConnectionTools(
+  db: McpDatabase,
+  mcp: McpPool | { syncTools?: McpPool["syncTools"] } | null | undefined,
+  connections: Array<Record<string, unknown>>,
+  servers: Array<Record<string, unknown>>,
+): Promise<Record<string, unknown[]>> {
+  const serversById = new Map(servers.map((server) => [String(server.id), server]));
+  const rawListed: Record<string, unknown[]> = {};
+  for (const connection of connections) {
+    const server = serversById.get(String(connection.mcp_server_id));
+    if (server === undefined) {
+      continue;
+    }
+    if (connection.status === "connected" && mcp?.syncTools) {
+      try {
+        rawListed[String(connection.id)] = await mcp.syncTools(db, connection, server);
+        continue;
+      } catch {
+        /* use stored rows */
+      }
+    }
+    rawListed[String(connection.id)] = listedFromRows(await db.listMcpTools(String(connection.id)));
+  }
+  return rawListed;
+}
+
+/** The tools, connectors and bindings a scope sees, with each listed tool resolved for it. */
+export async function loadAccessView(
   db: McpDatabase,
   options: {
     orgId?: string | null;
@@ -37,23 +61,7 @@ export async function httpAccess(
   };
   const connections = await db.listMcpConnections(scope);
   const servers = visibleServers(await db.listMcpServers(scope.orgId), connections);
-  const serversById = new Map(servers.map((server) => [String(server.id), server]));
-  const rawListed: Record<string, unknown[]> = {};
-  for (const connection of connections) {
-    const server = serversById.get(String(connection.mcp_server_id));
-    if (server === undefined) {
-      continue;
-    }
-    if (connection.status === "connected" && options.mcp?.syncTools) {
-      try {
-        rawListed[String(connection.id)] = await options.mcp.syncTools(db, connection, server);
-        continue;
-      } catch {
-        /* use stored rows */
-      }
-    }
-    rawListed[String(connection.id)] = listedFromRows(await db.listMcpTools(String(connection.id)));
-  }
+  const rawListed = await listConnectionTools(db, options.mcp, connections, servers);
   // Read after the syncs: a sync writes an Off binding for each tool it lists for the first time.
   const rows = await db.listBindingsCovering(scope);
   const listedTools: Record<string, Array<Record<string, unknown>>> = {};
@@ -66,7 +74,7 @@ export async function httpAccess(
     const key = item.connection_id ?? `catalog:${server.id}`;
     if (item.connection_id !== null) {
       listedTools[key] = (rawListed[item.connection_id] ?? []).map((tool) => {
-        const record = listedRecord(tool);
+        const record = isPlainRecord(tool) ? tool : {};
         const namespaced = String(record.namespaced_name ?? record.name ?? "");
         const resolved = resolveMcpTool(rows, namespaced, {
           serverEnabled: item.enabled,

@@ -76,7 +76,7 @@ import {
   type OrgPolicy,
   remaining,
 } from "../policy/index.js";
-import { httpAccess } from "../http/access.js";
+import { loadAccessView } from "../access/view.js";
 import { agentsOfRoles, raiseRecipeAccess } from "./access.js";
 import { RecipeConflictError, RecipeError } from "./errors.js";
 import {
@@ -1237,7 +1237,7 @@ export class RecipeApplyService {
     const id = String(step.id);
     if (id.startsWith("conn:")) {
       const slug = id.slice(5);
-      const access = await httpAccess(mcpDatabase(this.deps.db), {
+      const access = await loadAccessView(mcpDatabase(this.deps.db), {
         orgId: String(applyRow.org_id),
         guildId: String(applyRow.guild_id),
         viewScope: "guild",
