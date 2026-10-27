@@ -197,14 +197,6 @@
       "count": 1
     }
   },
-  "src/connectors/qonto/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    },
-    "complexity": {
-      "count": 3
-    }
-  },
   "src/connectors/settings.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 4
