@@ -22,7 +22,7 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
   const services: SecretServices = {
     db,
     masterKey: deps.masterKey,
-    generation: deps.generation ?? null,
+    runSecrets: deps.generation?.secrets ?? null,
   };
 
   app.get("/api/secrets", async (request) => {

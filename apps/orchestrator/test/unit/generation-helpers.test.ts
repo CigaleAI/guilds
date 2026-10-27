@@ -9,7 +9,7 @@ import {
 } from "../../src/generation/tool-calls.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { mcpIndex } from "../../src/generation/offered-tools.js";
-import { mcpRedactions } from "../../src/generation/index.js";
+import { mcpRedactions } from "../../src/generation/run-secrets.js";
 import { workspaceMaxMib } from "../../src/generation/workspace.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";

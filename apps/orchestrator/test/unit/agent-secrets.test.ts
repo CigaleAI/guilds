@@ -14,8 +14,8 @@ import {
   type AgentSecretsDatabase,
 } from "../../src/secrets/agent.js";
 import { createToolContext, invokeTool, type Tool } from "../../src/toolbox/index.js";
-import type { AgentSecretStore } from "../../src/toolbox/types.js";
-import { FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
+
+import { agentRow, FakeDB, FakeSandboxes, makeLoop } from "../helpers/generation.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 
 process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -264,9 +264,7 @@ test("the generation's secret store removes the value file and resyncs the agent
   const sandboxes = new FakeSandboxes();
   sandboxes.running.add("mach_1");
   const loop = makeLoop(db, {}, root, sandboxes);
-  const store = (loop as unknown as { agentSecretStore(agent: Record<string, unknown>): AgentSecretStore }).agentSecretStore(
-    db.agent,
-  );
+  const store = loop.secrets.secretStore(agentRow());
   const stored = await store.store({ name: "ACME_KEY", description: "Calls Acme", file: "/home/a_1/key.txt" });
   assert.deepEqual(stored, { name: "ACME_KEY", rotated: false, value: "sk-live-777" });
   assert.equal(existsSync(file), false);

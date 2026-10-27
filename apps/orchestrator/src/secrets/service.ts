@@ -19,7 +19,7 @@ import {
   setSecretAccess,
   updateSecret,
 } from "../db/secrets.js";
-import type { GenerationLoop } from "../generation/index.js";
+import type { RunSecrets } from "../generation/run-secrets.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { newId } from "../lib/ids.js";
 import {
@@ -50,8 +50,8 @@ export type SecretServices = {
   db: Queryable;
   /** The key secrets are encrypted with; the process's own when absent. */
   masterKey: Buffer | undefined;
-  /** The generation loop whose running agents see the secrets; absent on a box without one. */
-  generation: Pick<GenerationLoop, "secretAccessChanged" | "secretChanged"> | null;
+  /** The secrets of the runs under way; absent on a box without a generation loop. */
+  runSecrets: Pick<RunSecrets, "secretAccessChanged" | "secretChanged"> | null;
 };
 
 /** A new secret as it is asked for, before validation: the name, description and value, and who gets it. */
@@ -186,7 +186,7 @@ export async function createSecret(
   } catch (error) {
     throw nameConflict(error);
   }
-  await services.generation?.secretAccessChanged(await listAgentIdsReached(db, orgId, access));
+  await services.runSecrets?.secretAccessChanged(await listAgentIdsReached(db, orgId, access));
   return secretMetadata(row, viewer);
 }
 
@@ -239,7 +239,7 @@ export async function changeSecret(
   if (updated === null) {
     throw new SecretError(404, "secret not found");
   }
-  await services.generation?.secretChanged(held.row.id);
+  await services.runSecrets?.secretChanged(held.row.id);
   return secretMetadata(updated, held.viewer);
 }
 
@@ -285,7 +285,7 @@ export async function replaceSecretAccess(
   const after = await listAgentIdsReached(db, orgId, access);
   const reached = new Set(after);
   const left = new Set(before);
-  await services.generation?.secretAccessChanged([
+  await services.runSecrets?.secretAccessChanged([
     ...before.filter((id) => !reached.has(id)),
     ...after.filter((id) => !left.has(id)),
   ]);
@@ -301,5 +301,5 @@ export async function deleteOrgSecret(services: SecretServices, held: HeldSecret
   if ((await deleteSecret(services.db, held.row.id)) === null) {
     throw new SecretError(404, "secret not found");
   }
-  await services.generation?.secretAccessChanged(reached);
+  await services.runSecrets?.secretAccessChanged(reached);
 }

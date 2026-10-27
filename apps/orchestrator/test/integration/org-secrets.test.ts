@@ -50,11 +50,13 @@ before(async () => {
   const generation = {
     groupChat: { observe: () => undefined },
     isAgentBusy: () => false,
-    secretAccessChanged: async (agentIds: string[]) => {
-      accessChanges.push([...agentIds].sort());
-    },
-    secretChanged: async (secretId: string) => {
-      valueChanges.push(secretId);
+    secrets: {
+      secretAccessChanged: async (agentIds: string[]) => {
+        accessChanges.push([...agentIds].sort());
+      },
+      secretChanged: async (secretId: string) => {
+        valueChanges.push(secretId);
+      },
     },
   };
   app = await buildApp(database, {

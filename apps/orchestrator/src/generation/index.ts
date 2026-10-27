@@ -6,13 +6,7 @@ import {
   secretAliasesOf,
 } from "../agents/validation.js";
 
-import {
-  agentSecrets,
-  applySecretAliases,
-  snapshotEnvValues,
-} from "../access/runtime.js";
-import { decryptPayload } from "../credentials/crypto.js";
-import { isPlainRecord, recordOf } from "../db/json.js";
+import { recordOf } from "../db/json.js";
 import { runItem } from "../db/views.js";
 import {
   GroupChat,
@@ -40,7 +34,7 @@ import {
   agentActor,
 } from "../artifacts/index.js";
 import { type NotesStore } from "../notes/store.js";
-import { tokenRedactions } from "../oauth/index.js";
+
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 
 import {
@@ -57,9 +51,6 @@ import type { RunScriptSnapshot } from "../scripts/snapshot.js";
 
 import { Schedules } from "../schedules/service.js";
 
-import { readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
-
-import { instanceRedactions } from "../connectors/instance.js";
 import {
   defaultGroupRouter,
   type GroupRouter,
@@ -70,6 +61,7 @@ import { WorkspaceLimits } from "./workspace.js";
 import { countInputTokensImpl, generationLive, ModelCompletion } from "./completion.js";
 import { RunEvents } from "./events.js";
 import { RunPreparation, type ConnectorPool } from "./prepare.js";
+import { RunSecrets } from "./run-secrets.js";
 import { Runs } from "./runs.js";
 import { AgentMachines, agentMachine, agentSeat, type GenerationSandboxes } from "./machines.js";
 import {
@@ -101,7 +93,7 @@ import {
   harnessMissingError,
   shownProgressLines,
 } from "../toolbox/harness.js";
-import type { AgentSecretStore } from "../toolbox/types.js";
+
 import { Issues } from "../issues/index.js";
 
 import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
@@ -235,40 +227,6 @@ function runHitTerminalCap(run: Record<string, unknown>): boolean {
   });
 }
 
-async function tokenRedactionsForConnection(
-  db: { getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null> },
-  connectionId: string,
-): Promise<Record<string, string>> {
-  const connection = await db.getMcpConnection(connectionId);
-  if (connection === null) {
-    return {};
-  }
-  try {
-    const payload = decryptPayload(connection.ciphertext as Buffer, connection.nonce as Buffer);
-    return tokenRedactions(payload, connectionId);
-  } catch {
-    return {};
-  }
-}
-
-export async function mcpRedactions(
-  db: { getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null> },
-  snapshot: Record<string, unknown>,
-): Promise<Record<string, string>> {
-  const values: Record<string, string> = {};
-  const mcp = snapshot.mcp;
-  if (!Array.isArray(mcp)) {
-    return values;
-  }
-  for (const group of mcp) {
-    if (!isPlainRecord(group) || typeof group.connection_id !== "string") {
-      continue;
-    }
-    Object.assign(values, await tokenRedactionsForConnection(db, group.connection_id));
-  }
-  return values;
-}
-
 /** The db/ functions a generation reads and writes through, on `db`. */
 export function generationDatabase(db: Queryable) {
   return {
@@ -360,6 +318,7 @@ export class GenerationLoop implements GroupRunner {
   coding: CodingRuns;
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
+  secrets: RunSecrets;
   runs: Runs;
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
@@ -432,6 +391,7 @@ export class GenerationLoop implements GroupRunner {
       credentials: this.credentials,
       attachments: this.attachments,
     });
+    this.secrets = new RunSecrets(db, this.machines);
     this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events });
     this.workspace = new WorkspaceLimits(db, this.events);
     this.toolCalls = new ToolCalls({
@@ -536,47 +496,6 @@ export class GenerationLoop implements GroupRunner {
 
   async waitForLockRelease(seen: number): Promise<void> {
     return this.generations.waitForLockRelease(seen);
-  }
-
-  /** A secret's value, name, or description changed: the active runs it reaches get a fresh snapshot. */
-  async secretChanged(secretId: string): Promise<void> {
-    await this.refreshEnvironments(await this.db.listActiveRunAgentIdsForSecret(secretId));
-  }
-
-  /** These agents gained or lost a secret: their active runs get a fresh snapshot. */
-  async secretAccessChanged(agentIds: string[]): Promise<void> {
-    if (!agentIds.length) {
-      return;
-    }
-    const live = new Set((await this.db.listActiveRuns()).map((row) => row.agent_id));
-    await this.refreshEnvironments(agentIds.filter((id) => live.has(id)));
-  }
-
-  private async refreshEnvironments(agentIds: string[]): Promise<void> {
-    for (const agentId of [...new Set(agentIds)].sort()) {
-      const agent = await this.db.getAgent(agentId);
-      if (agent !== null) {
-        await this.syncRunSecrets(agent);
-      }
-    }
-  }
-
-  async syncRunSecrets(agent: AgentRow): Promise<Array<Record<string, string>>> {
-    const refs = await agentSecrets(this.db, agent);
-    const now = new Date();
-    for (const run of await this.db.listRuns(String(agent.id))) {
-      if (run.status !== "active") {
-        continue;
-      }
-      const snapshot = recordOf(run.config_snapshot);
-      if (JSON.stringify(snapshot.secrets) === JSON.stringify(refs)) {
-        continue;
-      }
-      await this.db.updateRunSecrets(run.id, refs, now);
-      snapshot.secrets = refs;
-      run.config_snapshot = snapshot;
-    }
-    return refs;
   }
 
   async deleteAgent(agentId: string): Promise<void> {
@@ -691,7 +610,7 @@ export class GenerationLoop implements GroupRunner {
       const agent = await this.db.getAgent(String(run.agent_id));
       const seq = await this.db.nextSeq(runId);
       if (agent !== null) {
-        await this.syncRunSecrets(agent);
+        await this.secrets.sync(agent);
       }
       await this.db.insertMessage(
         {
@@ -949,10 +868,7 @@ export class GenerationLoop implements GroupRunner {
     let env: Record<string, string>;
     let secrets: Record<string, string>;
     try {
-      secretRefs = await this.syncRunSecrets(agent);
-      snapshot.secrets = secretRefs;
-      env = applySecretAliases(await snapshotEnvValues(this.db, secretRefs), secretAliasesOf(snapshot));
-      secrets = { ...env, ...(await mcpRedactions(this.db, snapshot)), ...instanceRedactions() };
+      ({ refs: secretRefs, env, values: secrets } = await this.secrets.resolve(agent, snapshot));
     } catch (error) {
       await this._fail(runId, generation, "secrets.resolve", error, extra);
       return;
@@ -1048,7 +964,7 @@ export class GenerationLoop implements GroupRunner {
       scripts: SCRIPT_TOOLS.some((name) => offered.has(name)) ? this.scripts : null,
       run_kind: runKind(run),
       secret_names: secretRefs.map((ref) => String(ref.name)),
-      secret_store: this.agentSecretStore(agent),
+      secret_store: this.secrets.secretStore(agent),
       memory_replaced_by: await this._memory_replaced_by(run),
       run_scripts: runScripts,
       persist_run_scripts: async (scripts) => {
@@ -1386,31 +1302,6 @@ export class GenerationLoop implements GroupRunner {
     extra?: Record<string, string>,
   ): Promise<void> {
     await this.events.recordError({ runId, generation, log: extra ?? { run_id: runId } }, operation, error);
-  }
-
-  /**
-   * `secret_store` for one agent: reads the value file from its workspace, saves the
-   * secret granted to it, removes the file, and refreshes environments the change reaches.
-   */
-  private agentSecretStore(agent: AgentRow): AgentSecretStore {
-    const agentId = String(agent.id);
-    return {
-      store: async (input) => {
-        const file = await readSecretFile(await this.machines.agentWorkspace(agent), input.file);
-        const stored = await storeAgentSecret(
-          this.db,
-          { id: agentId, orgId: String(agent.org_id) },
-          { name: input.name, description: input.description, value: file.value },
-        );
-        await removeSecretFile(file.path);
-        if (stored.rotated) {
-          await this.secretChanged(stored.secretId);
-        } else {
-          await this.secretAccessChanged([agentId]);
-        }
-        return { name: stored.name, rotated: stored.rotated, value: stored.value };
-      },
-    };
   }
 
 }

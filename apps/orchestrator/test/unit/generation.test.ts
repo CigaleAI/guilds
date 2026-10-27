@@ -551,7 +551,7 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     sandboxes.running.add("mach_1");
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop.secretChanged("sec_1");
+    await loop.secrets.secretChanged("sec_1");
     assert.deepEqual(synced, ["a_1"]);
     assert.deepEqual(sandboxes.destroyed, []);
   });
@@ -2141,7 +2141,7 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     sandboxes.running.add("mach_1");
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop.secretAccessChanged(["a_1"]);
+    await loop.secrets.secretAccessChanged(["a_1"]);
     assert.deepEqual((db.run.config_snapshot as Record<string, unknown>).secrets, [
       { id: "sec_1", name: "WALLET_PRIVATE_KEY", description: "signs sends" },
     ]);
