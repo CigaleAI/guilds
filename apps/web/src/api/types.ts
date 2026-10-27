@@ -1947,17 +1947,17 @@ export type RecipeValidation = {
   status: RecipeStatus;
 };
 
-/** What apply does with one recipe collection: create it, reuse the live table, or stop on a conflict (recipes/apply.ts). */
+/** What apply does with one recipe collection: create it, reuse the live table, or stop on a conflict (recipes/plan.ts). */
 export type CollectionPlan = RecipeCollection & {
   action: "create" | "reuse" | "conflict";
   collection_id: string | null;
   differences: string[];
 };
 
-/** A live organisation connection apply can reuse for a connector (recipes/apply.ts). */
+/** A live organisation connection apply can reuse for a connector (recipes/plan.ts). */
 export type ReusableConnection = { id: string; owner_scope: string; status: string };
 
-/** What apply does with one connector: reuse a live login or create one (recipes/apply.ts). */
+/** What apply does with one connector: reuse a live login or create one (recipes/plan.ts). */
 export type PlannedConnection = {
   server: string;
   auth: RecipeConnection["auth"];
@@ -1969,7 +1969,7 @@ export type PlannedConnection = {
   resources: RecipeConnectionResource[];
 };
 
-/** What apply does with one secret: create it, reuse a same-named one, rename it, or skip it (recipes/apply.ts). */
+/** What apply does with one secret: create it, reuse a same-named one, rename it, or skip it (recipes/plan.ts). */
 export type PlannedSecret = {
   name: string;
   description: string;
@@ -1979,7 +1979,7 @@ export type PlannedSecret = {
   recommended_scope: "guild" | "agent";
 };
 
-/** One agent apply creates (recipes/apply.ts). */
+/** One agent apply creates (recipes/plan.ts). */
 export type CreatedAgent = {
   role: string;
   name: string;
@@ -1991,7 +1991,7 @@ export type CreatedAgent = {
   native_tools: string[];
 };
 
-/** One routine apply creates; exactly one of `cron` or `window` is set (recipes/apply.ts). */
+/** One routine apply creates; exactly one of `cron` or `window` is set (recipes/plan.ts). */
 export type CreatedRoutine = {
   role: string;
   key: string;
@@ -2001,7 +2001,7 @@ export type CreatedRoutine = {
   instruction: string;
 };
 
-/** Everything apply creates, as the preview lists it (recipes/apply.ts). */
+/** Everything apply creates, as the preview lists it (recipes/plan.ts). */
 export type ApplyCreates = {
   guild: { name: string; about: string; objective: string };
   agents: CreatedAgent[];
@@ -2045,7 +2045,7 @@ export type ApplyMachine = MachineRef & {
   fits: boolean;
 };
 
-/** `POST /api/recipes/:id/preview`: the apply plan, its findings, and what it creates (recipes/apply.ts). */
+/** `POST /api/recipes/:id/preview`: the apply plan, its findings, and what it creates (recipes/plan.ts). */
 export type ApplyPreview = {
   recipe_id: string;
   recipe_name: string;

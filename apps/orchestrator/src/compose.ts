@@ -26,7 +26,7 @@ import { McpPool, TOOLS_TTL_MS } from "./mcp/index.js";
 import { NotesStore } from "./notes/store.js";
 import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
-import { RecipeApplyService } from "./recipes/apply.js";
+import { recipeApply } from "./recipes/apply.js";
 import { RunSandboxes } from "./sandbox/index.js";
 import { scheduleDatabase, Schedules } from "./schedules/service.js";
 import { scriptDatabase, Scripts } from "./scripts/catalog.js";
@@ -176,7 +176,7 @@ export async function createServer(
   // A studio session left generating is continued by this process.
   await studio.reconcile();
   const capabilities = new CapabilityService(db, policy, models);
-  const apply = new RecipeApplyService({
+  const apply = recipeApply({
     db,
     artifacts,
     notes,

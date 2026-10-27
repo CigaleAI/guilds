@@ -8,7 +8,7 @@ import { newId } from "../../src/lib/ids.js";
 import { CALL_TOOL_TIMEOUT_MS, mcpDatabase, McpPool } from "../../src/mcp/index.js";
 import { proxyFetch } from "../../src/net/http.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
+import { recipeApply } from "../../src/recipes/apply.js";
 import { operatorAuthor } from "../../src/recipes/schema.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -65,7 +65,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
-  const apply = new RecipeApplyService({ db, artifacts, notes, scripts, schedules, registry: null });
+  const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: null });
   const mcp = new McpPool();
   // The stub servers listen on loopback, which the pool refuses by default.
   mcp.endpointFetch = proxyFetch("", CALL_TOOL_TIMEOUT_MS);

@@ -34,6 +34,11 @@ import { currentOrg, currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
+import { validationContext } from "../recipes/apply.js";
+import { applyGuild, confirmStep, skipStep, verifyStep, writeOverlays } from "../recipes/checklist.js";
+import { abortApply, activateApply, getApply, guildApplyState } from "../recipes/lifecycle.js";
+import { previewApply } from "../recipes/plan.js";
+import { createSkeleton } from "../recipes/skeleton.js";
 
 function mapError(error: unknown): never {
   if (error instanceof RecipeConflictError) {
@@ -78,7 +83,7 @@ async function ownedRecipe(deps: AppDeps, recipeId: string, org: OrgMembershipRo
 }
 
 async function ownedApply(deps: AppDeps, applyId: string, org: OrgMembershipRow) {
-  const row = await applyOf(deps).get(applyId);
+  const row = await getApply(applyOf(deps), applyId);
   if (!row || String(row.org_id) !== org.id) {
     throw new HttpError(404, "apply not found");
   }
@@ -284,7 +289,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const recipe = parseRecipe(row.body);
-      const ctx = await applyOf(deps).validationContext(org.id, recipe);
+      const ctx = await validationContext(applyOf(deps), org.id, recipe);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const findings = validateRecipe(recipe, ctx);
       return {
@@ -306,7 +311,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const recipe = parseRecipe(row.body);
-      const ctx = await applyOf(deps).validationContext(org.id);
+      const ctx = await validationContext(applyOf(deps), org.id);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const errors = blockingErrors(validateRecipe(recipe, ctx));
       if (errors.length) {
@@ -338,7 +343,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      return await applyOf(deps).preview(org, row, bodyOf(request), user);
+      return await previewApply(applyOf(deps), { org, recipeRow: row, user }, bodyOf(request));
     } catch (error) {
       mapError(error);
     }
@@ -349,7 +354,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const created = await applyOf(deps).createSkeleton(org, user, row, bodyOf(request));
+      const created = await createSkeleton(applyOf(deps), { org, user, recipeRow: row }, bodyOf(request));
       reply.code(201);
       return created;
     } catch (error) {
@@ -366,7 +371,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/guilds/:guild_id/apply", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    return applyOf(deps).guildApplyState(String(guild.id));
+    return guildApplyState(applyOf(deps), guild.id);
   });
 
   app.post("/api/applies/:apply_id/overlays", async (request) => {
@@ -375,10 +380,10 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       const body = bodyOf(request);
-      await applyOf(deps).writeOverlays(
-        row,
-        String(body.server ?? ""),
-        String(body.connection_id ?? ""),
+      await writeOverlays(
+        applyOf(deps),
+        { ...row, guild_id: applyGuild(row), names: row.plan.names },
+        { server: String(body.server ?? ""), connectionId: String(body.connection_id ?? "") },
         userActor(user),
       );
       return { ok: true };
@@ -392,7 +397,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).verifyStep(row, param(request, "step_id"), userActor(user));
+      return await verifyStep(applyOf(deps), row, param(request, "step_id"), userActor(user));
     } catch (error) {
       mapError(error);
     }
@@ -404,10 +409,10 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       const body = bodyOf(request);
-      return await applyOf(deps).confirmStep(row, param(request, "step_id"), {
-        later: body.later === true,
-        skip: body.skip === true,
-      });
+      if (body.skip === true) {
+        return await skipStep(applyOf(deps), row, param(request, "step_id"));
+      }
+      return await confirmStep(applyOf(deps), row, param(request, "step_id"), { later: body.later === true });
     } catch (error) {
       mapError(error);
     }
@@ -418,7 +423,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).activate(row, userActor(user));
+      return await activateApply(applyOf(deps), row, userActor(user));
     } catch (error) {
       mapError(error);
     }
@@ -429,7 +434,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
-      return await applyOf(deps).abort(row);
+      return await abortApply(applyOf(deps), row);
     } catch (error) {
       mapError(error);
     }

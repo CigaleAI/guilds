@@ -221,8 +221,8 @@ agent that made it.
 
 **Found:** 2026-10-21, reviewing what the Builder and recipe apply can see outside a new guild.
 
-**Where:** `planCollections` and `operator` in
-`apps/orchestrator/src/recipes/apply.ts`, behind
+**Where:** `planCollections` and `previewActor` in
+`apps/orchestrator/src/recipes/plan.ts`, behind
 `POST /api/recipes/:recipe_id/preview` in
 `apps/orchestrator/src/http/recipe-routes.ts`.
 

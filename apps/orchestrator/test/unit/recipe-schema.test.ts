@@ -24,7 +24,7 @@ import {
   inboxQueueColumns,
   linkedInNotionRecipe,
 } from "../helpers/recipe-docs.js";
-import { prepareRecipeForApply } from "../../src/recipes/apply.js";
+import { prepareRecipeForApply } from "../../src/recipes/prepare.js";
 import { RECIPE_VERSION } from "../../src/recipes/schema.js";
 
 const ctx = {
@@ -300,7 +300,7 @@ test("empty task is derived when focus exists, and unreviewed fields do not bloc
 });
 
 test("apply fills an empty task and does not invent wakes or connectors", () => {
-  const prepared = prepareRecipeForApply(parseRecipe(huskLeadMatcherRecipe()), new Set(["notion", "cigale", "x"]));
+  const prepared = prepareRecipeForApply(parseRecipe(huskLeadMatcherRecipe()));
   const role = prepared.roles[0];
   assert.ok(role);
   assert.match(role.task.body, /Match Cigale stories/);
@@ -313,7 +313,7 @@ test("apply does not infer a wake from prose cadence", () => {
   const recipe = parseRecipe(huskLeadMatcherRecipe());
   recipe.guild.objective = "Monitor markets and post proposals.";
   recipe.meta.description = "Proposal-only research, reporting to guild chat every 15 minutes.";
-  const prepared = prepareRecipeForApply(recipe, new Set());
+  const prepared = prepareRecipeForApply(recipe);
   assert.equal(prepared.roles[0]?.schedules.length, 0);
 });
 
@@ -335,7 +335,7 @@ test("fixture desk recipes are apply-ready against stub mail and crm", () => {
   assert.ok(findings.some((item) => item.code === "schedule.missing"));
   assert.ok(findings.some((item) => item.code === "connection.missing"));
   assert.equal(applyBlockingErrors(findings).some((item) => item.code === "review.required"), false);
-  const prepared = prepareRecipeForApply(husk, stubs.publishedServers);
+  const prepared = prepareRecipeForApply(husk);
   assert.equal(prepared.roles.every((item) => item.task.body.trim().length > 0), true);
   assert.deepEqual(
     prepared.roles.flatMap((item) => item.schedules.map((row) => row.cron)),

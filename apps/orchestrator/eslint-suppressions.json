@@ -482,23 +482,6 @@
       "count": 1
     }
   },
-  "src/recipes/apply.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 42
-    },
-    "@typescript-eslint/max-params": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 7
-    },
-    "max-depth": {
-      "count": 3
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/recipes/capture.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 8

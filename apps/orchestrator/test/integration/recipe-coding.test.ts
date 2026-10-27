@@ -5,7 +5,7 @@ import { artifactStore } from "../../src/artifacts/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
+import { recipeApply } from "../../src/recipes/apply.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
@@ -34,7 +34,7 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
   const artifacts = artifactStore(database.pool, templatesRoot());
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
-  const apply = new RecipeApplyService({ db, artifacts, notes, scripts, schedules, registry: null });
+  const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: null });
   const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, apply });
   const call = async (method: "GET" | "POST", url: string, payload?: unknown) =>
     app.inject(

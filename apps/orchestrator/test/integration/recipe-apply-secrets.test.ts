@@ -5,7 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
+import { recipeApply } from "../../src/recipes/apply.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -40,7 +40,7 @@ test("apply reuses a secret by granting it to the new guild and waits for the on
     artifacts,
     scripts,
     schedules,
-    apply: new RecipeApplyService({ db, artifacts, notes, scripts, schedules, registry: null }),
+    apply: recipeApply({ db, artifacts, notes, scripts, schedules, registry: null }),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
   });
   try {

@@ -26,7 +26,8 @@ import { assignGuildLooks } from "../avatars/looks.js";
 import { emptyRecipe } from "../recipes/minimal.js";
 import { addRecipeDraft, linkRecipeToBuilder, markRecipeReady, writeRecipe } from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
-import { RecipeApplyService, type ApplyChoices } from "../recipes/apply.js";
+import { validationContext, type ApplyChoices, type RecipeApply } from "../recipes/apply.js";
+import { createSkeleton } from "../recipes/skeleton.js";
 import {
   applyAccessEdits,
   applyReview,
@@ -53,7 +54,7 @@ import type { OrgMembershipRow } from "../db/orgs.js";
 export type BuilderServiceDeps = {
   db: Queryable;
   capabilities: CapabilityService;
-  apply: RecipeApplyService;
+  apply: RecipeApply;
   admission?: AdmissionCoordinator;
   policy?: OrgPolicy;
   /** What the coach's model provider is called with; core's own rows when absent. */
@@ -254,7 +255,7 @@ export class BuilderService {
       recipeId: String(session.recipe_id),
       connection: this.deps.db,
       coachModel: String(session.config_snapshot.model ?? ""),
-      validationContext: () => this.deps.apply.validationContext(session.org_id),
+      validationContext: () => validationContext(this.deps.apply, session.org_id),
     };
   }
 
@@ -417,7 +418,7 @@ export class BuilderService {
   async validate(session: BuilderSessionRow): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
-    const ctx = await this.deps.apply.validationContext(session.org_id);
+    const ctx = await validationContext(this.deps.apply, session.org_id);
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const findings = validateRecipe(recipe, ctx);
     return {
@@ -437,7 +438,7 @@ export class BuilderService {
     if (assignGuildLooks(recipe.roles)) {
       current = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
     }
-    const ctx = await this.deps.apply.validationContext(session.org_id);
+    const ctx = await validationContext(this.deps.apply, session.org_id);
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const errors = blockingErrors(validateRecipe(recipe, ctx));
     if (errors.length) {
@@ -453,6 +454,6 @@ export class BuilderService {
     choices: ApplyChoices = {},
   ) {
     const recipe = await this.recipeFor(session);
-    return this.deps.apply.createSkeleton(org, user, recipe, choices);
+    return createSkeleton(this.deps.apply, { org, user, recipeRow: recipe }, choices);
   }
 }

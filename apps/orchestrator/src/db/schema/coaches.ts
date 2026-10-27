@@ -320,6 +320,94 @@ export const builderMessages = pgTable(
   ],
 );
 
+/** A page or database a recipe connection points its agents at. */
+export type ConnectionResource = {
+  kind: "database" | "page" | "other";
+  id: string;
+  title: string;
+  url?: string;
+  use?: string;
+};
+
+/** A role's agent as an apply names it; `agent_id` once the skeleton created it. */
+export type PlannedAgent = { role: string; name: string; agent_id?: string | undefined };
+
+/** What an apply does about one recipe connection: reuse a live connection, or have the operator create one. */
+export type PlannedConnection = {
+  server: string;
+  auth: "oauth" | "token" | "none";
+  recommended_scope: "guild" | "agent";
+  reusable: Array<{ id: string; owner_scope: string; status: string }>;
+  action: "reuse" | "create";
+  connection_id: string | null;
+  setup: string;
+  resources: ConnectionResource[];
+  /** The recipe's tool overlays are bound on the reused connection. */
+  bound?: boolean;
+};
+
+/** What an apply does about one recipe secret: create it, reuse the organisation's of that name, rename, or skip it. */
+export type PlannedSecret = {
+  name: string;
+  description: string;
+  collision: boolean;
+  action: "create" | "reuse" | "rename" | "skip";
+  dest_name: string;
+  recommended_scope: "guild" | "agent";
+  roles: string[];
+};
+
+/** A recipe collection as the skeleton left it: created or reused, with its live id. */
+export type PlannedCollection = {
+  name: string;
+  action: "create" | "reuse" | "conflict";
+  collection_id: string | null;
+  guild: "read" | "write";
+  writers: string[];
+};
+
+/** What an apply created and decided, read back by its checklist and activation. */
+export type ApplyPlan = {
+  names: PlannedAgent[];
+  connections: PlannedConnection[];
+  secrets: PlannedSecret[];
+  collections: PlannedCollection[];
+  /** The routine keys activation unpauses. */
+  activate_keys: string[];
+};
+
+export const APPLY_STEP_KINDS = ["connection", "overlays", "repository", "secret", "browser", "external", "activate"] as const;
+export type ApplyStepKind = (typeof APPLY_STEP_KINDS)[number];
+
+/**
+ * One step of an apply's checklist. A `verified` step closes when the server checks it; a
+ * `confirmed` one when the operator says so.
+ */
+export type ApplyStep = {
+  id: string;
+  kind: ApplyStepKind;
+  title: string;
+  setup?: string;
+  closure: "verified" | "confirmed";
+  status: "open" | "verified" | "confirmed" | "skipped";
+  /** How a closed step ended: done, left for later, skipped, or the routines activated. */
+  resolution?: "done" | "later" | "skipped" | "activated";
+  closed_at?: string;
+  /** A browser step's site and role, and that it may wait until after activation. */
+  site?: string;
+  role?: string;
+  deferrable?: boolean;
+  phase?: "post_apply";
+};
+
+/** A finding of the apply's preview, or a step the operator skipped. */
+export type ApplyWarning = {
+  code: string;
+  severity?: "error" | "warning" | "info";
+  path: string;
+  message: string;
+};
+
 export const recipeApplies = pgTable(
   "recipe_applies",
   {
@@ -331,10 +419,11 @@ export const recipeApplies = pgTable(
     created_guild: boolean("created_guild").notNull().default(false),
     status: text("status", { enum: ["preview", "skeleton", "checklist", "ready", "aborted"] }).notNull(),
     recipe_body_version: integer("recipe_body_version").notNull(),
+    /** The preview the apply was made from, kept as the operator saw it; never read back. */
     preview: jsonb("preview").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
-    plan: jsonb("plan").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
-    checklist: jsonb("checklist").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
-    warnings: jsonb("warnings").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    plan: jsonb("plan").$type<ApplyPlan>().notNull().default(sql`'{}'::jsonb`),
+    checklist: jsonb("checklist").$type<ApplyStep[]>().notNull().default(sql`'[]'::jsonb`),
+    warnings: jsonb("warnings").$type<ApplyWarning[]>().notNull().default(sql`'[]'::jsonb`),
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
   },

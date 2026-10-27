@@ -11,7 +11,7 @@ import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
+import { recipeApply } from "../../src/recipes/apply.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { tempDir } from "../helpers/env.js";
@@ -72,7 +72,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
   const caps = { maxAgents: 25 };
   const policy = limitedPolicy(caps);
   const capabilities = new CapabilityService(db, policy);
-  const apply = new RecipeApplyService({ db, artifacts, notes, scripts, schedules, policy, registry: null });
+  const apply = recipeApply({ db, artifacts, notes, scripts, schedules, policy, registry: null });
   const builder = new BuilderService({ db, capabilities, apply, policy });
   const app = await buildApp(database, {
     db,

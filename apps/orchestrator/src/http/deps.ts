@@ -10,7 +10,7 @@ import type { GenerationLoop } from "../generation/index.js";
 import type { GenerationSandboxes } from "../generation/machines.js";
 import type { StudioService } from "../studio/index.js";
 import type { BuilderService } from "../builder/index.js";
-import type { RecipeApplyService } from "../recipes/apply.js";
+import type { RecipeApply } from "../recipes/apply.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import type { AttachmentService } from "../attachments/index.js";
 import type { Integration } from "../instance/integrations.js";
@@ -48,7 +48,7 @@ export type AppDeps = {
   sandboxes?: GenerationSandboxes;
   studio?: StudioService;
   capabilities?: CapabilityService;
-  apply?: RecipeApplyService;
+  apply?: RecipeApply;
   builder?: BuilderService;
   /** Identifies a request's user in place of core's modes. */
   identity?: IdentityProvider;

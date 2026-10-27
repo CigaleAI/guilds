@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MachineAgent, MachineBox, MachineWithAgents } from "../../src/machines/index.js";
-import { machineFindings } from "../../src/recipes/apply.js";
+import { machineFindings } from "../../src/recipes/plan.js";
 import type { RecipeDocument } from "../../src/recipes/schema.js";
 import { cryptoThreeRoleRecipe } from "../helpers/recipe-docs.js";
 

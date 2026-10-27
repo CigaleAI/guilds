@@ -6,7 +6,7 @@ import { connectorCommand } from "../../src/cli/connector.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { RecipeApplyService } from "../../src/recipes/apply.js";
+import { recipeApply } from "../../src/recipes/apply.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -84,7 +84,7 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
     const artifacts = artifactStore(database.pool, templatesRoot());
     const scripts = new Scripts(scriptDatabase(db));
     const schedules = new Schedules(scheduleDatabase(db));
-    const apply = new RecipeApplyService({ db, artifacts, notes, scripts, schedules, registry: registry.client });
+    const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: registry.client });
     const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, apply, registry: registry.client });
     try {
       const view = await app.inject({ method: "GET", url: "/api/admin/registry", headers: AUTH });

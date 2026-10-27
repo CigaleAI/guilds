@@ -231,6 +231,12 @@ export async function insertAgent(
   return row;
 }
 
+/** Whether an agent of any organisation goes by `name`. */
+export async function agentNameTaken(pool: Queryable, name: string): Promise<boolean> {
+  const result = await pool.query(`SELECT 1 FROM agents WHERE name = $1 LIMIT 1`, [name]);
+  return result.rows.length > 0;
+}
+
 export async function deleteAgent(pool: Queryable, agentId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
     await client.query(
