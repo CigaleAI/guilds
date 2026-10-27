@@ -50,10 +50,14 @@ export const ACCESS_NATIVE_TOOLS = NATIVE_TOOLS;
 export const CATALOG_KINDS = ["native_tool", "mcp", "mcp_tool"] as const;
 export const SCOPES = ["platform", "org", "guild", "agent"] as const;
 
+/** A refused binding request, with the HTTP status it answers with: 422 unless it says otherwise. */
 export class BindingError extends Error {
-  constructor(message: string) {
+  status: 400 | 404 | 422;
+
+  constructor(message: string, status: 400 | 404 | 422 = 422) {
     super(message);
     this.name = "BindingError";
+    this.status = status;
   }
 }
 

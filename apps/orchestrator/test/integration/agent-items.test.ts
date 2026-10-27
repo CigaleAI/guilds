@@ -23,7 +23,7 @@ after(async () => {
 });
 
 test(
-  "an operator's scripts, routines, issues, runs, notes and tables answer for what is there and what is not",
+  "an operator's scripts, routines, issues, runs, notes, tables and bindings answer for what is there and what is not",
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -229,6 +229,28 @@ test(
         headers: OWNER,
       });
       assert.equal(image.statusCode, 503, "a box without an image store serves none");
+
+      const bind = (payload: object) =>
+        app.inject({ method: "PUT", url: "/api/bindings", headers: JSON_OWNER, payload });
+      const tool = { catalog_kind: "native_tool", catalog_id: "script_list", enabled: false };
+      const platform = await bind({ ...tool, scope: "platform" });
+      assert.equal(platform.statusCode, 400, platform.body);
+      assert.equal((await bind({ ...tool, scope: "galaxy", scope_id: "x" })).statusCode, 422);
+      const bound = await bind({ ...tool, scope: "agent", scope_id: "a_items" });
+      assert.equal(bound.statusCode, 200, bound.body);
+      assert.equal(bound.json().enabled, false);
+      const unbind = (query: string) =>
+        app.inject({
+          method: "DELETE",
+          url: `/api/bindings?catalog_kind=native_tool&catalog_id=script_list&${query}`,
+          headers: OWNER,
+        });
+      assert.equal((await unbind("scope=agent&scope_id=a_items")).statusCode, 204);
+      assert.equal(
+        (await unbind("scope=agent&scope_id=a_items")).statusCode,
+        404,
+        "a binding goes once",
+      );
 
       const table = await app.inject({
         method: "POST",

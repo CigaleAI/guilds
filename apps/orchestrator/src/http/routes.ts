@@ -13,7 +13,6 @@ import {
   type OwnerScope,
   validateOwner,
 } from "../credentials/validate.js";
-import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { awaitingSettings, markDisconnected, mcpDatabase } from "../mcp/index.js";
 import {
@@ -50,12 +49,6 @@ import {
   tokenPayload,
 } from "../oauth/index.js";
 import {
-  BindingError,
-  validateBinding,
-  validateCatalog,
-  validateScope,
-} from "../access/index.js";
-import {
   canSeeGuild,
 } from "../guilds/validation.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
@@ -66,12 +59,13 @@ import { registerAttachmentRoutes } from "./attachment-routes.js";
 import { registerUsageRoutes } from "./usage-routes.js";
 import { registerStudioRoutes } from "./studio-routes.js";
 import { registerFileRoutes } from "./file-routes.js";
-import type { AppDeps, RouteDeps } from "./deps.js";
+import type { RouteDeps } from "./deps.js";
 import { HttpError, missingBodyFields } from "./errors.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
 import { registerAgentRoutes } from "./agent-routes.js";
 import { registerArtifactAccessRoutes } from "./artifact-access-routes.js";
+import { registerBindingRoutes } from "./binding-routes.js";
 import { registerCollectionRoutes } from "./collection-routes.js";
 import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
@@ -127,18 +121,13 @@ import {
   getMcpConnectionByOauthState,
   getMcpConnectionForOwner,
   getPendingGithubConnectionForUser,
-  isListedMcpTool,
   listMcpConnections,
   saveMcpConnection,
   updateMcpConnectionSettings,
 } from "../db/mcp.js";
 import { getMcpServer, listMcpServers, updateConnector } from "../db/connectors.js";
 import {
-  deleteBinding,
-  getBinding,
   listBindingsForConnection,
-  upsertBinding,
-  upsertPlatformBinding,
 } from "../db/bindings.js";
 
 /** Answers a connector's failure as HTTP: a rejected credential or a bad setting is a 422, anything else upstream a 502. */
@@ -163,30 +152,6 @@ async function send(reply: FastifyReply, status: number, payload?: unknown): Pro
     return reply.code(204).send();
   }
   return reply.code(status).send(payload);
-}
-
-async function scopeGuild(
-  db: AppDeps["db"],
-  scope: string,
-  scopeId: string | null,
-  user: Record<string, unknown>,
-): Promise<string | null> {
-  if (scope === "platform") {
-    throw new HttpError(400, "platform bindings cannot be changed here");
-  }
-  if (scope === "org") {
-    const membership = await getMembership(db, scopeId || "", String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    return null;
-  }
-  if (scope === "guild") {
-    const row = await requireVisibleGuild(db, scopeId || "", String(user.id));
-    return String(row.id);
-  }
-  const row = await requireVisibleAgent(db, scopeId || "", String(user.id));
-  return String(row.guild_id);
 }
 
 export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
@@ -231,6 +196,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
   await registerCollectionRoutes(app, deps);
   await registerArtifactAccessRoutes(app, deps);
   await registerSecretRoutes(app, deps);
+  await registerBindingRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -647,134 +613,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
     }
     return { row, payload, userToken: token };
   }
-
-  /** The caller's role in the organisation and the guilds they can see there; null for a non-member. */
-  app.put("/api/bindings", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const missing = missingBodyFields(request.body, ["catalog_kind", "catalog_id", "scope", "enabled"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const [catalogKind, catalogId] = validateCatalog(String(body.catalog_kind ?? ""), String(body.catalog_id ?? ""));
-      const [scope, scopeId] = validateScope(
-        String(body.scope ?? ""),
-        body.scope_id === undefined || body.scope_id === null ? null : String(body.scope_id),
-      );
-      const guildId = await scopeGuild(db, scope, scopeId, user);
-      let orgId: string | null = null;
-      if (scope === "org") {
-        orgId = scopeId;
-      } else if (scope === "guild") {
-        const guild = await getGuild(db, scopeId || "");
-        orgId = guild === null ? null : String(guild.org_id);
-      } else if (scope === "agent") {
-        const agent = await getAgent(db, scopeId || "");
-        orgId = agent === null ? null : String(agent.org_id);
-      }
-      const replaceConnection = Object.prototype.hasOwnProperty.call(body, "connection_id");
-      const connectionId = replaceConnection
-        ? body.connection_id === null || body.connection_id === undefined
-          ? null
-          : String(body.connection_id)
-        : null;
-      if (catalogKind === "mcp_tool" && !(await isListedMcpTool(db, catalogId, orgId))) {
-        throw new HttpError(404, "mcp tool not found");
-      }
-      let server: Record<string, unknown> | null = null;
-      let connection: Record<string, unknown> | null = null;
-      if (catalogKind === "mcp") {
-        server = await getMcpServer(db, catalogId);
-        if (server === null || !serverVisible(server, orgId)) {
-          throw new HttpError(404, "mcp server not found");
-        }
-        if (connectionId !== null) {
-          connection = await getMcpConnection(db, connectionId);
-          if (connection === null) {
-            throw new HttpError(404, "connection not found");
-          }
-        }
-      }
-      const overlay = validateBinding({
-        catalogKind,
-        catalogId,
-        scope,
-        scopeId,
-        enabled: Boolean(body.enabled),
-        guildId,
-        orgId,
-        server,
-        connection,
-        connectionId,
-      });
-      let writeConnectionId = overlay.connection_id;
-      if (catalogKind === "mcp" && !replaceConnection) {
-        const existing = await getBinding(db, { catalogKind, catalogId, scope, scopeId });
-        if (existing !== null) {
-          writeConnectionId =
-            existing.connection_id === null || existing.connection_id === undefined
-              ? null
-              : String(existing.connection_id);
-        }
-      }
-      const now = new Date();
-      const row =
-        scope === "platform"
-          ? await upsertPlatformBinding(db,
-              {
-                bindingId: newId("bind"),
-                catalogKind: overlay.catalog_kind,
-                catalogId: overlay.catalog_id,
-                enabled: overlay.enabled,
-                connectionId: writeConnectionId,
-              },
-              now,
-            )
-          : await upsertBinding(db,
-              {
-                bindingId: newId("bind"),
-                catalogKind: overlay.catalog_kind,
-                catalogId: overlay.catalog_id,
-                scope: overlay.scope,
-                scopeId: overlay.scope_id,
-                enabled: overlay.enabled,
-                connectionId: writeConnectionId,
-              },
-              now,
-              userActor(user),
-            );
-      return bindingItem(row);
-    } catch (error) {
-      if (error instanceof BindingError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.delete("/api/bindings", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const query = queryOf(request);
-    try {
-      const [catalogKind, catalogId] = validateCatalog(query.catalog_kind ?? "", query.catalog_id ?? "");
-      const [scope, scopeId] = validateScope(query.scope ?? "", query.scope_id ?? null);
-      await scopeGuild(db, scope, scopeId, user);
-      const row = await deleteBinding(db,
-        { catalogKind, catalogId, scope, scopeId },
-        userActor(user),
-      );
-      if (row === null) {
-        throw new HttpError(404, "binding not found");
-      }
-      await send(reply, 204);
-    } catch (error) {
-      if (error instanceof BindingError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
 
   app.get("/api/mcp/servers", async (request) => {
     const user = await currentUser(identityDb, request, deps);

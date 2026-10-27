@@ -3,6 +3,7 @@ import { AttachmentError } from "../attachments/index.js";
 import { CredentialError } from "../credentials/validate.js";
 import { AgentError } from "../agents/errors.js";
 import { AgentValidationError } from "../agents/validation.js";
+import { BindingError } from "../access/index.js";
 import { RunRequestError } from "../generation/index.js";
 import { GroupChatError } from "../groupchat/index.js";
 import { GuildError } from "../guilds/errors.js";
@@ -10,6 +11,7 @@ import { GuildValidationError } from "../guilds/validation.js";
 import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
 import { MachineError } from "../machines/index.js";
+import { ConnectionError } from "../mcp/visibility.js";
 import { NotesError } from "../notes/store.js";
 import { OrgValidationError } from "../organisations/index.js";
 import { OrgError } from "../organisations/service.js";
@@ -122,6 +124,8 @@ const REFUSALS = [
   IssueError,
   AttachmentError,
   SecretError,
+  BindingError,
+  ConnectionError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
@@ -141,7 +145,10 @@ const INVALID = [
 export function domainHttp(error: unknown): HttpError | null {
   for (const kind of REFUSALS) {
     if (error instanceof kind) {
-      return new HttpError(error.status, error.message);
+      return new HttpError(
+        error.status,
+        error instanceof ConnectionError ? error.detail : error.message,
+      );
     }
   }
   for (const kind of INVALID) {
