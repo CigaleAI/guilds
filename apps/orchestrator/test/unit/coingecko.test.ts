@@ -39,7 +39,7 @@ class MemoryDb {
 }
 
 test("formatSearch drops images and exchanges", () => {
-  const stored = formatSearch({
+  const payload = {
     coins: [{
       id: "ethereum",
       name: "Ethereum",
@@ -51,7 +51,8 @@ test("formatSearch drops images and exchanges", () => {
     exchanges: [{ id: "uniswap_v3", name: "Uniswap V3" }],
     nfts: [{ id: "ens", name: "ENS", symbol: "ENS", thumb: "x" }],
     categories: [{ id: "layer-1", name: "Layer 1" }],
-  });
+  };
+  const stored = formatSearch(payload);
   assert.equal(stored, "coins\nethereum  ETH  Ethereum  #2\n\nnfts\nens  ENS  ENS\n\ncategories\nlayer-1  Layer 1");
   assert.ok(!stored.includes("example.com"));
   assert.ok(!stored.includes("uniswap"));
@@ -72,7 +73,7 @@ test("formatSearch caps rows", () => {
 });
 
 test("formatCoin keeps platforms and lean market", () => {
-  const stored = formatCoin({
+  const payload = {
     id: "uniswap",
     symbol: "uni",
     name: "Uniswap",
@@ -91,7 +92,8 @@ test("formatCoin keeps platforms and lean market", () => {
       total_supply: 894_182_420,
       price_change_percentage_24h: 1.2,
     },
-  });
+  };
+  const stored = formatCoin(payload);
   assert.ok(stored.includes("uniswap  uni  Uniswap  #28"));
   assert.ok(stored.includes("p=6.12"));
   assert.ok(stored.includes("ethereum=0xfaba6f8e4a5e8ab82f62fe7c39859fa577269be3"));
@@ -158,27 +160,25 @@ test("formatChart downsamples and keeps price only", () => {
 });
 
 test("formatTrending drops media", () => {
-  assert.equal(
-    formatTrending({
-      coins: [{
-        item: {
-          id: "bonk",
-          name: "Bonk",
-          symbol: "BONK",
-          market_cap_rank: 103,
-          thumb: "https://example.com/bonk.png",
-          data: {
-            price: 0.00000594,
-            price_change_percentage_24h: { usd: -3.27 },
-            sparkline: "https://example.com/spark.svg",
-          },
+  const payload = {
+    coins: [{
+      item: {
+        id: "bonk",
+        name: "Bonk",
+        symbol: "BONK",
+        market_cap_rank: 103,
+        thumb: "https://example.com/bonk.png",
+        data: {
+          price: 0.00000594,
+          price_change_percentage_24h: { usd: -3.27 },
+          sparkline: "https://example.com/spark.svg",
         },
-      }],
-      nfts: [],
-      categories: [],
-    }),
-    "coins\nbonk  BONK  Bonk  #103  5.94e-06  -3.27%",
-  );
+      },
+    }],
+    nfts: [],
+    categories: [],
+  };
+  assert.equal(formatTrending(payload), "coins\nbonk  BONK  Bonk  #103  5.94e-06  -3.27%");
 });
 
 test("search uses the pro key header", async () => {

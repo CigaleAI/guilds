@@ -161,11 +161,8 @@
     }
   },
   "src/connectors/coingecko/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 35
-    },
     "complexity": {
-      "count": 9
+      "count": 1
     }
   },
   "src/connectors/connect.ts": {
