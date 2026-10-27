@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import { writeBinding } from "../../src/access/bindings.js";
 import { operatorActor } from "../../src/artifacts/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { insertAgent, upsertAgentScript } from "../../src/db/agents.js";
 import { insertAttachment } from "../../src/db/attachments.js";
-import {
-  insertBindingIfAbsent,
-  upsertBinding,
-  upsertPlatformBinding,
-} from "../../src/db/bindings.js";
+import { insertBindingIfAbsent, upsertPlatformBinding } from "../../src/db/bindings.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import type { ChangeActor } from "../../src/lib/change-actor.js";
@@ -336,7 +333,7 @@ describe("RowMissing", { concurrency: 1 }, () => {
       table: "bindings",
       event: "INSERT",
       write: () =>
-        upsertBinding(
+        writeBinding(
           database.pool,
           {
             bindingId: "bind_upsert_insert",
@@ -546,10 +543,10 @@ describe("RowMissing", { concurrency: 1 }, () => {
       enabled: true,
       connectionId: null,
     };
-    await upsertBinding(database.pool, binding, new Date(), ACTOR);
+    await writeBinding(database.pool, binding, new Date(), ACTOR);
     await assert.rejects(
       withSkippedRows("bindings", "UPDATE", () =>
-        upsertBinding(database.pool, { ...binding, enabled: false }, new Date(), ACTOR),
+        writeBinding(database.pool, { ...binding, enabled: false }, new Date(), ACTOR),
       ),
       rowMissing("binding update failed"),
     );

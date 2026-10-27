@@ -1,3 +1,4 @@
+import { writeBinding } from "../access/bindings.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
@@ -104,7 +105,7 @@ import { deleteAgent, listAgents, writeAgentTask } from "../db/agents.js";
 import { listMachines } from "../db/machines.js";
 import { listSchedules } from "../db/schedules.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
-import { listBindingsCovering, upsertBinding } from "../db/bindings.js";
+import { listBindingsCovering } from "../db/bindings.js";
 import { getSecretByName, listAgentSecrets, listSecrets, setSecretAccess } from "../db/secrets.js";
 import { mcpDatabase } from "../mcp/index.js";
 import type { Queryable } from "../db/pg.js";
@@ -1064,7 +1065,7 @@ export class RecipeApplyService {
     const bindAtGuild = connection.recommended_scope !== "agent" && allRolesEnabled && toolsUniform;
 
     const bind = async (scope: "guild" | "agent", scopeId: string, spec: { enabled: boolean; tools: Record<string, boolean> }) => {
-      await upsertBinding(this.deps.db,
+      await writeBinding(this.deps.db,
         {
           bindingId: newId("bind"),
           catalogKind: "mcp",
@@ -1081,7 +1082,7 @@ export class RecipeApplyService {
         if (!known.has(tool)) {
           continue;
         }
-        await upsertBinding(this.deps.db,
+        await writeBinding(this.deps.db,
           {
             bindingId: newId("bind"),
             catalogKind: "mcp_tool",
@@ -1384,7 +1385,7 @@ export class RecipeApplyService {
 
   private async writeNativeAccess(role: RecipeRole, agentId: string, now: Date, actor: ChangeActor): Promise<void> {
     for (const [tool, enabled] of Object.entries(role.native_tools)) {
-      await upsertBinding(this.deps.db,
+      await writeBinding(this.deps.db,
         {
           bindingId: newId("bind"),
           catalogKind: "native_tool",

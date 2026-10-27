@@ -1,11 +1,8 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
-import { bindingChange } from "../access/changes.js";
-import type { ChangeActor } from "../lib/change-actor.js";
 import { pickColumns, ownerRefs } from "./columns.js";
-import { recordChangeIfAny } from "./config-changes.js";
 import { RowMissing } from "./errors.js";
-import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { type Queryable, stamp } from "./pg.js";
 import { bindings } from "./schema/index.js";
 
 export type BindingKey = {
@@ -151,68 +148,71 @@ export async function insertBindingIfAbsent(
   return row;
 }
 
-export async function upsertBinding(
-  pool: Queryable,
-  binding: Binding,
-  now: Date,
-  actor: ChangeActor,
-): Promise<BindingRow> {
+/** A scope's binding of one catalog entry, locked for the rest of the transaction `db` runs. */
+export async function lockBinding(db: Queryable, key: BindingKey): Promise<DeletedBindingRow | null> {
+  const result = await db.query<DeletedBindingRow>(
+    `SELECT id, enabled FROM bindings
+     WHERE catalog_kind = $1 AND catalog_id = $2
+       AND scope = $3 AND scope_id = $4
+     FOR UPDATE`,
+    [key.catalogKind, key.catalogId, key.scope, key.scopeId],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function insertBinding(db: Queryable, binding: Binding, now: Date): Promise<BindingRow> {
   const { bindingId, catalogKind, catalogId, scope, scopeId, enabled, connectionId } = binding;
-  return withTransaction(pool, async (client) => {
-    const existing = await client.query<{ id: string; enabled: boolean }>(
-      `SELECT id, enabled FROM bindings
-       WHERE catalog_kind = $1 AND catalog_id = $2
-         AND scope = $3 AND scope_id = $4
-       FOR UPDATE`,
-      [catalogKind, catalogId, scope, scopeId],
-    );
-    const found = existing.rows[0] ?? null;
-    const key = { catalogKind, catalogId, scope, scopeId };
-    if (found === null) {
-      const [orgId, guildId, agentId] = ownerRefs(scope, scopeId);
-      const inserted = await client.query<BindingRow>(
-        `INSERT INTO bindings (
-           id, catalog_kind, catalog_id, scope, scope_id,
-           org_id, guild_id, agent_id, enabled, connection_id,
-           created_at, updated_at
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
-         RETURNING ${BINDING_COLUMNS}`,
-        [
-          bindingId,
-          catalogKind,
-          catalogId,
-          scope,
-          scopeId,
-          orgId,
-          guildId,
-          agentId,
-          enabled,
-          connectionId,
-          stamp(now),
-        ],
-      );
-      const row = inserted.rows[0] ?? null;
-      if (!row) {
-        throw new RowMissing("binding insert failed");
-      }
-      await recordChangeIfAny(client, actor, bindingChange(key, null, enabled));
-      return row;
-    }
-    const updated = await client.query<BindingRow>(
-      `UPDATE bindings
-       SET enabled = $2, connection_id = $3, updated_at = $4
-       WHERE id = $1
-       RETURNING ${BINDING_COLUMNS}`,
-      [found.id, enabled, connectionId, stamp(now)],
-    );
-    const row = updated.rows[0] ?? null;
-    if (!row) {
-      throw new RowMissing("binding update failed");
-    }
-    await recordChangeIfAny(client, actor, bindingChange(key, found.enabled, enabled));
-    return row;
-  });
+  const [orgId, guildId, agentId] = ownerRefs(scope, scopeId);
+  const inserted = await db.query<BindingRow>(
+    `INSERT INTO bindings (
+       id, catalog_kind, catalog_id, scope, scope_id,
+       org_id, guild_id, agent_id, enabled, connection_id,
+       created_at, updated_at
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+     RETURNING ${BINDING_COLUMNS}`,
+    [
+      bindingId,
+      catalogKind,
+      catalogId,
+      scope,
+      scopeId,
+      orgId,
+      guildId,
+      agentId,
+      enabled,
+      connectionId,
+      stamp(now),
+    ],
+  );
+  const row = inserted.rows[0] ?? null;
+  if (!row) {
+    throw new RowMissing("binding insert failed");
+  }
+  return row;
+}
+
+/** What a binding's update sets: whether it is on, and the login a connector's binding uses. */
+export type BindingState = Pick<Binding, "enabled" | "connectionId">;
+
+export async function updateBinding(
+  db: Queryable,
+  bindingId: string,
+  state: BindingState,
+  now: Date,
+): Promise<BindingRow> {
+  const updated = await db.query<BindingRow>(
+    `UPDATE bindings
+     SET enabled = $2, connection_id = $3, updated_at = $4
+     WHERE id = $1
+     RETURNING ${BINDING_COLUMNS}`,
+    [bindingId, state.enabled, state.connectionId, stamp(now)],
+  );
+  const row = updated.rows[0] ?? null;
+  if (!row) {
+    throw new RowMissing("binding update failed");
+  }
+  return row;
 }
 
 export async function upsertPlatformBinding(
@@ -257,32 +257,24 @@ export async function upsertPlatformBinding(
   return row;
 }
 
-export async function deleteBinding(
-  pool: Queryable,
-  key: BindingKey,
-  actor: ChangeActor,
-): Promise<DeletedBindingRow | null> {
+export async function deleteBinding(pool: Queryable, key: BindingKey): Promise<DeletedBindingRow | null> {
   const { catalogKind, catalogId, scope, scopeId } = key;
-  return withTransaction(pool, async (client) => {
-    const result =
-      scope === "platform"
-        ? await client.query<DeletedBindingRow>(
-            `DELETE FROM bindings
-             WHERE catalog_kind = $1 AND catalog_id = $2 AND scope = 'platform'
-             RETURNING id, enabled`,
-            [catalogKind, catalogId],
-          )
-        : await client.query<DeletedBindingRow>(
-            `DELETE FROM bindings
-             WHERE catalog_kind = $1 AND catalog_id = $2
-               AND scope = $3 AND scope_id = $4
-             RETURNING id, enabled`,
-            [catalogKind, catalogId, scope, scopeId],
-          );
-    const row = result.rows[0] ?? null;
-    await recordChangeIfAny(client, actor, row ? bindingChange(key, row.enabled, null) : null);
-    return row;
-  });
+  const result =
+    scope === "platform"
+      ? await pool.query<DeletedBindingRow>(
+          `DELETE FROM bindings
+           WHERE catalog_kind = $1 AND catalog_id = $2 AND scope = 'platform'
+           RETURNING id, enabled`,
+          [catalogKind, catalogId],
+        )
+      : await pool.query<DeletedBindingRow>(
+          `DELETE FROM bindings
+           WHERE catalog_kind = $1 AND catalog_id = $2
+             AND scope = $3 AND scope_id = $4
+           RETURNING id, enabled`,
+          [catalogKind, catalogId, scope, scopeId],
+        );
+  return result.rows[0] ?? null;
 }
 
 export async function upsertMcpBinding(

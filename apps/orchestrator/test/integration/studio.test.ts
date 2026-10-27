@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
+import { writeBinding } from "../../src/access/bindings.js";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { agentActor, ArtifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
 import { runItem } from "../../src/db/views.js";
@@ -58,7 +59,6 @@ import { getMcpServerBySlug } from "../../src/db/connectors.js";
 import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
 import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
 import { insertIssue } from "../../src/db/issues.js";
-import { upsertBinding } from "../../src/db/bindings.js";
 import { getSchedule, listSchedules } from "../../src/db/schedules.js";
 import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq } from "../../src/db/conversations.js";
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
@@ -1835,7 +1835,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       widenWidget.edit.effects.join(" | "),
     );
     const widenSeq = await commit("studio_edit_access", widenArgs, widenWidget);
-    await upsertBinding(db,
+    await writeBinding(db,
       {
         bindingId: newId("bind"),
         catalogKind: "native_tool",

@@ -1,13 +1,7 @@
 import { requireVisibleAgent } from "../agents/access.js";
 import { bindingItem } from "../credentials/items.js";
 import { getAgent } from "../db/agents.js";
-import {
-  deleteBinding,
-  getBinding,
-  upsertBinding,
-  upsertPlatformBinding,
-  type BindingKey,
-} from "../db/bindings.js";
+import { getBinding, upsertPlatformBinding, type BindingKey } from "../db/bindings.js";
 import { getMcpServer } from "../db/connectors.js";
 import { getGuild } from "../db/guilds.js";
 import { getMcpConnection, isListedMcpTool } from "../db/mcp.js";
@@ -17,6 +11,7 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { serverVisible } from "../mcp/visibility.js";
+import { resetBinding, writeBinding } from "./bindings.js";
 import { BindingError, validateBinding, validateCatalog, validateScope } from "./index.js";
 
 /** A binding as an operator asks for it, before validation; `connectionId` absent keeps the stored login. */
@@ -134,7 +129,7 @@ export async function setBinding(
   const row =
     scope === "platform"
       ? await upsertPlatformBinding(db, binding, now)
-      : await upsertBinding(
+      : await writeBinding(
           db,
           { ...binding, scope: overlay.scope, scopeId: overlay.scope_id },
           now,
@@ -153,7 +148,7 @@ export async function removeBinding(
   const [scope, scopeId] = validateScope(request.scope, request.scopeId);
   await assertChangesScope(db, scope, scopeId, String(user.id));
   if (
-    (await deleteBinding(db, { catalogKind, catalogId, scope, scopeId }, userActor(user))) === null
+    (await resetBinding(db, { catalogKind, catalogId, scope, scopeId }, userActor(user))) === null
   ) {
     throw new BindingError("binding not found", 404);
   }

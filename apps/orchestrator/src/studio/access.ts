@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resetBinding, writeBinding } from "../access/bindings.js";
 import {
   BindingError,
   resolvedMcp,
@@ -13,7 +14,7 @@ import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
-import { deleteBinding, getBinding, listBindingsCovering, upsertBinding } from "../db/bindings.js";
+import { getBinding, listBindingsCovering } from "../db/bindings.js";
 import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 
@@ -343,7 +344,7 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
   const actor = editActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
-      await deleteBinding(scope.db,
+      await resetBinding(scope.db,
         { catalogKind: change.kind, catalogId: change.id, scope: "agent", scopeId: agentId },
         actor,
       );
@@ -359,7 +360,7 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
       change.kind === "mcp" && existing?.connection_id !== null && existing?.connection_id !== undefined
         ? String(existing.connection_id)
         : null;
-    await upsertBinding(scope.db,
+    await writeBinding(scope.db,
       {
         bindingId: newId("bind"),
         catalogKind: change.kind,
