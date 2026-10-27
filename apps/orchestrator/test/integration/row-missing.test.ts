@@ -24,6 +24,7 @@ import { insertSecret } from "../../src/db/secrets.js";
 import { insertUser } from "../../src/db/users.js";
 import type { MachineInput } from "../../src/machines/index.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_row_missing");
 let database: Database;
@@ -46,7 +47,7 @@ const MACHINE_INPUT: MachineInput = {
   memory_mib: null,
   max_workspace_mib: 1024,
 };
-const AGENT_CONFIG = {
+const AGENT_CONFIG = agentConfig({
   model: "openrouter/openai/gpt-5.6-luna",
   temperature: 1,
   max_tokens: 8192,
@@ -54,7 +55,7 @@ const AGENT_CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 function newIssue(issueId: string): NewIssue {
   return {

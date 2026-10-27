@@ -23,6 +23,7 @@ import {
   createScheduleRun,
   insertMessage,
 } from "../../src/db/runs.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -31,7 +32,7 @@ const AUTH = {
   "X-Guilds-Org": "org_home",
 };
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
@@ -39,7 +40,7 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 const HASHES = { systemPromptHash: "s", taskPromptHash: "t", memoryPromptHash: "m" };
 const SNAPSHOT = { ...CONFIG, tools: [], mcp: [] };

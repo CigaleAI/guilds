@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { persistAgent } from "../../src/agents/persist.js";
 import { persistGuild } from "../../src/guilds/persist.js";
 import { collectDirectoryListing } from "../../src/directories/index.js";
+import { agentConfig } from "../helpers/generation.js";
 
 class FakeDB {
   guilds = new Map<string, string>();
@@ -98,7 +99,7 @@ test("agent persist deletes row when notes fails", async () => {
         guildName: "research",
         orgSlug: "acme",
         name: "researcher",
-        config: { model: "openrouter/x" },
+        config: agentConfig({ model: "openrouter/x" }),
         now: new Date(),
       }),
     /notes failed/,
@@ -116,7 +117,7 @@ test("agent persist seeds task from focus", async () => {
     guildName: "research",
     orgSlug: "acme",
     name: "researcher",
-    config: { model: "openrouter/x" },
+    config: agentConfig({ model: "openrouter/x" }),
     now: new Date(),
     focus: "read papers",
   });

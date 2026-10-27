@@ -106,7 +106,7 @@ export type NewAgent = {
   agentId: string;
   guildId: string;
   name: string;
-  config: Record<string, unknown>;
+  config: Agent["config"];
   focus?: string | undefined;
   wakeTriggers?: string | undefined;
   avatarShape?: string | undefined;
@@ -427,7 +427,7 @@ export async function listAgentTaskRevisions(
 export async function updateAgentConfig(
   pool: Queryable,
   agentId: string,
-  config: Record<string, unknown>,
+  config: Agent["config"],
   now: Date,
   options: AgentConfigPatch = {},
 ): Promise<AgentConfigRow | null> {

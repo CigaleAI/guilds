@@ -8,7 +8,6 @@ import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
-import { agentConfigObject } from "../agents/view.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param } from "./request.js";
 import type { UserRow } from "../db/users.js";
@@ -60,7 +59,7 @@ export async function registerScriptRoutes(app: FastifyInstance, deps: AppDeps):
       body.description,
       body.source,
       body.parameters ?? null,
-      { maxScripts: maxScriptsOf(agentConfigObject(agent)) },
+      { maxScripts: maxScriptsOf(agent.config) },
     );
     await publishGroup(deps, agent.guild_id, "agent.scripts.changed", {
       agent_id: agent.id,

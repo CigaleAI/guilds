@@ -31,13 +31,54 @@ export type WakeWindow = {
   max_wakes: number;
 };
 
+/** The coding harnesses a coding agent delegates code work to. */
+export const HARNESSES = ["claude-code", "codex", "cursor", "antigravity"] as const;
+export type Harness = (typeof HARNESSES)[number];
+
+/** The reasoning efforts a harness can run a model at, lowest first. */
+export const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
+export type Effort = (typeof EFFORTS)[number];
+
+export const THINKING_LEVELS = ["none", "low", "medium", "high"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/** An agent's settings, as `agents.config` stores them: every key present. */
+export type AgentConfig = {
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  max_steps: number;
+  max_tool_calls: number;
+  max_input_tokens: number;
+  keep_tool_result_generations: number;
+  max_scripts: number;
+  max_workspace_mib: number;
+  browser: boolean;
+  browser_language: string;
+  coding: boolean;
+  harness: Harness | null;
+  /** The model the harness runs; null leaves it to the harness's subscription. */
+  harness_model: string | null;
+  /** The effort the harness runs its model at; null leaves it to the harness. */
+  harness_effort: Effort | null;
+  /**
+   * Variable names the agent's commands see beside the secrets reaching it, each holding the
+   * value of the secret it names: `{ CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" }`. An alias wins over
+   * a secret of its own name.
+   */
+  secret_aliases: Record<string, string>;
+  scripting: boolean;
+  memory: boolean;
+  thinking_level: ThinkingLevel;
+};
+
 export const agents = pgTable(
   "agents",
   {
     id: text("id").primaryKey(),
     guild_id: text("guild_id").notNull(),
     name: text("name").notNull(),
-    config: jsonb("config").$type<Record<string, unknown>>().notNull(),
+    config: jsonb("config").$type<AgentConfig>().notNull(),
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
     group_chat_delivered_through: bigint("group_chat_delivered_through", {

@@ -14,6 +14,7 @@ import { insertGuild } from "../../src/db/guilds.js";
 import { addAgent } from "../../src/agents/persist.js";
 import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
 import { getUsage } from "../../src/db/usage.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_r2");
 let database: Database;
@@ -61,7 +62,7 @@ describe("repositories", { concurrency: 1 }, () => {
         agentId: "a_scripts",
         guildId: "guild_scripts",
         name: "scripter",
-        config: {
+        config: agentConfig({
           model: "openrouter/openai/gpt-5.6-luna",
           temperature: 1,
           max_tokens: 8192,
@@ -69,7 +70,7 @@ describe("repositories", { concurrency: 1 }, () => {
           max_tool_calls: 50,
           max_input_tokens: 100000,
           browser: false,
-        },
+        }),
       },
       new Date(),
     );
@@ -119,7 +120,7 @@ describe("repositories", { concurrency: 1 }, () => {
         agentId: "a_usage",
         guildId: "guild_usage",
         name: "counter",
-        config: {
+        config: agentConfig({
           model: "openrouter/openai/gpt-5.6-luna",
           temperature: 1,
           max_tokens: 8192,
@@ -127,7 +128,7 @@ describe("repositories", { concurrency: 1 }, () => {
           max_tool_calls: 50,
           max_input_tokens: 100000,
           browser: false,
-        },
+        }),
       },
       now,
     );

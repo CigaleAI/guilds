@@ -12,6 +12,7 @@ import { MigrationsNotApplied, committedMigrations } from "../../src/db/migratio
 import { orchestratorRoot } from "../../src/lib/paths.js";
 import { tempDir } from "../helpers/env.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const migrationsFolder = path.join(orchestratorRoot(import.meta.url), "drizzle");
 const freshDb = uniqueDbName("agent_platform_migrate_fresh");
@@ -19,6 +20,7 @@ const extensionDb = uniqueDbName("agent_platform_migrate_extension");
 const driftDb = uniqueDbName("agent_platform_migrate_drift");
 const cliDb = uniqueDbName("agent_platform_migrate_cli");
 const accessDb = uniqueDbName("agent_platform_migrate_access");
+const configDb = uniqueDbName("agent_platform_migrate_config");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
@@ -214,6 +216,39 @@ test("the access-list migration moves table rows, gives live guild and org items
     assert.deepEqual(stamps.rows, [{ same: true }]);
     assert.equal((await pool.query("SELECT to_regclass('public.collection_access') AS name")).rows[0].name, null);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM public.bindings")).rows[0].n, 0);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the agent config migration gives a config each key it predates, keeping the values it has", async () => {
+  const pool = await createPool(await createIsolatedDatabase(configDb), reportPoolError);
+  try {
+    const folder = chainBefore("0014_agent_config_keys");
+    await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
+    const now = new Date().toISOString();
+    await pool.query("INSERT INTO public.orgs (id, name, slug, created_at, updated_at) VALUES ('org_1', 'Org', 'org', $1, $1)", [now]);
+    await pool.query("INSERT INTO public.guilds (id, name, org_id, created_at, updated_at) VALUES ('guild_1', 'g', 'org_1', $1, $1)", [now]);
+    await pool.query(
+      "INSERT INTO public.machines (id, org_id, name, box, created_at, updated_at) VALUES ('mach_1', 'org_1', 'default', 'standard', $1, $1)",
+      [now],
+    );
+    const MODEL = "openrouter/openai/gpt-5.6-luna";
+    const agent = (id: string, slot: number, config: Record<string, unknown>) =>
+      pool.query(
+        `INSERT INTO public.agents (id, guild_id, name, config, created_at, updated_at, org_id, task, task_hash, task_updated_at, machine_id, machine_slot)
+         VALUES ($1, 'guild_1', $1, $2, $3, $3, 'org_1', '', '', $3, 'mach_1', $4)`,
+        [id, JSON.stringify(config), now, slot],
+      );
+    await agent("old", 0, { model: MODEL, coding: true, harness: "codex", max_steps: 200 });
+    const full = agentConfig({ model: MODEL, temperature: 0.5 });
+    await agent("full", 1, full);
+
+    await applyMigrations(pool);
+    const rows = await pool.query<{ id: string; config: Record<string, unknown> }>("SELECT id, config FROM public.agents ORDER BY id");
+    const byId = new Map(rows.rows.map((row) => [row.id, row.config]));
+    assert.deepEqual(byId.get("old"), agentConfig({ model: MODEL, coding: true, harness: "codex", max_steps: 200 }));
+    assert.deepEqual(byId.get("full"), full);
   } finally {
     await pool.end();
   }

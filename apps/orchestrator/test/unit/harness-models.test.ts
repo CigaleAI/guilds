@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  EFFORTS,
   findHarnessModel,
   HARNESS_MODELS,
   harnessCatalog,
@@ -9,7 +8,8 @@ import {
   harnessEffortsFor,
   harnessLaunch,
 } from "../../src/coding/harness-models.js";
-import { HARNESS_MODEL_RE, HARNESSES } from "../../src/coding/harnesses.js";
+import { HARNESS_MODEL_RE } from "../../src/coding/harnesses.js";
+import { HARNESSES, EFFORTS } from "../../src/db/schema/index.js";
 
 test("every listed model id, and every CLI name it starts under, is a model name the driver passes", () => {
   for (const harness of HARNESSES) {

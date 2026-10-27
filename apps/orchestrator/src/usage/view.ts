@@ -4,7 +4,6 @@ import { listGuilds, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { listOrgs, type OrgRow } from "../db/orgs.js";
 import { getUsage, listUsageCounters } from "../db/usage.js";
-import { agentConfigObject } from "../agents/view.js";
 import { maxWorkspaceMibOf } from "../agents/validation.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import { usageCounterKey, usageFields, usageTree } from "./index.js";
@@ -113,7 +112,7 @@ export async function usageForAgent(
     guild_id: agent.guild_id,
     guild_name: agent.guild_name,
     workspace_mib: mibOrNull(agent.workspace_mib),
-    max_workspace_mib: maxWorkspaceMibOf(agentConfigObject(agent)),
+    max_workspace_mib: maxWorkspaceMibOf(agent.config),
     machine: {
       id: agent.machine_id,
       name: agent.machine_name,

@@ -20,6 +20,7 @@ import {
   postAgentGroupMessage,
   postUserGroupMessage,
 } from "../../src/db/group-chat.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -83,7 +84,7 @@ test(
       const base = `/api/guilds/${guildId}/group-chat`;
 
       const started = new Date(Date.now() - 60_000);
-      await addAgent(db, { agentId: "a_clear", guildId, name: "scout", config: {} }, started);
+      await addAgent(db, { agentId: "a_clear", guildId, name: "scout", config: agentConfig({}) }, started);
       await createRun(db,
         {
           runId: "r_before",

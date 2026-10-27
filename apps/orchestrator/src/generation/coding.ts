@@ -1,6 +1,6 @@
 import { accessDatabase, agentSecrets, snapshotEnvValues } from "../access/runtime.js";
 import { agentGitIdentity, cloneFailures, repositoryTokenDatabase, RepositoryTokens } from "../coding/git.js";
-import { harnessOf, type Harness } from "../coding/harnesses.js";
+import { harnessOf } from "../coding/harnesses.js";
 import { codingRepositories } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
@@ -8,6 +8,7 @@ import { isPlainRecord } from "../db/json.js";
 import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
+import type { Harness } from "../db/schema/index.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import { RepositoryAccessError } from "../github/tokens.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";

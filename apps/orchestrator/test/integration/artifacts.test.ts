@@ -26,13 +26,14 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
 import { getAgentTask, listAgentTaskRevisions } from "../../src/db/agents.js";
 import { insertRun } from "../../src/db/runs.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_artifacts");
 let database: Database;
 let store: ArtifactStore;
 let db: pg.Pool;
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: "openrouter/openai/gpt-5.6-luna",
   temperature: 1,
   max_tokens: 8192,
@@ -40,7 +41,7 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 before(async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);

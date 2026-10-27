@@ -1,11 +1,11 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
-import type { Harness } from "../coding/harnesses.js";
 import { getMcpServer } from "../connectors/servers.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { isPlainRecord, recordOf } from "../db/json.js";
 import { getMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow } from "../db/runs.js";
+import type { Harness } from "../db/schema/index.js";
 import { McpDisconnectedError, McpError, mcpDatabase } from "../mcp/index.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { callSegment, repeatedReadStep, repeatedReadText } from "../toolbox/code.js";

@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
+import type { Harness, Effort } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
@@ -8,8 +9,6 @@ import type { Issues } from "../issues/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
-import type { Harness } from "../coding/harnesses.js";
-import type { Effort } from "../coding/harness-models.js";
 
 export type GroupChat = {
   publish?(guildId: string, event: string, data: Record<string, unknown>): Promise<void>;

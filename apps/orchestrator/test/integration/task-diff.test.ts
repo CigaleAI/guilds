@@ -14,6 +14,7 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { addAgent } from "../../src/agents/persist.js";
 import { createRun, insertMessage } from "../../src/db/runs.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -67,7 +68,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
         agentId: "a_diff",
         guildId: String(guild.json().id),
         name: "coder",
-        config: { model: "openrouter/openai/gpt-5.6-luna" },
+        config: agentConfig({ model: "openrouter/openai/gpt-5.6-luna" }),
       },
       now,
     );

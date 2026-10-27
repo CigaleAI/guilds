@@ -1,13 +1,7 @@
 import { Buffer } from "node:buffer";
-import {
-  credentialFix,
-  HARNESS_INFO,
-  harnessesOn,
-  harnessOffMessage,
-  isHarnessOff,
-  type Harness,
-} from "../coding/harnesses.js";
+import { credentialFix, HARNESS_INFO, harnessesOn, harnessOffMessage, isHarnessOff } from "../coding/harnesses.js";
 import { harnessLaunch } from "../coding/harness-models.js";
+import type { Harness } from "../db/schema/index.js";
 import { writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 import { readArtifactText } from "./artifacts.js";

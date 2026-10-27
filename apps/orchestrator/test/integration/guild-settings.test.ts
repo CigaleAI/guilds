@@ -18,6 +18,7 @@ import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { limitedPolicy } from "../helpers/policy.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_guild_settings");
 const HOME = { id: "org_home", slug: "home" };
@@ -92,7 +93,7 @@ test("guild settings change within the guild's state and roles", { timeout: 60_0
     state.deleting = false;
     await addAgent(
       db,
-      { agentId: "a_settings", guildId: guild.id, name: "worker", config: {} },
+      { agentId: "a_settings", guildId: guild.id, name: "worker", config: agentConfig({}) },
       new Date(),
     );
     state.busy = true;

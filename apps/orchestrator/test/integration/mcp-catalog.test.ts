@@ -22,6 +22,7 @@ import {
 import { insertUser } from "../../src/db/users.js";
 import { insertMember, insertOrg } from "../../src/db/orgs.js";
 import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -303,7 +304,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     orgId: "org_home",
     name: "catalog-agent",
     focus: "",
-    config: {
+    config: agentConfig({
       model: "openrouter/openai/gpt-5.6-luna",
       temperature: 1,
       max_tokens: 8192,
@@ -311,7 +312,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
       max_tool_calls: 50,
       max_input_tokens: 100000,
       browser: false,
-    },
+    }),
     now,
   });
   const afterAgent = await app.inject({ method: "GET", url: "/api/builder/capabilities", headers: AUTH });

@@ -22,16 +22,35 @@ import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agen
 import type { ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
+import type { AgentConfig } from "../../src/db/schema/index.js";
+import { validateConfig } from "../../src/agents/validation.js";
 
-export const AGENT_CONFIG = {
+export const AGENT_CONFIG: AgentConfig = {
   model: "openrouter/openai/gpt-5.6-luna",
   temperature: 0,
   max_tokens: 32,
   max_steps: 30,
   max_tool_calls: 50,
   max_input_tokens: 100000,
+  keep_tool_result_generations: 1,
+  max_scripts: 10,
+  max_workspace_mib: 10240,
   browser: false,
+  browser_language: "en-US",
+  coding: false,
+  harness: null,
+  harness_model: null,
+  harness_effort: null,
+  secret_aliases: {},
+  scripting: true,
+  memory: true,
+  thinking_level: "none",
 };
+
+/** An agent config as a create with these settings stores it: every key, the defaults filling the rest. */
+export function agentConfig(overrides: Record<string, unknown> = {}): AgentConfig {
+  return validateConfig({ model: AGENT_CONFIG.model, ...overrides });
+}
 
 export function scheduleRow(
   overrides: Partial<Omit<ScheduleRow, "cron" | "wake_window">> = {},
@@ -285,7 +304,7 @@ export class FakeDB {
       updated_at: now,
       metadata: {},
     };
-    this.agent = agentRow({ guild_name: "research", org_slug: "acme", config: {} });
+    this.agent = agentRow({ guild_name: "research", org_slug: "acme" });
     this.messages = [
       {
         id: 1,

@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { accessDatabase, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { AgentValidationError, memoryOf, validateConfig, type AgentConfig } from "../agents/validation.js";
+import { AgentValidationError, memoryOf, validateConfig } from "../agents/validation.js";
 import {
   ArtifactError,
   agentActor,
@@ -14,6 +14,7 @@ import {
   type ArtifactStore,
 } from "../artifacts/index.js";
 import { stateRepositories } from "../coding/repositories.js";
+import type { AgentConfig } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";

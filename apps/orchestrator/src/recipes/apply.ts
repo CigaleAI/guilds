@@ -1,6 +1,7 @@
 import { writeBinding } from "../access/bindings.js";
 import { writeAgentTask } from "../agents/task.js";
 import { getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
+import type { Harness, Effort } from "../db/schema/index.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
@@ -25,6 +26,7 @@ import {
   maxScriptsOf,
   secretAliasesOf,
   validateAgentName,
+  validateConfig,
 } from "../agents/validation.js";
 import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { modelsDatabase, ModelsService } from "../llm/models.js";
@@ -36,9 +38,8 @@ import {
   harnessOffMessage,
   isHarness,
   isHarnessOff,
-  type Harness,
 } from "../coding/harnesses.js";
-import { harnessEffortOf, harnessEffortsFor, type Effort } from "../coding/harness-models.js";
+import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { operatorActor } from "../artifacts/actors.js";
 import {
   ArtifactError,
@@ -667,7 +668,7 @@ export class RecipeApplyService {
           orgSlug: org.slug,
           orgId: org.id,
           name,
-          config: role.config,
+          config: validateConfig(role.config),
           now,
           focus: role.focus,
           wakeTriggers: role.wake_triggers,

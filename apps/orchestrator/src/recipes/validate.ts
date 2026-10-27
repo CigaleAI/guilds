@@ -1,7 +1,8 @@
+import { HARNESSES, EFFORTS } from "../db/schema/index.js";
 import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS, secretAliasesOf } from "../agents/validation.js";
-import { credentialFix, HARNESS_INFO, harnessModelOf, HARNESSES, isHarness, isHarnessOff } from "../coding/harnesses.js";
-import { EFFORTS, harnessEffortsFor, isEffort } from "../coding/harness-models.js";
+import { credentialFix, HARNESS_INFO, harnessModelOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
+import { harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
 import { NATIVE_TOOLS } from "../seed/catalog.js";

@@ -19,6 +19,7 @@ import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
 import { addAgent } from "../../src/agents/persist.js";
 import { deleteAgent } from "../../src/db/agents.js";
 import { getSecret, listAgentSecrets } from "../../src/db/secrets.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_org_secrets");
 const as = (user: string) => ({ "X-Guilds-User": user, "X-Guilds-Org": "org_home" });
@@ -97,7 +98,7 @@ before(async () => {
     },
     now,
   );
-  const config = { model: TEST_MODEL };
+  const config = agentConfig({ model: TEST_MODEL });
   await addAgent(db, { agentId: "a_open", guildId: "guild_open", name: "opener", config }, now);
   await addAgent(db,
     { agentId: "a_open_two", guildId: "guild_open", name: "second", config },
@@ -327,7 +328,7 @@ test("access changes replace the set and refresh the agents they reach", async (
 
 test("a secret goes with the guild or agent that held its last grant", async () => {
   const now = new Date();
-  const config = { model: TEST_MODEL };
+  const config = agentConfig({ model: TEST_MODEL });
   await insertGuild(db, { guildId: "guild_doomed", name: "doomed-desk", orgId: "org_home" }, now);
   await addAgent(db,
     { agentId: "a_doomed", guildId: "guild_doomed", name: "doomed", config },

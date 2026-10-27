@@ -17,6 +17,7 @@ import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_OWNER = { ...OWNER, "content-type": "application/json" };
@@ -49,7 +50,7 @@ test(
     );
     await addAgent(
       db,
-      { agentId: "a_items", guildId: "guild_items", name: "keeper", config: {} },
+      { agentId: "a_items", guildId: "guild_items", name: "keeper", config: agentConfig({}) },
       new Date(),
     );
     const agent = "/api/agents/a_items";

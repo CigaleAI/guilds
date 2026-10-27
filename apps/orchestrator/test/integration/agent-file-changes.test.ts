@@ -8,6 +8,7 @@ import { insertGuild } from "../../src/db/guilds.js";
 import { removeAgentScript, writeAgentScript } from "../../src/scripts/catalog.js";
 import { connect } from "../../src/seed/connect.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_agent_file_changes");
 let database: Database;
@@ -21,7 +22,7 @@ before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));
   const now = new Date();
   await insertGuild(database.pool, { guildId: GUILD, name: "changes", orgId: ORG }, now);
-  await addAgent(database.pool, { agentId: AGENT, guildId: GUILD, name: "scribe", config: {} }, now, ACTOR);
+  await addAgent(database.pool, { agentId: AGENT, guildId: GUILD, name: "scribe", config: agentConfig({}) }, now, ACTOR);
 });
 
 after(async () => {

@@ -3,8 +3,7 @@
  * agent's sandbox on the user's own subscription: a token granted to the agent as a secret,
  * or a login stored in the agent's home.
  */
-export const HARNESSES = ["claude-code", "codex", "cursor", "antigravity"] as const;
-export type Harness = (typeof HARNESSES)[number];
+import { HARNESSES, type Harness } from "../db/schema/index.js";
 
 export type HarnessInfo = {
   harness: Harness;

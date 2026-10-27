@@ -15,6 +15,7 @@ import { GuildNameTaken } from "../db/errors.js";
 import type { GuildRow } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
+import type { AgentConfig } from "../db/schema/index.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
 import { assertGuildAgentRoom, guildAgentRoom } from "../guilds/validation.js";
@@ -42,9 +43,8 @@ import {
   validateFocus,
   validateWakeTriggers,
   withCodingLimits,
-  type AgentConfig,
 } from "./validation.js";
-import { agentConfigObject, agentItem } from "./view.js";
+import { agentItem } from "./view.js";
 
 /** What agents are created, changed, moved and deleted through, built once from the app's services. */
 export type AgentServices = {
@@ -270,7 +270,7 @@ async function writeAgentSettings(
     row = await updateAgentConfig(services.db, agent.id, change.config, new Date(), change.profile);
   } catch (error) {
     if (moves) {
-      const previous = agentConfigObject(agent);
+      const previous = agent.config;
       await generationOf(services).machines.moveAgent(agent.id, agent.machine_id, {
         needs: { browser: Boolean(previous.browser), coding: Boolean(previous.coding) },
       });
@@ -310,7 +310,7 @@ export async function reconfigureAgent(
   patch: AgentSettingsPatch,
 ): Promise<AgentRow> {
   const config = validateConfig(configObject(patch.config));
-  const previous = agentConfigObject(agent);
+  const previous = agent.config;
   assertCodingAgent(config, previous);
   await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
   const needs = { browser: config.browser, coding: config.coding };
@@ -356,7 +356,7 @@ export async function moveAgentToMachine(
   if (machineId === undefined || machineId === null) {
     throw new AgentError(422, "machine_id is required");
   }
-  const config = agentConfigObject(agent);
+  const config = agent.config;
   const { machine, maxAgentsPerMachine, moves } = await placeAgent(services, agent.org_id, userId, {
     requested: machineId,
     needs: { browser: config.browser === true, coding: config.coding === true },

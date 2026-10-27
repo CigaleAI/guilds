@@ -23,6 +23,7 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 import { codeDefaultMachine } from "../helpers/machines.js";
 import { getRun, listMessages, listRuns, mergeRunMetadata } from "../../src/db/runs.js";
 import { updateAgentConfig } from "../../src/db/agents.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const live = generationLive;
 const originalStream = live.streamCompletion;
@@ -268,7 +269,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     assert.equal(Number(cursor.rows[0]?.group_chat_delivered_through), Number(root.group_chat_through_seq));
 
     // A run without coding keeps the terminal cap.
-    await updateAgentConfig(db, agentId, { ...config, coding: false, harness: null }, new Date(), {});
+    await updateAgentConfig(db, agentId, agentConfig({ ...config, coding: false, harness: null }), new Date(), {});
     live.streamCompletion = script((messages) => shellCall(`c${messages.length}`));
     const plain = String((await loop.runs.createRun(agentId, "plain")).id);
     await loop.generations.task(plain);

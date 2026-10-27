@@ -2,9 +2,9 @@ import path from "node:path";
 import { NAME_RE } from "../lib/names.js";
 import { numberOrNull } from "../lib/numbers.js";
 import { maxWorkspaceMibOf } from "../agents/validation.js";
-import { isHarness, type Harness } from "../coding/harnesses.js";
+import { isHarness } from "../coding/harnesses.js";
 import type { MachineWithAgentsQueryRow } from "../db/machines.js";
-import { DEFAULT_MACHINE_BOX, DEFAULT_MACHINE_MAX_WORKSPACE_MIB } from "../db/schema/index.js";
+import { DEFAULT_MACHINE_BOX, DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type Harness } from "../db/schema/index.js";
 
 /**
  * An organisation's machines (docs/concepts/machines.md): one sandbox container

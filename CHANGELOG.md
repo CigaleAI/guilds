@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Migration 0014 gives every stored agent config each
+setting it predates, with the value the app already read for it, so
+a config holds every key. Applying a recipe refuses a role whose
+config does not validate as an agent's.
+
 **No impact.** The Studio's Tools view takes an organisation's
 bindings into account for every agent of the guild: a tool the
 organisation turns off is no longer listed as offered.

@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { parseHarnessesOff, type Harness } from "../coding/harnesses.js";
+import { parseHarnessesOff } from "../coding/harnesses.js";
+import type { Harness } from "../db/schema/index.js";
 import { normalizeEmail } from "../lib/email.js";
 import { orchestratorRoot } from "../lib/paths.js";
 

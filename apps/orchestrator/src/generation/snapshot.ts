@@ -6,7 +6,6 @@ import {
   keepToolResultGenerationsOf,
   memoryOf,
   secretAliasesOf,
-  type AgentConfig,
 } from "../agents/validation.js";
 import { harnessEffortOf } from "../coding/harness-models.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
@@ -14,6 +13,7 @@ import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
 import type { AgentRow } from "../db/agents.js";
 import { isPlainRecord } from "../db/json.js";
 import type { RunRow } from "../db/runs.js";
+import type { AgentConfig } from "../db/schema/index.js";
 import { promptHash } from "../prompts/index.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
 import { schemasFor } from "../toolbox/index.js";

@@ -65,6 +65,7 @@ import { getSchedule, listSchedules } from "../../src/db/schedules.js";
 import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq } from "../../src/db/conversations.js";
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -73,7 +74,7 @@ const AUTH = {
   "X-Guilds-Org": "org_home",
 };
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: TEST_MODEL,
   temperature: 1,
   max_tokens: 8192,
@@ -81,7 +82,7 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 const dbName = uniqueDbName("agent_platform_studio");
 const accessDbName = uniqueDbName("agent_platform_studio_access");

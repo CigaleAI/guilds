@@ -1,8 +1,7 @@
-import { HARNESS_INFO, HARNESSES, isHarnessOff, type Harness } from "./harnesses.js";
+import { HARNESSES, type Harness } from "../db/schema/index.js";
+import { HARNESS_INFO, isHarnessOff } from "./harnesses.js";
+import { EFFORTS, type Effort } from "../db/schema/index.js";
 
-/** The reasoning efforts a harness can run a model at, lowest first. */
-export const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
-export type Effort = (typeof EFFORTS)[number];
 
 const EFFORT_SET = new Set<string>(EFFORTS);
 

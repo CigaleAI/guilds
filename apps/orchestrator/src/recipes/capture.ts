@@ -1,5 +1,5 @@
 import { getMcpServerBySlug } from "../connectors/servers.js";
-import { DEFAULT_AGENT_MESSAGE_LIMIT } from "../db/schema/index.js";
+import { DEFAULT_AGENT_MESSAGE_LIMIT, HARNESSES } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
@@ -19,7 +19,7 @@ import {
   addMissingThinkingLevel,
   secretAliasesOf,
 } from "../agents/validation.js";
-import { HARNESS_INFO, HARNESSES, harnessSecretSource } from "../coding/harnesses.js";
+import { HARNESS_INFO, harnessSecretSource } from "../coding/harnesses.js";
 import { jsonObj } from "../db/json.js";
 import { secretGrants } from "../secrets/access.js";
 import { emptyRecipe } from "./minimal.js";

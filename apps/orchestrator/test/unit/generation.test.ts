@@ -883,7 +883,7 @@ describe("generation", { concurrency: 1 }, () => {
 
   test("delete_guild_blocks_new_runs_while_deleting", async () => {
     const db = guildDb(["a_1"]);
-    db.getAgent = async () => agentRow({ guild_name: "research", org_slug: "acme", config: {} });
+    db.getAgent = async () => agentRow({ guild_name: "research", org_slug: "acme" });
     const notes = guildNotes();
     const tmp = tempDir("guilds-gen-");
     const loop = makeLoop(db, notes, tmp, new FakeSandboxes());

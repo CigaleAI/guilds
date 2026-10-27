@@ -1,22 +1,20 @@
 import { accessDatabase, agentSecrets } from "../access/runtime.js";
 import { secretAliasesOf } from "../agents/validation.js";
-import { agentConfigObject } from "../agents/view.js";
 import type { AgentRow } from "../db/agents.js";
 import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
+import { HARNESSES, type Harness } from "../db/schema/index.js";
 import type { CodingRuns } from "../generation/coding.js";
 import { RunRequestError } from "../generation/errors.js";
 import { harnessEffortOf } from "./harness-models.js";
 import {
-  HARNESSES,
   HARNESS_INFO,
   harnessLoginOf,
   harnessModelOf,
   harnessOf,
   harnessSecretSource,
   isHarness,
-  type Harness,
 } from "./harnesses.js";
 
 /** What a coding agent's harness and a coding run's changes are read through, built once from the app's services. */
@@ -83,7 +81,7 @@ function harnessView(
 
 /** A coding agent's harness, model and effort, the repositories it works in, and each harness's secret and login. */
 export async function loadHarnessView(services: RunReviewServices, agent: AgentRow): Promise<Item> {
-  const config = agentConfigObject(agent);
+  const config = agent.config;
   const granted = new Set(
     (await agentSecrets(accessDatabase(services.db), agent)).map((secret) => secret.name),
   );

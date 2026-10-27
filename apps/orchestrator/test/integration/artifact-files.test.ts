@@ -17,6 +17,7 @@ import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertGuild } from "../../src/db/guilds.js";
+import { agentConfig } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_files");
 let database: Database;
@@ -25,7 +26,7 @@ let blobs: MemoryBlobStore;
 let files: ArtifactFiles;
 let db: pg.Pool;
 
-const CONFIG = {
+const CONFIG = agentConfig({
   model: "openrouter/openai/gpt-5.6-luna",
   temperature: 1,
   max_tokens: 8192,
@@ -33,7 +34,7 @@ const CONFIG = {
   max_tool_calls: 50,
   max_input_tokens: 100000,
   browser: false,
-};
+});
 
 before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));

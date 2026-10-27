@@ -9,6 +9,7 @@ import {
   viewToolCall,
   type ToolEntry,
 } from "../../src/studio/tool-usage.js";
+import { AGENT_CONFIG } from "../helpers/generation.js";
 
 const access = {
   native_tools: ["note_get", "memory_write", "script_run"],
@@ -42,7 +43,7 @@ test("a native tool's group is the family its name starts with", () => {
 });
 
 test("an agent's entries follow its switches: scripts as tools, Memory, and withheld connection tools", () => {
-  const entries = agentToolEntries({ id: "a_1", config: { scripting: true, memory: true } }, access);
+  const entries = agentToolEntries({ id: "a_1", config: { ...AGENT_CONFIG, scripting: true, memory: true } }, access);
   const byName = new Map(entries.map((entry) => [entry.name, entry]));
   assert.equal(byName.get("note_get")?.source, "native");
   assert.equal(byName.get("memory_write")?.offered, true);
@@ -54,7 +55,7 @@ test("an agent's entries follow its switches: scripts as tools, Memory, and with
   assert.equal(byName.get("notion_create")?.offered, false);
   assert.ok(byName.has("report_issue"));
 
-  const quiet = agentToolEntries({ id: "a_2", config: { scripting: false, memory: false } }, access);
+  const quiet = agentToolEntries({ id: "a_2", config: { ...AGENT_CONFIG, scripting: false, memory: false } }, access);
   const names = quiet.filter((entry) => entry.offered).map((entry) => entry.name);
   assert.equal(names.includes("script_run"), false);
   assert.equal(names.includes("memory_write"), false);
