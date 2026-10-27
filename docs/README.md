@@ -216,6 +216,8 @@ For the people who change the code.
   stack, Make targets, tests, the check, CI
 - [Code guidelines](contributing/code-guidelines.md) — names,
   functions, boundaries, docs
+- [Pull requests](contributing/pull-requests.md) — size, content,
+  what a reviewer checks
 
 ## Licence
 
