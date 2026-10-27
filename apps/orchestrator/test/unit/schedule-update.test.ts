@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ScheduleError } from "../../src/schedules/cron.js";
-import { Schedules, changedFields, type ScheduleDatabase } from "../../src/schedules/service.js";
+import {
+  Schedules,
+  changedFields,
+  type ScheduleDatabase,
+  type ScheduleQueries,
+} from "../../src/schedules/service.js";
 import { rowTiming } from "../../src/schedules/timing.js";
 import { userActor } from "../../src/lib/change-actor.js";
+import type { ConfigChange } from "../../src/db/config-changes.js";
 import type { ScheduleKey, ScheduleRow, ScheduleUpdate, PlannedWake } from "../../src/db/schedules.js";
 
 const ACTOR = userActor({ id: "user_operator", name: "operator" });
@@ -27,9 +33,11 @@ const ROW: ScheduleRow = {
 function storeWith(row: ScheduleRow): {
   db: ScheduleDatabase;
   wakes: Array<PlannedWake | null>;
+  changes: Array<ConfigChange | null>;
 } {
   const wakes: Array<PlannedWake | null> = [];
-  const db: ScheduleDatabase = {
+  const changes: Array<ConfigChange | null> = [];
+  const queries: ScheduleQueries = {
     insertSchedule: async () => row,
     deleteSchedule: async () => row,
     getSchedule: async (_agentId: string, scheduleId: string) =>
@@ -52,8 +60,13 @@ function storeWith(row: ScheduleRow): {
       };
     },
     setScheduleNextRun: async () => {},
+    lockSchedule: async () => row,
+    recordChangeIfAny: async (_actor, change) => {
+      changes.push(change);
+    },
   };
-  return { db, wakes };
+  const db: ScheduleDatabase = { ...queries, scheduleTransaction: (work) => work(queries) };
+  return { db, wakes, changes };
 }
 
 test("changed_fields_keeps_what_a_change_leaves_out", () => {
@@ -161,4 +174,30 @@ test("update_plans_a_new_wake_on_resume_and_none_while_paused", async () => {
     paused: true,
   });
   assert.deepEqual(active.wakes, [null]);
+});
+
+test("create_logs_the_new_routine", async () => {
+  const { db, changes } = storeWith(ROW);
+  await new Schedules(db).create(ACTOR, "a_1", { cron: "0 9 * * 1" }, "Weekly sweep", "Sweep the feed.");
+  assert.equal(changes[0]?.operation, "create");
+});
+
+test("delete_logs_the_routine_it_removes", async () => {
+  const { db, changes } = storeWith(ROW);
+  await new Schedules(db).delete(ACTOR, "a_1", "sch_1");
+  assert.equal(changes[0]?.operation, "delete");
+});
+
+test("update_logs_what_it_changed", async () => {
+  const { db, changes } = storeWith(ROW);
+  await new Schedules(db).update(ACTOR, "a_1", "sch_1", { instruction: "Sweep and post." });
+  assert.equal(changes[0]?.summary, 'Changed the instruction of "Weekly sweep"');
+});
+
+test("set_paused_logs_the_pause", async () => {
+  const { db, changes } = storeWith(ROW);
+  const queries = { ...db, pauseSchedule: async () => ({ ...ROW, paused: true }) };
+  const pausing = { ...queries, scheduleTransaction: (work) => work(queries) } satisfies ScheduleDatabase;
+  await new Schedules(pausing).setPaused(ACTOR, "a_1", "sch_1", true);
+  assert.equal(changes[0]?.summary, 'Paused "Weekly sweep"');
 });

@@ -17,6 +17,18 @@ export function bindQuery<C, A extends unknown[], R>(
   return (...args) => query(db, ...args);
 }
 
+/** Runs `work` in one transaction, on the dependencies object of its client. */
+export type Transaction<D> = <T>(work: (tx: D) => Promise<T>) => Promise<T>;
+
+/**
+ * A transaction on `db` that hands `work` the dependencies object `database` builds on its
+ * client. A domain whose unit tests fake the database keeps one beside its bound queries, so a
+ * write and the change it records commit together.
+ */
+export function bindTransaction<D>(db: Queryable, database: (db: Queryable) => D): Transaction<D> {
+  return (work) => withTransaction(db, (client) => work(database(client)));
+}
+
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }

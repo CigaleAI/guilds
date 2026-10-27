@@ -1,11 +1,14 @@
 import { newId } from "../lib/ids.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
+import { routineChange } from "./changes.js";
 import { formatScheduleRow, rowDescription, scheduleItem, type ScheduleItem } from "./item.js";
 import { planWake, rowTiming, validateTiming } from "./timing.js";
 import type { ChangeActor } from "../lib/change-actor.js";
+import { recordChangeIfAny } from "../db/config-changes.js";
 import type {
   ScheduleDefinition,
   ScheduleFields,
+  ScheduleKey,
   ScheduleRow,
 } from "../db/schedules.js";
 import {
@@ -14,29 +17,39 @@ import {
   insertSchedule,
   listSchedules,
   listSchedulesForGuild,
+  lockSchedule,
   pauseSchedule,
   resumeSchedule,
   setScheduleNextRun,
   updateSchedule,
 } from "../db/schedules.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { bindQuery, bindTransaction, type Queryable, type Transaction } from "../db/pg.js";
 
 /** The db/ functions routines are read and written through, on `db`. */
-export function scheduleDatabase(db: Queryable) {
+export function scheduleQueries(db: Queryable) {
   return {
     insertSchedule: bindQuery(db, insertSchedule),
     deleteSchedule: bindQuery(db, deleteSchedule),
     getSchedule: bindQuery(db, getSchedule),
+    lockSchedule: bindQuery(db, lockSchedule),
     pauseSchedule: bindQuery(db, pauseSchedule),
     resumeSchedule: bindQuery(db, resumeSchedule),
     listSchedules: bindQuery(db, listSchedules),
     listSchedulesForGuild: bindQuery(db, listSchedulesForGuild),
     updateSchedule: bindQuery(db, updateSchedule),
     setScheduleNextRun: bindQuery(db, setScheduleNextRun),
+    recordChangeIfAny: bindQuery(db, recordChangeIfAny),
   };
 }
 
-export type ScheduleDatabase = ReturnType<typeof scheduleDatabase>;
+export type ScheduleQueries = ReturnType<typeof scheduleQueries>;
+
+export type ScheduleDatabase = ScheduleQueries & { scheduleTransaction: Transaction<ScheduleQueries> };
+
+/** The routines' queries on `db`, and a transaction that runs them on one client. */
+export function scheduleDatabase(db: Queryable): ScheduleDatabase {
+  return { ...scheduleQueries(db), scheduleTransaction: bindTransaction(db, scheduleQueries) };
+}
 
 /** A routine of a guild's listing, with the agent it wakes. */
 export type GuildScheduleItem = ScheduleItem & {
@@ -64,19 +77,22 @@ export class Schedules {
     const now = new Date();
     const scheduleId = newId("sch");
     const paused = Boolean(options.paused);
-    return this.db.insertSchedule(
-      {
-        scheduleId,
-        agentId,
-        timing,
-        description: summary,
-        instruction: text,
-        wake: paused ? { at: now, windowFires: 0 } : planWake(timing, now),
-        paused,
-      },
-      now,
-      actor,
-    );
+    return this.db.scheduleTransaction(async (tx) => {
+      const row = await tx.insertSchedule(
+        {
+          scheduleId,
+          agentId,
+          timing,
+          description: summary,
+          instruction: text,
+          wake: paused ? { at: now, windowFires: 0 } : planWake(timing, now),
+          paused,
+        },
+        now,
+      );
+      await tx.recordChangeIfAny(actor, routineChange(null, row));
+      return row;
+    });
   }
 
   async listForAgent(agentId: string): Promise<string> {
@@ -133,7 +149,11 @@ export class Schedules {
     if (!token) {
       throw new ScheduleError("schedule_id is required");
     }
-    const row = await this.db.deleteSchedule(agentId, token, actor);
+    const row = await this.db.scheduleTransaction(async (tx) => {
+      const deleted = await tx.deleteSchedule(agentId, token);
+      await tx.recordChangeIfAny(actor, deleted ? routineChange(deleted, null) : null);
+      return deleted;
+    });
     if (row === null) {
       throw new ScheduleError("schedule not found", 404);
     }
@@ -156,9 +176,9 @@ export class Schedules {
     }
     const now = new Date();
     const key = { agentId, scheduleId: token };
-    const updated = paused
-      ? await this.db.pauseSchedule(key, now, actor)
-      : await this.db.resumeSchedule(key, planWake(rowTiming(row), now), now, actor);
+    const updated = await this.changeSchedule(key, actor, (tx) =>
+      paused ? tx.pauseSchedule(key, now) : tx.resumeSchedule(key, planWake(rowTiming(row), now), now),
+    );
     if (updated === null) {
       throw new ScheduleError("schedule not found", 404);
     }
@@ -183,16 +203,28 @@ export class Schedules {
     const fields = changedFields(row, changes);
     const replan = !fields.paused && (changes.when !== undefined || row.paused);
     const now = new Date();
-    const updated = await this.db.updateSchedule(
-      { agentId, scheduleId: row.id },
-      { ...fields, wake: replan ? planWake(fields.timing, now) : null },
-      now,
-      actor,
+    const key = { agentId, scheduleId: row.id };
+    const updated = await this.changeSchedule(key, actor, (tx) =>
+      tx.updateSchedule(key, { ...fields, wake: replan ? planWake(fields.timing, now) : null }, now),
     );
     if (updated === null) {
       throw new ScheduleError("schedule not found", 404);
     }
     return updated;
+  }
+
+  /** Runs `write` on one routine, locked, and logs what it changed against `actor`. */
+  private changeSchedule(
+    key: ScheduleKey,
+    actor: ChangeActor,
+    write: (tx: ScheduleQueries) => Promise<ScheduleRow | null>,
+  ): Promise<ScheduleRow | null> {
+    return this.db.scheduleTransaction(async (tx) => {
+      const before = await tx.lockSchedule(key);
+      const after = await write(tx);
+      await tx.recordChangeIfAny(actor, before && after ? routineChange(before, after) : null);
+      return after;
+    });
   }
 
   async releaseGuild(guildId: string): Promise<void> {

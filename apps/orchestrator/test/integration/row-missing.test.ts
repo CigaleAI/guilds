@@ -309,7 +309,6 @@ describe("RowMissing", { concurrency: 1 }, () => {
             wake: { at: new Date(), windowFires: 0 },
           },
           new Date(),
-          ACTOR,
         ),
       message: "schedule insert failed",
     },
