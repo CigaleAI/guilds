@@ -48,6 +48,7 @@ import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./
 import { connectedDatabase } from "./connected.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
 import type { UserRow } from "../db/users.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
 
 export type BuilderServiceDeps = {
   db: Queryable;
@@ -114,10 +115,10 @@ export class BuilderService {
   async getOwnedSession(
     sessionId: string,
     user: UserRow,
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
   ): Promise<BuilderSessionRow> {
     const session = await getBuilderSession(this.deps.db, sessionId);
-    if (!session || session.org_id !== String(org.id)) {
+    if (!session || session.org_id !== org.id) {
       throw new BuilderError(404, "builder session not found");
     }
     if (session.created_by_user_id && session.created_by_user_id !== user.id) {
@@ -159,7 +160,7 @@ export class BuilderService {
 
   async createSession(args: {
     user: UserRow;
-    org: Record<string, unknown>;
+    org: OrgMembershipRow;
     model: string;
     temperature?: number;
   }): Promise<Record<string, unknown>> {
@@ -447,7 +448,7 @@ export class BuilderService {
 
   async deploy(
     session: BuilderSessionRow,
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
     user: UserRow,
     choices: ApplyChoices = {},
   ) {

@@ -2,7 +2,7 @@ import type { AgentRow } from "../db/agents.js";
 import { listAgents, listAllAgents } from "../db/agents.js";
 import { listGuilds, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
-import { listOrgs } from "../db/orgs.js";
+import { listOrgs, type OrgRow } from "../db/orgs.js";
 import { getUsage, listUsageCounters } from "../db/usage.js";
 import { agentConfigObject } from "../agents/view.js";
 import { maxWorkspaceMibOf } from "../agents/validation.js";
@@ -38,10 +38,10 @@ async function coachUsage(services: UsageServices) {
 /** One organisation's usage by guild and agent, limited to the guilds `userId` may see; every guild when null. */
 export async function usageForOrg(
   services: UsageServices,
-  org: Record<string, unknown>,
+  org: Pick<OrgRow, "id" | "name" | "slug">,
   userId: string | null,
 ): Promise<Record<string, unknown>> {
-  const orgId = String(org.id);
+  const orgId = org.id;
   const guilds = (await listGuilds(services.db)).filter(
     (guild) => guild.org_id === orgId && (userId === null || canSeeGuild(guild, userId)),
   );

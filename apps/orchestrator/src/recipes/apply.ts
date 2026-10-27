@@ -96,12 +96,7 @@ import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames }
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
 import { getRecipe } from "../db/recipes.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
-import {
-  countOrgAgents,
-  countOrgBrowserAgents,
-  countOrgCodingAgents,
-  getMembership,
-} from "../db/orgs.js";
+import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents, getMembership, type OrgMembershipRow } from "../db/orgs.js";
 import { deleteGuild, getGuild, listGuildRepositories } from "../db/guilds.js";
 import { deleteAgent, listAgents } from "../db/agents.js";
 import { listMachines } from "../db/machines.js";
@@ -411,21 +406,21 @@ export class RecipeApplyService {
   }
 
   async preview(
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
     recipeRow: Record<string, unknown>,
     choices: ApplyChoices = {},
     user?: UserRow,
   ): Promise<Record<string, unknown>> {
     const recipe = parseRecipe(recipeRow.body);
     const unreviewed = unreviewedFields(recipe);
-    const ctx = await this.validationContext(String(org.id), recipe);
+    const ctx = await this.validationContext(org.id, recipe);
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const findings = validateRecipe(recipe, ctx);
     const models = this.resolveModels(
       recipe,
       choices.models ?? [],
       ctx.connectedProviders ?? new Set(),
-      await this.models.defaultModel(String(org.id)),
+      await this.models.defaultModel(org.id),
     );
     const harnesses = this.resolveHarnesses(recipe, choices.harnesses ?? []);
     const prepared = prepareRecipeForApply(recipe, ctx.publishedServers, roleModelMap(models), roleHarnessMap(harnesses));
@@ -444,7 +439,7 @@ export class RecipeApplyService {
     let destGuild: Record<string, unknown> | null = null;
     if (choices.guild_id) {
       destGuild = await getGuild(this.deps.db, choices.guild_id);
-      if (!destGuild || String(destGuild.org_id) !== String(org.id)) {
+      if (!destGuild || String(destGuild.org_id) !== org.id) {
         throw new RecipeError("destination guild not found", 404);
       }
       const members = await listAgents(this.deps.db, String(destGuild.id));
@@ -472,8 +467,8 @@ export class RecipeApplyService {
         const offered = ctx.registryConnectors?.get(connection.server);
         return offered ? [{ server: connection.server, from: "registry", ...offered }] : [];
       });
-    const setups = await this.setupsNeeded(String(org.id), prepared);
-    const placement = await this.planMachine(String(org.id), prepared, choices.machine_id, user);
+    const setups = await this.setupsNeeded(org.id, prepared);
+    const placement = await this.planMachine(org.id, prepared, choices.machine_id, user);
     findings.push(...placement.findings);
     errors.push(...applyBlockingErrors(placement.findings));
     return {
@@ -549,7 +544,7 @@ export class RecipeApplyService {
   }
 
   async createSkeleton(
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
     user: UserRow,
     recipeRow: Record<string, unknown>,
     choices: ApplyChoices = {},
@@ -582,7 +577,7 @@ export class RecipeApplyService {
     if (withoutHarness.length) {
       throw new RecipeError(`choose a harness for ${withoutHarness.join(", ")}`);
     }
-    const ctx = await this.validationContext(String(org.id));
+    const ctx = await this.validationContext(org.id);
     const recipe = prepareRecipeForApply(
       parseRecipe(recipeRow.body),
       ctx.publishedServers,
@@ -593,14 +588,14 @@ export class RecipeApplyService {
     const maxAgentsPerMachine = await assertCanPlaceAgents(
       this.policy,
       machineCounts(this.deps.db),
-      String(org.id),
+      org.id,
       machineId,
       recipe.roles.length,
     );
     if (!choices.guild_id) {
-      await assertCanCreateGuild(this.policy, orgCounts(this.deps.db), String(org.id));
+      await assertCanCreateGuild(this.policy, orgCounts(this.deps.db), org.id);
     }
-    await assertCanCreateAgents(this.policy, orgCounts(this.deps.db), String(org.id), {
+    await assertCanCreateAgents(this.policy, orgCounts(this.deps.db), org.id, {
       agents: recipe.roles.length,
       browserAgents: recipe.roles.filter((role) => role.browser.required || role.config.browser).length,
       codingAgents: recipe.roles.filter((role) => role.config.coding === true).length,
@@ -621,7 +616,7 @@ export class RecipeApplyService {
     const createdCollections: string[] = [];
     let applied: Record<string, unknown>;
     const actor = operatorActor({
-      orgId: String(org.id),
+      orgId: org.id,
       actorId: user.id,
       actorName: user.name,
       guildId,
@@ -632,8 +627,8 @@ export class RecipeApplyService {
           guildId,
           name: String(preview.guild_name),
           now,
-          orgId: String(org.id),
-          orgSlug: String(org.slug),
+          orgId: org.id,
+          orgSlug: org.slug,
           about: recipe.guild.about,
           description: recipe.guild.objective,
           groupAgentMessageLimit: recipe.guild.group_agent_message_limit,
@@ -650,7 +645,7 @@ export class RecipeApplyService {
         if (note.level === "agent") {
           continue;
         }
-        const ownerId = note.level === "guild" ? guildId : String(org.id);
+        const ownerId = note.level === "guild" ? guildId : org.id;
         const written = await this.deps.artifacts.writeNote(actor, {
           level: note.level,
           key: note.key,
@@ -669,8 +664,8 @@ export class RecipeApplyService {
           agentId,
           guildId,
           guildName: String(preview.guild_name),
-          orgSlug: String(org.slug),
-          orgId: String(org.id),
+          orgSlug: org.slug,
+          orgId: org.id,
           name,
           config: role.config,
           now,
@@ -692,7 +687,7 @@ export class RecipeApplyService {
         if (!agentId) continue;
         const written = await this.deps.artifacts.writeNote(
           operatorActor({
-            orgId: String(org.id),
+            orgId: org.id,
             actorId: user.id,
             actorName: user.name,
             guildId,
@@ -726,7 +721,7 @@ export class RecipeApplyService {
         if (task.trim()) {
           await writeAgentTask(this.deps.db,
             operatorActor({
-              orgId: String(org.id),
+              orgId: org.id,
               actorId: user.id,
               actorName: user.name,
               guildId,
@@ -745,7 +740,7 @@ export class RecipeApplyService {
         for (const script of role.scripts) {
           await this.deps.scripts.create(
             operatorActor({
-              orgId: String(org.id),
+              orgId: org.id,
               actorId: user.id,
               actorName: user.name,
               guildId,
@@ -1116,9 +1111,9 @@ export class RecipeApplyService {
   }
 
   /** The operator actor a preview lists with; a preview only reads. */
-  private operator(org: Record<string, unknown>, user?: UserRow): ArtifactActor {
+  private operator(org: OrgMembershipRow, user?: UserRow): ArtifactActor {
     return operatorActor({
-      orgId: String(org.id),
+      orgId: org.id,
       actorId: String(user?.id ?? org.id),
       actorName: String(user?.name ?? "operator"),
     });
@@ -1130,7 +1125,7 @@ export class RecipeApplyService {
    * reused, and anything else is a conflict the operator resolves by renaming.
    */
   private async planCollections(
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
     recipe: RecipeDocument,
     user?: UserRow,
   ): Promise<CollectionPlan[]> {
@@ -1174,12 +1169,12 @@ export class RecipeApplyService {
   }
 
   private async planConnections(
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
     recipe: RecipeDocument,
     decisions: ConnectionDecision[],
   ): Promise<Array<Record<string, unknown>>> {
-    const connections = await listMcpConnections(this.deps.db, { orgId: String(org.id) });
-    const servers = await listMcpServers(this.deps.db, String(org.id));
+    const connections = await listMcpConnections(this.deps.db, { orgId: org.id });
+    const servers = await listMcpServers(this.deps.db, org.id);
     const bySlug = new Map(servers.map((row) => [String(row.slug), row]));
     const chosen = new Map(decisions.map((item) => [item.server, item]));
     return recipe.connections.map((connection) => {
@@ -1210,11 +1205,11 @@ export class RecipeApplyService {
 
   /** A recipe secret collides when its name is taken in the organisation; reuse is then the default. */
   private async planSecrets(
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
     recipe: RecipeDocument,
     decisions: SecretDecision[],
   ): Promise<Array<Record<string, unknown>>> {
-    const existing = await listSecrets(this.deps.db, String(org.id));
+    const existing = await listSecrets(this.deps.db, org.id);
     const names = new Set(existing.map((row) => String(row.name)));
     const chosen = new Map(decisions.map((item) => [item.name, item]));
     return recipe.secrets.map((secret) => {

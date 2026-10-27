@@ -33,6 +33,7 @@ import { HttpError, recipeConflictHttp } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
 import { bodyOf, param } from "./request.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
 
 function mapError(error: unknown): never {
   if (error instanceof RecipeConflictError) {
@@ -68,17 +69,17 @@ function resetImported(recipe: RecipeDocument): RecipeDocument {
   return recipe;
 }
 
-async function ownedRecipe(deps: AppDeps, recipeId: string, org: Record<string, unknown>) {
-  const row = await orgRecipe(deps.db, String(org.id), recipeId);
+async function ownedRecipe(deps: AppDeps, recipeId: string, org: OrgMembershipRow) {
+  const row = await orgRecipe(deps.db, org.id, recipeId);
   if (!row) {
     throw new HttpError(404, "recipe not found");
   }
   return row;
 }
 
-async function ownedApply(deps: AppDeps, applyId: string, org: Record<string, unknown>) {
+async function ownedApply(deps: AppDeps, applyId: string, org: OrgMembershipRow) {
   const row = await applyOf(deps).get(applyId);
-  if (!row || String(row.org_id) !== String(org.id)) {
+  if (!row || String(row.org_id) !== org.id) {
     throw new HttpError(404, "apply not found");
   }
   return row;
@@ -91,11 +92,11 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/recipes", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return orgRecipes(db, String(org.id));
+    return orgRecipes(db, org.id);
   });
 
   /** Adds an imported document to the organisation's library as a private draft. */
-  async function importRecipe(org: Record<string, unknown>, user: UserRow, document: unknown) {
+  async function importRecipe(org: OrgMembershipRow, user: UserRow, document: unknown) {
     const parsed = resetImported(parseRecipe(document));
     if (hasForbiddenSecrets(parsed)) {
       throw new RecipeError("recipe must not contain secrets or ciphertext");
@@ -104,7 +105,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
       db,
       {
         recipeId: newId("rcp"),
-        orgId: String(org.id),
+        orgId: org.id,
         createdByUserId: user.id,
         name: parsed.meta.name,
         description: parsed.meta.description,
@@ -271,7 +272,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   app.delete("/api/recipes/:recipe_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    if (!(await deleteOrgRecipe(db, String(org.id), param(request, "recipe_id")))) {
+    if (!(await deleteOrgRecipe(db, org.id, param(request, "recipe_id")))) {
       throw new HttpError(404, "recipe not found");
     }
     return { ok: true };
@@ -283,7 +284,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const recipe = parseRecipe(row.body);
-      const ctx = await applyOf(deps).validationContext(String(org.id), recipe);
+      const ctx = await applyOf(deps).validationContext(org.id, recipe);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const findings = validateRecipe(recipe, ctx);
       return {
@@ -305,7 +306,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const recipe = parseRecipe(row.body);
-      const ctx = await applyOf(deps).validationContext(String(org.id));
+      const ctx = await applyOf(deps).validationContext(org.id);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const errors = blockingErrors(validateRecipe(recipe, ctx));
       if (errors.length) {

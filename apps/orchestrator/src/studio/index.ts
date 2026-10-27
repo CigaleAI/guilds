@@ -87,6 +87,7 @@ import {
 } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
 import type { AgentRow } from "../db/agents.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -143,7 +144,7 @@ export class StudioService {
 
   async createSession(args: {
     user: UserRow;
-    org: Record<string, unknown>;
+    org: OrgMembershipRow;
     mode: string;
     sourceGuildId: string;
     model: string;
@@ -289,9 +290,9 @@ export class StudioService {
       .map((row) => this.viewSession(row));
   }
 
-  async getOwnedSession(sessionId: string, user: UserRow, org: Record<string, unknown>): Promise<StudioSessionRow> {
+  async getOwnedSession(sessionId: string, user: UserRow, org: OrgMembershipRow): Promise<StudioSessionRow> {
     const session = await getStudioSession(this.deps.db, sessionId);
-    if (!session || session.org_id !== String(org.id)) {
+    if (!session || session.org_id !== org.id) {
       throw new StudioError(404, "studio session not found");
     }
     if (session.created_by_user_id && session.created_by_user_id !== user.id) {
@@ -893,7 +894,7 @@ export class StudioService {
   async continueSession(
     session: StudioSessionRow,
     user: UserRow,
-    org: Record<string, unknown>,
+    org: OrgMembershipRow,
   ): Promise<Record<string, unknown>> {
     if (session.blocked_reason !== "input_token_limit" && session.status !== "blocked") {
       throw new StudioUnprocessableError("session is not blocked on input tokens");
