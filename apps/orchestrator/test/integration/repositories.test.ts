@@ -10,7 +10,8 @@ import { insertUser } from "../../src/db/users.js";
 import { listUsersInSeedOrder } from "../../src/users/directory.js";
 import { getMembership, listOrgsForUser } from "../../src/db/orgs.js";
 import { insertGuild } from "../../src/db/guilds.js";
-import { insertAgent, writeAgentTask } from "../../src/db/agents.js";
+import { addAgent } from "../../src/agents/persist.js";
+import { writeAgentTask } from "../../src/db/agents.js";
 import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
 import { getUsage } from "../../src/db/usage.js";
 
@@ -55,7 +56,7 @@ describe("repositories", { concurrency: 1 }, () => {
       { guildId: "guild_scripts", name: "scripts-guild", orgId: "org_home", about: "" },
       new Date(),
     );
-    await insertAgent(db,
+    await addAgent(db,
       {
         agentId: "a_scripts",
         guildId: "guild_scripts",
@@ -113,7 +114,7 @@ describe("repositories", { concurrency: 1 }, () => {
       { guildId: "guild_usage", name: "usage-guild", orgId: "org_home", about: "" },
       now,
     );
-    await insertAgent(db,
+    await addAgent(db,
       {
         agentId: "a_usage",
         guildId: "guild_usage",

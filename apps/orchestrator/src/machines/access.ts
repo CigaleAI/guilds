@@ -1,4 +1,4 @@
-import { MachineError, type MachineWithAgents } from "./index.js";
+import { MachineError, machineWithAgentsFromRow, type MachineWithAgents } from "./index.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { getMachineWithAgents } from "../db/machines.js";
 import type { Queryable } from "../db/pg.js";
@@ -18,8 +18,8 @@ export function hostsOnlyVisible(machine: MachineWithAgents, visible: ReadonlySe
  * on one machine can read each other's homes and sessions (SEC-24).
  */
 export async function assertCanPlaceOn(db: Queryable, orgId: string, machineId: string, userId: string): Promise<void> {
-  const machine = await getMachineWithAgents(db, orgId, machineId);
-  if (machine !== null && !hostsOnlyVisible(machine, await visibleGuildIds(db, orgId, userId))) {
+  const row = await getMachineWithAgents(db, orgId, machineId);
+  if (row !== null && !hostsOnlyVisible(machineWithAgentsFromRow(row), await visibleGuildIds(db, orgId, userId))) {
     throw new MachineError(403, "the machine hosts agents of a guild you cannot see");
   }
 }

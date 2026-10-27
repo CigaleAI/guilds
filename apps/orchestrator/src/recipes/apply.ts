@@ -55,6 +55,7 @@ import {
   agentsMinimum,
   belowMinimumMessage,
   machineSize,
+  machineWithAgentsFromRow,
   plannedLoad,
   sizeMeets,
   type AgentNeeds,
@@ -523,7 +524,7 @@ export class RecipeApplyService {
     adds: MachineSize;
     findings: RecipeFinding[];
   }> {
-    const rows = await listMachines(this.deps.db, orgId);
+    const rows = (await listMachines(this.deps.db, orgId)).map(machineWithAgentsFromRow);
     const needs = rolesNeeds(recipe);
     const minimum = agentsMinimum(needs);
     const adds = plannedLoad(needs);

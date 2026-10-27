@@ -4,7 +4,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
-import { insertAgent } from "../../src/db/agents.js";
+import { addAgent } from "../../src/agents/persist.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { insertUser } from "../../src/db/users.js";
 import { GuildError } from "../../src/guilds/errors.js";
@@ -90,7 +90,7 @@ test("guild settings change within the guild's state and roles", { timeout: 60_0
       refusedWith(409, /being deleted/),
     );
     state.deleting = false;
-    await insertAgent(
+    await addAgent(
       db,
       { agentId: "a_settings", guildId: guild.id, name: "worker", config: {} },
       new Date(),

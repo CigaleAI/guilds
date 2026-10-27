@@ -145,6 +145,12 @@ export const guildOperators = pgTable(
   ],
 );
 
+/** The machine every new organisation starts with. */
+export const DEFAULT_MACHINE_NAME = "default";
+export const DEFAULT_MACHINE_BOX = "standard";
+/** A machine's disk cap in MiB, over every agent home on it. */
+export const DEFAULT_MACHINE_MAX_WORKSPACE_MIB = 10240;
+
 export const machines = pgTable(
   "machines",
   {
@@ -154,7 +160,7 @@ export const machines = pgTable(
     box: text("box", { enum: ["standard", "code", "custom"] }).notNull(),
     cpu: numeric("cpu"),
     memory_mib: integer("memory_mib"),
-    max_workspace_mib: integer("max_workspace_mib").notNull().default(10240),
+    max_workspace_mib: integer("max_workspace_mib").notNull().default(DEFAULT_MACHINE_MAX_WORKSPACE_MIB),
     workspace_mib: integer("workspace_mib"),
     harnesses: text("harnesses").array(),
     created_at: timestamptz("created_at").notNull(),

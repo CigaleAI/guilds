@@ -3,6 +3,7 @@ import { after, before, describe, test } from "node:test";
 import { writeBinding } from "../../src/access/bindings.js";
 import { operatorActor } from "../../src/artifacts/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
+import { addAgent } from "../../src/agents/persist.js";
 import { insertAgent, upsertAgentScript } from "../../src/db/agents.js";
 import { insertAttachment } from "../../src/db/attachments.js";
 import { insertBindingIfAbsent, upsertPlatformBinding } from "../../src/db/bindings.js";
@@ -136,7 +137,7 @@ before(async () => {
     { guildId: GUILD, name: "errors-guild", orgId: "org_home" },
     now,
   );
-  await insertAgent(
+  await addAgent(
     database.pool,
     { agentId: AGENT, guildId: GUILD, name: "errors-agent", config: AGENT_CONFIG },
     now,
@@ -187,11 +188,30 @@ describe("RowMissing", { concurrency: 1 }, () => {
       message: "user insert failed",
     },
     {
+      name: "adding an agent to a missing guild raises RowMissing",
+      write: () =>
+        addAgent(
+          database.pool,
+          { agentId: "a_orphan", guildId: "guild_missing", name: "orphan", config: AGENT_CONFIG },
+          new Date(),
+        ),
+      message: "agent insert failed: guild not found",
+    },
+    {
       name: "an agent insert into a missing guild raises RowMissing",
       write: () =>
         insertAgent(
           database.pool,
-          { agentId: "a_orphan", guildId: "guild_missing", name: "orphan", config: AGENT_CONFIG },
+          {
+            agentId: "a_orphan",
+            guildId: "guild_missing",
+            name: "orphan",
+            config: AGENT_CONFIG,
+            task: "",
+            taskHash: "",
+            machineId,
+            machineSlot: 0,
+          },
           new Date(),
         ),
       message: "agent insert failed: guild not found",

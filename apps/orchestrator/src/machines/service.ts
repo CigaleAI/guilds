@@ -1,24 +1,36 @@
 import {
+  countOrgMachines,
   deleteMachine,
   getMachine,
   getMachineWithAgents,
   insertMachine,
+  listHostedNeeds,
   listMachines,
+  lockMachine,
+  machineHostsAgents,
+  orgHasOtherMachines,
   updateMachine,
 } from "../db/machines.js";
-import type { OrgMembershipRow } from "../db/orgs.js";
-import type { Queryable } from "../db/pg.js";
+import { lockOrg, type OrgMembershipRow } from "../db/orgs.js";
+import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { AgentMachines } from "../generation/machines.js";
 import { canManageSettings } from "../organisations/index.js";
-import { machineCap, type OrgPolicy } from "../policy/index.js";
+import { machineCap, type HeldCap, type OrgPolicy } from "../policy/index.js";
 import { visibleGuildIds } from "./access.js";
 import {
+  agentsMinimum,
   allocatedWorkspaceMib,
   MachineError,
+  machineFromRow,
   machineSize,
   machineSizeChanged,
+  machineWithAgentsFromRow,
   plannedLoad,
+  sizeLabel,
+  sizeMeets,
   validateMachineInput,
+  type MachineInput,
+  type MachineRow,
   type MachineWithAgents,
 } from "./index.js";
 
@@ -83,11 +95,11 @@ async function viewMachine(
   machineId: string,
 ): Promise<Record<string, unknown>> {
   const orgId = member.membership.id;
-  const machine = await getMachineWithAgents(db, orgId, machineId);
-  if (machine === null) {
+  const row = await getMachineWithAgents(db, orgId, machineId);
+  if (row === null) {
     throw new MachineError(404, "machine not found");
   }
-  return machineItem(machine, await visibleGuildIds(db, orgId, member.userId));
+  return machineItem(machineWithAgentsFromRow(row), await visibleGuildIds(db, orgId, member.userId));
 }
 
 /** The organisation's machines, with the agents on each the member may see. */
@@ -97,7 +109,91 @@ export async function listOrgMachines(
 ): Promise<Array<Record<string, unknown>>> {
   const orgId = member.membership.id;
   const visible = await visibleGuildIds(db, orgId, member.userId);
-  return (await listMachines(db, orgId)).map((machine) => machineItem(machine, visible));
+  return (await listMachines(db, orgId)).map((row) => machineItem(machineWithAgentsFromRow(row), visible));
+}
+
+/** The refusal of a name the organisation already gives another machine; any other error as it is. */
+function nameConflict(error: unknown, machine: MachineInput): unknown {
+  return isUniqueViolation(error)
+    ? new MachineError(409, `${machine.name} is already a machine of this organisation`)
+    : error;
+}
+
+/**
+ * Adds a machine to the organisation. With a `cap`, the machines are counted under the
+ * organisation's lock and a full organisation is refused with the cap's error.
+ */
+async function addMachine(
+  db: Queryable,
+  orgId: string,
+  machine: MachineInput,
+  cap: HeldCap | null,
+): Promise<MachineRow> {
+  try {
+    return await withTransaction(db, async (client) => {
+      await lockOrg(client, orgId);
+      if (cap !== null && (await countOrgMachines(client, orgId)) >= cap.max) {
+        throw cap.refuse();
+      }
+      return machineFromRow(await insertMachine(client, orgId, machine, new Date()));
+    });
+  } catch (error) {
+    throw nameConflict(error, machine);
+  }
+}
+
+/**
+ * Changes a machine's name, tier, size, or disk cap. A size below the minimum of an agent on the
+ * machine is refused. Returns the machine before and after the change, or null when there is none.
+ */
+async function resizeMachine(
+  db: Queryable,
+  orgId: string,
+  machineId: string,
+  machine: MachineInput,
+): Promise<{ before: MachineRow; after: MachineRow } | null> {
+  try {
+    return await withTransaction(db, async (client) => {
+      const current = await lockMachine(client, orgId, machineId);
+      if (current === null) {
+        return null;
+      }
+      const hosted = await listHostedNeeds(client, machineId);
+      const minimum = agentsMinimum(hosted);
+      if (hosted.length && !sizeMeets(machineSize(machine), minimum)) {
+        throw new MachineError(
+          409,
+          `this machine's agents need at least ${sizeLabel(minimum)}; move them or turn their browser or coding off first`,
+        );
+      }
+      const after = await updateMachine(client, orgId, machineId, machine, new Date());
+      return { before: machineFromRow(current), after: machineFromRow(after) };
+    });
+  } catch (error) {
+    throw nameConflict(error, machine);
+  }
+}
+
+/**
+ * Deletes a machine no agent sits on. One that still hosts agents is refused, and so is the
+ * organisation's last machine. Null when there is no such machine.
+ */
+async function dropMachine(db: Queryable, orgId: string, machineId: string): Promise<MachineRow | null> {
+  return withTransaction(db, async (client) => {
+    await lockOrg(client, orgId);
+    const current = await lockMachine(client, orgId, machineId);
+    if (current === null) {
+      return null;
+    }
+    if (await machineHostsAgents(client, machineId)) {
+      throw new MachineError(409, "agents are on this machine; move or delete them first");
+    }
+    if (!(await orgHasOtherMachines(client, orgId, machineId))) {
+      throw new MachineError(409, "an organisation keeps at least one machine");
+    }
+    await deleteMachine(client, machineId);
+    return machineFromRow(current);
+  });
 }
 
 /** Adds a machine, within the policy's machine cap. */
@@ -108,11 +204,10 @@ export async function createMachine(
 ): Promise<Record<string, unknown>> {
   assertManagesMachines(member);
   const orgId = member.membership.id;
-  const machine = await insertMachine(
+  const machine = await addMachine(
     services.db,
     orgId,
     validateMachineInput(input),
-    new Date(),
     await machineCap(services.policy, orgId),
   );
   return viewMachine(services.db, member, machine.id);
@@ -131,12 +226,11 @@ export async function changeMachine(
   if (current === null) {
     throw new MachineError(404, "machine not found");
   }
-  const changed = await updateMachine(
+  const changed = await resizeMachine(
     services.db,
     orgId,
     machineId,
-    validateMachineInput(input, current),
-    new Date(),
+    validateMachineInput(input, machineFromRow(current)),
   );
   if (changed === null) {
     throw new MachineError(404, "machine not found");
@@ -154,7 +248,7 @@ export async function removeMachine(
   machineId: string,
 ): Promise<void> {
   assertManagesMachines(member);
-  if ((await deleteMachine(services.db, member.membership.id, machineId)) === null) {
+  if ((await dropMachine(services.db, member.membership.id, machineId)) === null) {
     throw new MachineError(404, "machine not found");
   }
   await services.containers?.deleteMachine(machineId);

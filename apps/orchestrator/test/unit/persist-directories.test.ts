@@ -29,7 +29,7 @@ class FakeDB {
     this.guilds.delete(guildId);
     this.deletedGuilds.push(guildId);
   }
-  async insertAgent(input: {
+  async addAgent(input: {
     agentId: string;
     guildId: string;
     name: string;

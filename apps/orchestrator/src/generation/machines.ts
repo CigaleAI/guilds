@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { AgentValidationError, browserLanguageOf, validateConfig, type AgentConfig } from "../agents/validation.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { moveAgent, setMachineHarnesses } from "../db/machines.js";
+import { setMachineHarnesses } from "../db/machines.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { agentDirectory, machineDirectory, machineFromRow, type AgentNeeds } from "../machines/index.js";
+import { moveAgent } from "../machines/placement.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import {
   machineSpec,

@@ -2,8 +2,8 @@ import { DEFAULT_MAX_WORKSPACE_MIB, maxWorkspaceMibOf } from "../agents/validati
 import { setAgentWorkspaceMib, type AgentRow } from "../db/agents.js";
 import { setMachineWorkspaceMib } from "../db/machines.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
-import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB } from "../machines/index.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentSandbox, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
 import { measureMachine, measureWorkspace } from "../toolbox/code.js";

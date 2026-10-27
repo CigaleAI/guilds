@@ -1,30 +1,16 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { maxWorkspaceMibOf } from "../agents/validation.js";
 import { newId } from "../lib/ids.js";
+import { pickColumns } from "./columns.js";
+import { RowMissing } from "./errors.js";
+import { type Queryable, stamp } from "./pg.js";
 import {
   DEFAULT_MACHINE_BOX,
   DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
   DEFAULT_MACHINE_NAME,
-  lowestFreeSlot,
-  MachineError,
-  agentMinimum,
-  agentsMinimum,
-  belowMinimumMessage,
-  machineFromRow,
-  machineSize,
-  sizeLabel,
-  sizeMeets,
-  type AgentNeeds,
-  type MachineAgent,
-  type MachineInput,
-  type MachineRow,
-  type MachineWithAgents,
-} from "../machines/index.js";
-import type { HeldCap } from "../policy/index.js";
-import { pickColumns } from "./columns.js";
-import { RowMissing } from "./errors.js";
-import { isUniqueViolation, type Queryable, stamp, withTransaction } from "./pg.js";
-import { machines } from "./schema/index.js";
+  machines,
+} from "./schema/index.js";
+
+type Machine = InferSelectModel<typeof machines>;
 
 const MACHINE_KEYS = [
   "id",
@@ -38,19 +24,39 @@ const MACHINE_KEYS = [
   "harnesses",
 ] as const;
 
-type MachineQueryRow = Pick<InferSelectModel<typeof machines>, (typeof MACHINE_KEYS)[number]>;
+/** A machine as stored: its numeric `cpu` is the text the driver reads it as. */
+export type MachineQueryRow = Pick<Machine, (typeof MACHINE_KEYS)[number]>;
 
-type MachineAgentQueryRow = Omit<MachineAgent, "max_workspace_mib"> & {
+/** An agent on a machine, as the machine listing reads it from the agent and its config. */
+export type MachineAgentQueryRow = {
+  id: string;
+  name: string;
+  guild_id: string;
+  guild_name: string;
+  slot: number;
+  browser: boolean;
+  coding: boolean;
   max_workspace_mib: unknown;
 };
 
-type MachineWithAgentsQueryRow = MachineQueryRow & {
+export type MachineWithAgentsQueryRow = MachineQueryRow & {
   agents: MachineAgentQueryRow[] | null;
 };
 
-export type MoveAgentResult = {
-  from: { machineId: string; slot: number };
-  to: { machineId: string; slot: number };
+/** What a machine is written with: its name, its tier, a custom tier's size, and its disk cap. */
+export type MachineSpec = Pick<Machine, "name" | "box" | "memory_mib" | "max_workspace_mib"> & {
+  cpu: number | null;
+};
+
+/** What an agent on a machine has on, as its config says. */
+export type HostedNeeds = { browser: boolean; coding: boolean };
+
+/** Where an agent sits, with its organisation and config, locked for the rest of the transaction. */
+export type AgentPlacementRow = {
+  org_id: string;
+  config: Record<string, unknown>;
+  machine_id: string;
+  machine_slot: number;
 };
 
 const MACHINE_COLUMNS = pickColumns(machines, MACHINE_KEYS);
@@ -69,25 +75,6 @@ const MACHINES_WITH_AGENTS = `
             FROM agents a JOIN guilds g ON g.id = a.guild_id
            WHERE a.machine_id = m.id) AS agents
     FROM machines m`;
-
-function machineWithAgents(row: MachineWithAgentsQueryRow): MachineWithAgents {
-  const agents = row.agents ?? [];
-  return {
-    ...machineFromRow(row),
-    agents: agents.map((agent) => ({
-      ...agent,
-      max_workspace_mib: maxWorkspaceMibOf(agent),
-    })),
-  };
-}
-
-/** What an agent with these needs is called in a refusal. */
-function needsLabel(needs: AgentNeeds): string {
-  if (needs.coding) {
-    return "a coding agent";
-  }
-  return needs.browser ? "a browser agent" : "an agent";
-}
 
 /** The machine every organisation starts with, created in the transaction that creates it. */
 export async function insertDefaultMachine(
@@ -111,91 +98,58 @@ export async function insertDefaultMachine(
   return machineId;
 }
 
-/**
- * The machine an agent goes on, locked with the organisation's other machines: the one named, or
- * the organisation's only machine when none is. Refuses a machine below the agent's minimum.
- */
-export async function placementMachine(
-  client: Queryable,
-  orgId: string,
-  machineId: string | null | undefined,
-  needs: AgentNeeds,
-): Promise<MachineRow> {
-  const rows = (
-    await client.query<MachineQueryRow>(
-      `SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 ORDER BY created_at, name FOR UPDATE`,
-      [orgId],
-    )
-  ).rows;
-  let row: MachineQueryRow | undefined;
-  if (machineId) {
-    row = rows.find((item) => item.id === machineId);
-    if (!row) {
-      throw new MachineError(422, "machine_id names no machine of this organisation");
-    }
-  } else if (rows.length === 1) {
-    row = rows[0];
-  }
-  if (!row) {
-    throw new MachineError(
-      422,
-      rows.length
-        ? "machine_id is required: the organisation has more than one machine"
-        : "the organisation has no machine",
-    );
-  }
-  const machine = machineFromRow(row);
-  if (!sizeMeets(machineSize(machine), agentMinimum(needs))) {
-    throw new MachineError(
-      422,
-      `${belowMinimumMessage(needsLabel(needs), needs, machine)}. Pick a larger machine, or resize ${machine.name} under Settings, Machines`,
-    );
-  }
-  return machine;
-}
-
-/** The lowest slot free on a machine, under `ceiling` agents; a full machine is refused. */
-export async function freeSlot(
-  client: Queryable,
-  machine: MachineRow,
-  ceiling: number | undefined,
-): Promise<number> {
-  const taken = (
-    await client.query<{ machine_slot: number }>(
-      `SELECT machine_slot FROM agents WHERE machine_id = $1`,
-      [machine.id],
-    )
-  ).rows.map((row) => row.machine_slot);
-  const slot = lowestFreeSlot(taken, ceiling);
-  if (slot === null) {
-    throw new MachineError(409, `machine ${machine.name} is full`);
-  }
-  return slot;
+/** The organisation's machines, oldest first, locked for the rest of the transaction `db` runs. */
+export async function lockOrgMachines(db: Queryable, orgId: string): Promise<MachineQueryRow[]> {
+  const result = await db.query<MachineQueryRow>(
+    `SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 ORDER BY created_at, name FOR UPDATE`,
+    [orgId],
+  );
+  return result.rows;
 }
 
 /** One machine of the organisation, locked for the rest of the transaction; null when it has none such. */
-async function lockMachine(
-  client: Queryable,
+export async function lockMachine(
+  db: Queryable,
   orgId: string,
   machineId: string,
-): Promise<MachineRow | null> {
-  const row =
-    (
-      await client.query<MachineQueryRow>(
-        `SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 AND id = $2 FOR UPDATE`,
-        [orgId, machineId],
-      )
-    ).rows[0] ?? null;
-  return row ? machineFromRow(row) : null;
+): Promise<MachineQueryRow | null> {
+  const result = await db.query<MachineQueryRow>(
+    `SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+    [orgId, machineId],
+  );
+  return result.rows[0] ?? null;
+}
+
+/** The slots the agents on a machine sit in. */
+export async function listMachineSlots(db: Queryable, machineId: string): Promise<number[]> {
+  const result = await db.query<{ machine_slot: number }>(
+    `SELECT machine_slot FROM agents WHERE machine_id = $1`,
+    [machineId],
+  );
+  return result.rows.map((row) => row.machine_slot);
+}
+
+/** What each agent on a machine has on. */
+export async function listHostedNeeds(db: Queryable, machineId: string): Promise<HostedNeeds[]> {
+  const result = await db.query<HostedNeeds>(
+    `SELECT COALESCE((config->>'browser')::boolean, FALSE) AS browser,
+            COALESCE((config->>'coding')::boolean, FALSE) AS coding
+       FROM agents WHERE machine_id = $1`,
+    [machineId],
+  );
+  return result.rows;
 }
 
 /** The organisation's machines, oldest first, each with the agents on it. */
-export async function listMachines(pool: Queryable, orgId: string): Promise<MachineWithAgents[]> {
+export async function listMachines(
+  pool: Queryable,
+  orgId: string,
+): Promise<MachineWithAgentsQueryRow[]> {
   const result = await pool.query<MachineWithAgentsQueryRow>(
     `${MACHINES_WITH_AGENTS} WHERE m.org_id = $1 ORDER BY m.created_at, m.name`,
     [orgId],
   );
-  return result.rows.map(machineWithAgents);
+  return result.rows;
 }
 
 /** One machine of the organisation with the agents on it. */
@@ -203,30 +157,24 @@ export async function getMachineWithAgents(
   pool: Queryable,
   orgId: string,
   machineId: string,
-): Promise<MachineWithAgents | null> {
-  const row =
-    (
-      await pool.query<MachineWithAgentsQueryRow>(
-        `${MACHINES_WITH_AGENTS} WHERE m.org_id = $1 AND m.id = $2`,
-        [orgId, machineId],
-      )
-    ).rows[0] ?? null;
-  return row ? machineWithAgents(row) : null;
+): Promise<MachineWithAgentsQueryRow | null> {
+  const result = await pool.query<MachineWithAgentsQueryRow>(
+    `${MACHINES_WITH_AGENTS} WHERE m.org_id = $1 AND m.id = $2`,
+    [orgId, machineId],
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function getMachine(
   pool: Queryable,
   orgId: string,
   machineId: string,
-): Promise<MachineRow | null> {
-  const row =
-    (
-      await pool.query<MachineQueryRow>(
-        `SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 AND id = $2`,
-        [orgId, machineId],
-      )
-    ).rows[0] ?? null;
-  return row ? machineFromRow(row) : null;
+): Promise<MachineQueryRow | null> {
+  const result = await pool.query<MachineQueryRow>(
+    `SELECT ${MACHINE_COLUMNS} FROM machines WHERE org_id = $1 AND id = $2`,
+    [orgId, machineId],
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function countMachineAgents(pool: Queryable, machineId: string): Promise<number> {
@@ -237,200 +185,120 @@ export async function countMachineAgents(pool: Queryable, machineId: string): Pr
   return result.rows[0]?.count ?? 0;
 }
 
-/**
- * Adds a machine to the organisation. With a `cap`, the machines are counted under the
- * organisation's lock and a full organisation is refused with the cap's error.
- */
+export async function countOrgMachines(db: Queryable, orgId: string): Promise<number> {
+  const result = await db.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM machines WHERE org_id = $1`,
+    [orgId],
+  );
+  return result.rows[0]?.count ?? 0;
+}
+
+/** Whether any agent sits on the machine. */
+export async function machineHostsAgents(db: Queryable, machineId: string): Promise<boolean> {
+  const result = await db.query(`SELECT 1 FROM agents WHERE machine_id = $1 LIMIT 1`, [machineId]);
+  return Boolean(result.rowCount);
+}
+
+/** Whether the organisation has a machine other than `machineId`. */
+export async function orgHasOtherMachines(
+  db: Queryable,
+  orgId: string,
+  machineId: string,
+): Promise<boolean> {
+  const result = await db.query(`SELECT 1 FROM machines WHERE org_id = $1 AND id <> $2 LIMIT 1`, [
+    orgId,
+    machineId,
+  ]);
+  return Boolean(result.rowCount);
+}
+
 export async function insertMachine(
-  pool: Queryable,
+  db: Queryable,
   orgId: string,
-  machine: MachineInput,
+  machine: MachineSpec,
   now: Date,
-  cap: HeldCap | null = null,
-): Promise<MachineRow> {
-  try {
-    return await withTransaction(pool, async (client) => {
-      await client.query(`SELECT 1 FROM orgs WHERE id = $1 FOR UPDATE`, [orgId]);
-      if (cap !== null) {
-        const count = await client.query<{ count: number }>(
-          `SELECT COUNT(*)::int AS count FROM machines WHERE org_id = $1`,
-          [orgId],
-        );
-        if ((count.rows[0]?.count ?? 0) >= cap.max) {
-          throw cap.refuse();
-        }
-      }
-      const row =
-        (
-          await client.query<MachineQueryRow>(
-            `INSERT INTO machines (id, org_id, name, box, cpu, memory_mib, max_workspace_mib, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
-             RETURNING ${MACHINE_COLUMNS}`,
-            [
-              newId("mach"),
-              orgId,
-              machine.name,
-              machine.box,
-              machine.cpu,
-              machine.memory_mib,
-              machine.max_workspace_mib,
-              stamp(now),
-            ],
-          )
-        ).rows[0] ?? null;
-      if (!row) {
-        throw new RowMissing("machine insert failed");
-      }
-      return machineFromRow(row);
-    });
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new MachineError(409, `${machine.name} is already a machine of this organisation`);
-    }
-    throw error;
+): Promise<MachineQueryRow> {
+  const result = await db.query<MachineQueryRow>(
+    `INSERT INTO machines (id, org_id, name, box, cpu, memory_mib, max_workspace_mib, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
+     RETURNING ${MACHINE_COLUMNS}`,
+    [
+      newId("mach"),
+      orgId,
+      machine.name,
+      machine.box,
+      machine.cpu,
+      machine.memory_mib,
+      machine.max_workspace_mib,
+      stamp(now),
+    ],
+  );
+  const row = result.rows[0] ?? null;
+  if (!row) {
+    throw new RowMissing("machine insert failed");
   }
+  return row;
 }
 
-/**
- * Changes a machine's name, tier, size, or disk cap. A size below the minimum of an agent on the
- * machine is refused. Returns the machine before and after the change.
- */
+/** Writes a machine's name, tier, size, and disk cap. */
 export async function updateMachine(
-  pool: Queryable,
+  db: Queryable,
   orgId: string,
   machineId: string,
-  machine: MachineInput,
+  machine: MachineSpec,
   now: Date,
-): Promise<{ before: MachineRow; after: MachineRow } | null> {
-  try {
-    return await withTransaction(pool, async (client) => {
-      const current = await lockMachine(client, orgId, machineId);
-      if (current === null) {
-        return null;
-      }
-      const hosted = (
-        await client.query<AgentNeeds>(
-          `SELECT COALESCE((config->>'browser')::boolean, FALSE) AS browser,
-                  COALESCE((config->>'coding')::boolean, FALSE) AS coding
-             FROM agents WHERE machine_id = $1`,
-          [machineId],
-        )
-      ).rows;
-      const minimum = agentsMinimum(hosted);
-      if (hosted.length && !sizeMeets(machineSize(machine), minimum)) {
-        throw new MachineError(
-          409,
-          `this machine's agents need at least ${sizeLabel(minimum)}; move them or turn their browser or coding off first`,
-        );
-      }
-      const row =
-        (
-          await client.query<MachineQueryRow>(
-            `UPDATE machines
-                SET name = $3, box = $4, cpu = $5, memory_mib = $6, max_workspace_mib = $7, updated_at = $8
-              WHERE org_id = $1 AND id = $2
-              RETURNING ${MACHINE_COLUMNS}`,
-            [
-              orgId,
-              machineId,
-              machine.name,
-              machine.box,
-              machine.cpu,
-              machine.memory_mib,
-              machine.max_workspace_mib,
-              stamp(now),
-            ],
-          )
-        ).rows[0] ?? null;
-      if (!row) {
-        throw new RowMissing("machine update failed");
-      }
-      return { before: current, after: machineFromRow(row) };
-    });
-  } catch (error) {
-    if (isUniqueViolation(error)) {
-      throw new MachineError(409, `${machine.name} is already a machine of this organisation`);
-    }
-    throw error;
-  }
-}
-
-/**
- * Deletes a machine no agent sits on. One that still hosts agents is refused, and so is the
- * organisation's last machine.
- */
-export async function deleteMachine(
-  pool: Queryable,
-  orgId: string,
-  machineId: string,
-): Promise<MachineRow | null> {
-  return withTransaction(pool, async (client) => {
-    await client.query(`SELECT 1 FROM orgs WHERE id = $1 FOR UPDATE`, [orgId]);
-    const current = await lockMachine(client, orgId, machineId);
-    if (current === null) {
-      return null;
-    }
-    const hosted = await client.query(`SELECT 1 FROM agents WHERE machine_id = $1 LIMIT 1`, [
+): Promise<MachineQueryRow> {
+  const result = await db.query<MachineQueryRow>(
+    `UPDATE machines
+        SET name = $3, box = $4, cpu = $5, memory_mib = $6, max_workspace_mib = $7, updated_at = $8
+      WHERE org_id = $1 AND id = $2
+      RETURNING ${MACHINE_COLUMNS}`,
+    [
+      orgId,
       machineId,
-    ]);
-    if (hosted.rowCount) {
-      throw new MachineError(409, "agents are on this machine; move or delete them first");
-    }
-    const others = await client.query(
-      `SELECT 1 FROM machines WHERE org_id = $1 AND id <> $2 LIMIT 1`,
-      [orgId, machineId],
-    );
-    if (!others.rowCount) {
-      throw new MachineError(409, "an organisation keeps at least one machine");
-    }
-    await client.query(`DELETE FROM machines WHERE id = $1`, [machineId]);
-    return current;
-  });
+      machine.name,
+      machine.box,
+      machine.cpu,
+      machine.memory_mib,
+      machine.max_workspace_mib,
+      stamp(now),
+    ],
+  );
+  const row = result.rows[0] ?? null;
+  if (!row) {
+    throw new RowMissing("machine update failed");
+  }
+  return row;
 }
 
-/**
- * Moves an agent to another machine of its organisation, in the lowest free slot there. `needs`
- * is what the agent has on once moved, its saved config's when omitted. Returns where it was and
- * where it is.
- */
-export async function moveAgent(
-  pool: Queryable,
+export async function deleteMachine(db: Queryable, machineId: string): Promise<void> {
+  await db.query(`DELETE FROM machines WHERE id = $1`, [machineId]);
+}
+
+/** Where an agent sits, locked for the rest of the transaction `db` runs; null when there is no such agent. */
+export async function lockAgentPlacement(
+  db: Queryable,
+  agentId: string,
+): Promise<AgentPlacementRow | null> {
+  const result = await db.query<AgentPlacementRow>(
+    `SELECT org_id, config, machine_id, machine_slot FROM agents WHERE id = $1 FOR UPDATE`,
+    [agentId],
+  );
+  return result.rows[0] ?? null;
+}
+
+/** Seats an agent on a machine, in `slot`. */
+export async function setAgentMachine(
+  db: Queryable,
   agentId: string,
   machineId: string,
-  options: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds } = {},
-): Promise<MoveAgentResult | null> {
-  return withTransaction(pool, async (client) => {
-    const agent =
-      (
-        await client.query<{
-          org_id: string;
-          config: Record<string, unknown>;
-          machine_id: string;
-          machine_slot: number;
-        }>(`SELECT org_id, config, machine_id, machine_slot FROM agents WHERE id = $1 FOR UPDATE`, [
-          agentId,
-        ])
-      ).rows[0] ?? null;
-    if (!agent) {
-      return null;
-    }
-    const from = { machineId: agent.machine_id, slot: agent.machine_slot };
-    if (from.machineId === machineId) {
-      return { from, to: from };
-    }
-    const needs = options.needs ?? {
-      browser: agent.config.browser === true,
-      coding: agent.config.coding === true,
-    };
-    const machine = await placementMachine(client, agent.org_id, machineId, needs);
-    const slot = await freeSlot(client, machine, options.maxAgentsPerMachine ?? undefined);
-    await client.query(`UPDATE agents SET machine_id = $2, machine_slot = $3 WHERE id = $1`, [
-      agentId,
-      machine.id,
-      slot,
-    ]);
-    return { from, to: { machineId: machine.id, slot } };
-  });
+  slot: number,
+): Promise<void> {
+  await db.query(`UPDATE agents SET machine_id = $2, machine_slot = $3 WHERE id = $1`, [
+    agentId,
+    machineId,
+    slot,
+  ]);
 }
 
 /** The coding harness CLIs the machine's image carries, as its container reported them. */

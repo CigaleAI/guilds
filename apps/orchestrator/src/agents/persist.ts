@@ -5,9 +5,19 @@ import {
 } from "./validation.js";
 import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
 import { operatorActor } from "../artifacts/actors.js";
-import { hashTaskContent, resolveTaskContent } from "./task.js";
-import { deleteAgent, insertAgent } from "../db/agents.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { FALLBACK_TASK, FALLBACK_TASK_HASH, hashTaskContent, resolveTaskContent, taskDisplayPath } from "./task.js";
+import {
+  deleteAgent,
+  guildHasOperatorNamed,
+  insertAgent,
+  type AgentPlacement,
+  type NewAgent,
+} from "../db/agents.js";
+import { GuildNameTaken, RowMissing } from "../db/errors.js";
+import { recordFileChange } from "../db/file-changes.js";
+import { getGuild } from "../db/guilds.js";
+import { bindQuery, type Queryable, withTransaction } from "../db/pg.js";
+import { freeSlot, placementMachine } from "../machines/placement.js";
 
 export type AgentNotes = {
   createAgent(
@@ -18,10 +28,58 @@ export type AgentNotes = {
   ): Promise<void>;
 };
 
+/**
+ * Adds an agent to its guild, on the machine `placement` names or else the organisation's only
+ * one, in the lowest free slot there. With `actor`, its task's creation is logged against it.
+ */
+export async function addAgent(
+  db: Queryable,
+  agent: NewAgent,
+  now: Date,
+  actor?: ArtifactActor,
+  placement: AgentPlacement = {},
+): Promise<void> {
+  await withTransaction(db, async (client) => {
+    if (await guildHasOperatorNamed(client, agent.guildId, agent.name)) {
+      throw new GuildNameTaken(agent.name, "operator");
+    }
+    const guild = await getGuild(client, agent.guildId);
+    if (!guild) {
+      throw new RowMissing("agent insert failed: guild not found");
+    }
+    const machine = await placementMachine(client, guild.org_id, placement.machineId, {
+      browser: agent.config.browser === true,
+      coding: agent.config.coding === true,
+    });
+    const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
+    const inserted = await insertAgent(
+      client,
+      {
+        ...agent,
+        task: agent.task ?? FALLBACK_TASK,
+        taskHash: agent.taskHash ?? FALLBACK_TASK_HASH,
+        machineId: machine.id,
+        machineSlot: slot,
+      },
+      now,
+    );
+    if (actor) {
+      await recordFileChange(client, actor, {
+        orgId: inserted.org_id,
+        taskAgentId: agent.agentId,
+        displayPath: taskDisplayPath(inserted.org_id, agent.agentId),
+        operation: "create",
+        version: inserted.task_version,
+        createdAt: now,
+      });
+    }
+  });
+}
+
 /** The db/ functions a new agent is written through, on `db`. */
 export function agentDatabase(db: Queryable) {
   return {
-    insertAgent: bindQuery(db, insertAgent),
+    addAgent: bindQuery(db, addAgent),
     deleteAgent: bindQuery(db, deleteAgent),
   };
 }
@@ -65,7 +123,7 @@ export async function persistAgent(
         agentId: args.agentId,
       }))
     : null;
-  await db.insertAgent(
+  await db.addAgent(
     {
       agentId: args.agentId,
       guildId: args.guildId,

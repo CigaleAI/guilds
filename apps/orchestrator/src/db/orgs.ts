@@ -57,6 +57,11 @@ export type NewOrgModelProvider = {
   models: string[];
 };
 
+/** Locks the organisation's row for the rest of the transaction `db` runs. */
+export async function lockOrg(db: Queryable, orgId: string): Promise<void> {
+  await db.query(`SELECT 1 FROM orgs WHERE id = $1 FOR UPDATE`, [orgId]);
+}
+
 /**
  * Locks the owner rows of the organisations `orgsSql` selects (`$1` binds into it), so owner
  * changes there run one at a time and each sees the owners the one before it left.

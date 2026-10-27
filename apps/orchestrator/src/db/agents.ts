@@ -1,8 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import {
-  FALLBACK_TASK,
-  FALLBACK_TASK_HASH,
   hashTaskContent,
   taskDisplayPath,
   type AgentTaskRow,
@@ -14,7 +12,6 @@ import { TASK_REVISIONS_MAX, WRITE_MAX_BYTES, type ArtifactActor } from "../arti
 import { newId } from "../lib/ids.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
-import { freeSlot, placementMachine } from "./machines.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import { agents, guilds, machines, orgs, taskRevisions } from "./schema/index.js";
 
@@ -161,80 +158,61 @@ export async function listAgents(pool: Queryable, guildId: string): Promise<Guil
   return result.rows;
 }
 
+/** Whether one of the guild's operators goes by `name`, which none of its agents may take. */
+export async function guildHasOperatorNamed(db: Queryable, guildId: string, name: string): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1 FROM guild_operators go JOIN users u ON u.id = go.user_id
+     WHERE go.guild_id = $1 AND u.name = $2`,
+    [guildId, name],
+  );
+  return Boolean(result.rowCount);
+}
+
+/** A new agent as written: its task and the machine slot it sits in decided. */
+export type AgentInsert = Omit<NewAgent, "task" | "taskHash"> & {
+  task: string;
+  taskHash: string;
+  machineId: string;
+  machineSlot: number;
+};
+
+/** Inserts an agent into its guild's organisation; returns the organisation and the task's first version. */
 export async function insertAgent(
-  pool: Queryable,
-  agent: NewAgent,
+  db: Queryable,
+  agent: AgentInsert,
   now: Date,
-  actor?: ArtifactActor,
-  placement: AgentPlacement = {},
-): Promise<void> {
-  const focus = agent.focus ?? "";
-  const wakeTriggers = agent.wakeTriggers ?? "";
-  const avatarShape = agent.avatarShape ?? "teardrop";
-  const avatarColor = agent.avatarColor ?? "#7c5cff";
-  const task = agent.task ?? FALLBACK_TASK;
-  const taskHash = agent.taskHash ?? FALLBACK_TASK_HASH;
-  await withTransaction(pool, async (client) => {
-    const clash = await client.query(
-      `SELECT 1 FROM guild_operators go JOIN users u ON u.id = go.user_id
-       WHERE go.guild_id = $1 AND u.name = $2`,
-      [agent.guildId, agent.name],
-    );
-    if (clash.rowCount) {
-      throw new GuildNameTaken(agent.name, "operator");
-    }
-    const guild =
-      (
-        await client.query<{ org_id: string }>(`SELECT org_id FROM guilds WHERE id = $1`, [
-          agent.guildId,
-        ])
-      ).rows[0] ?? null;
-    if (!guild) {
-      throw new RowMissing("agent insert failed: guild not found");
-    }
-    const machine = await placementMachine(client, guild.org_id, placement.machineId, {
-      browser: agent.config.browser === true,
-      coding: agent.config.coding === true,
-    });
-    const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
-    const result = await client.query<{ org_id: string; task_version: number }>(
-      `INSERT INTO agents (
-         id, guild_id, name, config, focus, avatar_shape, avatar_color, org_id,
-         created_at, updated_at, group_chat_delivered_through,
-         task, task_version, task_hash, task_updated_at, wake_triggers, machine_id, machine_slot
-       )
-       SELECT $1, $2, $3, $4::jsonb, $6, $7, $8, p.org_id, $5, $5, p.group_chat_seq,
-              $9, 1, $10, $5, $11, $12, $13
-       FROM guilds p WHERE p.id = $2
-       RETURNING org_id, task_version`,
-      [
-        agent.agentId,
-        agent.guildId,
-        agent.name,
-        JSON.stringify(agent.config),
-        stamp(now),
-        focus,
-        avatarShape,
-        avatarColor,
-        task,
-        taskHash,
-        wakeTriggers,
-        machine.id,
-        slot,
-      ],
-    );
-    const inserted = result.rows[0] ?? null;
-    if (actor && inserted) {
-      await recordFileChange(client, actor, {
-        orgId: inserted.org_id,
-        taskAgentId: agent.agentId,
-        displayPath: taskDisplayPath(inserted.org_id, agent.agentId),
-        operation: "create",
-        version: inserted.task_version,
-        createdAt: now,
-      });
-    }
-  });
+): Promise<{ org_id: string; task_version: number }> {
+  const result = await db.query<{ org_id: string; task_version: number }>(
+    `INSERT INTO agents (
+       id, guild_id, name, config, focus, avatar_shape, avatar_color, org_id,
+       created_at, updated_at, group_chat_delivered_through,
+       task, task_version, task_hash, task_updated_at, wake_triggers, machine_id, machine_slot
+     )
+     SELECT $1, $2, $3, $4::jsonb, $6, $7, $8, p.org_id, $5, $5, p.group_chat_seq,
+            $9, 1, $10, $5, $11, $12, $13
+     FROM guilds p WHERE p.id = $2
+     RETURNING org_id, task_version`,
+    [
+      agent.agentId,
+      agent.guildId,
+      agent.name,
+      JSON.stringify(agent.config),
+      stamp(now),
+      agent.focus ?? "",
+      agent.avatarShape ?? "teardrop",
+      agent.avatarColor ?? "#7c5cff",
+      agent.task,
+      agent.taskHash,
+      agent.wakeTriggers ?? "",
+      agent.machineId,
+      agent.machineSlot,
+    ],
+  );
+  const row = result.rows[0] ?? null;
+  if (!row) {
+    throw new RowMissing("agent insert failed: guild not found");
+  }
+  return row;
 }
 
 export async function deleteAgent(pool: Queryable, agentId: string): Promise<void> {
