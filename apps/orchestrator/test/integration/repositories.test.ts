@@ -6,7 +6,8 @@ import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
 import { listFileChanges, operatorActor } from "../../src/artifacts/index.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { insertUser, listUsers } from "../../src/db/users.js";
+import { insertUser } from "../../src/db/users.js";
+import { listUsersInSeedOrder } from "../../src/users/directory.js";
 import { getMembership, listOrgsForUser } from "../../src/db/orgs.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertAgent, writeAgentTask } from "../../src/db/agents.js";
@@ -29,12 +30,12 @@ after(async () => {
 describe("repositories", { concurrency: 1 }, () => {
   test("insert_user creates a personal org and list_users keeps seed order", async () => {
     const db = database.pool;
-    const users = await listUsers(db);
+    const users = await listUsersInSeedOrder(db);
     assert.equal(users[0]?.id, "user_operator");
     assert.equal(users[0]?.name, "operator");
     const created = await insertUser(db, { userId: newId("user"), name: "other" }, new Date());
     assert.equal(created.name, "other");
-    const listed = await listUsers(db);
+    const listed = await listUsersInSeedOrder(db);
     assert.deepEqual(
       listed.map((row) => row.name),
       ["operator", "other"],

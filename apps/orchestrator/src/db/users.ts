@@ -1,6 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { newId } from "../lib/ids.js";
-import { SEED_USERS } from "../users/index.js";
 import { tableColumns } from "./columns.js";
 import { GuildNameTaken, LastOrgOwner, RowMissing } from "./errors.js";
 import { insertDefaultMachine } from "./machines.js";
@@ -72,21 +71,10 @@ async function writeUserProfile(
   return result.rows[0] ?? null;
 }
 
+/** Every user, oldest first, then by name. */
 export async function listUsers(pool: Queryable): Promise<UserRow[]> {
-  const result = await pool.query<UserRow>(`SELECT ${USER_COLUMNS} FROM users`);
-  const seedOrder = new Map<string, number>(SEED_USERS.map((user, index) => [user.id, index]));
-  return [...result.rows].sort((a, b) => {
-    const left = seedOrder.get(a.id) ?? SEED_USERS.length;
-    const right = seedOrder.get(b.id) ?? SEED_USERS.length;
-    if (left !== right) {
-      return left - right;
-    }
-    const created = a.created_at.localeCompare(b.created_at);
-    if (created !== 0) {
-      return created;
-    }
-    return a.name.localeCompare(b.name);
-  });
+  const result = await pool.query<UserRow>(`SELECT ${USER_COLUMNS} FROM users ORDER BY created_at, name`);
+  return result.rows;
 }
 
 export async function getUser(pool: Queryable, userId: string): Promise<UserRow | null> {

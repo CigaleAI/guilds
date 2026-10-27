@@ -16,6 +16,7 @@ import { newId } from "../lib/ids.js";
 import { validateTimezone } from "../schedules/window.js";
 import {
   SEED_USER_IDS,
+  SEED_USERS,
   userItem,
   validateUserColor,
   validateUserEmail,
@@ -53,8 +54,15 @@ function userConflict(error: unknown): unknown {
   );
 }
 
+/** Every user: the seed users first, in their seed order, then the rest oldest first. */
+export async function listUsersInSeedOrder(db: Queryable): Promise<UserRow[]> {
+  const seedOrder = new Map<string, number>(SEED_USERS.map((user, index) => [user.id, index]));
+  const rank = (row: UserRow) => seedOrder.get(row.id) ?? SEED_USERS.length;
+  return (await listUsers(db)).sort((a, b) => rank(a) - rank(b));
+}
+
 export async function listDirectoryUsers(db: Queryable): Promise<UserItem[]> {
-  return (await listUsers(db)).map((row) => userItem(row));
+  return (await listUsersInSeedOrder(db)).map((row) => userItem(row));
 }
 
 /** Creates a user and their personal organisation; `orgCreated` runs for that organisation. */
