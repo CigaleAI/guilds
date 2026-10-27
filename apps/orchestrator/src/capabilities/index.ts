@@ -5,7 +5,7 @@ import { manifestTools, overriddenTool, toolStartsOff } from "../connectors/load
 import { connectorFacts } from "../connectors/view.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
-import { usageFields, utcMonth } from "../usage/index.js";
+import { usageFields } from "../usage/index.js";
 import {
   ALWAYS_OFFERED_TOOLS,
   BROWSER_CAPABILITY,
@@ -15,7 +15,7 @@ import {
 import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
-import { getOrgMonthlyUsage } from "../db/usage.js";
+import { getOrgMonthlyUsage, utcMonth } from "../db/usage.js";
 import type { Queryable } from "../db/pg.js";
 
 const FORBIDDEN_CONNECTION_KEYS = new Set([

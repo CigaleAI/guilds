@@ -1,4 +1,4 @@
-import { ownerRefs } from "../credentials/validate.js";
+import { ownerRefs } from "../db/columns.js";
 import type { ConfigChange, ConfigOperation } from "../db/config-changes.js";
 
 /** A binding's identity: what it sets and at which scope. */

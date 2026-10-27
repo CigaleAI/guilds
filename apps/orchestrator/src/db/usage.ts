@@ -1,8 +1,43 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
-import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, type UsageDelta, usageDelta, utcMonth } from "../usage/index.js";
+import { isPlainRecord } from "./json.js";
 import { type Queryable, stamp } from "./pg.js";
 import { orgMonthlyUsage, usageCounters } from "./schema/index.js";
+
+export const GLOBAL_SCOPE = "global";
+export const GLOBAL_SCOPE_ID = "";
+
+export type UsageDelta = {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cost_usd: number;
+};
+
+/** The UTC month a usage row is counted under, as `YYYY-MM`. */
+export function utcMonth(now = new Date()): string {
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** The tokens and cost a message's metadata records, or null when it records no usage. */
+export function usageDelta(metadata: Record<string, unknown>): UsageDelta | null {
+  const record = metadata.usage;
+  if (!isPlainRecord(record)) {
+    return null;
+  }
+  return {
+    input_tokens: Number(record.input_tokens || 0),
+    output_tokens: Number(record.output_tokens || 0),
+    cache_read_tokens: Number(record.cache_read_tokens || 0),
+    cost_usd: Number(metadata.cost_usd || 0),
+  };
+}
+
+/** The cost a message's metadata records, the `cost_usd` column stored beside it. */
+export function messageCostUsd(metadata: Record<string, unknown>): number | null {
+  const delta = usageDelta(metadata);
+  return delta === null ? null : delta.cost_usd;
+}
 
 export type UsageCounterRow = InferSelectModel<typeof usageCounters>;
 

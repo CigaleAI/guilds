@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  messageCostUsd,
-  usageCounterKey,
-  usageDelta,
-  usageFields,
-  usageTree,
-  utcMonth,
-} from "../../src/usage/index.js";
+import { messageCostUsd, usageDelta, utcMonth } from "../../src/db/usage.js";
+import { usageCounterKey, usageFields, usageTree } from "../../src/usage/index.js";
 
 test("usage_delta_reads_assistant_metadata", () => {
   const delta = usageDelta({

@@ -1,19 +1,5 @@
 import { formatColumnTimestamp } from "../db/codecs.js";
-
-export const GLOBAL_SCOPE = "global";
-export const GLOBAL_SCOPE_ID = "";
-
-export type UsageDelta = {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cost_usd: number;
-};
-
-/** The UTC month a usage row is counted under, as `YYYY-MM`. */
-export function utcMonth(now = new Date()): string {
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-}
+import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID } from "../db/usage.js";
 
 export function usageCounterKey(scope: string, scopeId: string): string {
   return `${scope}\0${scopeId}`;
@@ -40,25 +26,6 @@ function formatUpdatedAt(value: unknown): unknown {
     return formatColumnTimestamp(String(value.toISOString()));
   }
   return value;
-}
-
-export function usageDelta(metadata: Record<string, unknown>): UsageDelta | null {
-  const usage = metadata.usage;
-  if (!usage || typeof usage !== "object" || Array.isArray(usage)) {
-    return null;
-  }
-  const record = usage as Record<string, unknown>;
-  return {
-    input_tokens: Number(record.input_tokens || 0),
-    output_tokens: Number(record.output_tokens || 0),
-    cache_read_tokens: Number(record.cache_read_tokens || 0),
-    cost_usd: Number(metadata.cost_usd || 0),
-  };
-}
-
-export function messageCostUsd(metadata: Record<string, unknown>): number | null {
-  const delta = usageDelta(metadata);
-  return delta === null ? null : delta.cost_usd;
 }
 
 export function usageFields(row: unknown): Record<string, unknown> {

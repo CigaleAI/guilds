@@ -1,8 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { ownerRefs } from "../credentials/validate.js";
 import { newId } from "../lib/ids.js";
 import { upsertMcpBinding, type McpConnectionBinding } from "./bindings.js";
-import { pickColumns } from "./columns.js";
+import { pickColumns, ownerRefs } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { isPlainRecord } from "./json.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";

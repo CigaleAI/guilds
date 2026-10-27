@@ -1,9 +1,8 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { bindingChange } from "../access/changes.js";
-import { ownerRefs } from "../credentials/validate.js";
 import type { ChangeActor } from "../lib/change-actor.js";
-import { pickColumns } from "./columns.js";
+import { pickColumns, ownerRefs } from "./columns.js";
 import { recordChangeIfAny } from "./config-changes.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";

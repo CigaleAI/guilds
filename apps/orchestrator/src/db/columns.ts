@@ -47,3 +47,20 @@ export function patchAssignments(
   }
   return { sets, values };
 }
+
+/** The organisation, guild, and agent owner columns of a row owned at `ownerScope` by `ownerId`. */
+export function ownerRefs(
+  ownerScope: string,
+  ownerId: string | null | undefined,
+): [string | null, string | null, string | null] {
+  if (ownerScope === "platform") {
+    return [null, null, null];
+  }
+  if (ownerScope === "org") {
+    return [ownerId ?? null, null, null];
+  }
+  if (ownerScope === "guild") {
+    return [null, ownerId ?? null, null];
+  }
+  return [null, null, ownerId ?? null];
+}

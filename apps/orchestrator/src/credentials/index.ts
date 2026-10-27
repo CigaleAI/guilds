@@ -5,7 +5,6 @@ export {
   OWNER_SCOPES,
   SECRET_DESCRIPTION_MAX,
   SECRET_NAME,
-  ownerRefs,
   secretPayload,
   secretValue,
   validateOwner,

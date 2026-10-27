@@ -1,9 +1,9 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { usageDelta } from "../usage/index.js";
 import { patchAssignments } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { builderMessages } from "./schema/index.js";
+import { usageDelta } from "./usage.js";
 
 /** Whose conversation it is: a Studio session's or a Builder session's, each with tables of its own. */
 export type ConversationKind = "studio" | "builder";

@@ -11,22 +11,6 @@ export class CredentialError extends Error {
   }
 }
 
-export function ownerRefs(
-  ownerScope: string,
-  ownerId: string | null | undefined,
-): [string | null, string | null, string | null] {
-  if (ownerScope === "platform") {
-    return [null, null, null];
-  }
-  if (ownerScope === "org") {
-    return [ownerId ?? null, null, null];
-  }
-  if (ownerScope === "guild") {
-    return [null, ownerId ?? null, null];
-  }
-  return [null, null, ownerId ?? null];
-}
-
 export function isOwnerScope(value: string): value is OwnerScope {
   return OWNER_SCOPES.some((scope) => scope === value);
 }
