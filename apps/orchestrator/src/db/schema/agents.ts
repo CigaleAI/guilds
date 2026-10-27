@@ -42,6 +42,10 @@ export type Effort = (typeof EFFORTS)[number];
 export const THINKING_LEVELS = ["none", "low", "medium", "high"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
+/** What `agents.harness_logins` records per harness: when a check last found a login, and whose it is. */
+export type HarnessLogin = { seen_at: string | null; account: string | null };
+export type HarnessLogins = Partial<Record<Harness, HarnessLogin>>;
+
 /** An agent's settings, as `agents.config` stores them: every key present. */
 export type AgentConfig = {
   model: string;
@@ -98,7 +102,7 @@ export const agents = pgTable(
     workspace_mib: integer("workspace_mib"),
     machine_id: text("machine_id").notNull(),
     machine_slot: smallint("machine_slot").notNull(),
-    harness_logins: jsonb("harness_logins").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    harness_logins: jsonb("harness_logins").$type<HarnessLogins>().notNull().default(sql`'{}'::jsonb`),
   },
   (table) => [
     unique("agents_name_key").on(table.name),

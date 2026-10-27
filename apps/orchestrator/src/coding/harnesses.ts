@@ -3,7 +3,7 @@
  * agent's sandbox on the user's own subscription: a token granted to the agent as a secret,
  * or a login stored in the agent's home.
  */
-import { HARNESSES, type Harness } from "../db/schema/index.js";
+import { HARNESSES, type Harness, type HarnessLogin, type HarnessLogins } from "../db/schema/index.js";
 
 export type HarnessInfo = {
   harness: Harness;
@@ -109,20 +109,9 @@ export const REPOSITORIES_MISSING = "coding.repositories_missing";
 export const REPOSITORIES_MISSING_MESSAGE =
   "this guild has no repositories: add one in the guild's Repositories, then send again";
 
-/** What `agents.harness_logins` records per harness: when a check last found a login, and whose it is. */
-export type HarnessLogin = { seen_at: string | null; account: string | null };
-
 /** The login record for a harness as stored, or none. */
-export function harnessLoginOf(logins: Record<string, unknown> | null | undefined, harness: Harness): HarnessLogin {
-  const stored = logins?.[harness];
-  if (typeof stored !== "object" || stored === null) {
-    return { seen_at: null, account: null };
-  }
-  const record = stored as Record<string, unknown>;
-  return {
-    seen_at: typeof record.seen_at === "string" ? record.seen_at : null,
-    account: typeof record.account === "string" ? record.account : null,
-  };
+export function harnessLoginOf(logins: HarnessLogins, harness: Harness): HarnessLogin {
+  return logins[harness] ?? { seen_at: null, account: null };
 }
 
 /**

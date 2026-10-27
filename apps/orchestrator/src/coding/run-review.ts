@@ -4,7 +4,7 @@ import type { AgentRow } from "../db/agents.js";
 import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
-import { HARNESSES, type Harness } from "../db/schema/index.js";
+import { HARNESSES, type Harness, type HarnessLogins } from "../db/schema/index.js";
 import type { CodingRuns } from "../generation/coding.js";
 import { RunRequestError } from "../generation/errors.js";
 import { harnessEffortOf } from "./harness-models.js";
@@ -59,7 +59,7 @@ function changedRepositories(run: RunRow): Item[] {
 /** One harness of the agent: its secret, whether the agent is granted it, and the login its home holds. */
 function harnessView(
   harness: Harness,
-  logins: Item,
+  logins: HarnessLogins,
   aliases: Record<string, string>,
   granted: ReadonlySet<string | undefined>,
 ): Item {
@@ -86,8 +86,7 @@ export async function loadHarnessView(services: RunReviewServices, agent: AgentR
     (await agentSecrets(accessDatabase(services.db), agent)).map((secret) => secret.name),
   );
   const aliases = secretAliasesOf(config);
-  const stored = jsonObj(agent.harness_logins);
-  const logins = isPlainRecord(stored) ? stored : {};
+  const logins = agent.harness_logins;
   const carried = Array.isArray(agent.machine_harnesses)
     ? agent.machine_harnesses.filter(isHarness)
     : null;

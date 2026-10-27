@@ -4,7 +4,7 @@ import { newId } from "../lib/ids.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { agents, guilds, machines, orgs, taskRevisions } from "./schema/index.js";
+import { agents, guilds, machines, orgs, taskRevisions, type Harness } from "./schema/index.js";
 
 type Agent = InferSelectModel<typeof agents>;
 type Machine = InferSelectModel<typeof machines>;
@@ -283,7 +283,7 @@ export async function getAgent(pool: Queryable, agentId: string): Promise<AgentR
 export async function markHarnessLogin(
   pool: Queryable,
   agentId: string,
-  harness: string,
+  harness: Harness,
   now: Date,
   account: string | null,
 ): Promise<void> {
@@ -300,7 +300,7 @@ export async function markHarnessLogin(
 export async function clearHarnessLogin(
   pool: Queryable,
   agentId: string,
-  harness: string,
+  harness: Harness,
 ): Promise<void> {
   await pool.query(`UPDATE agents SET harness_logins = harness_logins - $2::text WHERE id = $1`, [
     agentId,
