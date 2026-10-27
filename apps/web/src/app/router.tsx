@@ -24,7 +24,7 @@ const inboxRoute = createRoute({
 
 /**
  * A tabbed page's search: the tab, and whatever a tab reads for itself. The page decides which tabs
- * exist, since an edition adds its own.
+ * exist, since an extension adds its own.
  */
 export type TabSearch = { tab?: string } & Record<string, string | undefined>;
 

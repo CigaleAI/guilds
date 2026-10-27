@@ -230,7 +230,7 @@ app then returns to `/`.
 | Visibility change, clearing the group chat, and delete | Guild admins only |
 | Rename | Refused while being deleted or while an agent generates |
 | Delete | Refused while an agent generates or the group chat is delivering |
-| Guilds per organisation | No cap in core; an edition's policy may set one |
+| Guilds per organisation | No cap in core; an extension's policy may set one |
 
 ## Reference
 

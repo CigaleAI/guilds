@@ -121,7 +121,7 @@ test("core starts alone: one OpenSandbox from its configuration, no cap, nothing
   }
 });
 
-test("an edition's connector is installed with core's and listed like one", { timeout: 60_000 }, async () => {
+test("an extension's connector is installed with core's and listed like one", { timeout: 60_000 }, async () => {
   const folder = path.join(tempDir("guilds-compose-connector-"), "acme_notes");
   mkdirSync(folder);
   const manifest = {
@@ -142,7 +142,7 @@ test("an edition's connector is installed with core's and listed like one", { ti
       const listed = await server.app.inject({ method: "GET", url: "/api/mcp/servers", headers: OPERATOR });
       assert.equal(listed.statusCode, 200, listed.body);
       const acme = listed.json().servers.find((item: { id: string }) => item.id === "mcp_acme_notes");
-      assert.ok(acme, "the edition's connector is listed");
+      assert.ok(acme, "the extension's connector is listed");
       assert.deepEqual(
         { slug: acme.slug, config: acme.config, publisher: acme.publisher, source: acme.source, verified: acme.verified },
         { slug: "acme_notes", config: { url: "https://mcp.acme.example/mcp" }, publisher: "acme", source: "core", verified: true },

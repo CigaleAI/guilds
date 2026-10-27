@@ -90,7 +90,7 @@ A run that hit its tool-call or input-token limit cannot be resumed.
 Start a new one.
 
 A run also completes when its model cannot be called: the model's
-provider is not connected for the organisation, or an edition refuses
+provider is not connected for the organisation, or an extension refuses
 the model credentials or blocks the organisation. That run can be
 resumed once the cause is fixed.
 
@@ -362,8 +362,8 @@ run:
 | Operation | Cause |
 | --- | --- |
 | `generation.model_key` | the model's provider is not connected for the organisation |
-| `generation.model_credentials` | the edition's model credentials refuse the call |
-| `generation.subscription` | the edition's policy blocks the organisation; core never blocks |
+| `generation.model_credentials` | the extension's model credentials refuse the call |
+| `generation.subscription` | the extension's policy blocks the organisation; core never blocks |
 
 Resume is refused after `generation.max_tool_calls`,
 `generation.max_input_tokens`, and `generation.max_chain`, and allowed

@@ -20,7 +20,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("the instance is administered by the seed organisation's owners, or by whom an edition says", { timeout: 60_000 }, async () => {
+test("the instance is administered by the seed organisation's owners, or by whom an extension says", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-instance-admin-"), templatesRoot());
@@ -62,7 +62,7 @@ test("the instance is administered by the seed organisation's owners, or by whom
     assert.equal(await putKey(core, OWNER), 200);
     assert.equal(await putKey(core, MEMBER), 404);
 
-    // An edition's rule replaces it everywhere it is asked.
+    // An extension's rule replaces it everywhere it is asked.
     assert.equal(await flag(overridden, OWNER), false);
     assert.equal(await flag(overridden, MEMBER), true);
     for (const url of ["/api/admin/mcp/servers", "/api/platform"]) {

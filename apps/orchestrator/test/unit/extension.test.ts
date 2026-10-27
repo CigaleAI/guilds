@@ -29,7 +29,7 @@ test("extensions without a hook, a policy, or an identity leave core's own in pl
 });
 
 test("the first extension that supplies model credentials is the one used", () => {
-  const credentials = { modelCredentials: async () => ({ apiKey: "edition" }) };
+  const credentials = { modelCredentials: async () => ({ apiKey: "extension" }) };
   const supplied = extensionModelCredentials(
     [{ name: "a" }, { name: "b", modelCredentials: () => credentials }, { name: "c", modelCredentials: () => credentials }],
     { repo },

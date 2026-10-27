@@ -44,7 +44,7 @@ test("loadConfig rejects unknown AUTH_MODE", () => {
   );
 });
 
-test("a mode core does not implement is accepted only when an edition names it", () => {
+test("a mode core does not implement is accepted only when an extension names it", () => {
   const env = testEnv("postgresql://example", {
     NOTES_ROOT: tempDir("guilds-notes-"),
     WORKSPACE_ROOT: tempDir("guilds-workspaces-"),

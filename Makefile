@@ -1,8 +1,8 @@
-# CORE is where this repository sits under the directory make runs in. An edition on top of core
-# holds core in a subdirectory and includes this file from its own Makefile, after setting CORE,
-# EDITION, the variables an edition names below, and SECRET_GOALS, the goals that start a box
-# with real secrets. make then runs in the edition's root, where its .env, state and workspace
-# are, and COMPOSE is the Compose command that reads that .env.
+# CORE is where this repository sits under the directory make runs in. A repository that extends
+# core holds core in a subdirectory and includes this file from its own Makefile, after setting
+# CORE, EDITION, the variables named below, and SECRET_GOALS, the goals that start a box with real
+# secrets. make then runs in that repository's root, where its .env, state and workspace are, and
+# COMPOSE is the Compose command that reads that .env.
 CORE ?= .
 COMPOSE ?= docker compose
 STATE_ROOT ?= $(abspath .state)
@@ -24,9 +24,10 @@ export OPENSANDBOX_API_KEY
 export SECRETS_MASTER_KEY
 endif
 
-# The development stack runs core alone, unless an edition names its own. COMPOSE_DEV is that
-# stack, DEV_BASE_IMAGE the target that builds the image it starts from, WEB_PACKAGE the operator
-# app `make dev` serves, and SEED_USER and SEED_ORG_SLUG who verify and soak act as.
+# The development stack runs core alone, unless the extending repository names its own.
+# COMPOSE_DEV is that stack, DEV_BASE_IMAGE the target that builds the image it starts from,
+# WEB_PACKAGE the operator app `make dev` serves, and SEED_USER and SEED_ORG_SLUG who verify and
+# soak act as.
 EDITION ?= core
 ifeq ($(EDITION),core)
 COMPOSE_DEV := $(COMPOSE) -f $(CORE)/docker-compose.dev.yml
@@ -36,7 +37,7 @@ SEED_USER := user_operator
 SEED_ORG_SLUG := home
 endif
 ifndef COMPOSE_DEV
-$(error EDITION=$(EDITION) names no development stack: an edition sets COMPOSE_DEV)
+$(error EDITION=$(EDITION) names no development stack: set COMPOSE_DEV)
 endif
 COMPOSE_ALL := $(COMPOSE) -f $(CORE)/docker-compose.yml $(EDITION_COMPOSE_FILES)
 

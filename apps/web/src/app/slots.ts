@@ -1,14 +1,14 @@
 import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 
-/** A tab an edition adds to Settings or Admin. `after` names the tab it follows; without it the tab goes last. */
+/** A tab an extension adds to Settings or Admin. `after` names the tab it follows; without it the tab goes last. */
 export type TabSlot = { id: string; label: string; after?: string; render: () => ReactNode };
 
 /**
- * What an edition adds to the core app (docs/architecture/extension-points.md). Core fills none of it: the
+ * What an extension adds to the core app (docs/architecture/extension-points.md). Core fills none of it: the
  * app is whole without a slot.
  */
 export type AppSlots = {
-  /** The page for a path the edition owns, shown before anyone is identified; null for any other path. */
+  /** The page for a path the extension owns, shown before anyone is identified; null for any other path. */
   publicPage?: (pathname: string) => ReactNode | null;
   /** Where a signed-out request goes to sign in. Without it a 401 is an error on the page. */
   signInPath?: string;
@@ -30,7 +30,7 @@ export function useSlots(): AppSlots {
 
 type Tab = { value: string; label: string };
 
-/** Core's tabs with an edition's placed among them; slots that follow the same tab keep their order. */
+/** Core's tabs with an extension's placed among them; slots that follow the same tab keep their order. */
 export function placeTabs(core: readonly Tab[], slots: readonly TabSlot[] = []): Tab[] {
   const tabs = [...core];
   const placed = new Map<string, number>();

@@ -13,7 +13,7 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-test("a new organisation is handed to the edition's hook inside its transaction", { timeout: 60_000 }, async () => {
+test("a new organisation is handed to the extension's hook inside its transaction", { timeout: 60_000 }, async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const database = await connect(await createIsolatedDatabase(dbName));
   const count = async (table: string, orgId: string) =>

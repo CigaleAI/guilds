@@ -11,7 +11,7 @@ import {
 } from "../studio/constants.js";
 
 // Organisation policy (docs/architecture/extension-points.md): the caps an organisation works under and
-// whether it may work at all. Core checks them here; an edition says what they are.
+// whether it may work at all. Core checks them here; an extension says what they are.
 
 export type CoachKind = "studio" | "builder";
 

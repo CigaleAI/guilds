@@ -62,7 +62,7 @@ lives is the [Code map](code-map.md).
 catalog reads `MODELS_DEV_URL` on its own
 ([Configure](../operations/configure.md#model-catalog)).
 
-`loadConfig` accepts the modes an edition identifies requests in
+`loadConfig` accepts the modes an extension identifies requests in
 beside core's two. The instance keys are read through the registry
 in `src/instance/integrations.ts` and the encrypted store it
 snapshots (`src/instance/keys.ts`), so a platform key a platform
@@ -138,8 +138,9 @@ Local Compose uses `make up` or `make dev`.
 `server.ts` is core's process entry. It loads `AppConfig` and calls
 `runServer` (`src/run.ts`). `runServer` builds the server with
 `createServer` (`src/compose.ts`), listens, and shuts it down on a
-signal or a fatal error. An edition has an entry of its own, which
-passes its extensions with its configuration loaded beside core's
+signal or a fatal error. The extending repository has an entry of
+its own, which passes its extensions with its configuration loaded
+beside core's
 ([Extension points](extension-points.md)). Core passes none.
 
 ```mermaid
@@ -224,7 +225,7 @@ and exits 1.
 ```mermaid
 flowchart TD
   UI["React app"] --> API["/api/*"]
-  API --> ID["identity: cookie / trusted-header / an edition's provider"]
+  API --> ID["identity: cookie / trusted-header / an extension's provider"]
   ID --> R["http/routes.ts and siblings"]
   R --> CRUD["guilds / agents / artifacts / secrets / MCP"]
   R --> Run["POST /api/agents/:agent_id/runs"]
@@ -686,7 +687,7 @@ only the fields in its row.
 ## Sandbox and tools
 
 A `RunSandboxes` manager drives one OpenSandbox, from the
-configuration. An edition may supply a sandbox provider of its own
+configuration. An extension may supply a sandbox provider of its own
 ([Extension points](extension-points.md)).
 
 A manager's work:

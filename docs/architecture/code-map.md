@@ -27,14 +27,14 @@ flowchart LR
 | `docker-compose.yml`, `docker-compose.watch.yml`, `docker-compose.dev.yml` | The shipped stack, the development overlay, and the two merged ([Deployment](deployment.md#compose-stacks-and-images)) |
 | `setup.sh` | Writes `.env` (state path and generated secrets) and builds the OpenSandbox and runtime images |
 | `.env.example` | Core's settings, by integration ([Configure](../operations/configure.md)) |
-| `scripts/` | `check.sh` (the whole check; with `EDITION_ROOT` it checks an edition), `images.sh` (the OpenSandbox and runtime images), `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
-| `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract`, `compat-verify`, `soak`; an edition's Makefile includes it, with `CORE` naming core's path |
-| `eslint.boundary.js` | The lint rule holding core code inside core ([Extension points](extension-points.md#how-an-editions-repository-holds-core)) |
+| `scripts/` | `check.sh` (the whole check; with `EDITION_ROOT` it checks an extending repository), `images.sh` (the OpenSandbox and runtime images), `smoke-core-stack.sh` (the shipped stack, end to end) ([Development](../contributing/development.md)) |
+| `Makefile` | `state`, `opensandbox-image`, `runtime-image`, `core-image`, `build`, `up`, `dev`, `down`, `reset`, `migrate`, `verify`, `check`, `contract`, `compat-verify`, `soak`; an extending repository's Makefile includes it, with `CORE` naming core's path |
+| `eslint.boundary.js` | The lint rule holding core code inside core ([Extension points](extension-points.md#how-an-extending-repository-holds-core)) |
 | `.github/workflows/` | `verify` (every push: `scripts/check.sh`), `images` (a version tag publishes the orchestrator, runtime, and OpenSandbox server images on ghcr.io) |
 | `.state/` | The local `STATE_ROOT`, not in git ([Deployment](deployment.md#state-on-disk)) |
 
-An edition on top of core is a repository of its own that holds this
-one as a submodule ([Extension points](extension-points.md)).
+A repository that extends core holds this one as a submodule
+([Extension points](extension-points.md)).
 
 ## `apps/orchestrator/`
 
@@ -43,7 +43,7 @@ one as a submodule ([Extension points](extension-points.md)).
 | `src/server.ts` | Core's process entry: loads config and runs the server with no extension |
 | `src/run.ts` | `runServer`: builds the server, listens, shuts down on a signal or a fatal error |
 | `src/compose.ts` | `createServer`, the composition root ([Startup](orchestrator.md#startup-and-shutdown)) |
-| `src/extension.ts` | `ServerExtension`, what an edition adds ([Extension points](extension-points.md)) |
+| `src/extension.ts` | `ServerExtension`, what an extension adds ([Extension points](extension-points.md)) |
 | `src/app.ts` | The Fastify app: the web build, `/storybook`, `/health`, `/avatars/:style.svg`, client-error intake, domain routes |
 | `src/usage.ts` | Usage counter keys, deltas, and tree |
 | `drizzle/` | `0001_baseline` (with `0001.notes.md`), then numbered migrations ([PostgreSQL](orchestrator.md#postgresql)) |
@@ -109,8 +109,8 @@ one as a submodule ([Extension points](extension-points.md)).
 | `src/app/` | The app frame: providers, identity, routes, slots, theme, storage helpers, formatting, and the back button (`returnTrail.ts`) |
 | `src/api/` | The typed API client, identity, queries, streams, and the client error log ([State and events](web-app.md#state-and-events)) |
 | `public/` | Files served as-is |
-| `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an edition |
-| `package.json` | `exports`: what an edition's package may import ([Extension slots](web-app.md#extension-slots)) |
+| `vite.app.ts` | `appConfig()`: build and dev-server configuration, shared with an extension |
+| `package.json` | `exports`: what an extension's package may import ([Extension slots](web-app.md#extension-slots)) |
 | `claude-design-export/` | The first Claude Design export; not the live library |
 
 ### `src/features/`

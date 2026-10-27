@@ -2,7 +2,7 @@
 
 The guilds.run visual language is the `@guildsrun/ui` workspace
 package in `packages/ui`. The operator app (`apps/web`) and an
-edition's build of it import that package.
+extension's build of it import that package.
 
 Tokens live in CSS. Components are the barrel at
 `packages/ui/src/index.ts`. Theme is `data-theme="light"` or
@@ -27,7 +27,7 @@ are React 19 and React DOM 19. The package also uses Radix,
 Lucide, `class-variance-authority`, and Tailwind v4.
 
 A consumer depends on `@guildsrun/ui` with `workspace:*`. That
-covers the operator app in this repository, and an edition's
+covers the operator app in this repository, and an extension's
 operator app from a workspace that spans core's packages
 ([Extension points](extension-points.md)). The package is private
 and unpublished.
@@ -57,7 +57,7 @@ The operator app does this in `apps/web/src/main.tsx` (`import
 (preference in localStorage, applied as `data-theme` on
 `document.documentElement`).
 
-An edition's app names the core app's sources in its own CSS entry
+An extension's app names the core app's sources in its own CSS entry
 so their classes are generated in its build. Do not add another
 `@theme` block or a `tailwind.config` palette.
 
@@ -138,7 +138,7 @@ Those are the operator app.
 ## New UI
 
 A page that exists only on one surface, an operator feature layout
-or a screen an edition adds, is composed in that app from tokens
+or a screen an extension adds, is composed in that app from tokens
 and existing primitives. It is not added to `@guildsrun/ui`.
 
 A change every consumer should share, a new token, type style,

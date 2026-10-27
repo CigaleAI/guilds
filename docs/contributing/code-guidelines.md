@@ -213,14 +213,14 @@ from another feature; when two features must share behaviour, move
 that behaviour to a shared directory or keep a thin call at the composition
 root (`compose.ts`, the router, a page that mounts both).
 
-Core imports nothing from an edition built on it.
+Core imports nothing from an extension built on it.
 `eslint.boundary.js` fails the file that tries.
 
 A domain module imports nothing from the HTTP framework. Only
 `http/`, the app and composition roots, the extension points and
 the observability hooks import `fastify`.
 
-An edition attaches through the
+Custom code attaches through the
 [extension points](../architecture/extension-points.md). A need
 it has that core lacks becomes an extension point with a core
 default, not a branch.

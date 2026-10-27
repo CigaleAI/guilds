@@ -5,7 +5,7 @@ import { configureLogging } from "./observability/log.js";
 import { flushSentry, sentryEnabled } from "./observability/sentry.js";
 
 /**
- * Runs the server as this process: builds it with the edition's extensions, listens, and shuts
+ * Runs the server as this process: builds it with the extensions it is given, listens, and shuts
  * down on a signal or a fatal error. An entry point loads its configuration and calls this.
  */
 export async function runServer(

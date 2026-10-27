@@ -60,15 +60,15 @@ as that user.
 | `make build` | `state`, both images, then builds the development stack's images |
 | `make up` | `state`, both images, then the development stack, built, detached, and healthy |
 | `make dev` | `make up`, then the Vite server |
-| `make down` | Stops every service of the product stack and an edition's Compose files |
+| `make down` | Stops every service of the product stack and an extension's Compose files |
 | `make reset` | `make down`, removes the local state trees, `make up` ([Resetting](#resetting)) |
 | `make migrate` | Gives each recorded migration its committed stamp, applies the migrations it was hiding, and restarts the orchestrator. The data stays ([Schema changes](#schema-changes)) |
-| `make verify` | Against a running stack: health, the guild list as the seed user, the app page, typecheck, lint, the orchestrator tests, an edition's test packages, the fixture digests |
+| `make verify` | Against a running stack: health, the guild list as the seed user, the app page, typecheck, lint, the orchestrator tests, an extension's test packages, the fixture digests |
 | `make soak` | Creates and deletes a guild, restarts the orchestrator, and reads the migration, seed, binding, and run tables |
 | `make check` | `scripts/check.sh`: what CI runs ([Check](#check)) |
 | `make compat-verify` | The fixture digests alone |
 
-An edition sets the variables the Makefile reads
+The extending repository sets the variables the Makefile reads
 ([Extension points](../architecture/extension-points.md)).
 
 ## Package scripts
@@ -169,12 +169,12 @@ The pre-push hook (`.githooks/pre-push`) runs that check on the
 tip of every pushed ref and stops the push when it fails.
 `git push --no-verify` skips it.
 
-An edition built on core runs the same script from its own root
-with `EDITION_ROOT` set. It adds its steps through a
+A repository that extends core runs the same script from its own
+root with `EDITION_ROOT` set. It adds its steps through a
 `check.steps` file
 ([Extension points](../architecture/extension-points.md)).
 
-The edition's workspace includes core's packages. `pnpm install`
+That repository's workspace includes core's packages. `pnpm install`
 in either root links each core package's `node_modules` to that
 root's store. Before a working-tree check, install from the root
 the check runs in.
@@ -209,7 +209,7 @@ The orchestrator's tests run on Node's test runner through `tsx`
 | `test/unit` | Domain logic without Docker; the generation tests drive `GenerationLoop` against the file-backed `NotesStore` and fakes |
 | `test/integration` | HTTP and PostgreSQL: the recorded routes and SSE and WebSocket fixtures replayed against a database on `127.0.0.1:5432` (`R1_ADMIN_DATABASE_URL` names another) |
 | `test/contract` | Live calls, each skipped until its variables are set (below) |
-| `test/helpers` | The environment, fixtures, HTTP, OpenSandbox stub, and PostgreSQL helpers, which the package also exports for an edition's tests |
+| `test/helpers` | The environment, fixtures, HTTP, OpenSandbox stub, and PostgreSQL helpers, which the package also exports for an extension's tests |
 
 | Contract test | Runs when |
 | --- | --- |
@@ -296,7 +296,7 @@ recommended React Hooks rules.
 
 The orchestrator and the operator app also run the boundary rule
 (`eslint.boundary.js`). It fails any file that imports a package
-of an edition or a relative path that leaves this repository.
+of an extension or a relative path that leaves this repository.
 
 Every package also runs the limits of the
 [code guidelines](code-guidelines.md#functions) on its source,

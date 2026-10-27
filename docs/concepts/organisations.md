@@ -74,7 +74,7 @@ also block an organisation, which then creates no agent and runs no
 generation. Core's policy caps nothing and blocks no one. The
 box-wide ceiling on concurrent generations is
 `MAX_CONCURRENT_GENERATIONS` ([Configure](../operations/configure.md)).
-An edition may supply a policy of its own
+An extension may supply a policy of its own
 ([Extension points](../architecture/extension-points.md)).
 
 ### Deleting an organisation
@@ -101,7 +101,7 @@ new user, from **Admin**, **Users**.
 
 **Settings** (`/settings`) holds the organisation's settings. It
 opens from the account menu. Its header names the organisation. Its
-tabs (`?tab=`), in this order, with any an edition adds placed among
+tabs (`?tab=`), in this order, with any an extension adds placed among
 them:
 
 - **General**: the user's own profile ([Users](users.md)), then the

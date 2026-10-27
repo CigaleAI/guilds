@@ -14,7 +14,7 @@ export type IdentityReply = {
   header: (name: string, value: string) => unknown;
 };
 
-/** How an edition identifies a request's user, in place of core's modes. */
+/** How an extension identifies a request's user, in place of core's modes. */
 export type IdentityProvider = {
   /** The request's user, or a 401. */
   currentUser(request: IdentityRequest): Promise<Record<string, unknown>>;

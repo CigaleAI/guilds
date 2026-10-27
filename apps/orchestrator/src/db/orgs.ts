@@ -5,7 +5,7 @@ import { insertDefaultMachine } from "./machines.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import { orgMembers, orgModelProviders, orgs, users } from "./schema/index.js";
 
-/** What an edition does with a new organisation, inside the transaction that creates it. */
+/** What an extension does with a new organisation, inside the transaction that creates it. */
 export type OrgCreatedHook = (
   client: pg.PoolClient,
   org: { id: string },

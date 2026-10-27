@@ -21,18 +21,18 @@ export type SandboxProvider = GenerationSandboxes & {
   destroyAgentSandboxes?(): Promise<number>;
 };
 
-/** What an edition adds on top of core (docs/architecture/extension-points.md). Core runs with none. */
+/** What an extension adds on top of core (docs/architecture/extension-points.md). Core runs with none. */
 export type ServerExtension = {
   name: string;
-  /** Applies the edition's own migrations, on every boot, after core's. */
+  /** Applies the extension's own migrations, on every boot, after core's. */
   migrate?(pool: pg.Pool): Promise<void>;
   /** Runs on every boot, after core's seeds. */
   seed?(pool: pg.Pool): Promise<void>;
   /** Registers routes and hooks on the app, before core's routes. */
   routes?(app: FastifyInstance, deps: AppDeps): Promise<void>;
-  /** The instance keys the edition reads, listed with core's. */
+  /** The instance keys the extension reads, listed with core's. */
   integrations?: readonly Integration[];
-  /** The connectors the edition ships, installed after core's; a slug core has fails boot. */
+  /** The connectors the extension ships, installed after core's; a slug core has fails boot. */
   connectors?: readonly ConnectorEntry[];
   /** Runs for every new organisation, inside the transaction that creates it. */
   orgCreated?: OrgCreatedHook;
@@ -40,15 +40,15 @@ export type ServerExtension = {
   policy?(services: { repo: Repositories }): OrgPolicy;
   /** The credentials a model provider is called with for an organisation, in place of core's own rows. */
   modelCredentials?(services: { repo: Repositories }): ModelCredentialsProvider;
-  /** The identity provider for this configuration, when the edition identifies requests itself. */
+  /** The identity provider for this configuration, when the extension identifies requests itself. */
   identity?(deps: Pick<AppDeps, "repo" | "config">): IdentityProvider | undefined;
   /** Who may administer the instance, in place of core's rule. */
   instanceAdmin?(services: { repo: Repositories }): InstanceAdmin;
   /** The sandbox provider that replaces core's one OpenSandbox from the configuration. */
   sandboxes?(services: { repo: Repositories; config: AppConfig; masterKey: Buffer }): SandboxProvider;
-  /** Where attachment bytes are kept, when the edition keeps them somewhere of its own. */
+  /** Where attachment bytes are kept, when the extension keeps them somewhere of its own. */
   blobStore?(services: { config: AppConfig }): BlobStore | undefined;
-  /** The directory of the operator app's build this edition serves, in place of core's. */
+  /** The directory of the operator app's build this extension serves, in place of core's. */
   webApp?: string;
 };
 

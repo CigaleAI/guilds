@@ -1,6 +1,6 @@
-# CORE is where this repository sits in the build context and under /app. An edition on top of
-# core builds this file from its own root with core in a subdirectory; the manifests and lockfile
-# at the context's root are then that edition's workspace.
+# CORE is where this repository sits in the build context and under /app. A repository that
+# extends core builds this file from its own root with core in a subdirectory; the manifests and
+# lockfile at the context's root are then that repository's workspace.
 ARG CORE=.
 
 # Node 24.21.0 bookworm-slim. Exact patch and multi-arch index digest;

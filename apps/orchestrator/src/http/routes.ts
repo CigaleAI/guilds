@@ -614,7 +614,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   /**
    * The user directory. On a compat-cookie box whoever reaches it may act as any user, so it is
-   * open; behind an authenticating proxy it is the instance administrator's; a mode an edition
+   * open; behind an authenticating proxy it is the instance administrator's; a mode an extension
    * adds has none.
    */
   async function requireUserDirectory(request: IdentityRequest): Promise<void> {

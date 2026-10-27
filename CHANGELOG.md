@@ -22,7 +22,7 @@ Migration 0013 adds the `file` kind.
 `/notes`: `/api/agents/:id/notes`, `/api/guilds/:id/notes`, and
 `/api/org/notes`. The guild's notes view is **State › Notes** at
 `/guilds/<id>/state/notes`. The live event `guild.files.changed` is
-`guild.artifacts.changed`. An edition that imported `BlobStore` from
+`guild.artifacts.changed`. An extension that imported `BlobStore` from
 `attachments/types.js` imports it from `lib/blob-store.js`.
 
 **Breaking.** Agents run on machines: containers an organisation
@@ -55,11 +55,11 @@ a sandbox of their own moves them onto machines.
    installs, and npm installs. The home is `/home/<agent id>`. Run
    the install again from the agent's **CLI** tab, or let the agent
    run it.
-5. Update API clients and editions to the machine API. Agent create
+5. Update API clients and extensions to the machine API. Agent create
    takes `machine_id`, required when the organisation has more than
    one machine. Agent payloads carry `machine_id` and `machine`. A
    machine holds the tier and size
-   ([Machines](docs/concepts/machines.md)). An edition's
+   ([Machines](docs/concepts/machines.md)). An extension's
    `SandboxProvider`, `GenerationSandboxes`, and `machineHost` are
    keyed by machine
    ([Extension points](docs/architecture/extension-points.md)).

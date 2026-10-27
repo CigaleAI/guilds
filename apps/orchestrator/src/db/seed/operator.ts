@@ -6,7 +6,7 @@ import { isUniqueViolation, withTransaction } from "../pg.js";
 
 /**
  * A fresh box's first user and the organisation they own. Seeded only while the box has no user
- * at all, so a box an edition has populated, or one whose operator has renamed themselves, is
+ * at all, so a box an extension has populated, or one whose operator has renamed themselves, is
  * left as it is.
  */
 export async function seedOperator(pool: pg.Pool, now = new Date()): Promise<void> {

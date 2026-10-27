@@ -36,7 +36,7 @@ import { fastifyRequestIdOptions, registerHttpObservability } from "./observabil
 
 export type { AppDeps } from "./http/deps.js";
 
-/** Core's build of the React app, served at the site root unless an edition serves its own. */
+/** Core's build of the React app, served at the site root unless an extension serves its own. */
 const WEB_DIST = path.join(repoRoot(import.meta.url), "apps", "web", "dist");
 
 export async function buildApp(

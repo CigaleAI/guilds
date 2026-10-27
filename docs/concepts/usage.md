@@ -9,7 +9,7 @@ whole instance.
 
 Usage is a record, not a budget. Core never stops a run because of
 what it costs. Who pays for a call is the concern of the model
-credentials an edition plugs in ([Model keys](model-keys.md)).
+credentials an extension plugs in ([Model keys](model-keys.md)).
 
 ## Why it exists
 
@@ -52,7 +52,7 @@ Model calls of the [Prompt Studio](prompt-studio.md) coach and of the
 organisation, monthly, and instance totals only. The Studio coach
 and the Builder each show as a row of their own.
 
-### For editions
+### For extensions
 
 After every model completion, core reports the run, the model, the
 tokens, the cost, and where the cost came from to the model

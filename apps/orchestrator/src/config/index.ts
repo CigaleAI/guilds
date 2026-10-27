@@ -4,7 +4,7 @@ import { parseHarnessesOff, type Harness } from "../coding/harnesses.js";
 import { normalizeEmail } from "../lib/email.js";
 import { orchestratorRoot } from "../lib/paths.js";
 
-/** The modes core identifies a request in; an edition names its own when it loads the configuration. */
+/** The modes core identifies a request in; an extension names its own when it loads the configuration. */
 export const AUTH_MODES = ["compat-cookie", "trusted-header"] as const;
 export type AuthMode = string;
 /** Set to `1` on a development stack, which runs on the all-zero master key. */
@@ -117,7 +117,7 @@ function decodeHexBytes(raw: string): Buffer | null {
 }
 
 /**
- * Core's settings from the environment. `authModes` are the modes an edition identifies requests
+ * Core's settings from the environment. `authModes` are the modes an extension identifies requests
  * in, accepted beside core's.
  */
 export function loadConfig(

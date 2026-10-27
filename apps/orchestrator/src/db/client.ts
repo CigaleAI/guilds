@@ -20,7 +20,7 @@ export type Database = {
 };
 
 /**
- * What an edition adds to the database at boot: migrations of its own tables, applied after
+ * What an extension adds to the database at boot: migrations of its own tables, applied after
  * core's, and a seed.
  */
 export type DatabaseExtension = {
@@ -70,21 +70,21 @@ export async function repairMigrations(pool: pg.Pool): Promise<string[]> {
 }
 
 /**
- * Migrates and seeds: core's migrations, then each edition's; core's catalog, then each edition's
+ * Migrates and seeds: core's migrations, then each extension's; core's catalog, then each extension's
  * seed in order, then core's operator, which a box the seeds have populated does not get.
  */
 export async function connect(
   databaseUrl: string,
-  editions: readonly DatabaseExtension[] = [],
+  extensions: readonly DatabaseExtension[] = [],
 ): Promise<Database> {
   const pool = await createPool(databaseUrl);
   await applyMigrations(pool);
-  for (const edition of editions) {
-    await edition.migrate?.(pool);
+  for (const extension of extensions) {
+    await extension.migrate?.(pool);
   }
   await seedSystem(pool);
-  for (const edition of editions) {
-    await edition.seed?.(pool);
+  for (const extension of extensions) {
+    await extension.seed?.(pool);
   }
   await seedOperator(pool);
   const db = drizzle(pool, { schema });

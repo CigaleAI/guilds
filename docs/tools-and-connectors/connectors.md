@@ -22,7 +22,7 @@ Every connector the box ships is a folder under
   needs
 - an optional `logo.svg` (24×24, `currentColor`)
 
-`src/connectors/index.ts` lists core's folders. An edition adds its
+`src/connectors/index.ts` lists core's folders. An extension adds its
 own through `ServerExtension.connectors`
 ([Extension points](../architecture/extension-points.md)). A connector
 also comes from the [connector registry](connector-registry.md), or
@@ -171,7 +171,7 @@ key, for every organisation without a login of its own. It takes one
 of two forms:
 
 - `{ integration, field }`: that field of one of the box's own
-  integrations. Only a connector the box ships, core or an edition,
+  integrations. Only a connector the box ships, core or an extension,
   may use it. The Web search connector names `web-search`'s `api_key`.
 - `{ own: true }`: the token connector's own login fields, as the
   platform key `connector:<slug>`

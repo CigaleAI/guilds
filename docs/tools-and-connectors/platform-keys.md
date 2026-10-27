@@ -38,7 +38,7 @@ value does not count as set.
 | `registry` | env | `REGISTRY_URL` (default `https://registry.guilds.run`), optional `REGISTRY_PUBLIC_KEY` | Installing connectors and recipes from a registry ([Connector registry](connector-registry.md)) |
 | `connector-code` | env | `CONNECTORS_CODE_TIER`, optional `CONNECTORS_ROOT` | Registry connectors that carry adapter code ([Code tier](connector-registry.md#code-tier)) |
 
-An edition may add integrations of its own
+An extension may add integrations of its own
 ([Extension points](../architecture/extension-points.md)). An
 integration may provide native tools. A native tool that waits on an
 integration has no switch in **Tools**. It says it is offered once a
@@ -130,4 +130,4 @@ Each integration in `GET /api/instance` carries:
 | `provides` | `native_tools` and `connectors` it switches on |
 
 `installedIntegrations()` lists core's integrations, then an
-edition's, then the connector-declared ones.
+extension's, then the connector-declared ones.

@@ -72,7 +72,7 @@ function Scroll({ children }: { children: ReactNode }) {
   );
 }
 
-/** Platform administration: the connector catalog, the platform's keys, the users, and the tabs an edition adds. */
+/** Platform administration: the connector catalog, the platform's keys, the users, and the tabs an extension adds. */
 export function AdminPage() {
   const search = useSearch({ strict: false }) as TabSearch;
   const navigate = useNavigate();

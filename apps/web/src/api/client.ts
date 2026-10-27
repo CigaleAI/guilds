@@ -35,7 +35,7 @@ type RequestOptions = {
 
 /**
  * Calls the orchestrator API as the current operator, with the tab's request id. A signed-out
- * session goes to the edition's sign-in page when it has one; server errors and network failures
+ * session goes to the extension's sign-in page when it has one; server errors and network failures
  * are reported.
  */
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {

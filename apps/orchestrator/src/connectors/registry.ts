@@ -26,7 +26,7 @@ export class ConnectorRegistryError extends Error {
 }
 
 /**
- * An entry for a connector folder shipped in the image, by core or by an edition: its
+ * An entry for a connector folder shipped in the image, by core or by an extension: its
  * `connector.json`, checked against the folder name, and its adapter.
  */
 export function folderEntry(

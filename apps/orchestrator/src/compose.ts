@@ -50,7 +50,7 @@ export type Server = {
 
 /**
  * The composition root: connects, wires every service, reconciles what the previous process
- * left running, and builds the app. An edition starts from here with its extensions.
+ * left running, and builds the app. A caller passes its extensions here.
  */
 export async function createServer(
   config: AppConfig,

@@ -2,7 +2,7 @@
 
 export type AuthMode = "compat-cookie" | "trusted-header" | "session";
 
-/** How the server identifies a request. An edition that signs people in adds its methods to this. */
+/** How the server identifies a request. An extension that signs people in adds its methods to this. */
 export type AuthConfig = {
   mode: AuthMode;
 };

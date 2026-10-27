@@ -353,7 +353,7 @@ agent's live `coding` flag ([Code tools](code-tools.md#tools)).
 ### Policy
 
 The organisation policy's `maxCodingAgents` bounds how many of its
-agents have `coding` on. Core sets no bound. Where an edition's policy
+agents have `coding` on. Core sets no bound. Where an extension's policy
 sets one, creating a coding agent, or turning `coding` on, is refused
 above it with 409 `<source> limit reached: coding agents`. The
 capabilities payload reports `max_coding_agents` and the remaining

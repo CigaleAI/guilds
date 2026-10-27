@@ -13,14 +13,14 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 
 const migrationsFolder = path.join(orchestratorRoot(import.meta.url), "drizzle");
 const freshDb = uniqueDbName("agent_platform_migrate_fresh");
-const editionDb = uniqueDbName("agent_platform_migrate_edition");
+const extensionDb = uniqueDbName("agent_platform_migrate_extension");
 const driftDb = uniqueDbName("agent_platform_migrate_drift");
 const cliDb = uniqueDbName("agent_platform_migrate_cli");
 const accessDb = uniqueDbName("agent_platform_migrate_access");
 
 after(async () => {
   await dropIsolatedDatabase(freshDb);
-  await dropIsolatedDatabase(editionDb);
+  await dropIsolatedDatabase(extensionDb);
   await dropIsolatedDatabase(driftDb);
   await dropIsolatedDatabase(cliDb);
   await dropIsolatedDatabase(accessDb);
@@ -94,18 +94,18 @@ test("a migration skipped behind a later recorded stamp fails boot by name, and 
   }
 });
 
-test("an edition's migrations run after core's and before any seed", { timeout: 60_000 }, async () => {
+test("an extension's migrations run after core's and before any seed", { timeout: 60_000 }, async () => {
   const order: string[] = [];
-  const database = await connect(await createIsolatedDatabase(editionDb), [
+  const database = await connect(await createIsolatedDatabase(extensionDb), [
     {
       async migrate(pool) {
         const core = await pool.query("SELECT to_regclass('public.orgs') AS name");
         const seeded = await pool.query("SELECT count(*)::int AS count FROM public.connectors");
         order.push(`migrate: core tables ${core.rows[0].name === null ? "missing" : "present"}, ${seeded.rows[0].count} seeded rows`);
-        await pool.query("CREATE TABLE public.edition_things (org_id text REFERENCES public.orgs (id))");
+        await pool.query("CREATE TABLE public.extension_things (org_id text REFERENCES public.orgs (id))");
       },
       async seed(pool) {
-        const mine = await pool.query("SELECT to_regclass('public.edition_things') AS name");
+        const mine = await pool.query("SELECT to_regclass('public.extension_things') AS name");
         const seeded = await pool.query("SELECT count(*)::int AS count FROM public.connectors");
         order.push(`seed: own table ${mine.rows[0].name === null ? "missing" : "present"}, core seeded ${seeded.rows[0].count > 0}`);
       },

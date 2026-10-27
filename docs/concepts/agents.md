@@ -400,9 +400,9 @@ Choice.
 | Route | Does | Success | Refusals |
 | --- | --- | --- | --- |
 | `GET /api/guilds/:id/agents` | lists the guild's agents with their busy state | 200 | |
-| `POST /api/guilds/:id/agents` | creates an agent from `name`, `config`, and optional `focus`, `wake_triggers`, `avatar_shape`, `avatar_color`, `machine_id` | 201 | 422 validation or model not connected; 409 guild being deleted, `this guild is limited to N agents`, name taken, or an operator of that name; a placement refusal; an edition's policy limit |
+| `POST /api/guilds/:id/agents` | creates an agent from `name`, `config`, and optional `focus`, `wake_triggers`, `avatar_shape`, `avatar_color`, `machine_id` | 201 | 422 validation or model not connected; 409 guild being deleted, `this guild is limited to N agents`, name taken, or an operator of that name; a placement refusal; an extension's policy limit |
 | `GET /api/agents/:id` | the agent | 200 | 404 |
-| `PUT /api/agents/:id/config` | saves `config` plus optional `name`, `avatar_shape`, `avatar_color`, `focus`, `wake_triggers`, `machine_id` | 200 | 422 validation; 409 rename while generating or while the guild is being deleted, name taken; a placement refusal; an edition's policy limit |
+| `PUT /api/agents/:id/config` | saves `config` plus optional `name`, `avatar_shape`, `avatar_color`, `focus`, `wake_triggers`, `machine_id` | 200 | 422 validation; 409 rename while generating or while the guild is being deleted, name taken; a placement refusal; an extension's policy limit |
 | `PUT /api/agents/:id/machine` | moves the agent to `machine_id` ([Machines](machines.md#move-rules)) | 200 | a placement refusal |
 | `DELETE /api/agents/:id` | deletes the agent | 204 | 409 generating; 404 |
 | `GET /api/guilds/:id/embed-status` | each agent's `broken_embeds` | 200 | |
@@ -411,7 +411,7 @@ Choice.
 ([Machines](machines.md)). Placement refuses a full machine (409
 `machine <name> is full`) and a machine below what the agent needs
 (`<what> needs a machine with at least <size>; <machine> has <size>`).
-The organisation policy of an edition may cap agents, browser
+The organisation policy of an extension may cap agents, browser
 agents, and coding agents per organisation; core sets no cap. A
 policy refusal is 409 `<source> limit reached: <cap>`.
 
