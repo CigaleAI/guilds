@@ -39,7 +39,7 @@ export async function registerAgentRoutes(app: FastifyInstance, deps: RouteDeps)
       db,
       deps.mcp ?? null,
       row,
-      deps.generation?.agent_is_busy(row.id) ?? false,
+      deps.generation?.isAgentBusy(row.id) ?? false,
     );
   }
 

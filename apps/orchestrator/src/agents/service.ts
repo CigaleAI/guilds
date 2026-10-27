@@ -55,7 +55,7 @@ export type AgentServices = {
   /** The generation loop that runs the agents; absent on a box without one. */
   generation: Pick<
     GenerationLoop,
-    "deleting_guild" | "agent_is_busy" | "delete_agent" | "moveAgent" | "agentBrowserChanged"
+    "isDeletingGuild" | "isAgentBusy" | "deleteAgent" | "moveAgent" | "agentBrowserChanged"
   > | null;
 };
 
@@ -103,7 +103,7 @@ function generationOf(services: AgentServices): NonNullable<AgentServices["gener
 }
 
 function isBusy(services: AgentServices, agentId: string): boolean {
-  return services.generation?.agent_is_busy(agentId) ?? false;
+  return services.generation?.isAgentBusy(agentId) ?? false;
 }
 
 /** The 409 for a name another agent or an operator of the guild holds; any other error as it is. */
@@ -156,7 +156,7 @@ export async function createAgent(
   draft: AgentDraft,
 ): Promise<AgentRow> {
   const { db, policy } = services;
-  if (services.generation?.deleting_guild(guild.id)) {
+  if (services.generation?.isDeletingGuild(guild.id)) {
     throw new AgentError(409, "guild is being deleted");
   }
   const name = validateAgentName(draft.name);
@@ -240,7 +240,7 @@ async function assertCanEnable(
 
 /** Refuses a rename while the agent's guild is being deleted or the agent is generating. */
 function assertRenameable(services: AgentServices, agent: AgentRow): void {
-  if (services.generation?.deleting_guild(agent.guild_id)) {
+  if (services.generation?.isDeletingGuild(agent.guild_id)) {
     throw new AgentError(409, "guild is being deleted");
   }
   if (isBusy(services, agent.id)) {
@@ -368,5 +368,5 @@ export async function moveAgentToMachine(
 
 /** Deletes an agent with its runs and notes, through the generation loop that runs it. */
 export async function deleteAgent(services: AgentServices, agent: AgentRow): Promise<void> {
-  await generationOf(services).delete_agent(agent.id);
+  await generationOf(services).deleteAgent(agent.id);
 }

@@ -25,7 +25,7 @@ export async function registerGroupChatRoutes(
   const identityDb = identityDatabase(db);
   const services: GroupChatOperatorServices = {
     db,
-    chat: deps.generation?.group_chat ?? null,
+    chat: deps.generation?.groupChat ?? null,
     inbox: notifications,
   };
 

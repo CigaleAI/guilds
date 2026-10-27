@@ -184,11 +184,11 @@ test("a coding run near its input limit hands off and continues in a new run", {
       handoff: "Goal: ship refunds. Done: tests. Remains: docs. See src/refund.ts:12.",
     });
     assert.equal((rowsB.at(-1)?.payload as Record<string, unknown>).content, "picked up");
-    assert.equal(loop.agentIsBusy(agentId), false);
+    assert.equal(loop.isAgentBusy(agentId), false);
 
-    const view = loop.run_view(runB);
+    const view = loop.runView(runB);
     assert.deepEqual(view.chain, { root_run_id: first, index: 2, previous_run_id: first });
-    assert.equal(loop.run_view(runA).continued_by_run_id, second);
+    assert.equal(loop.runView(runA).continued_by_run_id, second);
 
     await assert.rejects(loop.addMessage(first, "more"), (error: unknown) =>
       error instanceof RunRequestError && error.status === 409 && error.detail.includes(`continued in run ${second}`),
@@ -250,7 +250,7 @@ test("a coding run near its input limit hands off and continues in a new run", {
     const groupRuns = async () => (await listRuns(db, agentId)).filter((row) => row.kind === "group");
     for (let attempt = 0; attempt < 200; attempt += 1) {
       const runs = await groupRuns();
-      if (runs.length === 2 && runs.every((row) => row.status === "completed") && !loop.group_chat.is_dispatching(guildId)) {
+      if (runs.length === 2 && runs.every((row) => row.status === "completed") && !loop.groupChat.is_dispatching(guildId)) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));

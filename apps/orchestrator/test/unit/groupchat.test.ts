@@ -355,7 +355,7 @@ class FakeRunner implements GroupRunner {
   deliveries: Array<[string, number]> = [];
   delivery_cursors: number[] = [];
   fail_agents = new Set<string>();
-  lock_generation = 0;
+  lockGeneration = 0;
   private readonly lockEvent = new AsyncEvent();
   gate: AsyncEvent | null = null;
   /** Holds one agent's runs open until set; a cancel sets it. */
@@ -363,14 +363,14 @@ class FakeRunner implements GroupRunner {
   started: string[] = [];
   cancelled: string[] = [];
 
-  agent_is_busy(agentId: string): boolean {
+  isAgentBusy(agentId: string): boolean {
     return this.busy.has(agentId);
   }
 
-  async wait_lock_release(seen: number): Promise<void> {
-    while (this.lock_generation <= seen) {
+  async waitForLockRelease(seen: number): Promise<void> {
+    while (this.lockGeneration <= seen) {
       this.lockEvent.clear();
-      if (this.lock_generation > seen) {
+      if (this.lockGeneration > seen) {
         return;
       }
       await this.lockEvent.wait();
@@ -378,11 +378,11 @@ class FakeRunner implements GroupRunner {
   }
 
   release(): void {
-    this.lock_generation += 1;
+    this.lockGeneration += 1;
     this.lockEvent.set();
   }
 
-  async deliver_group_run(delivery: GroupDelivery): Promise<void> {
+  async deliverGroupRun(delivery: GroupDelivery): Promise<void> {
     const { agentId, throughSeq, deliveredThrough } = delivery;
     if (this.fail_agents.has(agentId)) {
       throw new DeliveryCreateError("invalid prompt files");
@@ -396,7 +396,7 @@ class FakeRunner implements GroupRunner {
     this.delivery_cursors.push(deliveredThrough);
   }
 
-  async cancel_agent_run(agentId: string): Promise<void> {
+  async cancelAgentRuns(agentId: string): Promise<void> {
     this.cancelled.push(agentId);
     this.gates.get(agentId)?.set();
   }

@@ -188,7 +188,7 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
       }
       if (recorded.name === "run-message" || recorded.name === "run-create-with-message") {
         const id = String(jsonByName.get(recorded.name)?.id ?? "");
-        await waitUntil(() => !generation.generating(id), 10_000, recorded.name);
+        await waitUntil(() => !generation.isGenerating(id), 10_000, recorded.name);
       }
       if (recorded.name === "sse-run-create") {
         const runId = String(jsonByName.get("sse-run-create")?.id ?? "");

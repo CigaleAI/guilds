@@ -152,19 +152,19 @@ export async function createServer(
     policy,
     credentials: modelCredentials,
     publishFilesChanged: async (guildId) => {
-      await generation.group_chat.publish(guildId, "guild.artifacts.changed", {
+      await generation.groupChat.publish(guildId, "guild.artifacts.changed", {
         scope: "agent",
         path: "task.md",
       });
     },
     publishRoutinesChanged: async (guildId, change) => {
-      await generation.group_chat.publish(guildId, "agent.routines.changed", {
+      await generation.groupChat.publish(guildId, "agent.routines.changed", {
         agent_id: change.agentId,
         action: change.action,
         schedule_id: change.scheduleId,
       });
     },
-    isAgentBusy: (agentId) => generation.agent_is_busy(agentId),
+    isAgentBusy: (agentId) => generation.isAgentBusy(agentId),
   });
   // A studio session left generating is continued by this process.
   await studio.reconcile();

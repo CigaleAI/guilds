@@ -36,7 +36,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
   const logs: Array<[string, string, string]> = [];
   // Only what the routes reach: the group-chat feed they observe, and the diff and log read from the machine.
   const generation = {
-    group_chat: { observe: () => undefined },
+    groupChat: { observe: () => undefined },
     async runDiff(runId: string, repository: string, task: string | null = null) {
       diffs.push([runId, repository, task]);
       return { diff: "+print('hello, guild')\n", truncated: false };

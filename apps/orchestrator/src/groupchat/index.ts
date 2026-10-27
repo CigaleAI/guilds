@@ -319,12 +319,12 @@ export type GroupDelivery = {
 };
 
 export type GroupRunner = {
-  agent_is_busy(agentId: string): boolean;
-  wait_lock_release(seen: number): Promise<void>;
-  deliver_group_run(delivery: GroupDelivery): Promise<void>;
+  isAgentBusy(agentId: string): boolean;
+  waitForLockRelease(seen: number): Promise<void>;
+  deliverGroupRun(delivery: GroupDelivery): Promise<void>;
   /** Stops the run the agent is generating, if any. */
-  cancel_agent_run(agentId: string): Promise<void>;
-  lock_generation: number;
+  cancelAgentRuns(agentId: string): Promise<void>;
+  lockGeneration: number;
 };
 
 /** A group run under way: its agent and the snapshot it was given. */
@@ -679,7 +679,7 @@ export class GroupChat {
       return;
     }
     const targets = interruptTargets([...this._active_for(guildId).keys()], taggedAgentIds);
-    await Promise.all(targets.map((agentId) => runner.cancel_agent_run(agentId)));
+    await Promise.all(targets.map((agentId) => runner.cancelAgentRuns(agentId)));
   }
 
   async _tags(guildId: string, text: string): Promise<GroupTags> {
@@ -833,7 +833,7 @@ export class GroupChat {
   async _dispatch_step(guildId: string, runner: GroupRunner): Promise<boolean> {
     const kick = this._kick(guildId);
     kick.clear();
-    const seen = runner.lock_generation;
+    const seen = runner.lockGeneration;
     const active = this._active_for(guildId);
     const snapshot = Number((await this.state(guildId)).chat_seq);
     const pending = withActiveCursors(
@@ -850,7 +850,7 @@ export class GroupChat {
     if (!active.size && !plan.waitsForRelease) {
       return false;
     }
-    const release = plan.waitsForRelease ? [runner.wait_lock_release(seen)] : [];
+    const release = plan.waitsForRelease ? [runner.waitForLockRelease(seen)] : [];
     await Promise.race([kick.wait(), ...release]);
     return true;
   }
@@ -877,7 +877,7 @@ export class GroupChat {
       actionable,
       tagged: pick.tagged,
       active: this._active_for(guildId),
-      isBusy: (agentId) => runner.agent_is_busy(agentId),
+      isBusy: (agentId) => runner.isAgentBusy(agentId),
     });
     return { ...plan, pick };
   }
@@ -917,9 +917,9 @@ export class GroupChat {
       agent_name: active?.name ?? null,
       through_seq: delivery.throughSeq,
     });
-    const seen = runner.lock_generation;
+    const seen = runner.lockGeneration;
     try {
-      await runner.deliver_group_run(delivery);
+      await runner.deliverGroupRun(delivery);
       await this.db.advanceGroupCursor(delivery.agentId, delivery.throughSeq);
       await this.publish(guildId, "group.delivery.finished", {
         agent_id: delivery.agentId,
@@ -938,7 +938,7 @@ export class GroupChat {
   ): Promise<void> {
     const { error, seen } = failure;
     if (error instanceof DeliveryBusyError) {
-      await this._runner?.wait_lock_release(seen);
+      await this._runner?.waitForLockRelease(seen);
       return;
     }
     if (!(error instanceof DeliveryCreateError)) {

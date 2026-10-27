@@ -89,7 +89,7 @@ export async function startRun(
     throw new RunRequestError(422, "message must not be empty");
   }
   const attachments = await resolveAttachments(services, agent, ids);
-  const run = await generationLoopOf(services).create_run(agent.id, message, {
+  const run = await generationLoopOf(services).createRun(agent.id, message, {
     attachments,
     startedByUserId: userId,
   });
@@ -113,7 +113,7 @@ export async function postRunMessage(
     throw new RunRequestError(422, "content must not be empty");
   }
   const attachments = await resolveAttachments(services, agent, ids);
-  return generationLoopOf(services).add_message(run.id, content, attachments);
+  return generationLoopOf(services).addMessage(run.id, content, attachments);
 }
 
 export async function listRunMessages(

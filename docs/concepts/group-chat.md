@@ -417,7 +417,7 @@ for the lock. The cursor does not advance until delivery succeeds or
 fails.
 
 An interrupting post commits first, then cancels the targeted runs
-through `cancel_agent_run`. Each cancelled run ends like any other: the
+through `cancelAgentRuns`. Each cancelled run ends like any other: the
 agent's cursor moves through that run's snapshot, and the agent is
 pending again for the new message.
 

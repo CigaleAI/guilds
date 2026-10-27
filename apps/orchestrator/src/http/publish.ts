@@ -7,7 +7,7 @@ export async function publishGroup(
   event: string,
   data: Record<string, unknown>,
 ): Promise<void> {
-  const chat = deps.generation?.group_chat;
+  const chat = deps.generation?.groupChat;
   if (!chat) {
     return;
   }

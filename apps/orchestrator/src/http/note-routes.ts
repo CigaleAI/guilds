@@ -38,7 +38,7 @@ export async function registerNoteRoutes(app: FastifyInstance, deps: RouteDeps):
   const services: OperatorNotesServices = {
     db,
     artifacts: deps.artifacts,
-    stream: deps.generation?.group_chat ?? null,
+    stream: deps.generation?.groupChat ?? null,
   };
 
   /** The routes of one owner's notes: the list, and one note read, written and deleted by path. */

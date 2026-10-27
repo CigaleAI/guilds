@@ -48,8 +48,8 @@ before(async () => {
   await notes.ensureSystemPrompt();
   db = database.pool;
   const generation = {
-    group_chat: { observe: () => undefined },
-    agent_is_busy: () => false,
+    groupChat: { observe: () => undefined },
+    isAgentBusy: () => false,
     secretAccessChanged: async (agentIds: string[]) => {
       accessChanges.push([...agentIds].sort());
     },

@@ -13,7 +13,7 @@ export type InspectorServices = {
   db: Queryable;
   schedules: Schedules;
   /** The generation loop that marks a run while it generates; absent on a box without one. */
-  generation: Pick<GenerationLoop, "generating"> | null;
+  generation: Pick<GenerationLoop, "isGenerating"> | null;
 };
 
 /** Which of an agent's runs the inspector lists, as its query asks for them. */
@@ -37,7 +37,7 @@ function runHeader(services: InspectorServices, row: Item): Item {
     id: row.id,
     kind: row.kind,
     status: row.status,
-    generating: services.generation ? services.generation.generating(String(row.id)) : false,
+    generating: services.generation ? services.generation.isGenerating(String(row.id)) : false,
     task_prompt_hash: row.task_prompt_hash,
     system_prompt_hash: row.system_prompt_hash,
     memory_prompt_hash: row.memory_prompt_hash,

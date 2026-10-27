@@ -41,7 +41,7 @@ import { registerUserRoutes } from "./user-routes.js";
 export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
   const notifications = new Notifications(notificationsDatabase(deps.db));
 
-  deps.generation?.group_chat.observe((guildId, event, data) =>
+  deps.generation?.groupChat.observe((guildId, event, data) =>
     notifications.observe(guildId, event, data),
   );
   await registerMeRoutes(app, deps);

@@ -33,7 +33,7 @@ export type GuildServices = {
   policy: OrgPolicy;
   schedules: Schedules;
   /** The generation loop that runs the guild's agents; absent on a box without one. */
-  generation: Pick<GenerationLoop, "deleting_guild" | "agent_is_busy" | "delete_guild"> | null;
+  generation: Pick<GenerationLoop, "isDeletingGuild" | "isAgentBusy" | "deleteGuild"> | null;
 };
 
 /** A new guild as it is asked for, before validation. */
@@ -111,11 +111,11 @@ async function assertRenameable(services: GuildServices, guildId: string): Promi
   if (generation === null) {
     return;
   }
-  if (generation.deleting_guild(guildId)) {
+  if (generation.isDeletingGuild(guildId)) {
     throw new GuildError(409, "guild is being deleted");
   }
   const members = await listAgents(services.db, guildId);
-  if (members.some((row) => generation.agent_is_busy(row.id))) {
+  if (members.some((row) => generation.isAgentBusy(row.id))) {
     throw new GuildError(409, "a member agent is already generating");
   }
 }
@@ -195,5 +195,5 @@ export async function deleteGuild(services: GuildServices, guild: GuildRow): Pro
   if (services.generation === null) {
     throw new GuildError(503, "generation is unavailable");
   }
-  await services.generation.delete_guild(guild.id);
+  await services.generation.deleteGuild(guild.id);
 }

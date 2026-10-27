@@ -62,9 +62,9 @@ test("guild settings change within the guild's state and roles", { timeout: 60_0
       },
     }),
     generation: {
-      deleting_guild: () => state.deleting,
-      agent_is_busy: () => state.busy,
-      delete_guild: async () => {},
+      isDeletingGuild: () => state.deleting,
+      isAgentBusy: () => state.busy,
+      deleteGuild: async () => {},
     },
   };
   const draft = { name: "desk", about: "", description: "", visibility: "org" };

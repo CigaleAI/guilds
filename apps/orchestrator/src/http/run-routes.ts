@@ -29,7 +29,7 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
   app.get("/api/agents/:agent_id/runs", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    return loop().list_run_payloads(agent.id);
+    return loop().listRunViews(agent.id);
   });
 
   app.post("/api/agents/:agent_id/runs", async (request, reply) => {
@@ -46,7 +46,7 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
 
   app.get("/api/runs/:run_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    return loop().run_payload(
+    return loop().runView(
       await requireVisibleRun(db, param(request, "run_id"), String(user.id)),
     );
   });
@@ -62,7 +62,7 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
   app.post("/api/runs/:run_id/resume", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
-    return loop().resume_run(run.id);
+    return loop().resumeRun(run.id);
   });
 
   app.post("/api/runs/:run_id/messages", async (request, reply) => {

@@ -384,7 +384,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       return await loadGuildActivity(db, String(session.source_guild_id), {
         ...window,
         now,
-        generating: (runId) => (deps.generation ? deps.generation.generating(runId) : false),
+        generating: (runId) => (deps.generation ? deps.generation.isGenerating(runId) : false),
       });
     } catch (error) {
       mapStudioError(error);

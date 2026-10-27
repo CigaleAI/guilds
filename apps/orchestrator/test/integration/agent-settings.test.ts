@@ -74,9 +74,9 @@ test(
       policy: OPEN_POLICY,
       modelCredentials: TEST_CREDENTIALS,
       generation: {
-        deleting_guild: () => state.deleting,
-        agent_is_busy: () => state.busy,
-        delete_agent: async (agentId) => {
+        isDeletingGuild: () => state.deleting,
+        isAgentBusy: () => state.busy,
+        deleteAgent: async (agentId) => {
           calls.push(`delete ${agentId}`);
         },
         moveAgent: async (agentId, machineId) => {

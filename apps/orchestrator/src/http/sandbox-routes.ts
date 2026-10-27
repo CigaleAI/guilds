@@ -53,7 +53,7 @@ export async function registerSandboxRoutes(app: FastifyInstance, deps: AppDeps)
           return;
         }
         touchedAt = now;
-        loop().touch_sandbox(agentId);
+        loop().touchSandbox(agentId);
       },
     );
   }
@@ -85,20 +85,20 @@ export async function registerSandboxRoutes(app: FastifyInstance, deps: AppDeps)
   }
 
   app.get("/api/agents/:agent_id/browser", async (request) => {
-    await loop().ensure_browser(await visibleAgentId(request));
+    await loop().ensureBrowser(await visibleAgentId(request));
     return { status: "ready" };
   });
 
   registerSandboxProxy("/api/agents/:agent_id/browser/vnc", (agentId) =>
-    loop().browser_proxy_target(agentId),
+    loop().browserProxyTarget(agentId),
   );
 
   app.post("/api/agents/:agent_id/cli", async (request) => {
-    await loop().ensure_cli(await visibleAgentId(request));
+    await loop().ensureCli(await visibleAgentId(request));
     return { status: "ready" };
   });
 
   registerSandboxProxy("/api/agents/:agent_id/cli/tty", (agentId) =>
-    loop().cli_proxy_target(agentId),
+    loop().cliProxyTarget(agentId),
   );
 }

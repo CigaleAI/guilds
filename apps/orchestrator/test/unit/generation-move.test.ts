@@ -44,7 +44,7 @@ test("a move stops the agent on the machine it leaves and carries its home to th
   assert.deepEqual(sandboxes.stopped, [{ agentId: "a_1", what: "purge" }]);
   assert.equal(existsSync(path.join(root, "mach_1", "a_1")), false);
   assert.equal(readFileSync(path.join(root, "mach_2", "a_1", "notes.txt"), "utf8"), "kept");
-  assert.equal(loop.agentIsBusy("a_1"), false);
+  assert.equal(loop.isAgentBusy("a_1"), false);
 });
 
 test("a move onto the machine the agent sits on does nothing", async () => {
@@ -90,7 +90,7 @@ test("a move is refused across workspace roots and onto a home already on the ta
   await assert.rejects(() => loop.moveAgent("a_1", "mach_2"), refusal(409, /already holds a home/));
   assert.deepEqual(db.moves, []);
   assert.equal(existsSync(path.join(root, "mach_1", "a_1", "notes.txt")), true);
-  assert.equal(loop.agentIsBusy("a_1"), false);
+  assert.equal(loop.isAgentBusy("a_1"), false);
 });
 
 test("a home that moved goes back when the database refuses the move", async () => {
@@ -104,7 +104,7 @@ test("a home that moved goes back when the database refuses the move", async () 
     );
     assert.equal(readFileSync(path.join(root, "mach_1", "a_1", "notes.txt"), "utf8"), "kept");
     assert.equal(existsSync(path.join(root, "mach_2", "a_1")), false);
-    assert.equal(loop.agentIsBusy("a_1"), false);
+    assert.equal(loop.isAgentBusy("a_1"), false);
   }
 });
 
