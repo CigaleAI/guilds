@@ -17,8 +17,8 @@ async function counters(deps: AppDeps): Promise<Map<string, unknown>> {
 /** What the Studio and Builder coaches spent, per organisation. */
 async function coachUsage(deps: AppDeps): Promise<{ studioByOrg: Map<string, unknown>; builderByOrg: Map<string, unknown> }> {
   return {
-    studioByOrg: deps.studio ? await deps.studio.store.studioUsageByOrg() : new Map(),
-    builderByOrg: deps.builder ? await deps.builder.store.builderUsageByOrg() : new Map(),
+    studioByOrg: deps.studio ? await deps.studio.usageByOrg() : new Map(),
+    builderByOrg: deps.builder ? await deps.builder.usageByOrg() : new Map(),
   };
 }
 

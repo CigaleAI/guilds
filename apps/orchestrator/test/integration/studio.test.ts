@@ -59,6 +59,8 @@ import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
 import { insertIssue } from "../../src/db/issues.js";
 import { upsertBinding } from "../../src/db/bindings.js";
 import { getSchedule, listSchedules } from "../../src/db/schedules.js";
+import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq } from "../../src/db/conversations.js";
+import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -281,12 +283,11 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     const liveTask = await getAgentTask(db, "org_home", "a_studio");
     const createdDraft = await studio.drafts.createFromTool(
       {
-        session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+        session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
         user: { id: "user_operator", name: "operator" },
         orgId: "org_home",
         sourceGuildId: "guild_studio",
         generation: 1,
-        store: studio.store,
         artifacts,
         db,
         schedules,
@@ -323,12 +324,11 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
 
     const second = await studio.drafts.createFromTool(
       {
-        session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+        session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
         user: { id: "user_operator", name: "operator" },
         orgId: "org_home",
         sourceGuildId: "guild_studio",
         generation: 1,
-        store: studio.store,
         artifacts,
         db,
         schedules,
@@ -344,7 +344,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
       headers: AUTH,
     });
     assert.equal(discarded.statusCode, 200, discarded.body);
-    assert.equal((await studio.store.getDraft(String(second.draft_id)))?.discarded_by_user_id, "user_operator");
+    assert.equal((await getStudioDraft(db, String(second.draft_id)))?.discarded_by_user_id, "user_operator");
 
     const hostConflict = await app.inject({
       method: "PUT",
@@ -502,12 +502,11 @@ test("studio reads agent access, script source, and granted connections", { time
     assert.deepEqual(session.granted_connection_ids, []);
 
     const toolContext = async (): Promise<StudioToolContext> => ({
-      session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
       user: { id: "user_operator", name: "operator" },
       orgId: "org_home",
       sourceGuildId: "guild_access",
       generation: 1,
-      store: studio.store,
       artifacts,
       db,
       schedules,
@@ -629,13 +628,17 @@ test("studio reads agent access, script source, and granted connections", { time
 
     // A login request is answered on its card: the answer and who gave it stay on the request.
     const logged = async (result: Record<string, unknown>): Promise<number> => {
-      const seq = await studio.store.nextSeq(session.id);
-      await studio.store.insertMessage(
-        session.id,
-        seq,
-        1,
-        { role: "tool", tool_call_id: `call_${seq}`, content: JSON.stringify(result) },
-        { generation: 1, tool_name: "studio_request_connection_access" },
+      const seq = await nextConversationSeq(db, "studio", session.id);
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 1,
+          payload: { role: "tool", tool_call_id: `call_${seq}`, content: JSON.stringify(result) },
+          metadata: { generation: 1, tool_name: "studio_request_connection_access" },
+        },
         new Date(),
       );
       return seq;
@@ -646,7 +649,7 @@ test("studio reads agent access, script source, and granted connections", { time
     const declined = await answer(declineSeq, "decline");
     assert.equal(declined.statusCode, 200, declined.body);
     assert.deepEqual((declined.json() as { granted_connection_ids: string[] }).granted_connection_ids, []);
-    const declinedMeta = (await studio.store.getMessage(session.id, declineSeq))?.metadata as Record<string, unknown>;
+    const declinedMeta = (await getConversationMessage(db, "studio", session.id, declineSeq))?.metadata as Record<string, unknown>;
     assert.equal(declinedMeta.access_status, "declined");
     assert.equal(declinedMeta.resolved_by_user_id, "user_operator");
     assert.equal((await answer(declineSeq, "grant")).statusCode, 409);
@@ -655,9 +658,9 @@ test("studio reads agent access, script source, and granted connections", { time
     const grantedByCard = await answer(grantSeq, "grant");
     assert.equal(grantedByCard.statusCode, 200, grantedByCard.body);
     assert.deepEqual((grantedByCard.json() as { granted_connection_ids: string[] }).granted_connection_ids, [String(connection.id)]);
-    const grantedMeta = (await studio.store.getMessage(session.id, grantSeq))?.metadata as Record<string, unknown>;
+    const grantedMeta = (await getConversationMessage(db, "studio", session.id, grantSeq))?.metadata as Record<string, unknown>;
     assert.equal(grantedMeta.access_status, "granted");
-    const systemSeq = Number((await studio.store.listMessages(session.id))[0]?.seq);
+    const systemSeq = Number((await listConversationMessages(db, "studio", session.id))[0]?.seq);
     assert.equal((await answer(systemSeq, "grant")).statusCode, 404);
   } finally {
     await app.close();
@@ -871,7 +874,6 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       orgId: "org_home",
       sourceGuildId: "guild_ev",
       generation: 1,
-      store: studio.store,
       artifacts,
       db,
       schedules,
@@ -879,7 +881,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
     });
-    const sessionRow = () => studio.store.getSession(session.id) as Promise<Record<string, unknown>>;
+    const sessionRow = () => getStudioSession(db, session.id) as Promise<Record<string, unknown>>;
     const issue = await insertIssue(db,
       {
         issueId: "iss_ev",
@@ -904,12 +906,12 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       { kind: "issue", issue_id: issue.id },
     ];
     for (const pin of pins) {
-      const before = (await studio.store.listMessages(session.id)).length;
+      const before = (await listConversationMessages(db, "studio", session.id)).length;
       await studio.postMessage(await sessionRow(), { id: "user_operator", name: "operator" }, `Question about ${String(pin.kind)}`, pin);
       await studio.runner.wait(session.id);
-      const rows = await studio.store.listMessages(session.id);
-      const focusRow = rows[before] as { payload: { role: string; content: string }; metadata: { source: string; focus: { kind: string; label: string } } };
-      const question = rows[before + 1] as { payload: { content: string }; metadata: { source: string } };
+      const rows = await listConversationMessages(db, "studio", session.id);
+      const focusRow = rows[before] as unknown as { payload: { role: string; content: string }; metadata: { source: string; focus: { kind: string; label: string } } };
+      const question = rows[before + 1] as unknown as { payload: { content: string }; metadata: { source: string } };
       assert.equal(focusRow.metadata.source, "studio_focus");
       assert.equal(focusRow.metadata.focus.kind, pin.kind);
       assert.ok(focusRow.metadata.focus.label);
@@ -917,13 +919,13 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       assert.equal(question.metadata.source, "ui");
       assert.equal(question.payload.content, `Question about ${String(pin.kind)}`);
     }
-    const focusRows = (await studio.store.listMessages(session.id)).filter((row) => (row.metadata as { source?: string }).source === "studio_focus");
+    const focusRows = (await listConversationMessages(db, "studio", session.id)).filter((row) => (row.metadata as { source?: string }).source === "studio_focus");
     assert.match(String((focusRows[0]?.payload as { content: string }).content), /memory_write/);
     assert.match(String((focusRows[1]?.payload as { content: string }).content), /Written by: user operator/);
     assert.match(String((focusRows[1]?.payload as { content: string }).content), /written_at="\d{4}-\d{2}-\d{2}T/);
     assert.match(String((focusRows[2]?.payload as { content: string }).content), /Compile the weekly digest/);
     assert.match(String((focusRows[3]?.payload as { content: string }).content), /Always cite the source/);
-    const issuePin = focusRows[4] as { payload: { content: string }; metadata: { focus: { run_id: string; agent_id: string; issue_id: string } } };
+    const issuePin = focusRows[4] as unknown as { payload: { content: string }; metadata: { focus: { run_id: string; agent_id: string; issue_id: string } } };
     assert.match(issuePin.payload.content, /Digest feed returned 401/);
     assert.match(issuePin.payload.content, /studio_get_run\(run_id="r_ev_wake", tool_name="report_issue"\)/);
     assert.equal(issuePin.metadata.focus.issue_id, "iss_ev");
@@ -1096,12 +1098,11 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
       user: { id: "user_operator", name: "operator" },
       orgId: "org_home",
       sourceGuildId: "guild_ed",
       generation: 1,
-      store: studio.store,
       artifacts,
       db,
       schedules,
@@ -1111,22 +1112,30 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     });
     // Store the call and its result the way the runner commits them.
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
-      const seq = await studio.store.nextSeq(session.id);
+      const seq = await nextConversationSeq(db, "studio", session.id);
       const id = `call_${seq}`;
-      await studio.store.insertMessage(
-        session.id,
-        seq,
-        1,
-        { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
-        { generation: 1 },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 1,
+          payload: { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
+          metadata: { generation: 1 },
+        },
         new Date(),
       );
-      await studio.store.insertMessage(
-        session.id,
-        seq + 1,
-        1,
-        { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
-        { generation: 1, tool_name: name },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq: seq + 1,
+          generation: 1,
+          payload: { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
+          metadata: { generation: 1, tool_name: name },
+        },
         new Date(),
       );
       return seq + 1;
@@ -1161,7 +1170,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const liveGuild = await getGuild(db, "guild_ed");
     assert.equal(liveGuild?.description, "Coordinate the digest.");
     assert.equal(liveGuild?.about, "Old about");
-    const snapshot = (await studio.store.getSession(session.id))?.source_guild_snapshot as { objective?: string };
+    const snapshot = (await getStudioSession(db, session.id))?.source_guild_snapshot as { objective?: string };
     assert.equal(snapshot.objective, "Coordinate the digest.");
     const [guildChange] = await listConfigChanges(db, "org_home", { kind: "guild_text", id: "guild_ed" });
     assert.equal(guildChange?.summary, "Changed the description");
@@ -1308,12 +1317,11 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
       user: { id: "user_operator", name: "operator" },
       orgId: "org_home",
       sourceGuildId: "guild_tb",
       generation: 1,
-      store: studio.store,
       artifacts,
       db,
       schedules,
@@ -1322,22 +1330,30 @@ test("studio proposes tables to create, change, and delete that the operator app
       notesSystemPath: notes.systemPath(),
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
-      const seq = await studio.store.nextSeq(session.id);
+      const seq = await nextConversationSeq(db, "studio", session.id);
       const id = `call_${seq}`;
-      await studio.store.insertMessage(
-        session.id,
-        seq,
-        1,
-        { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
-        { generation: 1 },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 1,
+          payload: { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
+          metadata: { generation: 1 },
+        },
         new Date(),
       );
-      await studio.store.insertMessage(
-        session.id,
-        seq + 1,
-        1,
-        { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
-        { generation: 1, tool_name: name },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq: seq + 1,
+          generation: 1,
+          payload: { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
+          metadata: { generation: 1, tool_name: name },
+        },
         new Date(),
       );
       return seq + 1;
@@ -1642,12 +1658,11 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
       user: { id: "user_operator", name: "operator" },
       orgId: "org_home",
       sourceGuildId: "guild_nw",
       generation: 1,
-      store: studio.store,
       artifacts,
       db,
       schedules,
@@ -1656,22 +1671,30 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       notesSystemPath: notes.systemPath(),
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
-      const seq = await studio.store.nextSeq(session.id);
+      const seq = await nextConversationSeq(db, "studio", session.id);
       const id = `call_${seq}`;
-      await studio.store.insertMessage(
-        session.id,
-        seq,
-        1,
-        { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
-        { generation: 1 },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 1,
+          payload: { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
+          metadata: { generation: 1 },
+        },
         new Date(),
       );
-      await studio.store.insertMessage(
-        session.id,
-        seq + 1,
-        1,
-        { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
-        { generation: 1, tool_name: name },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq: seq + 1,
+          generation: 1,
+          payload: { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
+          metadata: { generation: 1, tool_name: name },
+        },
         new Date(),
       );
       return seq + 1;
@@ -1783,7 +1806,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.match(accessView.proposed, /notion_notion-create-pages: off, set on this agent, changes data/);
     const accessApplied = await resolve(accessSeq, "apply");
     assert.equal(accessApplied.statusCode, 200, accessApplied.body);
-    const appliedMeta = (await studio.store.getMessage(session.id, accessSeq))?.metadata as Record<string, unknown>;
+    const appliedMeta = (await getConversationMessage(db, "studio", session.id, accessSeq))?.metadata as Record<string, unknown>;
     assert.equal(appliedMeta.resolved_by_user_id, "user_operator");
     const [accessChange] = await listConfigChanges(db, "org_home", { kind: "access", id: "note_delete" });
     assert.equal(accessChange?.agent_id, "a_ar");
@@ -1893,12 +1916,11 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
-      session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
+      session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
       user: { id: "user_operator", name: "operator" },
       orgId: "org_home",
       sourceGuildId: "guild_rt",
       generation: 1,
-      store: studio.store,
       artifacts,
       db,
       schedules,
@@ -1907,22 +1929,30 @@ test("studio proposes routines to create, change, and delete that the operator a
       notesSystemPath: notes.systemPath(),
     });
     const commit = async (name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<number> => {
-      const seq = await studio.store.nextSeq(session.id);
+      const seq = await nextConversationSeq(db, "studio", session.id);
       const id = `call_${seq}`;
-      await studio.store.insertMessage(
-        session.id,
-        seq,
-        1,
-        { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
-        { generation: 1 },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq,
+          generation: 1,
+          payload: { role: "assistant", content: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] },
+          metadata: { generation: 1 },
+        },
         new Date(),
       );
-      await studio.store.insertMessage(
-        session.id,
-        seq + 1,
-        1,
-        { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
-        { generation: 1, tool_name: name },
+      await insertConversationMessage(
+        db,
+        "studio",
+        {
+          session_id: session.id,
+          seq: seq + 1,
+          generation: 1,
+          payload: { role: "tool", tool_call_id: id, content: JSON.stringify({ tool_message_seq: seq + 1, ...result }) },
+          metadata: { generation: 1, tool_name: name },
+        },
         new Date(),
       );
       return seq + 1;

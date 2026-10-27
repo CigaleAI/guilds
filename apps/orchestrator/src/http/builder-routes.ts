@@ -76,7 +76,7 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return builder.store.listMessages(String(session.id));
+      return builder.messages(session);
     } catch (error) {
       mapError(error);
     }

@@ -185,7 +185,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     const guild = await ownedGuild(db, param(request, "guild_id"), user);
     const studio = studioOf(deps);
-    const rows = await studio.store.inventory(String(guild.id), null);
+    const rows = await studio.guildInventory(String(guild.id));
     return rows.map((row) => studio.inventoryItem(row));
   });
 
@@ -219,7 +219,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const studio = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
-      return await studio.store.listMessages(String(session.id));
+      return await studio.messages(session);
     } catch (error) {
       mapStudioError(error);
     }
@@ -280,7 +280,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const studio = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
-      return (await studio.store.listDrafts(String(session.id))).map(viewDraft);
+      return (await studio.sessionDrafts(session)).map(viewDraft);
     } catch (error) {
       mapStudioError(error);
     }
@@ -293,7 +293,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     if (!membership || !canManageSettings(String(membership.role))) {
       throw new HttpError(403, "forbidden");
     }
-    return (await studioOf(deps).store.listOrphanDrafts(String(org.id))).map(viewDraft);
+    return (await studioOf(deps).orphanDrafts(String(org.id))).map(viewDraft);
   });
 
   app.get("/api/studio/drafts/:draft_id", async (request) => {
@@ -601,11 +601,11 @@ async function loadDraftContext(
   draftId: string,
 ): Promise<{ session: Record<string, unknown>; draft: Record<string, unknown>; user: Record<string, unknown>; orphan: boolean }> {
   const studio = studioOf(deps);
-  const draft = await studio.store.getDraft(draftId);
-  if (!draft || String(draft.org_id) !== String(org.id)) {
+  const found = await studio.orgDraft(String(org.id), draftId);
+  if (!found) {
     throw new HttpError(404, "draft not found");
   }
-  const session = await studio.store.getSession(String(draft.session_id));
+  const { draft, session } = found;
   if (!session) {
     throw new HttpError(404, "studio session not found");
   }

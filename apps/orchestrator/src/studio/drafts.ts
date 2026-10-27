@@ -22,12 +22,22 @@ import {
 } from "./constants.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
 import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
-import type { StudioStore } from "./store.js";
+import { withLockedSession } from "./session-lock.js";
 import type { StudioToolContext } from "./tools.js";
 import { resolveSourceGuildAgent, sourceGuildAgents, studioAgentHandleFromArgs } from "./tools.js";
 import { argString } from "../toolbox/schema.js";
 import { excerptBytes } from "./system.js";
 import { getAgent, getAgentTask, listAgents, writeAgentTaskInTransaction } from "../db/agents.js";
+import { nextConversationSeq } from "../db/conversations.js";
+import type { Queryable } from "../db/pg.js";
+import {
+  getStudioDraft,
+  insertStudioDraft,
+  listStudioDraftHeads,
+  lockStudioDraft,
+  updateStudioDraft,
+} from "../db/studio.js";
+import { listConversationMessages } from "../db/conversations.js";
 
 export type StudioDraftService = {
   createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -46,9 +56,13 @@ const REF_KINDS = new Set([
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
 
+function userIdOf(user: Record<string, unknown>): string | null {
+  return typeof user.id === "string" ? user.id : null;
+}
+
 export class StudioDrafts implements StudioDraftService {
   constructor(
-    public store: StudioStore,
+    public db: Queryable,
     public artifacts: ArtifactStore,
   ) {}
 
@@ -71,22 +85,23 @@ export class StudioDrafts implements StudioDraftService {
     if (!task) {
       throw new StudioUnprocessableError("task.md not found");
     }
-    const messages = await ctx.store.listMessages(String(ctx.session.id));
+    const messages = await listConversationMessages(ctx.db, "studio", String(ctx.session.id));
     const { refs, warnings } = resolveEvidenceRefs(args.evidence_refs, messages);
     const now = new Date();
-    return this.store.withSessionLock(String(ctx.session.id), async (client, session) => {
+    return withLockedSession(this.db, String(ctx.session.id), async (client, session) => {
       if (session.generation_state !== "generating" && session.generation_state !== "idle") {
         throw new StudioConflictError("session cannot accept a draft");
       }
-      const heads = (await this.store.listDraftHeads(String(session.id))).filter(
+      const heads = (await listStudioDraftHeads(this.db, String(session.id))).filter(
         (row) => row.target_agent_id === targetId && row.status === "draft",
       );
       const previous = heads[0] ?? null;
       if (previous) {
-        await this.store.updateDraft(String(previous.id), { status: "superseded", resolved_at: now }, client);
+        await updateStudioDraft(client, String(previous.id), { status: "superseded", resolved_at: now });
       }
-      const seq = await this.store.nextSeq(String(session.id), client);
-      const draft = await this.store.insertDraft(
+      const seq = await nextConversationSeq(client, "studio", String(session.id));
+      const draft = await insertStudioDraft(
+        client,
         {
           id: newId("std"),
           session_id: session.id,
@@ -120,9 +135,8 @@ export class StudioDrafts implements StudioDraftService {
           supersedes_draft_id: previous ? previous.id : null,
           created_generation: ctx.generation,
           created_message_seq: ctx.nextMessageSeq ?? seq,
-          now,
         },
-        client,
+        now,
       );
       return {
         widget: STUDIO_TASK_DRAFT_WIDGET,
@@ -148,8 +162,8 @@ export class StudioDrafts implements StudioDraftService {
       throw new StudioUnprocessableError("proposed_content exceeds the 256 KiB artifact write limit");
     }
     const now = new Date();
-    return this.store.withSessionLock(String(session.id), async (client) => {
-      const current = await this.store.lockDraft(draftId, client);
+    return withLockedSession(this.db, String(session.id), async (client) => {
+      const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
         throw new StudioError(404, "draft not found");
       }
@@ -159,8 +173,9 @@ export class StudioDrafts implements StudioDraftService {
       if (String(current.id) !== expectedHeadId) {
         throw new StudioConflictError("stale draft head");
       }
-      await this.store.updateDraft(String(current.id), { status: "superseded", resolved_at: now }, client);
-      const next = await this.store.insertDraft(
+      await updateStudioDraft(client, String(current.id), { status: "superseded", resolved_at: now });
+      const next = await insertStudioDraft(
+        client,
         {
           ...current,
           id: newId("std"),
@@ -170,9 +185,8 @@ export class StudioDrafts implements StudioDraftService {
           supersedes_draft_id: current.id,
           created_generation: current.created_generation,
           created_message_seq: current.created_message_seq,
-          now,
         },
-        client,
+        now,
       );
       return viewDraft(next);
     });
@@ -184,18 +198,18 @@ export class StudioDrafts implements StudioDraftService {
     draftId: string,
   ): Promise<Record<string, unknown>> {
     const now = new Date();
-    return this.store.withSessionLock(String(session.id), async (client) => {
-      const current = await this.store.lockDraft(draftId, client);
+    return withLockedSession(this.db, String(session.id), async (client) => {
+      const current = await lockStudioDraft(client, draftId);
       if (!current || current.session_id !== session.id) {
         throw new StudioError(404, "draft not found");
       }
       if (current.status !== "draft" && current.status !== "conflicted") {
         throw new StudioConflictError("draft cannot be discarded");
       }
-      const updated = await this.store.updateDraft(
-        String(current.id),
-        { status: "discarded", resolved_at: now, discarded_by_user_id: user.id ?? null },
+      const updated = await updateStudioDraft(
         client,
+        String(current.id),
+        { status: "discarded", resolved_at: now, discarded_by_user_id: userIdOf(user) },
       );
       return viewDraft(updated ?? current);
     });
@@ -214,8 +228,8 @@ export class StudioDrafts implements StudioDraftService {
     const { session, user, draftId } = args;
     const now = new Date();
     const preflight = await this.preflight(args);
-    return this.store.withSessionLock(String(session.id), async (client) => {
-      const draft = await this.store.lockDraft(draftId, client);
+    return withLockedSession(this.db, String(session.id), async (client) => {
+      const draft = await lockStudioDraft(client, draftId);
       if (!draft) {
         throw new StudioError(404, "draft not found");
       }
@@ -248,15 +262,15 @@ export class StudioDrafts implements StudioDraftService {
         throw new StudioUnprocessableError("task.md not found");
       }
       if (Number(live.version) !== Number(draft.base_version)) {
-        await this.store.updateDraft(String(draft.id), { status: "conflicted", resolved_at: now }, client);
+        await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
         throw new StudioConflictError("task version conflict");
       }
       const proposedHash = hashArtifactContent(String(draft.proposed_content));
       if (proposedHash === live.content_hash) {
-        const unchanged = await this.store.updateDraft(
-          String(draft.id),
-          { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: user.id ?? null },
+        const unchanged = await updateStudioDraft(
           client,
+          String(draft.id),
+          { status: "unchanged", resolved_at: now, published_at: now, published_by_user_id: userIdOf(user) },
         );
         return { outcome: "unchanged", draft: viewDraft(unchanged ?? draft), preflight };
       }
@@ -265,21 +279,21 @@ export class StudioDrafts implements StudioDraftService {
         written = await writeAgentTaskInTransaction(client, actor, String(draft.target_agent_id), String(draft.proposed_content), Number(draft.base_version));
       } catch (error) {
         if (error instanceof ArtifactError && error.status === 409) {
-          await this.store.updateDraft(String(draft.id), { status: "conflicted", resolved_at: now }, client);
+          await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
           throw new StudioConflictError("task version conflict");
         }
         throw error;
       }
-      const published = await this.store.updateDraft(
+      const published = await updateStudioDraft(
+        client,
         String(draft.id),
         {
           status: "published",
           resolved_at: now,
           published_at: now,
-          published_by_user_id: user.id ?? null,
+          published_by_user_id: userIdOf(user),
           published_resource_version: written.version,
         },
-        client,
       );
       return {
         outcome: "published",
@@ -299,7 +313,7 @@ export class StudioDrafts implements StudioDraftService {
     preview: StudioToolContext["preview"];
     notesSystemPath: string;
   }): Promise<Record<string, unknown>> {
-    const draft = await this.store.getDraft(args.draftId);
+    const draft = await getStudioDraft(this.db, args.draftId);
     if (!draft || !draft.target_agent_id) {
       throw new StudioError(404, "draft not found");
     }

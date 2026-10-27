@@ -153,7 +153,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       headers: AUTH,
     });
     assert.ok((messages.json() as unknown[]).length >= 2);
-    const stored = await builder.store.listMessages(session.id);
+    const stored = await builder.messages(session);
     const system = stored[0]?.payload as { role: string; content: string };
     assert.equal(system.role, "system");
     assert.match(system.content, new RegExp(`"role": "${linkedInNotionRecipe().roles[0]?.role}"`));

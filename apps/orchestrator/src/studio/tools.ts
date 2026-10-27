@@ -19,7 +19,6 @@ import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";
 import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
-import type { StudioStore } from "./store.js";
 import { previewCurrentState, projectAgentAccess, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
 import { wrapEvidence } from "./system.js";
 import { StudioUnprocessableError } from "./errors.js";
@@ -65,6 +64,7 @@ import { getRun, listMessages, listRunHeaders, routineRunStats } from "../db/run
 import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import { getStudioSession } from "../db/studio.js";
 
 export type StudioToolContext = {
   session: Record<string, unknown>;
@@ -73,7 +73,6 @@ export type StudioToolContext = {
   sourceGuildId: string;
   generation: number;
   nextMessageSeq?: number;
-  store: StudioStore;
   artifacts: ArtifactStore;
   db: Queryable;
   schedules: Schedules;
@@ -945,7 +944,7 @@ export const studioGetScript: StudioTool = {
 };
 
 async function liveGrantedConnectionIds(ctx: StudioToolContext): Promise<Set<string>> {
-  const live = await ctx.store.getSession(String(ctx.session.id));
+  const live = await getStudioSession(ctx.db, String(ctx.session.id));
   return new Set(grantedConnectionIds(live ?? ctx.session));
 }
 

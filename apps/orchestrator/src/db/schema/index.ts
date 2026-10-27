@@ -1171,7 +1171,7 @@ export const studioSessions = pgTable(
     generation_token: text("generation_token"),
     generation_started_at: timestamptz("generation_started_at"),
     errors: jsonb("errors").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
-    granted_connection_ids: jsonb("granted_connection_ids").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    granted_connection_ids: jsonb("granted_connection_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
     archived_at: timestamptz("archived_at"),

@@ -15,7 +15,6 @@ import { GuildValidationError, validateAbout, validateGuildDescription } from ".
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess, reviewAccessRequest } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
-import type { StudioStore } from "./store.js";
 import type { StudioOrigin } from "../db/config-changes.js";
 import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
@@ -24,6 +23,7 @@ import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type R
 import { getAgent, listAgents } from "../db/agents.js";
 import { getGuild, updateGuild } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
+import { getConversationMessage, updateConversationMessage } from "../db/conversations.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -864,23 +864,23 @@ export type EditResolution = {
 };
 
 export async function markEdit(
-  store: StudioStore,
+  db: Queryable,
   sessionId: string,
   record: EditRecord,
   resolution: EditResolution,
 ): Promise<void> {
-  const message = await store.getMessage(sessionId, record.seq);
+  const message = await getConversationMessage(db, "studio", sessionId, record.seq);
   if (!message) return;
-  await store.updateMessage(
-    sessionId,
-    record.seq,
-    (jsonObj(message.payload) as Record<string, unknown>) ?? {},
-    {
+  await updateConversationMessage(db, "studio", {
+    session_id: sessionId,
+    seq: record.seq,
+    payload: message.payload,
+    metadata: {
       ...record.metadata,
       edit_status: resolution.status,
       edit_resolved_at: new Date().toISOString(),
       resolved_by_user_id: resolution.userId,
       ...(resolution.status === "applied" ? { edit_version: resolution.version } : {}),
     },
-  );
+  });
 }

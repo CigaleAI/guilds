@@ -1,4 +1,21 @@
 import {
+  getBuilderSession,
+  insertBuilderSession,
+  listBuilderSessions,
+  listGeneratingBuilderSessions,
+  lockBuilderSession,
+  updateBuilderSession,
+} from "../db/builder.js";
+import {
+  type ConversationMessageRow,
+  type ConversationUsageRow,
+  conversationUsageByOrg,
+  insertConversationMessage,
+  listConversationMessages,
+  nextConversationSeq,
+  updateConversationMessage,
+} from "../db/conversations.js";
+import {
   assertModelConnected,
   coreModelCredentials,
   type ModelCredentialsProvider,
@@ -32,7 +49,6 @@ import {
   BUILDER_TOOL_RESULT_STUB_HINT,
 } from "./constants.js";
 import { BuilderConflictError, BuilderError } from "./errors.js";
-import { BuilderStore } from "./store.js";
 import { builderConversationTools, builderToolSchemas, type BuilderToolContext } from "./tools.js";
 import type { BuilderMcpClient } from "./connected.js";
 import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
@@ -53,21 +69,19 @@ export type BuilderServiceDeps = {
 };
 
 export class BuilderService {
-  store: BuilderStore;
   runner: ConversationRunner;
   admission: AdmissionCoordinator;
   policy: OrgPolicy;
   credentials: ModelCredentialsProvider;
 
   constructor(public deps: BuilderServiceDeps) {
-    this.store = new BuilderStore(deps.db);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
     this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
     this.runner = new ConversationRunner({
-      store: this.store,
+      db: deps.db,
+      kind: "builder",
       admission: this.admission,
-      admissionKind: "builder",
       stubHint: BUILDER_TOOL_RESULT_STUB_HINT,
       credentials: this.credentials,
       policy: this.policy,
@@ -80,10 +94,7 @@ export class BuilderService {
   }
 
   async reconcile(): Promise<void> {
-    const result = await this.store.pool.query(
-      `SELECT * FROM builder_sessions WHERE generation_state IN ('generating', 'cancelling')`,
-    );
-    for (const row of result.rows as Array<Record<string, unknown>>) {
+    for (const row of await listGeneratingBuilderSessions(this.deps.db)) {
       await this.runner.reconcile(row);
     }
   }
@@ -111,7 +122,7 @@ export class BuilderService {
     user: Record<string, unknown>,
     org: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const session = await this.store.getSession(sessionId);
+    const session = await getBuilderSession(this.deps.db, sessionId);
     if (!session || String(session.org_id) !== String(org.id)) {
       throw new BuilderError(404, "builder session not found");
     }
@@ -122,7 +133,7 @@ export class BuilderService {
   }
 
   async listSessions(orgId: string, userId: string): Promise<Array<Record<string, unknown>>> {
-    const rows = await this.store.listSessions(orgId, userId);
+    const rows = await listBuilderSessions(this.deps.db, orgId, userId);
     return rows.map((row) =>
       this.viewSession(row, {
         name: row.recipe_name,
@@ -196,32 +207,35 @@ export class BuilderService {
         },
         now,
       );
-      const created = await this.store.insertSession(
+      const created = await insertBuilderSession(
+        client,
         {
-          id: sessionId,
-          org_id: args.org.id,
-          created_by_user_id: args.user.id,
-          created_by_name: args.user.name ?? "operator",
-          recipe_id: recipeId,
-          config_snapshot: {
+          sessionId,
+          orgId: String(args.org.id),
+          createdByUserId: String(args.user.id),
+          createdByName: typeof args.user.name === "string" ? args.user.name : "operator",
+          recipeId,
+          configSnapshot: {
             ...coachConfig,
             system_prompt_hash: system.hash,
             tool_schemas: builderToolSchemas(),
           },
-          status: "active",
-          now,
         },
-        client,
+        now,
       );
       await linkRecipeToBuilder(client, recipeId, sessionId, now);
       return created;
     });
-    await this.store.insertMessage(
-      String(session.id),
-      0,
-      0,
-      { role: "system", content: system.content },
-      { source: "builder_system", system_prompt_hash: system.hash },
+    await insertConversationMessage(
+      this.deps.db,
+      "builder",
+      {
+        session_id: session.id,
+        seq: 0,
+        generation: 0,
+        payload: { role: "system", content: system.content },
+        metadata: { source: "builder_system", system_prompt_hash: system.hash },
+      },
       now,
     );
     const recipe = await getRecipe(this.deps.db, recipeId);
@@ -260,7 +274,11 @@ export class BuilderService {
     if (session.status !== "active") {
       throw new BuilderConflictError("session cannot generate");
     }
-    const started = await this.store.withSessionLock(String(session.id), async (client, locked) => {
+    const started = await withTransaction(this.deps.db, async (client) => {
+      const locked = await lockBuilderSession(client, String(session.id));
+      if (!locked) {
+        throw new BuilderError(404, "builder session not found");
+      }
       if (locked.generation_state !== "idle") {
         throw new BuilderConflictError("builder session is already generating");
       }
@@ -276,26 +294,29 @@ export class BuilderService {
         expectedBodyVersion,
         guidelinesPath: this.deps.guidelinesPath,
       });
-      await this.store.updateMessage(
-        String(locked.id),
-        0,
-        { role: "system", content: system.content },
-        { source: "builder_system", system_prompt_hash: system.hash, refreshed: true },
+      await updateConversationMessage(client, "builder", {
+        session_id: locked.id,
+        seq: 0,
+        payload: { role: "system", content: system.content },
+        metadata: { source: "builder_system", system_prompt_hash: system.hash, refreshed: true },
+      });
+      const generation = locked.generation_number + 1;
+      const seq = await nextConversationSeq(client, "builder", locked.id);
+      const userMessage = await insertConversationMessage(
         client,
-      );
-      const generation = Number(locked.generation_number) + 1;
-      const seq = await this.store.nextSeq(String(locked.id), client);
-      const userMessage = await this.store.insertMessage(
-        String(locked.id),
-        seq,
-        generation,
-        { role: "user", content },
-        { generation, source: "ui" },
+        "builder",
+        {
+          session_id: locked.id,
+          seq,
+          generation,
+          payload: { role: "user", content },
+          metadata: { generation, source: "ui" },
+        },
         now,
-        client,
       );
-      const updated = await this.store.updateSession(
-        String(locked.id),
+      const updated = await updateBuilderSession(
+        client,
+        locked.id,
         {
           generation_state: "generating",
           generation_number: generation,
@@ -303,7 +324,6 @@ export class BuilderService {
           generation_started_at: now,
         },
         now,
-        client,
       );
       return {
         session: updated ?? locked,
@@ -339,13 +359,19 @@ export class BuilderService {
   }
 
   async cancel(session: Record<string, unknown>): Promise<Record<string, unknown>> {
-    await this.store.updateSession(
-      String(session.id),
-      { generation_state: "cancelling" },
-      new Date(),
-    );
+    await updateBuilderSession(this.deps.db, String(session.id), { generation_state: "cancelling" }, new Date());
     this.runner.cancel(String(session.id));
     return this.viewSession({ ...session, generation_state: "cancelling" });
+  }
+
+  /** The session's conversation, in order. */
+  messages(session: Record<string, unknown>): Promise<ConversationMessageRow[]> {
+    return listConversationMessages(this.deps.db, "builder", String(session.id));
+  }
+
+  /** What Builder sessions spent, per organisation. */
+  usageByOrg(): Promise<Map<string, ConversationUsageRow>> {
+    return conversationUsageByOrg(this.deps.db, "builder");
   }
 
   subscribe(sessionId: string): EventQueue<[string, Record<string, unknown>]> {

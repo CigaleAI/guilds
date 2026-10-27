@@ -24,3 +24,26 @@ export function pickColumns<T extends PgTable>(
 ): string {
   return qualified(columns, alias);
 }
+
+/**
+ * The `SET` assignments for the fields of `patch` that `columns` lists, numbered from parameter
+ * `first`, and their values: a date as its stamp, an object or array as jsonb.
+ */
+export function patchAssignments(
+  patch: Readonly<Record<string, unknown>>,
+  columns: readonly string[],
+  first: number,
+): { sets: string[]; values: unknown[] } {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const column of columns) {
+    if (!(column in patch)) {
+      continue;
+    }
+    const value = patch[column];
+    const json = value !== null && typeof value === "object" && !(value instanceof Date);
+    sets.push(`${column} = $${first + values.length}${json ? "::jsonb" : ""}`);
+    values.push(value instanceof Date ? value.toISOString() : json ? JSON.stringify(value) : value);
+  }
+  return { sets, values };
+}

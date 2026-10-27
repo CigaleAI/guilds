@@ -1,6 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
-import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, usageDelta, utcMonth } from "../usage.js";
+import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, type UsageDelta, usageDelta, utcMonth } from "../usage.js";
 import { type Queryable, stamp } from "./pg.js";
 import { orgMonthlyUsage, usageCounters } from "./schema/index.js";
 
@@ -77,6 +77,7 @@ export async function claimMonthlyStudioBuilderRun(
   return row ? row.studio_builder_runs : null;
 }
 
+/** Adds a run's usage to its agent, guild, organisation, and the box's counters, and to its organisation's month. */
 export async function incrementUsage(
   client: pg.PoolClient,
   runId: string,
@@ -105,8 +106,41 @@ export async function incrementUsage(
     ["org", owner.org_id],
     [GLOBAL_SCOPE, GLOBAL_SCOPE_ID],
   ];
+  await addCounterUsage(client, scopes, delta, now);
+  await addMonthlyUsage(client, owner.org_id, delta, now);
+}
+
+/** Adds usage that belongs to no run, such as a Studio or Builder coach's, to the organisation's counters and month. */
+export async function incrementOrgUsage(
+  pool: Queryable,
+  orgId: string,
+  metadata: Record<string, unknown>,
+  now: Date,
+): Promise<void> {
+  const delta = usageDelta(metadata);
+  if (delta === null) {
+    return;
+  }
+  await addCounterUsage(
+    pool,
+    [
+      ["org", orgId],
+      [GLOBAL_SCOPE, GLOBAL_SCOPE_ID],
+    ],
+    delta,
+    now,
+  );
+  await addMonthlyUsage(pool, orgId, delta, now);
+}
+
+async function addCounterUsage(
+  pool: Queryable,
+  scopes: Array<[string, string]>,
+  delta: UsageDelta,
+  now: Date,
+): Promise<void> {
   for (const [scope, scopeId] of scopes) {
-    await client.query(
+    await pool.query(
       `INSERT INTO usage_counters (
          scope, scope_id, input_tokens, output_tokens, cache_read_tokens,
          cost_usd, calls, updated_at
@@ -130,7 +164,10 @@ export async function incrementUsage(
       ],
     );
   }
-  await client.query(
+}
+
+async function addMonthlyUsage(pool: Queryable, orgId: string, delta: UsageDelta, now: Date): Promise<void> {
+  await pool.query(
     `INSERT INTO org_monthly_usage (
        org_id, month, input_tokens, output_tokens, cache_read_tokens,
        cost_usd, calls, updated_at
@@ -144,7 +181,7 @@ export async function incrementUsage(
        calls = org_monthly_usage.calls + 1,
        updated_at = EXCLUDED.updated_at`,
     [
-      owner.org_id,
+      orgId,
       utcMonth(now),
       delta.input_tokens,
       delta.output_tokens,

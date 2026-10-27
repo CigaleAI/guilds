@@ -4,7 +4,6 @@ import type { OrgPolicy } from "../policy/index.js";
 import {
   ConversationRunner,
   generationLive,
-  type ConversationStore,
   type ConversationTool,
 } from "../conversation/runner.js";
 import {
@@ -17,28 +16,17 @@ import {
   STUDIO_TOOL_RESULT_STUB_HINT,
 } from "./constants.js";
 import type { ModelCredentialsProvider } from "../llm/credentials.js";
-import type { StudioStore } from "./store.js";
+import type { Queryable } from "../db/pg.js";
 import { studioToolMap, type StudioTool, type StudioToolContext } from "./tools.js";
 
 export { generationLive };
 
 export type StudioRunnerDeps = {
-  store: StudioStore;
+  db: Queryable;
   admission: AdmissionCoordinator;
   credentials?: ModelCredentialsProvider;
   policy?: OrgPolicy;
 };
-
-function studioConversationStore(store: StudioStore): ConversationStore {
-  return {
-    getSession: (sessionId) => store.getSession(sessionId),
-    nextSeq: (sessionId, client) => store.nextSeq(sessionId, client),
-    insertMessage: (...args) => store.insertMessage(...args),
-    listMessages: (sessionId) => store.listMessages(sessionId),
-    updateSession: (...args) => store.updateSession(...args),
-    incrementUsage: (...args) => store.incrementStudioUsage(...args),
-  };
-}
 
 function conversationTools(tools: Map<string, StudioTool>): Map<string, ConversationTool> {
   return new Map(
@@ -58,9 +46,9 @@ export class StudioRunner {
 
   constructor(public deps: StudioRunnerDeps) {
     this.inner = new ConversationRunner({
-      store: studioConversationStore(deps.store),
+      db: deps.db,
+      kind: "studio",
       admission: deps.admission,
-      admissionKind: "studio",
       stubHint: STUDIO_TOOL_RESULT_STUB_HINT,
       projectionPolicyVersion: STUDIO_PROJECTION_POLICY_VERSION,
       minUnstubbedToolResults: STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,

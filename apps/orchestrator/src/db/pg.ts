@@ -63,11 +63,6 @@ async function withSavepoint<T>(
   }
 }
 
-export function firstRow(result: pg.QueryResult): Record<string, unknown> | null {
-  const row = result.rows[0];
-  return row ? (row as Record<string, unknown>) : null;
-}
-
 export function stamp(now: Date): string {
   return now.toISOString();
 }
