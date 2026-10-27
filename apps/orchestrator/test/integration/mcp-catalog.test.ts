@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { getMcpServer, updateMcpServerConfig } from "../../src/connectors/servers.js";
 import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
@@ -20,7 +21,6 @@ import {
 } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember, insertOrg } from "../../src/db/orgs.js";
-import { getMcpServer, updateMcpServerConfig } from "../../src/db/connectors.js";
 import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
 
 const AUTH = {

@@ -1,3 +1,4 @@
+import { listMcpServers } from "../connectors/servers.js";
 import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { modelsDatabase, ModelsService } from "../llm/models.js";
 import { isSearchable } from "../connectors/builder.js";
@@ -12,7 +13,6 @@ import {
   CODING_CAPABILITY,
   NATIVE_CAPABILITY_GROUPS,
 } from "./native.js";
-import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
 import { getOrgMonthlyUsage, utcMonth } from "../db/usage.js";

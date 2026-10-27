@@ -1,3 +1,4 @@
+import { getMcpServer } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { jsonObj } from "../db/json.js";
 import {
@@ -14,7 +15,6 @@ import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioError, StudioUnprocessableError } from "./errors.js";
 import { getMcpConnection, listMcpTools } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
-import { getMcpServer } from "../db/connectors.js";
 import type { Queryable } from "../db/pg.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";

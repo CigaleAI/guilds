@@ -2,11 +2,11 @@ import { readFile } from "node:fs/promises";
 import { requireVisibleAgent } from "../agents/access.js";
 import { connectFailure, tokenCredentials } from "../connectors/connect.js";
 import { installedConnectors } from "../connectors/index.js";
+import { getMcpServer, listMcpServers } from "../connectors/servers.js";
 import { settingsComplete, validateSettings } from "../connectors/settings.js";
 import { logoPath } from "../connectors/view.js";
 import { bindingItem, connectionMetadata, serverItem } from "../credentials/items.js";
 import { listBindingsForConnection } from "../db/bindings.js";
-import { getMcpServer, listMcpServers } from "../db/connectors.js";
 import { isPlainRecord } from "../db/json.js";
 import {
   deleteMcpConnection,

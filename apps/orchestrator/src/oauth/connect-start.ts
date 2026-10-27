@@ -2,9 +2,9 @@
 // App login is stored pending and leaves for the provider's consent page.
 import { connect, connectDatabase } from "../connectors/connect.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import { getMcpServer } from "../connectors/servers.js";
 import { connectionMetadata } from "../credentials/items.js";
 import { validateOwner, type OwnerScope } from "../credentials/validate.js";
-import { getMcpServer } from "../db/connectors.js";
 import { isPlainRecord } from "../db/json.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { githubAppConfig, userAuthorizationUrl } from "../github/index.js";

@@ -4,11 +4,11 @@ import { pathToFileURL } from "node:url";
 import { installedConnectors, removeInstalledConnector, replaceInstalledConnector } from "../connectors/index.js";
 import { loadManifest, serverIdOf } from "../connectors/manifest.js";
 import { ConnectorRegistry, type ConnectorEntry } from "../connectors/registry.js";
+import { listMcpServers } from "../connectors/servers.js";
 import type { Adapter } from "../connectors/types.js";
 import { CONNECTOR_CODE, integrationValue, integrationValues } from "../instance/integrations.js";
 import { writeLog } from "../observability/log.js";
 import type { ConnectorPackage } from "./client.js";
-import { listMcpServers } from "../db/connectors.js";
 import type { Queryable } from "../db/pg.js";
 
 // Code connectors live under CONNECTORS_ROOT, one folder per version: `<root>/<slug>/<version>/`

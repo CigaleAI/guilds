@@ -3,6 +3,7 @@ import { after, test } from "node:test";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { connectorCommand } from "../../src/cli/connector.js";
+import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { RecipeApplyService } from "../../src/recipes/apply.js";
@@ -21,7 +22,7 @@ import { installedConnectors } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { McpError, McpPool, type McpDatabase } from "../../src/mcp/index.js";
 import { syncCodeConnectors } from "../../src/registry/code.js";
-import { getMcpServerBySlug, updateConnector } from "../../src/db/connectors.js";
+import { updateConnector } from "../../src/db/connectors.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
 

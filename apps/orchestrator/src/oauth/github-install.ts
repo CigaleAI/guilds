@@ -1,6 +1,6 @@
 // A GitHub App sign-in's installation: traded from the user's code, picked when the user
 // reaches several, or installed when they reach none.
-import { getMcpServer } from "../db/connectors.js";
+import { getMcpServer } from "../connectors/servers.js";
 import {
   getMcpConnectionByOauthState,
   saveMcpConnection,

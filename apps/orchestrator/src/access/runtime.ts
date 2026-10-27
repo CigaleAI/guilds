@@ -1,5 +1,5 @@
+import { listMcpServers } from "../connectors/servers.js";
 import { listBindingsCovering } from "../db/bindings.js";
-import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getSecret, listAgentSecrets } from "../db/secrets.js";

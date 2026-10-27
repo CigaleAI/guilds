@@ -1,8 +1,8 @@
 // The provider's callback that completes a sign-in, or ends it when the operator cancelled.
 import { installedConnectors } from "../connectors/index.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import { getMcpServer } from "../connectors/servers.js";
 import { settingsComplete } from "../connectors/settings.js";
-import { getMcpServer } from "../db/connectors.js";
 import {
   getMcpConnectionByOauthState,
   getPendingGithubConnectionForUser,

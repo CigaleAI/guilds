@@ -1,6 +1,7 @@
 import { installedConnectors } from "../connectors/index.js";
 import { serverManifest } from "../connectors/load.js";
 import { authFields } from "../connectors/manifest.js";
+import { listMcpServers } from "../connectors/servers.js";
 import type { AuthField, Manifest } from "../db/schema/index.js";
 import {
   connectorIntegrationId,
@@ -8,7 +9,6 @@ import {
   type Integration,
   type IntegrationField,
 } from "./integrations.js";
-import { listMcpServers } from "../db/connectors.js";
 import type { Queryable } from "../db/pg.js";
 
 /**

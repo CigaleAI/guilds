@@ -8,6 +8,7 @@ import {
   type Resolved,
 } from "../access/index.js";
 import { resolveMcpTool } from "../access/runtime.js";
+import { listMcpServers } from "../connectors/servers.js";
 import { newId } from "../lib/ids.js";
 import { isReadOnlyRemote, listedFromRows } from "../mcp/index.js";
 import type { EditScope } from "./edits.js";
@@ -15,7 +16,6 @@ import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
 import { getBinding, listBindingsCovering } from "../db/bindings.js";
-import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native

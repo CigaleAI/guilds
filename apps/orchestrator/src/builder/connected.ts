@@ -1,6 +1,6 @@
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
+import { getMcpServer, getMcpServerBySlug } from "../connectors/servers.js";
 import { type McpDatabase, mcpDatabase, McpError } from "../mcp/index.js";
-import { getMcpServer, getMcpServerBySlug } from "../db/connectors.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
 

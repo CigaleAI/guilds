@@ -17,6 +17,7 @@
     "./connectors/connect.js": "./src/connectors/connect.ts",
     "./connectors/manifest.js": "./src/connectors/manifest.ts",
     "./connectors/registry.js": "./src/connectors/registry.ts",
+    "./connectors/servers.js": "./src/connectors/servers.ts",
     "./connectors/types.js": "./src/connectors/types.ts",
     "./credentials/crypto.js": "./src/credentials/crypto.ts",
     "./credentials/items.js": "./src/credentials/items.ts",

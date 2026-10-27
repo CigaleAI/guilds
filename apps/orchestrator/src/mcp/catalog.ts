@@ -1,6 +1,7 @@
 import { installedConnectors } from "../connectors/index.js";
-import { manifestTools, OVERRIDE_FIELDS, overridesOf, toolStartsOff } from "../connectors/load.js";
+import { loadConnector, manifestTools, OVERRIDE_FIELDS, overridesOf, toolStartsOff } from "../connectors/load.js";
 import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
+import { getMcpServerBySlug } from "../connectors/servers.js";
 import { connectorFacts } from "../connectors/view.js";
 import { jsonObj } from "../db/json.js";
 import { SLUG_PATTERN, type Manifest, type Overrides, type ToolOverride } from "../db/schema/index.js";
@@ -9,13 +10,7 @@ import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp
 import { namespacedName } from "../mcp/names.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
 import { oauthSetupState } from "../oauth/index.js";
-import {
-  getMcpServerBySlug,
-  insertConnector,
-  listConnectorSlugOwners,
-  listTakenToolPrefixes,
-  updateConnector,
-} from "../db/connectors.js";
+import { insertConnector, listConnectorSlugOwners, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
 import type { Queryable } from "../db/pg.js";
 
 export const AUTH_KINDS = ["none", "token", "oauth"] as const;
@@ -279,7 +274,8 @@ export async function createConnector(
   if (isReservedToolPrefix(toolPrefix)) {
     throw new CatalogError("generated tool prefix is reserved");
   }
-  return insertConnector(db,
+  const row = await insertConnector(
+    db,
     {
       id: newId("mcp"),
       slug,
@@ -293,6 +289,7 @@ export async function createConnector(
     },
     now,
   );
+  return loadConnector(row);
 }
 
 /**
@@ -372,7 +369,7 @@ export async function patchConnector(
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }
-  return updated;
+  return loadConnector(updated);
 }
 
 /** Edits one tool by name: its description, its input schema, and whether it starts On. Null clears an edit. */
@@ -427,7 +424,7 @@ export async function patchConnectorTool(
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }
-  return updated;
+  return loadConnector(updated);
 }
 
 /** The connector in the folder format: its manifest with the admin's overrides applied. */

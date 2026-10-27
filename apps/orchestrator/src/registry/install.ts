@@ -1,4 +1,6 @@
 import { rmSync } from "node:fs";
+import { loadConnector } from "../connectors/load.js";
+import { getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
 import { connectorIntegrationId } from "../instance/integrations.js";
 import { serverIdOf } from "../connectors/manifest.js";
 import { assertSlugFree, CatalogError } from "../mcp/catalog.js";
@@ -6,14 +8,7 @@ import { generateToolPrefix, isReservedToolPrefix } from "../mcp/policy.js";
 import type { ConnectorPackage, RegistryClient } from "./client.js";
 import { codeEntry, codeFolder, removeCodePackage, writeCodePackage } from "./code.js";
 import { compareVersions, pickEntry, RegistryError, type RegistryConnectorEntry, type RegistryIndex } from "./index.js";
-import {
-  deleteConnector,
-  getMcpServerBySlug,
-  insertConnector,
-  listMcpServers,
-  listTakenToolPrefixes,
-  updateConnector,
-} from "../db/connectors.js";
+import { deleteConnector, insertConnector, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
 import { expireMcpTools } from "../db/mcp.js";
 import { deleteInstanceKey } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
@@ -137,7 +132,7 @@ export async function installConnector(
       },
       options.now ?? new Date(),
     );
-    return { row, code };
+    return { row: loadConnector(row), code };
   } catch (error) {
     if (code && options.codeRoot) {
       removeCodePackage(options.codeRoot, slug);

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { updateMcpServerConfig } from "../connectors/servers.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { jsonObj } from "../db/json.js";
 import { encryptPayload } from "../credentials/crypto.js";
@@ -10,7 +11,6 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { serverManifest } from "../connectors/load.js";
-import { updateMcpServerConfig } from "../db/connectors.js";
 import { saveMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { mcpConnections, type Manifest } from "../db/schema/index.js";

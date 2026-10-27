@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { loadConnector, type LoadedConnector } from "../connectors/load.js";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { isPlainRecord, jsonObj } from "./json.js";
@@ -40,10 +39,10 @@ const CONNECTOR_COLUMNS = tableColumns(connectors);
  * The connectors an organisation sees, loaded with their overrides, by slug: the platform's,
  * and with `orgId` that organisation's own. Without one, the platform's alone.
  */
-export async function listMcpServers(
+export async function listOrgConnectors(
   pool: Queryable,
   orgId: string | null = null,
-): Promise<LoadedConnector[]> {
+): Promise<ConnectorRow[]> {
   const result = await pool.query<ConnectorRow>(
     `SELECT ${CONNECTOR_COLUMNS}
      FROM connectors
@@ -51,29 +50,25 @@ export async function listMcpServers(
      ORDER BY slug`,
     [orgId],
   );
-  return result.rows.map((row) => loadConnector(row));
+  return result.rows;
 }
 
-export async function getMcpServer(
-  pool: Queryable,
-  serverId: string,
-): Promise<LoadedConnector | null> {
+export async function getConnector(pool: Queryable, serverId: string): Promise<ConnectorRow | null> {
   const result = await pool.query<ConnectorRow>(
     `SELECT ${CONNECTOR_COLUMNS}
      FROM connectors
      WHERE id = $1`,
     [serverId],
   );
-  const row = result.rows[0] ?? null;
-  return row === null ? null : loadConnector(row);
+  return result.rows[0] ?? null;
 }
 
 /** The connector an organisation sees under a slug: the platform's, or with `orgId` its own. */
-export async function getMcpServerBySlug(
+export async function getConnectorBySlug(
   pool: Queryable,
   slug: string,
   orgId: string | null = null,
-): Promise<LoadedConnector | null> {
+): Promise<ConnectorRow | null> {
   const result = await pool.query<ConnectorRow>(
     `SELECT ${CONNECTOR_COLUMNS}
      FROM connectors
@@ -82,17 +77,16 @@ export async function getMcpServerBySlug(
      LIMIT 1`,
     [slug, orgId],
   );
-  const row = result.rows[0] ?? null;
-  return row === null ? null : loadConnector(row);
+  return result.rows[0] ?? null;
 }
 
 /** Stores the OAuth client a server's `config.oauth_client` carries: the one registered with its authorization server. */
-export async function updateMcpServerConfig(
+export async function setConnectorOauthClient(
   pool: Queryable,
   serverId: string,
   config: unknown,
   now: Date,
-): Promise<LoadedConnector | null> {
+): Promise<ConnectorRow | null> {
   const parsed = jsonObj(config);
   const client = isPlainRecord(parsed) ? (parsed.oauth_client ?? null) : null;
   const result = await pool.query<ConnectorRow>(
@@ -102,8 +96,7 @@ export async function updateMcpServerConfig(
      RETURNING ${CONNECTOR_COLUMNS}`,
     [serverId, client === null ? null : JSON.stringify(client), stamp(now)],
   );
-  const row = result.rows[0] ?? null;
-  return row === null ? null : loadConnector(row);
+  return result.rows[0] ?? null;
 }
 
 /** Who holds a slug: the platform (null) or each organisation that added a server under it. */
@@ -194,7 +187,7 @@ export async function insertConnector(
   pool: Queryable,
   connector: NewConnector,
   now: Date,
-): Promise<LoadedConnector> {
+): Promise<ConnectorRow> {
   const result = await pool.query<ConnectorRow>(
     `INSERT INTO connectors (
        id, slug, tool_prefix, owner_org_id, manifest, source, version, verified, publisher, enabled,
@@ -221,7 +214,7 @@ export async function insertConnector(
   if (!inserted) {
     throw new RowMissing("connector insert failed");
   }
-  return loadConnector(inserted);
+  return inserted;
 }
 
 /** Updates a connector's manifest and where it came from (a folderless row), its overrides, or its switch. */
@@ -230,7 +223,7 @@ export async function updateConnector(
   serverId: string,
   patch: ConnectorPatch,
   now: Date,
-): Promise<LoadedConnector | null> {
+): Promise<ConnectorRow | null> {
   const result = await pool.query<ConnectorRow>(
     `UPDATE connectors SET
        slug = COALESCE($2, slug),
@@ -257,8 +250,7 @@ export async function updateConnector(
       patch.experimental ?? null,
     ],
   );
-  const row = result.rows[0] ?? null;
-  return row === null ? null : loadConnector(row);
+  return result.rows[0] ?? null;
 }
 
 export async function listTakenToolPrefixes(pool: Queryable): Promise<string[]> {

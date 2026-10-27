@@ -1,10 +1,7 @@
+import { updateMcpServerConfig } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { insertBindingIfAbsent } from "../db/bindings.js";
-import {
-  countConnectorCalls,
-  recordConnectorCall,
-  updateMcpServerConfig,
-} from "../db/connectors.js";
+import { countConnectorCalls, recordConnectorCall } from "../db/connectors.js";
 import { replaceMcpTools, saveMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { jsonObj } from "../db/json.js";

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
+import { getMcpServer } from "../../src/connectors/servers.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
@@ -11,7 +12,6 @@ import { limitedPolicy } from "../helpers/policy.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember, insertOrg } from "../../src/db/orgs.js";
-import { getMcpServer } from "../../src/db/connectors.js";
 
 const dbName = uniqueDbName("agent_platform_org_connectors");
 const JSON_HEADERS = { "content-type": "application/json" };

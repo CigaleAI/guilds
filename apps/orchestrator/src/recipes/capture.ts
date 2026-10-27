@@ -1,3 +1,4 @@
+import { getMcpServerBySlug } from "../connectors/servers.js";
 import { DEFAULT_AGENT_MESSAGE_LIMIT } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
@@ -30,7 +31,6 @@ import { exportManifest } from "../mcp/catalog.js";
 import { mcpDatabase } from "../mcp/index.js";
 import { getAgentTask, listAgents } from "../db/agents.js";
 import { listSchedules } from "../db/schedules.js";
-import { getMcpServerBySlug } from "../db/connectors.js";
 import { listSecrets } from "../db/secrets.js";
 import { listGuildRepositories } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";

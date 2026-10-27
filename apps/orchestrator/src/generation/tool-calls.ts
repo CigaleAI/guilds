@@ -1,6 +1,6 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
 import type { Harness } from "../coding/harnesses.js";
-import { getMcpServer } from "../db/connectors.js";
+import { getMcpServer } from "../connectors/servers.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { isPlainRecord, recordOf } from "../db/json.js";
 import { getMcpConnection } from "../db/mcp.js";

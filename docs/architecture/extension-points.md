@@ -62,10 +62,11 @@ A factory on `ServerExtension` (`policy`, `modelCredentials`,
 receives the database connection as `db`, a `Queryable`
 (`db/pg.js`). The extension reads and writes core's tables through
 the `db/` modules the package exports (`db/orgs.js`, `db/users.js`,
-`db/connectors.js`, `db/mcp.js`, `db/usage.js`). Each function
-takes that connection, or the client of a transaction the extension
-has open, as its first argument; a function whose writes commit
-together runs them in a savepoint of that transaction.
+`db/connectors.js`, `db/mcp.js`, `db/usage.js`), and loads a
+connector with its overrides applied through `connectors/servers.js`.
+Each function takes that connection, or the client of a transaction
+the extension has open, as its first argument; a function whose
+writes commit together runs them in a savepoint of that transaction.
 
 `loadConfig` (`src/config/index.ts`) takes the `AUTH_MODE` values
 an extension identifies requests in, beside core's `compat-cookie`

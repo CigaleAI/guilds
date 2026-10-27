@@ -23,6 +23,7 @@ import {
 } from "../helpers/postgres.js";
 import { fixtureDeskRecipe, fixtureHuskDeskRecipe, inboxQueueColumns } from "../helpers/recipe-docs.js";
 import { insertConnector } from "../../src/db/connectors.js";
+import { loadConnector } from "../../src/connectors/load.js";
 import { getAgentTask, listAgentTaskRevisions, listAgents } from "../../src/db/agents.js";
 import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";
@@ -101,7 +102,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
       },
       now,
     );
-    return server;
+    return loadConnector(server);
   }
 
   async function importRecipe(body: unknown) {

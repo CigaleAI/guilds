@@ -52,7 +52,12 @@ which `currentUser` and `currentOrg` take, is exported from
 `DatabaseExtension` are exported from `seed/connect.js`.
 `createPool` takes the handler for a connection that fails while
 idle as its second argument, `reportPoolError` from
-`observability/runtime.js` for the default report.
+`observability/runtime.js` for the default report. `getMcpServer`,
+`getMcpServerBySlug`, `listMcpServers`, and `updateMcpServerConfig`
+are exported from `connectors/servers.js`; the functions of
+`db/connectors.js` return the stored row, `ConnectorRow`, and are
+`getConnector`, `getConnectorBySlug`, `listOrgConnectors`, and
+`setConnectorOauthClient`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

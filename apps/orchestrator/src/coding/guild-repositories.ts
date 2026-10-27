@@ -1,4 +1,4 @@
-import { getMcpServer } from "../db/connectors.js";
+import { getMcpServer } from "../connectors/servers.js";
 import type { GuildRow } from "../db/guilds.js";
 import {
   deleteGuildRepository,

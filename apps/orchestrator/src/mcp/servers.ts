@@ -1,10 +1,6 @@
 import type { LoadedConnector } from "../connectors/load.js";
-import {
-  countOrgConnectors,
-  deleteConnector,
-  getMcpServer,
-  listMcpServers,
-} from "../db/connectors.js";
+import { getMcpServer, listMcpServers } from "../connectors/servers.js";
+import { countOrgConnectors, deleteConnector } from "../db/connectors.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
 import { refreshConnectorIntegrations } from "../instance/connectors.js";
 import { LimitError, type OrgPolicy } from "../policy/index.js";

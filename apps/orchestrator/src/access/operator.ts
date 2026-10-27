@@ -1,8 +1,8 @@
 import { requireVisibleAgent } from "../agents/access.js";
+import { getMcpServer } from "../connectors/servers.js";
 import { bindingItem } from "../credentials/items.js";
 import { getAgent } from "../db/agents.js";
 import { getBinding, upsertPlatformBinding, type BindingKey } from "../db/bindings.js";
-import { getMcpServer } from "../db/connectors.js";
 import { getGuild } from "../db/guilds.js";
 import { getMcpConnection, isListedMcpTool } from "../db/mcp.js";
 import { getMembership } from "../db/orgs.js";
