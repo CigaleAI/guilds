@@ -1,4 +1,5 @@
-import { DEFAULT_GUILD_AGENTS, guildOperators } from "./validation.js";
+import { DEFAULT_GUILD_AGENTS } from "../db/schema/index.js";
+import { guildOperators } from "./validation.js";
 
 /** A guild as the API answers it. */
 export function guildItem(row: Record<string, unknown>): Record<string, unknown> {

@@ -2,12 +2,11 @@ import { NAME_RE } from "../lib/names.js";
 import { jsonObj } from "../db/json.js";
 import { countGuildAgents, getGuild } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import { DEFAULT_GUILD_AGENTS } from "../db/schema/index.js";
 
 export const ABOUT_MAX = 200;
 export const DESCRIPTION_MAX = 8000;
 export const GIT_AUTHOR_EMAIL_MAX = 254;
-export const DEFAULT_GUILD_AGENTS = 15;
-export const DEFAULT_AGENT_MESSAGE_LIMIT = 200;
 export const GUILD_VISIBILITIES = ["org", "private"] as const;
 export type GuildVisibility = (typeof GUILD_VISIBILITIES)[number];
 export const GUILD_OPERATOR_ROLES = ["admin", "operator"] as const;

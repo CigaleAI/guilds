@@ -1,12 +1,17 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { guildTextChange } from "../guilds/changes.js";
-import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../guilds/validation.js";
-import type { ChangeActor } from "../lib/change-actor.js";
 import { pickColumns } from "./columns.js";
-import { recordChangeIfAny } from "./config-changes.js";
 import { GuildNameTaken, LastGuildAdmin, RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { guildOperators, guildRepositories, guilds, mcpConnections, orgs, users } from "./schema/index.js";
+import {
+  DEFAULT_AGENT_MESSAGE_LIMIT,
+  DEFAULT_GUILD_AGENTS,
+  guildOperators,
+  guildRepositories,
+  guilds,
+  mcpConnections,
+  orgs,
+  users,
+} from "./schema/index.js";
 import { deleteGuildUsage } from "./usage.js";
 
 type Guild = InferSelectModel<typeof guilds>;
@@ -77,7 +82,7 @@ export type NewGuildRepository = {
   githubId: number | null;
 };
 
-type GuildTextRow = Pick<Guild, "about" | "description">;
+export type GuildTextRow = Pick<Guild, "about" | "description">;
 
 // Operators of guild `p`, oldest first: [{ user_id, name, role }].
 export function guildOperatorsColumn(alias: string): string {
@@ -101,7 +106,7 @@ const GUILD_COLUMNS = `
   ${guildOperatorsColumn("operators")}`;
 
 /** Writes the fields `options` sets and returns the guild's text after, or null when no guild has `guildId`. */
-async function updateGuildRow(
+export async function updateGuild(
   client: Queryable,
   guildId: string,
   now: Date,
@@ -275,29 +280,13 @@ export async function getGuild(pool: Queryable, guildId: string): Promise<GuildR
   return result.rows[0] ?? null;
 }
 
-/** Changes a guild's settings; a change to its about or description is logged against `actor`. */
-export async function updateGuild(
-  pool: Queryable,
-  guildId: string,
-  now: Date,
-  options: GuildPatch,
-  actor: ChangeActor,
-): Promise<GuildRow | null> {
-  const updated = await withTransaction(pool, async (client) => {
-    const before =
-      (
-        await client.query<GuildTextRow>(
-          `SELECT about, description FROM guilds WHERE id = $1 FOR UPDATE`,
-          [guildId],
-        )
-      ).rows[0] ?? null;
-    const after = await updateGuildRow(client, guildId, now, options);
-    if (before && after) {
-      await recordChangeIfAny(client, actor, guildTextChange(guildId, before, after));
-    }
-    return after;
-  });
-  return updated ? getGuild(pool, guildId) : null;
+/** A guild's about and description, locked for the rest of the transaction `db` runs; null when there is no such guild. */
+export async function lockGuildText(db: Queryable, guildId: string): Promise<GuildTextRow | null> {
+  const result = await db.query<GuildTextRow>(
+    `SELECT about, description FROM guilds WHERE id = $1 FOR UPDATE`,
+    [guildId],
+  );
+  return result.rows[0] ?? null;
 }
 
 // Grants `role` to an organisation member, or removes the operator when

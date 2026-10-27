@@ -5,6 +5,7 @@ import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { agentActor, ArtifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
 import { runItem } from "../../src/db/views.js";
 import { buildApp } from "../../src/app.js";
+import { changeGuild } from "../../src/guilds/changes.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -51,7 +52,7 @@ import { listConfigChanges } from "../../src/db/config-changes.js";
 import { userActor } from "../../src/lib/change-actor.js";
 import { createToolContext } from "../../src/toolbox/index.js";
 import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js";
-import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";
+import { getGuild, insertGuild } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { getAgentTask, writeAgentTask } from "../../src/db/agents.js";
@@ -1853,7 +1854,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal((await resolve(widenSeq, "decline")).statusCode, 200);
 
     // A user who can no longer see the guild loses its sessions, edits included.
-    await updateGuild(db, "guild_nw", new Date(), { visibility: "private" }, TEST_ACTOR);
+    await changeGuild(db, "guild_nw", { visibility: "private" }, TEST_ACTOR);
     assert.equal(
       (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${widenSeq}`, headers: AUTH })).statusCode,
       404,

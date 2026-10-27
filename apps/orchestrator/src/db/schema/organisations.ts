@@ -80,6 +80,10 @@ export const orgMembers = pgTable(
   ],
 );
 
+/** How many agents a guild holds, and how many messages its agents post to its group chat, unless it says otherwise. */
+export const DEFAULT_GUILD_AGENTS = 15;
+export const DEFAULT_AGENT_MESSAGE_LIMIT = 200;
+
 export const guilds = pgTable(
   "guilds",
   {
@@ -89,7 +93,7 @@ export const guilds = pgTable(
     updated_at: timestamptz("updated_at").notNull(),
     group_chat_seq: bigint("group_chat_seq", { mode: "number" }).notNull().default(0),
     group_agent_message_count: integer("group_agent_message_count").notNull().default(0),
-    group_agent_message_limit: integer("group_agent_message_limit").notNull().default(200),
+    group_agent_message_limit: integer("group_agent_message_limit").notNull().default(DEFAULT_AGENT_MESSAGE_LIMIT),
     group_chat_errors: jsonb("group_chat_errors").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
     group_chat_cleared_at: timestamptz("group_chat_cleared_at"),
     about: text("about").notNull().default(""),
@@ -97,7 +101,7 @@ export const guilds = pgTable(
     visibility: text("visibility", { enum: ["org", "private"] }).notNull().default("org"),
     routines_enabled: boolean("routines_enabled").notNull().default(true),
     description: text("description").notNull().default(""),
-    max_agents: integer("max_agents").notNull().default(15),
+    max_agents: integer("max_agents").notNull().default(DEFAULT_GUILD_AGENTS),
     git_author_email: text("git_author_email").notNull().default(""),
   },
   (table) => [

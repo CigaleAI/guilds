@@ -1,8 +1,5 @@
-import {
-  DEFAULT_AGENT_MESSAGE_LIMIT,
-  DEFAULT_GUILD_AGENTS,
-  type GuildVisibility,
-} from "./validation.js";
+import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../db/schema/index.js";
+import type { GuildVisibility } from "./validation.js";
 import { deleteGuild, insertGuild } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 

@@ -1,12 +1,6 @@
 import { listAgents } from "../db/agents.js";
 import { userActor } from "../lib/change-actor.js";
-import {
-  getGuild,
-  listGuildsForUser,
-  updateGuild,
-  type GuildPatch,
-  type GuildRow,
-} from "../db/guilds.js";
+import { getGuild, listGuildsForUser, type GuildPatch, type GuildRow } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
 import type { GenerationLoop } from "../generation/index.js";
 import { newId } from "../lib/ids.js";
@@ -14,6 +8,7 @@ import type { NotesStore } from "../notes/store.js";
 import { assertCanCreateGuild, orgCounts, type OrgPolicy } from "../policy/index.js";
 import type { Schedules } from "../schedules/service.js";
 import { requireAdministeredGuild } from "./access.js";
+import { changeGuild } from "./changes.js";
 import { GuildError } from "./errors.js";
 import { guildDatabase, persistGuild } from "./persist.js";
 import {
@@ -146,7 +141,7 @@ async function moveGuildNotes(
   try {
     await services.notes.renameGuild(guild.org_slug, guild.name, name);
   } catch (error) {
-    await updateGuild(services.db, guild.id, new Date(), { name: guild.name }, userActor(actor));
+    await changeGuild(services.db, guild.id, { name: guild.name }, userActor(actor));
     throw error;
   }
 }
@@ -174,7 +169,7 @@ export async function updateGuildSettings(
   }
   let row;
   try {
-    row = await updateGuild(db, guild.id, new Date(), changes, userActor(actor));
+    row = await changeGuild(db, guild.id, changes, userActor(actor));
   } catch (error) {
     throw nameConflict(error);
   }

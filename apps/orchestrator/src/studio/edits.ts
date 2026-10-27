@@ -10,6 +10,7 @@ import {
 } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj } from "../db/json.js";
+import { changeGuild } from "../guilds/changes.js";
 import type { Schedules } from "../schedules/service.js";
 import { GuildValidationError, validateAbout, validateGuildDescription } from "../guilds/validation.js";
 import { argString } from "../toolbox/schema.js";
@@ -21,7 +22,7 @@ import { editActionOf } from "./actions.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
 import { getAgent, listAgents } from "../db/agents.js";
-import { getGuild, updateGuild } from "../db/guilds.js";
+import { getGuild } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage } from "../db/conversations.js";
 
@@ -844,9 +845,9 @@ export async function applyEdit(
     }
   }
   const text = proposed as GuildText;
-  const row = await updateGuild(scope.db,
+  const row = await changeGuild(
+    scope.db,
     base.guildId,
-    new Date(),
     { about: text.about, description: text.description },
     editActor(scope),
   );

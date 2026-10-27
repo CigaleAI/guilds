@@ -1,4 +1,7 @@
-import type { ConfigChange } from "../db/config-changes.js";
+import { recordChangeIfAny, type ConfigChange } from "../db/config-changes.js";
+import { getGuild, lockGuildText, updateGuild, type GuildPatch, type GuildRow } from "../db/guilds.js";
+import { type Queryable, withTransaction } from "../db/pg.js";
+import type { ChangeActor } from "../lib/change-actor.js";
 
 export type GuildTextFields = { about: string; description: string };
 
@@ -21,4 +24,22 @@ export function guildTextChange(
     operation: "update",
     summary: `Changed the ${fields.join(" and ")}`,
   };
+}
+
+/** Changes a guild's settings; a change to its about or description is logged against `actor`. Null when there is no such guild. */
+export async function changeGuild(
+  db: Queryable,
+  guildId: string,
+  patch: GuildPatch,
+  actor: ChangeActor,
+): Promise<GuildRow | null> {
+  const updated = await withTransaction(db, async (client) => {
+    const before = await lockGuildText(client, guildId);
+    const after = await updateGuild(client, guildId, new Date(), patch);
+    if (before && after) {
+      await recordChangeIfAny(client, actor, guildTextChange(guildId, before, after));
+    }
+    return after;
+  });
+  return updated ? getGuild(db, guildId) : null;
 }
