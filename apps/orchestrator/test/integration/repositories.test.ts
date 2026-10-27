@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { connect, type Database } from "../../src/db/client.js";
+import type { Database } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
 import { listFileChanges, operatorActor } from "../../src/artifacts/index.js";

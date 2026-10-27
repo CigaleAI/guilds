@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";

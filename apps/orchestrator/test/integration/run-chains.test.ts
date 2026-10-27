@@ -4,7 +4,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { HANDOFF_REQUEST, HANDOFF_TOOL_REFUSED } from "../../src/generation/chain.js";
 import { generationDatabase, GenerationLoop, LOOP_TIMINGS, RunRequestError } from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";

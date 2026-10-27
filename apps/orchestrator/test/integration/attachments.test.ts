@@ -4,7 +4,7 @@ import { AttachmentService } from "../../src/attachments/index.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { newId } from "../../src/lib/ids.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";

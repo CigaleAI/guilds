@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactFiles } from "../../src/artifacts/files.js";
 import { ArtifactStore } from "../../src/artifacts/store.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";

@@ -7,7 +7,7 @@
 //                                                   hypothetical user post
 //   add --json for the raw report, --min 0.7 to try another confidence gate.
 import { decodeMasterKey, loadToolConfig } from "../src/config/index.js";
-import { connect } from "../src/db/client.js";
+import { connect } from "../src/seed/connect.js";
 import { InstanceKeys } from "../src/instance/keys.js";
 import { createTypeSafeClient } from "../src/typesafe/client.js";
 import { formatRecipientReplay, replayRecipients } from "../src/typesafe/replay.js";

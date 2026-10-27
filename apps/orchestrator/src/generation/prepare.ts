@@ -14,7 +14,7 @@ import {
   type ArtifactStore,
 } from "../artifacts/index.js";
 import { stateRepositories } from "../coding/repositories.js";
-import { FILE_TOOLS, NOTE_TOOLS } from "../db/seed/catalog.js";
+import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";

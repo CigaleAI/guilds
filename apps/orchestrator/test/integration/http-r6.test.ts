@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";

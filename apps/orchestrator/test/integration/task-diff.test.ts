@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import type { GenerationLoop } from "../../src/generation/index.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";

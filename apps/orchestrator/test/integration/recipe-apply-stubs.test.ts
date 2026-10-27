@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { newId } from "../../src/lib/ids.js";
 import { CALL_TOOL_TIMEOUT_MS, mcpDatabase, McpPool } from "../../src/mcp/index.js";
 import { proxyFetch } from "../../src/net/http.js";

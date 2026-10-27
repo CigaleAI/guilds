@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { getMcpServer } from "../../src/db/connectors.js";
 import { connectMcp, getMcpConnection, saveMcpConnection } from "../../src/db/mcp.js";
 import { ConnectionError } from "../../src/mcp/visibility.js";

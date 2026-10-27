@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { insertAgent } from "../../src/db/agents.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { insertUser } from "../../src/db/users.js";

@@ -1,4 +1,4 @@
-import { CONNECTORS } from "../../connectors/index.js";
+import { CONNECTORS } from "../connectors/index.js";
 
 export const SHARED_HOST_ID = "host_shared";
 

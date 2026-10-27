@@ -188,7 +188,7 @@ test("a lost idle connection logs a warning naming the error", () => {
 });
 
 test("the pool keeps connections alive, bounds the handshake, and reports idle errors", async () => {
-  const pool = await createPool("postgresql://user:pass@127.0.0.1:1/db");
+  const pool = await createPool("postgresql://user:pass@127.0.0.1:1/db", reportPoolError);
   try {
     const options = (pool as unknown as { options: Record<string, unknown> }).options;
     assert.equal(options.keepAlive, true);

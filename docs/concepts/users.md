@@ -235,7 +235,7 @@ Who reaches the directory:
 ### Seed identity
 
 On a box with no user at all, boot (`seedOperator`,
-`apps/orchestrator/src/db/seed/operator.ts`) inserts one user row and
+`apps/orchestrator/src/seed/operator.ts`) inserts one user row and
 the organisation it owns:
 
 | Id | Name | Email | Image |

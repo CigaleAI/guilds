@@ -24,7 +24,7 @@ import { wrapEvidence } from "./system.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { ScriptError } from "../scripts/validation.js";
 import { ABOUT_MAX, DESCRIPTION_MAX } from "../guilds/validation.js";
-import { NATIVE_TOOLS } from "../db/seed/catalog.js";
+import { NATIVE_TOOLS } from "../seed/catalog.js";
 import {
   STUDIO_CONNECTION_ACCESS_WIDGET,
   callConnectionTool,

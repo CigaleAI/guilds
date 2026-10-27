@@ -1,6 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { loadToolConfig } from "../config/index.js";
-import { connect } from "../db/client.js";
+import { connect } from "../seed/connect.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { codeTierRoot, connectorsRoot } from "../registry/code.js";
 import { RegistryError } from "../registry/index.js";

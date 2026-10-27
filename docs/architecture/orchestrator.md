@@ -509,7 +509,7 @@ The host-side trees beside PostgreSQL are in
 container lifecycle in its own SQLite store, which holds no
 application data.
 
-Seeds stay separate from schema (`src/db/seed/`):
+Seeds stay separate from schema (`src/seed/`):
 
 ```text
 catalog.ts        seed identifiers and native-tool lists
@@ -517,6 +517,7 @@ mcp-manifests.ts  the installed connectors projected into catalog rows and tool 
 system.ts         upsert catalog, platform bindings
 operator.ts       the operator and the Home organisation, on a box with no user
 test.ts           deterministic fixtures
+connect.ts        open the pool, migrate, and seed
 ```
 
 Boot runs the system seed, each extension's seed, and the operator

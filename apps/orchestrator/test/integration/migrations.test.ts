@@ -5,7 +5,9 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { applyMigrations, connect, createPool, repairMigrations } from "../../src/db/client.js";
+import { applyMigrations, createPool, repairMigrations } from "../../src/db/client.js";
+import { reportPoolError } from "../../src/observability/runtime.js";
+import { connect } from "../../src/seed/connect.js";
 import { MigrationsNotApplied, committedMigrations } from "../../src/db/migrations.js";
 import { orchestratorRoot } from "../../src/lib/paths.js";
 import { tempDir } from "../helpers/env.js";
@@ -27,7 +29,7 @@ after(async () => {
 });
 
 test("each migration is recorded once however often the chain is applied", async () => {
-  const pool = await createPool(await createIsolatedDatabase(freshDb));
+  const pool = await createPool(await createIsolatedDatabase(freshDb), reportPoolError);
   try {
     await applyMigrations(pool);
     const first = await pool.query("SELECT hash FROM public.__drizzle_migrations ORDER BY created_at");
@@ -64,7 +66,7 @@ function chainBefore(tag?: string): string {
 }
 
 test("a migration skipped behind a later recorded stamp fails boot by name, and repair applies it keeping the data", async () => {
-  const pool = await createPool(await createIsolatedDatabase(driftDb));
+  const pool = await createPool(await createIsolatedDatabase(driftDb), reportPoolError);
   try {
     await migrate(drizzle(pool), {
       migrationsFolder: chainBefore(),
@@ -119,7 +121,7 @@ test("an extension's migrations run after core's and before any seed", { timeout
 });
 
 test("the native CLI migration drops the cli flag from recipe roles, keeping their order", async () => {
-  const pool = await createPool(await createIsolatedDatabase(cliDb));
+  const pool = await createPool(await createIsolatedDatabase(cliDb), reportPoolError);
   try {
     const folder = chainBefore("0007_native_cli");
     await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });
@@ -154,7 +156,7 @@ test("the native CLI migration drops the cli flag from recipe roles, keeping the
 });
 
 test("the access-list migration moves table rows, gives live guild and org items their default rows, and drops note grants", async () => {
-  const pool = await createPool(await createIsolatedDatabase(accessDb));
+  const pool = await createPool(await createIsolatedDatabase(accessDb), reportPoolError);
   try {
     const folder = chainBefore("0012_artifact_access");
     await migrate(drizzle(pool), { migrationsFolder: folder, migrationsSchema: "public", migrationsTable: "__drizzle_migrations" });

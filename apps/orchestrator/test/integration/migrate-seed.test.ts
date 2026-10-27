@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { applyMigrations, createPool } from "../../src/db/client.js";
-import { seedOperator } from "../../src/db/seed/operator.js";
-import { seedSystem } from "../../src/db/seed/system.js";
-import { seedTest } from "../../src/db/seed/test.js";
+import { reportPoolError } from "../../src/observability/runtime.js";
+import { seedOperator } from "../../src/seed/operator.js";
+import { seedSystem } from "../../src/seed/system.js";
+import { seedTest } from "../../src/seed/test.js";
 import {
   createIsolatedDatabase,
   dropIsolatedDatabase,
@@ -19,7 +20,7 @@ after(async () => {
 
 test("system and operator seeds match the classified manifest and stay semantic-stable", async () => {
   const databaseUrl = await createIsolatedDatabase(dbName);
-  const pool = await createPool(databaseUrl);
+  const pool = await createPool(databaseUrl, reportPoolError);
   try {
     await applyMigrations(pool);
     await seedSystem(pool);

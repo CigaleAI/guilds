@@ -12,7 +12,8 @@ import {
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { connect, type Database } from "../../src/db/client.js";
+import type { Database } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { templatesRoot } from "../helpers/fixtures.js";

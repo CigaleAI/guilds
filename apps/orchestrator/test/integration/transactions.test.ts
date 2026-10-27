@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { connect, type Database } from "../../src/db/client.js";
+import type { Database } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { getGuild, insertGuild } from "../../src/db/guilds.js";
 import { withTransaction } from "../../src/db/pg.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";

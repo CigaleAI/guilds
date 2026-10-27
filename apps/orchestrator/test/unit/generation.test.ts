@@ -17,7 +17,7 @@ import { LLMError } from "../../src/llm/index.js";
 import { sleep } from "../../src/lib/event.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { nextRunAt } from "../../src/schedules/cron.js";
-import { NOTE_TOOLS } from "../../src/db/seed/catalog.js";
+import { NOTE_TOOLS } from "../../src/seed/catalog.js";
 import { schemasFor, withRemainingToolCalls } from "../../src/toolbox/index.js";
 import { SCRIPT_TOOLS } from "../../src/toolbox/script.js";
 import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.js";

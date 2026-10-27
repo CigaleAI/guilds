@@ -6,7 +6,7 @@ import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
 import { CapabilityService } from "../../src/capabilities/index.js";
 import { generationLive } from "../../src/conversation/runner.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";

@@ -3,6 +3,7 @@ import { after, before, test } from "node:test";
 import { getTableColumns, is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import { applyMigrations, createPool } from "../../src/db/client.js";
+import { reportPoolError } from "../../src/observability/runtime.js";
 import * as schema from "../../src/db/schema/index.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 
@@ -31,7 +32,7 @@ function declaredTables(): Map<string, Map<string, Column>> {
 
 before(async () => {
   const url = await createIsolatedDatabase(dbName);
-  const pool = await createPool(url);
+  const pool = await createPool(url, reportPoolError);
   try {
     await applyMigrations(pool);
     const result = await pool.query<{ table: string; column: string; type: string; not_null: boolean }>(

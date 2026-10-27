@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { applyMigrations, createPool } from "../src/db/client.js";
+import { reportPoolError } from "../src/observability/runtime.js";
 import { orchestratorRoot } from "../src/lib/paths.js";
 import {
   createIsolatedDatabase,
@@ -76,7 +77,7 @@ function toMigrationSql(dump: string): string {
 
 const dbName = uniqueDbName("agent_platform_baseline");
 const url = await createIsolatedDatabase(dbName);
-const pool = await createPool(url);
+const pool = await createPool(url, reportPoolError);
 try {
   await applyMigrations(pool);
 } finally {

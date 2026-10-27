@@ -46,7 +46,13 @@ The export `usage.js` is `usage/index.js`, and `http/usage-view.js` is
 `usage/view.js`: `usageForOrg` and `usageForPlatform` take
 `{ db, studio, builder }`, which `AppDeps` satisfies. `identityDatabase`,
 which `currentUser` and `currentOrg` take, is exported from
-`users/identity.js`.
+`users/identity.js`. The seeds are under `seed/`: the exports
+`db/seed/catalog.js` and `db/seed/mcp-manifests.js` are
+`seed/catalog.js` and `seed/mcp-manifests.js`, and `connect` and
+`DatabaseExtension` are exported from `seed/connect.js`.
+`createPool` takes the handler for a connection that fails while
+idle as its second argument, `reportPoolError` from
+`observability/runtime.js` for the default report.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

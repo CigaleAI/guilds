@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { agentRuntime } from "../../src/access/runtime.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import { NATIVE_TOOLS } from "../../src/db/seed/catalog.js";
+import { NATIVE_TOOLS } from "../../src/seed/catalog.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { instanceCredentials, instanceKey, instanceRedactions } from "../../src/connectors/instance.js";
 import { TavilyError, formatSearch, search } from "../../src/connectors/tavily/client.js";

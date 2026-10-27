@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { connectorCommand } from "../../src/cli/connector.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { RecipeApplyService } from "../../src/recipes/apply.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";

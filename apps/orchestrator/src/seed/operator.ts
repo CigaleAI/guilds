@@ -1,8 +1,8 @@
 import type pg from "pg";
-import { SEED_ORG_FOUNDERS, SEED_ORG_ID, SEED_ORG_NAME, SEED_ORG_SLUG } from "../../organisations/index.js";
-import { SEED_USERS } from "../../users/index.js";
-import { insertDefaultMachine } from "../machines.js";
-import { isUniqueViolation, withTransaction } from "../pg.js";
+import { SEED_ORG_FOUNDERS, SEED_ORG_ID, SEED_ORG_NAME, SEED_ORG_SLUG } from "../organisations/index.js";
+import { SEED_USERS } from "../users/index.js";
+import { insertDefaultMachine } from "../db/machines.js";
+import { isUniqueViolation, withTransaction } from "../db/pg.js";
 
 /**
  * A fresh box's first user and the organisation they own. Seeded only while the box has no user

@@ -4,7 +4,7 @@ import { credentialFix, HARNESS_INFO, harnessModelOf, HARNESSES, isHarness, isHa
 import { EFFORTS, harnessEffortsFor, isEffort } from "../coding/harness-models.js";
 import { validateTiming } from "../schedules/timing.js";
 import { validateScriptName, validateScriptDescription, validateScriptSource, validateScriptParameters } from "../scripts/validation.js";
-import { NATIVE_TOOLS } from "../db/seed/catalog.js";
+import { NATIVE_TOOLS } from "../seed/catalog.js";
 import type { CollectionColumn } from "../artifacts/columns.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { isDisplayPath } from "../artifacts/paths.js";

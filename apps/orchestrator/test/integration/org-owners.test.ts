@@ -1,7 +1,8 @@
 import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { connect, type Database } from "../../src/db/client.js";
+import type { Database } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { LastOrgOwner } from "../../src/db/errors.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { deleteUser, insertUser } from "../../src/db/users.js";

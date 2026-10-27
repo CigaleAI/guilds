@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { GroupChatCleared } from "../../src/db/errors.js";
 import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";

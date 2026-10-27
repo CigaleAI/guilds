@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { insertAgent } from "../../src/db/agents.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertIssue } from "../../src/db/issues.js";

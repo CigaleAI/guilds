@@ -1,4 +1,4 @@
-import { NATIVE_TOOLS } from "../db/seed/catalog.js";
+import { NATIVE_TOOLS } from "../seed/catalog.js";
 import { visibleAt } from "../credentials/visibility.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { connectorFacts } from "../connectors/view.js";

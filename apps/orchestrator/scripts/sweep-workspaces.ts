@@ -1,5 +1,5 @@
 import { loadToolConfig } from "../src/config/index.js";
-import { connect } from "../src/db/client.js";
+import { connect } from "../src/seed/connect.js";
 import { applyWorkspaceSweep, parseSweepArgs, planWorkspaceSweep } from "../src/sandbox/sweep.js";
 import { listMachineIds, listMachinePlacements } from "../src/db/machines.js";
 

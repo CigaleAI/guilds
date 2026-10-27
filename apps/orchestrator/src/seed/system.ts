@@ -1,12 +1,12 @@
 import type pg from "pg";
-import { decryptPayload, encryptPayload } from "../../credentials/crypto.js";
-import { newId } from "../../lib/ids.js";
+import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
+import { newId } from "../lib/ids.js";
 import {
   DROPPED_MCP_SERVERS,
   DROPPED_NATIVE_TOOLS,
   PLATFORM_NATIVE_TOOLS,
 } from "./catalog.js";
-import { installedConnectors } from "../../connectors/index.js";
+import { installedConnectors } from "../connectors/index.js";
 
 /**
  * Writes every installed connector's row from its folder, replacing the manifest and where it

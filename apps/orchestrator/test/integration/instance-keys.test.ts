@@ -4,7 +4,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { GITHUB_SERVER_ID } from "../../src/github/index.js";
 import { GITHUB_MANIFEST_STATE_COOKIE, MANIFEST_CALLBACK_PATH } from "../../src/github/manifest.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";

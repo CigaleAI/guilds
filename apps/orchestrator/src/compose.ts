@@ -6,8 +6,8 @@ import { FileBlobStore, MemoryBlobStore } from "./lib/blob-store.js";
 import { BuilderService } from "./builder/index.js";
 import { CapabilityService } from "./capabilities/index.js";
 import { decodeMasterKey, type AppConfig } from "./config/index.js";
-import { connect } from "./db/client.js";
-import { setOperatorEmail } from "./db/seed/operator.js";
+import { connect } from "./seed/connect.js";
+import { setOperatorEmail } from "./seed/operator.js";
 import {
   extensionBlobStore,
   extensionConnectors,

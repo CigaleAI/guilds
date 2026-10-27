@@ -9,7 +9,8 @@ import {
   upsertBinding,
   upsertPlatformBinding,
 } from "../../src/db/bindings.js";
-import { connect, type Database } from "../../src/db/client.js";
+import type { Database } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import type { ChangeActor } from "../../src/lib/change-actor.js";
 import { insertConnector } from "../../src/db/connectors.js";
 import { RowMissing } from "../../src/db/errors.js";

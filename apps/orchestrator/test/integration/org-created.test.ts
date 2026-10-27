@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { connect } from "../../src/db/client.js";
+import { connect } from "../../src/seed/connect.js";
 import { insertOrg, listOrgsForUser, type OrgCreatedHook } from "../../src/db/orgs.js";
 import { getUser, insertUser } from "../../src/db/users.js";
 import { newId } from "../../src/lib/ids.js";

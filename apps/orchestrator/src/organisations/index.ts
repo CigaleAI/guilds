@@ -6,7 +6,7 @@ export const ORG_COOKIE = "guilds_org";
 export const ORG_ROLES = ["owner", "admin", "member"] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 export const ORG_NAME_MAX = 80;
-/** The organisation a fresh box starts with (`db/seed/operator.ts`); its owners administer the instance. */
+/** The organisation a fresh box starts with (`seed/operator.ts`); its owners administer the instance. */
 export const SEED_ORG_ID = "org_home";
 export const SEED_ORG_NAME = "Home";
 export const SEED_ORG_SLUG = "home";
