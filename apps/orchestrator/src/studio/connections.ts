@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { decryptPayload } from "../credentials/crypto.js";
 import { jsonObj } from "../db/json.js";
 import {
@@ -16,6 +15,7 @@ import { StudioError, StudioUnprocessableError } from "./errors.js";
 import { getMcpConnection, listMcpTools } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import { getMcpServer } from "../db/connectors.js";
+import type { Queryable } from "../db/pg.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";
 
@@ -77,7 +77,7 @@ export type ReachableConnection = {
 // A connection is in Studio's reach when an agent of the source guild could
 // inherit it: platform, this organisation, this guild, or a live member.
 export async function reachableConnection(
-  db: pg.Pool,
+  db: Queryable,
   orgId: string,
   guildId: string,
   connectionId: string,
@@ -131,7 +131,7 @@ export function connectionSummary(reach: ReachableConnection): Record<string, un
 // Proxies one read-only tool on an operator-granted connection. The result is
 // redacted against that connection's stored credentials and byte-capped.
 export async function callConnectionTool(args: {
-  db: pg.Pool;
+  db: Queryable;
   mcp: StudioMcpClient;
   reach: ReachableConnection;
   tool: string;

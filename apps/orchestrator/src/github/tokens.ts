@@ -1,8 +1,7 @@
-import type pg from "pg";
 import { githubIdOf, githubRepositoriesOf } from "../coding/repositories.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { recordGithubRepository } from "../db/mcp.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import type { FetchFn } from "../net/http.js";
 import {
   GithubError,
@@ -42,7 +41,7 @@ export function loginAccount(connection: Record<string, unknown>): string {
 }
 
 /** Where minting stores a repository's GitHub id and current URL, on `db`. */
-export function githubRepositoryRecorder(db: pg.Pool) {
+export function githubRepositoryRecorder(db: Queryable) {
   return { recordGithubRepository: bindQuery(db, recordGithubRepository) };
 }
 

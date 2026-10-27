@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
 import { guildTextChange } from "../guilds/changes.js";
 import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../guilds/validation.js";
 import { pickColumns } from "./columns.js";
@@ -196,7 +195,7 @@ export async function listGuildViewerIds(pool: Queryable, guildId: string): Prom
   return result.rows.map((row) => row.user_id);
 }
 
-export async function insertGuild(pool: pg.Pool, guild: NewGuild, now: Date): Promise<void> {
+export async function insertGuild(pool: Queryable, guild: NewGuild, now: Date): Promise<void> {
   const about = guild.about ?? "";
   const agentMessageLimit = guild.agentMessageLimit ?? DEFAULT_AGENT_MESSAGE_LIMIT;
   const visibility = guild.visibility ?? "org";
@@ -229,7 +228,7 @@ export async function insertGuild(pool: pg.Pool, guild: NewGuild, now: Date): Pr
   });
 }
 
-export async function deleteGuild(pool: pg.Pool, guildId: string): Promise<void> {
+export async function deleteGuild(pool: Queryable, guildId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
     await deleteGuildUsage(client, guildId);
     const now = new Date().toISOString();
@@ -277,7 +276,7 @@ export async function getGuild(pool: Queryable, guildId: string): Promise<GuildR
 
 /** Changes a guild's settings; a change to its about or description is logged against `actor`. */
 export async function updateGuild(
-  pool: pg.Pool,
+  pool: Queryable,
   guildId: string,
   now: Date,
   options: GuildPatch,
@@ -304,7 +303,7 @@ export async function updateGuild(
 // `role` is null. The guild keeps at least one admin, and an operator's
 // name stays distinct from its agents' names.
 export async function setGuildOperator(
-  pool: pg.Pool,
+  pool: Queryable,
   guildId: string,
   userId: string,
   role: "admin" | "operator" | null,

@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { modelsDatabase, ModelsService } from "../llm/models.js";
 import { isSearchable } from "../connectors/builder.js";
@@ -17,6 +16,7 @@ import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
 import { getOrgMonthlyUsage } from "../db/usage.js";
+import type { Queryable } from "../db/pg.js";
 
 const FORBIDDEN_CONNECTION_KEYS = new Set([
   "connection_id",
@@ -107,7 +107,7 @@ export class CapabilityService {
   private models: ModelsService;
 
   constructor(
-    private db: pg.Pool,
+    private db: Queryable,
     private policy: OrgPolicy = OPEN_POLICY,
     models?: ModelsService,
   ) {

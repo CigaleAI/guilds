@@ -1,11 +1,11 @@
 import type pg from "pg";
 import { jsonObj } from "../db/json.js";
-import { firstRow, stamp, withTransaction } from "../db/pg.js";
+import { firstRow, stamp, withTransaction, type Queryable } from "../db/pg.js";
 import { utcMonth } from "../usage.js";
 import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, usageDelta } from "../usage.js";
 
 export class StudioStore {
-  constructor(public pool: pg.Pool) {}
+  constructor(public pool: Queryable) {}
 
   async insertSession(row: Record<string, unknown>): Promise<Record<string, unknown>> {
     const result = await this.pool.query(

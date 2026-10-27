@@ -27,10 +27,11 @@ Migration 0013 adds the `file` kind.
 
 **Breaking for extensions.** `Repositories` and the export
 `db/repositories.js` are gone. The `ServerExtension` factories and
-`AppDeps` take the database pool as `db` in place of `repo`. An
-extension calls the functions of `db/orgs.js`, `db/users.js`,
-`db/connectors.js`, `db/mcp.js`, and `db/usage.js` with the pool as
-the first argument, and each takes one input object per write. A new
+`AppDeps` take the database connection as `db`, a `Queryable`, in
+place of `repo`. An extension calls the functions of `db/orgs.js`,
+`db/users.js`, `db/connectors.js`, `db/mcp.js`, and `db/usage.js`
+with that connection, or a transaction's client, as the first
+argument, and each takes one input object per write. A new
 organisation's hook is `AppDeps.orgCreated`. `ModelsRepository` is
 `ModelsDatabase`, built with `modelsDatabase(db)`
 ([Extension points](docs/architecture/extension-points.md)).

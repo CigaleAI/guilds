@@ -162,7 +162,7 @@ export async function listAgents(pool: Queryable, guildId: string): Promise<Guil
 }
 
 export async function insertAgent(
-  pool: pg.Pool,
+  pool: Queryable,
   agent: NewAgent,
   now: Date,
   actor?: ArtifactActor,
@@ -237,7 +237,7 @@ export async function insertAgent(
   });
 }
 
-export async function deleteAgent(pool: pg.Pool, agentId: string): Promise<void> {
+export async function deleteAgent(pool: Queryable, agentId: string): Promise<void> {
   await withTransaction(pool, async (client) => {
     await client.query(
       `DELETE FROM artifact_access
@@ -338,7 +338,7 @@ export async function getAgentTask(
 }
 
 export async function writeAgentTask(
-  pool: pg.Pool,
+  pool: Queryable,
   actor: ArtifactActor,
   agentId: string,
   content: string,
@@ -449,7 +449,7 @@ export async function listAgentTaskRevisions(
 }
 
 export async function updateAgentConfig(
-  pool: pg.Pool,
+  pool: Queryable,
   agentId: string,
   config: Record<string, unknown>,
   now: Date,
@@ -504,7 +504,7 @@ export async function updateAgentConfig(
 }
 
 export async function upsertAgentScript(
-  pool: pg.Pool,
+  pool: Queryable,
   script: NewAgentScript,
   actor: ArtifactActor,
   now: Date,
@@ -637,7 +637,7 @@ export async function getAgentScript(
 }
 
 export async function deleteAgentScript(
-  pool: pg.Pool,
+  pool: Queryable,
   actor: ArtifactActor,
   agentId: string,
   name: string,

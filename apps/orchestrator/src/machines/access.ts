@@ -1,10 +1,10 @@
-import type pg from "pg";
 import { MachineError, type MachineWithAgents } from "./index.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { getMachineWithAgents } from "../db/machines.js";
+import type { Queryable } from "../db/pg.js";
 
 /** The ids of the organisation's guilds the user can see. */
-export async function visibleGuildIds(db: pg.Pool, orgId: string, userId: string): Promise<Set<string>> {
+export async function visibleGuildIds(db: Queryable, orgId: string, userId: string): Promise<Set<string>> {
   return new Set((await listGuildsForUser(db, orgId, userId)).map((guild) => String(guild.id)));
 }
 
@@ -17,7 +17,7 @@ export function hostsOnlyVisible(machine: MachineWithAgents, visible: ReadonlySe
  * Refuses placing an agent on a machine that hosts an agent of a guild the user cannot see: agents
  * on one machine can read each other's homes and sessions (SEC-24).
  */
-export async function assertCanPlaceOn(db: pg.Pool, orgId: string, machineId: string, userId: string): Promise<void> {
+export async function assertCanPlaceOn(db: Queryable, orgId: string, machineId: string, userId: string): Promise<void> {
   const machine = await getMachineWithAgents(db, orgId, machineId);
   if (machine !== null && !hostsOnlyVisible(machine, await visibleGuildIds(db, orgId, userId))) {
     throw new MachineError(403, "the machine hosts agents of a guild you cannot see");

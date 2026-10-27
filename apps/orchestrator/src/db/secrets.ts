@@ -172,7 +172,7 @@ export async function getSecretByName(
 }
 
 export async function insertSecret(
-  pool: pg.Pool,
+  pool: Queryable,
   secret: NewSecret,
   now: Date,
 ): Promise<SecretRow> {
@@ -265,7 +265,7 @@ export async function updateSecret(
 
 /** Replaces who gets the secret; organisation-wide drops every grant. */
 export async function setSecretAccess(
-  pool: pg.Pool,
+  pool: Queryable,
   secretId: string,
   access: SecretAccessGrant,
   now: Date,

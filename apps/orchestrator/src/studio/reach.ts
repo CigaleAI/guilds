@@ -1,6 +1,6 @@
-import type pg from "pg";
 import { parseDisplayPath, type ArtifactStore, type ParsedDisplayPath } from "../artifacts/index.js";
 import { listAgents } from "../db/agents.js";
+import type { Queryable } from "../db/pg.js";
 
 // What a Studio session reaches outside its own transcript: the source
 // guild, its agents, the organisation's notes, and the tables the source
@@ -10,7 +10,7 @@ import { listAgents } from "../db/agents.js";
 export type StudioReachScope = {
   orgId: string;
   sourceGuildId: string;
-  db: pg.Pool;
+  db: Queryable;
   artifacts: ArtifactStore;
 };
 

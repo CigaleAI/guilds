@@ -166,7 +166,7 @@ export class ArtifactFiles {
 
   /** The live file with this id, with the actor's mode; 404 when it is not one the actor reaches. */
   async loadFileById(actor: ArtifactActor, fileId: string): Promise<ArtifactRow> {
-    const result = await this.store.pool.query(
+    const result = await this.store.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -204,7 +204,7 @@ export class ArtifactFiles {
   /** The files one owner holds that the actor may read, by name. */
   async listOwnerFiles(actor: ArtifactActor, level: ArtifactLevel, ownerId: string): Promise<FileView[]> {
     const values: unknown[] = [actor.orgId, level, ownerId];
-    const result = await this.store.pool.query(
+    const result = await this.store.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -219,7 +219,7 @@ export class ArtifactFiles {
   /** Soft-deletes a file the actor writes, drops its access list, and removes its bytes. */
   async deleteFile(actor: ArtifactActor, row: ArtifactRow): Promise<void> {
     await this.store.assertWrite(actor, row);
-    await withTransaction(this.store.pool, async (client) => {
+    await withTransaction(this.store.db, async (client) => {
       const now = new Date();
       const result = await client.query(
         `UPDATE artifacts
@@ -283,7 +283,7 @@ export class ArtifactFiles {
     const key = fileBlobKey(target.owner.orgId, id, 1);
     await this.blobs.put(key, content.bytes, content.mime);
     try {
-      return await withTransaction(this.store.pool, async (client) => {
+      return await withTransaction(this.store.db, async (client) => {
         const result = await client.query(
           `INSERT INTO artifacts (
              id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind,
@@ -354,7 +354,7 @@ export class ArtifactFiles {
     await this.blobs.put(key, content.bytes, content.mime);
     let row: ArtifactRow;
     try {
-      row = await withTransaction(this.store.pool, async (client) => {
+      row = await withTransaction(this.store.db, async (client) => {
         const result = await client.query(
           `UPDATE artifacts
               SET title = $2, search_text = $3, mime = $4, bytes = $5, content_hash = $6, version = version + 1,
@@ -398,7 +398,7 @@ export class ArtifactFiles {
 
   /** A 422 when the organisation's live files would hold more than their cap with `adding` bytes. */
   private async assertOrgBytes(orgId: string, adding: number, replacingId: string | null): Promise<void> {
-    const result = await this.store.pool.query(
+    const result = await this.store.db.query(
       `SELECT COALESCE(SUM(bytes), 0)::bigint AS n FROM artifacts
         WHERE org_id = $1 AND kind = 'file' AND deleted_at IS NULL AND id IS DISTINCT FROM $2`,
       [orgId, replacingId],

@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
 import { AsyncLock } from "../lib/lock.js";
 import { newId } from "../lib/ids.js";
@@ -20,7 +19,7 @@ import {
   listAgentScripts,
   upsertAgentScript,
 } from "../db/agents.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 /** An agent's script: its row without the timestamps. */
 export type AgentScript = Omit<AgentScriptRow, "created_at" | "updated_at">;
@@ -63,7 +62,7 @@ export function scriptItem(script: AgentScript): ScriptItem {
 }
 
 /** The db/ functions an agent's scripts are read and written through, on `db`. */
-export function scriptDatabase(db: pg.Pool) {
+export function scriptDatabase(db: Queryable) {
   return {
     getAgentScript: bindQuery(db, getAgentScript),
     upsertAgentScript: bindQuery(db, upsertAgentScript),

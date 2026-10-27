@@ -152,7 +152,7 @@ export async function insertBindingIfAbsent(
 }
 
 export async function upsertBinding(
-  pool: pg.Pool,
+  pool: Queryable,
   binding: Binding,
   now: Date,
   actor: ChangeActor,
@@ -258,7 +258,7 @@ export async function upsertPlatformBinding(
 }
 
 export async function deleteBinding(
-  pool: pg.Pool,
+  pool: Queryable,
   key: BindingKey,
   actor: ChangeActor,
 ): Promise<DeletedBindingRow | null> {

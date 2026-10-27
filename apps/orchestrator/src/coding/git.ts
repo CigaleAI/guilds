@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { GithubInstallationGoneError, parseGithubUrl, type GithubAppConfig, type TokenPermissions } from "../github/index.js";
 import {
   loginAccount,
@@ -9,7 +8,7 @@ import {
   type RepositoryToken,
 } from "../github/tokens.js";
 import { getMcpConnection, saveMcpConnection } from "../db/mcp.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import { markDisconnected } from "../mcp/index.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
@@ -34,7 +33,7 @@ export function agentGitIdentity(
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
 
 /** The db/ functions a run's repository tokens are minted and stored through, on `db`. */
-export function repositoryTokenDatabase(db: pg.Pool) {
+export function repositoryTokenDatabase(db: Queryable) {
   return {
     ...githubRepositoryRecorder(db),
     getMcpConnection: bindQuery(db, getMcpConnection),

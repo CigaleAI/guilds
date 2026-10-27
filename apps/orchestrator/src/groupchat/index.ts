@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { jsonObj } from "../db/json.js";
 import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
 import { groupMessageItem } from "../db/views.js";
@@ -26,7 +25,7 @@ import {
 import { getGuild, listGuilds } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
 import { getRun } from "../db/runs.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export {
   CONTEXT_HISTORY_LIMIT,
@@ -284,7 +283,7 @@ export function groupChatUserMessage(args: {
 }
 
 /** The db/ functions a guild's group chat is read and written through, on `db`. */
-export function groupChatDatabase(db: pg.Pool) {
+export function groupChatDatabase(db: Queryable) {
   return {
     getGroupChatState: bindQuery(db, getGroupChatState),
     updateGroupAgentMessageLimit: bindQuery(db, updateGroupAgentMessageLimit),

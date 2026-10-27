@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
 import { loadConnector, type LoadedConnector, type Overrides } from "../connectors/load.js";
 import type { Manifest } from "../connectors/manifest.js";
 import { tableColumns } from "./columns.js";
@@ -174,7 +173,7 @@ export async function countOrgConnectors(pool: Queryable, orgId: string): Promis
 }
 
 /** Removes a connector with its logins, their listed tools, and the bindings on them. */
-export async function deleteConnector(pool: pg.Pool, serverId: string): Promise<boolean> {
+export async function deleteConnector(pool: Queryable, serverId: string): Promise<boolean> {
   return withTransaction(pool, async (client) => {
     const tools = await client.query<{ namespaced_name: string }>(
       `SELECT namespaced_name FROM mcp_tools WHERE mcp_server_id = $1`,

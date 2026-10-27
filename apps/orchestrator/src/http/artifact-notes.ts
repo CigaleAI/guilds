@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   ArtifactError,
   ArtifactStore,
@@ -17,6 +16,7 @@ import { formatColumnTimestamp } from "../db/codecs.js";
 import { artifactHttp, HttpError } from "./errors.js";
 import { hiddenGuildsFor } from "../db/guilds.js";
 import { getAgentTask, listAgentTaskRevisions, writeAgentTask } from "../db/agents.js";
+import type { Queryable } from "../db/pg.js";
 
 export async function ensureAgentArtifacts(
   store: ArtifactStore,
@@ -32,7 +32,7 @@ export async function ensureAgentArtifacts(
 }
 
 export async function operatorFor(
-  db: pg.Pool,
+  db: Queryable,
   user: Record<string, unknown>,
   scope: { orgId: string; guildId?: string | null; agentId?: string | null },
 ): Promise<ArtifactActor> {
@@ -51,7 +51,7 @@ export async function operatorFor(
 // `recorded: false`, so a listing can still say who saved a file last.
 export async function latestFileChanges(
   store: ArtifactStore,
-  db: pg.Pool,
+  db: Queryable,
   actor: ArtifactActor,
   displayPaths: string[],
 ): Promise<Record<string, unknown>> {
@@ -148,7 +148,7 @@ async function withFileMeta(
   payload: HostFilePayload,
   kind?: string,
   version?: number,
-  db?: pg.Pool,
+  db?: Queryable,
 ): Promise<HostFilePayload> {
   const next = { ...payload };
   if (version !== undefined) {
@@ -174,7 +174,7 @@ export async function readHostFile(
   level: ArtifactLevel,
   ownerId: string,
   relative: string,
-  db?: pg.Pool,
+  db?: Queryable,
 ): Promise<HostFilePayload> {
   const name = hostFileName(relative);
   if (level === "agent" && name === TASK_KEY && db) {
@@ -225,7 +225,7 @@ export async function writeHostFile(
   relative: string,
   content: string,
   expectedVersion?: number,
-  db?: pg.Pool,
+  db?: Queryable,
 ): Promise<HostFilePayload> {
   const name = hostFileName(relative);
   if (level === "agent" && name === TASK_KEY) {

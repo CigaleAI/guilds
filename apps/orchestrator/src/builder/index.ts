@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   assertModelConnected,
   coreModelCredentials,
@@ -37,9 +36,10 @@ import { builderConversationTools, builderToolSchemas, type BuilderToolContext }
 import type { BuilderMcpClient } from "./connected.js";
 import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
 import { connectedDatabase } from "./connected.js";
+import type { Queryable } from "../db/pg.js";
 
 export type BuilderServiceDeps = {
-  db: pg.Pool;
+  db: Queryable;
   recipes: RecipeStore;
   capabilities: CapabilityService;
   apply: RecipeApplyService;

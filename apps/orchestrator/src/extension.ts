@@ -11,6 +11,7 @@ import type { ConnectorEntry } from "./connectors/registry.js";
 import type { Integration } from "./instance/integrations.js";
 import type { ModelCredentialsProvider } from "./llm/credentials.js";
 import type { OrgPolicy } from "./policy/index.js";
+import type { Queryable } from "./db/pg.js";
 
 /** The sandboxes agents run in, with the lifecycle the composition root drives. */
 export type SandboxProvider = GenerationSandboxes & {
@@ -36,15 +37,15 @@ export type ServerExtension = {
   /** Runs for every new organisation, inside the transaction that creates it. */
   orgCreated?: OrgCreatedHook;
   /** The organisation policy that replaces core's open one. */
-  policy?(services: { db: pg.Pool }): OrgPolicy;
+  policy?(services: { db: Queryable }): OrgPolicy;
   /** The credentials a model provider is called with for an organisation, in place of core's own rows. */
-  modelCredentials?(services: { db: pg.Pool }): ModelCredentialsProvider;
+  modelCredentials?(services: { db: Queryable }): ModelCredentialsProvider;
   /** The identity provider for this configuration, when the extension identifies requests itself. */
   identity?(deps: Pick<AppDeps, "db" | "config">): IdentityProvider | undefined;
   /** Who may administer the instance, in place of core's rule. */
-  instanceAdmin?(services: { db: pg.Pool }): InstanceAdmin;
+  instanceAdmin?(services: { db: Queryable }): InstanceAdmin;
   /** The sandbox provider that replaces core's one OpenSandbox from the configuration. */
-  sandboxes?(services: { db: pg.Pool; config: AppConfig; masterKey: Buffer }): SandboxProvider;
+  sandboxes?(services: { db: Queryable; config: AppConfig; masterKey: Buffer }): SandboxProvider;
   /** Where attachment bytes are kept, when the extension keeps them somewhere of its own. */
   blobStore?(services: { config: AppConfig }): BlobStore | undefined;
   /** The directory of the operator app's build this extension serves, in place of core's. */
@@ -78,7 +79,7 @@ export function extensionBlobStore(
 /** The instance-admin rule the extensions supply, if one does. */
 export function extensionInstanceAdmin(
   extensions: readonly ServerExtension[],
-  services: { db: pg.Pool },
+  services: { db: Queryable },
 ): InstanceAdmin | undefined {
   for (const extension of extensions) {
     const instanceAdmin = extension.instanceAdmin?.(services);
@@ -92,7 +93,7 @@ export function extensionInstanceAdmin(
 /** The sandbox provider the extensions supply, if one does. */
 export function extensionSandboxes(
   extensions: readonly ServerExtension[],
-  services: { db: pg.Pool; config: AppConfig; masterKey: Buffer },
+  services: { db: Queryable; config: AppConfig; masterKey: Buffer },
 ): SandboxProvider | undefined {
   for (const extension of extensions) {
     const sandboxes = extension.sandboxes?.(services);
@@ -133,7 +134,7 @@ export function extensionOrgCreated(extensions: readonly ServerExtension[]): Org
 /** The model credentials provider the extensions supply, if one does. */
 export function extensionModelCredentials(
   extensions: readonly ServerExtension[],
-  services: { db: pg.Pool },
+  services: { db: Queryable },
 ): ModelCredentialsProvider | undefined {
   for (const extension of extensions) {
     const credentials = extension.modelCredentials?.(services);
@@ -147,7 +148,7 @@ export function extensionModelCredentials(
 /** The organisation policy the extensions supply, if one does. */
 export function extensionPolicy(
   extensions: readonly ServerExtension[],
-  services: { db: pg.Pool },
+  services: { db: Queryable },
 ): OrgPolicy | undefined {
   for (const extension of extensions) {
     const policy = extension.policy?.(services);

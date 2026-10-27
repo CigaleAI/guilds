@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
 import { newId } from "../lib/ids.js";
 import { SEED_USERS } from "../users/index.js";
 import { tableColumns } from "./columns.js";
@@ -115,7 +114,7 @@ export async function getUserByEmail(pool: Queryable, email: string): Promise<Us
 
 /** Updates the user's profile; refuses a name an agent holds in a guild the user operates. */
 export async function updateUserProfile(
-  pool: pg.Pool,
+  pool: Queryable,
   userId: string,
   profile: UserProfilePatch,
   now: Date,
@@ -146,7 +145,7 @@ export async function setUserEmail(
 
 /** A user and their personal organisation; `orgCreated` runs for that organisation. */
 export async function insertUser(
-  pool: pg.Pool,
+  pool: Queryable,
   user: NewUser,
   now: Date,
   orgCreated?: OrgCreatedHook,
@@ -183,7 +182,7 @@ export async function insertUser(
  * Deletes the user. Refuses while the user is the only owner of an organisation that keeps
  * other members or guilds; an organisation left with neither is deleted with them.
  */
-export async function deleteUser(pool: pg.Pool, userId: string): Promise<DeletedUserRow | null> {
+export async function deleteUser(pool: Queryable, userId: string): Promise<DeletedUserRow | null> {
   return withTransaction(pool, async (client) => {
     await lockOwners(
       client,

@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import {
@@ -258,7 +257,7 @@ import {
 } from "../db/issues.js";
 import { getOrgMonthlyUsage } from "../db/usage.js";
 import { getOrgModelProvider } from "../db/orgs.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import { agentSecretsDatabase } from "../secrets/agent.js";
 
 export {
@@ -909,7 +908,7 @@ function preparedRunMetadata(
 }
 
 /** The db/ functions a generation reads and writes through, on `db`. */
-export function generationDatabase(db: pg.Pool) {
+export function generationDatabase(db: Queryable) {
   return {
     ...mcpDatabase(db),
     ...agentSecretsDatabase(db),

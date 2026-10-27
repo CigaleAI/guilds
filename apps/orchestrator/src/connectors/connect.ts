@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import type { OwnerScope } from "../credentials/validate.js";
 import type {
@@ -13,7 +12,7 @@ import { installedConnectors } from "./index.js";
 import { settingsComplete, SettingsError, validateSettings } from "./settings.js";
 import type { Credentials } from "./types.js";
 import { connectMcp, deleteMcpConnection, getMcpConnectionForOwner } from "../db/mcp.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 /**
  * What to do when the owner already has a connected login on the server. `refuse`: a 409.
@@ -58,7 +57,7 @@ export class ConnectError extends Error {
 }
 
 /** The db/ functions a login is connected and bound through, on `db`. */
-export function connectDatabase(db: pg.Pool) {
+export function connectDatabase(db: Queryable) {
   return {
     ...mcpDatabase(db),
     getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),

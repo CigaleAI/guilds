@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
 import { messageCostUsd } from "../usage.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
@@ -221,7 +220,7 @@ export async function getRun(pool: Queryable, runId: string): Promise<RunRow | n
   return result.rows[0] ?? null;
 }
 
-export async function insertRun(pool: pg.Pool, run: NewRun, now: Date): Promise<void> {
+export async function insertRun(pool: Queryable, run: NewRun, now: Date): Promise<void> {
   const systemMetadata: Record<string, unknown> = { source: "system" };
   if (run.runMetadata?.task_source) {
     systemMetadata.task_source = run.runMetadata.task_source;
@@ -276,7 +275,7 @@ export async function insertRun(pool: pg.Pool, run: NewRun, now: Date): Promise<
   });
 }
 
-export async function createRun(pool: pg.Pool, run: NewDirectRun, now: Date): Promise<void> {
+export async function createRun(pool: Queryable, run: NewDirectRun, now: Date): Promise<void> {
   const opening = [...(run.extraMessages ?? [])];
   if (run.userContent !== null) {
     opening.push([
@@ -304,7 +303,7 @@ export async function createRun(pool: pg.Pool, run: NewDirectRun, now: Date): Pr
   );
 }
 
-export async function createGroupRun(pool: pg.Pool, run: NewGroupRun, now: Date): Promise<void> {
+export async function createGroupRun(pool: Queryable, run: NewGroupRun, now: Date): Promise<void> {
   await insertRun(
     pool,
     {
@@ -327,7 +326,7 @@ export async function createGroupRun(pool: pg.Pool, run: NewGroupRun, now: Date)
 }
 
 export async function createScheduleRun(
-  pool: pg.Pool,
+  pool: Queryable,
   run: NewScheduleRun,
   now: Date,
 ): Promise<void> {
@@ -352,7 +351,7 @@ export async function createScheduleRun(
 }
 
 export async function insertMessage(
-  pool: pg.Pool,
+  pool: Queryable,
   message: NewMessage,
   now: Date,
 ): Promise<MessageRow> {
@@ -480,7 +479,7 @@ export async function reopenRun(pool: Queryable, runId: string, now: Date): Prom
 }
 
 export async function completeGroupDelivery(
-  pool: pg.Pool,
+  pool: Queryable,
   runId: string,
   agentId: string,
   throughSeq: number,

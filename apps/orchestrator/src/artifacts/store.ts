@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type pg from "pg";
 import { formatColumnTimestamp, formatOperationalTimestamp } from "../db/codecs.js";
 import { isUniqueViolation, type Queryable, stamp, withTransaction } from "../db/pg.js";
 import { newId } from "../lib/ids.js";
@@ -212,7 +211,7 @@ function collectionRef(row: CollectionRow): CollectionRef {
 
 export class ArtifactStore {
   constructor(
-    public pool: pg.Pool,
+    public db: Queryable,
     public templatesRoot = "",
   ) {}
 
@@ -280,7 +279,7 @@ export class ArtifactStore {
       throw new ArtifactError("version conflict", 409);
     }
     const hash = contentHash(content, null);
-    return withTransaction(this.pool, async (client) => {
+    return withTransaction(this.db, async (client) => {
       const now = new Date();
       let writtenAt = stamp(now);
       if (live.content_hash !== hash) {
@@ -431,7 +430,7 @@ export class ArtifactStore {
     const purpose = validatePurpose(args.purpose);
     const columns = parseColumns(args.columns ?? []);
     const guildId = args.guildId ? await this.requireGuild(actor, args.guildId) : null;
-    const count = await this.pool.query(
+    const count = await this.db.query(
       `SELECT COUNT(*)::int AS n FROM artifact_collections WHERE org_id = $1 AND deleted_at IS NULL`,
       [actor.orgId],
     );
@@ -440,7 +439,7 @@ export class ArtifactStore {
     }
     const now = stamp(new Date());
     try {
-      return await withTransaction(this.pool, async (client) => {
+      return await withTransaction(this.db, async (client) => {
         const result = await client.query(
           `INSERT INTO artifact_collections (
              id, org_id, guild_id, name, purpose, columns, next_id,
@@ -486,7 +485,7 @@ export class ArtifactStore {
     const guildId =
       args.guildId === undefined ? current.guild_id : args.guildId ? await this.requireGuild(actor, args.guildId) : null;
     const now = stamp(new Date());
-    await withTransaction(this.pool, async (client) => {
+    await withTransaction(this.db, async (client) => {
       await client.query(`SELECT id FROM artifact_collections WHERE id = $1 FOR UPDATE`, [current.id]);
       if (change) {
         await recordChangeIfAny(client, actor, collectionColumnsChanged(collectionRef(current), change));
@@ -560,7 +559,7 @@ export class ArtifactStore {
       throw new ArtifactError("unknown collection", 404);
     }
     const now = stamp(new Date());
-    await withTransaction(this.pool, async (client) => {
+    await withTransaction(this.db, async (client) => {
       await client.query(
         `UPDATE artifacts SET deleted_at = $2, updated_by_type = $3, updated_by_id = $4, updated_by_name = $5, updated_at = $2
           WHERE collection_id = $1 AND deleted_at IS NULL`,
@@ -586,7 +585,7 @@ export class ArtifactStore {
       throw new ArtifactError("unknown collection", 404);
     }
     const now = stamp(new Date());
-    return withTransaction(this.pool, async (client) => {
+    return withTransaction(this.db, async (client) => {
       const locked = await client.query(
         `SELECT id FROM artifact_collections WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
         [collection.id],
@@ -685,7 +684,7 @@ export class ArtifactStore {
     if (!described) {
       return null;
     }
-    const facts = await this.pool.query(
+    const facts = await this.db.query(
       `SELECT count(*)::int AS count, max(updated_at) AS newest
          FROM artifacts WHERE collection_id = $1 AND kind = 'object' AND deleted_at IS NULL`,
       [described.id],
@@ -716,7 +715,7 @@ export class ArtifactStore {
   async accessList(actor: ArtifactActor, target: AccessTarget): Promise<AccessList> {
     this.assertOperator(actor);
     const item = await this.requireTarget(actor, target);
-    return { subjects: await this.loadEntries(this.pool, actor, target), owner_agent_id: item.ownerAgentId };
+    return { subjects: await this.loadEntries(this.db, actor, target), owner_agent_id: item.ownerAgentId };
   }
 
   /**
@@ -729,7 +728,7 @@ export class ArtifactStore {
     this.assertOperator(actor);
     const item = await this.requireTarget(actor, target);
     const wanted = parseGrants(subjects);
-    return withTransaction(this.pool, async (client) => {
+    return withTransaction(this.db, async (client) => {
       const before = await this.loadEntries(client, actor, target);
       const names = new Map(before.map((entry) => [grantKey(entry), subjectLabel(entry.type, entry.name)]));
       const { upserts, removals } = diffGrants(before, wanted);
@@ -765,7 +764,7 @@ export class ArtifactStore {
     this.assertOperator(actor);
     const item = await this.requireTarget(actor, target);
     const grant = parseGrant({ ...subject, mode: mode ?? "read" });
-    await withTransaction(this.pool, async (client) => {
+    await withTransaction(this.db, async (client) => {
       const before = (await this.loadEntries(client, actor, target)).find((entry) => grantKey(entry) === grantKey(grant));
       if ((before?.mode ?? null) === mode) {
         return;
@@ -822,7 +821,7 @@ export class ArtifactStore {
     const body = checked.body;
     this.assertBytes(JSON.stringify(body));
     const identity = identityFor(collection.columns, body);
-    return withTransaction(this.pool, async (client) => {
+    return withTransaction(this.db, async (client) => {
       const locked = await client.query(
         `SELECT next_id FROM artifact_collections WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
         [collection.id],
@@ -927,7 +926,7 @@ export class ArtifactStore {
     if (checked.problems.length) {
       throw recordRejected(checked.problems);
     }
-    return withTransaction(this.pool, async (client) => {
+    return withTransaction(this.db, async (client) => {
       const current = await this.lockRecord(client, collection.id, id);
       const merged: Record<string, unknown> = { ...bodyOf(current) };
       for (const name of checked.clear) {
@@ -963,7 +962,7 @@ export class ArtifactStore {
   async removeRecord(actor: ArtifactActor, args: { collection: string; id: unknown }): Promise<number> {
     const collection = await this.requireWritable(actor, args.collection);
     const id = parseRecordId(args.id);
-    return withTransaction(this.pool, async (client) => {
+    return withTransaction(this.db, async (client) => {
       const current = await this.lockRecord(client, collection.id, id);
       const now = new Date();
       const result = await client.query(
@@ -990,7 +989,7 @@ export class ArtifactStore {
 
   async getRecord(actor: ArtifactActor, collectionName: string, id: unknown): Promise<RecordView> {
     const collection = await this.requireReadable(actor, collectionName);
-    const row = await this.loadRecord(this.pool, collection.id, parseRecordId(id));
+    const row = await this.loadRecord(this.db, collection.id, parseRecordId(id));
     if (!row) {
       throw new ArtifactError("record not found", 404);
     }
@@ -1023,12 +1022,12 @@ export class ArtifactStore {
       values.push(since);
       filter += ` AND a.updated_at >= $${values.length}`;
     }
-    const total = await this.pool.query(`SELECT count(*)::int AS n FROM artifacts a WHERE ${filter}`, values);
+    const total = await this.db.query(`SELECT count(*)::int AS n FROM artifacts a WHERE ${filter}`, values);
     const orderSql = orderClauseSql(order ?? (since ? { column: "updated_at", direction: "asc" } : { column: "id", direction: "asc" }), collection.columns, values);
     values.push(limit);
     const limitIndex = values.length;
     values.push(offset);
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -1086,7 +1085,7 @@ export class ArtifactStore {
     }
     values.push(limit);
     sql += ` ORDER BY (${scores.join(" + ")}) DESC, a.updated_at DESC LIMIT $${values.length}`;
-    const result = await this.pool.query(sql, values);
+    const result = await this.db.query(sql, values);
     return {
       records: (result.rows as Array<Record<string, unknown>>).map((row) => this.recordView(mapRow(row))),
     };
@@ -1098,7 +1097,7 @@ export class ArtifactStore {
     if (!collection || !(await this.accessMode(actor, collection))) {
       throw new ArtifactError("unknown collection", 404);
     }
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -1154,7 +1153,7 @@ export class ArtifactStore {
       throw new ArtifactError("use file_delete for files", 422);
     }
     await this.assertNotEmbedded(actor.orgId, displayPathFor(rowAsDisplay(row)));
-    await withTransaction(this.pool, async (client) => {
+    await withTransaction(this.db, async (client) => {
       const now = new Date();
       const result = await client.query(
         `UPDATE artifacts
@@ -1188,7 +1187,7 @@ export class ArtifactStore {
       if (!actor.operator || !reachesOwner(actor, "agent", parsed.agentId)) {
         throw new ArtifactError("artifact not found", 404);
       }
-      const result = await this.pool.query(
+      const result = await this.db.query(
         `SELECT content_text, replaced_at, replaced_by_name
            FROM memory_revisions
           WHERE org_id = $1 AND agent_id = $2
@@ -1221,7 +1220,7 @@ export class ArtifactStore {
         throw new ArtifactError("artifact not found", 404);
       }
       const collection = await this.requireReadable(actor, parsed.collectionName);
-      const row = await this.loadRecord(this.pool, collection.id, parseRecordId(parsed.recordId), true);
+      const row = await this.loadRecord(this.db, collection.id, parseRecordId(parsed.recordId), true);
       if (!row) {
         throw new ArtifactError("artifact not found", 404);
       }
@@ -1281,7 +1280,7 @@ export class ArtifactStore {
     ownerId: string,
   ): Promise<Array<Record<string, unknown>>> {
     const values: unknown[] = [actor.orgId, level, ownerId];
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -1298,7 +1297,7 @@ export class ArtifactStore {
     if (!actor.operator || !reachesOwner(actor, "agent", agentId)) {
       return [];
     }
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT id, content_text, replaced_at, replaced_by_type, replaced_by_id, replaced_by_name, replaced_by_detail
          FROM memory_revisions
         WHERE org_id = $1 AND agent_id = $2
@@ -1334,7 +1333,7 @@ export class ArtifactStore {
     owners: { guildId: string; agentIds: string[] },
   ): Promise<StateArtifact[]> {
     const values: unknown[] = [actor.orgId, owners.guildId, owners.agentIds];
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -1365,7 +1364,7 @@ export class ArtifactStore {
 
   async listEmbeddableNotes(actor: ArtifactActor): Promise<Array<Record<string, unknown>>> {
     const values: unknown[] = [actor.orgId];
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -1457,13 +1456,13 @@ export class ArtifactStore {
       return "write";
     }
     const values: unknown[] = [collection.id];
-    const result = await this.pool.query(`SELECT ${agentModeSql("collection", "$1", actor, values)} AS mode`, values);
+    const result = await this.db.query(`SELECT ${agentModeSql("collection", "$1", actor, values)} AS mode`, values);
     return reachedMode(result.rows[0]?.mode);
   }
 
   private async accessibleCollections(actor: ArtifactActor): Promise<Array<{ row: CollectionRow; mode: AccessMode }>> {
     if (actor.operator) {
-      const result = await this.pool.query(
+      const result = await this.db.query(
         `SELECT ${COLLECTION_SELECT} FROM artifact_collections
           WHERE org_id = $1 AND deleted_at IS NULL
             AND (guild_id IS NULL OR guild_id <> ALL($2::text[]))
@@ -1474,7 +1473,7 @@ export class ArtifactStore {
     }
     const values: unknown[] = [actor.orgId];
     const mode = agentModeSql("collection", "artifact_collections.id", actor, values);
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT * FROM (
          SELECT ${COLLECTION_SELECT}, ${mode} AS mode
            FROM artifact_collections
@@ -1516,7 +1515,7 @@ export class ArtifactStore {
         label: `the table ${collection.name}`,
       };
     }
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${ARTIFACT_SELECT}
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -1546,7 +1545,7 @@ export class ArtifactStore {
     subject: { type: AccessSubject; id: string },
     where = "",
   ): Promise<string> {
-    const result = await this.pool.query(SUBJECT_SQL[subject.type], [subject.id, actor.orgId]);
+    const result = await this.db.query(SUBJECT_SQL[subject.type], [subject.id, actor.orgId]);
     const row = result.rows[0] as { name: string; guild_id: string | null } | undefined;
     if (!row || (row.guild_id !== null && actor.hidden.guildIds.includes(row.guild_id))) {
       throw new ArtifactError(`${where}unknown ${subject.type}`, 422);
@@ -1618,7 +1617,7 @@ export class ArtifactStore {
     const values: unknown[] = [actor.orgId];
     const mode = this.artifactModeSql(reacher, values);
     const hidden = this.readScope(actor, values);
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT * FROM (
          SELECT ${ARTIFACT_SELECT}, ${mode} AS access_mode, ${OWNER_NAME_SQL} AS owner_name
            FROM artifacts a
@@ -1665,7 +1664,7 @@ export class ArtifactStore {
 
   private async requireGuild(actor: ArtifactActor, guildId: string): Promise<string> {
     const id = String(guildId ?? "").trim();
-    const result = await this.pool.query(`SELECT id FROM guilds WHERE id = $1 AND org_id = $2`, [id, actor.orgId]);
+    const result = await this.db.query(`SELECT id FROM guilds WHERE id = $1 AND org_id = $2`, [id, actor.orgId]);
     if (!result.rows[0] || actor.hidden.guildIds.includes(id)) {
       throw new ArtifactError("unknown guild", 404);
     }
@@ -1689,7 +1688,7 @@ export class ArtifactStore {
   }
 
   private async countRecords(collectionId: string): Promise<number> {
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT count(*)::int AS n FROM artifacts WHERE collection_id = $1 AND kind = 'object' AND deleted_at IS NULL`,
       [collectionId],
     );
@@ -1701,7 +1700,7 @@ export class ArtifactStore {
     if (!ids.length) {
       return counts;
     }
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT collection_id, count(*)::int AS n FROM artifacts
         WHERE collection_id = ANY($1::text[]) AND kind = 'object' AND deleted_at IS NULL
         GROUP BY collection_id`,
@@ -1714,7 +1713,7 @@ export class ArtifactStore {
   }
 
   private async loadCollectionById(actor: ArtifactActor, collectionId: string): Promise<CollectionRow | null> {
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${COLLECTION_SELECT} FROM artifact_collections WHERE org_id = $1 AND id = $2 AND deleted_at IS NULL`,
       [actor.orgId, collectionId],
     );
@@ -1722,7 +1721,7 @@ export class ArtifactStore {
   }
 
   private async loadCollectionByName(actor: ArtifactActor, name: string): Promise<CollectionRow | null> {
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${COLLECTION_SELECT} FROM artifact_collections WHERE org_id = $1 AND name = $2 AND deleted_at IS NULL`,
       [actor.orgId, name],
     );
@@ -1867,7 +1866,7 @@ export class ArtifactStore {
       return null;
     }
     const values: unknown[] = [row.id];
-    const result = await this.pool.query(`SELECT ${agentModeSql(row.kind, "$1", actor, values)} AS mode`, values);
+    const result = await this.db.query(`SELECT ${agentModeSql(row.kind, "$1", actor, values)} AS mode`, values);
     return reachedMode(result.rows[0]?.mode);
   }
 
@@ -1911,7 +1910,7 @@ export class ArtifactStore {
 
   /** A 422 when the owner already holds the most live notes, Memory, scripts, and files it may. */
   async assertLiveCount(orgId: string, level: ArtifactLevel, ownerId: string): Promise<void> {
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT COUNT(*)::int AS n FROM artifacts
         WHERE org_id = $1 AND level = $2 AND owner_id = $3 AND deleted_at IS NULL AND kind <> 'object'`,
       [orgId, level, ownerId],
@@ -1922,7 +1921,7 @@ export class ArtifactStore {
   }
 
   private async assertNotEmbedded(orgId: string, displayPath: string): Promise<void> {
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT id AS agent_id
          FROM agents
         WHERE org_id = $1 AND task LIKE $2
@@ -1939,7 +1938,7 @@ export class ArtifactStore {
     actor: ArtifactActor,
     agentId: string,
     kind: "memory",
-    db: Queryable = this.pool,
+    db: Queryable = this.db,
   ): Promise<(ArtifactRow & { content_hash: string }) | null> {
     const result = await db.query(
       `SELECT ${ARTIFACT_SELECT}, a.content_hash
@@ -1962,7 +1961,7 @@ export class ArtifactStore {
     key: string,
     content: string,
   ): Promise<void> {
-    await withTransaction(this.pool, async (client) => {
+    await withTransaction(this.db, async (client) => {
       const now = new Date();
       const result = await client.query(
         `INSERT INTO artifacts (
@@ -2020,7 +2019,7 @@ export class ArtifactStore {
       expectedVersion?: number;
     },
   ): Promise<ArtifactRow> {
-    return withTransaction(this.pool, async (client) => {
+    return withTransaction(this.db, async (client) => {
       const existing = await client.query(
         `SELECT ${ARTIFACT_SELECT}, a.content_hash
            FROM artifacts a
@@ -2131,7 +2130,7 @@ export class ArtifactStore {
     includeDeleted = false,
   ): Promise<(ArtifactRow & { deleted_at?: string | null }) | null> {
     const deleted = includeDeleted ? "" : "AND a.deleted_at IS NULL";
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT ${ARTIFACT_SELECT}, a.deleted_at
          FROM artifacts a
          LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -2213,7 +2212,7 @@ export class ArtifactStore {
       )
       ORDER BY ts_rank_cd(a.search_document, websearch_to_tsquery('simple', $${qIndex})) DESC, a.updated_at DESC
       LIMIT $${values.length}`;
-    const result = await this.pool.query(sql, values);
+    const result = await this.db.query(sql, values);
     return (result.rows as Array<Record<string, unknown>>).map((row) => mapRow(row));
   }
 
@@ -2234,7 +2233,7 @@ export class ArtifactStore {
     sql += this.levelFilter(level, values);
     values.push(limit);
     sql += ` ORDER BY a.level, a.key LIMIT $${values.length}`;
-    const result = await this.pool.query(sql, values);
+    const result = await this.db.query(sql, values);
     return (result.rows as Array<Record<string, unknown>>).map((row) => mapRow(row));
   }
 }

@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { createHash } from "node:crypto";
 import {
   ArtifactError,
@@ -24,6 +23,7 @@ import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./table
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
 import { getAgent, listAgents } from "../db/agents.js";
 import { getGuild, updateGuild } from "../db/guilds.js";
+import type { Queryable } from "../db/pg.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -72,7 +72,7 @@ export type EditScope = {
   /** The coach message being applied; set by `applyEdit` so every write links to it. */
   origin?: StudioOrigin;
   user: Record<string, unknown>;
-  db: pg.Pool;
+  db: Queryable;
   artifacts: ArtifactStore;
   schedules: Schedules;
 };

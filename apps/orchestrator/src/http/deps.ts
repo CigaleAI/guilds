@@ -1,4 +1,3 @@
-import type pg from "pg";
 import type { ArtifactFiles, ArtifactStore } from "../artifacts/index.js";
 import type { Database } from "../db/client.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
@@ -22,10 +21,11 @@ import type { IdentityProvider } from "./identity.js";
 import type { InstanceAdmin } from "./instance-admin.js";
 import type { OrgPolicy } from "../policy/index.js";
 import type { RegistryClient } from "../registry/client.js";
+import type { Queryable } from "../db/pg.js";
 
 export type AppDeps = {
   database: Database;
-  db: pg.Pool;
+  db: Queryable;
   notes: NotesStore;
   artifacts?: ArtifactStore;
   /** The shared files over `artifacts` and the blob store. */

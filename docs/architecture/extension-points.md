@@ -59,11 +59,13 @@ and hands its extensions to `runServer` (`src/run.ts`). Core's
 
 A factory on `ServerExtension` (`policy`, `modelCredentials`,
 `instanceAdmin`, `sandboxes`, `identity`) runs once at boot and
-receives the database pool as `db`. The extension reads and writes
-core's tables through the `db/` modules the package exports
-(`db/orgs.js`, `db/users.js`, `db/connectors.js`, `db/mcp.js`,
-`db/usage.js`). Each function takes the pool, or a transaction's
-client, as its first argument.
+receives the database connection as `db`, a `Queryable`
+(`db/pg.js`). The extension reads and writes core's tables through
+the `db/` modules the package exports (`db/orgs.js`, `db/users.js`,
+`db/connectors.js`, `db/mcp.js`, `db/usage.js`). Each function
+takes that connection, or the client of a transaction the extension
+has open, as its first argument; a function whose writes commit
+together runs them in a savepoint of that transaction.
 
 `loadConfig` (`src/config/index.ts`) takes the `AUTH_MODE` values
 an extension identifies requests in, beside core's `compat-cookie`

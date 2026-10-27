@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
@@ -34,10 +33,10 @@ import { listSchedules } from "../db/schedules.js";
 import { getMcpServerBySlug } from "../db/connectors.js";
 import { listSecrets } from "../db/secrets.js";
 import { listGuildRepositories } from "../db/guilds.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 /** The db/ functions a guild is captured into a recipe through, on `db`. */
-export function captureDatabase(db: pg.Pool) {
+export function captureDatabase(db: Queryable) {
   return {
     ...mcpDatabase(db),
     listAgents: bindQuery(db, listAgents),

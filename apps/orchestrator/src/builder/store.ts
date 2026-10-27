@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { jsonObj } from "../db/json.js";
-import { firstRow, stamp, withTransaction } from "../db/pg.js";
+import { firstRow, stamp, withTransaction, type Queryable } from "../db/pg.js";
 import { utcMonth } from "../usage.js";
 import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, usageDelta } from "../usage.js";
 
@@ -39,7 +39,7 @@ function mapMessage(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 export class BuilderStore {
-  constructor(public pool: pg.Pool) {}
+  constructor(public pool: Queryable) {}
 
   async insertSession(row: Record<string, unknown>, client?: pg.PoolClient): Promise<Record<string, unknown>> {
     const db = client ?? this.pool;

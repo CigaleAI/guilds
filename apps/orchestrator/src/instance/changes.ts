@@ -1,9 +1,9 @@
-import type pg from "pg";
 import { syncInstanceLogins } from "../connectors/instance.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import type { McpPool } from "../mcp/index.js";
 import { GITHUB_APP } from "./integrations.js";
 import { disconnectServerConnections } from "../db/mcp.js";
+import type { Queryable } from "../db/pg.js";
 
 /** Whether a GitHub App write puts another App in place of the one connections were installed with, or takes it away. */
 export function replacesGithubApp(
@@ -22,7 +22,7 @@ export function replacesGithubApp(
  * their installations belong to the old App. Returns how many it disconnected.
  */
 export async function applyKeyChange(
-  ctx: { db: pg.Pool; masterKey?: Buffer | undefined; mcp?: McpPool | undefined },
+  ctx: { db: Queryable; masterKey?: Buffer | undefined; mcp?: McpPool | undefined },
   integrationId: string,
   previous: Record<string, string> | null,
   next: Record<string, string> | null,

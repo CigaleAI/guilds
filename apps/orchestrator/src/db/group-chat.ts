@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
 import { AgentMessageLimitReached, GroupChatCleared, RowMissing } from "./errors.js";
 import { guildVisibleTo } from "./guilds.js";
 import { jsonObj } from "./json.js";
@@ -174,7 +173,7 @@ export async function advanceGroupCursor(
 // agent message count and delivery errors reset, and the clear time stops
 // runs that started before it from posting.
 export async function clearGroupMessages(
-  pool: pg.Pool,
+  pool: Queryable,
   guildId: string,
   now: Date,
 ): Promise<GroupChatStateRow | null> {
@@ -279,7 +278,7 @@ export async function appendGroupChatError(
 }
 
 export async function postUserGroupMessage(
-  pool: pg.Pool,
+  pool: Queryable,
   message: NewUserGroupMessage,
   now: Date,
 ): Promise<GroupMessageRow | null> {
@@ -329,7 +328,7 @@ export async function postUserGroupMessage(
 }
 
 export async function postAgentGroupMessage(
-  pool: pg.Pool,
+  pool: Queryable,
   message: NewAgentGroupMessage,
   now: Date,
 ): Promise<GroupMessageRow | null> {

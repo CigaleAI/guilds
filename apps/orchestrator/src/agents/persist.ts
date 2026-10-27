@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   DEFAULT_AVATAR_COLOR,
   DEFAULT_AVATAR_SHAPE,
@@ -8,7 +7,7 @@ import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { hashTaskContent, resolveTaskContent } from "./task.js";
 import { deleteAgent, insertAgent } from "../db/agents.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export type AgentNotes = {
   createAgent(
@@ -20,7 +19,7 @@ export type AgentNotes = {
 };
 
 /** The db/ functions a new agent is written through, on `db`. */
-export function agentDatabase(db: pg.Pool) {
+export function agentDatabase(db: Queryable) {
   return {
     insertAgent: bindQuery(db, insertAgent),
     deleteAgent: bindQuery(db, deleteAgent),

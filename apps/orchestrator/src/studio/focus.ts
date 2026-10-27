@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   ArtifactError,
   listFileChanges,
@@ -26,6 +25,7 @@ import { getRun, listMessages } from "../db/runs.js";
 import { getSchedule } from "../db/schedules.js";
 import { getIssue } from "../db/issues.js";
 import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
+import type { Queryable } from "../db/pg.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -62,9 +62,8 @@ export type StudioFocus = {
 };
 
 export type StudioFocusDeps = {
-  db: pg.Pool;
+  db: Queryable;
   artifacts: ArtifactStore;
-  pool: pg.Pool;
   orgId: string;
   sourceGuildId: string;
   user: Record<string, unknown>;
@@ -492,7 +491,7 @@ async function resolveFile(
   const file = await loadFileForFocus(deps, displayPath);
   const agent =
     file.agent ?? (await guildAgent(deps, trimmedText(input.agent_id)).catch(() => null));
-  const changes = await listFileChanges(deps.pool, deps.orgId, displayPath);
+  const changes = await listFileChanges(deps.db, deps.orgId, displayPath);
   const changeId = trimmedText(input.change_id);
   const change = changeId ? changes.find((row) => row.id === changeId) : changes[0];
   if (changeId && !change) {

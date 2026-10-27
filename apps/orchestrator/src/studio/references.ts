@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   EMBED_BUDGET,
   EMBED_DEPTH,
@@ -18,6 +17,7 @@ import {
 } from "../artifacts/index.js";
 import { taskDisplayPath } from "../agents/task.js";
 import { listAgents } from "../db/agents.js";
+import type { Queryable } from "../db/pg.js";
 
 export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
 
@@ -312,7 +312,7 @@ function deepen(
 // ---------------------------------------------------------------------------
 // Loading: the guild's files as the operator may read them, each Task's run as its agent reads.
 
-export type ReferenceDeps = { db: pg.Pool; artifacts: ArtifactStore };
+export type ReferenceDeps = { db: Queryable; artifacts: ArtifactStore };
 
 type Reached = { files: ReferenceFile[]; unresolved: UnresolvedLink[] };
 type Resolved = { file?: ReferenceFile; unresolved?: UnresolvedLink };

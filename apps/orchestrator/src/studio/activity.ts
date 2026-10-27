@@ -1,4 +1,3 @@
-import type pg from "pg";
 import type { ScheduleRow } from "../db/schedules.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
@@ -17,6 +16,7 @@ import {
 } from "../db/activity.js";
 import { listSchedulesForGuild } from "../db/schedules.js";
 import { listGroupMessagesForActivity } from "../db/group-chat.js";
+import type { Queryable } from "../db/pg.js";
 
 // The guild activity ledger: one row per wake (a run of any kind) with what
 // started it, how it was routed, the tools it called, and what it produced,
@@ -586,7 +586,7 @@ export function messageFloor(run: Record<string, unknown>): number | null {
 }
 
 export async function loadGuildActivity(
-  db: pg.Pool,
+  db: Queryable,
   guildId: string,
   window: ActivityWindow & { now?: Date; generating?: (runId: string) => boolean },
 ): Promise<ActivityView> {

@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { memoryOf } from "../agents/validation.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
@@ -9,6 +8,7 @@ import { projectAgentAccess, type PreviewDeps } from "./preview.js";
 import type { ActivityWindow } from "./activity.js";
 import { listAgents } from "../db/agents.js";
 import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
+import type { Queryable } from "../db/pg.js";
 
 // The guild's tools as Studio's Tools section lists them: what each agent is
 // offered now, from the live access projection, beside how the agents called
@@ -183,7 +183,7 @@ export function buildToolRows(entries: ToolEntry[], stats: StatRow[]): ToolRow[]
 
 /** The guild's tools: what each agent is offered now, and their calls in the window. */
 export async function loadGuildTools(
-  deps: { db: pg.Pool; preview: PreviewDeps },
+  deps: { db: Queryable; preview: PreviewDeps },
   guildId: string,
   window: ActivityWindow,
 ): Promise<{ since: string; until: string; tools: ToolRow[] }> {
@@ -232,7 +232,7 @@ export function viewToolCall(row: Record<string, unknown>): Record<string, unkno
 
 /** One tool's calls in the window, newest first, a page at a time. */
 export async function loadToolCalls(
-  db: pg.Pool,
+  db: Queryable,
   guildId: string,
   request: { tool: string; window: ActivityWindow; query: ToolCallsQuery },
 ): Promise<{ calls: Array<Record<string, unknown>>; next_cursor: string | null }> {

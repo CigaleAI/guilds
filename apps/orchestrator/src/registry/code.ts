@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,6 +9,7 @@ import { CONNECTOR_CODE, integrationValue, integrationValues } from "../instance
 import { writeLog } from "../observability/log.js";
 import type { ConnectorPackage } from "./client.js";
 import { listMcpServers } from "../db/connectors.js";
+import type { Queryable } from "../db/pg.js";
 
 // Code connectors live under CONNECTORS_ROOT, one folder per version: `<root>/<slug>/<version>/`
 // holding connector.json, adapter.js, and logo.svg. The row's version names the folder that serves.
@@ -120,7 +120,7 @@ export type CodeSync = { loaded: string[]; removed: string[]; failed: string[] }
  * version that does not load is logged and the one served before stays. While the code tier is
  * off, code on disk is a warning and is not loaded. Runs at boot and after each change.
  */
-export async function syncCodeConnectors(db: pg.Pool, env: NodeJS.ProcessEnv = process.env): Promise<CodeSync> {
+export async function syncCodeConnectors(db: Queryable, env: NodeJS.ProcessEnv = process.env): Promise<CodeSync> {
   const result: CodeSync = { loaded: [], removed: [], failed: [] };
   const root = connectorsRoot(env);
   const on = codeTierRoot(env) !== null;

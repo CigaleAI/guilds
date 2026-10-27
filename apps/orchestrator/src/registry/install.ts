@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { rmSync } from "node:fs";
 import { connectorIntegrationId } from "../instance/integrations.js";
 import { serverIdOf } from "../connectors/manifest.js";
@@ -17,6 +16,7 @@ import {
 } from "../db/connectors.js";
 import { expireMcpTools } from "../db/mcp.js";
 import { deleteInstanceKey } from "../db/orgs.js";
+import type { Queryable } from "../db/pg.js";
 
 /** A connector the box installed from a registry, beside the newest version its index offers. */
 export type InstalledConnector = {
@@ -100,7 +100,7 @@ export type InstallOptions = Acceptance & {
  * serves it once `syncCodeConnectors` runs.
  */
 export async function installConnector(
-  db: pg.Pool,
+  db: Queryable,
   client: RegistryClient,
   slug: string,
   options: InstallOptions = {},
@@ -146,7 +146,7 @@ export async function installConnector(
   }
 }
 
-async function registryRow(db: pg.Pool, slug: string): Promise<Record<string, unknown>> {
+async function registryRow(db: Queryable, slug: string): Promise<Record<string, unknown>> {
   const row = await getMcpServerBySlug(db, slug, null);
   if (row === null || row.owner_org_id) {
     throw new RegistryError(`connector ${slug} is not installed`, 404);
@@ -164,7 +164,7 @@ async function registryRow(db: pg.Pool, slug: string): Promise<Record<string, un
  * served once `syncCodeConnectors` runs. Returns what moved.
  */
 export async function updateConnectors(
-  db: pg.Pool,
+  db: Queryable,
   client: RegistryClient,
   options: Acceptance & { slug?: string; now?: Date; codeRoot?: string | null; connectorsRoot?: string | null } = {},
 ): Promise<Array<{ slug: string; from: string; to: string; code: boolean }>> {
@@ -204,7 +204,7 @@ export async function updateConnectors(
 }
 
 /** Removes a registry connector with its logins, the bindings that name it, the key it declared of its own, and its code on disk. */
-export async function removeConnector(db: pg.Pool, slug: string, connectorsRoot: string | null = null): Promise<void> {
+export async function removeConnector(db: Queryable, slug: string, connectorsRoot: string | null = null): Promise<void> {
   const row = await registryRow(db, slug);
   await deleteConnector(db, String(row.id));
   await deleteInstanceKey(db, connectorIntegrationId(slug));
@@ -214,7 +214,7 @@ export async function removeConnector(db: pg.Pool, slug: string, connectorsRoot:
 }
 
 /** The box's platform connectors, each with the newest version the index offers when one is given. */
-export async function listConnectors(db: pg.Pool, index: RegistryIndex | null): Promise<InstalledConnector[]> {
+export async function listConnectors(db: Queryable, index: RegistryIndex | null): Promise<InstalledConnector[]> {
   const rows = (await listMcpServers(db)).filter((row) => !row.owner_org_id);
   return rows
     .map((row) => {

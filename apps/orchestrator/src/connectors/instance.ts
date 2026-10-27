@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { encryptPayload } from "../credentials/crypto.js";
 import { connectorIntegration, platformConnectors } from "../instance/connectors.js";
 import {
@@ -14,6 +13,7 @@ import { newId } from "../lib/ids.js";
 import { authFields, type Manifest } from "./manifest.js";
 import type { Credentials } from "./types.js";
 import { connectMcp, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
+import type { Queryable } from "../db/pg.js";
 
 /** The integration a manifest's `auth.instance` reads: a shipped one by id, or the connector's own. */
 function instanceIntegration(manifest: Manifest): Integration | null {
@@ -93,7 +93,7 @@ export function instanceRedactions(sources?: IntegrationSources): Record<string,
  * is off, that login is disconnected. Runs at boot and after every instance key write.
  */
 export async function syncInstanceLogins(
-  db: pg.Pool,
+  db: Queryable,
   masterKey?: Buffer,
   now = new Date(),
   sources?: IntegrationSources,

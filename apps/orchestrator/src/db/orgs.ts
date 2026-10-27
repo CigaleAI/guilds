@@ -130,7 +130,7 @@ export async function getMembership(
 }
 
 export async function insertOrg(
-  pool: pg.Pool,
+  pool: Queryable,
   org: NewOrg,
   now: Date,
   orgCreated?: OrgCreatedHook,
@@ -204,7 +204,7 @@ export async function insertMember(
 
 /** Changes a member's role; refuses to demote the organisation's only owner. */
 export async function updateMemberRole(
-  pool: pg.Pool,
+  pool: Queryable,
   orgId: string,
   userId: string,
   role: string,
@@ -224,7 +224,7 @@ export async function updateMemberRole(
 
 /** Removes a member; refuses to remove the organisation's only owner. */
 export async function deleteMember(
-  pool: pg.Pool,
+  pool: Queryable,
   orgId: string,
   userId: string,
 ): Promise<DeletedOrgMemberRow | null> {

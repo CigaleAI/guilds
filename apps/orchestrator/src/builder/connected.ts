@@ -1,8 +1,7 @@
-import type pg from "pg";
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
 import { type McpDatabase, mcpDatabase, McpError } from "../mcp/index.js";
 import { getMcpServer, getMcpServerBySlug } from "../db/connectors.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
@@ -21,7 +20,7 @@ export type BuilderMcpClient = {
 };
 
 /** The db/ functions the Builder's connected-workspace tools read and call through, on `db`. */
-export function connectedDatabase(db: pg.Pool) {
+export function connectedDatabase(db: Queryable) {
   return {
     ...mcpDatabase(db),
     getMcpServer: bindQuery(db, getMcpServer),

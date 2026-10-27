@@ -1,4 +1,3 @@
-import type pg from "pg";
 import type { ArtifactStore } from "../artifacts/store.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { listFileChanges } from "../artifacts/file-changes.js";
@@ -6,6 +5,7 @@ import { displayPathFor, MEMORY_KEY } from "../artifacts/paths.js";
 import { iso } from "../db/views.js";
 import { buildMemoryTimeline, type MemoryTimelineEntry } from "./timeline.js";
 import { getRun } from "../db/runs.js";
+import type { Queryable } from "../db/pg.js";
 
 export type MemoryWriteCall = { call_id: string; name: string | null };
 
@@ -64,7 +64,7 @@ export function attachRunsToMemoryEntries(
 }
 
 async function runsById(
-  db: pg.Pool,
+  db: Queryable,
   runIds: string[],
 ): Promise<Map<string, Record<string, unknown>>> {
   const runs = new Map<string, Record<string, unknown>>();
@@ -82,7 +82,7 @@ async function runsById(
 // run and the memory_write call that did it. The archive is operator-only,
 // so `actor` is an operator.
 export async function memoryHistory(
-  deps: { artifacts: ArtifactStore; db: pg.Pool },
+  deps: { artifacts: ArtifactStore; db: Queryable },
   actor: ArtifactActor,
   agent: { id: string; name: string },
 ): Promise<Record<string, unknown>> {

@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
@@ -108,9 +107,10 @@ import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 import { listBindingsCovering, upsertBinding } from "../db/bindings.js";
 import { getSecretByName, listAgentSecrets, listSecrets, setSecretAccess } from "../db/secrets.js";
 import { mcpDatabase } from "../mcp/index.js";
+import type { Queryable } from "../db/pg.js";
 
 export type ApplyDeps = {
-  db: pg.Pool;
+  db: Queryable;
   recipes: RecipeStore;
   artifacts: ArtifactStore;
   notes: NotesStore;

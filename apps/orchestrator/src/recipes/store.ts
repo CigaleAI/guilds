@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { jsonObj } from "../db/json.js";
-import { firstRow, stamp, withTransaction } from "../db/pg.js";
+import { firstRow, stamp, withTransaction, type Queryable } from "../db/pg.js";
 import { RecipeConflictError, RecipeError } from "./errors.js";
 import { parseRecipe, type RecipeDocument } from "./schema.js";
 
@@ -24,7 +24,7 @@ function mapRecipe(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 export class RecipeStore {
-  constructor(public pool: pg.Pool) {}
+  constructor(public pool: Queryable) {}
 
   async insert(row: Record<string, unknown>, client?: pg.PoolClient): Promise<Record<string, unknown>> {
     const db = client ?? this.pool;

@@ -68,7 +68,7 @@ const SCHEDULE_COLUMNS = tableColumns(schedules);
  * logs what it changed against `actor`.
  */
 async function changeSchedule(
-  pool: pg.Pool,
+  pool: Queryable,
   key: ScheduleKey,
   actor: ChangeActor,
   write: (client: pg.PoolClient) => Promise<ScheduleRow | null>,
@@ -88,7 +88,7 @@ async function changeSchedule(
 }
 
 export async function insertSchedule(
-  pool: pg.Pool,
+  pool: Queryable,
   schedule: NewSchedule,
   now: Date,
   actor: ChangeActor,
@@ -156,7 +156,7 @@ export async function listSchedulesForGuild(
 }
 
 export async function deleteSchedule(
-  pool: pg.Pool,
+  pool: Queryable,
   agentId: string,
   scheduleId: string,
   actor: ChangeActor,
@@ -187,7 +187,7 @@ export async function getSchedule(
 }
 
 export async function pauseSchedule(
-  pool: pg.Pool,
+  pool: Queryable,
   key: ScheduleKey,
   now: Date,
   actor: ChangeActor,
@@ -205,7 +205,7 @@ export async function pauseSchedule(
 
 /** Resumes a routine, which next wakes at `wake`. */
 export async function resumeSchedule(
-  pool: pg.Pool,
+  pool: Queryable,
   key: ScheduleKey,
   wake: PlannedWake,
   now: Date,
@@ -224,7 +224,7 @@ export async function resumeSchedule(
 
 /** Replaces a routine's definition. */
 export async function updateSchedule(
-  pool: pg.Pool,
+  pool: Queryable,
   key: ScheduleKey,
   update: ScheduleUpdate,
   now: Date,

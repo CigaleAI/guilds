@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { unlink } from "node:fs/promises";
 import { SecretNameTaken } from "../db/errors.js";
 import { AgentFileError, homeOfDirectory, readAgentFile } from "../lib/agent-file.js";
@@ -12,7 +11,7 @@ import {
   insertSecret,
   updateSecret,
 } from "../db/secrets.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 /** Secrets one agent may have created in its organisation. */
 export const AGENT_SECRET_CAP = 20;
@@ -27,7 +26,7 @@ export class AgentSecretError extends Error {
 }
 
 /** The db/ functions the secrets an agent creates are written through, on `db`. */
-export function agentSecretsDatabase(db: pg.Pool) {
+export function agentSecretsDatabase(db: Queryable) {
   return {
     getSecretByName: bindQuery(db, getSecretByName),
     countSecretsCreatedByAgent: bindQuery(db, countSecretsCreatedByAgent),

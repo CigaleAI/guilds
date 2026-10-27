@@ -1,6 +1,5 @@
-import type pg from "pg";
 import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
-import { stamp } from "../db/pg.js";
+import { stamp, type Queryable } from "../db/pg.js";
 import type { ActivityWindow } from "./activity.js";
 import { StudioError, StudioUnprocessableError } from "./errors.js";
 import {
@@ -22,7 +21,7 @@ import { listAgents } from "../db/agents.js";
 // read with the operator's own permissions so the list never shows what the
 // viewer cannot open, and the change and read rows of a window.
 
-export type StateDeps = { db: pg.Pool; artifacts: ArtifactStore };
+export type StateDeps = { db: Queryable; artifacts: ArtifactStore };
 
 type Row = Record<string, unknown>;
 

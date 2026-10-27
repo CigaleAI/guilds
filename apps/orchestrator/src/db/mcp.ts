@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
 import { ownerRefs } from "../credentials/validate.js";
 import { newId } from "../lib/ids.js";
 import { upsertMcpBinding, type McpConnectionBinding } from "./bindings.js";
@@ -162,7 +161,7 @@ export async function getMcpConnectionForOwner(
 }
 
 export async function connectMcp(
-  pool: pg.Pool,
+  pool: Queryable,
   connection: NewMcpConnection,
   now: Date,
 ): Promise<McpConnectionRow> {
@@ -257,7 +256,7 @@ export async function connectMcp(
 }
 
 export async function bindMcpConnection(
-  pool: pg.Pool,
+  pool: Queryable,
   binding: McpConnectionBinding,
   now: Date,
 ): Promise<void> {
@@ -391,7 +390,7 @@ export async function updateMcpConnectionGithubRepositories(
 
 /** Replaces the guild_repositories rows that use this GitHub login, leaving anonymous ones. */
 export async function replaceConnectionGuildRepositories(
-  pool: pg.Pool,
+  pool: Queryable,
   connectionId: string,
   guildId: string,
   repositories: ConnectionGuildRepository[],
@@ -427,7 +426,7 @@ export async function replaceConnectionGuildRepositories(
  * the guild repositories that use the login and in the login's own selection.
  */
 export async function recordGithubRepository(
-  pool: pg.Pool,
+  pool: Queryable,
   connectionId: string,
   name: string,
   repository: { githubId: number; url: string },
@@ -525,7 +524,7 @@ export async function listMcpTools(pool: Queryable, connectionId: string): Promi
 }
 
 export async function replaceMcpTools(
-  pool: pg.Pool,
+  pool: Queryable,
   connectionId: string,
   tools: NewMcpTool[],
   now: Date,

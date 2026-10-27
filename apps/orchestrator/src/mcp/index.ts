@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { decryptPayload } from "../credentials/crypto.js";
 import { insertBindingIfAbsent } from "../db/bindings.js";
 import {
@@ -7,7 +6,7 @@ import {
   updateMcpServerConfig,
 } from "../db/connectors.js";
 import { replaceMcpTools, saveMcpConnection } from "../db/mcp.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import { jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
 import { assertPublicHost, EndpointError, type HostLookup } from "../net/endpoints.js";
@@ -581,7 +580,7 @@ export class McpSession {
 }
 
 /** The db/ functions the pool lists, meters and refreshes logins through, on `db`. */
-export function mcpDatabase(db: pg.Pool) {
+export function mcpDatabase(db: Queryable) {
   return {
     ...accessDatabase(db),
     ...githubRepositoryRecorder(db),

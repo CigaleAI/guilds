@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   addMissingBrowserLanguage,
   addMissingFlags,
@@ -19,6 +18,7 @@ import { listBindingsCovering } from "../db/bindings.js";
 import { listMcpServers } from "../db/connectors.js";
 import { listMcpConnections } from "../db/mcp.js";
 import { getRun } from "../db/runs.js";
+import type { Queryable } from "../db/pg.js";
 
 function agentConfig(row: Record<string, unknown>): Record<string, unknown> {
   const value = jsonObj(row.config);
@@ -84,7 +84,7 @@ export function agentConfigObject(row: Record<string, unknown>): Record<string, 
 }
 
 export async function ownedGuild(
-  db: pg.Pool,
+  db: Queryable,
   guildId: string,
   user: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
@@ -101,7 +101,7 @@ export async function ownedGuild(
 
 /** A guild the user can see and administers; otherwise the same 404 as an unseen guild. */
 export async function administeredGuild(
-  db: pg.Pool,
+  db: Queryable,
   guildId: string,
   user: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
@@ -113,7 +113,7 @@ export async function administeredGuild(
 }
 
 export async function ownedAgent(
-  db: pg.Pool,
+  db: Queryable,
   agentId: string,
   user: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
@@ -133,7 +133,7 @@ export async function ownedAgent(
 }
 
 export async function agentWithAccess(
-  db: pg.Pool,
+  db: Queryable,
   row: Record<string, unknown>,
   options: { generating?: boolean; access?: Record<string, unknown> } = {},
 ): Promise<Record<string, unknown>> {
@@ -168,7 +168,7 @@ export async function agentWithAccess(
 
 /** A run the user may see: a member of its organisation who can see its guild. */
 export async function ownedRun(
-  db: pg.Pool,
+  db: Queryable,
   runId: string,
   user: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {

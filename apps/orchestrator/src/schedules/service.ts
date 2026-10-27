@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { newId } from "../lib/ids.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
 import { formatScheduleRow, rowDescription, scheduleItem, type ScheduleItem } from "./item.js";
@@ -20,10 +19,10 @@ import {
   setScheduleNextRun,
   updateSchedule,
 } from "../db/schedules.js";
-import { bindQuery } from "../db/pg.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 /** The db/ functions routines are read and written through, on `db`. */
-export function scheduleDatabase(db: pg.Pool) {
+export function scheduleDatabase(db: Queryable) {
   return {
     insertSchedule: bindQuery(db, insertSchedule),
     deleteSchedule: bindQuery(db, deleteSchedule),

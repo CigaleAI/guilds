@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   ArtifactError,
   collectTaskEmbeds,
@@ -76,7 +75,7 @@ export type StudioToolContext = {
   nextMessageSeq?: number;
   store: StudioStore;
   artifacts: ArtifactStore;
-  db: pg.Pool;
+  db: Queryable;
   schedules: Schedules;
   drafts: StudioDraftService;
   preview: PreviewDeps;

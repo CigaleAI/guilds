@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "../artifacts/index.js";
 import {
@@ -59,9 +58,10 @@ import type { RoutineChange } from "./routines.js";
 import { getGuild } from "../db/guilds.js";
 import { getAgent, getAgentTask } from "../db/agents.js";
 import { listRunHeaders } from "../db/runs.js";
+import type { Queryable } from "../db/pg.js";
 
 export type StudioServiceDeps = {
-  db: pg.Pool;
+  db: Queryable;
   artifacts: ArtifactStore;
   scripts: Scripts;
   schedules: Schedules;
@@ -706,7 +706,6 @@ export class StudioService {
             {
               db: this.deps.db,
               artifacts: this.deps.artifacts,
-              pool: this.deps.db,
               orgId: String(session.org_id),
               sourceGuildId: String(session.source_guild_id),
               user,

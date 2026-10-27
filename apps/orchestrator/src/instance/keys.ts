@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { writeLog } from "../observability/log.js";
 import {
@@ -7,6 +6,7 @@ import {
   type InstanceKeyRow,
   type InstanceKeySnapshot,
 } from "./integrations.js";
+import type { Queryable } from "../db/pg.js";
 
 /** A write the store refuses: an env-sourced integration, a missing required field, a field the integration lacks. */
 export class InstanceKeyError extends Error {
@@ -69,7 +69,7 @@ function setByOf(row: Record<string, unknown>): string | null {
  */
 export class InstanceKeys {
   constructor(
-    public pool: pg.Pool,
+    public db: Queryable,
     private masterKey?: Buffer,
   ) {}
 
@@ -82,7 +82,7 @@ export class InstanceKeys {
 
   /** Reads and decrypts every row into the snapshot readers resolve from. A row that fails to decrypt is skipped and logged. */
   async load(): Promise<InstanceKeySnapshot> {
-    const result = await this.pool.query(
+    const result = await this.db.query(
       `SELECT k.integration, k.ciphertext, k.nonce, k.updated_at,
               u.name AS set_by_name, u.email AS set_by_email
          FROM instance_keys k
@@ -126,7 +126,7 @@ export class InstanceKeys {
   ): Promise<{ previous: Record<string, string> | null }> {
     const previous = this.current(integration.id);
     const [ciphertext, nonce] = encryptPayload(values, this.masterKey);
-    await this.pool.query(
+    await this.db.query(
       `INSERT INTO instance_keys (integration, ciphertext, nonce, set_by_user_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $5)
        ON CONFLICT (integration) DO UPDATE
@@ -143,7 +143,7 @@ export class InstanceKeys {
   /** Removes an integration's values and reloads the snapshot. */
   async remove(integrationId: string): Promise<{ previous: Record<string, string> | null }> {
     const previous = this.current(integrationId);
-    await this.pool.query(`DELETE FROM instance_keys WHERE integration = $1`, [integrationId]);
+    await this.db.query(`DELETE FROM instance_keys WHERE integration = $1`, [integrationId]);
     await this.load();
     return { previous };
   }

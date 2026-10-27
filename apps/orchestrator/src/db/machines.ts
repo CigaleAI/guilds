@@ -1,5 +1,4 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
 import { maxWorkspaceMibOf } from "../agents/validation.js";
 import { newId } from "../lib/ids.js";
 import {
@@ -243,7 +242,7 @@ export async function countMachineAgents(pool: Queryable, machineId: string): Pr
  * organisation's lock and a full organisation is refused with the cap's error.
  */
 export async function insertMachine(
-  pool: pg.Pool,
+  pool: Queryable,
   orgId: string,
   machine: MachineInput,
   now: Date,
@@ -297,7 +296,7 @@ export async function insertMachine(
  * machine is refused. Returns the machine before and after the change.
  */
 export async function updateMachine(
-  pool: pg.Pool,
+  pool: Queryable,
   orgId: string,
   machineId: string,
   machine: MachineInput,
@@ -361,7 +360,7 @@ export async function updateMachine(
  * organisation's last machine.
  */
 export async function deleteMachine(
-  pool: pg.Pool,
+  pool: Queryable,
   orgId: string,
   machineId: string,
 ): Promise<MachineRow | null> {
@@ -395,7 +394,7 @@ export async function deleteMachine(
  * where it is.
  */
 export async function moveAgent(
-  pool: pg.Pool,
+  pool: Queryable,
   agentId: string,
   machineId: string,
   options: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds } = {},

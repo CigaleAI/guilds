@@ -1,4 +1,3 @@
-import type pg from "pg";
 import { installedConnectors } from "../connectors/index.js";
 import {
   manifestTools,
@@ -23,6 +22,7 @@ import {
   listTakenToolPrefixes,
   updateConnector,
 } from "../db/connectors.js";
+import type { Queryable } from "../db/pg.js";
 
 export const AUTH_KINDS = ["none", "token", "oauth"] as const;
 export const OAUTH_STRATEGIES = ["none", "dynamic", "configured"] as const;
@@ -233,7 +233,7 @@ function handManifest(fields: {
  * may each add a server under one slug. The refusal names the side that holds it.
  */
 export async function assertSlugFree(
-  db: pg.Pool,
+  db: Queryable,
   slug: string,
   ownerOrgId: string | null,
   serverId?: string,
@@ -260,7 +260,7 @@ export async function assertSlugFree(
 
 /** Installs a remote MCP server the instance admin adds by hand: a platform row with no folder, on at creation. */
 export async function createConnector(
-  db: pg.Pool,
+  db: Queryable,
   body: Record<string, unknown>,
   now = new Date(),
   ownerOrgId: string | null = null,
@@ -307,7 +307,7 @@ export async function createConnector(
  * box did not write come from its manifest.
  */
 export async function patchConnector(
-  db: pg.Pool,
+  db: Queryable,
   server: Record<string, unknown>,
   body: Record<string, unknown>,
   now = new Date(),
@@ -383,7 +383,7 @@ export async function patchConnector(
 
 /** Edits one tool by name: its description, its input schema, and whether it starts On. Null clears an edit. */
 export async function patchConnectorTool(
-  db: pg.Pool,
+  db: Queryable,
   server: Record<string, unknown>,
   name: string,
   body: Record<string, unknown>,
