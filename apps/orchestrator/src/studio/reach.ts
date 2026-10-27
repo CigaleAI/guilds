@@ -1,5 +1,6 @@
+import type pg from "pg";
 import { parseDisplayPath, type ArtifactStore, type ParsedDisplayPath } from "../artifacts/index.js";
-import type { Repositories } from "../db/repositories.js";
+import { listAgents } from "../db/agents.js";
 
 // What a Studio session reaches outside its own transcript: the source
 // guild, its agents, the organisation's notes, and the tables the source
@@ -9,7 +10,7 @@ import type { Repositories } from "../db/repositories.js";
 export type StudioReachScope = {
   orgId: string;
   sourceGuildId: string;
-  repo: Repositories;
+  db: pg.Pool;
   artifacts: ArtifactStore;
 };
 
@@ -54,6 +55,6 @@ export async function studioReachesPath(scope: StudioReachScope, displayPath: st
 }
 
 async function sourceAgentIds(scope: StudioReachScope): Promise<Set<string>> {
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return new Set(agents.map((row) => String(row.id)));
 }

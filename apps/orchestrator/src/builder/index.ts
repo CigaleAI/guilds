@@ -1,17 +1,18 @@
+import type pg from "pg";
 import {
-  ModelNotConnectedError,
   assertModelConnected,
   coreModelCredentials,
   type ModelCredentialsProvider,
+  ModelNotConnectedError,
+  modelProviderStore,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { AdmissionCoordinator } from "../generation/admission.js";
-import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
+import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
-import type { Repositories } from "../db/repositories.js";
 import { assignGuildLooks } from "../avatars/looks.js";
 import { emptyRecipe } from "../recipes/minimal.js";
 import { RecipeStore } from "../recipes/store.js";
@@ -35,9 +36,10 @@ import { BuilderStore } from "./store.js";
 import { builderConversationTools, builderToolSchemas, type BuilderToolContext } from "./tools.js";
 import type { BuilderMcpClient } from "./connected.js";
 import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
+import { connectedDatabase } from "./connected.js";
 
 export type BuilderServiceDeps = {
-  repo: Repositories;
+  db: pg.Pool;
   recipes: RecipeStore;
   capabilities: CapabilityService;
   apply: RecipeApplyService;
@@ -58,10 +60,10 @@ export class BuilderService {
   credentials: ModelCredentialsProvider;
 
   constructor(public deps: BuilderServiceDeps) {
-    this.store = new BuilderStore(deps.repo.pool);
+    this.store = new BuilderStore(deps.db);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(deps.repo);
+    this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
     this.runner = new ConversationRunner({
       store: this.store,
       admission: this.admission,
@@ -242,7 +244,7 @@ export class BuilderService {
     return {
       orgId: String(session.org_id),
       capabilities: this.deps.capabilities,
-      repo: this.deps.repo,
+      db: connectedDatabase(this.deps.db),
       mcp: this.deps.mcp ?? null,
       recipeId: String(session.recipe_id),
       recipes: this.deps.recipes,
@@ -267,7 +269,7 @@ export class BuilderService {
         throw new BuilderConflictError("builder session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, this.deps.repo, String(locked.org_id), now, client);
+      await claimCoachRun(this.policy, coachRunClaims(client), String(locked.org_id), now);
       const recipe = await this.deps.recipes.get(String(locked.recipe_id), client);
       const parsed = parseRecipe(recipe?.body);
       const expectedBodyVersion = Number(recipe?.body_version ?? 1);

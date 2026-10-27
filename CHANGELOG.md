@@ -25,6 +25,16 @@ Migration 0013 adds the `file` kind.
 `guild.artifacts.changed`. An extension that imported `BlobStore` from
 `attachments/types.js` imports it from `lib/blob-store.js`.
 
+**Breaking for extensions.** `Repositories` and the export
+`db/repositories.js` are gone. The `ServerExtension` factories and
+`AppDeps` take the database pool as `db` in place of `repo`. An
+extension calls the functions of `db/orgs.js`, `db/users.js`,
+`db/connectors.js`, `db/mcp.js`, and `db/usage.js` with the pool as
+the first argument, and each takes one input object per write. A new
+organisation's hook is `AppDeps.orgCreated`. `ModelsRepository` is
+`ModelsDatabase`, built with `modelsDatabase(db)`
+([Extension points](docs/architecture/extension-points.md)).
+
 **Breaking.** Agents run on machines: containers an organisation
 sizes and shares between its agents. A box whose agents each run in
 a sandbox of their own moves them onto machines.

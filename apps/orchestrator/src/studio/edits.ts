@@ -1,3 +1,4 @@
+import type pg from "pg";
 import { createHash } from "node:crypto";
 import {
   ArtifactError,
@@ -10,7 +11,6 @@ import {
 } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj } from "../db/json.js";
-import type { Repositories } from "../db/repositories.js";
 import type { Schedules } from "../schedules/service.js";
 import { GuildValidationError, validateAbout, validateGuildDescription } from "../guilds/validation.js";
 import { argString } from "../toolbox/schema.js";
@@ -22,6 +22,8 @@ import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
+import { getAgent, listAgents } from "../db/agents.js";
+import { getGuild, updateGuild } from "../db/guilds.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -70,7 +72,7 @@ export type EditScope = {
   /** The coach message being applied; set by `applyEdit` so every write links to it. */
   origin?: StudioOrigin;
   user: Record<string, unknown>;
-  repo: Repositories;
+  db: pg.Pool;
   artifacts: ArtifactStore;
   schedules: Schedules;
 };
@@ -102,7 +104,7 @@ function artifactFailure(error: unknown): never {
 }
 
 async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return new Set(agents.map((row) => String(row.id)));
 }
 
@@ -167,7 +169,7 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
 }
 
 export async function loadGuildBase(scope: EditScope): Promise<EditBase> {
-  const guild = await scope.repo.getGuild(scope.sourceGuildId);
+  const guild = await getGuild(scope.db, scope.sourceGuildId);
   if (!guild || String(guild.org_id) !== scope.orgId) {
     throw new StudioUnprocessableError("source guild not found");
   }
@@ -399,7 +401,7 @@ async function reviewNoteCreate(
   let ownerId: string;
   let reader: string;
   if (level === "agent") {
-    const agents = await scope.repo.listAgents(scope.sourceGuildId);
+    const agents = await listAgents(scope.db, scope.sourceGuildId);
     const agent = agents.find((row) => String(row.id) === agentId);
     if (!agent) {
       throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
@@ -407,7 +409,7 @@ async function reviewNoteCreate(
     ownerId = String(agent.id);
     reader = `Only ${agent.name} reads it.`;
   } else if (level === "guild") {
-    const guild = await scope.repo.getGuild(scope.sourceGuildId);
+    const guild = await getGuild(scope.db, scope.sourceGuildId);
     ownerId = scope.sourceGuildId;
     reader = `Every agent of ${guild?.name ?? "the guild"} that reads guild notes reaches it.`;
   } else {
@@ -441,7 +443,7 @@ async function reviewNoteDelete(scope: EditScope, displayPath: string): Promise<
   if (base.kind !== "note") {
     throw new StudioUnprocessableError("only notes can be deleted here");
   }
-  const members = await scope.repo.listAgents(scope.sourceGuildId);
+  const members = await listAgents(scope.db, scope.sourceGuildId);
   const embedding = members.filter((row) => String(row.task ?? "").includes(`![[${base.displayPath}]]`));
   const naming = members.filter(
     (row) => !embedding.includes(row) && String(row.task ?? "").includes(base.displayPath),
@@ -627,7 +629,7 @@ async function loadBaseFor(scope: EditScope, record: EditRecord): Promise<EditBa
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   const target = (edit.target ?? {}) as Record<string, unknown>;
   if (record.toolName === "studio_edit_memory") {
-    const agent = await scope.repo.getAgent(String(target.agent_id ?? ""));
+    const agent = await getAgent(scope.db, String(target.agent_id ?? ""));
     if (!agent || String(agent.guild_id) !== scope.sourceGuildId) {
       throw new StudioUnprocessableError("agent is not in the source guild");
     }
@@ -842,7 +844,7 @@ export async function applyEdit(
     }
   }
   const text = proposed as GuildText;
-  const row = await scope.repo.updateGuild(
+  const row = await updateGuild(scope.db,
     base.guildId,
     new Date(),
     { about: text.about, description: text.description },

@@ -1,3 +1,4 @@
+import type pg from "pg";
 import {
   ArtifactError,
   collectTaskEmbeds,
@@ -17,7 +18,6 @@ import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } f
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";
-import type { Repositories } from "../db/repositories.js";
 import type { AgentScheduleRow } from "../db/schedules.js";
 import type { Schedules } from "../schedules/service.js";
 import type { StudioStore } from "./store.js";
@@ -60,6 +60,12 @@ import {
 import { editActionOf } from "./actions.js";
 import { listTables, readTable } from "./tables.js";
 import { studioReachesParsed, studioReachesPath } from "./reach.js";
+import { getAgent, getAgentTask, listAgentTaskRevisions, listAgents } from "../db/agents.js";
+import { listSchedules, listSchedulesForGuild } from "../db/schedules.js";
+import { getRun, listMessages, listRunHeaders, routineRunStats } from "../db/runs.js";
+import { listGroupMessages } from "../db/group-chat.js";
+import { listGuildsForUser } from "../db/guilds.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export type StudioToolContext = {
   session: Record<string, unknown>;
@@ -70,7 +76,7 @@ export type StudioToolContext = {
   nextMessageSeq?: number;
   store: StudioStore;
   artifacts: ArtifactStore;
-  repo: Repositories;
+  db: pg.Pool;
   schedules: Schedules;
   drafts: StudioDraftService;
   preview: PreviewDeps;
@@ -98,7 +104,7 @@ function cursorOffset(cursor: unknown): number {
 }
 
 async function resolveHandle(ctx: StudioToolContext, handle: string | undefined): Promise<Record<string, unknown>> {
-  const agent = await resolveSourceGuildAgent(ctx, handle);
+  const agent = await resolveSourceGuildAgent(sourceGuildAgents(ctx.db), ctx, handle);
   if (!agent) {
     throw new StudioUnprocessableError(handle ? "agent is not in the source guild" : "agent handle required");
   }
@@ -119,19 +125,30 @@ function normalizeAgentHandle(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
+/** The db/ functions an agent of the source guild is found by handle through, on `db`. */
+export function sourceGuildAgents(db: Queryable) {
+  return {
+    getAgent: bindQuery(db, getAgent),
+    listAgents: bindQuery(db, listAgents),
+  };
+}
+
+export type SourceGuildAgents = ReturnType<typeof sourceGuildAgents>;
+
 export async function resolveSourceGuildAgent(
-  ctx: Pick<StudioToolContext, "repo" | "sourceGuildId" | "orgId">,
+  agents: SourceGuildAgents,
+  ctx: Pick<StudioToolContext, "sourceGuildId" | "orgId">,
   handle: string | null | undefined,
 ): Promise<Record<string, unknown> | null> {
   const needle = String(handle ?? "").trim();
   if (!needle) {
     return null;
   }
-  const byId = await ctx.repo.getAgent(needle);
+  const byId = await agents.getAgent(needle);
   if (byId && String(byId.guild_id) === String(ctx.sourceGuildId) && (!ctx.orgId || String(byId.org_id) === ctx.orgId)) {
     return byId;
   }
-  const members = await ctx.repo.listAgents(ctx.sourceGuildId);
+  const members = await agents.listAgents(ctx.sourceGuildId);
   const lower = needle.toLowerCase();
   const normalized = normalizeAgentHandle(needle);
   const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
@@ -140,7 +157,7 @@ export async function resolveSourceGuildAgent(
     live.find((row) => normalizeAgentHandle(String(row.name)) === normalized) ??
     null;
   // The roster query omits org and guild columns; projections need the full row.
-  return match ? ctx.repo.getAgent(String(match.id)) : null;
+  return match ? agents.getAgent(String(match.id)) : null;
 }
 
 // The run facts a listing carries: enough to pick a run without its transcript.
@@ -264,7 +281,7 @@ export const studioGetAgentContext: StudioTool = {
       guildId: ctx.sourceGuildId,
       agentId: String(agent.id),
     });
-    const task = await ctx.repo.getAgentTask(ctx.orgId, String(agent.id));
+    const task = await getAgentTask(ctx.db, ctx.orgId, String(agent.id));
     const memory = await ctx.artifacts.getMemoryRow(actor, String(agent.id));
     // state and effective_prompt read the same projection; take it once.
     let statePreview: ReturnType<typeof previewCurrentState> | null = null;
@@ -392,16 +409,16 @@ export const studioListRoutines: StudioTool = {
     let rows: AgentScheduleRow[];
     if (studioAgentHandleFromArgs(args)) {
       const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
-      rows = await ctx.repo.listSchedules(String(agent.id));
+      rows = await listSchedules(ctx.db, String(agent.id));
     } else {
-      rows = await ctx.repo.listSchedulesForGuild(ctx.sourceGuildId);
+      rows = await listSchedulesForGuild(ctx.db, ctx.sourceGuildId);
     }
     const filtered = rows.filter((row) => {
       if (args.paused === undefined) return true;
       return Boolean(row.paused) === Boolean(args.paused);
     });
     const slice = filtered.slice(offset, offset + limit);
-    const stats = await ctx.repo.routineRunStats(slice.map((row) => String(row.id)));
+    const stats = await routineRunStats(ctx.db, slice.map((row) => String(row.id)));
     const routines = [];
     for (const row of slice) {
       const mine = stats.get(String(row.id));
@@ -445,7 +462,7 @@ export const studioListRuns: StudioTool = {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_RUN_LIST_MAX);
     const offset = cursorOffset(args.cursor);
     // One row past the page says whether another page follows.
-    const rows = await ctx.repo.listRunHeaders(String(agent.id), {
+    const rows = await listRunHeaders(ctx.db, String(agent.id), {
       kind: argString(args, "kind"),
       status: argString(args, "status"),
       taskPromptHash: argString(args, "task_prompt_hash"),
@@ -481,18 +498,18 @@ export const studioGetRun: StudioTool = {
   ),
   async handler(ctx, args) {
     const runId = argString(args, "run_id");
-    const run = await ctx.repo.getRun(runId);
+    const run = await getRun(ctx.db, runId);
     if (!run) {
       throw new StudioUnprocessableError("run not found");
     }
-    const agent = await ctx.repo.getAgent(String(run.agent_id));
+    const agent = await getAgent(ctx.db, String(run.agent_id));
     if (!agent || String(agent.guild_id) !== ctx.sourceGuildId) {
       throw new StudioUnprocessableError("run is not in the source guild");
     }
     const seqStart = argInteger(args, "seq_start", 0);
     const seqEnd = argInteger(args, "seq_end", 10_000);
     const toolName = argString(args, "tool_name");
-    let messages = (await ctx.repo.listMessages(runId)).filter(
+    let messages = (await listMessages(ctx.db, runId)).filter(
       (row) => Number(row.seq) >= seqStart && Number(row.seq) <= seqEnd,
     );
     if (toolName) {
@@ -568,7 +585,7 @@ export const studioListGroupMessages: StudioTool = {
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    let rows = await ctx.repo.listGroupMessages(ctx.sourceGuildId);
+    let rows = await listGroupMessages(ctx.db, ctx.sourceGuildId);
     if (argString(args, "author_type")) {
       rows = rows.filter((row) => row.author_type === args.author_type);
     }
@@ -606,7 +623,7 @@ export const studioListTaskRevisions: StudioTool = {
     const agent = await resolveHandle(ctx, studioAgentHandleFromArgs(args) || undefined);
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    const rows = await ctx.repo.listAgentTaskRevisions(ctx.orgId, String(agent.id));
+    const rows = await listAgentTaskRevisions(ctx.db, ctx.orgId, String(agent.id));
     const slice = rows.slice(offset, offset + limit);
     return {
       revisions: slice.map((row) => ({
@@ -864,7 +881,7 @@ export const studioListFileChanges: StudioTool = {
     }
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    const rows = await listFileChanges(ctx.repo.pool, ctx.orgId, displayPath);
+    const rows = await listFileChanges(ctx.db, ctx.orgId, displayPath);
     const slice = rows.slice(offset, offset + limit);
     return {
       display_path: displayPath,
@@ -985,7 +1002,7 @@ export const studioRequestConnectionAccess: StudioTool = {
   ),
   async handler(ctx, args) {
     const connectionId = argString(args, "connection_id");
-    const reach = await reachableConnection(ctx.repo, ctx.orgId, ctx.sourceGuildId, connectionId);
+    const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
     }
@@ -1025,7 +1042,7 @@ export const studioCallConnectionTool: StudioTool = {
       throw new StudioUnprocessableError("connection tools are unavailable");
     }
     const connectionId = argString(args, "connection_id");
-    const reach = await reachableConnection(ctx.repo, ctx.orgId, ctx.sourceGuildId, connectionId);
+    const reach = await reachableConnection(ctx.db, ctx.orgId, ctx.sourceGuildId, connectionId);
     if (!reach) {
       throw new StudioUnprocessableError("connection is not reachable from the source guild");
     }
@@ -1042,7 +1059,7 @@ export const studioCallConnectionTool: StudioTool = {
         ? (args.arguments as Record<string, unknown>)
         : {};
     const result = await callConnectionTool({
-      repo: ctx.repo,
+      db: ctx.db,
       mcp: ctx.mcp,
       reach,
       tool: argString(args, "tool"),
@@ -1090,7 +1107,7 @@ function editScope(ctx: StudioToolContext): EditScope {
     sourceGuildId: ctx.sourceGuildId,
     sessionId: String(ctx.session.id),
     user: ctx.user,
-    repo: ctx.repo,
+    db: ctx.db,
     artifacts: ctx.artifacts,
     schedules: ctx.schedules,
   };
@@ -1141,7 +1158,7 @@ export const studioListGuilds: StudioTool = {
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_GROUP_LIST_MAX);
     const offset = cursorOffset(args.cursor);
-    const others = (await ctx.repo.listGuildsForUser(ctx.orgId, String(ctx.user.id))).filter(
+    const others = (await listGuildsForUser(ctx.db, ctx.orgId, String(ctx.user.id))).filter(
       (row) => String(row.id) !== String(ctx.sourceGuildId),
     );
     // A page ends at the limit or where the next guild would pass the byte cap.

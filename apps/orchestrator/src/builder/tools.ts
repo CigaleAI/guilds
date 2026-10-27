@@ -1,6 +1,10 @@
 import { assignGuildLooks } from "../avatars/looks.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
-import { searchConnectedWorkspace, type BuilderMcpClient } from "./connected.js";
+import {
+  searchConnectedWorkspace,
+  type BuilderMcpClient,
+  type ConnectedDatabase,
+} from "./connected.js";
 import {
   buildAnyConnectWidget,
   buildOrgConnectWidget,
@@ -9,7 +13,6 @@ import {
 } from "./widgets.js";
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import type { CapabilityService } from "../capabilities/index.js";
-import type { Repositories } from "../db/repositories.js";
 import {
   operatorAccessCuts,
   parseRecipe,
@@ -23,7 +26,7 @@ import { validateRecipe, type ValidationContext } from "../recipes/validate.js";
 export type BuilderCapabilityContext = {
   orgId: string;
   capabilities: CapabilityService;
-  repo?: Repositories;
+  db?: ConnectedDatabase;
   mcp?: BuilderMcpClient | null;
 };
 
@@ -539,11 +542,11 @@ export const builderSearchConnected = {
     [],
   ),
   async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
-    if (!ctx.repo) {
+    if (!ctx.db) {
       return { error: "workspace search is unavailable" };
     }
     return searchConnectedWorkspace({
-      repo: ctx.repo,
+      db: ctx.db,
       mcp: ctx.mcp ?? null,
       orgId: ctx.orgId,
       serverRef: argString(args, "server_ref"),
@@ -572,11 +575,11 @@ export const builderAskOrgConnection = {
     ["server_ref", "reason"],
   ),
   async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
-    if (!ctx.repo) {
+    if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
     return buildOrgConnectWidget({
-      repo: ctx.repo,
+      db: ctx.db,
       orgId: ctx.orgId,
       serverRef: argString(args, "server_ref"),
       reason: argString(args, "reason"),
@@ -614,11 +617,11 @@ export const builderAskConnection = {
     ["reason"],
   ),
   async handler(ctx: BuilderCapabilityContext, args: Record<string, unknown>) {
-    if (!ctx.repo) {
+    if (!ctx.db) {
       return { error: "connection widgets are unavailable" };
     }
     return buildAnyConnectWidget({
-      repo: ctx.repo,
+      db: ctx.db,
       capabilities: ctx.capabilities,
       orgId: ctx.orgId,
       serverRef: argString(args, "server_ref") || undefined,

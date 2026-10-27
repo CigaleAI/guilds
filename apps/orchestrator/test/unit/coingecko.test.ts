@@ -226,8 +226,8 @@ test("sync CoinGecko writes the curated catalog", async () => {
   const db = new MemoryDb();
   const connection = { id: "conn_cg", status: "connected", ciphertext, nonce };
   const server = { id: "mcp_coingecko", slug: "coingecko", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `coingecko_${spec.name}`));
   assert.deepEqual(first, second);
@@ -244,7 +244,7 @@ test("sync CoinGecko rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb(), { id: "conn_cg", status: "connected", ciphertext, nonce }, { id: "mcp_coingecko", slug: "coingecko", auth: "token" }, { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, { id: "conn_cg", status: "connected", ciphertext, nonce }, { id: "mcp_coingecko", slug: "coingecko", auth: "token" }, { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -263,7 +263,7 @@ test("call CoinGecko dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "cg-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
+    new MemoryDb() as never,
     { id: "conn_cg", status: "connected", ciphertext, nonce },
     { id: "mcp_coingecko", slug: "coingecko", auth: "token" },
     "search",
@@ -378,7 +378,7 @@ function toolDb(options: { toolOff?: boolean; serverOff?: boolean; status?: stri
 
 test("agentToolConnection follows the prices tool toggle", async () => {
   const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
-  const found = await agentToolConnection(toolDb(), agent, "coingecko", "prices");
+  const found = await agentToolConnection(toolDb() as never, agent, "coingecko", "prices");
   assert.equal(found?.id, "conn_1");
   for (const off of [
     { toolOff: true },
@@ -386,6 +386,6 @@ test("agentToolConnection follows the prices tool toggle", async () => {
     { status: "disconnected" },
     { listed: false },
   ]) {
-    assert.equal(await agentToolConnection(toolDb(off), agent, "coingecko", "prices"), null, JSON.stringify(off));
+    assert.equal(await agentToolConnection(toolDb(off) as never, agent, "coingecko", "prices"), null, JSON.stringify(off));
   }
 });

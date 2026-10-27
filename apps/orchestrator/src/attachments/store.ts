@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { modelAcceptsAttachments } from "../llm/catalog.js";
 import { modelNeedsInlineImages } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
-import type { NewAttachment } from "../db/attachments.js";
 import { iso } from "../db/views.js";
 import { sanitizeFilename, sniffImage } from "./sniff.js";
 import { hydrateMessages } from "./hydrate.js";
@@ -15,12 +14,19 @@ import {
   type AttachmentRow,
 } from "./types.js";
 import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
+import { getAttachment, insertAttachment, listAttachmentsByIds } from "../db/attachments.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
-export type AttachmentDatabase = {
-  insertAttachment(attachment: NewAttachment, now: Date): Promise<Record<string, unknown>>;
-  getAttachment(id: string): Promise<Record<string, unknown> | null>;
-  listAttachmentsByIds(orgId: string, ids: string[]): Promise<Array<Record<string, unknown>>>;
-};
+/** The db/ functions attachment rows are read and written through, on `db`. */
+export function attachmentDatabase(db: Queryable) {
+  return {
+    insertAttachment: bindQuery(db, insertAttachment),
+    getAttachment: bindQuery(db, getAttachment),
+    listAttachmentsByIds: bindQuery(db, listAttachmentsByIds),
+  };
+}
+
+export type AttachmentDatabase = ReturnType<typeof attachmentDatabase>;
 
 function asRow(row: Record<string, unknown>): AttachmentRow {
   return {

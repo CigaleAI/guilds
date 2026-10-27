@@ -436,8 +436,8 @@ test("sync Gmail writes the curated catalog", async () => {
   const db = new MemoryDb();
   const connection = { id: "conn_gmail", status: "connected", ciphertext, nonce };
   const server = { id: "mcp_gmail", slug: "gmail", auth: "oauth", config: { url: "https://gmail.googleapis.com/gmail/v1" } };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(
     first.map((tool) => tool.namespaced_name),
@@ -464,7 +464,7 @@ test("call Gmail dispatches with the stored access token", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ access_token: TOKEN }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
+    new MemoryDb() as never,
     { id: "conn_gmail", status: "connected", ciphertext, nonce },
     { id: "mcp_gmail", slug: "gmail", auth: "oauth" },
     "search_threads",
@@ -487,7 +487,7 @@ test("sync Gmail disconnects a login with no token to refresh", async () => {
   await assert.rejects(
     () =>
       new McpPool().syncTools(
-        db,
+        db as never,
         { id: "conn_gmail", status: "connected", ciphertext, nonce },
         { id: "mcp_gmail", slug: "gmail", auth: "oauth" },
         { force: true },

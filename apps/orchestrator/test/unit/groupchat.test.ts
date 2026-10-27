@@ -21,7 +21,6 @@ import {
   wakeMessage,
   withActiveCursors,
   type ActiveDelivery,
-  type GroupChatDatabase,
   type GroupDelivery,
   type GroupRunner,
 } from "../../src/groupchat/index.js";
@@ -35,7 +34,7 @@ import {
   type GroupRouter,
 } from "../../src/typesafe/index.js";
 
-class MemoryGroupDB implements GroupChatDatabase {
+class MemoryGroupDB {
   private readonly lock = new AsyncLock();
   guilds: Record<string, Record<string, unknown>> = {};
   agents: Record<string, Record<string, unknown>> = {};
@@ -297,7 +296,7 @@ function chatFor(
   deleting: Set<string> = new Set(),
   router?: GroupRouter,
 ): GroupChat {
-  return new GroupChat(db, {
+  return new GroupChat(db as never, {
     is_deleting: (guildId) => deleting.has(guildId),
     ...(router ? { router } : {}),
   });

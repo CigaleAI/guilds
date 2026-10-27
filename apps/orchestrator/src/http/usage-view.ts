@@ -1,10 +1,14 @@
 import { canSeeGuild } from "../guilds/validation.js";
 import { usageCounterKey, usageTree } from "../usage.js";
 import type { AppDeps } from "./deps.js";
+import { listUsageCounters } from "../db/usage.js";
+import { listGuilds } from "../db/guilds.js";
+import { listAllAgents } from "../db/agents.js";
+import { listOrgs } from "../db/orgs.js";
 
 async function counters(deps: AppDeps): Promise<Map<string, unknown>> {
   const map = new Map<string, unknown>();
-  for (const row of await deps.repo.listUsageCounters()) {
+  for (const row of await listUsageCounters(deps.db)) {
     map.set(usageCounterKey(String(row.scope), String(row.scope_id ?? "")), row);
   }
   return map;
@@ -25,12 +29,12 @@ export async function usageForOrg(
   userId: string | null,
 ): Promise<Record<string, unknown>> {
   const orgId = String(org.id);
-  const guilds = (await deps.repo.listGuilds()).filter(
+  const guilds = (await listGuilds(deps.db)).filter(
     (guild) =>
       String(guild.org_id) === orgId && (userId === null || canSeeGuild(guild, userId)),
   );
   const guildIds = new Set(guilds.map((guild) => String(guild.id)));
-  const agents = (await deps.repo.listAllAgents()).filter((agent) =>
+  const agents = (await listAllAgents(deps.db)).filter((agent) =>
     guildIds.has(String(agent.guild_id)),
   );
   const tree = usageTree({ orgs: [org], guilds, agents, counters: await counters(deps), ...(await coachUsage(deps)) });
@@ -39,8 +43,8 @@ export async function usageForOrg(
 
 /** Every organisation's usage plus the server total, for platform admins. */
 export async function usageForPlatform(deps: AppDeps): Promise<Record<string, unknown>> {
-  const orgs = await deps.repo.listOrgs();
-  const guilds = await deps.repo.listGuilds();
-  const agents = await deps.repo.listAllAgents();
+  const orgs = await listOrgs(deps.db);
+  const guilds = await listGuilds(deps.db);
+  const agents = await listAllAgents(deps.db);
   return usageTree({ orgs, guilds, agents, counters: await counters(deps), ...(await coachUsage(deps)) });
 }

@@ -61,6 +61,25 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // A route handler reads the request, calls one domain function, and writes the reply; it does
+    // not query on its own (docs/contributing/code-guidelines.md, Scaffolding). A row type is not a query.
+    files: ["src/http/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["../db/*", "../db/**"],
+              allowTypeImports: true,
+              message: "http/ calls a domain module, which reads and writes through db/.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   boundary({
     files: ["**/*.ts"],
     source: ".",

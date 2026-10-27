@@ -5,14 +5,13 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
@@ -35,22 +34,22 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
   const database = await connect(databaseUrl);
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const workspaceRoot = env.WORKSPACE_ROOT ?? "";
   const sandboxes = new ExportSandboxes(workspaceRoot);
-  const generation = new GenerationLoop(repo, notes, workspaceRoot, sandboxes, {
+  const generation = new GenerationLoop(generationDatabase(db), notes, workspaceRoot, sandboxes, {
     mcp: new McpPool(),
     artifacts,
     idleTimeoutMs: 5 * 60 * 1000,
   });
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: new McpPool(),
     generation,
@@ -137,7 +136,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     assert.equal((await machines()).find((item) => item.id === codeId)?.harnesses, null, "before its container first started");
 
     // A coding agent stored without a harness is not ready: it saves nothing until a harness is picked.
-    await repo.pool.query(`UPDATE agents SET config = config - 'harness' WHERE id = $1`, [coderId]);
+    await db.query(`UPDATE agents SET config = config - 'harness' WHERE id = $1`, [coderId]);
     const stripped = await app.inject({ method: "GET", url: `/api/agents/${coderId}`, headers: AUTH });
     assert.equal(stripped.statusCode, 200, stripped.body);
     assert.equal("deprecated" in stripped.json(), false);

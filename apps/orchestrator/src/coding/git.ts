@@ -1,13 +1,15 @@
+import type pg from "pg";
 import { GithubInstallationGoneError, parseGithubUrl, type GithubAppConfig, type TokenPermissions } from "../github/index.js";
 import {
   loginAccount,
   mintRepositoryToken,
   RepositoryAccessError,
   TOKEN_REFRESH_MS,
-  type GithubRepositoryRecorder,
+  githubRepositoryRecorder,
   type RepositoryToken,
 } from "../github/tokens.js";
-import type { McpConnectionLogin } from "../db/mcp.js";
+import { getMcpConnection, saveMcpConnection } from "../db/mcp.js";
+import { bindQuery } from "../db/pg.js";
 import { markDisconnected } from "../mcp/index.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
@@ -31,14 +33,16 @@ export function agentGitIdentity(
 
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
 
-export type RepositoryTokenDb = GithubRepositoryRecorder & {
-  getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null>;
-  saveMcpConnection?(
-    connectionId: string,
-    login: McpConnectionLogin,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-};
+/** The db/ functions a run's repository tokens are minted and stored through, on `db`. */
+export function repositoryTokenDatabase(db: pg.Pool) {
+  return {
+    ...githubRepositoryRecorder(db),
+    getMcpConnection: bindQuery(db, getMcpConnection),
+    saveMcpConnection: bindQuery(db, saveMcpConnection),
+  };
+}
+
+export type RepositoryTokenDb = ReturnType<typeof repositoryTokenDatabase>;
 
 /**
  * The installation tokens of a run's guild repositories, one per GitHub connection, each
@@ -125,9 +129,7 @@ export class RepositoryTokens {
       if (!(error instanceof GithubInstallationGoneError)) {
         throw error;
       }
-      if (this.db.saveMcpConnection) {
-        await markDisconnected(this.db as never, connection);
-      }
+      await markDisconnected(this.db, connection);
       throw new RepositoryAccessError(
         `GitHub refused the installation for ${loginAccount(connection)}; the connection is now disconnected`,
       );

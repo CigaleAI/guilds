@@ -1,20 +1,28 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { agentActor, ArtifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import type { ActivityView } from "../../src/studio/activity.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { userActor } from "../../src/db/config-changes.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { postAgentGroupMessage, postUserGroupMessage } from "../../src/db/group-chat.js";
+import {
+  appendRunError,
+  createGroupRun,
+  createRun,
+  createScheduleRun,
+  insertMessage,
+} from "../../src/db/runs.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -47,16 +55,16 @@ test("studio activity lists each wake with what started it and what it produced"
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-activity-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild(
+  await insertGuild(db,
     { guildId: "guild_act", name: "activity-guild", orgId: "org_home", about: "Activity" },
     now,
   );
@@ -64,7 +72,7 @@ test("studio activity lists each wake with what started it and what it produced"
     ["a_scout", "scout"],
     ["a_desk", "desk"],
   ] as const) {
-    await persistAgent(repo, notes, {
+    await persistAgent(agentDatabase(db), notes, {
       agentId,
       guildId: "guild_act",
       guildName: "activity-guild",
@@ -79,7 +87,7 @@ test("studio activity lists each wake with what started it and what it produced"
   }
 
   // The operator tags scout; scout's wake posts a row that tags desk.
-  const first = await repo.postUserGroupMessage(
+  const first = await postUserGroupMessage(db,
     {
       guildId: "guild_act",
       content: "@scout go",
@@ -92,7 +100,7 @@ test("studio activity lists each wake with what started it and what it produced"
     now,
   );
   const firstSeq = Number(first?.seq);
-  await repo.createGroupRun(
+  await createGroupRun(db,
     {
       runId: "r_scout",
       agentId: "a_scout",
@@ -127,7 +135,7 @@ test("studio activity lists each wake with what started it and what it produced"
     },
     now,
   );
-  const second = await repo.postAgentGroupMessage(
+  const second = await postAgentGroupMessage(db,
     {
       guildId: "guild_act",
       agentId: "a_scout",
@@ -141,7 +149,7 @@ test("studio activity lists each wake with what started it and what it produced"
     now,
   );
   const secondSeq = Number(second?.seq);
-  await repo.insertMessage(
+  await insertMessage(db,
     {
       runId: "r_scout",
       seq: 3,
@@ -162,7 +170,7 @@ test("studio activity lists each wake with what started it and what it produced"
   );
 
   // desk's wake, which stores the row that woke it, writes a note, then runs out of tool calls without posting.
-  await repo.createGroupRun(
+  await createGroupRun(db,
     {
       runId: "r_desk",
       agentId: "a_desk",
@@ -186,12 +194,12 @@ test("studio activity lists each wake with what started it and what it produced"
     toolCall: { id: "call_note", name: "note_write" },
   };
   await artifacts.writeNote(deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });
-  await repo.appendRunError("r_desk", { at: now.toISOString(), operation: "generation.max_tool_calls", message: "Tool call limit reached." }, now);
+  await appendRunError(db, "r_desk", { at: now.toISOString(), operation: "generation.max_tool_calls", message: "Tool call limit reached." }, now);
 
   // A routine wake for desk that changes nothing.
   const routine = await schedules.create(TEST_ACTOR, "a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");
   const scheduleId = String(routine.id);
-  await repo.createScheduleRun(
+  await createScheduleRun(db,
     {
       runId: "r_tick",
       agentId: "a_desk",
@@ -211,7 +219,7 @@ test("studio activity lists each wake with what started it and what it produced"
   );
 
   // The operator chats with scout directly.
-  await repo.createRun(
+  await createRun(db,
     {
       runId: "r_chat",
       agentId: "a_scout",

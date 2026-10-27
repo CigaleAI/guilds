@@ -52,9 +52,9 @@ test("compose explains a connector's State key only when State carries it", () =
 
 test("agentMcpConnection reads a login's settings, and leaves out a server that is off or a login disconnected", async () => {
   const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
-  const found = await agentMcpConnection(pinnedDb(), agent, "quotes");
+  const found = await agentMcpConnection(pinnedDb() as never, agent, "quotes");
   assert.equal(found?.id, "conn_quotes");
   assert.deepEqual(connectionSettings(found!).symbols, PINNED);
-  assert.equal(await agentMcpConnection(pinnedDb({ serverOff: true }), agent, "quotes"), null);
-  assert.equal(await agentMcpConnection(pinnedDb({ status: "disconnected" }), agent, "quotes"), null);
+  assert.equal(await agentMcpConnection(pinnedDb({ serverOff: true }) as never, agent, "quotes"), null);
+  assert.equal(await agentMcpConnection(pinnedDb({ status: "disconnected" }) as never, agent, "quotes"), null);
 });

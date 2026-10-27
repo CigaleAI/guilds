@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { connect, type Database } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { Scripts } from "../../src/scripts/catalog.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
 import { listFileChanges, operatorActor } from "../../src/artifacts/index.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser, listUsers } from "../../src/db/users.js";
+import { getMembership, listOrgsForUser } from "../../src/db/orgs.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { insertAgent, writeAgentTask } from "../../src/db/agents.js";
+import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
+import { getUsage } from "../../src/db/usage.js";
 
 const dbName = uniqueDbName("agent_platform_r2");
 let database: Database;
@@ -22,33 +27,33 @@ after(async () => {
 
 describe("repositories", { concurrency: 1 }, () => {
   test("insert_user creates a personal org and list_users keeps seed order", async () => {
-    const repo = new Repositories(database.pool);
-    const users = await repo.listUsers();
+    const db = database.pool;
+    const users = await listUsers(db);
     assert.equal(users[0]?.id, "user_operator");
     assert.equal(users[0]?.name, "operator");
-    const created = await repo.insertUser({ userId: newId("user"), name: "other" }, new Date());
+    const created = await insertUser(db, { userId: newId("user"), name: "other" }, new Date());
     assert.equal(created.name, "other");
-    const listed = await repo.listUsers();
+    const listed = await listUsers(db);
     assert.deepEqual(
       listed.map((row) => row.name),
       ["operator", "other"],
     );
-    const orgs = await repo.listOrgsForUser(String(created.id));
+    const orgs = await listOrgsForUser(db, String(created.id));
     assert.equal(orgs.length, 1);
     assert.equal(orgs[0]?.slug, "other");
     assert.equal(orgs[0]?.role, "owner");
-    const home = await repo.getMembership("org_home", "user_operator");
+    const home = await getMembership(db, "org_home", "user_operator");
     assert.ok(home);
     assert.equal(home.slug, "home");
   });
 
   test("script catalog persists through the repository", async () => {
-    const repo = new Repositories(database.pool);
-    await repo.insertGuild(
+    const db = database.pool;
+    await insertGuild(db,
       { guildId: "guild_scripts", name: "scripts-guild", orgId: "org_home", about: "" },
       new Date(),
     );
-    await repo.insertAgent(
+    await insertAgent(db,
       {
         agentId: "a_scripts",
         guildId: "guild_scripts",
@@ -65,7 +70,7 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       new Date(),
     );
-    const scripts = new Scripts(repo);
+    const scripts = new Scripts(scriptDatabase(db));
     const actor = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",
@@ -89,7 +94,7 @@ describe("repositories", { concurrency: 1 }, () => {
       name: "operator",
     });
 
-    await repo.writeAgentTask(actor, "a_scripts", "Updated task");
+    await writeAgentTask(db, actor, "a_scripts", "Updated task");
     const taskChanges = await listFileChanges(
       database.pool,
       "org_home",
@@ -100,13 +105,13 @@ describe("repositories", { concurrency: 1 }, () => {
   });
 
   test("insertMessage with assistant usage increments counters", async () => {
-    const repo = new Repositories(database.pool);
+    const db = database.pool;
     const now = new Date("2026-09-15T12:00:00.000Z");
-    await repo.insertGuild(
+    await insertGuild(db,
       { guildId: "guild_usage", name: "usage-guild", orgId: "org_home", about: "" },
       now,
     );
-    await repo.insertAgent(
+    await insertAgent(db,
       {
         agentId: "a_usage",
         guildId: "guild_usage",
@@ -123,7 +128,7 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       now,
     );
-    await repo.createRun(
+    await createRun(db,
       {
         runId: "r_usage",
         agentId: "a_usage",
@@ -137,8 +142,8 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       now,
     );
-    const seq = await repo.nextSeq("r_usage");
-    await repo.insertMessage(
+    const seq = await nextSeq(db, "r_usage");
+    await insertMessage(db,
       {
         runId: "r_usage",
         seq,
@@ -150,10 +155,10 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       now,
     );
-    const agentUsage = await repo.getUsage("agent", "a_usage");
-    const guildUsage = await repo.getUsage("guild", "guild_usage");
-    const orgUsage = await repo.getUsage("org", "org_home");
-    const globalUsage = await repo.getUsage("global", "");
+    const agentUsage = await getUsage(db, "agent", "a_usage");
+    const guildUsage = await getUsage(db, "guild", "guild_usage");
+    const orgUsage = await getUsage(db, "org", "org_home");
+    const globalUsage = await getUsage(db, "global", "");
     for (const row of [agentUsage, guildUsage, orgUsage, globalUsage]) {
       assert.ok(row);
       assert.equal(Number(row.input_tokens), 10);
@@ -162,7 +167,7 @@ describe("repositories", { concurrency: 1 }, () => {
       assert.equal(Number(row.cost_usd), 0.001);
       assert.equal(Number(row.calls), 1);
     }
-    await repo.insertMessage(
+    await insertMessage(db,
       {
         runId: "r_usage",
         seq: seq + 1,
@@ -171,9 +176,9 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       now,
     );
-    const afterTool = await repo.getUsage("agent", "a_usage");
+    const afterTool = await getUsage(db, "agent", "a_usage");
     assert.equal(Number(afterTool?.calls), 1);
-    await repo.insertMessage(
+    await insertMessage(db,
       {
         runId: "r_usage",
         seq: seq + 2,
@@ -185,7 +190,7 @@ describe("repositories", { concurrency: 1 }, () => {
       },
       now,
     );
-    const stacked = await repo.getUsage("agent", "a_usage");
+    const stacked = await getUsage(db, "agent", "a_usage");
     assert.equal(Number(stacked?.input_tokens), 11);
     assert.equal(Number(stacked?.output_tokens), 6);
     assert.equal(Number(stacked?.cache_read_tokens), 2);

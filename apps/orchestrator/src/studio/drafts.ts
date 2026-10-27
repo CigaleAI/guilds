@@ -24,9 +24,10 @@ import { StudioConflictError, StudioError, StudioUnprocessableError } from "./er
 import { previewCurrentState, projectOfferedToolSchemas } from "./preview.js";
 import type { StudioStore } from "./store.js";
 import type { StudioToolContext } from "./tools.js";
-import { resolveSourceGuildAgent, studioAgentHandleFromArgs } from "./tools.js";
+import { resolveSourceGuildAgent, sourceGuildAgents, studioAgentHandleFromArgs } from "./tools.js";
 import { argString } from "../toolbox/schema.js";
 import { excerptBytes } from "./system.js";
+import { getAgent, getAgentTask, listAgents, writeAgentTaskInTransaction } from "../db/agents.js";
 
 export type StudioDraftService = {
   createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -53,7 +54,7 @@ export class StudioDrafts implements StudioDraftService {
 
   async createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>> {
     const handle = studioAgentHandleFromArgs(args);
-    const agent = await resolveSourceGuildAgent(ctx, handle);
+    const agent = await resolveSourceGuildAgent(sourceGuildAgents(ctx.db), ctx, handle);
     if (!agent) {
       throw new StudioUnprocessableError(await missingDraftAgentMessage(ctx, handle));
     }
@@ -66,7 +67,7 @@ export class StudioDrafts implements StudioDraftService {
     if (Buffer.byteLength(proposed, "utf8") > WRITE_MAX_BYTES) {
       throw new StudioUnprocessableError("proposed_content exceeds the 256 KiB artifact write limit");
     }
-    const task = await ctx.repo.getAgentTask(ctx.orgId, targetId);
+    const task = await getAgentTask(ctx.db, ctx.orgId, targetId);
     if (!task) {
       throw new StudioUnprocessableError("task.md not found");
     }
@@ -204,7 +205,7 @@ export class StudioDrafts implements StudioDraftService {
     session: Record<string, unknown>;
     user: Record<string, unknown>;
     draftId: string;
-    repo: StudioToolContext["repo"];
+    db: StudioToolContext["db"];
     preview: StudioToolContext["preview"];
     notesSystemPath: string;
     publishFilesChanged?: (guildId: string) => Promise<void>;
@@ -227,7 +228,7 @@ export class StudioDrafts implements StudioDraftService {
       if (!draft.target_agent_id || !draft.source_guild_id) {
         throw new StudioUnprocessableError("draft target is no longer live");
       }
-      const agent = await args.repo.getAgent(String(draft.target_agent_id));
+      const agent = await getAgent(args.db, String(draft.target_agent_id));
       if (!agent) {
         throw new StudioUnprocessableError("target is not a publishable agent");
       }
@@ -242,7 +243,7 @@ export class StudioDrafts implements StudioDraftService {
         String(user.name ?? "operator"),
         { guildId: String(draft.source_guild_id), agentId: String(draft.target_agent_id) },
       );
-      const live = await args.repo.getAgentTask(String(session.org_id), String(draft.target_agent_id), client);
+      const live = await getAgentTask(client ?? args.db, String(session.org_id), String(draft.target_agent_id));
       if (!live) {
         throw new StudioUnprocessableError("task.md not found");
       }
@@ -261,13 +262,7 @@ export class StudioDrafts implements StudioDraftService {
       }
       let written;
       try {
-        written = await args.repo.writeAgentTaskInTransaction(
-          client,
-          actor,
-          String(draft.target_agent_id),
-          String(draft.proposed_content),
-          Number(draft.base_version),
-        );
+        written = await writeAgentTaskInTransaction(client, actor, String(draft.target_agent_id), String(draft.proposed_content), Number(draft.base_version));
       } catch (error) {
         if (error instanceof ArtifactError && error.status === 409) {
           await this.store.updateDraft(String(draft.id), { status: "conflicted", resolved_at: now }, client);
@@ -300,7 +295,7 @@ export class StudioDrafts implements StudioDraftService {
   async preflight(args: {
     session: Record<string, unknown>;
     draftId: string;
-    repo: StudioToolContext["repo"];
+    db: StudioToolContext["db"];
     preview: StudioToolContext["preview"];
     notesSystemPath: string;
   }): Promise<Record<string, unknown>> {
@@ -308,7 +303,7 @@ export class StudioDrafts implements StudioDraftService {
     if (!draft || !draft.target_agent_id) {
       throw new StudioError(404, "draft not found");
     }
-    const agent = await args.repo.getAgent(String(draft.target_agent_id));
+    const agent = await getAgent(args.db, String(draft.target_agent_id));
     if (!agent) {
       throw new StudioUnprocessableError("target agent not found");
     }
@@ -474,7 +469,7 @@ async function missingDraftAgentMessage(
 ): Promise<string> {
   let known = "";
   try {
-    const members = await ctx.repo.listAgents(ctx.sourceGuildId);
+    const members = await listAgents(ctx.db, ctx.sourceGuildId);
     const live = members.filter((row) => String(row.guild_id) === String(ctx.sourceGuildId));
     if (live.length) {
       known = ` Known agents: ${live.map((row) => `${row.name} (${row.id})`).join(", ")}.`;

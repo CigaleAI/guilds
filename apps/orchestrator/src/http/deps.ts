@@ -1,6 +1,7 @@
+import type pg from "pg";
 import type { ArtifactFiles, ArtifactStore } from "../artifacts/index.js";
 import type { Database } from "../db/client.js";
-import type { Repositories } from "../db/repositories.js";
+import type { OrgCreatedHook } from "../db/orgs.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
@@ -24,7 +25,7 @@ import type { RegistryClient } from "../registry/client.js";
 
 export type AppDeps = {
   database: Database;
-  repo: Repositories;
+  db: pg.Pool;
   notes: NotesStore;
   artifacts?: ArtifactStore;
   /** The shared files over `artifacts` and the blob store. */
@@ -58,4 +59,6 @@ export type AppDeps = {
   modelCredentials?: ModelCredentialsProvider;
   /** The organisation's providers, chosen models, and default; built over `modelCredentials` when absent. */
   models?: ModelsService;
+  /** Runs for every new organisation, inside the transaction that creates it; the extensions' hooks when absent. */
+  orgCreated?: OrgCreatedHook;
 };

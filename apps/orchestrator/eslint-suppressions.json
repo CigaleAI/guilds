@@ -171,11 +171,6 @@
       "count": 1
     }
   },
-  "src/coding/git.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/coding/harnesses.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
@@ -417,7 +412,7 @@
   },
   "src/generation/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 30
+      "count": 28
     },
     "@typescript-eslint/max-params": {
       "count": 7
@@ -481,7 +476,20 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
     },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 1
+    },
     "complexity": {
+      "count": 1
+    }
+  },
+  "src/http/admin-mcp-routes.ts": {
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 2
+    }
+  },
+  "src/http/admin-registry-routes.ts": {
+    "@typescript-eslint/no-restricted-imports": {
       "count": 1
     }
   },
@@ -490,6 +498,9 @@
       "count": 1
     },
     "@typescript-eslint/max-params": {
+      "count": 3
+    },
+    "@typescript-eslint/no-restricted-imports": {
       "count": 3
     },
     "complexity": {
@@ -505,6 +516,9 @@
     "@typescript-eslint/consistent-type-assertions": {
       "count": 5
     },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 8
+    },
     "complexity": {
       "count": 3
     },
@@ -515,23 +529,55 @@
   "src/http/identity.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 5
+    },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 3
+    }
+  },
+  "src/http/instance-admin.ts": {
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 1
     }
   },
   "src/http/items.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 8
+    }
+  },
+  "src/http/machine-routes.ts": {
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 2
     }
   },
   "src/http/me-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 2
+    },
     "complexity": {
       "count": 1
     }
   },
+  "src/http/model-provider-routes.ts": {
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 1
+    }
+  },
+  "src/http/org-connector-routes.ts": {
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 3
+    }
+  },
   "src/http/recipe-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
+      "count": 1
+    },
+    "@typescript-eslint/no-restricted-imports": {
       "count": 1
     }
   },
@@ -543,6 +589,9 @@
   "src/http/routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 21
+    },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 18
     },
     "complexity": {
       "count": 18
@@ -570,11 +619,17 @@
   "src/http/studio-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 10
+    },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 6
     }
   },
   "src/http/usage-view.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
+    },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 4
     }
   },
   "src/instance/integrations.ts": {
@@ -713,7 +768,7 @@
       "count": 16
     },
     "complexity": {
-      "count": 4
+      "count": 3
     }
   },
   "src/observability/client-errors.ts": {

@@ -1,4 +1,4 @@
-import type { AgentPlacement, NewAgent } from "../db/agents.js";
+import type pg from "pg";
 import {
   DEFAULT_AVATAR_COLOR,
   DEFAULT_AVATAR_SHAPE,
@@ -7,6 +7,8 @@ import {
 import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { hashTaskContent, resolveTaskContent } from "./task.js";
+import { deleteAgent, insertAgent } from "../db/agents.js";
+import { bindQuery } from "../db/pg.js";
 
 export type AgentNotes = {
   createAgent(
@@ -17,15 +19,15 @@ export type AgentNotes = {
   ): Promise<void>;
 };
 
-export type AgentDatabase = {
-  insertAgent(
-    agent: NewAgent,
-    now: Date,
-    actor?: ArtifactActor,
-    placement?: AgentPlacement,
-  ): Promise<void>;
-  deleteAgent(agentId: string): Promise<void>;
-};
+/** The db/ functions a new agent is written through, on `db`. */
+export function agentDatabase(db: pg.Pool) {
+  return {
+    insertAgent: bindQuery(db, insertAgent),
+    deleteAgent: bindQuery(db, deleteAgent),
+  };
+}
+
+export type AgentDatabase = ReturnType<typeof agentDatabase>;
 
 export async function persistAgent(
   db: AgentDatabase,

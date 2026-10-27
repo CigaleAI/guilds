@@ -1,8 +1,9 @@
+import type pg from "pg";
 import { syncInstanceLogins } from "../connectors/instance.js";
-import type { Repositories } from "../db/repositories.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import type { McpPool } from "../mcp/index.js";
 import { GITHUB_APP } from "./integrations.js";
+import { disconnectServerConnections } from "../db/mcp.js";
 
 /** Whether a GitHub App write puts another App in place of the one connections were installed with, or takes it away. */
 export function replacesGithubApp(
@@ -21,16 +22,16 @@ export function replacesGithubApp(
  * their installations belong to the old App. Returns how many it disconnected.
  */
 export async function applyKeyChange(
-  ctx: { repo: Repositories; masterKey?: Buffer | undefined; mcp?: McpPool | undefined },
+  ctx: { db: pg.Pool; masterKey?: Buffer | undefined; mcp?: McpPool | undefined },
   integrationId: string,
   previous: Record<string, string> | null,
   next: Record<string, string> | null,
   now = new Date(),
 ): Promise<{ disconnected: number }> {
-  await syncInstanceLogins(ctx.repo, ctx.masterKey, now);
+  await syncInstanceLogins(ctx.db, ctx.masterKey, now);
   let disconnected = 0;
   if (integrationId === GITHUB_APP.id && replacesGithubApp(previous, next)) {
-    disconnected = await ctx.repo.disconnectServerConnections(GITHUB_SERVER_ID, now);
+    disconnected = await disconnectServerConnections(ctx.db, GITHUB_SERVER_ID, now);
   }
   ctx.mcp?.forgetListings();
   return { disconnected };

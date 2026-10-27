@@ -244,23 +244,20 @@ test("studio_create_task_draft takes an explicit agent id or name and does not n
   const scout = { id: "a_2", name: "scout", guild_id: "guild_1", org_id: "org_1" };
   const manager = { id: "a_4", name: "mr-manager", guild_id: "guild_1", org_id: "org_1" };
   const outsider = { id: "a_3", name: "researcher", guild_id: "guild_other", org_id: "org_1" };
-  const ctx = {
-    sourceGuildId: "guild_1",
-    orgId: "org_1",
-    repo: {
-      async getAgent(id: string) {
-        return [researcher, scout, manager, outsider].find((row) => row.id === id) ?? null;
-      },
-      async listAgents() {
-        return [researcher, scout, manager];
-      },
+  const ctx = { sourceGuildId: "guild_1", orgId: "org_1" };
+  const agents = {
+    async getAgent(id: string) {
+      return [researcher, scout, manager, outsider].find((row) => row.id === id) ?? null;
+    },
+    async listAgents() {
+      return [researcher, scout, manager];
     },
   } as never;
-  assert.equal((await resolveSourceGuildAgent(ctx, "a_1"))?.id, "a_1");
-  assert.equal((await resolveSourceGuildAgent(ctx, "Researcher"))?.id, "a_1");
-  assert.equal((await resolveSourceGuildAgent(ctx, "scout"))?.id, "a_2");
-  assert.equal((await resolveSourceGuildAgent(ctx, "mr manager"))?.id, "a_4");
-  assert.equal(await resolveSourceGuildAgent(ctx, ""), null);
-  assert.equal(await resolveSourceGuildAgent(ctx, "missing"), null);
-  assert.equal(await resolveSourceGuildAgent(ctx, "a_3"), null);
+  assert.equal((await resolveSourceGuildAgent(agents, ctx, "a_1"))?.id, "a_1");
+  assert.equal((await resolveSourceGuildAgent(agents, ctx, "Researcher"))?.id, "a_1");
+  assert.equal((await resolveSourceGuildAgent(agents, ctx, "scout"))?.id, "a_2");
+  assert.equal((await resolveSourceGuildAgent(agents, ctx, "mr manager"))?.id, "a_4");
+  assert.equal(await resolveSourceGuildAgent(agents, ctx, ""), null);
+  assert.equal(await resolveSourceGuildAgent(agents, ctx, "missing"), null);
+  assert.equal(await resolveSourceGuildAgent(agents, ctx, "a_3"), null);
 });

@@ -1,10 +1,22 @@
-import type { Repositories } from "../db/repositories.js";
+import type pg from "pg";
 import type { ScheduleRow } from "../db/schedules.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { rowDescription } from "../schedules/item.js";
 import { describeTiming, rowTiming } from "../schedules/timing.js";
 import { StudioUnprocessableError } from "./errors.js";
+import { listAgents } from "../db/agents.js";
+import {
+  listGuildActivityRuns,
+  listRunActivityStats,
+  listRunActivitySteps,
+  listRunFileChanges,
+  listRunGroupDeliveries,
+  listRunGroupPosts,
+  listRunOpenings,
+} from "../db/activity.js";
+import { listSchedulesForGuild } from "../db/schedules.js";
+import { listGroupMessagesForActivity } from "../db/group-chat.js";
 
 // The guild activity ledger: one row per wake (a run of any kind) with what
 // started it, how it was routed, the tools it called, and what it produced,
@@ -574,15 +586,15 @@ export function messageFloor(run: Record<string, unknown>): number | null {
 }
 
 export async function loadGuildActivity(
-  repo: Repositories,
+  db: pg.Pool,
   guildId: string,
   window: ActivityWindow & { now?: Date; generating?: (runId: string) => boolean },
 ): Promise<ActivityView> {
   const { since, until } = window;
   const [agents, runs, schedules] = await Promise.all([
-    repo.listAgents(guildId),
-    repo.listGuildActivityRuns(guildId, since, until),
-    repo.listSchedulesForGuild(guildId),
+    listAgents(db, guildId),
+    listGuildActivityRuns(db, guildId, since, until),
+    listSchedulesForGuild(db, guildId),
   ]);
   const runIds = runs.map((run) => String(run.id));
   const groupRunIds = runs.filter((run) => run.kind === "group").map((run) => String(run.id));
@@ -590,13 +602,13 @@ export async function loadGuildActivity(
   const floors = runs.map(messageFloor).filter((floor): floor is number => floor !== null);
   const afterSeq = floors.length ? Math.min(...floors) : null;
   const [stats, deliveries, posts, changes, steps, openings, messages] = await Promise.all([
-    repo.listRunActivityStats(runIds, since),
-    repo.listRunGroupDeliveries(groupRunIds),
-    repo.listRunGroupPosts(runIds),
-    repo.listRunFileChanges(runIds),
-    repo.listRunActivitySteps(runIds, since),
-    repo.listRunOpenings(directRunIds, since),
-    repo.listGroupMessagesForActivity(guildId, since, until, afterSeq),
+    listRunActivityStats(db, runIds, since),
+    listRunGroupDeliveries(db, groupRunIds),
+    listRunGroupPosts(db, runIds),
+    listRunFileChanges(db, runIds),
+    listRunActivitySteps(db, runIds, since),
+    listRunOpenings(db, directRunIds, since),
+    listGroupMessagesForActivity(db, guildId, since, until, afterSeq),
   ]);
   return projectActivity({
     guildId,

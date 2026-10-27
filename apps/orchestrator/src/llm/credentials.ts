@@ -4,6 +4,8 @@ import { writeLog } from "../observability/log.js";
 import { PolicyError } from "../policy/index.js";
 import type { CostSource, TokenUsage } from "./cost.js";
 import { parseModelId, providerLabel, providerById, type ProviderDef } from "./providers.js";
+import { getOrgModelProvider } from "../db/orgs.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 // The credentials a run calls a provider with. Core asks one function for them: an extension
 // point (docs/architecture/extension-points.md) whose core default reads the organisation's own
@@ -55,9 +57,14 @@ export class ModelNotConnectedError extends Error {
   }
 }
 
-export type ModelProviderStore = {
-  getOrgModelProvider(orgId: string, provider: string): Promise<OrgModelProviderRow | null>;
-};
+/** The db/ function an organisation's provider rows are read through, on `db`. */
+export function modelProviderStore(db: Queryable) {
+  return {
+    getOrgModelProvider: bindQuery(db, getOrgModelProvider),
+  };
+}
+
+export type ModelProviderStore = ReturnType<typeof modelProviderStore>;
 
 /** The stored secret of a provider row: its key, and the base URL of a local endpoint. */
 export function decryptProviderRow(

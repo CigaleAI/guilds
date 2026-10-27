@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ModelCatalog } from "../../src/llm/catalog.js";
 import { coreModelCredentials, type ModelCredentialsProvider } from "../../src/llm/credentials.js";
-import { ModelsError, ModelsService, type ModelsRepository } from "../../src/llm/models.js";
+import { ModelsError, ModelsService, type ModelsDatabase } from "../../src/llm/models.js";
 import { projectModelsDevFeed } from "../../src/llm/models-dev.js";
 import type { NewOrgModelProvider, OrgModelProviderRow } from "../../src/db/orgs.js";
 import { TEST_MASTER_KEY } from "../helpers/models.js";
 
 const STORED_AT = "2026-01-01T00:00:00.000Z";
 
-class MemoryRepo implements ModelsRepository {
+class MemoryRepo implements ModelsDatabase {
   rows = new Map<string, OrgModelProviderRow>();
   defaults = new Map<string, string | null>();
 
@@ -91,7 +91,7 @@ function service(
     });
   }) as typeof fetch;
   const models = new ModelsService({
-    repo,
+    db: repo,
     credentials: credentialsOf(repo),
     catalog: new ModelCatalog({ snapshot: { fetched_at: "2026-01-01", providers: feed }, url: "" }),
     fetch: fetchFn,

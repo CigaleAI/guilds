@@ -3,7 +3,6 @@ import type pg from "pg";
 import type { BlobStore } from "./lib/blob-store.js";
 import type { AppConfig } from "./config/index.js";
 import type { OrgCreatedHook } from "./db/orgs.js";
-import type { Repositories } from "./db/repositories.js";
 import type { GenerationSandboxes } from "./generation/index.js";
 import type { AppDeps } from "./http/deps.js";
 import type { IdentityProvider } from "./http/identity.js";
@@ -37,15 +36,15 @@ export type ServerExtension = {
   /** Runs for every new organisation, inside the transaction that creates it. */
   orgCreated?: OrgCreatedHook;
   /** The organisation policy that replaces core's open one. */
-  policy?(services: { repo: Repositories }): OrgPolicy;
+  policy?(services: { db: pg.Pool }): OrgPolicy;
   /** The credentials a model provider is called with for an organisation, in place of core's own rows. */
-  modelCredentials?(services: { repo: Repositories }): ModelCredentialsProvider;
+  modelCredentials?(services: { db: pg.Pool }): ModelCredentialsProvider;
   /** The identity provider for this configuration, when the extension identifies requests itself. */
-  identity?(deps: Pick<AppDeps, "repo" | "config">): IdentityProvider | undefined;
+  identity?(deps: Pick<AppDeps, "db" | "config">): IdentityProvider | undefined;
   /** Who may administer the instance, in place of core's rule. */
-  instanceAdmin?(services: { repo: Repositories }): InstanceAdmin;
+  instanceAdmin?(services: { db: pg.Pool }): InstanceAdmin;
   /** The sandbox provider that replaces core's one OpenSandbox from the configuration. */
-  sandboxes?(services: { repo: Repositories; config: AppConfig; masterKey: Buffer }): SandboxProvider;
+  sandboxes?(services: { db: pg.Pool; config: AppConfig; masterKey: Buffer }): SandboxProvider;
   /** Where attachment bytes are kept, when the extension keeps them somewhere of its own. */
   blobStore?(services: { config: AppConfig }): BlobStore | undefined;
   /** The directory of the operator app's build this extension serves, in place of core's. */
@@ -79,7 +78,7 @@ export function extensionBlobStore(
 /** The instance-admin rule the extensions supply, if one does. */
 export function extensionInstanceAdmin(
   extensions: readonly ServerExtension[],
-  services: { repo: Repositories },
+  services: { db: pg.Pool },
 ): InstanceAdmin | undefined {
   for (const extension of extensions) {
     const instanceAdmin = extension.instanceAdmin?.(services);
@@ -93,7 +92,7 @@ export function extensionInstanceAdmin(
 /** The sandbox provider the extensions supply, if one does. */
 export function extensionSandboxes(
   extensions: readonly ServerExtension[],
-  services: { repo: Repositories; config: AppConfig; masterKey: Buffer },
+  services: { db: pg.Pool; config: AppConfig; masterKey: Buffer },
 ): SandboxProvider | undefined {
   for (const extension of extensions) {
     const sandboxes = extension.sandboxes?.(services);
@@ -107,7 +106,7 @@ export function extensionSandboxes(
 /** The identity provider the extensions supply, if one does. */
 export function extensionIdentity(
   extensions: readonly ServerExtension[],
-  deps: Pick<AppDeps, "repo" | "config">,
+  deps: Pick<AppDeps, "db" | "config">,
 ): IdentityProvider | undefined {
   for (const extension of extensions) {
     const identity = extension.identity?.(deps);
@@ -134,7 +133,7 @@ export function extensionOrgCreated(extensions: readonly ServerExtension[]): Org
 /** The model credentials provider the extensions supply, if one does. */
 export function extensionModelCredentials(
   extensions: readonly ServerExtension[],
-  services: { repo: Repositories },
+  services: { db: pg.Pool },
 ): ModelCredentialsProvider | undefined {
   for (const extension of extensions) {
     const credentials = extension.modelCredentials?.(services);
@@ -148,7 +147,7 @@ export function extensionModelCredentials(
 /** The organisation policy the extensions supply, if one does. */
 export function extensionPolicy(
   extensions: readonly ServerExtension[],
-  services: { repo: Repositories },
+  services: { db: pg.Pool },
 ): OrgPolicy | undefined {
   for (const extension of extensions) {
     const policy = extension.policy?.(services);

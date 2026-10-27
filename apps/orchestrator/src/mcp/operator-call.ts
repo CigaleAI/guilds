@@ -2,7 +2,7 @@ import { asBuffer, decryptPayload } from "../credentials/crypto.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
-import { listedFromRows, McpDisconnectedError, McpError } from "./index.js";
+import { listedFromRows, McpDisconnectedError, McpError, type McpDatabase } from "./index.js";
 
 export const OPERATOR_TOOL_RESULT_MAX_BYTES = 64 * 1024;
 
@@ -16,13 +16,9 @@ export class OperatorCallError extends Error {
   }
 }
 
-export type OperatorCallRepo = {
-  listMcpTools(connectionId: string): Promise<Array<Record<string, unknown>>>;
-};
-
 export type OperatorCallMcp = {
   call(
-    db: unknown,
+    db: McpDatabase,
     connection: Record<string, unknown>,
     server: Record<string, unknown>,
     remoteName: string,
@@ -32,7 +28,7 @@ export type OperatorCallMcp = {
 
 /** Calls one listed tool on a connected login the operator can see. Results are redacted and capped. */
 export async function callOwnedConnectionTool(args: {
-  repo: OperatorCallRepo;
+  db: McpDatabase;
   mcp: OperatorCallMcp;
   connection: Record<string, unknown>;
   server: Record<string, unknown>;
@@ -48,7 +44,7 @@ export async function callOwnedConnectionTool(args: {
   if (!wanted) {
     throw new OperatorCallError(422, "tool is required");
   }
-  const listed = listedFromRows(await args.repo.listMcpTools(String(connection.id))).find(
+  const listed = listedFromRows(await args.db.listMcpTools(String(connection.id))).find(
     (tool) => tool.namespaced_name === wanted || tool.remote_name === wanted,
   );
   if (!listed) {
@@ -65,7 +61,7 @@ export async function callOwnedConnectionTool(args: {
   }
   let raw: string;
   try {
-    raw = await args.mcp.call(args.repo, connection, server, listed.remote_name, args.arguments);
+    raw = await args.mcp.call(args.db, connection, server, listed.remote_name, args.arguments);
   } catch (error) {
     if (error instanceof McpDisconnectedError) {
       throw new OperatorCallError(409, error.message);

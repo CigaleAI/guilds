@@ -9,6 +9,9 @@ import type { EditAction } from "./actions.js";
 import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioUnprocessableError } from "./errors.js";
+import { getGuild } from "../db/guilds.js";
+import { listAgents } from "../db/agents.js";
+import { listSchedulesForGuild } from "../db/schedules.js";
 
 // Routines the coach proposes to create, change, or delete for the source
 // guild's live agents. Like every Studio edit, a proposal writes nothing
@@ -88,8 +91,8 @@ function valid<T>(read: () => T): T {
 }
 
 async function routineContext(scope: EditScope): Promise<RoutineContext> {
-  const guild = await scope.repo.getGuild(scope.sourceGuildId);
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const guild = await getGuild(scope.db, scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return {
     scope,
     guildName: String(guild?.name ?? "this guild"),
@@ -107,7 +110,7 @@ function requireMember(rc: RoutineContext, agentId: string | null): Member {
 }
 
 async function loadRoutine(rc: RoutineContext, scheduleId: string): Promise<Routine> {
-  const rows = await rc.scope.repo.listSchedulesForGuild(rc.scope.sourceGuildId);
+  const rows = await listSchedulesForGuild(rc.scope.db, rc.scope.sourceGuildId);
   const row = rows.find((item) => String(item.id) === scheduleId);
   if (!row) {
     throw new StudioUnprocessableError(

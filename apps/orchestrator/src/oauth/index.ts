@@ -11,7 +11,9 @@ import {
 } from "../instance/integrations.js";
 import { serverManifest } from "../connectors/load.js";
 import type { Manifest } from "../connectors/manifest.js";
-import type { McpConnectionLogin } from "../db/mcp.js";
+import { updateMcpServerConfig } from "../db/connectors.js";
+import { saveMcpConnection } from "../db/mcp.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import { mcpConnections } from "../db/schema/index.js";
 import { connectorIntegration } from "../instance/connectors.js";
 
@@ -601,21 +603,18 @@ export async function refreshTokens(
   );
 }
 
-type OauthDb = {
-  updateMcpServerConfig?(
-    serverId: string,
-    config: unknown,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-  saveMcpConnection?(
-    connectionId: string,
-    login: McpConnectionLogin,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-};
+/** The db/ functions a login's OAuth client and tokens are saved through, on `db`. */
+export function oauthDatabase(db: Queryable) {
+  return {
+    updateMcpServerConfig: bindQuery(db, updateMcpServerConfig),
+    saveMcpConnection: bindQuery(db, saveMcpConnection),
+  };
+}
+
+export type OauthDatabase = ReturnType<typeof oauthDatabase>;
 
 export async function ensureClient(
-  db: OauthDb,
+  db: OauthDatabase,
   server: Record<string, unknown>,
   redirectUri: string,
   options: { client?: FetchFn | undefined; proxyUrl?: string | undefined; sources?: IntegrationSources | undefined } = {},
@@ -643,15 +642,12 @@ export async function ensureClient(
   }
   const registered = await registerClient(discovery, redirectUri, options);
   const config = { ...configOf(server), oauth_client: registered };
-  if (!db.updateMcpServerConfig) {
-    throw new OAuthError("mcp db cannot save server config");
-  }
   await db.updateMcpServerConfig(String(server.id), config, new Date());
   return [discovery, registered];
 }
 
 export async function refreshConnection(
-  db: OauthDb,
+  db: OauthDatabase,
   connection: Record<string, unknown>,
   server: Record<string, unknown>,
   options: {
@@ -682,9 +678,6 @@ export async function refreshConnection(
   }));
   const stored = tokenPayload(tokens, { now, existing: payload });
   const [ciphertext, nonce] = (options.encrypt ?? encryptPayload)(stored);
-  if (!db.saveMcpConnection) {
-    throw new OAuthError("mcp db cannot save connections");
-  }
   const row = await db.saveMcpConnection(
     String(connection.id),
     {

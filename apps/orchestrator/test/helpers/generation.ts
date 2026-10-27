@@ -6,7 +6,7 @@ import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
 import {
   GenerationLoop,
-  type GenerationDb,
+  type GenerationDatabase,
   type GenerationNotes,
   type GenerationSandboxes,
 } from "../../src/generation/index.js";
@@ -451,11 +451,11 @@ export class FakeDB {
     this.fired.push({ id: scheduleId, now, next_run_at: wake.at, window_fires: wake.windowFires });
   }
 
-  async purgeAgent(_agentId: string) {
+  async deleteAgent(_agentId: string) {
     return undefined;
   }
 
-  async purgeGuild(_guildId: string) {
+  async deleteGuild(_guildId: string) {
     return undefined;
   }
 
@@ -836,11 +836,11 @@ export class RecordingDB {
     return [];
   }
 
-  async purgeAgent(_agentId: string) {
+  async deleteAgent(_agentId: string) {
     return undefined;
   }
 
-  async purgeGuild(_guildId: string) {
+  async deleteGuild(_guildId: string) {
     return undefined;
   }
 }
@@ -867,7 +867,7 @@ export function makeLoop(
   options: ConstructorParameters<typeof GenerationLoop>[4] = {},
 ): GenerationLoop {
   return new GenerationLoop(
-    db as GenerationDb,
+    db as GenerationDatabase,
     notes as GenerationNotes,
     workspaceRoot,
     sandboxes as GenerationSandboxes,
@@ -975,7 +975,7 @@ export function guildDb(agentIds: string[]) {
     purged: string[];
     getGuild: (guildId: string) => Promise<Record<string, unknown> | null>;
     listAgents: (guildId: string) => Promise<Array<Record<string, unknown>>>;
-    purgeGuild: (guildId: string) => Promise<void>;
+    deleteGuild: (guildId: string) => Promise<void>;
     getAgent?: (agentId: string) => Promise<Record<string, unknown> | null>;
   } = {
     purged: [],
@@ -992,7 +992,7 @@ export function guildDb(agentIds: string[]) {
       const slot = agentIds.indexOf(agentId);
       return slot < 0 ? null : { id: agentId, ...AGENT_MACHINE, machine_slot: slot };
     },
-    async purgeGuild(guildId: string) {
+    async deleteGuild(guildId: string) {
       db.purged.push(guildId);
     },
   };

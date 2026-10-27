@@ -3,16 +3,17 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import type { GenerationLoop } from "../../src/generation/index.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertAgent } from "../../src/db/agents.js";
+import { createRun, insertMessage } from "../../src/db/runs.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -30,7 +31,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
   const database = await connect(databaseUrl);
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const diffs: Array<[string, string, string | null]> = [];
   const logs: Array<[string, string, string]> = [];
   // Only what the routes reach: the group-chat feed they observe, and the diff and log read from the machine.
@@ -46,11 +47,11 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     },
   } as unknown as GenerationLoop;
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts: new ArtifactStore(database.pool, notes.templates),
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
     mcp: new McpPool(),
     generation,
@@ -59,7 +60,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "diff-desk" } });
     assert.equal(guild.statusCode, 201, guild.body);
     const now = new Date();
-    await repo.insertAgent(
+    await insertAgent(db,
       {
         agentId: "a_diff",
         guildId: String(guild.json().id),
@@ -68,7 +69,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
       },
       now,
     );
-    await repo.createRun(
+    await createRun(db,
       {
         runId: "r_diff",
         agentId: "a_diff",
@@ -83,7 +84,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
       now,
     );
     const result = (callId: string, metadata: Record<string, unknown>, seq: number) =>
-      repo.insertMessage(
+      insertMessage(db,
         {
           runId: "r_diff",
           seq,

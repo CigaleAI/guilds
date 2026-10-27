@@ -1,7 +1,7 @@
+import type pg from "pg";
 import { pathToFileURL } from "node:url";
 import { loadToolConfig } from "../config/index.js";
 import { connect } from "../db/client.js";
-import { Repositories } from "../db/repositories.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { codeTierRoot, connectorsRoot } from "../registry/code.js";
 import { RegistryError } from "../registry/index.js";
@@ -25,7 +25,7 @@ function needClient(client: RegistryClient | null): RegistryClient {
 /** Runs one `connector` command against a box's database and registry; returns the lines it prints. */
 export async function connectorCommand(
   argv: readonly string[],
-  deps: { repo: Repositories; client: RegistryClient | null; env?: NodeJS.ProcessEnv },
+  deps: { db: pg.Pool; client: RegistryClient | null; env?: NodeJS.ProcessEnv },
 ): Promise<string[]> {
   const flags = new Set(argv.filter((arg) => arg.startsWith("--")));
   const [command, target, ...rest] = argv.filter((arg) => !arg.startsWith("--"));
@@ -40,7 +40,7 @@ export async function connectorCommand(
         throw new RegistryError(USAGE, 400);
       }
       const [slug = "", version] = target.split("@");
-      const { row, code } = await installConnector(deps.repo, needClient(deps.client), slug, {
+      const { row, code } = await installConnector(deps.db, needClient(deps.client), slug, {
         ...(version ? { version } : {}),
         unverified,
         experimental,
@@ -53,7 +53,7 @@ export async function connectorCommand(
       if (!target) {
         throw new RegistryError(USAGE, 400);
       }
-      await removeConnector(deps.repo, target, connectorsRoot(deps.env));
+      await removeConnector(deps.db, target, connectorsRoot(deps.env));
       return [`removed ${target}`];
     }
     case "list": {
@@ -61,7 +61,7 @@ export async function connectorCommand(
         throw new RegistryError(USAGE, 400);
       }
       const index = deps.client ? await deps.client.index() : null;
-      return (await listConnectors(deps.repo, index)).map((row) =>
+      return (await listConnectors(deps.db, index)).map((row) =>
         [
           row.slug,
           row.source,
@@ -74,7 +74,7 @@ export async function connectorCommand(
       );
     }
     case "update": {
-      const moved = await updateConnectors(deps.repo, needClient(deps.client), {
+      const moved = await updateConnectors(deps.db, needClient(deps.client), {
         ...(target ? { slug: target } : {}),
         unverified,
         experimental,
@@ -95,7 +95,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const database = await connect(config.databaseUrl);
   try {
     const lines = await connectorCommand(process.argv.slice(2), {
-      repo: new Repositories(database.pool),
+      db: database.pool,
       client: registryClient(),
     });
     for (const line of lines) {

@@ -1,8 +1,12 @@
-import type { InboxIssueRow } from "../db/issues.js";
 import { iso } from "../db/views.js";
 import { guildOperators } from "../guilds/validation.js";
 import { issueItem } from "../issues/index.js";
 import { EventQueue } from "../lib/event.js";
+import { getAgent } from "../db/agents.js";
+import { getGuild, listGuildViewerIds } from "../db/guilds.js";
+import { listInboxIssues, listInboxMentions, markInboxMentionsRead } from "../db/issues.js";
+import { listUnreadGroupChats } from "../db/group-chat.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 // An operator's inbox is a view over existing rows, not a table of its own:
 // open issues in the guilds they operate, messages tagging them that are past
@@ -20,15 +24,20 @@ export const INBOX_MENTION_LIMIT = 100;
 export const NOTICE_PREVIEW_LENGTH = 300;
 const EVENT_QUEUE_LIMIT = 256;
 
-export type NotificationsDatabase = {
-  getAgent(agentId: string): Promise<Record<string, unknown> | null>;
-  getGuild(guildId: string): Promise<Record<string, unknown> | null>;
-  listGuildViewerIds(guildId: string): Promise<string[]>;
-  listInboxIssues(orgId: string, userId: string, limit: number): Promise<InboxIssueRow[]>;
-  listInboxMentions(orgId: string, userId: string, limit: number): Promise<Array<Record<string, unknown>>>;
-  listUnreadGroupChats(orgId: string, userId: string): Promise<Array<Record<string, unknown>>>;
-  markInboxMentionsRead(orgId: string, userId: string, now: Date): Promise<string[]>;
-};
+/** The db/ functions a user's inbox is read through, on `db`. */
+export function notificationsDatabase(db: Queryable) {
+  return {
+    getAgent: bindQuery(db, getAgent),
+    getGuild: bindQuery(db, getGuild),
+    listGuildViewerIds: bindQuery(db, listGuildViewerIds),
+    listInboxIssues: bindQuery(db, listInboxIssues),
+    listInboxMentions: bindQuery(db, listInboxMentions),
+    listUnreadGroupChats: bindQuery(db, listUnreadGroupChats),
+    markInboxMentionsRead: bindQuery(db, markInboxMentionsRead),
+  };
+}
+
+export type NotificationsDatabase = ReturnType<typeof notificationsDatabase>;
 
 type Event = [string, Record<string, unknown>];
 type Queue = EventQueue<Event>;

@@ -1,5 +1,5 @@
+import type pg from "pg";
 import { rmSync } from "node:fs";
-import type { Repositories } from "../db/repositories.js";
 import { connectorIntegrationId } from "../instance/integrations.js";
 import { serverIdOf } from "../connectors/manifest.js";
 import { assertSlugFree, CatalogError } from "../mcp/catalog.js";
@@ -7,6 +7,16 @@ import { generateToolPrefix, isReservedToolPrefix } from "../mcp/policy.js";
 import type { ConnectorPackage, RegistryClient } from "./client.js";
 import { codeEntry, codeFolder, removeCodePackage, writeCodePackage } from "./code.js";
 import { compareVersions, pickEntry, RegistryError, type RegistryConnectorEntry, type RegistryIndex } from "./index.js";
+import {
+  deleteConnector,
+  getMcpServerBySlug,
+  insertConnector,
+  listMcpServers,
+  listTakenToolPrefixes,
+  updateConnector,
+} from "../db/connectors.js";
+import { expireMcpTools } from "../db/mcp.js";
+import { deleteInstanceKey } from "../db/orgs.js";
 
 /** A connector the box installed from a registry, beside the newest version its index offers. */
 export type InstalledConnector = {
@@ -90,14 +100,14 @@ export type InstallOptions = Acceptance & {
  * serves it once `syncCodeConnectors` runs.
  */
 export async function installConnector(
-  repo: Repositories,
+  db: pg.Pool,
   client: RegistryClient,
   slug: string,
   options: InstallOptions = {},
 ): Promise<{ row: Record<string, unknown>; code: boolean }> {
   const entry = chosenEntry(await client.index(), slug, options.version, options);
   try {
-    await assertSlugFree(repo, slug, null);
+    await assertSlugFree(db, slug, null);
   } catch (error) {
     if (error instanceof CatalogError) {
       throw new RegistryError(error.message, error.status);
@@ -105,13 +115,13 @@ export async function installConnector(
     throw error;
   }
   const pkg = await client.connectorPackage(entry);
-  const toolPrefix = generateToolPrefix(slug, await repo.listTakenToolPrefixes());
+  const toolPrefix = generateToolPrefix(slug, await listTakenToolPrefixes(db));
   if (isReservedToolPrefix(toolPrefix)) {
     throw new RegistryError(`the tool prefix for ${slug} is reserved`);
   }
   const code = await placeCode(client, entry, pkg, options.codeRoot);
   try {
-    const row = await repo.insertConnector(
+    const row = await insertConnector(db,
       {
         id: serverIdOf(slug),
         slug,
@@ -136,8 +146,8 @@ export async function installConnector(
   }
 }
 
-async function registryRow(repo: Repositories, slug: string): Promise<Record<string, unknown>> {
-  const row = await repo.getMcpServerBySlug(slug, null);
+async function registryRow(db: pg.Pool, slug: string): Promise<Record<string, unknown>> {
+  const row = await getMcpServerBySlug(db, slug, null);
   if (row === null || row.owner_org_id) {
     throw new RegistryError(`connector ${slug} is not installed`, 404);
   }
@@ -154,14 +164,14 @@ async function registryRow(repo: Repositories, slug: string): Promise<Record<str
  * served once `syncCodeConnectors` runs. Returns what moved.
  */
 export async function updateConnectors(
-  repo: Repositories,
+  db: pg.Pool,
   client: RegistryClient,
   options: Acceptance & { slug?: string; now?: Date; codeRoot?: string | null; connectorsRoot?: string | null } = {},
 ): Promise<Array<{ slug: string; from: string; to: string; code: boolean }>> {
   const index = await client.index();
   const rows = options.slug
-    ? [await registryRow(repo, options.slug)]
-    : (await repo.listMcpServers()).filter((row) => !row.owner_org_id && row.source === "registry");
+    ? [await registryRow(db, options.slug)]
+    : (await listMcpServers(db)).filter((row) => !row.owner_org_id && row.source === "registry");
   const moved: Array<{ slug: string; from: string; to: string; code: boolean }> = [];
   for (const row of rows) {
     const slug = String(row.slug);
@@ -173,7 +183,7 @@ export async function updateConnectors(
     const entry = chosenEntry(index, slug, latest.version, options);
     const pkg = await client.connectorPackage(entry);
     const code = await placeCode(client, entry, pkg, options.codeRoot);
-    await repo.updateConnector(
+    await updateConnector(db,
       String(row.id),
       {
         manifest: pkg.manifest,
@@ -184,7 +194,7 @@ export async function updateConnectors(
       },
       options.now ?? new Date(),
     );
-    await repo.expireMcpTools(String(row.id));
+    await expireMcpTools(db, String(row.id));
     if (options.connectorsRoot) {
       removeCodePackage(options.connectorsRoot, slug, code ? entry.version : null);
     }
@@ -194,18 +204,18 @@ export async function updateConnectors(
 }
 
 /** Removes a registry connector with its logins, the bindings that name it, the key it declared of its own, and its code on disk. */
-export async function removeConnector(repo: Repositories, slug: string, connectorsRoot: string | null = null): Promise<void> {
-  const row = await registryRow(repo, slug);
-  await repo.deleteConnector(String(row.id));
-  await repo.deleteInstanceKey(connectorIntegrationId(slug));
+export async function removeConnector(db: pg.Pool, slug: string, connectorsRoot: string | null = null): Promise<void> {
+  const row = await registryRow(db, slug);
+  await deleteConnector(db, String(row.id));
+  await deleteInstanceKey(db, connectorIntegrationId(slug));
   if (connectorsRoot) {
     removeCodePackage(connectorsRoot, slug);
   }
 }
 
 /** The box's platform connectors, each with the newest version the index offers when one is given. */
-export async function listConnectors(repo: Repositories, index: RegistryIndex | null): Promise<InstalledConnector[]> {
-  const rows = (await repo.listMcpServers()).filter((row) => !row.owner_org_id);
+export async function listConnectors(db: pg.Pool, index: RegistryIndex | null): Promise<InstalledConnector[]> {
+  const rows = (await listMcpServers(db)).filter((row) => !row.owner_org_id);
   return rows
     .map((row) => {
       const slug = String(row.slug);

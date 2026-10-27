@@ -3,14 +3,13 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes, openWs, startSandboxUpstream, wsRecv } from "../helpers/live.js";
@@ -39,24 +38,24 @@ test(
     const database = await connect(databaseUrl);
     const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
     await notes.ensureSystemPrompt();
-    const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+    const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
     const artifacts = new ArtifactStore(database.pool, notes.templates);
     const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
     const upstream = await startSandboxUpstream({ subprotocol: "tty" });
     sandboxes.cliBase = upstream.base;
     const secret = `/t/${sandboxes.cliToken}`;
-    const generation = new GenerationLoop(repo, notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
+    const generation = new GenerationLoop(generationDatabase(db), notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
       mcp: new McpPool(),
       artifacts,
       idleTimeoutMs: 5 * 60 * 1000,
     });
     const app = await buildApp(database, {
-      repo,
+      db,
       notes,
       artifacts,
-      scripts: new Scripts(repo),
-      schedules: new Schedules(repo),
+      scripts: new Scripts(scriptDatabase(db)),
+      schedules: new Schedules(scheduleDatabase(db)),
       masterKey: decodeMasterKey(HEX_MASTER_KEY),
       mcp: new McpPool(),
       generation,

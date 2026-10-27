@@ -1,12 +1,21 @@
+import type pg from "pg";
 import { decryptPayload } from "../credentials/crypto.js";
 import { jsonObj } from "../db/json.js";
-import type { Repositories } from "../db/repositories.js";
-import { listedFromRows, McpError, isReadOnlyRemote } from "../mcp/index.js";
+import {
+  isReadOnlyRemote,
+  listedFromRows,
+  type McpDatabase,
+  mcpDatabase,
+  McpError,
+} from "../mcp/index.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioError, StudioUnprocessableError } from "./errors.js";
+import { getMcpConnection, listMcpTools } from "../db/mcp.js";
+import { getAgent } from "../db/agents.js";
+import { getMcpServer } from "../db/connectors.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";
 
@@ -52,7 +61,7 @@ export function loginStatus(record: LoginRecord): StudioLoginStatus {
 
 export type StudioMcpClient = {
   call(
-    db: Repositories,
+    db: McpDatabase,
     connection: Record<string, unknown>,
     server: Record<string, unknown>,
     remoteName: string,
@@ -68,12 +77,12 @@ export type ReachableConnection = {
 // A connection is in Studio's reach when an agent of the source guild could
 // inherit it: platform, this organisation, this guild, or a live member.
 export async function reachableConnection(
-  repo: Repositories,
+  db: pg.Pool,
   orgId: string,
   guildId: string,
   connectionId: string,
 ): Promise<ReachableConnection | null> {
-  const connection = await repo.getMcpConnection(connectionId);
+  const connection = await getMcpConnection(db, connectionId);
   if (!connection) {
     return null;
   }
@@ -87,13 +96,13 @@ export async function reachableConnection(
   } else if (scope === "guild") {
     reachable = ownerId === guildId;
   } else if (scope === "agent" && ownerId) {
-    const agent = await repo.getAgent(ownerId);
+    const agent = await getAgent(db, ownerId);
     reachable = Boolean(agent && String(agent.guild_id) === guildId);
   }
   if (!reachable) {
     return null;
   }
-  const server = await repo.getMcpServer(String(connection.mcp_server_id));
+  const server = await getMcpServer(db, String(connection.mcp_server_id));
   if (!server) {
     return null;
   }
@@ -122,7 +131,7 @@ export function connectionSummary(reach: ReachableConnection): Record<string, un
 // Proxies one read-only tool on an operator-granted connection. The result is
 // redacted against that connection's stored credentials and byte-capped.
 export async function callConnectionTool(args: {
-  repo: Repositories;
+  db: pg.Pool;
   mcp: StudioMcpClient;
   reach: ReachableConnection;
   tool: string;
@@ -134,7 +143,7 @@ export async function callConnectionTool(args: {
   }
   const slug = String(server.slug);
   const wanted = args.tool.trim();
-  const listed = listedFromRows(await args.repo.listMcpTools(String(connection.id))).find(
+  const listed = listedFromRows(await listMcpTools(args.db, String(connection.id))).find(
     (tool) => tool.namespaced_name === wanted || tool.remote_name === wanted,
   );
   if (!listed) {
@@ -154,7 +163,7 @@ export async function callConnectionTool(args: {
   }
   let raw: string;
   try {
-    raw = await args.mcp.call(args.repo, connection, server, listed.remote_name, args.arguments);
+    raw = await args.mcp.call(mcpDatabase(args.db), connection, server, listed.remote_name, args.arguments);
   } catch (error) {
     if (error instanceof McpError) {
       throw new StudioUnprocessableError(`${slug} call failed: ${error.message}`);

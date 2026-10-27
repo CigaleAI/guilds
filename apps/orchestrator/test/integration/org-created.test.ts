@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import type { OrgCreatedHook } from "../../src/db/orgs.js";
+import { insertOrg, listOrgsForUser, type OrgCreatedHook } from "../../src/db/orgs.js";
+import { getUser, insertUser } from "../../src/db/users.js";
 import { newId } from "../../src/lib/ids.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -23,8 +23,9 @@ test("a new organisation is handed to the extension's hook inside its transactio
 
   try {
     // Core alone: the organisation and its owner.
-    const core = new Repositories(database.pool);
-    const plain = await core.insertOrg(
+    const db = database.pool;
+    const plain = await insertOrg(
+      db,
       { orgId: newId("org"), name: "plain", slug: "plain", userId: "user_operator" },
       new Date(),
     );
@@ -39,56 +40,46 @@ test("a new organisation is handed to the extension's hook inside its transactio
         visibleOutside: await orgExists(org.id),
       });
     };
-    const hooked = new Repositories(database.pool, { orgCreated: hook });
-    const made = await hooked.insertOrg(
+    const made = await insertOrg(
+      db,
       { orgId: newId("org"), name: "hooked", slug: "hooked", userId: "user_operator" },
       new Date(),
+      hook,
     );
     assert.deepEqual(seen, [{ id: String(made.id), visibleInside: true, visibleOutside: false }]);
 
     // A user's personal organisation goes through the hook too.
-    const user = await hooked.insertUser(
+    const user = await insertUser(
+      db,
       { userId: newId("user"), name: "newcomer", image: null, email: "newcomer@example.com" },
       new Date(),
+      hook,
     );
-    const personal = (await hooked.listOrgsForUser(String(user.id)))[0];
+    const personal = (await listOrgsForUser(db, String(user.id)))[0];
     assert.equal(seen.at(-1)?.id, String(personal?.id));
 
-    // A hook given for one creation runs in place of the repositories' own.
-    const before = seen.length;
-    const once: string[] = [];
-    await hooked.insertUser(
-      { userId: newId("user"), name: "registrant", image: null, email: "registrant@example.com" },
-      new Date(),
-      async (_client, org) => {
-        once.push(org.id);
-      },
-    );
-    assert.equal(once.length, 1);
-    assert.equal(seen.length, before);
-
     // A hook that fails takes the organisation with it.
-    const failing = new Repositories(database.pool, {
-      orgCreated: async () => {
-        throw new Error("no plan to start on");
-      },
-    });
+    const failing: OrgCreatedHook = async () => {
+      throw new Error("no plan to start on");
+    };
     const orgId = newId("org");
     await assert.rejects(
       () =>
-        failing.insertOrg(
+        insertOrg(
+          db,
           { orgId, name: "doomed", slug: "doomed", userId: "user_operator" },
           new Date(),
+          failing,
         ),
       /no plan to start on/,
     );
     assert.equal(await orgExists(orgId), false);
     const userId = newId("user");
     await assert.rejects(
-      () => failing.insertUser({ userId, name: "doomed-user" }, new Date()),
+      () => insertUser(db, { userId, name: "doomed-user" }, new Date(), failing),
       /no plan to start on/,
     );
-    assert.equal(await failing.getUser(userId), null);
+    assert.equal(await getUser(db, userId), null);
   } finally {
     await database.close();
   }

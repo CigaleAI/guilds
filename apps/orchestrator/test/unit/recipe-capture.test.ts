@@ -9,7 +9,6 @@ import {
   type CaptureDeps,
 } from "../../src/recipes/capture.js";
 import type { ArtifactStore } from "../../src/artifacts/index.js";
-import type { Repositories } from "../../src/db/repositories.js";
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
 
@@ -103,7 +102,7 @@ function captureDeps(options: {
     },
   ];
   return {
-    repo: {
+    db: {
       listAgents: async () => agents,
       getAgentTask: async (_orgId: string, agentId: string) =>
         agentId === "a_scout"
@@ -134,7 +133,7 @@ function captureDeps(options: {
       listMcpServers: async () => options.servers ?? [],
       listMcpTools: async () => options.tools ?? [],
       listMcpCatalogTools: async () => options.tools ?? [],
-    } as unknown as Repositories,
+    } as never,
     artifacts: {
       getByDisplayPath: async (_actor: unknown, displayPath: string) => {
         const note = (options.notes ?? []).find((item) => item.display_path === displayPath);

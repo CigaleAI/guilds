@@ -1,6 +1,6 @@
+import type pg from "pg";
 import { jsonObj } from "../db/json.js";
 import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
-import type { NewAgentGroupMessage, NewUserGroupMessage } from "../db/group-chat.js";
 import { groupMessageItem } from "../db/views.js";
 import { guildOperators, type GuildOperator } from "../guilds/validation.js";
 import { AsyncEvent, EventQueue } from "../lib/event.js";
@@ -12,6 +12,21 @@ import {
   type RecipientDecision,
 } from "../typesafe/index.js";
 import { groupChatHistory, storedTags } from "./history.js";
+import {
+  advanceGroupCursor,
+  appendGroupChatError,
+  clearGroupMessages,
+  getGroupChatState,
+  listGroupMessages,
+  listPendingGroupAgents,
+  postAgentGroupMessage,
+  postUserGroupMessage,
+  updateGroupAgentMessageLimit,
+} from "../db/group-chat.js";
+import { getGuild, listGuilds } from "../db/guilds.js";
+import { getAgent, listAgents } from "../db/agents.js";
+import { getRun } from "../db/runs.js";
+import { bindQuery } from "../db/pg.js";
 
 export {
   CONTEXT_HISTORY_LIMIT,
@@ -268,39 +283,27 @@ export function groupChatUserMessage(args: {
   return [payload, metadata];
 }
 
-export type GroupChatDatabase = {
-  getGroupChatState(guildId: string): Promise<Record<string, unknown> | null>;
-  updateGroupAgentMessageLimit(
-    guildId: string,
-    limit: number,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-  clearGroupMessages(guildId: string, now: Date): Promise<Record<string, unknown> | null>;
-  getGuild(guildId: string): Promise<Record<string, unknown> | null>;
-  listGroupMessages(
-    guildId: string,
-    options?: { throughSeq?: number | null },
-  ): Promise<Array<Record<string, unknown>>>;
-  listAgents(guildId: string): Promise<Array<Record<string, unknown>>>;
-  postUserGroupMessage(
-    message: NewUserGroupMessage,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-  postAgentGroupMessage(
-    message: NewAgentGroupMessage,
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-  getRun(runId: string): Promise<Record<string, unknown> | null>;
-  getAgent(agentId: string): Promise<Record<string, unknown> | null>;
-  listPendingGroupAgents(guildId: string, chatSeq: number): Promise<Array<Record<string, unknown>>>;
-  advanceGroupCursor(agentId: string, seq: number): Promise<void>;
-  appendGroupChatError(
-    guildId: string,
-    entry: Record<string, unknown>,
-    now: Date,
-  ): Promise<unknown[]>;
-  listGuilds?(orgId?: string | null): Promise<Array<Record<string, unknown>>>;
-};
+/** The db/ functions a guild's group chat is read and written through, on `db`. */
+export function groupChatDatabase(db: pg.Pool) {
+  return {
+    getGroupChatState: bindQuery(db, getGroupChatState),
+    updateGroupAgentMessageLimit: bindQuery(db, updateGroupAgentMessageLimit),
+    clearGroupMessages: bindQuery(db, clearGroupMessages),
+    getGuild: bindQuery(db, getGuild),
+    listGroupMessages: bindQuery(db, listGroupMessages),
+    listAgents: bindQuery(db, listAgents),
+    postUserGroupMessage: bindQuery(db, postUserGroupMessage),
+    postAgentGroupMessage: bindQuery(db, postAgentGroupMessage),
+    getRun: bindQuery(db, getRun),
+    getAgent: bindQuery(db, getAgent),
+    listPendingGroupAgents: bindQuery(db, listPendingGroupAgents),
+    advanceGroupCursor: bindQuery(db, advanceGroupCursor),
+    appendGroupChatError: bindQuery(db, appendGroupChatError),
+    listGuilds: bindQuery(db, listGuilds),
+  };
+}
+
+export type GroupChatDatabase = ReturnType<typeof groupChatDatabase>;
 
 export type GuildEventObserver = (
   guildId: string,

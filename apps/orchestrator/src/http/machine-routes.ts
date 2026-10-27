@@ -12,8 +12,17 @@ import { canManageSettings } from "../organisations/index.js";
 import { OPEN_POLICY, machineCap } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser } from "./identity.js";
+import { currentUser, identityDatabase } from "./identity.js";
 import { bodyOf, param } from "./request.js";
+import { getMembership } from "../db/orgs.js";
+import {
+  deleteMachine,
+  getMachine,
+  getMachineWithAgents,
+  insertMachine,
+  listMachines,
+  updateMachine,
+} from "../db/machines.js";
 
 /**
  * A machine as the operator app shows it: its size, the agents on it, their planned load (the sum
@@ -65,13 +74,14 @@ export function machineIdOf(value: unknown): string | null {
  * delete them. Another organisation's id is a 404.
  */
 export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
+  const identityDb = identityDatabase(db);
   const policy = deps.policy ?? OPEN_POLICY;
 
   async function requireMember(request: FastifyRequest): Promise<{ orgId: string; userId: string; role: string }> {
     const orgId = param(request, "org_id");
-    const user = await currentUser(repo, request, deps);
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const user = await currentUser(identityDb, request, deps);
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
@@ -87,23 +97,23 @@ export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps)
   }
 
   async function itemOf(orgId: string, machineId: string, userId: string): Promise<Record<string, unknown>> {
-    const machine = await repo.getMachineWithAgents(orgId, machineId);
+    const machine = await getMachineWithAgents(db, orgId, machineId);
     if (machine === null) {
       throw new HttpError(404, "machine not found");
     }
-    return machineItem(machine, await visibleGuildIds(repo, orgId, userId));
+    return machineItem(machine, await visibleGuildIds(db, orgId, userId));
   }
 
   app.get("/api/orgs/:org_id/machines", async (request) => {
     const { orgId, userId } = await requireMember(request);
-    const visible = await visibleGuildIds(repo, orgId, userId);
-    return (await repo.listMachines(orgId)).map((machine) => machineItem(machine, visible));
+    const visible = await visibleGuildIds(db, orgId, userId);
+    return (await listMachines(db, orgId)).map((machine) => machineItem(machine, visible));
   });
 
   app.post("/api/orgs/:org_id/machines", async (request, reply) => {
     const { orgId, userId } = await requireManager(request);
     const input = validateMachineInput(bodyOf(request));
-    const machine = await repo.insertMachine(orgId, input, new Date(), await machineCap(policy, orgId));
+    const machine = await insertMachine(db, orgId, input, new Date(), await machineCap(policy, orgId));
     reply.code(201);
     return await itemOf(orgId, machine.id, userId);
   });
@@ -111,11 +121,11 @@ export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps)
   app.patch("/api/orgs/:org_id/machines/:machine_id", async (request) => {
     const { orgId, userId } = await requireManager(request);
     const machineId = param(request, "machine_id");
-    const current = await repo.getMachine(orgId, machineId);
+    const current = await getMachine(db, orgId, machineId);
     if (current === null) {
       throw new HttpError(404, "machine not found");
     }
-    const changed = await repo.updateMachine(orgId, machineId, validateMachineInput(bodyOf(request), current), new Date());
+    const changed = await updateMachine(db, orgId, machineId, validateMachineInput(bodyOf(request), current), new Date());
     if (changed === null) {
       throw new HttpError(404, "machine not found");
     }
@@ -128,7 +138,7 @@ export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps)
   app.delete("/api/orgs/:org_id/machines/:machine_id", async (request, reply) => {
     const { orgId } = await requireManager(request);
     const machineId = param(request, "machine_id");
-    if ((await repo.deleteMachine(orgId, machineId)) === null) {
+    if ((await deleteMachine(db, orgId, machineId)) === null) {
       throw new HttpError(404, "machine not found");
     }
     await deps.generation?.deleteMachine(machineId);

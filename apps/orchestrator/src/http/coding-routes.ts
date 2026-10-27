@@ -12,7 +12,7 @@ import {
 } from "../coding/harnesses.js";
 import { harnessCatalog, harnessEffortOf } from "../coding/harness-models.js";
 import { secretAliasesOf } from "../agents/validation.js";
-import { agentSecrets } from "../access/runtime.js";
+import { accessDatabase, agentSecrets } from "../access/runtime.js";
 import {
   DEFAULT_BRANCH,
   githubLoginItem,
@@ -37,12 +37,29 @@ import {
 } from "../github/index.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import { newId } from "../lib/ids.js";
-import { markDisconnected } from "../mcp/index.js";
+import { markDisconnected, mcpDatabase } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser } from "./identity.js";
+import { currentUser, identityDatabase } from "./identity.js";
 import { agentConfigObject, ownedAgent, ownedGuild, ownedRun } from "./items.js";
 import { bodyOf, param } from "./request.js";
+import {
+  getMcpConnection,
+  listVisibleGithubConnections,
+  replaceConnectionGuildRepositories,
+  updateMcpConnectionGithubRepositories,
+} from "../db/mcp.js";
+import { getMcpServer } from "../db/connectors.js";
+import { getMembership } from "../db/orgs.js";
+import {
+  deleteGuildRepository,
+  getGuild,
+  insertGuildRepository,
+  listGuildRepositories,
+  listGuildsForUser,
+} from "../db/guilds.js";
+import { getAgent } from "../db/agents.js";
+import { getToolResultMetadata } from "../db/runs.js";
 
 /** The repository a `code_task` result's diff is in, or null when the result has no end checkpoint. */
 function taskDiffRepository(metadata: Record<string, unknown> | null): string | null {
@@ -65,14 +82,15 @@ function proxyUrl(): string {
  * coding run changed in each repository.
  */
 export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
+  const identityDb = identityDatabase(db);
 
   async function githubConnection(id: string): Promise<{ connection: Record<string, unknown> }> {
-    const connection = await repo.getMcpConnection(id);
+    const connection = await getMcpConnection(db, id);
     if (connection === null) {
       throw new HttpError(404, "connection not found");
     }
-    const server = await repo.getMcpServer(String(connection.mcp_server_id));
+    const server = await getMcpServer(db, String(connection.mcp_server_id));
     if (server?.slug !== GITHUB_SLUG) {
       throw new HttpError(422, "connection is not a GitHub connection");
     }
@@ -90,7 +108,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
       });
     } catch (error) {
       if (error instanceof GithubInstallationGoneError) {
-        await markDisconnected(repo, connection);
+        await markDisconnected(mcpDatabase(db), connection);
         throw new HttpError(422, "GitHub refused the installation; the connection is now disconnected");
       }
       if (error instanceof GithubError || error instanceof RepositoryAccessError) {
@@ -105,26 +123,26 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     user: Record<string, unknown>,
   ): Promise<boolean> {
     if (connection.owner_scope === "org") {
-      return (await repo.getMembership(String(connection.owner_id ?? ""), String(user.id))) !== null;
+      return (await getMembership(db, String(connection.owner_id ?? ""), String(user.id))) !== null;
     }
     if (connection.owner_scope === "guild") {
-      const guild = await repo.getGuild(String(connection.owner_id ?? ""));
+      const guild = await getGuild(db, String(connection.owner_id ?? ""));
       return (
         guild !== null &&
         canSeeGuild(guild, String(user.id)) &&
-        (await repo.getMembership(String(guild.org_id), String(user.id))) !== null
+        (await getMembership(db, String(guild.org_id), String(user.id))) !== null
       );
     }
     if (connection.owner_scope === "agent") {
-      const agent = await repo.getAgent(String(connection.owner_id ?? ""));
+      const agent = await getAgent(db, String(connection.owner_id ?? ""));
       if (agent === null) {
         return false;
       }
-      const guild = await repo.getGuild(String(agent.guild_id));
+      const guild = await getGuild(db, String(agent.guild_id));
       return (
         guild !== null &&
         canSeeGuild(guild, String(user.id)) &&
-        (await repo.getMembership(String(guild.org_id), String(user.id))) !== null
+        (await getMembership(db, String(guild.org_id), String(user.id))) !== null
       );
     }
     return false;
@@ -141,33 +159,33 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     if (connection.owner_scope !== "guild") {
       return false;
     }
-    const owner = await repo.getGuild(String(connection.owner_id ?? ""));
+    const owner = await getGuild(db, String(connection.owner_id ?? ""));
     return (
       owner !== null &&
       owner.org_id === guild.org_id &&
       canSeeGuild(owner, String(user.id)) &&
-      (await repo.getMembership(String(owner.org_id), String(user.id))) !== null
+      (await getMembership(db, String(owner.org_id), String(user.id))) !== null
     );
   }
 
   app.get("/api/guilds/:guild_id/repositories", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    const visible = await repo.listGuildsForUser(String(guild.org_id), String(user.id));
-    const connections = await repo.listVisibleGithubConnections(
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const visible = await listGuildsForUser(db, String(guild.org_id), String(user.id));
+    const connections = await listVisibleGithubConnections(db,
       GITHUB_SERVER_ID,
       String(guild.org_id),
       visible.map((item) => String(item.id)),
     );
     return {
-      repositories: (await repo.listGuildRepositories(String(guild.id))).map(repositoryItem),
+      repositories: (await listGuildRepositories(db, String(guild.id))).map(repositoryItem),
       github_connections: connections.map(githubLoginItem),
     };
   });
 
   app.post("/api/guilds/:guild_id/repositories", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
     let input;
     try {
       input = validateRepositoryInput(bodyOf(request));
@@ -194,7 +212,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
       githubId = match.id;
     }
     try {
-      const row = await repo.insertGuildRepository(
+      const row = await insertGuildRepository(db,
         {
           id: newId("repo"),
           guildId: String(guild.id),
@@ -207,7 +225,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
         new Date(),
       );
       if (input.connectionId !== null) {
-        const connection = await repo.getMcpConnection(input.connectionId);
+        const connection = await getMcpConnection(db, input.connectionId);
         if (
           connection !== null &&
           connection.owner_scope === "guild" &&
@@ -215,7 +233,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
         ) {
           const current = githubRepositoriesOf(connection);
           if (!current.some((item) => item.name === input.name)) {
-            await repo.updateMcpConnectionGithubRepositories(
+            await updateMcpConnectionGithubRepositories(db,
               input.connectionId,
               [
                 ...current,
@@ -231,7 +249,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
           }
         }
       }
-      const listed = (await repo.listGuildRepositories(String(guild.id))).find((item) => item.id === row.id) ?? row;
+      const listed = (await listGuildRepositories(db, String(guild.id))).find((item) => item.id === row.id) ?? row;
       return reply.code(201).send(repositoryItem(listed));
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -242,30 +260,30 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/guilds/:guild_id/repositories/:repository_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    const deleted = await repo.deleteGuildRepository(String(guild.id), param(request, "repository_id"));
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const deleted = await deleteGuildRepository(db, String(guild.id), param(request, "repository_id"));
     if (deleted === null) {
       throw new HttpError(404, "repository not found");
     }
     const connectionId =
       deleted.connection_id === null || deleted.connection_id === undefined ? null : String(deleted.connection_id);
     if (connectionId !== null) {
-      const connection = await repo.getMcpConnection(connectionId);
+      const connection = await getMcpConnection(db, connectionId);
       if (
         connection !== null &&
         connection.owner_scope === "guild" &&
         String(connection.owner_id ?? "") === String(guild.id)
       ) {
         const next = githubRepositoriesOf(connection).filter((item) => item.name !== String(deleted.name));
-        await repo.updateMcpConnectionGithubRepositories(connectionId, next, new Date());
+        await updateMcpConnectionGithubRepositories(db, connectionId, next, new Date());
       }
     }
     return reply.code(204).send();
   });
 
   app.get("/api/mcp/connections/:connection_id/github/repositories", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const { connection } = await githubConnection(param(request, "connection_id"));
     if (!(await githubConnectionVisible(connection, user))) {
       throw new HttpError(404, "connection not found");
@@ -274,7 +292,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/mcp/connections/:connection_id/github/selected", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const { connection } = await githubConnection(param(request, "connection_id"));
     if (!(await githubConnectionVisible(connection, user))) {
       throw new HttpError(404, "connection not found");
@@ -312,7 +330,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     const now = new Date();
-    const row = await repo.updateMcpConnectionGithubRepositories(String(connection.id), selected, now);
+    const row = await updateMcpConnectionGithubRepositories(db, String(connection.id), selected, now);
     if (row === null) {
       throw new HttpError(404, "connection not found");
     }
@@ -320,7 +338,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     deps.mcp?.drop(String(connection.id));
     if (connection.owner_scope === "guild" && connection.owner_id) {
       try {
-        await repo.replaceConnectionGuildRepositories(
+        await replaceConnectionGuildRepositories(db,
           String(connection.id),
           String(connection.owner_id),
           selected.map((item) => ({
@@ -343,15 +361,15 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/harnesses", async (request) => {
-    await currentUser(repo, request, deps);
+    await currentUser(identityDb, request, deps);
     return { harnesses: harnessCatalog() };
   });
 
   app.get("/api/agents/:agent_id/harness", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const agent = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const agent = await ownedAgent(db, param(request, "agent_id"), user);
     const config = agentConfigObject(agent);
-    const granted = new Set((await agentSecrets(repo, agent)).map((secret) => secret.name));
+    const granted = new Set((await agentSecrets(accessDatabase(db), agent)).map((secret) => secret.name));
     const aliases = secretAliasesOf(config);
     const logins = (jsonObj(agent.harness_logins) as Record<string, unknown> | null) ?? {};
     const carried = Array.isArray(agent.machine_harnesses) ? agent.machine_harnesses.filter(isHarness) : null;
@@ -381,8 +399,8 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/agents/:agent_id/harness/check", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const agent = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const agent = await ownedAgent(db, param(request, "agent_id"), user);
     const harness = bodyOf(request).harness;
     if (!isHarness(harness)) {
       throw new HttpError(422, `harness must be one of: ${HARNESSES.join(", ")}`);
@@ -401,18 +419,18 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/runs/:run_id/changes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const run = await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const run = await ownedRun(db, param(request, "run_id"), user);
     const metadata = jsonObj(run.metadata) as Record<string, unknown> | null;
     const repos = metadata && Array.isArray(metadata.repos) ? metadata.repos : [];
     return { repositories: repos };
   });
 
   app.get("/api/runs/:run_id/tasks/:call_id/diff", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const run = await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const run = await ownedRun(db, param(request, "run_id"), user);
     const callId = param(request, "call_id");
-    const repository = taskDiffRepository(await repo.getToolResultMetadata(String(run.id), callId));
+    const repository = taskDiffRepository(await getToolResultMetadata(db, String(run.id), callId));
     if (repository === null) {
       throw new HttpError(404, "that call has no task diff");
     }
@@ -431,10 +449,10 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/runs/:run_id/tasks/:call_id/log", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const run = await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const run = await ownedRun(db, param(request, "run_id"), user);
     const callId = param(request, "call_id");
-    const harness = taskLogHarness(await repo.getToolResultMetadata(String(run.id), callId));
+    const harness = taskLogHarness(await getToolResultMetadata(db, String(run.id), callId));
     if (harness === null) {
       throw new HttpError(404, "that call has no harness log");
     }
@@ -452,8 +470,8 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/runs/:run_id/changes/:repository/diff", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const run = await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const run = await ownedRun(db, param(request, "run_id"), user);
     const repository = param(request, "repository");
     const metadata = jsonObj(run.metadata) as Record<string, unknown> | null;
     const repos = metadata && Array.isArray(metadata.repos) ? (metadata.repos as Array<Record<string, unknown>>) : [];

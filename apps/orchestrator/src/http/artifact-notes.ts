@@ -1,3 +1,4 @@
+import type pg from "pg";
 import {
   ArtifactError,
   ArtifactStore,
@@ -12,9 +13,10 @@ import {
   TASK_KEY,
 } from "../artifacts/index.js";
 import { taskDisplayPath } from "../agents/task.js";
-import type { Repositories } from "../db/repositories.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { artifactHttp, HttpError } from "./errors.js";
+import { hiddenGuildsFor } from "../db/guilds.js";
+import { getAgentTask, listAgentTaskRevisions, writeAgentTask } from "../db/agents.js";
 
 export async function ensureAgentArtifacts(
   store: ArtifactStore,
@@ -30,7 +32,7 @@ export async function ensureAgentArtifacts(
 }
 
 export async function operatorFor(
-  repo: Repositories,
+  db: pg.Pool,
   user: Record<string, unknown>,
   scope: { orgId: string; guildId?: string | null; agentId?: string | null },
 ): Promise<ArtifactActor> {
@@ -40,7 +42,7 @@ export async function operatorFor(
     actorName: String(user.name ?? "operator"),
     guildId: scope.guildId ?? null,
     agentId: scope.agentId ?? null,
-    hidden: await repo.hiddenGuildsFor(scope.orgId, String(user.id)),
+    hidden: await hiddenGuildsFor(db, scope.orgId, String(user.id)),
   });
 }
 
@@ -49,12 +51,12 @@ export async function operatorFor(
 // `recorded: false`, so a listing can still say who saved a file last.
 export async function latestFileChanges(
   store: ArtifactStore,
-  repo: Repositories,
+  db: pg.Pool,
   actor: ArtifactActor,
   displayPaths: string[],
 ): Promise<Record<string, unknown>> {
   const paths = await readablePaths(store, actor, [...new Set(displayPaths.filter((path) => path))]);
-  const latest: Record<string, unknown> = await listLatestFileChanges(repo.pool, actor.orgId, paths);
+  const latest: Record<string, unknown> = await listLatestFileChanges(db, actor.orgId, paths);
   for (const path of paths) {
     if (latest[path]) {
       continue;
@@ -69,7 +71,7 @@ export async function latestFileChanges(
       continue;
     }
     if (parsed.kind === "artifact" && parsed.level === "agent" && parsed.path === "" && parsed.key === TASK_KEY) {
-      const task = await repo.getAgentTask(actor.orgId, parsed.ownerId);
+      const task = await getAgentTask(db, actor.orgId, parsed.ownerId);
       if (task) {
         latest[path] = fallbackChange(path, task.version, null, task.updated_at);
       }
@@ -146,14 +148,14 @@ async function withFileMeta(
   payload: HostFilePayload,
   kind?: string,
   version?: number,
-  repo?: Repositories,
+  db?: pg.Pool,
 ): Promise<HostFilePayload> {
   const next = { ...payload };
   if (version !== undefined) {
     next.version = version;
   }
-  if (kind === "task" && repo) {
-    next.revisions = (await repo.listAgentTaskRevisions(actor.orgId, ownerId)).map((row) => ({
+  if (kind === "task" && db) {
+    next.revisions = (await listAgentTaskRevisions(db, actor.orgId, ownerId)).map((row) => ({
       ...row,
       replaced_at: formatColumnTimestamp(row.replaced_at),
     }));
@@ -172,11 +174,11 @@ export async function readHostFile(
   level: ArtifactLevel,
   ownerId: string,
   relative: string,
-  repo?: Repositories,
+  db?: pg.Pool,
 ): Promise<HostFilePayload> {
   const name = hostFileName(relative);
-  if (level === "agent" && name === TASK_KEY && repo) {
-    const row = await repo.getAgentTask(actor.orgId, ownerId);
+  if (level === "agent" && name === TASK_KEY && db) {
+    const row = await getAgentTask(db, actor.orgId, ownerId);
     if (!row) {
       throw new ArtifactError("task.md not found", 404);
     }
@@ -191,7 +193,7 @@ export async function readHostFile(
       },
       "task",
       row.version,
-      repo,
+      db,
     );
   }
   const displayPath = hostFileDisplayPath(actor.orgId, level, ownerId, name);
@@ -211,7 +213,7 @@ export async function readHostFile(
     },
     loaded.row.kind,
     loaded.row.version,
-    repo,
+    db,
   );
 }
 
@@ -223,14 +225,14 @@ export async function writeHostFile(
   relative: string,
   content: string,
   expectedVersion?: number,
-  repo?: Repositories,
+  db?: pg.Pool,
 ): Promise<HostFilePayload> {
   const name = hostFileName(relative);
   if (level === "agent" && name === TASK_KEY) {
-    if (!repo) {
+    if (!db) {
       throw new ArtifactError("task.md not found", 404);
     }
-    const row = await repo.writeAgentTask(actor, ownerId, content, expectedVersion);
+    const row = await writeAgentTask(db, actor, ownerId, content, expectedVersion);
     return withFileMeta(
       store,
       actor,
@@ -238,7 +240,7 @@ export async function writeHostFile(
       { path: name, content, display_path: taskDisplayPath(actor.orgId, ownerId) },
       "task",
       row.version,
-      repo,
+      db,
     );
   }
   if (level === "agent" && name === MEMORY_KEY) {
@@ -250,7 +252,7 @@ export async function writeHostFile(
       { path: name, content, display_path: String(store.view(row).display_path) },
       "memory",
       row.version,
-      repo,
+      db,
     );
   }
   const row = await store.writeNote(actor, { level, key: name, content });
@@ -261,7 +263,7 @@ export async function writeHostFile(
     { id: row.id, path: name, content, display_path: String(store.view(row).display_path) },
     row.kind,
     row.version,
-    repo,
+    db,
   );
 }
 

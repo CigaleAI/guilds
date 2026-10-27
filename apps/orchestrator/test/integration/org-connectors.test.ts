@@ -2,14 +2,16 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { limitedPolicy } from "../helpers/policy.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember, insertOrg } from "../../src/db/orgs.js";
+import { getMcpServer } from "../../src/db/connectors.js";
 
 const dbName = uniqueDbName("agent_platform_org_connectors");
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -24,29 +26,20 @@ test("an organisation adds remote servers of its own that no other organisation 
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-org-connectors-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     policy: limitedPolicy({ maxMcpServers: 2 }),
     masterKey: Buffer.from(HEX_MASTER_KEY, "hex"),
   });
-  const other = await repo.insertUser(
-    { userId: "user_other", name: "other", image: null, email: "other@example.com" },
-    new Date(),
-  );
-  await repo.insertOrg(
-    { orgId: "org_other", name: "other team", slug: "other-team", userId: String(other.id) },
-    new Date(),
-  );
+  const other = await insertUser(db, { userId: "user_other", name: "other", image: null, email: "other@example.com" }, new Date());
+  await insertOrg(db, { orgId: "org_other", name: "other team", slug: "other-team", userId: String(other.id) }, new Date());
   const OTHER = { "X-Guilds-User": String(other.id), "X-Guilds-Org": "org_other" };
-  const member = await repo.insertUser(
-    { userId: "user_member", name: "member", image: null, email: "member@example.com" },
-    new Date(),
-  );
-  await repo.insertMember("org_home", String(member.id), "member", new Date());
+  const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
+  await insertMember(db, "org_home", String(member.id), "member", new Date());
   const add = (headers: Record<string, string>, org: string, payload: Record<string, unknown>) =>
     app.inject({
       method: "POST",
@@ -149,7 +142,7 @@ test("an organisation adds remote servers of its own that no other organisation 
 
     const removed = await app.inject({ method: "DELETE", url: `/api/orgs/org_home/mcp/servers/${crmId}`, headers: HOME });
     assert.equal(removed.statusCode, 204);
-    assert.equal(await repo.getMcpServer(crmId), null);
+    assert.equal(await getMcpServer(db, crmId), null);
   } finally {
     await app.close();
     await database.close();

@@ -57,6 +57,14 @@ extending repository has an entry point that loads its configuration
 and hands its extensions to `runServer` (`src/run.ts`). Core's
 `src/server.ts` passes none.
 
+A factory on `ServerExtension` (`policy`, `modelCredentials`,
+`instanceAdmin`, `sandboxes`, `identity`) runs once at boot and
+receives the database pool as `db`. The extension reads and writes
+core's tables through the `db/` modules the package exports
+(`db/orgs.js`, `db/users.js`, `db/connectors.js`, `db/mcp.js`,
+`db/usage.js`). Each function takes the pool, or a transaction's
+client, as its first argument.
+
 `loadConfig` (`src/config/index.ts`) takes the `AUTH_MODE` values
 an extension identifies requests in, beside core's `compat-cookie`
 and `trusted-header`. Paths below are under
@@ -112,7 +120,10 @@ and `trusted-header`. Paths below are under
   ([Orchestrator](orchestrator.md#credentials)).
 - **Organisation created.** The hook runs inside the transaction that
   creates an organisation. Hooks from several extensions run in
-  order. A hook passed for one creation replaces them.
+  order. `insertOrg` and `insertUser` (`db/orgs.ts`, `db/users.ts`)
+  run the hook they are passed. The routes pass `AppDeps.orgCreated`,
+  which is the extensions' hooks unless the caller of `buildApp`
+  gives its own.
 - **Sandbox provider.** `GenerationSandboxes`
   (`generation/index.ts`), keyed by machine: `ensure(machine)`,
   `connectRunning`, `destroy`, `listRunningMachineIds`, and an

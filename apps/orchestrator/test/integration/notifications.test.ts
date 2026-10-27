@@ -2,15 +2,17 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
+import { insertIssue } from "../../src/db/issues.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -29,37 +31,31 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-notifications-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
+  const db = database.pool;
   const workspaceRoot = tempDir("guilds-notifications-workspaces-");
-  const generation = new GenerationLoop(repo, notes, workspaceRoot, new ExportSandboxes(workspaceRoot));
+  const generation = new GenerationLoop(generationDatabase(db), notes, workspaceRoot, new ExportSandboxes(workspaceRoot));
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
-    scripts: new Scripts(repo),
-    schedules: new Schedules(repo),
+    scripts: new Scripts(scriptDatabase(db)),
+    schedules: new Schedules(scheduleDatabase(db)),
     generation,
   });
 
-  const teammate = await repo.insertUser(
-    {
+  const teammate = await insertUser(db, {
       userId: "user_teammate_inbox",
       name: "teammate-inbox",
       image: null,
       email: "teammate-inbox@example.com",
-    },
-    new Date(),
-  );
-  await repo.insertMember("org_home", String(teammate.id), "member", new Date());
-  const bystander = await repo.insertUser(
-    {
+    }, new Date());
+  await insertMember(db, "org_home", String(teammate.id), "member", new Date());
+  const bystander = await insertUser(db, {
       userId: "user_bystander_inbox",
       name: "bystander-inbox",
       image: null,
       email: "bystander-inbox@example.com",
-    },
-    new Date(),
-  );
-  await repo.insertMember("org_home", String(bystander.id), "member", new Date());
+    }, new Date());
+  await insertMember(db, "org_home", String(bystander.id), "member", new Date());
   const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
   const BYSTANDER = { "X-Guilds-User": String(bystander.id), "X-Guilds-Org": "org_home" };
   const json = { "content-type": "application/json" };
@@ -179,7 +175,7 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
     assert.equal(chat.json().seen_through_seq, followUp.seq, "the tagged chat is read through now");
     assert.deepEqual((await inbox(OWNER)).mentions, [], "another operator's cursor is unchanged");
 
-    const issue = await repo.insertIssue(
+    const issue = await insertIssue(db,
       {
         issueId: "iss_inbox",
         guildId,

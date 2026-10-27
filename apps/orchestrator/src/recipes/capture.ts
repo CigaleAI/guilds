@@ -1,9 +1,9 @@
+import type pg from "pg";
 import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
 import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
 import { httpAccess } from "../http/access.js";
-import type { Repositories } from "../db/repositories.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -28,9 +28,29 @@ import { recipeNotePath, rewriteGuildTextToRecipeRefs } from "./rewrite.js";
 import { RecipeError } from "./errors.js";
 import { capturedNoteAccess, capturedTableAccess, type CapturedGuild } from "./access.js";
 import { exportManifest } from "../mcp/catalog.js";
+import { mcpDatabase } from "../mcp/index.js";
+import { getAgentTask, listAgents } from "../db/agents.js";
+import { listSchedules } from "../db/schedules.js";
+import { getMcpServerBySlug } from "../db/connectors.js";
+import { listSecrets } from "../db/secrets.js";
+import { listGuildRepositories } from "../db/guilds.js";
+import { bindQuery } from "../db/pg.js";
+
+/** The db/ functions a guild is captured into a recipe through, on `db`. */
+export function captureDatabase(db: pg.Pool) {
+  return {
+    ...mcpDatabase(db),
+    listAgents: bindQuery(db, listAgents),
+    getAgentTask: bindQuery(db, getAgentTask),
+    listSchedules: bindQuery(db, listSchedules),
+    getMcpServerBySlug: bindQuery(db, getMcpServerBySlug),
+    listSecrets: bindQuery(db, listSecrets),
+    listGuildRepositories: bindQuery(db, listGuildRepositories),
+  };
+}
 
 export type CaptureDeps = {
-  repo: Repositories;
+  db: ReturnType<typeof captureDatabase>;
   artifacts: ArtifactStore;
   scripts: Scripts;
   schedules: Schedules;
@@ -144,7 +164,7 @@ export async function captureGuild(
 ): Promise<RecipeDocument> {
   const guildId = String(args.guild.id);
   const orgId = String(args.guild.org_id);
-  const agents = await deps.repo.listAgents(guildId);
+  const agents = await deps.db.listAgents(guildId);
   if (!agents.length) {
     throw new RecipeError("guild has no agents to capture");
   }
@@ -209,14 +229,14 @@ export async function captureGuild(
     const agentId = String(agent.id);
     const role = String(agent.name);
     const config = (jsonObj(agent.config) ?? {}) as Record<string, unknown>;
-    const taskRow = await deps.repo.getAgentTask(orgId, agentId);
+    const taskRow = await deps.db.getAgentTask(orgId, agentId);
     const taskBody = String(taskRow?.content_text ?? "");
-    const access = await httpAccess(deps.repo, { orgId, guildId, agentId, viewScope: "agent" });
+    const access = await httpAccess(deps.db, { orgId, guildId, agentId, viewScope: "agent" });
     const nativeTools = Object.fromEntries(
       (access.tools as Array<Record<string, unknown>>).map((item) => [String(item.name), Boolean(item.enabled)]),
     );
     const scripts = await deps.scripts.listForAgent(agentId);
-    const schedules = await deps.repo.listSchedules(agentId);
+    const schedules = await deps.db.listSchedules(agentId);
     const browserRequired = Boolean(config.browser);
     const portable = portableRoleConfig(config, browserRequired);
     if (scripts.length > Number(portable.max_scripts ?? 0)) {
@@ -282,7 +302,7 @@ export async function captureGuild(
         }
         // An organisation's own server travels whole: the box applying the recipe may lack it.
         if (server.org_owned) {
-          const row = await deps.repo.getMcpServerBySlug(slug, orgId);
+          const row = await deps.db.getMcpServerBySlug(slug, orgId);
           if (row && row.owner_org_id === orgId) {
             connection.manifest = exportManifest(row);
           }
@@ -311,7 +331,7 @@ export async function captureGuild(
       connection.roles[role] = { enabled: Boolean(server.enabled), tools };
     }
     const harnessTokens = harnessTokenSecrets(config);
-    for (const secret of await deps.repo.listSecrets(orgId, { agentId })) {
+    for (const secret of await deps.db.listSecrets(orgId, { agentId })) {
       const name = String(secret.name);
       if (harnessTokens.has(name)) {
         continue;
@@ -344,7 +364,7 @@ export async function captureGuild(
   }
 
   // Repositories travel by name only: their URLs and connections stay with the guild.
-  recipe.repositories = (await deps.repo.listGuildRepositories(guildId)).map((row) => ({
+  recipe.repositories = (await deps.db.listGuildRepositories(guildId)).map((row) => ({
     name: String(row.name),
     purpose: "",
   }));

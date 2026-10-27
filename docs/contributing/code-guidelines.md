@@ -99,7 +99,7 @@ function; it is a block of its caller.
 - Two functions that differ in behaviour differ in name, in the
   part of the name that carries the difference
   (`readAgentFile`, `readAgentFolder`).
-- Types and tables are the domain noun (`Repositories`,
+- Types and tables are the domain noun (`ArtifactStore`,
   `artifact_collections`).
 - Booleans read as a question (`isReadOnlyRemote`).
 
@@ -215,6 +215,14 @@ root (`compose.ts`, the router, a page that mounts both).
 
 Core imports nothing from an extension built on it.
 `eslint.boundary.js` fails the file that tries.
+
+A domain module imports the `db/` modules it reads and writes
+through, and takes a `Queryable` as its connection. Where a unit
+test fakes the database, the module takes a dependencies object of
+the `db/` functions it calls instead, each bound to the connection
+with `bindQuery`. Nothing else stands between a domain module and
+`db/`: no facade, no class that forwards every query. Only `http/`
+is kept out of `db/`.
 
 A domain module imports nothing from the HTTP framework. Only
 `http/`, the app and composition roots, the extension points and

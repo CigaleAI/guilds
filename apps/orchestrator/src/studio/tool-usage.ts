@@ -1,5 +1,5 @@
+import type pg from "pg";
 import { memoryOf } from "../agents/validation.js";
-import type { Repositories } from "../db/repositories.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { REGISTRY } from "../toolbox/index.js";
@@ -7,6 +7,8 @@ import { offeredToolNames } from "../toolbox/offered.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { projectAgentAccess, type PreviewDeps } from "./preview.js";
 import type { ActivityWindow } from "./activity.js";
+import { listAgents } from "../db/agents.js";
+import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 
 // The guild's tools as Studio's Tools section lists them: what each agent is
 // offered now, from the live access projection, beside how the agents called
@@ -181,15 +183,15 @@ export function buildToolRows(entries: ToolEntry[], stats: StatRow[]): ToolRow[]
 
 /** The guild's tools: what each agent is offered now, and their calls in the window. */
 export async function loadGuildTools(
-  deps: { repo: Repositories; preview: PreviewDeps },
+  deps: { db: pg.Pool; preview: PreviewDeps },
   guildId: string,
   window: ActivityWindow,
 ): Promise<{ since: string; until: string; tools: ToolRow[] }> {
-  const agents = await deps.repo.listAgents(guildId);
+  const agents = await listAgents(deps.db, guildId);
   const entries = (
     await Promise.all(agents.map(async (agent) => agentToolEntries(agent, await projectAgentAccess(deps.preview, agent))))
   ).flat();
-  const stats = await deps.repo.listGuildToolCallStats(guildId, window.since, window.until);
+  const stats = await listGuildToolCallStats(deps.db, guildId, window.since, window.until);
   return { since: iso(window.since), until: iso(window.until), tools: buildToolRows(entries, stats) };
 }
 
@@ -230,11 +232,11 @@ export function viewToolCall(row: Record<string, unknown>): Record<string, unkno
 
 /** One tool's calls in the window, newest first, a page at a time. */
 export async function loadToolCalls(
-  repo: Repositories,
+  db: pg.Pool,
   guildId: string,
   request: { tool: string; window: ActivityWindow; query: ToolCallsQuery },
 ): Promise<{ calls: Array<Record<string, unknown>>; next_cursor: string | null }> {
-  const rows = await repo.listGuildToolCalls(guildId, request.tool, {
+  const rows = await listGuildToolCalls(db, guildId, request.tool, {
     ...request.window,
     errorsOnly: request.query.errorsOnly,
     before: parseToolCursor(request.query.cursor),

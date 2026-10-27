@@ -4,7 +4,7 @@ import { attachmentDisposition } from "../attachments/index.js";
 import { catchArtifact, operatorFor } from "./artifact-notes.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentOrg, currentUser } from "./identity.js";
+import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { ownedAgent, ownedGuild } from "./items.js";
 import { publishGroup } from "./publish.js";
 import { param } from "./request.js";
@@ -41,9 +41,9 @@ function uploadBytes(request: FastifyRequest): Buffer {
 type FileOwner = { level: ArtifactLevel; ownerId: string; guildId: string | null; actor: ArtifactActor };
 
 async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
-  const user = await currentUser(deps.repo, request, deps);
-  const row = await ownedAgent(deps.repo, param(request, "agent_id"), user);
-  const actor = await operatorFor(deps.repo, user, {
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const row = await ownedAgent(deps.db, param(request, "agent_id"), user);
+  const actor = await operatorFor(deps.db, user, {
     orgId: String(row.org_id),
     guildId: String(row.guild_id),
     agentId: String(row.id),
@@ -52,16 +52,16 @@ async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileO
 }
 
 async function guildOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
-  const user = await currentUser(deps.repo, request, deps);
-  const row = await ownedGuild(deps.repo, param(request, "guild_id"), user);
-  const actor = await operatorFor(deps.repo, user, { orgId: String(row.org_id), guildId: String(row.id) });
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const row = await ownedGuild(deps.db, param(request, "guild_id"), user);
+  const actor = await operatorFor(deps.db, user, { orgId: String(row.org_id), guildId: String(row.id) });
   return { level: "guild", ownerId: String(row.id), guildId: String(row.id), actor };
 }
 
 async function orgOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
-  const user = await currentUser(deps.repo, request, deps);
-  const org = await currentOrg(deps.repo, request, user);
-  const actor = await operatorFor(deps.repo, user, { orgId: String(org.id) });
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const org = await currentOrg(identityDatabase(deps.db), request, user);
+  const actor = await operatorFor(deps.db, user, { orgId: String(org.id) });
   return { level: "org", ownerId: String(org.id), guildId: null, actor };
 }
 

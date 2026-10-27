@@ -6,8 +6,15 @@ import { canManageSettings } from "../organisations/index.js";
 import { LimitError, OPEN_POLICY } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser } from "./identity.js";
+import { currentUser, identityDatabase } from "./identity.js";
 import { bodyOf, param } from "./request.js";
+import { getMembership } from "../db/orgs.js";
+import {
+  countOrgConnectors,
+  deleteConnector,
+  getMcpServer,
+  listMcpServers,
+} from "../db/connectors.js";
 
 function catalogHttp(error: unknown): never {
   if (isUniqueViolation(error)) {
@@ -25,12 +32,13 @@ function catalogHttp(error: unknown): never {
  * client. A server is visible to its organisation alone; another organisation's id is a 404.
  */
 export async function registerOrgConnectorRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
+  const identityDb = identityDatabase(db);
 
   async function requireManager(request: FastifyRequest): Promise<string> {
     const orgId = param(request, "org_id");
-    const user = await currentUser(repo, request, deps);
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const user = await currentUser(identityDb, request, deps);
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null || !canManageSettings(String(membership.role))) {
       throw new HttpError(404, "organisation not found");
     }
@@ -38,7 +46,7 @@ export async function registerOrgConnectorRoutes(app: FastifyInstance, deps: App
   }
 
   async function requireOwnServer(request: FastifyRequest, orgId: string): Promise<Record<string, unknown>> {
-    const server = await repo.getMcpServer(param(request, "server_id"));
+    const server = await getMcpServer(db, param(request, "server_id"));
     if (server === null || server.owner_org_id !== orgId) {
       throw new HttpError(404, "mcp server not found");
     }
@@ -47,19 +55,19 @@ export async function registerOrgConnectorRoutes(app: FastifyInstance, deps: App
 
   app.get("/api/orgs/:org_id/mcp/servers", async (request) => {
     const orgId = await requireManager(request);
-    const servers = (await repo.listMcpServers(orgId)).filter((server) => server.owner_org_id === orgId);
+    const servers = (await listMcpServers(db, orgId)).filter((server) => server.owner_org_id === orgId);
     return { servers: servers.map((server) => serverItem(server)) };
   });
 
   app.post("/api/orgs/:org_id/mcp/servers", async (request, reply) => {
     const orgId = await requireManager(request);
     const { limits } = await (deps.policy ?? OPEN_POLICY).standing(orgId);
-    if (limits.maxMcpServers !== null && (await repo.countOrgConnectors(orgId)) >= limits.maxMcpServers) {
+    if (limits.maxMcpServers !== null && (await countOrgConnectors(db, orgId)) >= limits.maxMcpServers) {
       const refused = new LimitError(limits.source, "MCP servers");
       throw new HttpError(refused.status, refused.message);
     }
     try {
-      const row = await createConnector(repo, bodyOf(request), new Date(), orgId);
+      const row = await createConnector(db, bodyOf(request), new Date(), orgId);
       reply.code(201);
       return serverItem(row);
     } catch (error) {
@@ -71,7 +79,7 @@ export async function registerOrgConnectorRoutes(app: FastifyInstance, deps: App
     const orgId = await requireManager(request);
     const server = await requireOwnServer(request, orgId);
     try {
-      return serverItem(await patchConnector(repo, server, bodyOf(request)));
+      return serverItem(await patchConnector(db, server, bodyOf(request)));
     } catch (error) {
       catalogHttp(error);
     }
@@ -80,7 +88,7 @@ export async function registerOrgConnectorRoutes(app: FastifyInstance, deps: App
   app.delete("/api/orgs/:org_id/mcp/servers/:server_id", async (request, reply) => {
     const orgId = await requireManager(request);
     const server = await requireOwnServer(request, orgId);
-    await repo.deleteConnector(String(server.id));
+    await deleteConnector(db, String(server.id));
     return reply.code(204).send();
   });
 }

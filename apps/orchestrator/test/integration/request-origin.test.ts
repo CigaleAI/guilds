@@ -4,10 +4,9 @@ import WebSocket from "ws";
 import { buildApp } from "../../src/app.js";
 import type { AppConfig } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
@@ -23,8 +22,8 @@ test("with no sign-in, the server still refuses another host and another origin"
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-origin-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
+  const db = database.pool;
+  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
   const local = await buildApp(database, deps);
   const proxied = await buildApp(database, {
     ...deps,

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { decryptPayload, encryptPayload } from "../../src/credentials/crypto.js";
-import { connect, ConnectError, type ConnectInput, type ConnectRepo } from "../../src/connectors/connect.js";
+import { connect, ConnectError, type ConnectInput } from "../../src/connectors/connect.js";
 import type { ConnectorRow } from "../../src/db/connectors.js";
 import type { McpConnectionLogin, McpConnectionRow, NewMcpConnection } from "../../src/db/mcp.js";
 import { lookupProperties, settingsComplete, validateSettings } from "../../src/connectors/settings.js";
@@ -278,7 +278,7 @@ test("a REST adapter's upstream 401 reaches the pool as an McpError", async () =
   const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; } };
   await assert.rejects(
     () =>
-      pool.syncTools(db, { id: "conn_cg", status: "connected", ciphertext, nonce }, { id: "mcp_coingecko", slug: "coingecko", auth: "token" }, { force: true }),
+      pool.syncTools(db as never, { id: "conn_cg", status: "connected", ciphertext, nonce }, { id: "mcp_coingecko", slug: "coingecko", auth: "token" }, { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -339,7 +339,7 @@ test("a listed tool carries the endpoint's annotations", async () => {
       },
     }) as never;
   const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; } };
-  const listed = await pool.syncTools(db, { id: "conn_n", status: "connected" }, { id: "mcp_notion", slug: "notion", auth: "token" });
+  const listed = await pool.syncTools(db as never, { id: "conn_n", status: "connected" }, { id: "mcp_notion", slug: "notion", auth: "token" });
   assert.deepEqual(listed.map((tool) => tool.namespaced_name), ["notion_search", "notion_delete_page"]);
   assert.deepEqual(
     seen.map((tool) => [tool.read_only_hint, tool.destructive_hint]),
@@ -375,10 +375,10 @@ test("state quotes pinned symbols under the manifest's key and redacts the key",
   const pool = new McpPool();
   pool.connectors = WITH_QUOTES;
   pool.fetchFn = mockFetch(() => ({ status: 200, json: { ethereum: 3200 } }));
-  const state = await pool.state(stateDb({ ciphertext, nonce, settings: { symbols: PINNED } }), AGENT);
+  const state = await pool.state(stateDb({ ciphertext, nonce, settings: { symbols: PINNED } }) as never, AGENT);
   assert.deepEqual(state, { quotes: [{ id: "ethereum", price: 3200 }] });
   pool.connectors = WITH_QUOTES.withAdapter("quotes", { state: async (creds) => ({ leaked: creds.token }) });
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }), AGENT), {
+  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {
     quotes: { leaked: "[REDACTED:token]" },
   });
 });
@@ -390,7 +390,7 @@ test("state is redacted against a login's secrets, not the rest of its payload",
   pool.connectors = WITH_QUOTES.withAdapter("quotes", {
     state: async (creds) => ({ owner: creds.account, token: creds.token, access: creds.access_token }),
   });
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }), AGENT), {
+  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {
     quotes: { owner: "acme", token: "[REDACTED:token]", access: "[REDACTED:access_token]" },
   });
 });
@@ -400,17 +400,17 @@ test("state leaves out a login with no value and marks a failing hook unavailabl
   const [ciphertext, nonce] = encryptPayload({ token: "qk" }, KEY);
   const pool = new McpPool();
   pool.connectors = WITH_QUOTES;
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }), AGENT), {});
+  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {});
   pool.connectors = WITH_QUOTES.withAdapter("quotes", {
     state: async () => {
       throw new ConnectorError("quota exhausted", 429);
     },
   });
-  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }), AGENT), {
+  assert.deepEqual(await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT), {
     quotes: { unavailable: "quota exhausted" },
   });
   pool.connectors = WITH_QUOTES.withAdapter("quotes", { state: async () => "x".repeat(40_000) });
-  const big = await pool.state(stateDb({ ciphertext, nonce }), AGENT);
+  const big = await pool.state(stateDb({ ciphertext, nonce }) as never, AGENT);
   assert.match(String((big.quotes as { unavailable: string }).unavailable), /exceeds/);
 });
 
@@ -420,7 +420,7 @@ test("a state hook that outlives the budget yields unavailable", async (t) => {
   const [ciphertext, nonce] = encryptPayload({ token: "qk" }, KEY);
   const pool = new McpPool();
   pool.connectors = WITH_QUOTES.withAdapter("quotes", { state: () => new Promise(() => undefined) });
-  const pending = pool.state(stateDb({ ciphertext, nonce }), AGENT);
+  const pending = pool.state(stateDb({ ciphertext, nonce }) as never, AGENT);
   for (let tick = 0; tick < 20; tick += 1) {
     await Promise.resolve();
   }
@@ -428,7 +428,7 @@ test("a state hook that outlives the budget yields unavailable", async (t) => {
   assert.deepEqual(await pending, { quotes: { unavailable: `timed out after ${STATE_TIMEOUT_MS} ms` } });
 });
 
-class ConnectRepoStub implements ConnectRepo {
+class ConnectRepoStub {
   rows = new Map<string, McpConnectionRow>();
   tools: ListedTool[] = [];
 
@@ -488,7 +488,7 @@ test("connect stores a two-field login under the manifest's names with the valid
   const pool = new McpPool();
   pool.connectors = CONNECTORS.withAdapter("qonto", { validate: async () => "Elektro" });
   const { connection, outcome } = await connect(
-    repo,
+    repo as never,
     pool,
     { server: QONTO, ownerScope: "org", ownerId: "org_1", credentials: { login: " org ", secret_key: "s3", extra: "x" } },
     new Date(),
@@ -505,7 +505,7 @@ test("connect stores a two-field login under the manifest's names with the valid
     CONNECTORS.bySlug("qonto")!.manifest.tools!.map((tool) => tool.name),
   );
   await assert.rejects(
-    () => connect(repo, pool, { server: QONTO, ownerScope: "org", ownerId: "org_2", credentials: { login: "org" } }),
+    () => connect(repo as never, pool, { server: QONTO, ownerScope: "org", ownerId: "org_2", credentials: { login: "org" } }),
     (error: unknown) => error instanceof ConnectError && error.status === 422 && error.message === "secret key is required",
   );
 });
@@ -516,16 +516,16 @@ test("connect refuses, keeps, or replaces an owner's login as asked", async () =
   const pool = new McpPool();
   pool.connectors = CONNECTORS.withAdapter("x", { validate: async () => "" });
   const owner = { server: X_SERVER, ownerScope: "org", ownerId: "org_1" } satisfies Partial<ConnectInput>;
-  const first = await connect(repo, pool, { ...owner, credentials: { token: "one" }, accountHint: "plan" }, new Date(), { masterKey: KEY });
+  const first = await connect(repo as never, pool, { ...owner, credentials: { token: "one" }, accountHint: "plan" }, new Date(), { masterKey: KEY });
   assert.equal(first.outcome, "installed");
   await assert.rejects(
-    () => connect(repo, pool, { ...owner, credentials: { token: "two" } }, new Date(), { masterKey: KEY }),
+    () => connect(repo as never, pool, { ...owner, credentials: { token: "two" } }, new Date(), { masterKey: KEY }),
     (error: unknown) => error instanceof ConnectError && error.status === 409,
   );
-  const kept = await connect(repo, pool, { ...owner, credentials: { token: "two" }, onExisting: "keep" }, new Date(), { masterKey: KEY });
+  const kept = await connect(repo as never, pool, { ...owner, credentials: { token: "two" }, onExisting: "keep" }, new Date(), { masterKey: KEY });
   assert.equal(kept.outcome, "kept");
   const current = await connect(
-    repo,
+    repo as never,
     pool,
     { ...owner, credentials: { token: "one" }, onExisting: { replace_when_hint: "plan" } },
     new Date(),
@@ -533,7 +533,7 @@ test("connect refuses, keeps, or replaces an owner's login as asked", async () =
   );
   assert.equal(current.outcome, "current");
   const replaced = await connect(
-    repo,
+    repo as never,
     pool,
     { ...owner, credentials: { token: "two" }, onExisting: { replace_when_hint: "plan" }, accountHint: "plan" },
     new Date(),
@@ -541,7 +541,7 @@ test("connect refuses, keeps, or replaces an owner's login as asked", async () =
   );
   assert.equal(replaced.outcome, "installed");
   const other = await connect(
-    repo,
+    repo as never,
     pool,
     { ...owner, credentials: { token: "three" }, onExisting: { replace_when_hint: "someone else" } },
     new Date(),
@@ -560,7 +560,7 @@ test("connect answers a rejected key with a 422 and stores nothing", async () =>
     },
   });
   await assert.rejects(
-    () => connect(repo, pool, { server: X_SERVER, ownerScope: "org", ownerId: "org_1", credentials: { token: "bad" } }),
+    () => connect(repo as never, pool, { server: X_SERVER, ownerScope: "org", ownerId: "org_1", credentials: { token: "bad" } }),
     (error: unknown) => error instanceof ConnectError && error.status === 422 && error.message === "api key was rejected",
   );
   assert.equal(repo.rows.size, 0);
@@ -623,10 +623,10 @@ test("connect stores a login that lacks required settings as pending, and one wi
     },
   });
   const server = { id: "mcp_quotes", slug: "quotes", auth: "token", display_name: "Quotes" };
-  const waiting = await connect(repo, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { token: "qk" } }, new Date(), { connectors: WITH_QUOTES });
+  const waiting = await connect(repo as never, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { token: "qk" } }, new Date(), { connectors: WITH_QUOTES });
   assert.equal(waiting.connection.status, "pending");
   assert.deepEqual(repo.tools, []);
-  const ready = await connect(repo, pool, {
+  const ready = await connect(repo as never, pool, {
     server,
     ownerScope: "org",
     ownerId: "org_2",
@@ -637,7 +637,7 @@ test("connect stores a login that lacks required settings as pending, and one wi
   assert.deepEqual(seen, [{}, { symbols: [{ id: "bitcoin" }] }]);
   await assert.rejects(
     () =>
-      connect(repo, pool, {
+      connect(repo as never, pool, {
         server,
         ownerScope: "org",
         ownerId: "org_3",
@@ -697,7 +697,7 @@ test("a sync keeps each listed tool's annotations", async () => {
     },
   };
   await pool.syncTools(
-    db,
+    db as never,
     { id: "conn_acme", status: "connected", owner_scope: "org", owner_id: "org_1" },
     { id: "mcp_acme", slug: "acme", tool_prefix: "acme", auth: "token" },
   );

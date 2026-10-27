@@ -1,17 +1,25 @@
+import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { connect, type Database } from "../../src/db/client.js";
 import { LastOrgOwner } from "../../src/db/errors.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { deleteUser, insertUser } from "../../src/db/users.js";
+import {
+  deleteMember,
+  getMembership,
+  insertMember,
+  insertOrg,
+  updateMemberRole,
+} from "../../src/db/orgs.js";
 
 const dbName = uniqueDbName("agent_platform_org_owners");
 let database: Database;
-let repo: Repositories;
+let db: pg.Pool;
 
 before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));
-  repo = new Repositories(database.pool);
+  db = database.pool;
 });
 
 after(async () => {
@@ -23,22 +31,19 @@ async function orgWithMembers(tag: string, roles: string[]): Promise<{ orgId: st
   const now = new Date();
   const userIds: string[] = [];
   for (const [index] of roles.entries()) {
-    const user = await repo.insertUser(
-      {
+    const user = await insertUser(db, {
         userId: `user_${tag}_${index}`,
         name: `${tag}-${index}`,
         image: null,
         email: `${tag}-${index}@example.com`,
-      },
-      now,
-    );
+      }, now);
     userIds.push(String(user.id));
   }
   const orgId = `org_${tag}`;
-  await repo.insertOrg({ orgId, name: tag, slug: tag, userId: userIds[0] ?? "" }, now);
+  await insertOrg(db, { orgId, name: tag, slug: tag, userId: userIds[0] ?? "" }, now);
   for (const [index, role] of roles.entries()) {
     if (index > 0) {
-      await repo.insertMember(orgId, userIds[index] ?? "", role, now);
+      await insertMember(db, orgId, userIds[index] ?? "", role, now);
     }
   }
   return { orgId, userIds };
@@ -48,16 +53,16 @@ test("the only owner of an organisation with another member cannot be deleted, d
   const { orgId, userIds } = await orgWithMembers("kept", ["owner", "member"]);
   const [owner = ""] = userIds;
 
-  await assert.rejects(repo.deleteUser(owner), LastOrgOwner);
-  await assert.rejects(repo.updateMemberRole(orgId, owner, "admin"), LastOrgOwner);
-  await assert.rejects(repo.deleteMember(orgId, owner), LastOrgOwner);
-  assert.equal((await repo.getMembership(orgId, owner))?.role, "owner");
+  await assert.rejects(deleteUser(db, owner), LastOrgOwner);
+  await assert.rejects(updateMemberRole(db, orgId, owner, "admin"), LastOrgOwner);
+  await assert.rejects(deleteMember(db, orgId, owner), LastOrgOwner);
+  assert.equal((await getMembership(db, orgId, owner))?.role, "owner");
 });
 
 test("an organisation left with no other member is deleted with its only owner", async () => {
   const { orgId, userIds } = await orgWithMembers("alone", ["owner"]);
 
-  assert.ok(await repo.deleteUser(userIds[0] ?? ""));
+  assert.ok(await deleteUser(db, userIds[0] ?? ""));
   const remaining = await database.pool.query(`SELECT 1 FROM orgs WHERE id = $1`, [orgId]);
   assert.equal(remaining.rowCount, 0);
 });
@@ -65,7 +70,7 @@ test("an organisation left with no other member is deleted with its only owner",
 test("two owners demoted at once leave one owner", async () => {
   const { orgId, userIds } = await orgWithMembers("pair", ["owner", "owner"]);
 
-  const results = await Promise.allSettled(userIds.map((userId) => repo.updateMemberRole(orgId, userId, "admin")));
+  const results = await Promise.allSettled(userIds.map((userId) => updateMemberRole(db, orgId, userId, "admin")));
 
   assert.deepEqual(results.map((result) => result.status).sort(), ["fulfilled", "rejected"]);
   const owners = await database.pool.query(`SELECT 1 FROM org_members WHERE org_id = $1 AND role = 'owner'`, [orgId]);
@@ -76,7 +81,7 @@ test("an owner and a co-owner removed at once leave one owner", async () => {
   const { orgId, userIds } = await orgWithMembers("split", ["owner", "owner", "member"]);
   const [first = "", second = ""] = userIds;
 
-  const results = await Promise.allSettled([repo.deleteUser(first), repo.deleteMember(orgId, second)]);
+  const results = await Promise.allSettled([deleteUser(db, first), deleteMember(db, orgId, second)]);
 
   assert.deepEqual(results.map((result) => result.status).sort(), ["fulfilled", "rejected"]);
   const owners = await database.pool.query(`SELECT 1 FROM org_members WHERE org_id = $1 AND role = 'owner'`, [orgId]);

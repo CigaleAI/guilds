@@ -2,7 +2,7 @@ import { existsSync, renameSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { persistAgent } from "../agents/persist.js";
+import { agentDatabase, persistAgent } from "../agents/persist.js";
 import {
   AgentValidationError,
   browserLanguageOf,
@@ -43,8 +43,14 @@ import { jsonObj } from "../db/json.js";
 import { userActor } from "../db/config-changes.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
-import { awaitingSettings, markDisconnected } from "../mcp/index.js";
-import { connect, ConnectError, connectFailure, tokenCredentials } from "../connectors/connect.js";
+import { awaitingSettings, markDisconnected, mcpDatabase } from "../mcp/index.js";
+import {
+  connect,
+  connectDatabase,
+  ConnectError,
+  connectFailure,
+  tokenCredentials,
+} from "../connectors/connect.js";
 import { settingsComplete, SettingsError, validateSettings } from "../connectors/settings.js";
 import type { Manifest } from "../connectors/manifest.js";
 import { DESCRIPTION_MAX } from "../mcp/catalog.js";
@@ -52,21 +58,22 @@ import { installedConnectors } from "../connectors/index.js";
 import { logoPath } from "../connectors/view.js";
 import { callOwnedConnectionTool, OperatorCallError } from "../mcp/operator-call.js";
 import {
-  OAuthError,
-  OAuthUnsupportedError,
   accountHint,
   authorizationUrl,
   ensureClient,
   exchangeCode,
   githubInstallationPickerHtml,
+  isGithubApp,
+  newState,
   oauthCallbackHtml,
   oauthCallbackUrl,
+  oauthDatabase,
+  OAuthError,
+  OAuthUnsupportedError,
   pendingOauth,
   pendingOauthPayload,
   pendingReplaces,
   pkcePair,
-  newState,
-  isGithubApp,
   startsBrowserOauth,
   tokenPayload,
 } from "../oauth/index.js";
@@ -89,16 +96,17 @@ import {
   validateRole,
   validateSlug,
 } from "../organisations/index.js";
-import { persistGuild } from "../guilds/persist.js";
+import { guildDatabase, persistGuild } from "../guilds/persist.js";
 import {
-  GuildAgentLimitError,
-  GuildValidationError,
   assertGuildAgentRoom,
   canSeeGuild,
+  GuildAgentLimitError,
+  guildAgentRoom,
   guildOperators,
+  GuildValidationError,
   validateAbout,
-  validateGuildDescription,
   validateGitAuthorEmail,
+  validateGuildDescription,
   validateGuildName,
   validateGuildOperatorRole,
   validateMaxAgents,
@@ -120,8 +128,8 @@ import { ScheduleError } from "../schedules/cron.js";
 import { scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
-import { Issues, IssueError } from "../issues/index.js";
-import { Notifications } from "../notifications/index.js";
+import { IssueError, Issues, issuesDatabase } from "../issues/index.js";
+import { Notifications, notificationsDatabase } from "../notifications/index.js";
 import { usageFields } from "../usage.js";
 import { usageForOrg } from "./usage-view.js";
 import { registerStudioRoutes } from "./studio-routes.js";
@@ -152,16 +160,23 @@ import {
   type SecretAccess,
   type SecretViewer,
 } from "../secrets/access.js";
-import { ModelNotConnectedError, assertModelConnected, coreModelCredentials } from "../llm/credentials.js";
 import {
-  LimitError,
-  OPEN_POLICY,
-  PolicyError,
+  assertModelConnected,
+  coreModelCredentials,
+  ModelNotConnectedError,
+  modelProviderStore,
+} from "../llm/credentials.js";
+import {
   assertCanCreateAgent,
   assertCanCreateGuild,
   assertCanEnableBrowser,
   assertCanEnableCoding,
   assertCanPlaceAgents,
+  LimitError,
+  machineCounts,
+  OPEN_POLICY,
+  orgCounts,
+  PolicyError,
 } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
 import { httpAccess } from "./access.js";
@@ -216,7 +231,7 @@ import { registerBuilderCapabilityRoutes } from "./builder-capability-routes.js"
 import { registerBuilderSessionRoutes } from "./builder-routes.js";
 import { registerRecipeRoutes } from "./recipe-routes.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
-import { currentOrg, currentUser, type IdentityRequest } from "./identity.js";
+import { currentOrg, currentUser, identityDatabase, type IdentityRequest } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import {
   administeredGuild,
@@ -230,6 +245,68 @@ import {
 } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { bodyOf, param } from "./request.js";
+import {
+  deleteMember,
+  getMembership,
+  insertMember,
+  insertOrg,
+  listMembers,
+  listOrgsForUser,
+  updateMemberRole,
+  updateOrg,
+} from "../db/orgs.js";
+import {
+  getGuild,
+  listGuildsForUser,
+  setGuildOperator,
+  soleAdminGuilds,
+  updateGuild,
+} from "../db/guilds.js";
+import { placementMachine } from "../db/machines.js";
+import {
+  deleteUser,
+  getUser,
+  getUserByName,
+  insertUser,
+  listUsers,
+  setUserEmail,
+} from "../db/users.js";
+import { getAgent, listAgents, updateAgentConfig } from "../db/agents.js";
+import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
+import { getSchedule, listSchedules } from "../db/schedules.js";
+import { listMessages } from "../db/runs.js";
+import { getUsage } from "../db/usage.js";
+import {
+  bindMcpConnection,
+  connectMcp,
+  deleteMcpConnection,
+  getMcpConnection,
+  getMcpConnectionByOauthState,
+  getMcpConnectionForOwner,
+  getPendingGithubConnectionForUser,
+  isListedMcpTool,
+  listMcpConnections,
+  saveMcpConnection,
+  updateMcpConnectionSettings,
+} from "../db/mcp.js";
+import { getMcpServer, listMcpServers, updateConnector } from "../db/connectors.js";
+import {
+  deleteSecret,
+  getSecret,
+  insertSecret,
+  listAgentIdsReached,
+  listSecrets,
+  secretGrantTargets,
+  setSecretAccess,
+  updateSecret,
+} from "../db/secrets.js";
+import {
+  deleteBinding,
+  getBinding,
+  listBindingsForConnection,
+  upsertBinding,
+  upsertPlatformBinding,
+} from "../db/bindings.js";
 
 type Params = Record<string, string>;
 
@@ -385,7 +462,7 @@ function routineAction(changes: ScheduleChanges): string {
 }
 
 async function scopeGuild(
-  repo: AppDeps["repo"],
+  db: AppDeps["db"],
   scope: string,
   scopeId: string | null,
   user: Record<string, unknown>,
@@ -394,17 +471,17 @@ async function scopeGuild(
     throw new HttpError(400, "platform bindings cannot be changed here");
   }
   if (scope === "org") {
-    const membership = await repo.getMembership(scopeId || "", String(user.id));
+    const membership = await getMembership(db, scopeId || "", String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
     return null;
   }
   if (scope === "guild") {
-    const row = await ownedGuild(repo, scopeId || "", user);
+    const row = await ownedGuild(db, scopeId || "", user);
     return String(row.id);
   }
-  const row = await ownedAgent(repo, scopeId || "", user);
+  const row = await ownedAgent(db, scopeId || "", user);
   return String(row.guild_id);
 }
 
@@ -416,14 +493,14 @@ async function agentPayload(
   deps: AppDeps,
   row: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const access = await httpAccess(deps.repo, {
+  const access = await httpAccess(mcpDatabase(deps.db), {
     orgId: String(row.org_id),
     guildId: String(row.guild_id),
     agentId: String(row.id),
     viewScope: "agent",
     mcp: deps.mcp ?? null,
   });
-  return agentWithAccess(deps.repo, row, {
+  return agentWithAccess(deps.db, row, {
     generating: busy(deps, String(row.id)),
     access,
   });
@@ -458,13 +535,13 @@ async function pipeSse(
 }
 
 async function setOperator(
-  repo: AppDeps["repo"],
+  db: AppDeps["db"],
   guildId: string,
   userId: string,
   role: "admin" | "operator" | null,
 ): Promise<Record<string, unknown>> {
   try {
-    const row = await repo.setGuildOperator(guildId, userId, role, new Date());
+    const row = await setGuildOperator(db, guildId, userId, role, new Date());
     if (row === null) {
       throw new HttpError(404, "guild not found");
     }
@@ -492,11 +569,11 @@ async function refuseLastOrgOwner<T>(change: () => Promise<T>): Promise<T> {
 // Leaving a guild without an admin would strand it, so removing the user
 // waits until another admin is named.
 async function refuseSoleGuildAdmin(
-  repo: AppDeps["repo"],
+  db: AppDeps["db"],
   userId: string,
   orgId: string | null,
 ): Promise<void> {
-  const guilds = await repo.soleAdminGuilds(userId, orgId);
+  const guilds = await soleAdminGuilds(db, userId, orgId);
   if (guilds.length) {
     const names = guilds.map((guild) => String(guild.name)).join(", ");
     throw new HttpError(409, `user is the only admin of ${names}; name another admin first`);
@@ -504,11 +581,12 @@ async function refuseSoleGuildAdmin(
 }
 
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo, notes, scripts, schedules, artifacts } = deps;
+  const { db, notes, scripts, schedules, artifacts } = deps;
+  const identityDb = identityDatabase(db);
   const policy = deps.policy ?? OPEN_POLICY;
-  const modelCredentials = deps.modelCredentials ?? coreModelCredentials(repo, deps.masterKey);
-  const issues = new Issues(repo);
-  const notifications = new Notifications(repo);
+  const modelCredentials = deps.modelCredentials ?? coreModelCredentials(modelProviderStore(db), deps.masterKey);
+  const issues = new Issues(issuesDatabase(db));
+  const notifications = new Notifications(notificationsDatabase(db));
 
   /**
    * The machine an agent goes on, with the policy's per-machine cap: the one named, else the
@@ -521,12 +599,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     requested: unknown,
     agent: { needs: AgentNeeds; machineId?: string },
   ): Promise<{ machine: MachineRow; maxAgentsPerMachine: number | null; moves: boolean }> {
-    const machine = await repo.placementMachine(orgId, machineIdOf(requested) ?? agent.machineId, agent.needs);
+    const machine = await placementMachine(db, orgId, machineIdOf(requested) ?? agent.machineId, agent.needs);
     if (machine.id === agent.machineId) {
       return { machine, maxAgentsPerMachine: null, moves: false };
     }
-    await assertCanPlaceOn(repo, orgId, machine.id, String(user.id));
-    const maxAgentsPerMachine = await assertCanPlaceAgents(policy, repo, orgId, machine.id, 1);
+    await assertCanPlaceOn(db, orgId, machine.id, String(user.id));
+    const maxAgentsPerMachine = await assertCanPlaceAgents(policy, machineCounts(db), orgId, machine.id, 1);
     return { machine, maxAgentsPerMachine, moves: true };
   }
   deps.generation?.group_chat.observe((guildId, event, data) => notifications.observe(guildId, event, data));
@@ -554,7 +632,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
    * An instance admin also sees when and by whom each store integration was written.
    */
   app.get("/api/instance", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const audit = await isInstanceAdmin(deps, String(user.id));
     return {
       auth_mode: deps.config?.authMode ?? "compat-cookie",
@@ -566,8 +644,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     "/api/attachments",
     { bodyLimit: MAX_ATTACHMENT_BYTES + 4096 },
     async (request, reply) => {
-      const user = await currentUser(repo, request, deps);
-      const org = await currentOrg(repo, request, user);
+      const user = await currentUser(identityDb, request, deps);
+      const org = await currentOrg(identityDb, request, user);
       const bytes = Buffer.isBuffer(request.body) ? request.body : null;
       if (!bytes) {
         throw new HttpError(422, "body must be the file bytes");
@@ -591,8 +669,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   );
 
   app.get("/api/attachments/:attachment_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const { row, bytes } = await attachmentsOf(deps).getForOrg(
         String(org.id),
@@ -623,7 +701,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return;
     }
     if (mode === "trusted-header" && !deps.identity) {
-      const user = await currentUser(repo, request, deps);
+      const user = await currentUser(identityDb, request, deps);
       if (await isInstanceAdmin(deps, String(user.id))) {
         return;
       }
@@ -648,7 +726,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/users", async (request) => {
     await requireUserDirectory(request);
-    return (await repo.listUsers()).map((row) => userItem(row));
+    return (await listUsers(db)).map((row) => userItem(row));
   });
 
   app.post("/api/users", async (request, reply) => {
@@ -661,9 +739,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const name = validateUserName(String(body.name ?? ""));
       const email = validateUserEmail(body.email ?? null);
-      const row = await repo.insertUser(
+      const row = await insertUser(
+        db,
         { userId: newId("user"), name, image: null, email },
         new Date(),
+        deps.orgCreated,
       );
       await send(reply, 201, userItem(row));
     } catch (error) {
@@ -686,7 +766,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     let row;
     try {
-      row = await repo.setUserEmail(param(request, "user_id"), validateUserEmail(body.email), new Date());
+      row = await setUserEmail(db, param(request, "user_id"), validateUserEmail(body.email), new Date());
     } catch (error) {
       if (error instanceof UserValidationError) {
         throw new HttpError(422, error.message);
@@ -705,15 +785,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   app.delete("/api/users/:user_id", async (request, reply) => {
     await requireUserDirectory(request);
     const userId = param(request, "user_id");
-    const row = await repo.getUser(userId);
+    const row = await getUser(db, userId);
     if (row === null) {
       throw new HttpError(404, "user not found");
     }
     if (SEED_USER_IDS.has(userId)) {
       throw new HttpError(400, "seed user cannot be deleted");
     }
-    await refuseSoleGuildAdmin(repo, userId, null);
-    const deleted = await refuseLastOrgOwner(() => repo.deleteUser(userId));
+    await refuseSoleGuildAdmin(db, userId, null);
+    const deleted = await refuseLastOrgOwner(() => deleteUser(db, userId));
     if (deleted === null) {
       throw new HttpError(404, "user not found");
     }
@@ -721,12 +801,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/orgs", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    return (await repo.listOrgsForUser(String(user.id))).map((row) => orgItem(row));
+    const user = await currentUser(identityDb, request, deps);
+    return (await listOrgsForUser(db, String(user.id))).map((row) => orgItem(row));
   });
 
   app.post("/api/orgs", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     await requireInstanceAdminUnlessCompat(user);
     const missing = missingBodyFields(request.body, ["name", "slug"]);
     if (missing) {
@@ -736,9 +816,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const name = validateOrgName(String(body.name ?? ""));
       const slug = validateSlug(String(body.slug ?? ""));
-      const row = await repo.insertOrg(
+      const row = await insertOrg(
+        db,
         { orgId: newId("org"), name, slug, userId: String(user.id) },
         new Date(),
+        deps.orgCreated,
       );
       const item = orgItem(row);
       item.role = "owner";
@@ -755,9 +837,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/orgs/:org_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const orgId = param(request, "org_id");
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
@@ -765,9 +847,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.patch("/api/orgs/:org_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const orgId = param(request, "org_id");
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
@@ -793,7 +875,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const previousSlug = String(membership.slug);
     let row;
     try {
-      row = await repo.updateOrg(orgId, new Date(), { name, slug });
+      row = await updateOrg(db, orgId, new Date(), { name, slug });
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new HttpError(409, "organisation slug already exists");
@@ -816,19 +898,19 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/orgs/:org_id/members", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const orgId = param(request, "org_id");
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
-    return (await repo.listMembers(orgId)).map((row) => memberItem(row));
+    return (await listMembers(db, orgId)).map((row) => memberItem(row));
   });
 
   app.post("/api/orgs/:org_id/members", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const orgId = param(request, "org_id");
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
@@ -857,30 +939,30 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     const target =
       "name" in body
-        ? await repo.getUserByName(String(body.name ?? "").trim().replace(/^@/, "").toLowerCase())
-        : await repo.getUser(String(body.user_id));
+        ? await getUserByName(db, String(body.name ?? "").trim().replace(/^@/, "").toLowerCase())
+        : await getUser(db, String(body.user_id));
     if (target === null) {
       throw new HttpError(404, "user not found");
     }
     const userId = String(target.id);
     try {
-      await repo.insertMember(orgId, userId, role, new Date());
+      await insertMember(db, orgId, userId, role, new Date());
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new HttpError(409, "member already exists");
       }
       throw error;
     }
-    const rows = await repo.listMembers(orgId);
+    const rows = await listMembers(db, orgId);
     const added = rows.find((row) => row.user_id === userId);
     await send(reply, 201, memberItem(added ?? {}));
   });
 
   app.patch("/api/orgs/:org_id/members/:user_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const orgId = param(request, "org_id");
     const userId = param(request, "user_id");
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
@@ -894,7 +976,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
-    const existing = await repo.getMembership(orgId, userId);
+    const existing = await getMembership(db, orgId, userId);
     if (existing === null) {
       throw new HttpError(404, "member not found");
     }
@@ -905,24 +987,24 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     } else if (!canManageMembers(String(membership.role))) {
       throw new HttpError(404, "organisation not found");
     }
-    const updated = await refuseLastOrgOwner(() => repo.updateMemberRole(orgId, userId, role));
+    const updated = await refuseLastOrgOwner(() => updateMemberRole(db, orgId, userId, role));
     if (updated === null) {
       throw new HttpError(404, "member not found");
     }
-    const rows = await repo.listMembers(orgId);
+    const rows = await listMembers(db, orgId);
     const row = rows.find((item) => item.user_id === userId);
     return memberItem(row ?? {});
   });
 
   app.delete("/api/orgs/:org_id/members/:user_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const orgId = param(request, "org_id");
     const userId = param(request, "user_id");
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       throw new HttpError(404, "organisation not found");
     }
-    const existing = await repo.getMembership(orgId, userId);
+    const existing = await getMembership(db, orgId, userId);
     if (existing === null) {
       throw new HttpError(404, "member not found");
     }
@@ -930,20 +1012,20 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (userId !== String(user.id) && !manages(String(membership.role))) {
       throw new HttpError(404, "organisation not found");
     }
-    await refuseSoleGuildAdmin(repo, userId, orgId);
-    await refuseLastOrgOwner(() => repo.deleteMember(orgId, userId));
+    await refuseSoleGuildAdmin(db, userId, orgId);
+    await refuseLastOrgOwner(() => deleteMember(db, orgId, userId));
     await send(reply, 204);
   });
 
   app.get("/api/guilds", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
-    return (await repo.listGuildsForUser(String(org.id), String(user.id))).map(guildItem);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
+    return (await listGuildsForUser(db, String(org.id), String(user.id))).map(guildItem);
   });
 
   app.post("/api/guilds", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const missing = missingBodyFields(request.body, ["name"]);
     if (missing) {
       throw missing;
@@ -954,9 +1036,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       const about = validateAbout(body.about === undefined ? "" : String(body.about));
       const description = validateGuildDescription(body.description === undefined ? "" : String(body.description));
       const visibility = validateVisibility(body.visibility);
-      await assertCanCreateGuild(policy, repo, String(org.id));
+      await assertCanCreateGuild(policy, orgCounts(db), String(org.id));
       const guildId = newId("guild");
-      await persistGuild(repo, notes, {
+      await persistGuild(guildDatabase(db), notes, {
         guildId,
         name,
         now: new Date(),
@@ -967,7 +1049,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         visibility,
         creatorUserId: String(user.id),
       });
-      const created = await repo.getGuild(guildId);
+      const created = await getGuild(db, guildId);
       if (created === null) {
         throw new HttpError(500, "guild not found after create");
       }
@@ -993,14 +1075,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/guilds/:guild_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    return guildItem(await ownedGuild(repo, param(request, "guild_id"), user));
+    const user = await currentUser(identityDb, request, deps);
+    return guildItem(await ownedGuild(db, param(request, "guild_id"), user));
   });
 
   app.put("/api/guilds/:guild_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    const existing = await ownedGuild(repo, guildId, user);
+    const existing = await ownedGuild(db, guildId, user);
     const body = bodyOf(request);
     try {
       const name = body.name !== undefined ? validateGuildName(String(body.name ?? "")) : null;
@@ -1034,7 +1116,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         visibility = validateVisibility(body.visibility);
         patch.visibility = visibility;
         if (visibility !== String(existing.visibility ?? "org")) {
-          await administeredGuild(repo, guildId, user);
+          await administeredGuild(db, guildId, user);
         }
       }
       const previousName = String(existing.name);
@@ -1042,13 +1124,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         if (deps.generation?.deleting_guild(guildId)) {
           throw new HttpError(409, "guild is being deleted");
         }
-        const members = await repo.listAgents(guildId);
+        const members = await listAgents(db, guildId);
         if (members.some((row) => busy(deps, String(row.id)))) {
           throw new HttpError(409, "a member agent is already generating");
         }
       }
       const turningOn = routinesEnabled === true && existing.routines_enabled === false;
-      const row = await repo.updateGuild(guildId, new Date(), patch, userActor(user));
+      const row = await updateGuild(db, guildId, new Date(), patch, userActor(user));
       if (row === null) {
         throw new HttpError(404, "guild not found");
       }
@@ -1056,7 +1138,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         try {
           await notes.renameGuild(String(existing.org_slug), previousName, name);
         } catch (error) {
-          await repo.updateGuild(guildId, new Date(), { name: previousName }, userActor(user));
+          await updateGuild(db, guildId, new Date(), { name: previousName }, userActor(user));
           throw error;
         }
       }
@@ -1079,9 +1161,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/guilds/:guild_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    await administeredGuild(repo, guildId, user);
+    await administeredGuild(db, guildId, user);
     try {
       await generationOf(deps).delete_guild(guildId);
       await send(reply, 204);
@@ -1097,8 +1179,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/guilds/:guild_id/operators/:user_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await administeredGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await administeredGuild(db, param(request, "guild_id"), user);
     const userId = param(request, "user_id");
     let role;
     try {
@@ -1109,31 +1191,31 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
-    if ((await repo.getMembership(String(guild.org_id), userId)) === null) {
+    if ((await getMembership(db, String(guild.org_id), userId)) === null) {
       throw new HttpError(422, "operators must be members of the organisation");
     }
-    return guildItem(await setOperator(repo, String(guild.id), userId, role));
+    return guildItem(await setOperator(db, String(guild.id), userId, role));
   });
 
   app.delete("/api/guilds/:guild_id/operators/:user_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await administeredGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await administeredGuild(db, param(request, "guild_id"), user);
     const userId = param(request, "user_id");
     if (!guildOperators(guild).some((operator) => operator.user_id === userId)) {
       throw new HttpError(404, "operator not found");
     }
-    return guildItem(await setOperator(repo, String(guild.id), userId, null));
+    return guildItem(await setOperator(db, String(guild.id), userId, null));
   });
 
   app.get("/api/guilds/:guild_id/group-chat", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    await ownedGuild(repo, guildId, user);
+    await ownedGuild(db, guildId, user);
     try {
       const chat = await generationOf(deps).group_chat.state(guildId);
       return {
         ...chat,
-        seen_through_seq: await repo.getGroupChatSeenThrough(guildId, String(user.id)),
+        seen_through_seq: await getGroupChatSeenThrough(db, guildId, String(user.id)),
       };
     } catch (error) {
       if (error instanceof GroupChatError) {
@@ -1144,22 +1226,22 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/guilds/:guild_id/group-chat/read", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const guildId = param(request, "guild_id");
-    await ownedGuild(repo, guildId, user);
+    await ownedGuild(db, guildId, user);
     const value = bodyOf(request).seen_through_seq;
     const seq = typeof value === "number" ? value : Number.NaN;
     if (!Number.isInteger(seq) || seq < 0) {
       throw new HttpError(422, "seen_through_seq must be a non-negative integer");
     }
-    const seen = await repo.markGroupChatSeen(guildId, String(user.id), seq, new Date());
+    const seen = await markGroupChatSeen(db, guildId, String(user.id), seq, new Date());
     await notifications.ping([String(user.id)]);
     return { seen_through_seq: seen };
   });
 
   app.put("/api/guilds/:guild_id/group-chat", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedGuild(db, param(request, "guild_id"), user);
     const body = bodyOf(request);
     try {
       return await generationOf(deps).group_chat.set_limit(
@@ -1175,8 +1257,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/guilds/:guild_id/group-chat/messages", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedGuild(db, param(request, "guild_id"), user);
     try {
       return await generationOf(deps).group_chat.list_messages(param(request, "guild_id"));
     } catch (error) {
@@ -1188,8 +1270,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/guilds/:guild_id/group-chat/messages", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await administeredGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await administeredGuild(db, param(request, "guild_id"), user);
     try {
       return await generationOf(deps).group_chat.clear(param(request, "guild_id"));
     } catch (error) {
@@ -1201,8 +1283,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/guilds/:guild_id/group-chat/messages", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedGuild(db, param(request, "guild_id"), user);
     const missing = missingBodyFields(request.body, ["content"]);
     if (missing) {
       throw missing;
@@ -1218,7 +1300,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         author_user_id: String(user.id),
         interrupt: body.interrupt === true,
       });
-      await repo.markGroupChatSeen(guildId, String(user.id), Number(message.seq), new Date());
+      await markGroupChatSeen(db, guildId, String(user.id), Number(message.seq), new Date());
       await notifications.ping([String(user.id)]);
       await send(reply, 202, message);
     } catch (error) {
@@ -1230,8 +1312,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/guilds/:guild_id/group-chat/stream", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedGuild(db, param(request, "guild_id"), user);
     const chat = generationOf(deps).group_chat;
     await pipeSse(
       request,
@@ -1242,20 +1324,20 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/notifications", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return notifications.list(String(org.id), String(user.id));
   });
 
   app.post("/api/notifications/read", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return notifications.markMentionsRead(String(org.id), String(user.id));
   });
 
   app.get("/api/notifications/stream", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const userId = String(user.id);
     await pipeSse(
       request,
@@ -1266,15 +1348,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/guilds/:guild_id/agents", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    return (await repo.listAgents(String(guild.id))).map((row) => agentItem(row, busy(deps, String(row.id))));
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    return (await listAgents(db, String(guild.id))).map((row) => agentItem(row, busy(deps, String(row.id))));
   });
 
   app.get("/api/guilds/:guild_id/embed-status", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    const agents = await repo.listAgents(String(guild.id));
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const agents = await listAgents(db, String(guild.id));
     if (!artifacts) {
       return { agents: agents.map((row) => ({ id: row.id, broken_embeds: [] as string[] })) };
     }
@@ -1291,8 +1373,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/guilds/:guild_id/agents", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
     if (deps.generation?.deleting_guild(String(guild.id))) {
       throw new HttpError(409, "guild is being deleted");
     }
@@ -1316,16 +1398,16 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       const config = validateConfig(withCodingLimits((body.config ?? {}) as Record<string, unknown>));
       assertCodingAgent(config);
       await assertModelConnected(modelCredentials, String(guild.org_id), config.model);
-      await assertCanCreateAgent(policy, repo, String(guild.org_id), {
+      await assertCanCreateAgent(policy, orgCounts(db), String(guild.org_id), {
         browser: config.browser,
         coding: config.coding,
       });
-      await assertGuildAgentRoom(repo, String(guild.id), 1);
+      await assertGuildAgentRoom(guildAgentRoom(db), String(guild.id), 1);
       const { machine, maxAgentsPerMachine } = await placement(String(guild.org_id), user, body.machine_id, {
         needs: { browser: config.browser, coding: config.coding },
       });
       const agentId = newId("a");
-      await persistAgent(repo, notes, {
+      await persistAgent(agentDatabase(db), notes, {
         agentId,
         guildId: String(guild.id),
         guildName: String(guild.name),
@@ -1339,7 +1421,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         avatarColor,
         orgId: String(guild.org_id),
         artifacts: artifacts ?? null,
-        actor: await operatorFor(repo, user, {
+        actor: await operatorFor(db, user, {
           orgId: String(guild.org_id),
           guildId: String(guild.id),
           agentId,
@@ -1347,7 +1429,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         machineId: machine.id,
         maxAgentsPerMachine,
       });
-      const created = await repo.getAgent(agentId);
+      const created = await getAgent(db, agentId);
       if (created === null) {
         throw new HttpError(500, "agent not found after create");
       }
@@ -1376,8 +1458,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/guilds/:guild_id/notes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedGuild(db, param(request, "guild_id"), user);
     if (!artifacts) {
       try {
         return notes.listSharedFiles(String(row.org_slug), String(row.name));
@@ -1391,7 +1473,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await listHostFiles(
         artifacts,
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
+        await operatorFor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
       );
@@ -1401,8 +1483,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/guilds/:guild_id/notes/*", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedGuild(db, param(request, "guild_id"), user);
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -1420,7 +1502,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await readHostFile(
         artifacts,
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
+        await operatorFor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
         filePath,
@@ -1431,8 +1513,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/guilds/:guild_id/notes/*", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedGuild(db, param(request, "guild_id"), user);
     const filePath = filePathParam(request);
     const body = bodyOf(request);
     if (!artifacts) {
@@ -1461,7 +1543,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const written = await writeHostFile(
         artifacts,
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
+        await operatorFor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
         filePath,
@@ -1478,8 +1560,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/guilds/:guild_id/notes/*", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedGuild(db, param(request, "guild_id"), user);
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -1500,7 +1582,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       await deleteHostFile(
         artifacts,
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.id) }),
+        await operatorFor(db, user, { orgId: String(row.org_id), guildId: String(row.id) }),
         "guild",
         String(row.id),
         filePath,
@@ -1516,21 +1598,21 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/org/notes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     if (!artifacts) {
       return [];
     }
     try {
-      return await listHostFiles(artifacts, await operatorFor(repo, user, { orgId: String(org.id) }), "org", String(org.id));
+      return await listHostFiles(artifacts, await operatorFor(db, user, { orgId: String(org.id) }), "org", String(org.id));
     } catch (error) {
       catchArtifact(error);
     }
   });
 
   app.get("/api/file-changes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const displayPath = String(
       (request.query as { display_path?: unknown }).display_path ?? "",
     ).trim();
@@ -1538,55 +1620,55 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(422, "display_path is required");
     }
     const store = requireArtifacts(artifacts);
-    const actor = await operatorFor(repo, user, { orgId: String(org.id) });
+    const actor = await operatorFor(db, user, { orgId: String(org.id) });
     if (!(await store.canReadDisplayPath(actor, displayPath))) {
       return [];
     }
-    return listFileChanges(repo.pool, String(org.id), displayPath);
+    return listFileChanges(db, String(org.id), displayPath);
   });
 
   // Newest change per display path. `display_paths` is comma-separated in
   // the query, or a JSON array in a POST body when the list is long.
   app.get("/api/file-changes/latest", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const raw = String((request.query as { display_paths?: unknown }).display_paths ?? "");
     const paths = raw
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
     const store = requireArtifacts(artifacts);
-    return latestFileChanges(store, repo, await operatorFor(repo, user, { orgId: String(org.id) }), paths);
+    return latestFileChanges(store, db, await operatorFor(db, user, { orgId: String(org.id) }), paths);
   });
 
   app.post("/api/file-changes/latest", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     const paths = Array.isArray(body.display_paths)
       ? body.display_paths.map((item) => String(item ?? "").trim()).filter(Boolean)
       : [];
     const store = requireArtifacts(artifacts);
-    return latestFileChanges(store, repo, await operatorFor(repo, user, { orgId: String(org.id) }), paths);
+    return latestFileChanges(store, db, await operatorFor(db, user, { orgId: String(org.id) }), paths);
   });
 
   app.get("/api/org/notes/*", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const filePath = filePathParam(request);
     if (!artifacts) {
       throw new HttpError(404, "artifact not found");
     }
     try {
-      return await readHostFile(artifacts, await operatorFor(repo, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
+      return await readHostFile(artifacts, await operatorFor(db, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
     } catch (error) {
       catchArtifact(error);
     }
   });
 
   app.put("/api/org/notes/*", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const filePath = filePathParam(request);
     const body = bodyOf(request);
     if (!artifacts) {
@@ -1595,7 +1677,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await writeHostFile(
         artifacts,
-        await operatorFor(repo, user, { orgId: String(org.id) }),
+        await operatorFor(db, user, { orgId: String(org.id) }),
         "org",
         String(org.id),
         filePath,
@@ -1607,14 +1689,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/org/notes/*", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const filePath = filePathParam(request);
     if (!artifacts) {
       throw new HttpError(422, "artifact store is not available");
     }
     try {
-      await deleteHostFile(artifacts, await operatorFor(repo, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
+      await deleteHostFile(artifacts, await operatorFor(db, user, { orgId: String(org.id) }), "org", String(org.id), filePath);
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1622,8 +1704,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/org/embeddable-notes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const displayPath = String((request.query as { display_path?: string }).display_path ?? "").trim();
     if (!artifacts) {
       if (displayPath) {
@@ -1631,7 +1713,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       return [];
     }
-    const actor = await operatorFor(repo, user, { orgId: String(org.id) });
+    const actor = await operatorFor(db, user, { orgId: String(org.id) });
     try {
       if (!displayPath) {
         return await artifacts.listEmbeddableNotes(actor);
@@ -1655,10 +1737,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   // browses their records and edits their access lists.
   app.get("/api/collections", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      return await listCollections(store, await operatorFor(repo, user, { orgId: String(org.id) }));
+      return await listCollections(store, await operatorFor(db, user, { orgId: String(org.id) }));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1666,14 +1748,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/collections", async (request, reply) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const missing = missingBodyFields(request.body, ["name", "purpose"]);
     if (missing) {
       throw missing;
     }
     try {
-      const created = await createCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), bodyOf(request));
+      const created = await createCollection(store, await operatorFor(db, user, { orgId: String(org.id) }), bodyOf(request));
       return await send(reply, 201, created);
     } catch (error) {
       catchArtifact(error);
@@ -1682,10 +1764,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/collections/:collection_id", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      return await getCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
+      return await getCollection(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1693,10 +1775,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.patch("/api/collections/:collection_id", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      return await updateCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request));
+      return await updateCollection(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1704,10 +1786,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/collections/:collection_id", async (request, reply) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      await deleteCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
+      await deleteCollection(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1716,10 +1798,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/collections/:collection_id/export", async (request, reply) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      const exported = await exportCollection(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
+      const exported = await exportCollection(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
       reply
         .header("content-disposition", `attachment; filename="${exported.name}.jsonl"`)
         .type("application/jsonl")
@@ -1731,10 +1813,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/collections/:collection_id/records", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      return await listRecords(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), queryOf(request));
+      return await listRecords(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), queryOf(request));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1742,14 +1824,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.post("/api/collections/:collection_id/records", async (request, reply) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const missing = missingBodyFields(request.body, ["body"]);
     if (missing) {
       throw missing;
     }
     try {
-      const added = await addRecord(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request).body);
+      const added = await addRecord(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), bodyOf(request).body);
       return await send(reply, 201, added);
     } catch (error) {
       catchArtifact(error);
@@ -1758,10 +1840,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/collections/:collection_id/records", async (request, reply) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      await clearRecords(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"));
+      await clearRecords(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"));
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1770,10 +1852,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/collections/:collection_id/records/:record_id", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      return await getRecord(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
+      return await getRecord(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
     } catch (error) {
       catchArtifact(error);
     }
@@ -1781,8 +1863,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.patch("/api/collections/:collection_id/records/:record_id", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const missing = missingBodyFields(request.body, ["body"]);
     if (missing) {
       throw missing;
@@ -1790,7 +1872,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       return await updateRecord(
         store,
-        await operatorFor(repo, user, { orgId: String(org.id) }),
+        await operatorFor(db, user, { orgId: String(org.id) }),
         param(request, "collection_id"),
         param(request, "record_id"),
         bodyOf(request).body,
@@ -1802,10 +1884,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/collections/:collection_id/records/:record_id", async (request, reply) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
-      await removeRecord(store, await operatorFor(repo, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
+      await removeRecord(store, await operatorFor(db, user, { orgId: String(org.id) }), param(request, "collection_id"), param(request, "record_id"));
       await send(reply, 204);
     } catch (error) {
       catchArtifact(error);
@@ -1821,10 +1903,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   for (const target of accessTargets) {
     app.get(target.path, async (request) => {
       const store = requireArtifacts(artifacts);
-      const user = await currentUser(repo, request, deps);
-      const org = await currentOrg(repo, request, user);
+      const user = await currentUser(identityDb, request, deps);
+      const org = await currentOrg(identityDb, request, user);
       try {
-        const actor = await operatorFor(repo, user, { orgId: String(org.id) });
+        const actor = await operatorFor(db, user, { orgId: String(org.id) });
         return await store.accessList(actor, { kind: target.kind, id: param(request, target.param) });
       } catch (error) {
         catchArtifact(error);
@@ -1833,14 +1915,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
     app.put(target.path, async (request) => {
       const store = requireArtifacts(artifacts);
-      const user = await currentUser(repo, request, deps);
-      const org = await currentOrg(repo, request, user);
+      const user = await currentUser(identityDb, request, deps);
+      const org = await currentOrg(identityDb, request, user);
       const missing = missingBodyFields(request.body, ["subjects"]);
       if (missing) {
         throw missing;
       }
       try {
-        const actor = await operatorFor(repo, user, { orgId: String(org.id) });
+        const actor = await operatorFor(db, user, { orgId: String(org.id) });
         return await store.replaceAccess(actor, { kind: target.kind, id: param(request, target.param) }, bodyOf(request).subjects);
       } catch (error) {
         catchArtifact(error);
@@ -1850,10 +1932,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/reach", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedGuild(db, param(request, "guild_id"), user);
     try {
-      const actor = await operatorFor(repo, user, { orgId: String(row.org_id) });
+      const actor = await operatorFor(db, user, { orgId: String(row.org_id) });
       return await store.reachOf(actor, { type: "guild", id: String(row.id), guildId: String(row.id) });
     } catch (error) {
       catchArtifact(error);
@@ -1862,10 +1944,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/reach", async (request) => {
     const store = requireArtifacts(artifacts);
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
     try {
-      const actor = await operatorFor(repo, user, { orgId: String(row.org_id) });
+      const actor = await operatorFor(db, user, { orgId: String(row.org_id) });
       return await store.reachOf(actor, { type: "agent", id: String(row.id), guildId: String(row.guild_id) });
     } catch (error) {
       catchArtifact(error);
@@ -1873,14 +1955,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/guilds/:guild_id/schedules", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedGuild(db, param(request, "guild_id"), user);
     return schedules.listForGuild(param(request, "guild_id"));
   });
 
   app.get("/api/guilds/:guild_id/issues", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedGuild(db, param(request, "guild_id"), user);
     try {
       return await issues.listForGuild(param(request, "guild_id"), queryOf(request).status);
     } catch (error) {
@@ -1892,8 +1974,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/guilds/:guild_id/issues/resolve", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
     try {
       const resolved = await issues.resolveOpen(
         String(guild.id),
@@ -1914,8 +1996,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.patch("/api/guilds/:guild_id/issues/:issue_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
     const body = bodyOf(request);
     if (body.status === undefined) {
       throw new HttpError(422, "status is required");
@@ -1941,15 +2023,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
     return agentPayload(deps, row);
   });
 
   app.delete("/api/agents/:agent_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    await ownedAgent(repo, agentId, user);
+    await ownedAgent(db, agentId, user);
     try {
       await generationOf(deps).delete_agent(agentId);
       await send(reply, 204);
@@ -1965,9 +2047,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/agents/:agent_id/config", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const existing = await ownedAgent(repo, agentId, user);
+    const existing = await ownedAgent(db, agentId, user);
     const body = bodyOf(request);
     try {
       const config = validateConfig((body.config ?? {}) as Record<string, unknown>);
@@ -1980,10 +2062,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         machineId: String(existing.machine_id),
       });
       if (config.browser && !previous.browser) {
-        await assertCanEnableBrowser(policy, repo, String(existing.org_id), false);
+        await assertCanEnableBrowser(policy, orgCounts(db), String(existing.org_id), false);
       }
       if (config.coding && !previous.coding) {
-        await assertCanEnableCoding(policy, repo, String(existing.org_id));
+        await assertCanEnableCoding(policy, orgCounts(db), String(existing.org_id));
       }
       const avatarShape =
         body.avatar_shape !== undefined ? validateAvatarShape(String(body.avatar_shape)) : null;
@@ -2007,7 +2089,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       let row: Record<string, unknown> | null;
       try {
-        row = await repo.updateAgentConfig(agentId, config, new Date(), {
+        row = await updateAgentConfig(db, agentId, config, new Date(), {
             name,
             avatarShape,
             avatarColor,
@@ -2034,7 +2116,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
             name,
           );
         } catch (error) {
-          await repo.updateAgentConfig(agentId, config, new Date(), { name: previousName });
+          await updateAgentConfig(db, agentId, config, new Date(), { name: previousName });
           throw error;
         }
       }
@@ -2044,7 +2126,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       if (browserChanged && deps.generation) {
         await deps.generation.agentBrowserChanged(agentId);
       }
-      const detail = await repo.getAgent(agentId);
+      const detail = await getAgent(db, agentId);
       if (detail === null) {
         throw new HttpError(404, "agent not found");
       }
@@ -2073,9 +2155,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/agents/:agent_id/machine", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const existing = await ownedAgent(repo, agentId, user);
+    const existing = await ownedAgent(db, agentId, user);
     const body = bodyOf(request);
     if (machineIdOf(body.machine_id) === null) {
       throw new HttpError(422, "machine_id is required");
@@ -2097,7 +2179,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
-    const detail = await repo.getAgent(agentId);
+    const detail = await getAgent(db, agentId);
     if (detail === null) {
       throw new HttpError(404, "agent not found");
     }
@@ -2105,20 +2187,20 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/schedules", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    await ownedAgent(repo, agentId, user);
+    await ownedAgent(db, agentId, user);
     const items = [];
-    for (const row of await repo.listSchedules(agentId)) {
+    for (const row of await listSchedules(db, agentId)) {
       items.push(await schedules.view(row));
     }
     return items;
   });
 
   app.post("/api/agents/:agent_id/schedules", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(repo, agentId, user);
+    const agent = await ownedAgent(db, agentId, user);
     const missing = missingBodyFields(request.body, ["description", "instruction"]);
     if (missing) {
       throw missing;
@@ -2147,11 +2229,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.patch("/api/agents/:agent_id/schedules/:schedule_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const scheduleId = param(request, "schedule_id");
-    const agent = await ownedAgent(repo, agentId, user);
-    if ((await repo.getSchedule(agentId, scheduleId)) === null) {
+    const agent = await ownedAgent(db, agentId, user);
+    if ((await getSchedule(db, agentId, scheduleId)) === null) {
       throw new HttpError(404, "schedule not found");
     }
     const changes = scheduleChanges(bodyOf(request));
@@ -2172,10 +2254,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/agents/:agent_id/schedules/:schedule_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const scheduleId = param(request, "schedule_id");
-    const agent = await ownedAgent(repo, agentId, user);
+    const agent = await ownedAgent(db, agentId, user);
     try {
       await schedules.delete(userActor(user), agentId, scheduleId);
       await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
@@ -2193,9 +2275,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/scripts", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(repo, agentId, user);
+    const agent = await ownedAgent(db, agentId, user);
     try {
       const rows = await scripts.listForAgent(agentId);
       return rows.map((row) => ({
@@ -2218,9 +2300,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/agents/:agent_id/scripts", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(repo, agentId, user);
+    const agent = await ownedAgent(db, agentId, user);
     const missing = missingBodyFields(request.body, ["name", "description", "source"]);
     if (missing) {
       throw missing;
@@ -2228,7 +2310,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const row = await scripts.create(
-        await operatorFor(repo, user, {
+        await operatorFor(db, user, {
           orgId: String(agent.org_id),
           guildId: String(agent.guild_id),
           agentId,
@@ -2255,12 +2337,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/agents/:agent_id/scripts", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
-    const agent = await ownedAgent(repo, agentId, user);
+    const agent = await ownedAgent(db, agentId, user);
     try {
       await scripts.deleteAll(
-        await operatorFor(repo, user, {
+        await operatorFor(db, user, {
           orgId: String(agent.org_id),
           guildId: String(agent.guild_id),
           agentId,
@@ -2281,10 +2363,10 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/scripts/:name", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const name = param(request, "name");
-    await ownedAgent(repo, agentId, user);
+    await ownedAgent(db, agentId, user);
     try {
       const row = await scripts.get(agentId, name);
       return scriptItem(row, { source: true });
@@ -2297,13 +2379,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/agents/:agent_id/scripts/:name", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const agentId = param(request, "agent_id");
     const name = param(request, "name");
-    const agent = await ownedAgent(repo, agentId, user);
+    const agent = await ownedAgent(db, agentId, user);
     try {
       await scripts.delete(
-        await operatorFor(repo, user, {
+        await operatorFor(db, user, {
           orgId: String(agent.org_id),
           guildId: String(agent.guild_id),
           agentId,
@@ -2326,8 +2408,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/notes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
     if (!artifacts) {
       try {
         return notes.listAgentFiles(String(row.org_slug), String(row.guild_name), String(row.name));
@@ -2339,7 +2421,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     try {
-      const actor = await operatorFor(repo, user, {
+      const actor = await operatorFor(db, user, {
         orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
@@ -2356,11 +2438,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/memory", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
     try {
       const store = requireArtifacts(artifacts);
-      const actor = await operatorFor(repo, user, {
+      const actor = await operatorFor(db, user, {
         orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
@@ -2370,15 +2452,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         guild_id: row.guild_id,
         org_id: row.org_id,
       });
-      return await memoryHistory({ artifacts: store, repo }, actor, { id: String(row.id), name: String(row.name) });
+      return await memoryHistory({ artifacts: store, db }, actor, { id: String(row.id), name: String(row.name) });
     } catch (error) {
       catchArtifact(error);
     }
   });
 
   app.get("/api/agents/:agent_id/notes/*", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -2399,7 +2481,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     try {
-      const actor = await operatorFor(repo, user, {
+      const actor = await operatorFor(db, user, {
         orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
@@ -2409,15 +2491,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         guild_id: row.guild_id,
         org_id: row.org_id,
       });
-      return await readHostFile(artifacts, actor, "agent", String(row.id), filePath, repo);
+      return await readHostFile(artifacts, actor, "agent", String(row.id), filePath, db);
     } catch (error) {
       catchArtifact(error);
     }
   });
 
   app.put("/api/agents/:agent_id/notes/*", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
     const filePath = filePathParam(request);
     const body = bodyOf(request);
     if (!artifacts) {
@@ -2452,7 +2534,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     try {
-      const actor = await operatorFor(repo, user, {
+      const actor = await operatorFor(db, user, {
         orgId: String(row.org_id),
         guildId: String(row.guild_id),
         agentId: String(row.id),
@@ -2470,7 +2552,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         filePath,
         String(body.content ?? ""),
         expectedVersionOf(body),
-        repo,
+        db,
       );
       await publishGroup(deps, String(row.guild_id), "guild.artifacts.changed", {
         scope: "agent",
@@ -2484,8 +2566,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/agents/:agent_id/notes/*", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
     const filePath = filePathParam(request);
     if (!artifacts) {
       try {
@@ -2512,7 +2594,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       await deleteHostFile(
         artifacts,
-        await operatorFor(repo, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
+        await operatorFor(db, user, { orgId: String(row.org_id), guildId: String(row.guild_id), agentId: String(row.id) }),
         "agent",
         String(row.id),
         filePath,
@@ -2537,8 +2619,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     target: SandboxTarget,
     pathPart: string,
   ): Promise<void> {
-    const user = await currentUser(repo, request, deps);
-    await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedAgent(db, param(request, "agent_id"), user);
     try {
       const [base, headers] = await target(param(request, "agent_id"));
       await proxyHttp(request, reply, base, headers, pathPart);
@@ -2561,8 +2643,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       socket,
       request,
       async () => {
-        const user = await currentUser(repo, request, deps);
-        await ownedAgent(repo, agentId, user);
+        const user = await currentUser(identityDb, request, deps);
+        await ownedAgent(db, agentId, user);
         const [base, extraHeaders] = await target(agentId);
         return { base, extraHeaders, pathPart: filePathParam(request) };
       },
@@ -2613,8 +2695,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   }
 
   app.get("/api/agents/:agent_id/browser", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedAgent(db, param(request, "agent_id"), user);
     try {
       await generationOf(deps).ensure_browser(param(request, "agent_id"));
     } catch (error) {
@@ -2631,8 +2713,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   );
 
   app.post("/api/agents/:agent_id/cli", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedAgent(db, param(request, "agent_id"), user);
     try {
       await generationOf(deps).ensure_cli(param(request, "agent_id"));
     } catch (error) {
@@ -2649,14 +2731,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   );
 
   app.get("/api/agents/:agent_id/runs", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedAgent(db, param(request, "agent_id"), user);
     return generationOf(deps).list_run_payloads(param(request, "agent_id"));
   });
 
   app.post("/api/agents/:agent_id/runs", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const agent = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const agent = await ownedAgent(db, param(request, "agent_id"), user);
     const body = bodyOf(request);
     const ids = attachmentIdsOf(body);
     const raw = body.message;
@@ -2685,20 +2767,20 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/runs/:run_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedRun(db, param(request, "run_id"), user);
     return generationOf(deps).run_payload(row);
   });
 
   app.get("/api/runs/:run_id/messages", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedRun(repo, param(request, "run_id"), user);
-    return (await repo.listMessages(param(request, "run_id"))).map((row) => messageItem(row));
+    const user = await currentUser(identityDb, request, deps);
+    await ownedRun(db, param(request, "run_id"), user);
+    return (await listMessages(db, param(request, "run_id"))).map((row) => messageItem(row));
   });
 
   app.post("/api/runs/:run_id/resume", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedRun(db, param(request, "run_id"), user);
     try {
       return await generationOf(deps).resume_run(param(request, "run_id"));
     } catch (error) {
@@ -2710,9 +2792,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/runs/:run_id/messages", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const run = await ownedRun(repo, param(request, "run_id"), user);
-    const agent = await repo.getAgent(String(run.agent_id));
+    const user = await currentUser(identityDb, request, deps);
+    const run = await ownedRun(db, param(request, "run_id"), user);
+    const agent = await getAgent(db, String(run.agent_id));
     if (agent === null) {
       throw new HttpError(404, "run not found");
     }
@@ -2746,8 +2828,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/runs/:run_id/cancel", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedRun(db, param(request, "run_id"), user);
     try {
       const run = await generationOf(deps).cancel(param(request, "run_id"));
       if (run === null) {
@@ -2764,8 +2846,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/runs/:run_id/stream", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    await ownedRun(repo, param(request, "run_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    await ownedRun(db, param(request, "run_id"), user);
     const loop = generationOf(deps);
     const runId = param(request, "run_id");
     await pipeSse(
@@ -2777,34 +2859,34 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/usage", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return { organisation: await usageForOrg(deps, org, String(user.id)) };
   });
 
   app.get("/api/guilds/:guild_id/usage", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    const agents = await repo.listAgents(String(guild.id));
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    const agents = await listAgents(db, String(guild.id));
     return {
       id: guild.id,
       name: guild.name,
-      ...usageFields(await repo.getUsage("guild", String(guild.id))),
+      ...usageFields(await getUsage(db, "guild", String(guild.id))),
       agents: await Promise.all(
         agents.map(async (agent) => ({
           id: agent.id,
           name: agent.name,
           avatar_shape: agent.avatar_shape || "teardrop",
           avatar_color: agent.avatar_color || "#7c5cff",
-          ...usageFields(await repo.getUsage("agent", String(agent.id))),
+          ...usageFields(await getUsage(db, "agent", String(agent.id))),
         })),
       ),
     };
   });
 
   app.get("/api/agents/:agent_id/usage", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const agent = await ownedAgent(repo, param(request, "agent_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const agent = await ownedAgent(db, param(request, "agent_id"), user);
     return {
       id: agent.id,
       name: agent.name,
@@ -2824,28 +2906,28 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
             : Number(agent.machine_workspace_mib),
         max_workspace_mib: Number(agent.machine_max_workspace_mib),
       },
-      ...usageFields(await repo.getUsage("agent", String(agent.id))),
+      ...usageFields(await getUsage(db, "agent", String(agent.id))),
     };
   });
 
   app.get("/api/platform", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     if (!(await isInstanceAdmin(deps, String(user.id)))) {
       throw new HttpError(404, "Not Found");
     }
-    return httpAccess(repo, { viewScope: "platform", mcp: deps.mcp ?? null });
+    return httpAccess(mcpDatabase(db), { viewScope: "platform", mcp: deps.mcp ?? null });
   });
 
   app.get("/api/access", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
-    return httpAccess(repo, { orgId: String(org.id), viewScope: "org", mcp: deps.mcp ?? null });
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
+    return httpAccess(mcpDatabase(db), { orgId: String(org.id), viewScope: "org", mcp: deps.mcp ?? null });
   });
 
   app.get("/api/guilds/:guild_id/access", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
-    return httpAccess(repo, {
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
+    return httpAccess(mcpDatabase(db), {
       orgId: String(guild.org_id),
       guildId: String(guild.id),
       viewScope: "guild",
@@ -2854,9 +2936,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/agents/:agent_id/access", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const row = await ownedAgent(repo, param(request, "agent_id"), user);
-    return httpAccess(repo, {
+    const user = await currentUser(identityDb, request, deps);
+    const row = await ownedAgent(db, param(request, "agent_id"), user);
+    return httpAccess(mcpDatabase(db), {
       orgId: String(row.org_id),
       guildId: String(row.guild_id),
       agentId: String(row.id),
@@ -2872,26 +2954,26 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return true;
     }
     if (ownerScope === "org") {
-      const membership = await repo.getMembership(String(ownerId || ""), String(user.id));
+      const membership = await getMembership(db, String(ownerId || ""), String(user.id));
       return membership !== null;
     }
     if (ownerScope === "guild") {
-      const guild = await repo.getGuild(String(ownerId || ""));
+      const guild = await getGuild(db, String(ownerId || ""));
       if (guild === null || !canSeeGuild(guild, String(user.id))) {
         return false;
       }
-      const membership = await repo.getMembership(String(guild.org_id), String(user.id));
+      const membership = await getMembership(db, String(guild.org_id), String(user.id));
       return membership !== null;
     }
-    const agent = await repo.getAgent(String(ownerId || ""));
+    const agent = await getAgent(db, String(ownerId || ""));
     if (agent === null) {
       return false;
     }
-    const membership = await repo.getMembership(String(agent.org_id), String(user.id));
+    const membership = await getMembership(db, String(agent.org_id), String(user.id));
     if (membership === null) {
       return false;
     }
-    const guild = await repo.getGuild(String(agent.guild_id));
+    const guild = await getGuild(db, String(agent.guild_id));
     return guild !== null && canSeeGuild(guild, String(user.id));
   }
 
@@ -2901,11 +2983,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return ownerId;
     }
     if (ownerScope === "guild") {
-      const guild = await repo.getGuild(ownerId ?? "");
+      const guild = await getGuild(db, ownerId ?? "");
       return guild === null ? null : String(guild.org_id);
     }
     if (ownerScope === "agent") {
-      const agent = await repo.getAgent(ownerId ?? "");
+      const agent = await getAgent(db, ownerId ?? "");
       return agent === null ? null : String(agent.org_id);
     }
     return null;
@@ -2920,17 +3002,17 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(400, "platform-owned credentials cannot be created here");
     }
     if (ownerScope === "org") {
-      const membership = await repo.getMembership(ownerId || "", String(user.id));
+      const membership = await getMembership(db, ownerId || "", String(user.id));
       if (membership === null) {
         throw new HttpError(404, "organisation not found");
       }
       return null;
     }
     if (ownerScope === "guild") {
-      const row = await ownedGuild(repo, ownerId || "", user);
+      const row = await ownedGuild(db, ownerId || "", user);
       return String(row.id);
     }
-    const row = await ownedAgent(repo, ownerId || "", user);
+    const row = await ownedAgent(db, ownerId || "", user);
     return String(row.guild_id);
   }
 
@@ -2967,9 +3049,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
     }
     if (keep) {
-      await markDisconnected(repo, row);
+      await markDisconnected(mcpDatabase(db), row);
     } else {
-      await repo.deleteMcpConnection(String(row.id));
+      await deleteMcpConnection(db, String(row.id));
     }
     deps.mcp?.forget(String(row.id));
   }
@@ -2978,7 +3060,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (!state) {
       return;
     }
-    const row = await repo.getMcpConnectionByOauthState(state);
+    const row = await getMcpConnectionByOauthState(db, state);
     if (row !== null) {
       await discardAttempt(row);
     }
@@ -2991,7 +3073,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     now: Date,
   ): Promise<Record<string, unknown> | null> {
     const [ciphertext, nonce] = encrypt(stored);
-    const connected = await repo.saveMcpConnection(
+    const connected = await saveMcpConnection(db,
       String(row.id),
       {
         ciphertext,
@@ -3003,7 +3085,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       now,
     );
     if (connected !== null) {
-      await repo.bindMcpConnection(
+      await bindMcpConnection(db,
         {
           bindingId: newId("bind"),
           serverId: connected.mcp_server_id,
@@ -3014,7 +3096,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         now,
       );
       try {
-        await deps.mcp?.syncTools(repo, connected, server, { force: true });
+        await deps.mcp?.syncTools(mcpDatabase(db), connected, server, { force: true });
       } catch {
         // Remote catalog sync is best-effort after OAuth, matching Python.
       }
@@ -3039,14 +3121,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return;
     }
     try {
-      const info = await deps.mcp.describeEndpoint(repo, connection, server);
+      const info = await deps.mcp.describeEndpoint(mcpDatabase(db), connection, server);
       const next: Manifest = {
         ...manifest,
         ...(blankName && info.name ? { display_name: info.name.slice(0, 120) } : {}),
         ...(blankDescription && info.instructions ? { description: info.instructions.slice(0, DESCRIPTION_MAX) } : {}),
       };
       if (next.display_name !== manifest.display_name || next.description !== manifest.description) {
-        await repo.updateConnector(String(server.id), { manifest: next }, new Date());
+        await updateConnector(db, String(server.id), { manifest: next }, new Date());
       }
     } catch {
       // The server keeps the name and description it was added with.
@@ -3056,13 +3138,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   /** Stores a signed-in login that still needs its settings: pending, bound, with no sign-in under way. */
   async function awaitSettings(row: Record<string, unknown>, stored: Record<string, unknown>, now: Date): Promise<void> {
     const [ciphertext, nonce] = encrypt(stored);
-    const saved = await repo.saveMcpConnection(
+    const saved = await saveMcpConnection(db,
       String(row.id),
       { ciphertext, nonce, status: "pending", accountHint: accountHint(stored), oauthState: null },
       now,
     );
     if (saved !== null) {
-      await repo.bindMcpConnection(
+      await bindMcpConnection(db,
         {
           bindingId: newId("bind"),
           serverId: saved.mcp_server_id,
@@ -3100,7 +3182,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     installation: GithubInstallation,
   ): Promise<void> {
     const [ciphertext, nonce] = encrypt({ installation_id: installation.id, account: installation.account });
-    const connected = await repo.saveMcpConnection(
+    const connected = await saveMcpConnection(db,
       String(row.id),
       {
         ciphertext,
@@ -3114,7 +3196,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (connected === null) {
       throw new OAuthError("the pending connection was removed");
     }
-    await repo.bindMcpConnection(
+    await bindMcpConnection(db,
       {
         bindingId: newId("bind"),
         serverId: connected.mcp_server_id,
@@ -3185,7 +3267,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           ? (fields.pending.oauth as Record<string, unknown>)
           : {};
       const [ciphertext, nonce] = encrypt({ ...fields.pending, oauth });
-      await repo.saveMcpConnection(
+      await saveMcpConnection(db,
         String(row.id),
         {
           ciphertext,
@@ -3209,7 +3291,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         replaces: pendingReplaces(fields.pending),
       },
     });
-    await repo.saveMcpConnection(
+    await saveMcpConnection(db,
       String(row.id),
       { ciphertext, nonce, status: "pending", accountHint: "", oauthState: pickerState },
       new Date(),
@@ -3223,7 +3305,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     githubCallback: boolean,
   ): Promise<Record<string, unknown> | null> {
     if (state) {
-      const row = await repo.getMcpConnectionByOauthState(state);
+      const row = await getMcpConnectionByOauthState(db, state);
       if (row !== null) {
         return row;
       }
@@ -3232,8 +3314,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       return null;
     }
     try {
-      const user = await currentUser(repo, request, deps);
-      return await repo.getPendingGithubConnectionForUser(String(user.id), GITHUB_SERVER_ID);
+      const user = await currentUser(identityDb, request, deps);
+      return await getPendingGithubConnectionForUser(db, String(user.id), GITHUB_SERVER_ID);
     } catch {
       return null;
     }
@@ -3247,11 +3329,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     if (!state) {
       return null;
     }
-    const row = await repo.getMcpConnectionByOauthState(state);
+    const row = await getMcpConnectionByOauthState(db, state);
     if (row === null || row.status !== "pending") {
       return null;
     }
-    const server = await repo.getMcpServer(String(row.mcp_server_id));
+    const server = await getMcpServer(db, String(row.mcp_server_id));
     if (server === null || server.slug !== GITHUB_SLUG) {
       return null;
     }
@@ -3270,11 +3352,11 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   /** The caller's role in the organisation and the guilds they can see there; null for a non-member. */
   async function secretViewer(orgId: string, user: Record<string, unknown>): Promise<SecretViewer | null> {
-    const membership = await repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(db, orgId, String(user.id));
     if (membership === null) {
       return null;
     }
-    const guilds = await repo.listGuildsForUser(orgId, String(user.id));
+    const guilds = await listGuildsForUser(db, orgId, String(user.id));
     return {
       role: String(membership.role),
       visibleGuildIds: new Set(guilds.map((guild) => String(guild.id))),
@@ -3286,7 +3368,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     secretId: string,
     user: Record<string, unknown>,
   ): Promise<[Record<string, unknown>, SecretViewer]> {
-    const row = await repo.getSecret(secretId);
+    const row = await getSecret(db, secretId);
     const viewer = row === null ? null : await secretViewer(String(row.org_id), user);
     if (row === null || viewer === null) {
       throw new HttpError(404, "secret not found");
@@ -3296,7 +3378,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   /** Each granted agent's guild; refuses a guild or agent outside the organisation. */
   async function grantTargets(orgId: string, access: SecretAccess): Promise<Map<string, string>> {
-    const found = await repo.secretGrantTargets(orgId, access.guild_ids, access.agent_ids);
+    const found = await secretGrantTargets(db, orgId, access.guild_ids, access.agent_ids);
     for (const id of access.guild_ids) {
       if (!found.guildIds.has(id)) {
         throw new HttpError(422, `unknown guild ${id}`);
@@ -3321,21 +3403,21 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   }
 
   app.get("/api/secrets", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const orgId = String(org.id);
     const query = request.query as { guild_id?: string; agent_id?: string };
-    if (query.guild_id && String((await ownedGuild(repo, query.guild_id, user)).org_id) !== orgId) {
+    if (query.guild_id && String((await ownedGuild(db, query.guild_id, user)).org_id) !== orgId) {
       throw new HttpError(404, "guild not found");
     }
-    if (query.agent_id && String((await ownedAgent(repo, query.agent_id, user)).org_id) !== orgId) {
+    if (query.agent_id && String((await ownedAgent(db, query.agent_id, user)).org_id) !== orgId) {
       throw new HttpError(404, "agent not found");
     }
     const viewer = await secretViewer(orgId, user);
     if (viewer === null) {
       throw new HttpError(404, "organisation not found");
     }
-    const rows = await repo.listSecrets(orgId, {
+    const rows = await listSecrets(db, orgId, {
       guildId: query.guild_id ?? null,
       agentId: query.agent_id ?? null,
     });
@@ -3343,8 +3425,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/secrets", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const orgId = String(org.id);
     const missing = missingBodyFields(request.body, ["name", "description", "value"]);
     if (missing) {
@@ -3368,7 +3450,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         );
       }
       const [ciphertext, nonce] = encrypt(payload);
-      const row = await repo.insertSecret(
+      const row = await insertSecret(db,
         {
           secretId: newId("sec"),
           orgId,
@@ -3381,7 +3463,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         },
         new Date(),
       );
-      await deps.generation?.secretAccessChanged(await repo.listAgentIdsReached(orgId, access));
+      await deps.generation?.secretAccessChanged(await listAgentIdsReached(db, orgId, access));
       await send(reply, 201, secretMetadata(row, viewer));
     } catch (error) {
       throw secretHttp(error);
@@ -3389,13 +3471,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/secrets/:secret_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const [row, viewer] = await memberSecret(param(request, "secret_id"), user);
     return secretMetadata(row, viewer);
   });
 
   app.patch("/api/secrets/:secret_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const secretId = param(request, "secret_id");
     const [row, viewer] = await memberSecret(secretId, user);
     if (!canManageSecret(row, viewer)) {
@@ -3412,7 +3494,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       if (given("value")) {
         [ciphertext, nonce] = encrypt(secretPayload(body.value));
       }
-      const updated = await repo.updateSecret(
+      const updated = await updateSecret(db,
         secretId,
         {
           name: given("name") ? validateSecretName(body.name) : null,
@@ -3433,7 +3515,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/secrets/:secret_id/access", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const secretId = param(request, "secret_id");
     const [row, viewer] = await memberSecret(secretId, user);
     if (!managesOrgSecrets(viewer.role)) {
@@ -3461,12 +3543,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       const orgId = String(row.org_id);
       await grantTargets(orgId, access);
-      const before = await repo.listAgentIdsReached(orgId, accessOf(row));
-      const updated = await repo.setSecretAccess(secretId, access, new Date());
+      const before = await listAgentIdsReached(db, orgId, accessOf(row));
+      const updated = await setSecretAccess(db, secretId, access, new Date());
       if (updated === null) {
         throw new HttpError(404, "secret not found");
       }
-      const after = await repo.listAgentIdsReached(orgId, access);
+      const after = await listAgentIdsReached(db, orgId, access);
       const reached = new Set(after);
       const left = new Set(before);
       await deps.generation?.secretAccessChanged([
@@ -3480,14 +3562,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/secrets/:secret_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const secretId = param(request, "secret_id");
     const [row, viewer] = await memberSecret(secretId, user);
     if (!canManageSecret(row, viewer)) {
       throw new HttpError(403, "only an org owner or admin can delete this secret");
     }
-    const reached = await repo.listAgentIdsReached(String(row.org_id), accessOf(row));
-    if ((await repo.deleteSecret(secretId)) === null) {
+    const reached = await listAgentIdsReached(db, String(row.org_id), accessOf(row));
+    if ((await deleteSecret(db, secretId)) === null) {
       throw new HttpError(404, "secret not found");
     }
     await deps.generation?.secretAccessChanged(reached);
@@ -3495,7 +3577,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.put("/api/bindings", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const missing = missingBodyFields(request.body, ["catalog_kind", "catalog_id", "scope", "enabled"]);
     if (missing) {
       throw missing;
@@ -3507,15 +3589,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         String(body.scope ?? ""),
         body.scope_id === undefined || body.scope_id === null ? null : String(body.scope_id),
       );
-      const guildId = await scopeGuild(repo, scope, scopeId, user);
+      const guildId = await scopeGuild(db, scope, scopeId, user);
       let orgId: string | null = null;
       if (scope === "org") {
         orgId = scopeId;
       } else if (scope === "guild") {
-        const guild = await repo.getGuild(scopeId || "");
+        const guild = await getGuild(db, scopeId || "");
         orgId = guild === null ? null : String(guild.org_id);
       } else if (scope === "agent") {
-        const agent = await repo.getAgent(scopeId || "");
+        const agent = await getAgent(db, scopeId || "");
         orgId = agent === null ? null : String(agent.org_id);
       }
       const replaceConnection = Object.prototype.hasOwnProperty.call(body, "connection_id");
@@ -3524,18 +3606,18 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
           ? null
           : String(body.connection_id)
         : null;
-      if (catalogKind === "mcp_tool" && !(await repo.isListedMcpTool(catalogId, orgId))) {
+      if (catalogKind === "mcp_tool" && !(await isListedMcpTool(db, catalogId, orgId))) {
         throw new HttpError(404, "mcp tool not found");
       }
       let server: Record<string, unknown> | null = null;
       let connection: Record<string, unknown> | null = null;
       if (catalogKind === "mcp") {
-        server = await repo.getMcpServer(catalogId);
+        server = await getMcpServer(db, catalogId);
         if (server === null || !serverVisible(server, orgId)) {
           throw new HttpError(404, "mcp server not found");
         }
         if (connectionId !== null) {
-          connection = await repo.getMcpConnection(connectionId);
+          connection = await getMcpConnection(db, connectionId);
           if (connection === null) {
             throw new HttpError(404, "connection not found");
           }
@@ -3555,7 +3637,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       });
       let writeConnectionId = overlay.connection_id;
       if (catalogKind === "mcp" && !replaceConnection) {
-        const existing = await repo.getBinding({ catalogKind, catalogId, scope, scopeId });
+        const existing = await getBinding(db, { catalogKind, catalogId, scope, scopeId });
         if (existing !== null) {
           writeConnectionId =
             existing.connection_id === null || existing.connection_id === undefined
@@ -3566,7 +3648,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       const now = new Date();
       const row =
         scope === "platform"
-          ? await repo.upsertPlatformBinding(
+          ? await upsertPlatformBinding(db,
               {
                 bindingId: newId("bind"),
                 catalogKind: overlay.catalog_kind,
@@ -3576,7 +3658,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
               },
               now,
             )
-          : await repo.upsertBinding(
+          : await upsertBinding(db,
               {
                 bindingId: newId("bind"),
                 catalogKind: overlay.catalog_kind,
@@ -3599,13 +3681,13 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/bindings", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const query = queryOf(request);
     try {
       const [catalogKind, catalogId] = validateCatalog(query.catalog_kind ?? "", query.catalog_id ?? "");
       const [scope, scopeId] = validateScope(query.scope ?? "", query.scope_id ?? null);
-      await scopeGuild(repo, scope, scopeId, user);
-      const row = await repo.deleteBinding(
+      await scopeGuild(db, scope, scopeId, user);
+      const row = await deleteBinding(db,
         { catalogKind, catalogId, scope, scopeId },
         userActor(user),
       );
@@ -3622,14 +3704,14 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/mcp/servers", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
-    const rows = await repo.listMcpServers(String(org.id));
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
+    const rows = await listMcpServers(db, String(org.id));
     return { servers: rows.map((row) => serverItem(row)) };
   });
 
   app.get("/api/mcp/servers/:server_id/logo", async (request, reply) => {
-    await currentUser(repo, request, deps);
+    await currentUser(identityDb, request, deps);
     const file = logoPath(installedConnectors().byId(param(request, "server_id")));
     if (file === null) {
       throw new HttpError(404, "logo not found");
@@ -3644,18 +3726,18 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/mcp/connections", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const query = request.query as { guild_id?: string; agent_id?: string };
     const guildId = query.guild_id;
     const agentId = query.agent_id;
     if (guildId) {
-      await ownedGuild(repo, guildId, user);
+      await ownedGuild(db, guildId, user);
     }
     if (agentId) {
-      await ownedAgent(repo, agentId, user);
+      await ownedAgent(db, agentId, user);
     }
-    const rows = await repo.listMcpConnections({
+    const rows = await listMcpConnections(db, {
       orgId: String(org.id),
       guildId: guildId ?? null,
       agentId: agentId ?? null,
@@ -3664,7 +3746,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/mcp/connections", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const missing = missingBodyFields(request.body, ["mcp_server_id", "owner_scope"]);
     if (missing) {
       throw missing;
@@ -3681,7 +3763,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw error;
     }
     await assertOwner(ownerScope, ownerId, user);
-    const server = await repo.getMcpServer(String(body.mcp_server_id ?? ""));
+    const server = await getMcpServer(db, String(body.mcp_server_id ?? ""));
     if (server === null || !serverVisible(server, await ownerOrgId(ownerScope, ownerId))) {
       throw new HttpError(404, "mcp server not found");
     }
@@ -3697,7 +3779,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       let connected: Record<string, unknown>;
       try {
         ({ connection: connected } = await connect(
-          repo,
+          connectDatabase(db),
           deps.mcp ?? null,
           {
             server,
@@ -3718,7 +3800,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       await fillFromEndpoint(connected, server);
       return send(reply, 201, connectionMetadata(connected));
     }
-    const existing = await repo.getMcpConnectionForOwner(String(server.id), ownerScope, ownerId);
+    const existing = await getMcpConnectionForOwner(db, String(server.id), ownerScope, ownerId);
     if (existing !== null && existing.status === "connected") {
       throw new HttpError(409, "already connected; disconnect first");
     }
@@ -3748,7 +3830,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     } else if (startsBrowserOauth(server)) {
       const redirect = oauthCallbackUrl(deps.config?.publicBaseUrl ?? "", request);
       try {
-        const [discovery, client] = await ensureClient(repo, server, redirect);
+        const [discovery, client] = await ensureClient(oauthDatabase(db), server, redirect);
         const [verifier, challenge] = pkcePair();
         oauthState = newState();
         [ciphertext, nonce] = encrypt(pendingOauthPayload(verifier, redirect, replaces));
@@ -3771,7 +3853,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     } else {
       [ciphertext, nonce] = encrypt({});
     }
-    const row = await repo.connectMcp(
+    const row = await connectMcp(db,
       {
         connectionId: newId("conn"),
         bindingId: newId("bind"),
@@ -3855,7 +3937,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         message: "This authorization request has expired or was already completed. Please try connecting again.",
       });
     }
-    const server = await repo.getMcpServer(String(row.mcp_server_id));
+    const server = await getMcpServer(db, String(row.mcp_server_id));
     if (server === null) {
       await discardAttempt(row);
       return sendHtml(reply, 404, {
@@ -3891,7 +3973,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
               replaces: pendingReplaces(pending),
             },
           });
-          await repo.saveMcpConnection(
+          await saveMcpConnection(db,
             String(row.id),
             { ciphertext, nonce, status: "pending", accountHint: "", oauthState },
             new Date(),
@@ -3942,7 +4024,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const pending = decrypt(row.ciphertext, row.nonce);
       const [verifier, redirectUri] = pendingOauth(pending);
-      const [discovery, client] = await ensureClient(repo, server, redirectUri);
+      const [discovery, client] = await ensureClient(oauthDatabase(db), server, redirectUri);
       const tokens = await exchangeCode(discovery, {
         code,
         codeVerifier: verifier,
@@ -4047,24 +4129,24 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/mcp/connections/:connection_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const connectionId = param(request, "connection_id");
-    const row = await repo.getMcpConnection(connectionId);
+    const row = await getMcpConnection(db, connectionId);
     if (row === null || !(await visibleCredential(row, user))) {
       throw new HttpError(404, "connection not found");
     }
-    const bindings = await repo.listBindingsForConnection(connectionId);
+    const bindings = await listBindingsForConnection(db, connectionId);
     return { ...connectionMetadata(row), bindings: bindings.map((item) => bindingItem(item)) };
   });
 
   app.post("/api/mcp/connections/:connection_id/call", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const connectionId = param(request, "connection_id");
-    const row = await repo.getMcpConnection(connectionId);
+    const row = await getMcpConnection(db, connectionId);
     if (row === null || !(await visibleCredential(row, user))) {
       throw new HttpError(404, "connection not found");
     }
-    const server = await repo.getMcpServer(String(row.mcp_server_id));
+    const server = await getMcpServer(db, String(row.mcp_server_id));
     if (server === null) {
       throw new HttpError(404, "mcp server not found");
     }
@@ -4082,7 +4164,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     try {
       return await callOwnedConnectionTool({
-        repo,
+        db: mcpDatabase(db),
         mcp: deps.mcp,
         connection: row,
         server,
@@ -4100,9 +4182,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   /** Values for a settings property marked `x-lookup`, searched with the credentials a Connect form holds. */
   app.post("/api/mcp/servers/:server_id/lookup", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
-    const server = await repo.getMcpServer(param(request, "server_id"));
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
+    const server = await getMcpServer(db, param(request, "server_id"));
     if (server === null || server.enabled === false || !serverVisible(server, String(org.id))) {
       throw new HttpError(404, "mcp server not found");
     }
@@ -4129,12 +4211,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
 
   /** Values for a settings property marked `x-lookup`, searched with a saved login. */
   app.get("/api/mcp/connections/:connection_id/lookup", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const connection = await repo.getMcpConnection(param(request, "connection_id"));
+    const user = await currentUser(identityDb, request, deps);
+    const connection = await getMcpConnection(db, param(request, "connection_id"));
     if (connection === null || !(await visibleCredential(connection, user))) {
       throw new HttpError(404, "connection not found");
     }
-    const server = await repo.getMcpServer(String(connection.mcp_server_id));
+    const server = await getMcpServer(db, String(connection.mcp_server_id));
     if (server === null) {
       throw new HttpError(404, "mcp server not found");
     }
@@ -4148,7 +4230,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(422, "property and q are required");
     }
     try {
-      return { options: await deps.mcp.lookupLogin(repo, connection, server, property, q) };
+      return { options: await deps.mcp.lookupLogin(mcpDatabase(db), connection, server, property, q) };
     } catch (error) {
       failure(error, server);
     }
@@ -4159,15 +4241,15 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
    * connector's `validate`. A login that waited for its settings connects and lists its tools.
    */
   app.put("/api/mcp/connections/:connection_id/settings", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const connection = await repo.getMcpConnection(param(request, "connection_id"));
+    const user = await currentUser(identityDb, request, deps);
+    const connection = await getMcpConnection(db, param(request, "connection_id"));
     if (connection === null || !(await visibleCredential(connection, user))) {
       throw new HttpError(404, "connection not found");
     }
     if (connection.owner_scope === "platform") {
       throw new HttpError(400, "platform-owned credentials cannot be changed here");
     }
-    const server = await repo.getMcpServer(String(connection.mcp_server_id));
+    const server = await getMcpServer(db, String(connection.mcp_server_id));
     if (server === null) {
       throw new HttpError(404, "mcp server not found");
     }
@@ -4192,12 +4274,12 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
     let hint = "";
     try {
-      hint = await deps.mcp.validateLogin(repo, connection, server, settings);
+      hint = await deps.mcp.validateLogin(mcpDatabase(db), connection, server, settings);
     } catch (error) {
       failure(error, server);
     }
     const connects = awaitingSettings(connection) && settingsComplete(schema, settings);
-    const row = await repo.updateMcpConnectionSettings(String(connection.id), settings, new Date(), {
+    const row = await updateMcpConnectionSettings(db, String(connection.id), settings, new Date(), {
         connect: connects,
         accountHint: hint,
       });
@@ -4207,7 +4289,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     deps.mcp.forget(String(row.id));
     if (row.status === "connected") {
       try {
-        await deps.mcp.syncTools(repo, row, server, { force: true, validate: false });
+        await deps.mcp.syncTools(mcpDatabase(db), row, server, { force: true, validate: false });
       } catch {
         // The settings stand; the login's tools list on the next sync.
       }
@@ -4216,16 +4298,16 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/mcp/connections/:connection_id", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const connectionId = param(request, "connection_id");
-    const existing = await repo.getMcpConnection(connectionId);
+    const existing = await getMcpConnection(db, connectionId);
     if (existing === null || !(await visibleCredential(existing, user))) {
       throw new HttpError(404, "connection not found");
     }
     if (existing.owner_scope === "platform") {
       throw new HttpError(400, "platform-owned credentials cannot be changed here");
     }
-    const row = await repo.deleteMcpConnection(connectionId);
+    const row = await deleteMcpConnection(db, connectionId);
     if (row === null) {
       throw new HttpError(404, "connection not found");
     }

@@ -1,18 +1,19 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { agentActor, ArtifactStore, ownerPrefix, snapshotTaskCollections } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertGuild } from "../../src/db/guilds.js";
+import { createScheduleRun } from "../../src/db/runs.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 
@@ -60,20 +61,20 @@ test("studio's State lists the guild's items with who changed and read each one"
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-studio-state-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
   try {
     const now = new Date();
-    await repo.insertGuild(
+    await insertGuild(db,
       { guildId: "guild_st", name: "state-guild", orgId: "org_home", about: "State" },
       now,
     );
-    await repo.insertGuild(
+    await insertGuild(db,
       { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "Far" },
       now,
     );
@@ -83,7 +84,7 @@ test("studio's State lists the guild's items with who changed and read each one"
       ["a_far", "far", "guild_far"],
     ];
     for (const [agentId, name, guildId] of agents) {
-      await persistAgent(repo, notes, {
+      await persistAgent(agentDatabase(db), notes, {
         agentId,
         guildId,
         guildName: guildId === "guild_st" ? "state-guild" : "far-guild",
@@ -107,7 +108,7 @@ test("studio's State lists the guild's items with who changed and read each one"
       calls: Call[],
       taskSource: Record<string, unknown> = {},
     ) =>
-      repo.createScheduleRun(
+      createScheduleRun(db,
         {
           runId: id,
           agentId,

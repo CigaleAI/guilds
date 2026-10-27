@@ -1,3 +1,4 @@
+import type pg from "pg";
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "../artifacts/index.js";
 import {
@@ -10,23 +11,23 @@ import {
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import {
-  ModelNotConnectedError,
   assertModelConnected,
   coreModelCredentials,
   type ModelCredentialsProvider,
+  ModelNotConnectedError,
+  modelProviderStore,
 } from "../llm/credentials.js";
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
 import { memoryOf } from "../agents/validation.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
-import type { Repositories } from "../db/repositories.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { AdmissionCoordinator } from "../generation/admission.js";
-import { OPEN_POLICY, claimCoachRun, type OrgPolicy } from "../policy/index.js";
+import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../policy/index.js";
 import {
   STUDIO_DEFAULT_TEMPERATURE,
   STUDIO_MAX_STEPS,
@@ -37,7 +38,13 @@ import { StudioRunner } from "./runner.js";
 import { StudioStore } from "./store.js";
 import { composeGenerationContext, composeStudioSystemMessage, hydrateStudioMember, readStudioSystemTemplate, studioSystemHash } from "./system.js";
 import { studioToolSchemas } from "./tools.js";
-import { previewCurrentState, projectGuildConnections, projectOfferedToolSchemas, type PreviewDeps } from "./preview.js";
+import {
+  previewCurrentState,
+  previewDatabase,
+  projectGuildConnections,
+  projectOfferedToolSchemas,
+  type PreviewDeps,
+} from "./preview.js";
 import {
   findLoginRecord,
   grantedConnectionIds,
@@ -49,9 +56,12 @@ import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocus } from "./foc
 import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
 import type { RoutineChange } from "./routines.js";
+import { getGuild } from "../db/guilds.js";
+import { getAgent, getAgentTask } from "../db/agents.js";
+import { listRunHeaders } from "../db/runs.js";
 
 export type StudioServiceDeps = {
-  repo: Repositories;
+  db: pg.Pool;
   artifacts: ArtifactStore;
   scripts: Scripts;
   schedules: Schedules;
@@ -75,11 +85,11 @@ export class StudioService {
   credentials: ModelCredentialsProvider;
 
   constructor(public deps: StudioServiceDeps) {
-    this.store = new StudioStore(deps.repo.pool);
+    this.store = new StudioStore(deps.db);
     this.drafts = new StudioDrafts(this.store, deps.artifacts);
     this.admission = deps.admission ?? new AdmissionCoordinator();
     this.policy = deps.policy ?? OPEN_POLICY;
-    this.credentials = deps.credentials ?? coreModelCredentials(deps.repo);
+    this.credentials = deps.credentials ?? coreModelCredentials(modelProviderStore(deps.db));
     this.runner = new StudioRunner({
       store: this.store,
       admission: this.admission,
@@ -90,7 +100,7 @@ export class StudioService {
 
   previewDeps(): PreviewDeps {
     return {
-      db: this.deps.repo,
+      db: previewDatabase(this.deps.db),
       artifacts: this.deps.artifacts,
       scripts: this.deps.scripts,
     };
@@ -123,7 +133,7 @@ export class StudioService {
     if (args.mode !== "optimize") {
       throw new StudioUnprocessableError("create mode is not available");
     }
-    const guild = await this.deps.repo.getGuild(args.sourceGuildId);
+    const guild = await getGuild(this.deps.db, args.sourceGuildId);
     if (
       !guild ||
       String(guild.org_id) !== String(args.org.id) ||
@@ -238,7 +248,7 @@ export class StudioService {
     const rows = await this.store.listSessions(orgId, userId);
     const hidden = new Set<string>();
     for (const guildId of new Set(rows.map((row) => String(row.source_guild_id ?? "")).filter(Boolean))) {
-      const guild = await this.deps.repo.getGuild(guildId);
+      const guild = await getGuild(this.deps.db, guildId);
       if (guild && !canSeeGuild(guild, userId)) hidden.add(guildId);
     }
     return rows
@@ -260,7 +270,7 @@ export class StudioService {
     // Seeing the guild is checked on every request, not only at creation: a
     // user who can no longer see a private guild loses its sessions too.
     if (session.source_guild_id) {
-      const guild = await this.deps.repo.getGuild(String(session.source_guild_id));
+      const guild = await getGuild(this.deps.db, String(session.source_guild_id));
       if (guild && !canSeeGuild(guild, String(user.id))) {
         throw new StudioError(404, "studio session not found");
       }
@@ -358,7 +368,7 @@ export class StudioService {
       return current.filter((id) => id !== connectionId);
     }
     const reach = await reachableConnection(
-      this.deps.repo,
+      this.deps.db,
       String(session.org_id),
       String(session.source_guild_id),
       connectionId,
@@ -424,7 +434,7 @@ export class StudioService {
         throw new StudioConflictError("session cannot change inspector");
       }
       if (agentId) {
-        const agent = await this.deps.repo.getAgent(agentId);
+        const agent = await getAgent(this.deps.db, agentId);
         if (!agent || String(agent.guild_id) !== String(locked.source_guild_id)) {
           throw new StudioUnprocessableError("agent is not in the source guild");
         }
@@ -494,7 +504,7 @@ export class StudioService {
       String(user.name ?? "operator"),
       { guildId: String(session.source_guild_id), agentId },
     );
-    const task = await this.deps.repo.getAgentTask(String(session.org_id), agentId);
+    const task = await getAgentTask(this.deps.db, String(session.org_id), agentId);
     const memory = await this.deps.artifacts.getMemoryRow(actor, agentId);
     const standing = hydrateStanding({
       systemPath: this.deps.notesSystemPath,
@@ -526,7 +536,7 @@ export class StudioService {
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
-    const latestRun = (await this.deps.repo.listRunHeaders(agentId, { limit: 1 }))[0] ?? null;
+    const latestRun = (await listRunHeaders(this.deps.db, agentId, { limit: 1 }))[0] ?? null;
     const guidelinesHash = promptHash(standing);
     const memoryPromptHash = promptHash(memoryText);
     return {
@@ -694,9 +704,9 @@ export class StudioService {
         ? null
         : await resolveStudioFocus(
             {
-              repo: this.deps.repo,
+              db: this.deps.db,
               artifacts: this.deps.artifacts,
-              pool: this.deps.repo.pool,
+              pool: this.deps.db,
               orgId: String(session.org_id),
               sourceGuildId: String(session.source_guild_id),
               user,
@@ -711,7 +721,7 @@ export class StudioService {
         throw new StudioConflictError("studio session is already generating");
       }
       const now = new Date();
-      await claimCoachRun(this.policy, this.deps.repo, String(locked.org_id), now, client);
+      await claimCoachRun(this.policy, coachRunClaims(client), String(locked.org_id), now);
       const rows = await this.store.inventory(String(locked.source_guild_id), String(locked.id));
       const systemContent = await this.refreshSystemMessage(locked, rows, client);
       const generation = Number(locked.generation_number) + 1;
@@ -776,7 +786,7 @@ export class StudioService {
         sourceGuildId: String(started.session.source_guild_id),
         store: this.store,
         artifacts: this.deps.artifacts,
-        repo: this.deps.repo,
+        db: this.deps.db,
         schedules: this.deps.schedules,
         drafts: this.drafts,
         preview: this.previewDeps(),
@@ -838,7 +848,7 @@ export class StudioService {
       session,
       user,
       draftId,
-      repo: this.deps.repo,
+      db: this.deps.db,
       preview: this.previewDeps(),
       notesSystemPath: this.deps.notesSystemPath,
       ...(options.orphan ? { orphan: true } : {}),
@@ -859,7 +869,7 @@ export class StudioService {
       sourceGuildId: String(session.source_guild_id),
       sessionId: String(session.id),
       user,
-      repo: this.deps.repo,
+      db: this.deps.db,
       artifacts: this.deps.artifacts,
       schedules: this.deps.schedules,
     };
@@ -939,7 +949,7 @@ export class StudioService {
   }
 
   async requireGuildAgent(session: Record<string, unknown>, agentId: string): Promise<Record<string, unknown>> {
-    const agent = await this.deps.repo.getAgent(agentId);
+    const agent = await getAgent(this.deps.db, agentId);
     if (!agent || String(agent.guild_id) !== String(session.source_guild_id)) {
       throw new StudioError(404, "agent not found");
     }

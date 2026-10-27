@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { agentActor, ArtifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
 import { runItem } from "../../src/db/views.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import { generationLive } from "../../src/studio/runner.js";
 import {
@@ -50,6 +49,16 @@ import {
 import { listConfigChanges, userActor } from "../../src/db/config-changes.js";
 import { createToolContext } from "../../src/toolbox/index.js";
 import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js";
+import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
+import { getAgentTask, writeAgentTask } from "../../src/db/agents.js";
+import { getMcpServerBySlug } from "../../src/db/connectors.js";
+import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
+import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
+import { insertIssue } from "../../src/db/issues.js";
+import { upsertBinding } from "../../src/db/bindings.js";
+import { getSchedule, listSchedules } from "../../src/db/schedules.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -93,20 +102,20 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({
-    repo,
+    db,
     artifacts,
     scripts,
     schedules,
     notesSystemPath: notes.systemPath(),
   });
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,
@@ -115,7 +124,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
   });
 
   const now = new Date();
-  await repo.insertGuild(
+  await insertGuild(db,
     {
       guildId: "guild_studio",
       name: "studio-guild",
@@ -125,11 +134,11 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     },
     now,
   );
-  await repo.insertGuild(
+  await insertGuild(db,
     { guildId: "guild_other", name: "other-guild", orgId: "org_home", about: "" },
     now,
   );
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId: "a_studio",
     guildId: "guild_studio",
     guildName: "studio-guild",
@@ -141,7 +150,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     now,
     artifacts,
   });
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId: "a_other",
     guildId: "guild_other",
     guildName: "other-guild",
@@ -152,11 +161,8 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     now,
     artifacts,
   });
-  const teammate = await repo.insertUser(
-    { userId: "user_teammate", name: "teammate", image: null, email: "teammate@example.com" },
-    now,
-  );
-  await repo.insertMember("org_home", String(teammate.id), "member", now);
+  const teammate = await insertUser(db, { userId: "user_teammate", name: "teammate", image: null, email: "teammate@example.com" }, now);
+  await insertMember(db, "org_home", String(teammate.id), "member", now);
 
   generationLive.streamCompletion = async function* stream() {
     yield ["delta", "Looking at the standing task."];
@@ -272,7 +278,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     assert.ok(rows.some((row) => row.payload.role === "user"));
     assert.ok(rows.some((row) => row.payload.role === "assistant"));
 
-    const liveTask = await repo.getAgentTask("org_home", "a_studio");
+    const liveTask = await getAgentTask(db, "org_home", "a_studio");
     const createdDraft = await studio.drafts.createFromTool(
       {
         session: (await studio.store.getSession(session.id)) as Record<string, unknown>,
@@ -282,7 +288,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
         generation: 1,
         store: studio.store,
         artifacts,
-        repo,
+        db,
         schedules,
         drafts: studio.drafts,
         preview: studio.previewDeps(),
@@ -312,7 +318,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     const result = published.json() as { outcome: string };
     assert.equal(result.outcome, "published");
 
-    const after = await repo.getAgentTask("org_home", "a_studio");
+    const after = await getAgentTask(db, "org_home", "a_studio");
     assert.equal(after?.content_text, "Write concise notes and stop when the artifact exists.\n");
 
     const second = await studio.drafts.createFromTool(
@@ -324,7 +330,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
         generation: 1,
         store: studio.store,
         artifacts,
-        repo,
+        db,
         schedules,
         drafts: studio.drafts,
         preview: studio.previewDeps(),
@@ -366,15 +372,15 @@ test("studio reads agent access, script source, and granted connections", { time
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-access-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const calls: Array<{ remote: string; args: Record<string, unknown> }> = [];
   const mcp = {
     async call(
-      _db: Repositories,
+      _db: unknown,
       _connection: Record<string, unknown>,
       _server: Record<string, unknown>,
       remoteName: string,
@@ -385,7 +391,7 @@ test("studio reads agent access, script source, and granted connections", { time
     },
   };
   const studio = new StudioService({
-    repo,
+    db,
     artifacts,
     scripts,
     schedules,
@@ -393,7 +399,7 @@ test("studio reads agent access, script source, and granted connections", { time
     mcp,
   });
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,
@@ -402,7 +408,7 @@ test("studio reads agent access, script source, and granted connections", { time
   });
 
   const now = new Date();
-  await repo.insertGuild(
+  await insertGuild(db,
     {
       guildId: "guild_access",
       name: "access-guild",
@@ -411,11 +417,11 @@ test("studio reads agent access, script source, and granted connections", { time
     },
     now,
   );
-  await repo.insertGuild(
+  await insertGuild(db,
     { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "" },
     now,
   );
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId: "a_access",
     guildId: "guild_access",
     guildName: "access-guild",
@@ -441,10 +447,10 @@ test("studio reads agent access, script source, and granted connections", { time
     "print('tally')\n",
   );
 
-  const server = await repo.getMcpServerBySlug("notion");
+  const server = await getMcpServerBySlug(db, "notion");
   assert.ok(server, "seeded Notion catalog row");
   const [ciphertext, nonce] = encryptPayload({ token: "notion-secret-token" }, Buffer.from(HEX_MASTER_KEY, "hex"));
-  const connection = await repo.connectMcp(
+  const connection = await connectMcp(db,
     {
       connectionId: newId("conn"),
       bindingId: newId("bind"),
@@ -457,7 +463,7 @@ test("studio reads agent access, script source, and granted connections", { time
     },
     now,
   );
-  await repo.replaceMcpTools(
+  await replaceMcpTools(db,
     String(connection.id),
     [
       { remote_name: "notion-search", namespaced_name: "notion_notion-search", description: "Search", input_schema: { type: "object" } },
@@ -466,7 +472,7 @@ test("studio reads agent access, script source, and granted connections", { time
     now,
   );
   const [farCipher, farNonce] = encryptPayload({ token: "far-token" }, Buffer.from(HEX_MASTER_KEY, "hex"));
-  const farConnection = await repo.connectMcp(
+  const farConnection = await connectMcp(db,
     {
       connectionId: newId("conn"),
       bindingId: newId("bind"),
@@ -503,7 +509,7 @@ test("studio reads agent access, script source, and granted connections", { time
       generation: 1,
       store: studio.store,
       artifacts,
-      repo,
+      db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
@@ -664,20 +670,20 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-evidence-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const studio = new StudioService({
-    repo,
+    db,
     artifacts,
     scripts,
     schedules,
     notesSystemPath: notes.systemPath(),
   });
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,
@@ -686,11 +692,11 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
   });
 
   const now = new Date();
-  await repo.insertGuild(
+  await insertGuild(db,
     { guildId: "guild_ev", name: "evidence-guild", orgId: "org_home", about: "Evidence" },
     now,
   );
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId: "a_ev",
     guildId: "guild_ev",
     guildName: "evidence-guild",
@@ -711,12 +717,12 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     { level: "guild", key: "house-rules.md", content: "Always cite the source.\n", title: "House rules" },
   );
   const sharedPath = `${ownerPrefix("org_home", "guild", "guild_ev")}${shared.key}`;
-  await repo.writeAgentTask(operator, "a_ev", `Curate the digest.\n\n![[${sharedPath}]]\n`);
+  await writeAgentTask(db, operator, "a_ev", `Curate the digest.\n\n![[${sharedPath}]]\n`);
 
   // A routine and one run it woke, then a memory written by that run.
   const routine = await schedules.create(TEST_ACTOR, "a_ev", { cron: "0 9 * * 1" }, "Weekly digest", "Compile the weekly digest.");
   const scheduleId = String(routine.id);
-  await repo.createScheduleRun(
+  await createScheduleRun(db,
     {
       runId: "r_ev_wake",
       agentId: "a_ev",
@@ -755,7 +761,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     },
     now,
   );
-  await repo.createRun(
+  await createRun(db,
     {
       runId: "r_ev_direct",
       agentId: "a_ev",
@@ -816,10 +822,10 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     const routineRows = routines.json() as Array<{ id: string; run_count: number; latest_run: { id: string } | null }>;
     assert.equal(routineRows[0]?.run_count, 1);
     assert.equal(routineRows[0]?.latest_run?.id, "r_ev_wake");
-    const wakeView = runItem((await repo.getRun("r_ev_wake")) as Record<string, unknown>, { generating: false });
+    const wakeView = runItem((await getRun(db, "r_ev_wake")) as Record<string, unknown>, { generating: false });
     assert.equal(wakeView.schedule_id, scheduleId);
     assert.equal(wakeView.instruction_hash, "h1");
-    const directView = runItem((await repo.getRun("r_ev_direct")) as Record<string, unknown>, { generating: false });
+    const directView = runItem((await getRun(db, "r_ev_direct")) as Record<string, unknown>, { generating: false });
     assert.equal("schedule_id" in directView, false);
 
     // Memory timeline: three versions, the newest written by the wake run with its memory_write call.
@@ -867,14 +873,14 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       generation: 1,
       store: studio.store,
       artifacts,
-      repo,
+      db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
       notesSystemPath: notes.systemPath(),
     });
     const sessionRow = () => studio.store.getSession(session.id) as Promise<Record<string, unknown>>;
-    const issue = await repo.insertIssue(
+    const issue = await insertIssue(db,
       {
         issueId: "iss_ev",
         guildId: "guild_ev",
@@ -924,11 +930,11 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     assert.equal(issuePin.metadata.focus.run_id, "r_ev_wake");
     assert.equal(issuePin.metadata.focus.agent_id, "a_ev");
 
-    await repo.insertGuild(
+    await insertGuild(db,
       { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "" },
       now,
     );
-    await persistAgent(repo, notes, {
+    await persistAgent(agentDatabase(db), notes, {
       agentId: "a_far",
       guildId: "guild_far",
       guildName: "far-guild",
@@ -939,7 +945,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       now,
       artifacts,
     });
-    await repo.createRun(
+    await createRun(db,
       {
         runId: "r_far",
         agentId: "a_far",
@@ -960,7 +966,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       payload: { content: "Why?", focus: { kind: "run", run_id: "r_far" } },
     });
     assert.equal(foreign.statusCode, 422, foreign.body);
-    await repo.insertIssue(
+    await insertIssue(db,
       {
         issueId: "iss_far",
         guildId: "guild_far",
@@ -1041,16 +1047,16 @@ test("studio proposes memory, note, and guild edits that the operator applies or
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-edits-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild(
+  await insertGuild(db,
     {
       guildId: "guild_ed",
       name: "edit-guild",
@@ -1060,7 +1066,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     },
     now,
   );
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId: "a_ed",
     guildId: "guild_ed",
     guildName: "edit-guild",
@@ -1097,7 +1103,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
       generation: 1,
       store: studio.store,
       artifacts,
-      repo,
+      db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
@@ -1141,7 +1147,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     assert.equal(guildEdit.widget, "studio_edit_request");
     assert.equal(guildEdit.await_operator, true);
     assert.deepEqual(guildEdit.edit.fields, ["description"]);
-    assert.equal(String((await repo.getGuild("guild_ed"))?.description).trim(), "Old description.");
+    assert.equal(String((await getGuild(db, "guild_ed"))?.description).trim(), "Old description.");
     const guildSeq = await commit("studio_edit_guild", guildArgs, guildEdit);
     const guildView = await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${guildSeq}`, headers: AUTH });
     assert.equal(guildView.statusCode, 200, guildView.body);
@@ -1152,12 +1158,12 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const applied = await resolve(guildSeq, "apply");
     assert.equal(applied.statusCode, 200, applied.body);
     assert.equal((applied.json() as { status: string }).status, "applied");
-    const liveGuild = await repo.getGuild("guild_ed");
+    const liveGuild = await getGuild(db, "guild_ed");
     assert.equal(liveGuild?.description, "Coordinate the digest.");
     assert.equal(liveGuild?.about, "Old about");
     const snapshot = (await studio.store.getSession(session.id))?.source_guild_snapshot as { objective?: string };
     assert.equal(snapshot.objective, "Coordinate the digest.");
-    const [guildChange] = await listConfigChanges(repo.pool, "org_home", { kind: "guild_text", id: "guild_ed" });
+    const [guildChange] = await listConfigChanges(db, "org_home", { kind: "guild_text", id: "guild_ed" });
     assert.equal(guildChange?.summary, "Changed the description");
     assert.deepEqual(guildChange?.actor, { type: "user", id: "user_operator", name: "operator" });
     assert.deepEqual(guildChange?.studio, { session_id: session.id, seq: guildSeq });
@@ -1226,17 +1232,17 @@ test("studio proposes tables to create, change, and delete that the operator app
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-tables-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild({ guildId: "guild_tb", name: "table-guild", orgId: "org_home" }, now);
-  await repo.insertGuild(
+  await insertGuild(db, { guildId: "guild_tb", name: "table-guild", orgId: "org_home" }, now);
+  await insertGuild(db,
     {
       guildId: "guild_nb",
       name: "neighbour-guild",
@@ -1248,7 +1254,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     },
     now,
   );
-  await repo.insertGuild(
+  await insertGuild(db,
     {
       guildId: "guild_pv",
       name: "private-guild",
@@ -1266,7 +1272,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     ["a_nb", "guild_nb", "neighbour-guild", "neighbour"],
     ["a_pv", "guild_pv", "private-guild", "hidden-agent"],
   ] as const) {
-    await persistAgent(repo, notes, {
+    await persistAgent(agentDatabase(db), notes, {
       agentId,
       guildId,
       guildName,
@@ -1309,7 +1315,7 @@ test("studio proposes tables to create, change, and delete that the operator app
       generation: 1,
       store: studio.store,
       artifacts,
-      repo,
+      db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
@@ -1474,7 +1480,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     assert.match(String(editView.live), /status/);
     assert.match(String(editView.proposed), /contact .*\(renamed from email\)/);
     assert.equal((await resolve(editSeq, "apply")).statusCode, 200);
-    const [accessChange, columnChange] = await listConfigChanges(repo.pool, "org_home", { kind: "collection", id: String(leads?.id) });
+    const [accessChange, columnChange] = await listConfigChanges(db, "org_home", { kind: "collection", id: String(leads?.id) });
     assert.equal(accessChange?.summary, "Removed agent writer from the access of the table leads");
     assert.deepEqual(accessChange?.studio, { session_id: session.id, seq: editSeq });
     assert.equal(columnChange?.summary, "Renamed the column email to contact, removed the column status in leads");
@@ -1565,16 +1571,16 @@ test("studio proposes notes to create and delete and narrows an agent's access",
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-narrow-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const studio = new StudioService({ repo, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const studio = new StudioService({ db, artifacts, scripts, schedules, notesSystemPath: notes.systemPath() });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild({ guildId: "guild_nw", name: "narrow-guild", orgId: "org_home" }, now);
+  await insertGuild(db, { guildId: "guild_nw", name: "narrow-guild", orgId: "org_home" }, now);
   const operator = artifacts.operatorContext("org_home", "user_operator", "operator", { guildId: "guild_nw" });
   const roles = await artifacts.writeNote(operator, {
     level: "guild",
@@ -1587,7 +1593,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     ["a_sc", "scout", `Find candidates.\n\n![[${rolesPath}]]\n`],
     ["a_ar", "archivist", "File candidates."],
   ] as const) {
-    await persistAgent(repo, notes, {
+    await persistAgent(agentDatabase(db), notes, {
       agentId,
       guildId: "guild_nw",
       guildName: "narrow-guild",
@@ -1601,10 +1607,10 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       artifacts,
     });
   }
-  const server = await repo.getMcpServerBySlug("notion");
+  const server = await getMcpServerBySlug(db, "notion");
   assert.ok(server, "seeded Notion catalog row");
   const [ciphertext, nonce] = encryptPayload({ token: "notion-secret-token" }, Buffer.from(HEX_MASTER_KEY, "hex"));
-  const connection = await repo.connectMcp(
+  const connection = await connectMcp(db,
     {
       connectionId: newId("conn"),
       bindingId: newId("bind"),
@@ -1617,7 +1623,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     },
     now,
   );
-  await repo.replaceMcpTools(
+  await replaceMcpTools(db,
     String(connection.id),
     [
       { remote_name: "notion-search", namespaced_name: "notion_notion-search", description: "Search", input_schema: { type: "object" } },
@@ -1643,7 +1649,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       generation: 1,
       store: studio.store,
       artifacts,
-      repo,
+      db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
@@ -1726,7 +1732,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.ok(deleteWidget.edit.effects.some((effect) => /scout embed it/.test(effect)), deleteWidget.edit.effects.join(" | "));
     const deleteSeq = await commit("studio_edit_note", deleteArgs, deleteWidget);
     assert.equal((await resolve(deleteSeq, "apply")).statusCode, 409);
-    await repo.writeAgentTask(operator, "a_sc", `Find candidates.\n\nnote_get ${playbookPath}\n`);
+    await writeAgentTask(db, operator, "a_sc", `Find candidates.\n\nnote_get ${playbookPath}\n`);
     const deleted = await resolve(deleteSeq, "apply");
     assert.equal(deleted.statusCode, 200, deleted.body);
     assert.equal((deleted.json() as { status: string }).status, "applied");
@@ -1779,7 +1785,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal(accessApplied.statusCode, 200, accessApplied.body);
     const appliedMeta = (await studio.store.getMessage(session.id, accessSeq))?.metadata as Record<string, unknown>;
     assert.equal(appliedMeta.resolved_by_user_id, "user_operator");
-    const [accessChange] = await listConfigChanges(repo.pool, "org_home", { kind: "access", id: "note_delete" });
+    const [accessChange] = await listConfigChanges(db, "org_home", { kind: "access", id: "note_delete" });
     assert.equal(accessChange?.agent_id, "a_ar");
     assert.equal(accessChange?.summary, "Turned off tool note_delete");
     assert.deepEqual(accessChange?.studio, { session_id: session.id, seq: accessSeq });
@@ -1805,7 +1811,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
       widenWidget.edit.effects.join(" | "),
     );
     const widenSeq = await commit("studio_edit_access", widenArgs, widenWidget);
-    await repo.upsertBinding(
+    await upsertBinding(db,
       {
         bindingId: newId("bind"),
         catalogKind: "native_tool",
@@ -1823,7 +1829,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal((await resolve(widenSeq, "decline")).statusCode, 200);
 
     // A user who can no longer see the guild loses its sessions, edits included.
-    await repo.updateGuild("guild_nw", new Date(), { visibility: "private" }, TEST_ACTOR);
+    await updateGuild(db, "guild_nw", new Date(), { visibility: "private" }, TEST_ACTOR);
     assert.equal(
       (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${widenSeq}`, headers: AUTH })).statusCode,
       404,
@@ -1843,14 +1849,14 @@ test("studio proposes routines to create, change, and delete that the operator a
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-studio-routines-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const published: Array<{ guildId: string; action: string; scheduleId: string }> = [];
   const studio = new StudioService({
-    repo,
+    db,
     artifacts,
     scripts,
     schedules,
@@ -1859,11 +1865,11 @@ test("studio proposes routines to create, change, and delete that the operator a
       published.push({ guildId, action: change.action, scheduleId: change.scheduleId });
     },
   });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
 
   const now = new Date();
-  await repo.insertGuild({ guildId: "guild_rt", name: "routine-guild", orgId: "org_home" }, now);
-  await persistAgent(repo, notes, {
+  await insertGuild(db, { guildId: "guild_rt", name: "routine-guild", orgId: "org_home" }, now);
+  await persistAgent(agentDatabase(db), notes, {
     agentId: "a_wt",
     guildId: "guild_rt",
     guildName: "routine-guild",
@@ -1894,7 +1900,7 @@ test("studio proposes routines to create, change, and delete that the operator a
       generation: 1,
       store: studio.store,
       artifacts,
-      repo,
+      db,
       schedules,
       drafts: studio.drafts,
       preview: studio.previewDeps(),
@@ -1971,7 +1977,7 @@ test("studio proposes routines to create, change, and delete that the operator a
       schedule_id: null,
       description: "Weekly feed sweep",
     });
-    assert.deepEqual(await repo.listSchedules("a_wt"), []);
+    assert.deepEqual(await listSchedules(db, "a_wt"), []);
     const createSeq = await commit("studio_edit_routine", createArgs, createWidget);
     const createView = await view(createSeq);
     assert.equal(createView.stale, false);
@@ -1981,7 +1987,7 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.ok(createView.effects.some((effect) => /wakes watcher/.test(effect)), createView.effects.join(" | "));
     const createApplied = await resolve(createSeq, "apply");
     assert.equal(createApplied.statusCode, 200, createApplied.body);
-    const [routine] = await repo.listSchedules("a_wt");
+    const [routine] = await listSchedules(db, "a_wt");
     assert.ok(routine);
     assert.equal(routine.cron, "0 9 * * 1");
     assert.equal(routine.instruction, "Sweep the feed for new items.");
@@ -2023,7 +2029,7 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.match(editView.proposed, /timing: Up to 3 random wake-ups between 09:00 and 18:00 every day \(Europe\/Paris\)/);
     const editApplied = await resolve(editSeq, "apply");
     assert.equal(editApplied.statusCode, 200, editApplied.body);
-    const edited = await repo.getSchedule("a_wt", scheduleId);
+    const edited = await getSchedule(db, "a_wt", scheduleId);
     assert.equal(edited?.cron, null);
     assert.equal(edited?.paused, false);
     assert.equal(edited?.description, "Weekly feed sweep");
@@ -2037,7 +2043,7 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.equal((await view(deleteSeq)).proposed, "");
     const deleted = await resolve(deleteSeq, "apply");
     assert.equal(deleted.statusCode, 200, deleted.body);
-    assert.equal(await repo.getSchedule("a_wt", scheduleId), null);
+    assert.equal(await getSchedule(db, "a_wt", scheduleId), null);
     assert.deepEqual(
       published.map((change) => change.action),
       ["create", "edit", "delete"],
@@ -2045,7 +2051,7 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.equal((await resolve(deleteSeq, "apply")).statusCode, 409);
 
     // The routine's change log: who changed it, newest first, each Studio apply linked to its card.
-    const history = await listConfigChanges(repo.pool, "org_home", { kind: "routine", id: scheduleId });
+    const history = await listConfigChanges(db, "org_home", { kind: "routine", id: scheduleId });
     assert.deepEqual(
       history.map((change) => [change.operation, change.actor.type, change.studio?.seq ?? null]),
       [
@@ -2059,7 +2065,7 @@ test("studio proposes routines to create, change, and delete that the operator a
     assert.ok(history.every((change) => change.agent_id === "a_wt"));
 
     // A routine an agent creates and pauses links to the run step that did it.
-    await repo.createRun(
+    await createRun(db,
       {
         runId: "r_wt",
         agentId: "a_wt",
@@ -2085,9 +2091,9 @@ test("studio proposes routines to create, change, and delete that the operator a
         tool_call_id: callId,
       });
     await scheduleCreateCron.handler(toolCtx("call_create"), { cron: "0 7 * * *", description: "Morning check", instruction: "Check." });
-    const [own] = await repo.listSchedules("a_wt");
+    const [own] = await listSchedules(db, "a_wt");
     await schedulePause.handler(toolCtx("call_pause"), { schedule_id: String(own?.id) });
-    const agentHistory = await listConfigChanges(repo.pool, "org_home", { kind: "routine", id: String(own?.id) });
+    const agentHistory = await listConfigChanges(db, "org_home", { kind: "routine", id: String(own?.id) });
     assert.deepEqual(
       agentHistory.map((change) => [change.operation, change.actor.type, change.actor.name, change.run_id, change.tool]),
       [

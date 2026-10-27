@@ -1,6 +1,9 @@
 import { agentActor, type ArtifactStore } from "../artifacts/index.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
-import { agentSecrets, resolveMcpTool, type AccessDatabase } from "../access/runtime.js";
+import { accessDatabase, agentSecrets, resolveMcpTool } from "../access/runtime.js";
+import { listAgents } from "../db/agents.js";
+import { listGroupMessages } from "../db/group-chat.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import { isReadOnlyRemote, listedFromRows, mcpSchema, previewConnectorState } from "../mcp/index.js";
 import { collectRunState } from "../state/index.js";
 import { guildOperators } from "../guilds/validation.js";
@@ -9,21 +12,17 @@ import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
 
-export type PreviewDeps = {
-  db: AccessDatabase & {
-    listAgents(guildId: string): Promise<Array<Record<string, unknown>>>;
-    listGroupMessages(
-      guildId: string,
-      options?: { throughSeq?: number | null },
-    ): Promise<Array<Record<string, unknown>>>;
-    listMcpServers(orgId?: string | null): Promise<Array<Record<string, unknown>>>;
-    listMcpConnections(options: {
-      orgId?: string | null;
-      guildId?: string | null;
-      agentId?: string | null;
-    }): Promise<Array<Record<string, unknown>>>;
-    listMcpTools(connectionId: string): Promise<Array<Record<string, unknown>>>;
+/** The db/ functions a preview of an agent's run state reads, on `db`. */
+export function previewDatabase(db: Queryable) {
+  return {
+    ...accessDatabase(db),
+    listAgents: bindQuery(db, listAgents),
+    listGroupMessages: bindQuery(db, listGroupMessages),
   };
+}
+
+export type PreviewDeps = {
+  db: ReturnType<typeof previewDatabase>;
   artifacts: ArtifactStore;
   scripts: Scripts;
 };

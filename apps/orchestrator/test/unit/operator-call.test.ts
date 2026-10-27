@@ -46,7 +46,7 @@ function call(args: {
   mcp?: (remoteName: string, arguments_: Record<string, unknown>) => Promise<string>;
 }) {
   return callOwnedConnectionTool({
-    repo: { listMcpTools: async () => args.tools ?? [listed()] },
+    db: { listMcpTools: async () => args.tools ?? [listed()] } as never,
     mcp: {
       call: async (_db, _connection, _server, remoteName, arguments_) =>
         (args.mcp ?? (async () => "ok"))(remoteName, arguments_),

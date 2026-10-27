@@ -1,10 +1,12 @@
 import type { IncomingHttpHeaders } from "node:http";
 import { ORG_COOKIE, ORG_HEADER, resolveOrg } from "../organisations/index.js";
 import { USER_COOKIE, USER_HEADER, resolveUser } from "../users/index.js";
-import type { Repositories } from "../db/repositories.js";
 import type { AppDeps } from "./deps.js";
 import { requestCookies } from "./cookies.js";
 import { HttpError } from "./errors.js";
+import { getUserByEmail, listUsers } from "../db/users.js";
+import { listOrgsForUser } from "../db/orgs.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export type IdentityRequest = {
   headers: IncomingHttpHeaders;
@@ -32,8 +34,19 @@ function headerOrCookie(request: IdentityRequest, headerName: string, cookieName
   return requestCookies(request)[cookieName] ?? null;
 }
 
+/** The db/ functions core's sign-in modes resolve a request's user and organisation through, on `db`. */
+export function identityDatabase(db: Queryable) {
+  return {
+    listUsers: bindQuery(db, listUsers),
+    listOrgsForUser: bindQuery(db, listOrgsForUser),
+    getUserByEmail: bindQuery(db, getUserByEmail),
+  };
+}
+
+export type IdentityDatabase = ReturnType<typeof identityDatabase>;
+
 export async function currentUser(
-  repo: Repositories,
+  db: IdentityDatabase,
   request: IdentityRequest,
   deps: Pick<AppDeps, "config" | "identity"> = {},
 ): Promise<Record<string, unknown>> {
@@ -42,14 +55,14 @@ export async function currentUser(
   }
   const mode = deps.config?.authMode ?? "compat-cookie";
   if (mode === "trusted-header") {
-    return trustedHeaderUser(repo, request, deps);
+    return trustedHeaderUser(db, request, deps);
   }
   if (mode !== "compat-cookie") {
     // A mode core does not implement, with no provider for it: nobody is signed in.
     throw new HttpError(401, "not signed in");
   }
   const token = headerOrCookie(request, USER_HEADER, USER_COOKIE);
-  const users = await repo.listUsers();
+  const users = await db.listUsers();
   try {
     return resolveUser(users as Array<{ id: string }>, token) as Record<string, unknown>;
   } catch (error) {
@@ -58,12 +71,12 @@ export async function currentUser(
 }
 
 export async function currentOrg(
-  repo: Repositories,
+  db: IdentityDatabase,
   request: IdentityRequest,
   user: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const token = headerOrCookie(request, ORG_HEADER, ORG_COOKIE);
-  const memberships = await repo.listOrgsForUser(String(user.id));
+  const memberships = await db.listOrgsForUser(String(user.id));
   try {
     return resolveOrg(memberships as Array<{ id: string }>, token) as Record<string, unknown>;
   } catch (error) {
@@ -72,7 +85,7 @@ export async function currentOrg(
 }
 
 async function trustedHeaderUser(
-  repo: Repositories,
+  db: IdentityDatabase,
   request: IdentityRequest,
   deps: Pick<AppDeps, "config">,
 ): Promise<Record<string, unknown>> {
@@ -86,7 +99,7 @@ async function trustedHeaderUser(
   if (!email) {
     throw new HttpError(401, "missing trusted email");
   }
-  const user = await repo.getUserByEmail(email);
+  const user = await db.getUserByEmail(email);
   if (!user) {
     throw new HttpError(401, "user not found");
   }

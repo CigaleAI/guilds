@@ -148,7 +148,7 @@ test("AttachmentService uploads and resolves only for models that accept images"
         .filter((row): row is Record<string, unknown> => Boolean(row && row.org_id === orgId));
     },
   };
-  const service = new AttachmentService(db, new MemoryBlobStore());
+  const service = new AttachmentService(db as never, new MemoryBlobStore());
   const uploaded = await service.upload({
     orgId: "org_1",
     userId: "user_1",

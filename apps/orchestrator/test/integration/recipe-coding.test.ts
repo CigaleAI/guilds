@@ -3,18 +3,18 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { RecipeApplyService } from "../../src/recipes/apply.js";
 import { RecipeStore } from "../../src/recipes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, storeKeys, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
+import { listAgents } from "../../src/db/agents.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const dbName = uniqueDbName("agent_platform_recipe_coding");
@@ -29,15 +29,15 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
   const database = await connect(databaseUrl);
   const notes = new NotesStore(tempDir("guilds-recipe-coding-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "openrouter");
-  await connectModelProvider(repo, "org_home", "deepinfra");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "openrouter");
+  await connectModelProvider(db, "org_home", "deepinfra");
   const artifacts = new ArtifactStore(database.pool, templatesRoot());
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
-  const recipes = new RecipeStore(repo.pool);
-  const apply = new RecipeApplyService({ repo, recipes, artifacts, notes, scripts, schedules, registry: null });
-  const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, recipes, apply });
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
+  const recipes = new RecipeStore(db);
+  const apply = new RecipeApplyService({ db, recipes, artifacts, notes, scripts, schedules, registry: null });
+  const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, recipes, apply });
   const call = async (method: "GET" | "POST", url: string, payload?: unknown) =>
     app.inject(
       payload === undefined
@@ -101,7 +101,7 @@ test("a captured coding guild applies with GitHub and repository steps", { timeo
       apply.checklist.filter((step) => step.kind === "connection" || step.kind === "repository").map((step) => step.id),
       ["conn:github", "repo:api"],
     );
-    const target = await repo.listAgents(apply.guild_id);
+    const target = await listAgents(db, apply.guild_id);
     assert.equal((target[0]?.config as Record<string, unknown>).coding, true);
 
     const early = await call("POST", `/api/applies/${apply.id}/steps/${encodeURIComponent("repo:api")}/verify`);

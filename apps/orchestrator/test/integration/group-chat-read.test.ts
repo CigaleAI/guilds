@@ -2,15 +2,16 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -32,32 +33,29 @@ test(
     const database = await connect(databaseUrl);
     const notes = new NotesStore(tempDir("guilds-group-read-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
-    const repo = new Repositories(database.pool);
+    const db = database.pool;
     const workspaceRoot = tempDir("guilds-group-read-workspaces-");
     const generation = new GenerationLoop(
-      repo,
+      generationDatabase(db),
       notes,
       workspaceRoot,
       new ExportSandboxes(workspaceRoot),
     );
     const app = await buildApp(database, {
-      repo,
+      db,
       notes,
-      scripts: new Scripts(repo),
-      schedules: new Schedules(repo),
+      scripts: new Scripts(scriptDatabase(db)),
+      schedules: new Schedules(scheduleDatabase(db)),
       generation,
     });
 
-    const teammate = await repo.insertUser(
-      {
+    const teammate = await insertUser(db, {
         userId: "user_teammate_read",
         name: "teammate-read",
         image: null,
         email: "teammate-read@example.com",
-      },
-      new Date(),
-    );
-    await repo.insertMember("org_home", String(teammate.id), "member", new Date());
+      }, new Date());
+    await insertMember(db, "org_home", String(teammate.id), "member", new Date());
     const TEAMMATE = {
       "X-Guilds-User": String(teammate.id),
       "X-Guilds-Org": "org_home",
@@ -126,15 +124,12 @@ test(
         assert.equal(rejected.statusCode, 422, `seen_through_seq=${String(bad)}`);
       }
 
-      const stranger = await repo.insertUser(
-        {
+      const stranger = await insertUser(db, {
           userId: "user_stranger_read",
           name: "stranger-read",
           image: null,
           email: "stranger-read@example.com",
-        },
-        new Date(),
-      );
+        }, new Date());
       const denied = await mark(
         { "X-Guilds-User": String(stranger.id), "X-Guilds-Org": "org_home" },
         1,

@@ -377,12 +377,12 @@ test("syncTools uses stored catalog within TTL", async () => {
   const db = new MemoryDb();
   const connection = { id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) };
   const server = { id: "mcp_notion", slug: "notion", auth: "oauth" };
-  const first = await pool.syncTools(db, connection, server);
-  const second = await pool.syncTools(db, connection, server);
+  const first = await pool.syncTools(db as never, connection, server);
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(session.listed, 1);
   assert.deepEqual(first, second);
   assert.deepEqual(first, [new ListedTool("search", "notion_search", "Search", { type: "object" })]);
-  await pool.syncTools(db, connection, server, { force: true });
+  await pool.syncTools(db as never, connection, server, { force: true });
   assert.equal(session.listed, 2);
 });
 
@@ -396,10 +396,10 @@ test("syncTools treats listed_at as fresh across a new pool", async () => {
   const server = { id: "mcp_notion", slug: "notion", auth: "oauth" };
   const firstPool = new McpPool(10 * 60 * 1000);
   firstPool.session = async () => session as never;
-  await firstPool.syncTools(db, connection, server);
+  await firstPool.syncTools(db as never, connection, server);
   const secondPool = new McpPool(10 * 60 * 1000);
   secondPool.session = async () => session as never;
-  await secondPool.syncTools(db, connection, server);
+  await secondPool.syncTools(db as never, connection, server);
   assert.equal(session.listed, 1);
 });
 
@@ -421,7 +421,7 @@ test("syncTools re-lists when listed_at is older than the TTL", async () => {
   const pool = new McpPool(10 * 60 * 1000);
   pool.session = async () => session as never;
   await pool.syncTools(
-    db,
+    db as never,
     { id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) },
     { id: "mcp_notion", slug: "notion", auth: "oauth" },
   );
@@ -506,8 +506,8 @@ test("sync OpenSea writes default-off and destructive tools Off, and reads On", 
   }) as never;
   const db = new MemoryDb();
   const server = { id: "mcp_opensea", slug: "opensea", auth: "token" };
-  const first = await pool.syncTools(db, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server, { force: true });
-  const second = await pool.syncTools(db, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server);
+  const first = await pool.syncTools(db as never, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server, { force: true });
+  const second = await pool.syncTools(db as never, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server);
   assert.deepEqual(
     first.map((tool) => tool.namespaced_name),
     ["opensea_search", "opensea_get_favorites", "opensea_get_instant_api_key"],
@@ -528,7 +528,7 @@ test("sync OpenSea rejects an unauthenticated catalog", async () => {
     },
   }) as never;
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb(), connectionOf("bad"), { id: "mcp_opensea", slug: "opensea", auth: "token" }, { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, connectionOf("bad"), { id: "mcp_opensea", slug: "opensea", auth: "token" }, { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && /api key was rejected/.test(error.message),
   );
 });

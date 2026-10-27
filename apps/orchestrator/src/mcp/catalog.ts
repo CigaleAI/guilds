@@ -1,3 +1,4 @@
+import type pg from "pg";
 import { installedConnectors } from "../connectors/index.js";
 import {
   manifestTools,
@@ -10,12 +11,18 @@ import {
 import { loadManifest, ManifestError, SLUG_PATTERN, SLUG_RE, type Manifest } from "../connectors/manifest.js";
 import { connectorFacts } from "../connectors/view.js";
 import { jsonObj } from "../db/json.js";
-import type { Repositories } from "../db/repositories.js";
 import { newId } from "../lib/ids.js";
 import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp/policy.js";
 import { namespacedName } from "../mcp/names.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
 import { oauthSetupState } from "../oauth/index.js";
+import {
+  getMcpServerBySlug,
+  insertConnector,
+  listConnectorSlugOwners,
+  listTakenToolPrefixes,
+  updateConnector,
+} from "../db/connectors.js";
 
 export const AUTH_KINDS = ["none", "token", "oauth"] as const;
 export const OAUTH_STRATEGIES = ["none", "dynamic", "configured"] as const;
@@ -226,7 +233,7 @@ function handManifest(fields: {
  * may each add a server under one slug. The refusal names the side that holds it.
  */
 export async function assertSlugFree(
-  repo: Repositories,
+  db: pg.Pool,
   slug: string,
   ownerOrgId: string | null,
   serverId?: string,
@@ -235,8 +242,8 @@ export async function assertSlugFree(
   if (installed && installed.id !== serverId) {
     throw new CatalogError(`slug ${slug} is the platform's ${installed.manifest.display_name} connector`, 409);
   }
-  const holders = [...new Set(await repo.listConnectorSlugOwners(slug))];
-  const existing = await repo.getMcpServerBySlug(slug, ownerOrgId);
+  const holders = [...new Set(await listConnectorSlugOwners(db, slug))];
+  const existing = await getMcpServerBySlug(db, slug, ownerOrgId);
   if (existing && existing.id === serverId) {
     return;
   }
@@ -253,13 +260,13 @@ export async function assertSlugFree(
 
 /** Installs a remote MCP server the instance admin adds by hand: a platform row with no folder, on at creation. */
 export async function createConnector(
-  repo: Repositories,
+  db: pg.Pool,
   body: Record<string, unknown>,
   now = new Date(),
   ownerOrgId: string | null = null,
 ): Promise<Record<string, unknown>> {
   const slug = validateSlug(requireString(body.slug, "slug"));
-  await assertSlugFree(repo, slug, ownerOrgId);
+  await assertSlugFree(db, slug, ownerOrgId);
   const auth = validateAuth(String(body.auth ?? "token"));
   if (ownerOrgId !== null && auth === "oauth" && body.oauth_strategy === "configured") {
     throw new CatalogError("an organisation's server signs in with a dynamically registered client");
@@ -274,11 +281,11 @@ export async function createConnector(
     limitations: validateOptionalText(body.limitations, "limitations"),
     setupHint: validateOptionalText(body.setup_hint, "setup_hint"),
   });
-  const toolPrefix = generateToolPrefix(slug, await repo.listTakenToolPrefixes());
+  const toolPrefix = generateToolPrefix(slug, await listTakenToolPrefixes(db));
   if (isReservedToolPrefix(toolPrefix)) {
     throw new CatalogError("generated tool prefix is reserved");
   }
-  return repo.insertConnector(
+  return insertConnector(db,
     {
       id: newId("mcp"),
       slug,
@@ -300,7 +307,7 @@ export async function createConnector(
  * box did not write come from its manifest.
  */
 export async function patchConnector(
-  repo: Repositories,
+  db: pg.Pool,
   server: Record<string, unknown>,
   body: Record<string, unknown>,
   now = new Date(),
@@ -317,7 +324,7 @@ export async function patchConnector(
     const slug = body.slug !== undefined ? validateSlug(String(body.slug)) : current.slug;
     const ownerOrgId = server.owner_org_id ? String(server.owner_org_id) : null;
     if (slug !== current.slug) {
-      await assertSlugFree(repo, slug, ownerOrgId, String(server.id));
+      await assertSlugFree(db, slug, ownerOrgId, String(server.id));
       patch.slug = slug;
     }
     const auth = body.auth !== undefined ? validateAuth(String(body.auth)) : current.auth.kind;
@@ -367,7 +374,7 @@ export async function patchConnector(
     }
     patch.overrides = overrides;
   }
-  const updated = await repo.updateConnector(String(server.id), patch, now);
+  const updated = await updateConnector(db, String(server.id), patch, now);
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }
@@ -376,7 +383,7 @@ export async function patchConnector(
 
 /** Edits one tool by name: its description, its input schema, and whether it starts On. Null clears an edit. */
 export async function patchConnectorTool(
-  repo: Repositories,
+  db: pg.Pool,
   server: Record<string, unknown>,
   name: string,
   body: Record<string, unknown>,
@@ -422,7 +429,7 @@ export async function patchConnectorTool(
   } else {
     delete overrides.tools;
   }
-  const updated = await repo.updateConnector(String(server.id), { overrides }, now);
+  const updated = await updateConnector(db, String(server.id), { overrides }, now);
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }

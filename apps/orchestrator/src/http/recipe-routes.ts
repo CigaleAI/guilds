@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { userActor } from "../db/config-changes.js";
 import { newId } from "../lib/ids.js";
-import { captureGuild } from "../recipes/capture.js";
+import { captureDatabase, captureGuild } from "../recipes/capture.js";
 import {
   applyAccessEdits,
   applyReview,
@@ -20,7 +20,7 @@ import type { AppDeps } from "./deps.js";
 import { pickEntry, RegistryError } from "../registry/index.js";
 import { latestEntries, registryHttp, registryOf } from "./admin-registry-routes.js";
 import { HttpError, recipeConflictHttp } from "./errors.js";
-import { currentOrg, currentUser } from "./identity.js";
+import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { ownedGuild } from "./items.js";
 import { bodyOf, param } from "./request.js";
 
@@ -82,11 +82,12 @@ async function ownedApply(deps: AppDeps, applyId: string, org: Record<string, un
 }
 
 export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
+  const identityDb = identityDatabase(db);
 
   app.get("/api/recipes", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return recipesOf(deps).list(String(org.id));
   });
 
@@ -112,8 +113,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   }
 
   app.post("/api/recipes/import", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const body = bodyOf(request);
       const row = await importRecipe(org, user, body.recipe ?? body);
@@ -125,7 +126,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/recipes/registry", async (request) => {
-    await currentUser(repo, request, deps);
+    await currentUser(identityDb, request, deps);
     const client = registryOf(deps);
     if (client === null) {
       return { offline: true, url: null, recipes: [] };
@@ -139,8 +140,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/registry/import", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     const client = registryOf(deps);
     if (client === null) {
@@ -165,17 +166,17 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/guilds/:guild_id/recipes", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    await currentOrg(identityDb, request, user);
     if (!deps.artifacts || !deps.recipes) {
       throw new HttpError(422, "recipes are not available");
     }
     try {
-      const guild = await ownedGuild(repo, param(request, "guild_id"), user);
+      const guild = await ownedGuild(db, param(request, "guild_id"), user);
       const body = bodyOf(request);
       const parsed = await captureGuild(
         {
-          repo,
+          db: captureDatabase(db),
           artifacts: deps.artifacts,
           scripts: deps.scripts,
           schedules: deps.schedules,
@@ -209,14 +210,14 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/recipes/:recipe_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return ownedRecipe(deps, param(request, "recipe_id"), org);
   });
 
   app.put("/api/recipes/:recipe_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
@@ -237,8 +238,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/access", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
@@ -252,8 +253,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/review", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
@@ -266,16 +267,16 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.delete("/api/recipes/:recipe_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
     await recipesOf(deps).delete(String(row.id));
     return { ok: true };
   });
 
   app.post("/api/recipes/:recipe_id/validate", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const recipe = parseRecipe(row.body);
@@ -296,8 +297,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/publish", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const recipe = parseRecipe(row.body);
@@ -314,8 +315,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/recipes/:recipe_id/export", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
     if (row.status === "draft") {
       throw new HttpError(409, "export refused while draft");
@@ -329,8 +330,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/preview", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       return await applyOf(deps).preview(org, row, bodyOf(request), user);
@@ -340,8 +341,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/recipes/:recipe_id/apply", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const created = await applyOf(deps).createSkeleton(org, user, row, bodyOf(request));
@@ -353,20 +354,20 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.get("/api/applies/:apply_id", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     return ownedApply(deps, param(request, "apply_id"), org);
   });
 
   app.get("/api/guilds/:guild_id/apply", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const guild = await ownedGuild(repo, param(request, "guild_id"), user);
+    const user = await currentUser(identityDb, request, deps);
+    const guild = await ownedGuild(db, param(request, "guild_id"), user);
     return applyOf(deps).guildApplyState(String(guild.id));
   });
 
   app.post("/api/applies/:apply_id/overlays", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       const body = bodyOf(request);
@@ -383,8 +384,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/applies/:apply_id/steps/:step_id/verify", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       return await applyOf(deps).verifyStep(row, param(request, "step_id"), userActor(user));
@@ -394,8 +395,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/applies/:apply_id/steps/:step_id/confirm", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       const body = bodyOf(request);
@@ -409,8 +410,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/applies/:apply_id/activate", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       return await applyOf(deps).activate(row, userActor(user));
@@ -420,8 +421,8 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   app.post("/api/applies/:apply_id/abort", async (request) => {
-    const user = await currentUser(repo, request, deps);
-    const org = await currentOrg(repo, request, user);
+    const user = await currentUser(identityDb, request, deps);
+    const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedApply(deps, param(request, "apply_id"), org);
       return await applyOf(deps).abort(row);

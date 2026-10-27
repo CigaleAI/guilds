@@ -4,16 +4,17 @@ import { ArtifactStore } from "../../src/artifacts/index.js";
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { StudioService } from "../../src/studio/index.js";
 import type { GuildReferences } from "../../src/studio/references.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_BODY = { "content-type": "application/json" };
@@ -32,29 +33,26 @@ test(
     const database = await connect(await createIsolatedDatabase(dbName));
     const notes = new NotesStore(tempDir("guilds-studio-references-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
-    const repo = new Repositories(database.pool);
-    await connectModelProvider(repo, "org_home", "deepinfra");
+    const db = database.pool;
+    await connectModelProvider(db, "org_home", "deepinfra");
     const artifacts = new ArtifactStore(database.pool, templatesRoot());
-    const scripts = new Scripts(repo);
-    const schedules = new Schedules(repo);
+    const scripts = new Scripts(scriptDatabase(db));
+    const schedules = new Schedules(scheduleDatabase(db));
     const studio = new StudioService({
-      repo,
+      db,
       artifacts,
       scripts,
       schedules,
       notesSystemPath: notes.systemPath(),
     });
-    const app = await buildApp(database, { repo, notes, artifacts, scripts, schedules, studio });
-    const teammate = await repo.insertUser(
-      {
+    const app = await buildApp(database, { db, notes, artifacts, scripts, schedules, studio });
+    const teammate = await insertUser(db, {
         userId: "user_teammate_refs",
         name: "teammate-refs",
         image: null,
         email: "refs@example.com",
-      },
-      new Date(),
-    );
-    await repo.insertMember("org_home", String(teammate.id), "member", new Date());
+      }, new Date());
+    await insertMember(db, "org_home", String(teammate.id), "member", new Date());
     const TEAMMATE = { "X-Guilds-User": String(teammate.id), "X-Guilds-Org": "org_home" };
 
     const call = async (

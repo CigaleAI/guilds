@@ -1,5 +1,6 @@
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import type { NewOrgModelProvider } from "../../src/db/orgs.js";
+import { upsertOrgModelProvider } from "../../src/db/orgs.js";
+import type { Queryable } from "../../src/db/pg.js";
 import { newId } from "../../src/lib/ids.js";
 import type { ModelCredentialsProvider } from "../../src/llm/credentials.js";
 import { HEX_MASTER_KEY } from "./env.js";
@@ -15,19 +16,12 @@ export const TEST_CREDENTIALS: ModelCredentialsProvider = {
   },
 };
 
-type ProviderStore = {
-  upsertOrgModelProvider(
-    provider: NewOrgModelProvider,
-    now: Date,
-  ): Promise<Record<string, unknown>>;
-};
-
 /**
  * Connects a provider for an organisation without probing it: the row the app, the loop, and the
  * coaches decrypt with the test master key, which this sets for the process when none is set.
  */
 export async function connectModelProvider(
-  repo: ProviderStore,
+  db: Queryable,
   orgId: string,
   provider: string,
   options: { apiKey?: string; baseURL?: string; models?: string[] } = {},
@@ -39,7 +33,8 @@ export async function connectModelProvider(
     payload.base_url = options.baseURL;
   }
   const [ciphertext, nonce] = encryptPayload(payload, TEST_MASTER_KEY);
-  await repo.upsertOrgModelProvider(
+  await upsertOrgModelProvider(
+    db,
     {
       providerId: newId("mp"),
       orgId,

@@ -99,7 +99,7 @@ class MemoryIssuesDB {
 
 test("report_issue_tool_writes_an_open_row", async () => {
   const db = new MemoryIssuesDB();
-  const issues = new Issues(db);
+  const issues = new Issues(db as never);
   const published: Array<[string, string, Record<string, unknown>]> = [];
   const ctx = createToolContext({
     run_id: "r_1",
@@ -143,7 +143,7 @@ test("report_issue_tool_writes_an_open_row", async () => {
 });
 
 test("report_issue_rejects_unknown_kind", async () => {
-  const issues = new Issues(new MemoryIssuesDB());
+  const issues = new Issues(new MemoryIssuesDB() as never);
   const ctx = createToolContext({
     run_id: "r_1",
     agent_id: "a_1",
@@ -174,7 +174,7 @@ test("report_issue_rejects_unknown_kind", async () => {
 
 test("open issue cap is enforced", async () => {
   const db = new MemoryIssuesDB();
-  const issues = new Issues(db);
+  const issues = new Issues(db as never);
   for (let index = 0; index < ISSUE_OPEN_CAP; index += 1) {
     await issues.create({
       guildId: "guild_1",
@@ -203,7 +203,7 @@ test("open issue cap is enforced", async () => {
 
 test("operator can resolve and reopen", async () => {
   const db = new MemoryIssuesDB();
-  const issues = new Issues(db);
+  const issues = new Issues(db as never);
   const created = await issues.create({
     guildId: "guild_1",
     agentId: "a_1",
@@ -224,7 +224,7 @@ test("operator can resolve and reopen", async () => {
 
 test("operator can resolve every open issue", async () => {
   const db = new MemoryIssuesDB();
-  const issues = new Issues(db);
+  const issues = new Issues(db as never);
   const first = await issues.create({
     guildId: "guild_1",
     agentId: "a_1",

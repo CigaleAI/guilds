@@ -651,7 +651,7 @@ describe("generation", { concurrency: 1 }, () => {
           ? { id: "a_1", name: "researcher", guild_name: "research", org_slug: "acme", ...AGENT_MACHINE }
           : null;
       },
-      async purgeAgent(agentId: string) {
+      async deleteAgent(agentId: string) {
         purged.push(agentId);
       },
     };

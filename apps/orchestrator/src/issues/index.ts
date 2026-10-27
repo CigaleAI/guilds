@@ -1,12 +1,19 @@
-import type { GuildRow } from "../db/guilds.js";
 import type {
   GuildIssueRow,
   IssueRow,
-  IssueStatusChange,
-  NewIssue,
 } from "../db/issues.js";
 import { iso, isoOrNull } from "../db/views.js";
 import { newId } from "../lib/ids.js";
+import { getGuild } from "../db/guilds.js";
+import {
+  countOpenIssues,
+  getIssue,
+  insertIssue,
+  listIssuesForGuild,
+  resolveOpenIssues,
+  setIssueStatus,
+} from "../db/issues.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export const ISSUE_KINDS = ["tool_failure", "truncated", "api", "other"] as const;
 export const ISSUE_SEVERITIES = ["low", "medium", "high"] as const;
@@ -24,25 +31,20 @@ export class IssueError extends Error {
   }
 }
 
-export type IssuesDatabase = {
-  getGuild(guildId: string): Promise<Pick<GuildRow, "org_id"> | null>;
-  insertIssue(issue: NewIssue, now: Date): Promise<IssueRow>;
-  listIssuesForGuild(guildId: string, status: string | null): Promise<GuildIssueRow[]>;
-  getIssue(guildId: string, issueId: string): Promise<GuildIssueRow | null>;
-  setIssueStatus(
-    guildId: string,
-    issueId: string,
-    change: IssueStatusChange,
-    now: Date,
-  ): Promise<GuildIssueRow | null>;
-  resolveOpenIssues(
-    guildId: string,
-    resolvedAt: Date,
-    resolvedBy: string,
-    now: Date,
-  ): Promise<number>;
-  countOpenIssues(guildId: string): Promise<number>;
-};
+/** The db/ functions a guild's issues are read and written through, on `db`. */
+export function issuesDatabase(db: Queryable) {
+  return {
+    getGuild: bindQuery(db, getGuild),
+    insertIssue: bindQuery(db, insertIssue),
+    listIssuesForGuild: bindQuery(db, listIssuesForGuild),
+    getIssue: bindQuery(db, getIssue),
+    setIssueStatus: bindQuery(db, setIssueStatus),
+    resolveOpenIssues: bindQuery(db, resolveOpenIssues),
+    countOpenIssues: bindQuery(db, countOpenIssues),
+  };
+}
+
+export type IssuesDatabase = ReturnType<typeof issuesDatabase>;
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], label: string): T {
   if (typeof value === "string" && (allowed as readonly string[]).includes(value)) {

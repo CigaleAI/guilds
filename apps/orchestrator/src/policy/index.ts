@@ -1,4 +1,3 @@
-import type pg from "pg";
 import {
   BUILDER_MAX_INPUT_TOKENS,
   BUILDER_MAX_TOKENS,
@@ -9,6 +8,15 @@ import {
   STUDIO_MAX_TOKENS,
   STUDIO_MAX_TOOL_CALLS,
 } from "../studio/constants.js";
+import {
+  countOrgAgents,
+  countOrgBrowserAgents,
+  countOrgCodingAgents,
+  countOrgGuilds,
+} from "../db/orgs.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import { countMachineAgents } from "../db/machines.js";
+import { claimMonthlyStudioBuilderRun } from "../db/usage.js";
 
 // Organisation policy (docs/architecture/extension-points.md): the caps an organisation works under and
 // whether it may work at all. Core checks them here; an extension says what they are.
@@ -111,17 +119,25 @@ export const OPEN_POLICY: OrgPolicy = {
 };
 
 /** The live counts the caps are checked against. */
-export type OrgCounts = {
-  countOrgAgents(orgId: string): Promise<number>;
-  countOrgBrowserAgents(orgId: string): Promise<number>;
-  countOrgCodingAgents(orgId: string): Promise<number>;
-  countOrgGuilds(orgId: string): Promise<number>;
-};
+export function orgCounts(db: Queryable) {
+  return {
+    countOrgAgents: bindQuery(db, countOrgAgents),
+    countOrgBrowserAgents: bindQuery(db, countOrgBrowserAgents),
+    countOrgCodingAgents: bindQuery(db, countOrgCodingAgents),
+    countOrgGuilds: bindQuery(db, countOrgGuilds),
+  };
+}
+
+export type OrgCounts = ReturnType<typeof orgCounts>;
 
 /** The live counts the machine caps are checked against. */
-export type MachineCounts = {
-  countMachineAgents(machineId: string): Promise<number>;
-};
+export function machineCounts(db: Queryable) {
+  return {
+    countMachineAgents: bindQuery(db, countMachineAgents),
+  };
+}
+
+export type MachineCounts = ReturnType<typeof machineCounts>;
 
 /** How many more of a capped thing fit; null when it is uncapped. */
 export function remaining(limit: number | null, count: number): number | null {
@@ -243,23 +259,22 @@ export async function assertCanEnableCoding(policy: OrgPolicy, counts: OrgCounts
   }
 }
 
+/** The month's Studio and Builder runs, claimed on `db`: the pool, or the transaction that starts the run. */
+export function coachRunClaims(db: Queryable) {
+  return { claimMonthlyStudioBuilderRun: bindQuery(db, claimMonthlyStudioBuilderRun) };
+}
+
+export type CoachRunClaims = ReturnType<typeof coachRunClaims>;
+
 /** Counts one Studio or Builder generation against the month, refusing it past `monthlyCoachRuns`. */
 export async function claimCoachRun(
   policy: OrgPolicy,
-  store: {
-    claimMonthlyStudioBuilderRun(
-      orgId: string,
-      now: Date,
-      limit: number | null,
-      client?: pg.PoolClient,
-    ): Promise<number | null>;
-  },
+  claims: CoachRunClaims,
   orgId: string,
   now = new Date(),
-  client?: pg.PoolClient,
 ): Promise<void> {
   const { limits } = await policy.standing(orgId, now);
-  const claimed = await store.claimMonthlyStudioBuilderRun(orgId, now, limits.monthlyCoachRuns, client);
+  const claimed = await claims.claimMonthlyStudioBuilderRun(orgId, now, limits.monthlyCoachRuns);
   if (limits.monthlyCoachRuns !== null && claimed === null) {
     throw new LimitError(limits.source, "studio and builder runs");
   }

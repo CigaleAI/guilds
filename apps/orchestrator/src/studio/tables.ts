@@ -23,6 +23,8 @@ import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { excerptBytes, wrapEvidence } from "./system.js";
 import { studioReachesTable } from "./reach.js";
+import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
+import { listAgents } from "../db/agents.js";
 
 // Tables (collections) the coach reads and proposes to create, change, or
 // delete. It reaches the tables the source guild's agents can be given: the
@@ -149,13 +151,13 @@ function plural(count: number, noun: string): string {
 async function tableActor(scope: EditScope): Promise<ArtifactActor> {
   return scope.artifacts.operatorContext(scope.orgId, String(scope.user.id), String(scope.user.name ?? "operator"), {
     guildId: scope.sourceGuildId,
-    hidden: await scope.repo.hiddenGuildsFor(scope.orgId, String(scope.user.id)),
+    hidden: await hiddenGuildsFor(scope.db, scope.orgId, String(scope.user.id)),
   });
 }
 
 async function tableContext(scope: EditScope): Promise<TableContext> {
-  const guild = await scope.repo.getGuild(scope.sourceGuildId);
-  const agents = await scope.repo.listAgents(scope.sourceGuildId);
+  const guild = await getGuild(scope.db, scope.sourceGuildId);
+  const agents = await listAgents(scope.db, scope.sourceGuildId);
   return {
     scope,
     actor: await tableActor(scope),

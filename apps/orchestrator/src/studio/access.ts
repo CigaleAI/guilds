@@ -12,6 +12,10 @@ import { isReadOnlyRemote, listedFromRows } from "../mcp/index.js";
 import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
+import { getAgent } from "../db/agents.js";
+import { deleteBinding, getBinding, listBindingsCovering, upsertBinding } from "../db/bindings.js";
+import { listMcpServers } from "../db/connectors.js";
+import { listMcpConnections, listMcpTools } from "../db/mcp.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
 // tools, and the connections and connection tools it is offered. A change is an agent-level overlay; the guild's and the
@@ -75,19 +79,19 @@ function hashOf(value: unknown): string {
 }
 
 async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot> {
-  const agent = await scope.repo.getAgent(agentId);
+  const agent = await getAgent(scope.db, agentId);
   if (!agent || String(agent.guild_id) !== scope.sourceGuildId || String(agent.org_id) !== scope.orgId) {
     throw new StudioUnprocessableError("agent is not in the source guild");
   }
   const resolveScope = { orgId: scope.orgId, guildId: scope.sourceGuildId, agentId };
-  const rows = await scope.repo.listBindingsCovering(resolveScope);
-  const servers = await scope.repo.listMcpServers(scope.orgId);
+  const rows = await listBindingsCovering(scope.db, resolveScope);
+  const servers = await listMcpServers(scope.db, scope.orgId);
   const serverById = new Map(servers.map((server) => [String(server.id), server]));
   const connections = new Map<string, AgentConnection>();
-  for (const connection of await scope.repo.listMcpConnections(resolveScope)) {
+  for (const connection of await listMcpConnections(scope.db, resolveScope)) {
     const server = serverById.get(String(connection.mcp_server_id));
     if (!server) continue;
-    const listed = listedFromRows(await scope.repo.listMcpTools(String(connection.id)));
+    const listed = listedFromRows(await listMcpTools(scope.db, String(connection.id)));
     const name = String(server.display_name || server.slug);
     const account = String(connection.account_hint ?? "");
     connections.set(String(connection.id), {
@@ -339,13 +343,13 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
   const actor = editActor(scope, { agentId });
   for (const change of review.changes) {
     if (change.setting === "inherit") {
-      await scope.repo.deleteBinding(
+      await deleteBinding(scope.db,
         { catalogKind: change.kind, catalogId: change.id, scope: "agent", scopeId: agentId },
         actor,
       );
       continue;
     }
-    const existing = await scope.repo.getBinding({
+    const existing = await getBinding(scope.db, {
       catalogKind: change.kind,
       catalogId: change.id,
       scope: "agent",
@@ -355,7 +359,7 @@ export async function applyAccess(scope: EditScope, agentId: string, review: Acc
       change.kind === "mcp" && existing?.connection_id !== null && existing?.connection_id !== undefined
         ? String(existing.connection_id)
         : null;
-    await scope.repo.upsertBinding(
+    await upsertBinding(scope.db,
       {
         bindingId: newId("bind"),
         catalogKind: change.kind,

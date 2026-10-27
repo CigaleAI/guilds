@@ -1,12 +1,18 @@
+import type pg from "pg";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
-import { persistAgent } from "../agents/persist.js";
+import { agentDatabase, persistAgent } from "../agents/persist.js";
 import { serverManifest } from "../connectors/load.js";
 import { GITHUB_SLUG } from "../github/index.js";
 import { integrationForConnector } from "../instance/integrations.js";
 import { oauthSetupState } from "../oauth/index.js";
-import { persistGuild } from "../guilds/persist.js";
-import { GuildAgentLimitError, assertGuildAgentRoom, validateGuildName } from "../guilds/validation.js";
+import { guildDatabase, persistGuild } from "../guilds/persist.js";
+import {
+  assertGuildAgentRoom,
+  GuildAgentLimitError,
+  guildAgentRoom,
+  validateGuildName,
+} from "../guilds/validation.js";
 import {
   addMissingBrowserLanguage,
   addMissingFlags,
@@ -18,8 +24,8 @@ import {
   secretAliasesOf,
   validateAgentName,
 } from "../agents/validation.js";
-import { coreModelCredentials } from "../llm/credentials.js";
-import { ModelsService } from "../llm/models.js";
+import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
+import { modelsDatabase, ModelsService } from "../llm/models.js";
 import { parseModelId } from "../llm/providers.js";
 import {
   harnessesOn,
@@ -57,17 +63,18 @@ import {
 } from "../machines/index.js";
 import { jsonObj } from "../db/json.js";
 import { userActor, type ChangeActor } from "../db/config-changes.js";
-import type { Repositories } from "../db/repositories.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import {
-  OPEN_POLICY,
   assertCanCreateAgents,
   assertCanCreateGuild,
   assertCanPlaceAgents,
-  remaining,
+  machineCounts,
+  OPEN_POLICY,
+  orgCounts,
   type OrgPolicy,
+  remaining,
 } from "../policy/index.js";
 import { httpAccess } from "../http/access.js";
 import { agentsOfRoles, raiseRecipeAccess } from "./access.js";
@@ -86,9 +93,24 @@ import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames }
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
 import type { RecipeStore } from "./store.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
+import {
+  countOrgAgents,
+  countOrgBrowserAgents,
+  countOrgCodingAgents,
+  getMembership,
+} from "../db/orgs.js";
+import { getMcpServerBySlug, listMcpServers } from "../db/connectors.js";
+import { deleteGuild, getGuild, listGuildRepositories } from "../db/guilds.js";
+import { deleteAgent, listAgents, writeAgentTask } from "../db/agents.js";
+import { listMachines } from "../db/machines.js";
+import { listSchedules } from "../db/schedules.js";
+import { listMcpConnections, listMcpTools } from "../db/mcp.js";
+import { listBindingsCovering, upsertBinding } from "../db/bindings.js";
+import { getSecretByName, listAgentSecrets, listSecrets, setSecretAccess } from "../db/secrets.js";
+import { mcpDatabase } from "../mcp/index.js";
 
 export type ApplyDeps = {
-  repo: Repositories;
+  db: pg.Pool;
   recipes: RecipeStore;
   artifacts: ArtifactStore;
   notes: NotesStore;
@@ -250,7 +272,7 @@ export class RecipeApplyService {
 
   constructor(public deps: ApplyDeps) {
     this.models =
-      deps.models ?? new ModelsService({ repo: deps.repo, credentials: coreModelCredentials(deps.repo) });
+      deps.models ?? new ModelsService({ db: modelsDatabase(deps.db), credentials: coreModelCredentials(modelProviderStore(deps.db)) });
   }
 
   private get policy(): OrgPolicy {
@@ -341,10 +363,10 @@ export class RecipeApplyService {
   /** The context a recipe validates against; given the recipe, what the registry offers for the connectors the box lacks. */
   async validationContext(orgId: string, recipe?: RecipeDocument): Promise<ValidationContext> {
     const { limits } = await this.policy.standing(orgId);
-    const agents = await this.deps.repo.countOrgAgents(orgId);
-    const browsers = await this.deps.repo.countOrgBrowserAgents(orgId);
-    const coders = await this.deps.repo.countOrgCodingAgents(orgId);
-    const servers = (await this.deps.repo.listMcpServers(orgId))
+    const agents = await countOrgAgents(this.deps.db, orgId);
+    const browsers = await countOrgBrowserAgents(this.deps.db, orgId);
+    const coders = await countOrgCodingAgents(this.deps.db, orgId);
+    const servers = (await listMcpServers(this.deps.db, orgId))
       .filter((row) => row.enabled !== false)
       .map((row) => String(row.slug));
     return {
@@ -371,7 +393,7 @@ export class RecipeApplyService {
     if (recipe.repositories.length) {
       wanted.add(GITHUB_SLUG);
     }
-    const rows = (await this.deps.repo.listMcpServers(orgId)).filter(
+    const rows = (await listMcpServers(this.deps.db, orgId)).filter(
       (row) => row.enabled !== false && wanted.has(String(row.slug)) && oauthSetupState(row) === "unsupported",
     );
     return rows.map((row) => {
@@ -410,7 +432,7 @@ export class RecipeApplyService {
     const names = this.resolveNames(prepared, choices.names ?? []);
     const collisions: string[] = [];
     for (const name of names.values()) {
-      const existing = await this.deps.repo.pool.query(`SELECT id FROM agents WHERE name = $1`, [name]);
+      const existing = await this.deps.db.query(`SELECT id FROM agents WHERE name = $1`, [name]);
       if (existing.rows.length) {
         collisions.push(name);
       }
@@ -418,11 +440,11 @@ export class RecipeApplyService {
     const guildName = validateGuildName(choices.guild_name || prepared.guild.name_suggestion);
     let destGuild: Record<string, unknown> | null = null;
     if (choices.guild_id) {
-      destGuild = await this.deps.repo.getGuild(choices.guild_id);
+      destGuild = await getGuild(this.deps.db, choices.guild_id);
       if (!destGuild || String(destGuild.org_id) !== String(org.id)) {
         throw new RecipeError("destination guild not found", 404);
       }
-      const members = await this.deps.repo.listAgents(String(destGuild.id));
+      const members = await listAgents(this.deps.db, String(destGuild.id));
       if (members.length) {
         throw new RecipeError("destination guild is not empty");
       }
@@ -501,7 +523,7 @@ export class RecipeApplyService {
     adds: MachineSize;
     findings: RecipeFinding[];
   }> {
-    const rows = await this.deps.repo.listMachines(orgId);
+    const rows = await listMachines(this.deps.db, orgId);
     const needs = rolesNeeds(recipe);
     const minimum = agentsMinimum(needs);
     const adds = plannedLoad(needs);
@@ -515,7 +537,7 @@ export class RecipeApplyService {
       throw new RecipeError("machine not found", 404);
     }
     const { limits } = await this.policy.standing(orgId);
-    const visible = user ? await visibleGuildIds(this.deps.repo, orgId, String(user.id)) : null;
+    const visible = user ? await visibleGuildIds(this.deps.db, orgId, String(user.id)) : null;
     const findings = machineFindings(recipe, machine, {
       maxAgents: Math.min(limits.maxAgentsPerMachine ?? MAX_AGENTS_PER_MACHINE, MAX_AGENTS_PER_MACHINE),
       private: visible !== null && !hostsOnlyVisible(machine, visible),
@@ -567,21 +589,21 @@ export class RecipeApplyService {
     const machineId = String(preview.machine_id);
     const maxAgentsPerMachine = await assertCanPlaceAgents(
       this.policy,
-      this.deps.repo,
+      machineCounts(this.deps.db),
       String(org.id),
       machineId,
       recipe.roles.length,
     );
     if (!choices.guild_id) {
-      await assertCanCreateGuild(this.policy, this.deps.repo, String(org.id));
+      await assertCanCreateGuild(this.policy, orgCounts(this.deps.db), String(org.id));
     }
-    await assertCanCreateAgents(this.policy, this.deps.repo, String(org.id), {
+    await assertCanCreateAgents(this.policy, orgCounts(this.deps.db), String(org.id), {
       agents: recipe.roles.length,
       browserAgents: recipe.roles.filter((role) => role.browser.required || role.config.browser).length,
       codingAgents: recipe.roles.filter((role) => role.config.coding === true).length,
     });
     try {
-      await assertGuildAgentRoom(this.deps.repo, choices.guild_id || null, recipe.roles.length);
+      await assertGuildAgentRoom(guildAgentRoom(this.deps.db), choices.guild_id || null, recipe.roles.length);
     } catch (error) {
       if (error instanceof GuildAgentLimitError) {
         throw new RecipeConflictError(error.message);
@@ -603,7 +625,7 @@ export class RecipeApplyService {
     });
     try {
       if (!choices.guild_id) {
-        await persistGuild(this.deps.repo, this.deps.notes, {
+        await persistGuild(guildDatabase(this.deps.db), this.deps.notes, {
           guildId,
           name: String(preview.guild_name),
           now,
@@ -640,7 +662,7 @@ export class RecipeApplyService {
       for (const role of recipe.roles) {
         const agentId = newId("a");
         const name = names.get(role.role) ?? role.name_suggestion;
-        await persistAgent(this.deps.repo, this.deps.notes, {
+        await persistAgent(agentDatabase(this.deps.db), this.deps.notes, {
           agentId,
           guildId,
           guildName: String(preview.guild_name),
@@ -699,7 +721,7 @@ export class RecipeApplyService {
         }
         task = rewritten.text;
         if (task.trim()) {
-          await this.deps.repo.writeAgentTask(
+          await writeAgentTask(this.deps.db,
             operatorActor({
               orgId: String(org.id),
               actorId: String(user.id),
@@ -825,7 +847,7 @@ export class RecipeApplyService {
           recipe.roles.flatMap((role) => schedulesForRole(role, recipe).map((item) => item.key)),
       };
       const checklist = checklistFromPlan(recipe, plan as Record<string, unknown>);
-      const result = await this.deps.repo.pool.query(
+      const result = await this.deps.db.query(
         `INSERT INTO recipe_applies (
            id, org_id, recipe_id, created_by_user_id, guild_id, created_guild, status,
            recipe_body_version, preview, plan, checklist, warnings, created_at, updated_at
@@ -849,10 +871,10 @@ export class RecipeApplyService {
       applied = mapApply(result.rows[0] as Record<string, unknown>);
     } catch (error) {
       for (const agentId of createdAgents.reverse()) {
-        await this.deps.repo.deleteAgent(agentId).catch(() => undefined);
+        await deleteAgent(this.deps.db, agentId).catch(() => undefined);
       }
       if (createdGuild) {
-        await this.deps.repo.deleteGuild(guildId).catch(() => undefined);
+        await deleteGuild(this.deps.db, guildId).catch(() => undefined);
       }
       for (const collectionId of createdCollections.reverse()) {
         await this.deps.artifacts.deleteCollection(actor, collectionId).catch(() => undefined);
@@ -864,13 +886,13 @@ export class RecipeApplyService {
   }
 
   async get(applyId: string): Promise<Record<string, unknown> | null> {
-    const result = await this.deps.repo.pool.query(`SELECT * FROM recipe_applies WHERE id = $1`, [applyId]);
+    const result = await this.deps.db.query(`SELECT * FROM recipe_applies WHERE id = $1`, [applyId]);
     const row = result.rows[0] as Record<string, unknown> | undefined;
     return row ? mapApply(row) : null;
   }
 
   async listOpenForGuild(guildId: string): Promise<Record<string, unknown> | null> {
-    const result = await this.deps.repo.pool.query(
+    const result = await this.deps.db.query(
       `SELECT * FROM recipe_applies
         WHERE guild_id = $1 AND status IN ('skeleton', 'checklist')
         ORDER BY updated_at DESC LIMIT 1`,
@@ -881,7 +903,7 @@ export class RecipeApplyService {
   }
 
   async listReadyForGuild(guildId: string): Promise<Record<string, unknown> | null> {
-    const result = await this.deps.repo.pool.query(
+    const result = await this.deps.db.query(
       `SELECT * FROM recipe_applies
         WHERE guild_id = $1 AND status = 'ready'
         ORDER BY updated_at DESC LIMIT 1`,
@@ -967,7 +989,7 @@ export class RecipeApplyService {
     for (const role of recipe.roles) {
       const agentId = names.find((item) => item.role === role.role)?.agent_id;
       if (!agentId) continue;
-      const rows = await this.deps.repo.listSchedules(agentId);
+      const rows = await listSchedules(this.deps.db, agentId);
       const created = schedulesForRole(role, recipe);
       for (const [index, row] of rows.entries()) {
         const key = created[index]?.key;
@@ -976,7 +998,7 @@ export class RecipeApplyService {
         }
       }
     }
-    await this.deps.repo.pool.query(
+    await this.deps.db.query(
       `UPDATE recipe_applies SET status = 'ready', checklist = $2::jsonb, updated_at = $3 WHERE id = $1`,
       [applyRow.id, JSON.stringify(checklist), now.toISOString()],
     );
@@ -988,11 +1010,11 @@ export class RecipeApplyService {
       throw new RecipeError("completed apply cannot be aborted");
     }
     if (applyRow.created_guild && applyRow.guild_id) {
-      const members = await this.deps.repo.listAgents(String(applyRow.guild_id));
+      const members = await listAgents(this.deps.db, String(applyRow.guild_id));
       for (const member of members) {
-        await this.deps.repo.deleteAgent(String(member.id)).catch(() => undefined);
+        await deleteAgent(this.deps.db, String(member.id)).catch(() => undefined);
       }
-      await this.deps.repo.deleteGuild(String(applyRow.guild_id)).catch(() => undefined);
+      await deleteGuild(this.deps.db, String(applyRow.guild_id)).catch(() => undefined);
       const plan = (applyRow.plan ?? {}) as Record<string, unknown>;
       const actor = operatorActor({
         orgId: String(applyRow.org_id),
@@ -1005,7 +1027,7 @@ export class RecipeApplyService {
         }
       }
     }
-    await this.deps.repo.pool.query(
+    await this.deps.db.query(
       `UPDATE recipe_applies SET status = 'aborted', updated_at = $2 WHERE id = $1`,
       [applyRow.id, new Date().toISOString()],
     );
@@ -1022,12 +1044,12 @@ export class RecipeApplyService {
     const recipe = prepareRecipeForApply(parseRecipe((await this.deps.recipes.get(String(applyRow.recipe_id)))?.body), ctx.publishedServers);
     const connection = recipe.connections.find((item) => item.server === server);
     if (!connection) return;
-    const serverRow = await this.deps.repo.getMcpServerBySlug(server, String(applyRow.org_id));
+    const serverRow = await getMcpServerBySlug(this.deps.db, server, String(applyRow.org_id));
     if (!serverRow) return;
     const plan = (applyRow.plan ?? {}) as Record<string, unknown>;
     const names = (plan.names as Array<{ role: string; agent_id?: string }>) ?? [];
     const now = new Date();
-    const listed = await this.deps.repo.listMcpTools(connectionId);
+    const listed = await listMcpTools(this.deps.db, connectionId);
     const known = new Set(listed.map((row) => String(row.namespaced_name)));
     const roleSpecs = recipe.roles.map((role) => ({
       role: role.role,
@@ -1043,7 +1065,7 @@ export class RecipeApplyService {
     const bindAtGuild = connection.recommended_scope !== "agent" && allRolesEnabled && toolsUniform;
 
     const bind = async (scope: "guild" | "agent", scopeId: string, spec: { enabled: boolean; tools: Record<string, boolean> }) => {
-      await this.deps.repo.upsertBinding(
+      await upsertBinding(this.deps.db,
         {
           bindingId: newId("bind"),
           catalogKind: "mcp",
@@ -1060,7 +1082,7 @@ export class RecipeApplyService {
         if (!known.has(tool)) {
           continue;
         }
-        await this.deps.repo.upsertBinding(
+        await upsertBinding(this.deps.db,
           {
             bindingId: newId("bind"),
             catalogKind: "mcp_tool",
@@ -1153,8 +1175,8 @@ export class RecipeApplyService {
     recipe: RecipeDocument,
     decisions: ConnectionDecision[],
   ): Promise<Array<Record<string, unknown>>> {
-    const connections = await this.deps.repo.listMcpConnections({ orgId: String(org.id) });
-    const servers = await this.deps.repo.listMcpServers(String(org.id));
+    const connections = await listMcpConnections(this.deps.db, { orgId: String(org.id) });
+    const servers = await listMcpServers(this.deps.db, String(org.id));
     const bySlug = new Map(servers.map((row) => [String(row.slug), row]));
     const chosen = new Map(decisions.map((item) => [item.server, item]));
     return recipe.connections.map((connection) => {
@@ -1189,7 +1211,7 @@ export class RecipeApplyService {
     recipe: RecipeDocument,
     decisions: SecretDecision[],
   ): Promise<Array<Record<string, unknown>>> {
-    const existing = await this.deps.repo.listSecrets(String(org.id));
+    const existing = await listSecrets(this.deps.db, String(org.id));
     const names = new Set(existing.map((row) => String(row.name)));
     const chosen = new Map(decisions.map((item) => [item.name, item]));
     return recipe.secrets.map((secret) => {
@@ -1215,7 +1237,7 @@ export class RecipeApplyService {
     const id = String(step.id);
     if (id.startsWith("conn:")) {
       const slug = id.slice(5);
-      const access = await httpAccess(this.deps.repo, {
+      const access = await httpAccess(mcpDatabase(this.deps.db), {
         orgId: String(applyRow.org_id),
         guildId: String(applyRow.guild_id),
         viewScope: "guild",
@@ -1241,7 +1263,7 @@ export class RecipeApplyService {
     }
     if (id.startsWith("repo:")) {
       const name = id.slice(5);
-      const listed = await this.deps.repo.listGuildRepositories(String(applyRow.guild_id));
+      const listed = await listGuildRepositories(this.deps.db, String(applyRow.guild_id));
       return listed.some((row) => row.name === name)
         ? { ok: true, reason: "" }
         : { ok: false, reason: `The guild has no repository named ${name} yet. Add it in the guild's Settings, then check it.` };
@@ -1259,11 +1281,11 @@ export class RecipeApplyService {
     }
     if (id.startsWith("overlays:")) {
       const slug = id.slice(9);
-      const server = await this.deps.repo.getMcpServerBySlug(slug, String(applyRow.org_id));
+      const server = await getMcpServerBySlug(this.deps.db, slug, String(applyRow.org_id));
       if (!server) {
         return { ok: false, reason: `${slug} is not in the catalog.` };
       }
-      const bindings = await this.deps.repo.listBindingsCovering({
+      const bindings = await listBindingsCovering(this.deps.db, {
         orgId: String(applyRow.org_id),
         guildId: String(applyRow.guild_id),
       });
@@ -1296,7 +1318,7 @@ export class RecipeApplyService {
     for (const item of planned) {
       if (roles.length && !roles.includes(String(item.role))) continue;
       if (typeof item.agent_id !== "string") continue;
-      const environment = await this.deps.repo.listAgentSecrets({
+      const environment = await listAgentSecrets(this.deps.db, {
         orgId: String(applyRow.org_id),
         guildId: String(applyRow.guild_id),
         agentId: item.agent_id,
@@ -1318,16 +1340,16 @@ export class RecipeApplyService {
   ): Promise<Record<string, unknown>> {
     const orgId = String(applyRow.org_id);
     const guildId = String(applyRow.guild_id);
-    const membership = await this.deps.repo.getMembership(orgId, String(user.id));
+    const membership = await getMembership(this.deps.db, orgId, String(user.id));
     const plan = (jsonObj(applyRow.plan) ?? {}) as Record<string, unknown>;
     if (membership && managesOrgSecrets(String(membership.role))) {
       for (const secret of (plan.secrets as Array<Record<string, unknown>>) ?? []) {
         if (secret.action !== "reuse") continue;
-        const row = await this.deps.repo.getSecretByName(orgId, String(secret.dest_name ?? secret.name));
+        const row = await getSecretByName(this.deps.db, orgId, String(secret.dest_name ?? secret.name));
         if (!row || row.org_wide) continue;
         const access = accessOf(row);
         if (access.guild_ids.includes(guildId)) continue;
-        await this.deps.repo.setSecretAccess(
+        await setSecretAccess(this.deps.db,
           String(row.id),
           { ...access, guild_ids: [...access.guild_ids, guildId] },
           new Date(),
@@ -1354,7 +1376,7 @@ export class RecipeApplyService {
     warnings?: unknown,
   ): Promise<Record<string, unknown>> {
     const nextWarnings = warnings ?? applyRow.warnings ?? [];
-    await this.deps.repo.pool.query(
+    await this.deps.db.query(
       `UPDATE recipe_applies SET checklist = $2::jsonb, warnings = $3::jsonb, updated_at = $4 WHERE id = $1`,
       [applyId, JSON.stringify(checklist), JSON.stringify(nextWarnings), new Date().toISOString()],
     );
@@ -1363,7 +1385,7 @@ export class RecipeApplyService {
 
   private async writeNativeAccess(role: RecipeRole, agentId: string, now: Date, actor: ChangeActor): Promise<void> {
     for (const [tool, enabled] of Object.entries(role.native_tools)) {
-      await this.deps.repo.upsertBinding(
+      await upsertBinding(this.deps.db,
         {
           bindingId: newId("bind"),
           catalogKind: "native_tool",

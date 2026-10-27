@@ -161,9 +161,9 @@ test("a platform login calls with the instance key; an organisation's login with
   const seen: string[] = [];
   const pool = searchPool(seen);
   await withInstanceKey("tvly-instance", async () => {
-    const result = await pool.call(new MeterDb(), login("platform", {}), SERVER, "search", { query: "messi" });
+    const result = await pool.call(new MeterDb() as never, login("platform", {}), SERVER, "search", { query: "messi" });
     assert.equal(result, "Messi\nhttps://example.com/messi\nFootballer");
-    await pool.call(new MeterDb(), login("org", { token: "tvly-own" }), SERVER, "search", { query: "messi" });
+    await pool.call(new MeterDb() as never, login("org", { token: "tvly-own" }), SERVER, "search", { query: "messi" });
   });
   assert.deepEqual(seen, ["Bearer tvly-instance", "Bearer tvly-own"]);
 });
@@ -183,15 +183,15 @@ test("a plan's monthly cap refuses platform-login calls past it and leaves an or
     const platform = login("platform", {});
     const results = [];
     for (let index = 0; index < 3; index += 1) {
-      results.push(await pool.call(db, platform, SERVER, "search", { query: "q" }, { orgId: "org_1" }));
+      results.push(await pool.call(db as never, platform, SERVER, "search", { query: "q" }, { orgId: "org_1" }));
     }
     assert.equal(results[2], "ERROR: plan limit reached: tavily calls this month");
     assert.equal(seen.length, 2);
     assert.equal(
-      await pool.call(db, platform, SERVER, "search", { query: "q" }, { orgId: "org_2" }),
+      await pool.call(db as never, platform, SERVER, "search", { query: "q" }, { orgId: "org_2" }),
       "Messi\nhttps://example.com/messi\nFootballer",
     );
-    await pool.call(db, login("org", { token: "tvly-own" }), SERVER, "search", { query: "q" }, { orgId: "org_1" });
+    await pool.call(db as never, login("org", { token: "tvly-own" }), SERVER, "search", { query: "q" }, { orgId: "org_1" });
   });
   assert.equal(seen.length, 4);
   assert.deepEqual([...db.calls.values()], [2, 1]);

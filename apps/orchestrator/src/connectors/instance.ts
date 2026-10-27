@@ -1,5 +1,5 @@
+import type pg from "pg";
 import { encryptPayload } from "../credentials/crypto.js";
-import type { Repositories } from "../db/repositories.js";
 import { connectorIntegration, platformConnectors } from "../instance/connectors.js";
 import {
   connectorIntegrationId,
@@ -13,6 +13,7 @@ import {
 import { newId } from "../lib/ids.js";
 import { authFields, type Manifest } from "./manifest.js";
 import type { Credentials } from "./types.js";
+import { connectMcp, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
 
 /** The integration a manifest's `auth.instance` reads: a shipped one by id, or the connector's own. */
 function instanceIntegration(manifest: Manifest): Integration | null {
@@ -92,7 +93,7 @@ export function instanceRedactions(sources?: IntegrationSources): Record<string,
  * is off, that login is disconnected. Runs at boot and after every instance key write.
  */
 export async function syncInstanceLogins(
-  repo: Repositories,
+  db: pg.Pool,
   masterKey?: Buffer,
   now = new Date(),
   sources?: IntegrationSources,
@@ -102,11 +103,11 @@ export async function syncInstanceLogins(
       continue;
     }
     const on = instanceKey(item.manifest, sources) !== null;
-    const login = await repo.getMcpConnectionForOwner(item.id, "platform", null);
+    const login = await getMcpConnectionForOwner(db, item.id, "platform", null);
     if (login === null) {
       if (on) {
         const [ciphertext, nonce] = encryptPayload({}, masterKey);
-        await repo.connectMcp(
+        await connectMcp(db,
           {
             connectionId: newId("conn"),
             bindingId: newId("bind"),
@@ -125,7 +126,7 @@ export async function syncInstanceLogins(
     }
     const status = on ? "connected" : "disconnected";
     if (login.status !== status) {
-      await repo.saveMcpConnection(
+      await saveMcpConnection(db,
         login.id,
         {
           ciphertext: login.ciphertext as Buffer,

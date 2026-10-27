@@ -1,5 +1,5 @@
+import type pg from "pg";
 import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
-import type { Repositories } from "../db/repositories.js";
 import { stamp } from "../db/pg.js";
 import type { ActivityWindow } from "./activity.js";
 import { StudioError, StudioUnprocessableError } from "./errors.js";
@@ -16,12 +16,13 @@ import {
   type StateKind,
   type StateRow,
 } from "./state-list.js";
+import { listAgents } from "../db/agents.js";
 
 // The loaders behind Studio's State list: the items a guild's state holds,
 // read with the operator's own permissions so the list never shows what the
 // viewer cannot open, and the change and read rows of a window.
 
-export type StateDeps = { repo: Repositories; artifacts: ArtifactStore };
+export type StateDeps = { db: pg.Pool; artifacts: ArtifactStore };
 
 type Row = Record<string, unknown>;
 
@@ -35,7 +36,7 @@ const CHANGE_COLUMNS = `fc.display_path, fc.operation, fc.actor_type, fc.actor_i
        r.agent_id AS run_agent_id`;
 
 async function listWindowFileChanges(deps: StateDeps, orgId: string, window: ActivityWindow): Promise<Row[]> {
-  const result = await deps.repo.pool.query(
+  const result = await deps.db.query(
     `SELECT ${CHANGE_COLUMNS}
        FROM file_changes fc LEFT JOIN runs r ON r.id = fc.run_id
       WHERE fc.org_id = $1 AND fc.created_at >= $2 AND fc.created_at <= $3`,
@@ -50,7 +51,7 @@ const CONFIG_COLUMNS = `cc.target_kind, cc.target_id, cc.operation, cc.actor_typ
 
 // The config log's changes to tables and notes: a table's shape and access, a note's access.
 async function listWindowConfigChanges(deps: StateDeps, orgId: string, window: ActivityWindow): Promise<Row[]> {
-  const result = await deps.repo.pool.query(
+  const result = await deps.db.query(
     `SELECT ${CONFIG_COLUMNS}
        FROM config_changes cc LEFT JOIN runs r ON r.id = cc.run_id
       WHERE cc.org_id = $1 AND cc.target_kind IN ('collection', 'note') AND cc.created_at >= $2 AND cc.created_at <= $3`,
@@ -60,7 +61,7 @@ async function listWindowConfigChanges(deps: StateDeps, orgId: string, window: A
 }
 
 async function listWindowRuns(deps: StateDeps, guildId: string, window: ActivityWindow): Promise<Row[]> {
-  const result = await deps.repo.pool.query(
+  const result = await deps.db.query(
     `SELECT r.id, r.id AS run_id, r.agent_id, r.created_at, r.metadata->'task_source' AS task_source
        FROM runs r JOIN agents a ON a.id = r.agent_id
       WHERE a.guild_id = $1 AND r.created_at >= $2 AND r.created_at <= $3`,
@@ -76,7 +77,7 @@ async function listWindowReadCalls(
   guildId: string,
   request: { window: ActivityWindow; tools: string[] },
 ): Promise<Row[]> {
-  const result = await deps.repo.pool.query(
+  const result = await deps.db.query(
     `SELECT m.run_id, r.agent_id, m.created_at, m.metadata->>'tool_name' AS tool_name,
             m.metadata->>'tool_call_id' AS call_id,
             (SELECT call->'function'->>'arguments'
@@ -129,7 +130,7 @@ type StateScope = { actor: ArtifactActor; guildId: string; window: ActivityWindo
 
 /** The items and every change and read of them in the window. */
 async function loadStateEvents(deps: StateDeps, scope: StateScope): Promise<{ items: StateItem[]; events: StateEvent[] }> {
-  const agentRows = await deps.repo.listAgents(scope.guildId);
+  const agentRows = await listAgents(deps.db, scope.guildId);
   const agents = new Map(agentRows.map((agent) => [String(agent.id), String(agent.name)]));
   const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
   const scripts = items.filter((item) => item.kind === "script").map((item) => item.title);
@@ -211,7 +212,7 @@ async function listItemChanges(
   orgId: string,
   page: { item: StateItem; op: string | null; before: { at: string; id: string } | null },
 ): Promise<Row[]> {
-  const result = await deps.repo.pool.query(
+  const result = await deps.db.query(
     `SELECT * FROM (
        SELECT ${CHANGE_COLUMNS}, NULL::text AS summary
          FROM file_changes fc LEFT JOIN runs r ON r.id = fc.run_id
@@ -248,7 +249,7 @@ export async function loadStateHistory(
   scope: { actor: ArtifactActor; guildId: string },
   request: { path: string; op: string | null; cursor: string | null },
 ): Promise<{ history: Array<Record<string, unknown>>; next_cursor: string | null }> {
-  const agentRows = await deps.repo.listAgents(scope.guildId);
+  const agentRows = await listAgents(deps.db, scope.guildId);
   const agents = new Map(agentRows.map((agent) => [String(agent.id), String(agent.name)]));
   const items = await loadStateItems(deps, scope.actor, { guildId: scope.guildId, agentIds: [...agents.keys()] });
   const item = items.find((entry) => entry.display_path === request.path);

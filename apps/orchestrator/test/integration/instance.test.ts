@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertUser } from "../../src/db/users.js";
+import { insertMember } from "../../src/db/orgs.js";
 
 const OWNER = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const MEMBER = { "X-Guilds-User": "user_member", "X-Guilds-Org": "org_home" };
@@ -36,13 +37,10 @@ test("the instance descriptor lists integrations and their state, never a key", 
   const database = await connect(await createIsolatedDatabase(dbName));
   const notes = new NotesStore(tempDir("guilds-instance-"), templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  const member = await repo.insertUser(
-    { userId: "user_member", name: "member", image: null, email: "member@example.com" },
-    new Date(),
-  );
-  await repo.insertMember("org_home", String(member.id), "member", new Date());
-  const deps = { repo, notes, scripts: new Scripts(repo), schedules: new Schedules(repo) };
+  const db = database.pool;
+  const member = await insertUser(db, { userId: "user_member", name: "member", image: null, email: "member@example.com" }, new Date());
+  await insertMember(db, "org_home", String(member.id), "member", new Date());
+  const deps = { db, notes, scripts: new Scripts(scriptDatabase(db)), schedules: new Schedules(scheduleDatabase(db)) };
   const core = await buildApp(database, deps);
   const describe = async (headers: Record<string, string>) => {
     const response = await core.inject({ method: "GET", url: "/api/instance", headers });

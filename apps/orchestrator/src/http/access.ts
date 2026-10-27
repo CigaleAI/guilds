@@ -1,8 +1,7 @@
 import { accessPayload, mcpToolView, resolvedMcp } from "../access/index.js";
 import { resolveMcpTool } from "../access/runtime.js";
 import { manifestTools } from "../connectors/load.js";
-import { listedFromRows, type McpPool } from "../mcp/index.js";
-import type { Repositories } from "../db/repositories.js";
+import { listedFromRows, type McpDatabase, type McpPool } from "../mcp/index.js";
 
 function listedRecord(tool: unknown): Record<string, unknown> {
   if (tool && typeof tool === "object" && !Array.isArray(tool)) {
@@ -22,7 +21,7 @@ function visibleServers(
 }
 
 export async function httpAccess(
-  repo: Repositories,
+  db: McpDatabase,
   options: {
     orgId?: string | null;
     guildId?: string | null;
@@ -36,8 +35,8 @@ export async function httpAccess(
     guildId: options.guildId ?? null,
     agentId: options.agentId ?? null,
   };
-  const connections = await repo.listMcpConnections(scope);
-  const servers = visibleServers(await repo.listMcpServers(scope.orgId), connections);
+  const connections = await db.listMcpConnections(scope);
+  const servers = visibleServers(await db.listMcpServers(scope.orgId), connections);
   const serversById = new Map(servers.map((server) => [String(server.id), server]));
   const rawListed: Record<string, unknown[]> = {};
   for (const connection of connections) {
@@ -47,16 +46,16 @@ export async function httpAccess(
     }
     if (connection.status === "connected" && options.mcp?.syncTools) {
       try {
-        rawListed[String(connection.id)] = await options.mcp.syncTools(repo, connection, server);
+        rawListed[String(connection.id)] = await options.mcp.syncTools(db, connection, server);
         continue;
       } catch {
         /* use stored rows */
       }
     }
-    rawListed[String(connection.id)] = listedFromRows(await repo.listMcpTools(String(connection.id)));
+    rawListed[String(connection.id)] = listedFromRows(await db.listMcpTools(String(connection.id)));
   }
   // Read after the syncs: a sync writes an Off binding for each tool it lists for the first time.
-  const rows = await repo.listBindingsCovering(scope);
+  const rows = await db.listBindingsCovering(scope);
   const listedTools: Record<string, Array<Record<string, unknown>>> = {};
   for (const [item, server] of resolvedMcp(rows, servers, {
     orgId: scope.orgId,

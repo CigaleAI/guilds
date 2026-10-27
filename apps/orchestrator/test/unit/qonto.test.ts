@@ -298,8 +298,8 @@ test("sync Qonto writes the curated catalog", async () => {
   };
   const connection = { id: "conn_qonto", status: "connected", ciphertext, nonce };
   const server = { id: "mcp_qonto", slug: "qonto", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `qonto_${spec.name}`));
   assert.deepEqual(first, second);
@@ -322,7 +322,7 @@ test("call Qonto dispatches with stored login and secret", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
   const stored = await pool.call(
-    { async listMcpTools() { return []; }, async replaceMcpTools() { return; } },
+    { async listMcpTools() { return []; }, async replaceMcpTools() { return; } } as never,
     { id: "conn_qonto", status: "connected", ciphertext, nonce },
     { id: "mcp_qonto", slug: "qonto", auth: "token" },
     "list_missing_invoices",

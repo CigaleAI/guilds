@@ -1,18 +1,25 @@
-import type { NewGuild } from "../db/guilds.js";
+import type pg from "pg";
 import {
   DEFAULT_AGENT_MESSAGE_LIMIT,
   DEFAULT_GUILD_AGENTS,
   type GuildVisibility,
 } from "./validation.js";
+import { deleteGuild, insertGuild } from "../db/guilds.js";
+import { bindQuery } from "../db/pg.js";
 
 export type GuildNotes = {
   createGuild(orgSlug: string, name: string): Promise<void>;
 };
 
-export type GuildDatabase = {
-  insertGuild(guild: NewGuild, now: Date): Promise<void>;
-  deleteGuild(guildId: string): Promise<void>;
-};
+/** The db/ functions a new guild is written through, on `db`. */
+export function guildDatabase(db: pg.Pool) {
+  return {
+    insertGuild: bindQuery(db, insertGuild),
+    deleteGuild: bindQuery(db, deleteGuild),
+  };
+}
+
+export type GuildDatabase = ReturnType<typeof guildDatabase>;
 
 export async function persistGuild(
   db: GuildDatabase,

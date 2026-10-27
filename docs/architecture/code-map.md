@@ -69,7 +69,7 @@ A repository that extends core holds this one as a submodule
 | `access/` | Binding resolution and a run's tools, MCP, and secrets ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM, environment fingerprints, connection views, and validation |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, and redaction ([Secrets](../concepts/secrets.md)) |
-| `db/` | Pool, codecs, Drizzle schema, `Repositories`, seeds, and the migration check |
+| `db/` | Pool, codecs, Drizzle schema, one query module per table family (`users.ts`, `agents.ts`, `runs.ts`, …), seeds, and the migration check |
 | `attachments/` | Chat images: sniffing, upload, and hydration |
 | `artifacts/` | `ArtifactStore` and `ArtifactFiles` (`files.ts`): notes, memory, scripts, files, collections, records, and the access lists of notes, collections, and files ([Artifacts](../concepts/artifacts.md), [Access](../concepts/access.md)) |
 | `notes/` | `NotesStore`: `system.md` and the routine shadow files; the store the generation unit tests use |

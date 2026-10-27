@@ -261,7 +261,7 @@ test("a session refuses an endpoint that resolves to a private address", async (
   try {
     const server = { id: "mcp_fixture", slug: "fixture", auth: "token", config: { url: fixture.url } };
     await assert.rejects(
-      () => new McpPool().call(new MemoryDb(), connectionOf("mcp-test"), server, "ping", {}),
+      () => new McpPool().call(new MemoryDb() as never, connectionOf("mcp-test"), server, "ping", {}),
       (error: unknown) => error instanceof McpError && error.status === 403 && /private or local/.test(error.message),
     );
     assert.equal(fixture.called, 0);
@@ -326,11 +326,11 @@ test("provider error and malformed MCP result surface as McpError", async () => 
   try {
     fixture.mode = "error";
     await assert.rejects(
-      () => pool.call(db, connection, server, "ping", {}),
+      () => pool.call(db as never, connection, server, "ping", {}),
       (error: unknown) => error instanceof McpError && error.status === 502,
     );
     fixture.mode = "malformed";
-    await assert.rejects(() => pool.call(db, connection, server, "ping", {}));
+    await assert.rejects(() => pool.call(db as never, connection, server, "ping", {}));
   } finally {
     await fixture.close();
   }
@@ -345,7 +345,7 @@ test("gmail send stays Off and the sandbox env has no Gmail token", async () => 
   const connection = connectionOf(token, { id: "conn_gmail", mcp_server_id: "mcp_gmail" });
   db.servers = [{ id: "mcp_gmail", slug: "gmail", display_name: "Gmail", auth: "oauth" }];
   db.connections = [connection];
-  await pool.syncTools(db, connection, db.servers[0]!, { force: true });
+  await pool.syncTools(db as never, connection, db.servers[0]!, { force: true });
   assert.equal(db.bindings.get("mcp_tool:gmail_send_message:org_1")?.enabled, false);
   const runtime = await agentRuntime(db as never, { id: "a_1", guild_id: "guild_1", org_id: "org_1" }, { mcpPool: pool });
   const offered = ((runtime.mcp[0] as { tools: Array<{ name: string }> } | undefined)?.tools ?? []).map(

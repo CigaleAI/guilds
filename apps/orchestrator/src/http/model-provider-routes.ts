@@ -1,20 +1,21 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { ModelsError, ModelsService } from "../llm/models.js";
-import { coreModelCredentials } from "../llm/credentials.js";
+import { modelsDatabase, ModelsError, ModelsService } from "../llm/models.js";
+import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { isProvider } from "../llm/providers.js";
 import { canManageSettings } from "../organisations/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser } from "./identity.js";
+import { currentUser, identityDatabase } from "./identity.js";
 import { bodyOf, param } from "./request.js";
+import { getMembership } from "../db/orgs.js";
 
 async function requireMembership(
   deps: AppDeps,
   request: FastifyRequest,
   orgId: string,
 ): Promise<Record<string, unknown>> {
-  const user = await currentUser(deps.repo, request, deps);
-  const membership = await deps.repo.getMembership(orgId, String(user.id));
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  const membership = await getMembership(deps.db, orgId, String(user.id));
   if (membership === null) {
     throw new HttpError(404, "organisation not found");
   }
@@ -41,8 +42,8 @@ export function modelsOf(deps: AppDeps): ModelsService {
   return (
     deps.models ??
     new ModelsService({
-      repo: deps.repo,
-      credentials: deps.modelCredentials ?? coreModelCredentials(deps.repo, deps.masterKey),
+      db: modelsDatabase(deps.db),
+      credentials: deps.modelCredentials ?? coreModelCredentials(modelProviderStore(deps.db), deps.masterKey),
       masterKey: deps.masterKey,
     })
   );

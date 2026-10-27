@@ -1,45 +1,43 @@
+import type pg from "pg";
 import { newId } from "../lib/ids.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
 import { formatScheduleRow, rowDescription, scheduleItem } from "./item.js";
 import { planWake, rowTiming, validateTiming } from "./timing.js";
-import type { PlannedWake } from "./window.js";
 import type { ChangeActor } from "../db/config-changes.js";
 import type {
-  AgentScheduleRow,
-  GuildScheduleRow,
-  NewSchedule,
   ScheduleDefinition,
   ScheduleFields,
-  ScheduleKey,
   ScheduleRow,
-  ScheduleUpdate,
 } from "../db/schedules.js";
+import {
+  deleteSchedule,
+  getSchedule,
+  insertSchedule,
+  listSchedules,
+  listSchedulesForGuild,
+  pauseSchedule,
+  resumeSchedule,
+  setScheduleNextRun,
+  updateSchedule,
+} from "../db/schedules.js";
+import { bindQuery } from "../db/pg.js";
 
-export type ScheduleDatabase = {
-  insertSchedule(schedule: NewSchedule, now: Date, actor: ChangeActor): Promise<ScheduleRow>;
-  deleteSchedule(
-    agentId: string,
-    scheduleId: string,
-    actor: ChangeActor,
-  ): Promise<ScheduleRow | null>;
-  getSchedule(agentId: string, scheduleId: string): Promise<ScheduleRow | null>;
-  pauseSchedule(key: ScheduleKey, now: Date, actor: ChangeActor): Promise<ScheduleRow | null>;
-  resumeSchedule(
-    key: ScheduleKey,
-    wake: PlannedWake,
-    now: Date,
-    actor: ChangeActor,
-  ): Promise<ScheduleRow | null>;
-  listSchedules(agentId: string): Promise<AgentScheduleRow[]>;
-  listSchedulesForGuild(guildId: string): Promise<GuildScheduleRow[]>;
-  updateSchedule(
-    key: ScheduleKey,
-    update: ScheduleUpdate,
-    now: Date,
-    actor: ChangeActor,
-  ): Promise<ScheduleRow | null>;
-  setScheduleNextRun(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
-};
+/** The db/ functions routines are read and written through, on `db`. */
+export function scheduleDatabase(db: pg.Pool) {
+  return {
+    insertSchedule: bindQuery(db, insertSchedule),
+    deleteSchedule: bindQuery(db, deleteSchedule),
+    getSchedule: bindQuery(db, getSchedule),
+    pauseSchedule: bindQuery(db, pauseSchedule),
+    resumeSchedule: bindQuery(db, resumeSchedule),
+    listSchedules: bindQuery(db, listSchedules),
+    listSchedulesForGuild: bindQuery(db, listSchedulesForGuild),
+    updateSchedule: bindQuery(db, updateSchedule),
+    setScheduleNextRun: bindQuery(db, setScheduleNextRun),
+  };
+}
+
+export type ScheduleDatabase = ReturnType<typeof scheduleDatabase>;
 
 /**
  * Routines of agents. Every write takes the actor it is logged against in the

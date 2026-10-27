@@ -3,15 +3,14 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
-import { Repositories } from "../../src/db/repositories.js";
 import * as generationMod from "../../src/generation/index.js";
-import { GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { AsyncEvent, sleep } from "../../src/lib/event.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { Scripts } from "../../src/scripts/catalog.js";
-import { Schedules } from "../../src/schedules/service.js";
+import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, clearInstanceKeys, testEnv } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { loadJsonFixture, loadTextFixture, templatesRoot } from "../helpers/fixtures.js";
@@ -83,11 +82,11 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const database = await connect(databaseUrl);
   const notes = new NotesStore(env.NOTES_ROOT ?? "", templatesRoot());
   await notes.ensureSystemPrompt();
-  const repo = new Repositories(database.pool);
-  await connectModelProvider(repo, "org_home", "openrouter");
+  const db = database.pool;
+  await connectModelProvider(db, "org_home", "openrouter");
   const artifacts = new ArtifactStore(database.pool, notes.templates);
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   const upstream = await startSandboxUpstream();
   const sandboxes = new ExportSandboxes(env.WORKSPACE_ROOT ?? "");
   sandboxes.novncBase = upstream.base;
@@ -95,13 +94,13 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const stream = new StreamScript();
   live.streamCompletion = ((options: Parameters<typeof originalStream>[0]) =>
     stream.run(options)) as typeof live.streamCompletion;
-  const generation = new GenerationLoop(repo, notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
+  const generation = new GenerationLoop(generationDatabase(db), notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
     mcp: new McpPool(),
     artifacts,
   });
   await generation.reconcile();
   const app = await buildApp(database, {
-    repo,
+    db,
     notes,
     artifacts,
     scripts,

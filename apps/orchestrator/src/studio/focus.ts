@@ -9,7 +9,6 @@ import {
 import { wrapEvidence } from "../conversation/trust.js";
 import { jsonObj } from "../db/json.js";
 import { isoOrNull } from "../db/views.js";
-import type { Repositories } from "../db/repositories.js";
 import {
   buildMemoryTimeline,
   memoryDiffText,
@@ -22,6 +21,11 @@ import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
 import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { studioReachesParsed } from "./reach.js";
+import { getAgent, getAgentTask } from "../db/agents.js";
+import { getRun, listMessages } from "../db/runs.js";
+import { getSchedule } from "../db/schedules.js";
+import { getIssue } from "../db/issues.js";
+import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -58,7 +62,7 @@ export type StudioFocus = {
 };
 
 export type StudioFocusDeps = {
-  repo: Repositories;
+  db: pg.Pool;
   artifacts: ArtifactStore;
   pool: pg.Pool;
   orgId: string;
@@ -113,7 +117,7 @@ async function guildAgent(
   deps: StudioFocusDeps,
   agentId: string,
 ): Promise<Record<string, unknown>> {
-  const agent = agentId ? await deps.repo.getAgent(agentId) : null;
+  const agent = agentId ? await getAgent(deps.db, agentId) : null;
   if (
     !agent ||
     String(agent.guild_id) !== deps.sourceGuildId ||
@@ -138,7 +142,7 @@ async function resolveRun(
   input: Record<string, unknown>,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const runId = trimmedText(input.run_id);
-  const run = runId ? await deps.repo.getRun(runId) : null;
+  const run = runId ? await getRun(deps.db, runId) : null;
   if (!run) {
     throw new StudioUnprocessableError("focus run not found");
   }
@@ -178,7 +182,7 @@ async function resolveRun(
   const callId = trimmedText(input.call_id);
   let tail = `Load the transcript with studio_get_run(run_id="${runId}").`;
   if (seq !== null || callId) {
-    const rows = await deps.repo.listMessages(runId);
+    const rows = await listMessages(deps.db, runId);
     let target: Record<string, unknown> | undefined;
     let request: Record<string, unknown> | undefined;
     if (callId) {
@@ -348,7 +352,7 @@ async function resolveRoutine(
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const scheduleId = trimmedText(input.schedule_id);
-  const row = scheduleId ? await deps.repo.getSchedule(String(agent.id), scheduleId) : null;
+  const row = scheduleId ? await getSchedule(deps.db, String(agent.id), scheduleId) : null;
   if (!row) {
     throw new StudioUnprocessableError("focus routine not found");
   }
@@ -433,7 +437,7 @@ async function loadFileForFocus(
     parsed.key === "task.md" &&
     agent
   ) {
-    const task = await deps.repo.getAgentTask(deps.orgId, String(agent.id));
+    const task = await getAgentTask(deps.db, deps.orgId, String(agent.id));
     return {
       agent,
       kind: "task",
@@ -550,7 +554,7 @@ async function resolveIssue(
   input: Record<string, unknown>,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const issueId = trimmedText(input.issue_id);
-  const row = issueId ? await deps.repo.getIssue(deps.sourceGuildId, issueId) : null;
+  const row = issueId ? await getIssue(deps.db, deps.sourceGuildId, issueId) : null;
   if (!row) {
     throw new StudioUnprocessableError("focus issue not found");
   }
@@ -631,10 +635,10 @@ async function resolveTool(
   }
   const until = new Date();
   const since = new Date(until.getTime() - ACTIVITY_MAX_HOURS * 3_600_000);
-  const stats = (await deps.repo.listGuildToolCallStats(deps.sourceGuildId, since, until)).filter(
+  const stats = (await listGuildToolCallStats(deps.db, deps.sourceGuildId, since, until)).filter(
     (stat) => stat.tool_name === name,
   );
-  const failures = await deps.repo.listGuildToolCalls(deps.sourceGuildId, name, {
+  const failures = await listGuildToolCalls(deps.db, deps.sourceGuildId, name, {
     since,
     until,
     errorsOnly: true,

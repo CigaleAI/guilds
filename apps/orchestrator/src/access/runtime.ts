@@ -1,3 +1,8 @@
+import { listBindingsCovering } from "../db/bindings.js";
+import { listMcpServers } from "../db/connectors.js";
+import { listMcpConnections, listMcpTools } from "../db/mcp.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import { getSecret, listAgentSecrets } from "../db/secrets.js";
 import { writeLog } from "../observability/log.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { secretValue } from "../credentials/validate.js";
@@ -20,26 +25,19 @@ export type RuntimeAccess = {
   mcp: Array<Record<string, unknown>>;
 };
 
-export type AccessDatabase = {
-  listBindingsCovering(options: {
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-  }): Promise<Array<Record<string, unknown>>>;
-  listAgentSecrets(options: {
-    orgId: string;
-    guildId: string;
-    agentId: string;
-  }): Promise<Array<Record<string, unknown>>>;
-  getSecret?(secretId: string): Promise<Record<string, unknown> | null>;
-  listMcpServers?(orgId?: string | null): Promise<Array<Record<string, unknown>>>;
-  listMcpConnections?(options: {
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-  }): Promise<Array<Record<string, unknown>>>;
-  listMcpTools?(connectionId: string): Promise<Array<Record<string, unknown>>>;
-};
+/** The db/ functions an agent's runtime access is resolved through, on `db`. */
+export function accessDatabase(db: Queryable) {
+  return {
+    listBindingsCovering: bindQuery(db, listBindingsCovering),
+    listAgentSecrets: bindQuery(db, listAgentSecrets),
+    getSecret: bindQuery(db, getSecret),
+    listMcpServers: bindQuery(db, listMcpServers),
+    listMcpConnections: bindQuery(db, listMcpConnections),
+    listMcpTools: bindQuery(db, listMcpTools),
+  };
+}
+
+export type AccessDatabase = ReturnType<typeof accessDatabase>;
 
 export function resolveMcpTool(
   rows: Array<Record<string, unknown>>,
@@ -108,7 +106,7 @@ export async function agentMcpConnection(
   const guildId = String(agent.guild_id);
   const agentId = String(agent.id);
   const scope = { orgId, guildId, agentId };
-  const server = (await (db.listMcpServers?.(orgId) ?? [])).find((row) => row.slug === slug);
+  const server = (await db.listMcpServers(orgId)).find((row) => row.slug === slug);
   if (!server) {
     return null;
   }
@@ -117,7 +115,7 @@ export async function agentMcpConnection(
   if (!item.enabled || item.connection_id === null) {
     return null;
   }
-  const connection = (await (db.listMcpConnections?.(scope) ?? [])).find(
+  const connection = (await db.listMcpConnections(scope)).find(
     (row) => row.id === item.connection_id,
   );
   if (connection?.status !== "connected") {
@@ -145,12 +143,12 @@ export async function agentToolConnection(
   const guildId = String(agent.guild_id);
   const agentId = String(agent.id);
   const scope = { orgId, guildId, agentId };
-  const server = (await (db.listMcpServers?.(orgId) ?? [])).find((row) => row.slug === slug);
+  const server = (await db.listMcpServers(orgId)).find((row) => row.slug === slug);
   if (!server) {
     return null;
   }
   const rows = await db.listBindingsCovering(scope);
-  const tool = listedFromRows(await (db.listMcpTools?.(String(connection.id)) ?? [])).find(
+  const tool = listedFromRows(await db.listMcpTools(String(connection.id))).find(
     (row) => row.remote_name === remoteName,
   );
   if (!tool || !resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled) {
@@ -204,7 +202,7 @@ async function loginTools(db: AccessDatabase, mcpPool: ToolSync, listing: Omit<L
       error_type: error instanceof Error ? error.name : "Error",
     }, error);
   }
-  return listedFromRows(await (db.listMcpTools?.(String(connection.id)) ?? []));
+  return listedFromRows(await db.listMcpTools(String(connection.id)));
 }
 
 /** The login's entry in the run's MCP access: its tools that resolve On, or null when none does. */
@@ -220,7 +218,7 @@ function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, sc
 
 /** The logins covering the agent, by id. */
 async function loginsById(db: AccessDatabase, scope: RuntimeScope): Promise<Map<string, Record<string, unknown>>> {
-  const logins = await (db.listMcpConnections?.(scope) ?? []);
+  const logins = await db.listMcpConnections(scope);
   return new Map(logins.map((connection) => [String(connection.id), connection]));
 }
 
@@ -237,7 +235,7 @@ export async function agentRuntime(
   const rows = await db.listBindingsCovering(scope);
   const tools = enabledToolNames(resolvedTools(rows, scope));
   const metas = await agentSecrets(db, agent);
-  const servers = await (db.listMcpServers?.(scope.orgId) ?? []);
+  const servers = await db.listMcpServers(scope.orgId);
   const connections = await loginsById(db, scope);
   const listings: Listing[] = [];
   for (const [item, server] of resolvedMcp(rows, servers, scope)) {
@@ -283,7 +281,7 @@ export async function snapshotEnvValues(
     if (typeof secretId !== "string" || typeof name !== "string") {
       throw new MissingSecretError(typeof name === "string" ? name : "secret");
     }
-    const secret = db.getSecret ? await db.getSecret(secretId) : null;
+    const secret = await db.getSecret(secretId);
     if (secret === null || secret === undefined) {
       throw new MissingSecretError(name);
     }

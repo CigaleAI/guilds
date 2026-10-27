@@ -225,8 +225,8 @@ test("sync TwitterAPI.io writes the curated catalog", async () => {
   const db = new MemoryDb();
   const connection = { id: "conn_twitterapiio", status: "connected", ciphertext, nonce };
   const server = { id: "mcp_twitterapiio", slug: "twitterapiio", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `twitterapiio_${spec.name}`));
   assert.deepEqual(first, second);
@@ -246,7 +246,7 @@ test("sync TwitterAPI.io rejects a bad key", async () => {
   await assert.rejects(
     () =>
       pool.syncTools(
-        new MemoryDb(),
+        new MemoryDb() as never,
         { id: "conn_twitterapiio", status: "connected", ciphertext, nonce },
         { id: "mcp_twitterapiio", slug: "twitterapiio", auth: "token" },
         { force: true },
@@ -269,7 +269,7 @@ test("call TwitterAPI.io dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
+    new MemoryDb() as never,
     { id: "conn_twitterapiio", status: "connected", ciphertext, nonce },
     { id: "mcp_twitterapiio", slug: "twitterapiio", auth: "token" },
     "search",

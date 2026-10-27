@@ -3,6 +3,17 @@ import type pg from "pg";
 /** A pool or a transaction's client: what a read or a single-statement write runs on. */
 export type Queryable = Pick<pg.Pool | pg.PoolClient, "query">;
 
+/**
+ * `query` with its connection bound. A domain whose unit tests fake the database takes a
+ * dependencies object of these, built from the db/ functions it calls.
+ */
+export function bindQuery<C, A extends unknown[], R>(
+  db: C,
+  query: (db: C, ...args: A) => R,
+): (...args: A) => R {
+  return (...args) => query(db, ...args);
+}
+
 export function isUniqueViolation(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }

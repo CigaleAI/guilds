@@ -11,12 +11,17 @@ import {
 
 type Operator = { user_id: string; name: string; role: string };
 
+/** The inbox's db functions with the rows a test hands back, which are partial. */
+type FakeInbox = {
+  [K in keyof NotificationsDatabase]: (...args: Parameters<NotificationsDatabase[K]>) => Promise<unknown>;
+};
+
 function hub(
   operators: Operator[],
-  extras: Partial<NotificationsDatabase> = {},
+  extras: Partial<FakeInbox> = {},
   viewers: string[] = operators.map((operator) => operator.user_id),
 ): Notifications {
-  const db: NotificationsDatabase = {
+  const db: FakeInbox = {
     async getAgent(agentId) {
       return agentId === "agent_scout" ? scout : null;
     },
@@ -40,7 +45,7 @@ function hub(
     },
     ...extras,
   };
-  return new Notifications(db);
+  return new Notifications(db as never);
 }
 
 const scout = {

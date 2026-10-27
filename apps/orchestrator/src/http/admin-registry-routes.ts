@@ -10,6 +10,7 @@ import { syncInstanceLogins } from "../connectors/instance.js";
 import { refreshConnectorIntegrations } from "../instance/connectors.js";
 import { requireInstanceAdmin } from "./instance-admin.js";
 import { bodyOf, param } from "./request.js";
+import { getMcpServer, listMcpServers } from "../db/connectors.js";
 
 /** The box's registry client: the one the deps carry, else `REGISTRY_URL`'s; null while offline. */
 export function registryOf(deps: AppDeps): RegistryClient | null {
@@ -45,17 +46,17 @@ export function latestEntries<E extends { version: string }>(
  * installing, updating, and removing a registry connector.
  */
 export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
 
   /**
    * Serves what the database now says in this process, without a restart: code connectors are
    * loaded, swapped, or taken out, and every login lists its tools again on its next use.
    */
   async function applyChange(): Promise<CodeSync> {
-    const sync = await syncCodeConnectors(repo);
-    await refreshConnectorIntegrations(repo);
+    const sync = await syncCodeConnectors(db);
+    await refreshConnectorIntegrations(db);
     await deps.instanceKeys?.load();
-    await syncInstanceLogins(repo, deps.masterKey);
+    await syncInstanceLogins(db, deps.masterKey);
     deps.mcp?.forgetListings();
     return sync;
   }
@@ -77,7 +78,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
     try {
       const index = await client.index();
       const installed = new Map(
-        (await repo.listMcpServers()).filter((row) => !row.owner_org_id).map((row) => [String(row.slug), row]),
+        (await listMcpServers(db)).filter((row) => !row.owner_org_id).map((row) => [String(row.slug), row]),
       );
       return {
         offline: false,
@@ -99,7 +100,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
     await requireInstanceAdmin(deps, request);
     const body = bodyOf(request);
     try {
-      const { row } = await installConnector(repo, onlineClient(), typeof body.slug === "string" ? body.slug : "", {
+      const { row } = await installConnector(db, onlineClient(), typeof body.slug === "string" ? body.slug : "", {
         ...(typeof body.version === "string" && body.version ? { version: body.version } : {}),
         unverified: body.unverified === true,
         experimental: body.experimental === true,
@@ -107,7 +108,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
       });
       await applyChange();
       reply.code(201);
-      return catalogServerItem((await repo.getMcpServer(String(row.id))) ?? row);
+      return catalogServerItem((await getMcpServer(db, String(row.id))) ?? row);
     } catch (error) {
       registryHttp(error);
     }
@@ -117,7 +118,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
     await requireInstanceAdmin(deps, request);
     try {
       const body = bodyOf(request);
-      const moved = await updateConnectors(repo, onlineClient(), {
+      const moved = await updateConnectors(db, onlineClient(), {
         slug: param(request, "slug"),
         unverified: body.unverified === true,
         experimental: body.experimental === true,
@@ -134,7 +135,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
   app.delete("/api/admin/registry/connectors/:slug", async (request, reply) => {
     await requireInstanceAdmin(deps, request);
     try {
-      await removeConnector(repo, param(request, "slug"), connectorsRoot());
+      await removeConnector(db, param(request, "slug"), connectorsRoot());
     } catch (error) {
       registryHttp(error);
     }

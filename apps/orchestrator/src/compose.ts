@@ -8,21 +8,19 @@ import { CapabilityService } from "./capabilities/index.js";
 import { decodeMasterKey, type AppConfig } from "./config/index.js";
 import { connect } from "./db/client.js";
 import { setOperatorEmail } from "./db/seed/operator.js";
-import { Repositories } from "./db/repositories.js";
 import {
   extensionBlobStore,
   extensionConnectors,
   extensionModelCredentials,
-  extensionOrgCreated,
   extensionPolicy,
   extensionSandboxes,
   type SandboxProvider,
   type ServerExtension,
 } from "./extension.js";
 import { AdmissionCoordinator } from "./generation/admission.js";
-import { GenerationLoop } from "./generation/index.js";
-import { coreModelCredentials } from "./llm/credentials.js";
-import { ModelsService } from "./llm/models.js";
+import { generationDatabase, GenerationLoop } from "./generation/index.js";
+import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
+import { modelsDatabase, ModelsService } from "./llm/models.js";
 import { layOutAgentHomes } from "./machines/layout.js";
 import { McpPool, TOOLS_TTL_MS } from "./mcp/index.js";
 import { NotesStore } from "./notes/store.js";
@@ -31,8 +29,8 @@ import { OPEN_POLICY } from "./policy/index.js";
 import { RecipeApplyService } from "./recipes/apply.js";
 import { RecipeStore } from "./recipes/store.js";
 import { RunSandboxes } from "./sandbox/index.js";
-import { Schedules } from "./schedules/service.js";
-import { Scripts } from "./scripts/catalog.js";
+import { scheduleDatabase, Schedules } from "./schedules/service.js";
+import { scriptDatabase, Scripts } from "./scripts/catalog.js";
 import { StudioService } from "./studio/index.js";
 import { installConnectors } from "./connectors/index.js";
 import { syncCodeConnectors } from "./registry/code.js";
@@ -41,6 +39,8 @@ import { refreshConnectorIntegrations } from "./instance/connectors.js";
 import { InstanceKeys } from "./instance/keys.js";
 import { installHarnessesOff } from "./coding/harnesses.js";
 import { syncInstanceLogins } from "./connectors/instance.js";
+import { listMachinePlacements } from "./db/machines.js";
+import { attachmentDatabase } from "./attachments/store.js";
 
 export type Server = {
   app: FastifyInstance;
@@ -77,28 +77,27 @@ export async function createServer(
   const notes = new NotesStore(config.notesRoot, config.templatesRoot);
   // The constructor does not touch the file. Boot refuses to start when the template is missing.
   await notes.ensureSystemPrompt();
-  // An extension's hook runs in the transaction that inserts the organisation.
-  const repo = new Repositories(database.pool, { orgCreated: extensionOrgCreated(extensions) });
+  const db = database.pool;
   // Code on disk is loaded to match the registry rows. Their manifests are then listed as
   // integrations, which is what Platform keys offers.
-  await syncCodeConnectors(repo);
-  await refreshConnectorIntegrations(repo);
+  await syncCodeConnectors(db);
+  await refreshConnectorIntegrations(db);
   const masterKey = decodeMasterKey(config.secretsMasterKey);
-  const instanceKeys = new InstanceKeys(database.pool, masterKey);
+  const instanceKeys = new InstanceKeys(db, masterKey);
   // Filled before the login sync below, which reads this snapshot rather than the table.
   await instanceKeys.load();
   // A connector whose instance key is on gets a platform login. One whose integration is off
   // is disconnected.
-  await syncInstanceLogins(repo, masterKey);
+  await syncInstanceLogins(db, masterKey);
   // Core caps nothing. An extension supplies the policy that does.
-  const policy = extensionPolicy(extensions, { repo }) ?? OPEN_POLICY;
-  const artifacts = new ArtifactStore(database.pool, config.templatesRoot);
-  const scripts = new Scripts(repo);
-  const schedules = new Schedules(repo);
+  const policy = extensionPolicy(extensions, { db }) ?? OPEN_POLICY;
+  const artifacts = new ArtifactStore(db, config.templatesRoot);
+  const scripts = new Scripts(scriptDatabase(db));
+  const schedules = new Schedules(scheduleDatabase(db));
   // Core reads the key stored for each organisation. An extension can answer with its own.
   const modelCredentials =
-    extensionModelCredentials(extensions, { repo }) ?? coreModelCredentials(repo, masterKey);
-  const models = new ModelsService({ repo, credentials: modelCredentials, masterKey });
+    extensionModelCredentials(extensions, { db }) ?? coreModelCredentials(modelProviderStore(db), masterKey);
+  const models = new ModelsService({ db: modelsDatabase(db), credentials: modelCredentials, masterKey });
   // Tool lists stay cached for their ttl. Calls go through the forward proxy when one is set,
   // and the policy above caps the ones a platform login makes.
   const mcp = new McpPool(TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");
@@ -106,7 +105,7 @@ export async function createServer(
   // An extension's manager, or one OpenSandbox manager for this box. Homes are laid out next,
   // and that step asks the manager to destroy sandboxes still running per agent.
   const sandboxes: SandboxProvider =
-    extensionSandboxes(extensions, { repo, config, masterKey }) ??
+    extensionSandboxes(extensions, { db, config, masterKey }) ??
     new RunSandboxes({
       url: config.opensandboxUrl,
       apiKey: config.opensandboxApiKey,
@@ -117,7 +116,7 @@ export async function createServer(
   // A home left at the workspace root moves into its machine's directory before a generation
   // can start.
   await layOutAgentHomes({
-    placements: () => repo.listMachinePlacements(),
+    placements: () => listMachinePlacements(db),
     workspaceRootFor: async (machineId) =>
       (await sandboxes.machineHost?.(machineId))?.workspaceRoot ?? config.workspaceRoot,
     destroyAgentSandboxes: sandboxes.destroyAgentSandboxes?.bind(sandboxes),
@@ -127,9 +126,9 @@ export async function createServer(
   const blobs =
     extensionBlobStore(extensions, { config }) ??
     (config.attachmentsRoot ? new FileBlobStore(config.attachmentsRoot) : new MemoryBlobStore());
-  const attachments = new AttachmentService(repo, blobs);
+  const attachments = new AttachmentService(attachmentDatabase(db), blobs);
   const files = new ArtifactFiles(artifacts, blobs);
-  const generation = new GenerationLoop(repo, notes, config.workspaceRoot, sandboxes, {
+  const generation = new GenerationLoop(generationDatabase(db), notes, config.workspaceRoot, sandboxes, {
     mcp,
     artifacts,
     files,
@@ -144,7 +143,7 @@ export async function createServer(
   // An edit is published on the guild's group chat, and a session waits while its agent is
   // already generating.
   const studio = new StudioService({
-    repo,
+    db,
     artifacts,
     scripts,
     schedules,
@@ -170,10 +169,10 @@ export async function createServer(
   });
   // A studio session left generating is continued by this process.
   await studio.reconcile();
-  const recipes = new RecipeStore(repo.pool);
-  const capabilities = new CapabilityService(repo, policy, models);
+  const recipes = new RecipeStore(db);
+  const capabilities = new CapabilityService(db, policy, models);
   const apply = new RecipeApplyService({
-    repo,
+    db,
     recipes,
     artifacts,
     notes,
@@ -183,7 +182,7 @@ export async function createServer(
     models,
   });
   const builder = new BuilderService({
-    repo,
+    db,
     recipes,
     capabilities,
     apply,
@@ -198,7 +197,7 @@ export async function createServer(
   const app = await buildApp(
     database,
     {
-      repo,
+      db,
       notes,
       artifacts,
       files,

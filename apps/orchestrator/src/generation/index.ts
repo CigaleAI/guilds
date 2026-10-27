@@ -1,3 +1,4 @@
+import type pg from "pg";
 import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import {
@@ -21,7 +22,6 @@ import {
   agentSecrets,
   applySecretAliases,
   snapshotEnvValues,
-  type AccessDatabase,
 } from "../access/runtime.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { jsonObj } from "../db/json.js";
@@ -30,8 +30,8 @@ import {
   DeliveryBusyError,
   DeliveryCreateError,
   GroupChat,
+  groupChatDatabase,
   groupChatUserMessage,
-  type GroupChatDatabase,
   type GroupDelivery,
   type GroupRunner,
   wakeMessage,
@@ -50,7 +50,6 @@ import {
 import { modelCatalog } from "../llm/catalog.js";
 import {
   ModelNotConnectedError,
-  NO_CREDENTIALS,
   coreModelCredentials,
   modelUsageOf,
   reportModelUsage,
@@ -69,7 +68,7 @@ import {
   type ModelEvent,
 } from "../llm/index.js";
 import { readMemory } from "../memory/index.js";
-import { McpDisconnectedError, McpError, McpPool } from "../mcp/index.js";
+import { mcpDatabase, McpDisconnectedError, McpError, McpPool } from "../mcp/index.js";
 import {
   ArtifactError,
   ArtifactFiles,
@@ -82,9 +81,7 @@ import {
   snapshotTaskEmbeds,
   snapshotTaskCollections,
   taskEmbedActor,
-  type ArtifactActor,
 } from "../artifacts/index.js";
-import type { ChangeActor } from "../db/config-changes.js";
 import { NotesError, type NotesStore } from "../notes/store.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { writeLog, redactText } from "../observability/log.js";
@@ -121,46 +118,13 @@ import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
 import type { RunScriptSnapshot } from "../scripts/snapshot.js";
 import { planAfterFire, rowTiming } from "../schedules/timing.js";
-import type { PlannedWake } from "../schedules/window.js";
 import { instructionHash, scheduleWakeUserMessage } from "../schedules/item.js";
-import { Schedules, type ScheduleDatabase } from "../schedules/service.js";
+import { Schedules } from "../schedules/service.js";
 import type {
-  AgentRow,
-  AgentScriptRow,
-  GuildAgentRow,
-  NewAgentScript,
-} from "../db/agents.js";
-import type { OrgModelProviderRow } from "../db/orgs.js";
-import type { GuildRepositoryListItemRow, GuildRow } from "../db/guilds.js";
-import type { GroupMessageRow } from "../db/group-chat.js";
-import type { McpConnectionLogin, McpConnectionRow } from "../db/mcp.js";
-import type { OrgMonthlyUsageRow } from "../db/usage.js";
-import type { LoadedConnector } from "../connectors/load.js";
-import type {
-  GuildIssueRow,
-  IssueRow,
-  IssueStatusChange,
-  NewIssue,
-} from "../db/issues.js";
-import type {
-  ActiveRunRow,
-  MessageRow,
-  NewDirectRun,
-  NewGroupRun,
-  NewMessage,
-  NewScheduleRun,
-  RunRow,
-} from "../db/runs.js";
-import type {
-  AgentScheduleRow,
-  GuildScheduleRow,
-  NewSchedule,
-  ScheduleKey,
   ScheduleRow,
-  ScheduleUpdate,
 } from "../db/schedules.js";
 import { redact } from "../secrets/index.js";
-import { readSecretFile, removeSecretFile, storeAgentSecret, type AgentSecretsDatabase } from "../secrets/agent.js";
+import { readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
 import { collectRunState } from "../state/index.js";
 import { instanceRedactions } from "../connectors/instance.js";
 import {
@@ -228,11 +192,74 @@ import {
   shownProgressLines,
 } from "../toolbox/harness.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
-import { Issues, type IssuesDatabase } from "../issues/index.js";
+import { Issues } from "../issues/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
 import { dynamicScriptTools, firstClassScriptSchemas, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
 import type { DirectoryNotes } from "../directories/index.js";
 import type { PromptNotes } from "../prompts/index.js";
+import {
+  appendRunError,
+  completeGroupDelivery,
+  completeRun,
+  createGroupRun,
+  createRun,
+  createScheduleRun,
+  getRun,
+  insertMessage,
+  listActiveRuns,
+  listMessages,
+  listPayloads,
+  listRuns,
+  mergeRunMetadata,
+  nextGeneration,
+  nextSeq,
+  reopenRun,
+  updateRunScripts,
+  updateRunSecrets,
+} from "../db/runs.js";
+import {
+  clearHarnessLogin,
+  deleteAgent,
+  deleteAgentScript,
+  getAgent,
+  getAgentScript,
+  listAgentScripts,
+  listAgents,
+  markHarnessLogin,
+  setAgentWorkspaceMib,
+  upsertAgentScript,
+} from "../db/agents.js";
+import { deleteGuild, getGuild, listGuildRepositories } from "../db/guilds.js";
+import { listGroupMessages } from "../db/group-chat.js";
+import { moveAgent, setMachineHarnesses, setMachineWorkspaceMib } from "../db/machines.js";
+import {
+  deleteSchedule,
+  getSchedule,
+  insertSchedule,
+  listDueSchedules,
+  listSchedules,
+  listSchedulesForGuild,
+  markScheduleFired,
+  pauseSchedule,
+  resumeSchedule,
+  setScheduleNextRun,
+  updateSchedule,
+} from "../db/schedules.js";
+import { listActiveRunAgentIdsForSecret } from "../db/secrets.js";
+import { getMcpConnection, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
+import { getMcpServer } from "../db/connectors.js";
+import {
+  countOpenIssues,
+  getIssue,
+  insertIssue,
+  listIssuesForGuild,
+  resolveOpenIssues,
+  setIssueStatus,
+} from "../db/issues.js";
+import { getOrgMonthlyUsage } from "../db/usage.js";
+import { getOrgModelProvider } from "../db/orgs.js";
+import { bindQuery } from "../db/pg.js";
+import { agentSecretsDatabase } from "../secrets/agent.js";
 
 export {
   LOW_TOOL_CALL_BUDGET,
@@ -881,135 +908,75 @@ function preparedRunMetadata(
   return Object.keys(metadata).length ? metadata : undefined;
 }
 
-export type GenerationDb = AccessDatabase &
-  AgentSecretsDatabase &
-  GroupChatDatabase & {
-    getRun(runId: string): Promise<RunRow | null>;
-    getAgent(agentId: string): Promise<AgentRow | null>;
-    getGuild(guildId: string): Promise<GuildRow | null>;
-    listAgents(guildId: string): Promise<GuildAgentRow[]>;
-    listRuns(agentId: string): Promise<RunRow[]>;
-    listActiveRuns(): Promise<ActiveRunRow[]>;
-    listGroupMessages(
-      guildId: string,
-      options?: { throughSeq?: number | null },
-    ): Promise<GroupMessageRow[]>;
-    createRun(run: NewDirectRun, now: Date): Promise<void>;
-    createGroupRun(run: NewGroupRun, now: Date): Promise<void>;
-    createScheduleRun(run: NewScheduleRun, now: Date): Promise<void>;
-    insertMessage(message: NewMessage, now: Date): Promise<MessageRow>;
-    listMessages(runId: string): Promise<MessageRow[]>;
-    listPayloads(runId: string): Promise<Array<Record<string, unknown>>>;
-    nextSeq(runId: string): Promise<number>;
-    nextGeneration(runId: string): Promise<number>;
-    appendRunError(runId: string, entry: Record<string, unknown>, now: Date): Promise<unknown[]>;
-    mergeRunMetadata(runId: string, extra: Record<string, unknown>, now: Date): Promise<void>;
-    /** Records when the agent's harness last found a login in its home. */
-    markHarnessLogin?(
-      agentId: string,
-      harness: string,
-      now: Date,
-      account: string | null,
-    ): Promise<void>;
-    clearHarnessLogin?(agentId: string, harness: Harness): Promise<void>;
-    /** Keeps the harness CLIs a machine's image carries. */
-    setMachineHarnesses?(machineId: string, harnesses: string[]): Promise<void>;
-    completeRun(runId: string, now: Date): Promise<void>;
-    reopenRun(runId: string, now: Date): Promise<void>;
-    completeGroupDelivery(
-      runId: string,
-      agentId: string,
-      throughSeq: number,
-      now: Date,
-    ): Promise<void>;
-    updateRunSecrets(
-      runId: string,
-      secrets: Array<Record<string, string>>,
-      now: Date,
-    ): Promise<void>;
-    updateRunScripts(runId: string, scripts: RunScriptSnapshot[], now: Date): Promise<void>;
-    listDueSchedules(now: Date): Promise<ScheduleRow[]>;
-    markScheduleFired(scheduleId: string, now: Date, wake: PlannedWake): Promise<void>;
-    listActiveRunAgentIdsForSecret(secretId: string): Promise<string[]>;
-    purgeAgent(agentId: string): Promise<void>;
-    purgeGuild(guildId: string): Promise<void>;
-    getMcpConnection(connectionId: string): Promise<McpConnectionRow | null>;
-    getMcpServer(serverId: string): Promise<LoadedConnector | null>;
-    getAgentScript(agentId: string, name: string): Promise<AgentScriptRow | null>;
-    upsertAgentScript(
-      script: NewAgentScript,
-      actor: ArtifactActor,
-      now: Date,
-    ): Promise<AgentScriptRow>;
-    listAgentScripts(agentId: string): Promise<AgentScriptRow[]>;
-    deleteAgentScript(
-      actor: ArtifactActor,
-      agentId: string,
-      name: string,
-    ): Promise<AgentScriptRow | null>;
-    insertSchedule?(schedule: NewSchedule, now: Date, actor: ChangeActor): Promise<ScheduleRow>;
-    deleteSchedule?(
-      agentId: string,
-      scheduleId: string,
-      actor: ChangeActor,
-    ): Promise<ScheduleRow | null>;
-    getSchedule?(agentId: string, scheduleId: string): Promise<ScheduleRow | null>;
-    pauseSchedule?(key: ScheduleKey, now: Date, actor: ChangeActor): Promise<ScheduleRow | null>;
-    resumeSchedule?(
-      key: ScheduleKey,
-      wake: PlannedWake,
-      now: Date,
-      actor: ChangeActor,
-    ): Promise<ScheduleRow | null>;
-    listSchedules?(agentId: string): Promise<AgentScheduleRow[]>;
-    listSchedulesForGuild?(guildId: string): Promise<GuildScheduleRow[]>;
-    updateSchedule?(
-      key: ScheduleKey,
-      update: ScheduleUpdate,
-      now: Date,
-      actor: ChangeActor,
-    ): Promise<ScheduleRow | null>;
-    setScheduleNextRun?(scheduleId: string, wake: PlannedWake, now: Date): Promise<void>;
-    insertIssue?(issue: NewIssue, now: Date): Promise<IssueRow>;
-    listIssuesForGuild?(guildId: string, status: string | null): Promise<GuildIssueRow[]>;
-    getIssue?(guildId: string, issueId: string): Promise<GuildIssueRow | null>;
-    setIssueStatus?(
-      guildId: string,
-      issueId: string,
-      change: IssueStatusChange,
-      now: Date,
-    ): Promise<GuildIssueRow | null>;
-    resolveOpenIssues?(
-      guildId: string,
-      resolvedAt: Date,
-      resolvedBy: string,
-      now: Date,
-    ): Promise<number>;
-    countOpenIssues?(guildId: string): Promise<number>;
-    setAgentWorkspaceMib?(agentId: string, mib: number): Promise<void>;
-    setMachineWorkspaceMib?(machineId: string, mib: number): Promise<void>;
-    moveAgent?(
-      agentId: string,
-      machineId: string,
-      options?: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds },
-    ): Promise<{
-      from: { machineId: string; slot: number };
-      to: { machineId: string; slot: number };
-    } | null>;
-    listGuildRepositories?(guildId: string): Promise<GuildRepositoryListItemRow[]>;
-    getMcpConnectionForOwner?(
-      serverId: string,
-      ownerScope: string,
-      ownerId: string | null,
-    ): Promise<McpConnectionRow | null>;
-    saveMcpConnection?(
-      connectionId: string,
-      login: McpConnectionLogin,
-      now: Date,
-    ): Promise<McpConnectionRow | null>;
-    getOrgMonthlyUsage?(orgId: string, month: string): Promise<OrgMonthlyUsageRow | null>;
-    getOrgModelProvider?(orgId: string, provider: string): Promise<OrgModelProviderRow | null>;
+/** The db/ functions a generation reads and writes through, on `db`. */
+export function generationDatabase(db: pg.Pool) {
+  return {
+    ...mcpDatabase(db),
+    ...agentSecretsDatabase(db),
+    ...groupChatDatabase(db),
+    getRun: bindQuery(db, getRun),
+    getAgent: bindQuery(db, getAgent),
+    getGuild: bindQuery(db, getGuild),
+    listAgents: bindQuery(db, listAgents),
+    listRuns: bindQuery(db, listRuns),
+    listActiveRuns: bindQuery(db, listActiveRuns),
+    listGroupMessages: bindQuery(db, listGroupMessages),
+    createRun: bindQuery(db, createRun),
+    createGroupRun: bindQuery(db, createGroupRun),
+    createScheduleRun: bindQuery(db, createScheduleRun),
+    insertMessage: bindQuery(db, insertMessage),
+    listMessages: bindQuery(db, listMessages),
+    listPayloads: bindQuery(db, listPayloads),
+    nextSeq: bindQuery(db, nextSeq),
+    nextGeneration: bindQuery(db, nextGeneration),
+    appendRunError: bindQuery(db, appendRunError),
+    mergeRunMetadata: bindQuery(db, mergeRunMetadata),
+    markHarnessLogin: bindQuery(db, markHarnessLogin),
+    clearHarnessLogin: bindQuery(db, clearHarnessLogin),
+    setMachineHarnesses: bindQuery(db, setMachineHarnesses),
+    completeRun: bindQuery(db, completeRun),
+    reopenRun: bindQuery(db, reopenRun),
+    completeGroupDelivery: bindQuery(db, completeGroupDelivery),
+    updateRunSecrets: bindQuery(db, updateRunSecrets),
+    updateRunScripts: bindQuery(db, updateRunScripts),
+    listDueSchedules: bindQuery(db, listDueSchedules),
+    markScheduleFired: bindQuery(db, markScheduleFired),
+    listActiveRunAgentIdsForSecret: bindQuery(db, listActiveRunAgentIdsForSecret),
+    deleteAgent: bindQuery(db, deleteAgent),
+    deleteGuild: bindQuery(db, deleteGuild),
+    getMcpConnection: bindQuery(db, getMcpConnection),
+    getMcpServer: bindQuery(db, getMcpServer),
+    getAgentScript: bindQuery(db, getAgentScript),
+    upsertAgentScript: bindQuery(db, upsertAgentScript),
+    listAgentScripts: bindQuery(db, listAgentScripts),
+    deleteAgentScript: bindQuery(db, deleteAgentScript),
+    insertSchedule: bindQuery(db, insertSchedule),
+    deleteSchedule: bindQuery(db, deleteSchedule),
+    getSchedule: bindQuery(db, getSchedule),
+    pauseSchedule: bindQuery(db, pauseSchedule),
+    resumeSchedule: bindQuery(db, resumeSchedule),
+    listSchedules: bindQuery(db, listSchedules),
+    listSchedulesForGuild: bindQuery(db, listSchedulesForGuild),
+    updateSchedule: bindQuery(db, updateSchedule),
+    setScheduleNextRun: bindQuery(db, setScheduleNextRun),
+    insertIssue: bindQuery(db, insertIssue),
+    listIssuesForGuild: bindQuery(db, listIssuesForGuild),
+    getIssue: bindQuery(db, getIssue),
+    setIssueStatus: bindQuery(db, setIssueStatus),
+    resolveOpenIssues: bindQuery(db, resolveOpenIssues),
+    countOpenIssues: bindQuery(db, countOpenIssues),
+    setAgentWorkspaceMib: bindQuery(db, setAgentWorkspaceMib),
+    setMachineWorkspaceMib: bindQuery(db, setMachineWorkspaceMib),
+    moveAgent: bindQuery(db, moveAgent),
+    listGuildRepositories: bindQuery(db, listGuildRepositories),
+    getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
+    saveMcpConnection: bindQuery(db, saveMcpConnection),
+    getOrgMonthlyUsage: bindQuery(db, getOrgMonthlyUsage),
+    getOrgModelProvider: bindQuery(db, getOrgModelProvider),
   };
+}
+
+export type GenerationDatabase = ReturnType<typeof generationDatabase>;
 
 export type GenerationNotes = Partial<DirectoryNotes> &
   Partial<PromptNotes> & {
@@ -1082,7 +1049,7 @@ export function agentSeat(agent: Record<string, unknown>): AgentSeat {
 }
 
 export class GenerationLoop implements GroupRunner {
-  db: GenerationDb;
+  db: GenerationDatabase;
   notes: GenerationNotes;
   workspace_root: string;
   sandboxes: GenerationSandboxes;
@@ -1130,7 +1097,7 @@ export class GenerationLoop implements GroupRunner {
   _group_router: GroupRouter;
 
   constructor(
-    db: GenerationDb,
+    db: GenerationDatabase,
     notes: GenerationNotes,
     workspaceRoot: string,
     sandboxes: GenerationSandboxes,
@@ -1162,11 +1129,7 @@ export class GenerationLoop implements GroupRunner {
       this.admission = options.admission;
     }
     this.policy = options.policy ?? OPEN_POLICY;
-    this.credentials =
-      options.credentials ??
-      (db.getOrgModelProvider
-        ? coreModelCredentials({ getOrgModelProvider: (orgId, provider) => db.getOrgModelProvider!(orgId, provider) })
-        : NO_CREDENTIALS);
+    this.credentials = options.credentials ?? coreModelCredentials(db);
     const idleTimeoutMs = options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS;
     this._idle_tasks = new IdleTimers(idleTimeoutMs);
     this._browser_idle = new IdleTimers(idleTimeoutMs);
@@ -1185,8 +1148,8 @@ export class GenerationLoop implements GroupRunner {
     this.groupChat = this.group_chat;
     this.group_chat.bind(this);
     this._group_router = groupRouter;
-    this.issues = new Issues(db as IssuesDatabase);
-    this.schedules = new Schedules(db as ScheduleDatabase);
+    this.issues = new Issues(db);
+    this.schedules = new Schedules(db);
     this.scripts = new Scripts(db);
   }
 
@@ -2066,7 +2029,7 @@ export class GenerationLoop implements GroupRunner {
         String(agent.guild_name),
         String(agent.name),
       );
-      await this.db.purgeAgent(agentId);
+      await this.db.deleteAgent(agentId);
     } finally {
       this._busy_agents.delete(agentId);
       this._notify_lock_release();
@@ -2104,7 +2067,7 @@ export class GenerationLoop implements GroupRunner {
         }
       }
       await this.notes.deleteGuild?.(String(guild.org_slug), String(guild.name));
-      await this.db.purgeGuild(guildId);
+      await this.db.deleteGuild(guildId);
     } finally {
       for (const agentId of agentIds) {
         this._busy_agents.delete(agentId);
@@ -2168,7 +2131,7 @@ export class GenerationLoop implements GroupRunner {
     agentId: string,
     from: string,
     to: string,
-  ): Promise<{ source: string; target: string; move: NonNullable<GenerationDb["moveAgent"]> }> {
+  ): Promise<{ source: string; target: string; move: NonNullable<GenerationDatabase["moveAgent"]> }> {
     if (this._busy_agents.has(agentId)) {
       throw new RunRequestError(409, "agent is already generating");
     }

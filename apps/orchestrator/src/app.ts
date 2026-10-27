@@ -17,6 +17,7 @@ import {
   extensionIdentity,
   extensionInstanceAdmin,
   extensionModelCredentials,
+  extensionOrgCreated,
   extensionPolicy,
   extensionWebApp,
   type ServerExtension,
@@ -29,8 +30,8 @@ import { registerWebApp } from "./http/web-app.js";
 import { installIntegrations } from "./instance/integrations.js";
 import { InstanceKeys } from "./instance/keys.js";
 import { repoRoot } from "./lib/paths.js";
-import { coreModelCredentials } from "./llm/credentials.js";
-import { ModelsService } from "./llm/models.js";
+import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
+import { modelsDatabase, ModelsService } from "./llm/models.js";
 import { registerClientErrorRoute } from "./observability/client-errors.js";
 import { fastifyRequestIdOptions, registerHttpObservability } from "./observability/http.js";
 
@@ -159,15 +160,16 @@ export async function buildApp(
     const modelCredentials =
       deps.modelCredentials ??
       extensionModelCredentials(extensions, deps) ??
-      coreModelCredentials(deps.repo, deps.masterKey);
+      coreModelCredentials(modelProviderStore(deps.db), deps.masterKey);
     const models =
       deps.models ??
       new ModelsService({
-        repo: deps.repo,
+        db: modelsDatabase(deps.db),
         credentials: modelCredentials,
         masterKey: deps.masterKey,
       });
     const instanceKeys = deps.instanceKeys ?? new InstanceKeys(database.pool, deps.masterKey);
+    const orgCreated = deps.orgCreated ?? extensionOrgCreated(extensions);
     const full = {
       database,
       ...deps,
@@ -180,6 +182,7 @@ export async function buildApp(
       ...(policy ? { policy } : {}),
       ...(identity ? { identity } : {}),
       ...(instanceAdmin ? { instanceAdmin } : {}),
+      ...(orgCreated ? { orgCreated } : {}),
     };
     // An extension's routes and hooks land first, so they are in place for the routes
     // registered next.

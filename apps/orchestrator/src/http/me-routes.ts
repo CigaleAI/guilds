@@ -5,13 +5,15 @@ import { validateTimezone } from "../schedules/window.js";
 import { UserValidationError, userItem, validateUserColor, validateUserName } from "../users/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { currentUser } from "./identity.js";
+import { currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { bodyOf } from "./request.js";
+import { updateUserProfile } from "../db/users.js";
 
 /** How this server identifies a request, and the request's own user. */
 export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
+  const identityDb = identityDatabase(db);
 
   async function me(user: Record<string, unknown>): Promise<Record<string, unknown>> {
     return {
@@ -27,13 +29,13 @@ export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Pro
   }));
 
   app.get("/api/auth/me", async (request, reply) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     deps.identity?.onSend?.(request, reply);
     return me(user);
   });
 
   app.patch("/api/auth/me", async (request) => {
-    const user = await currentUser(repo, request, deps);
+    const user = await currentUser(identityDb, request, deps);
     const body = bodyOf(request);
     if (!("name" in body) && !("timezone" in body) && !("color" in body)) {
       throw new HttpError(422, "name, timezone, or color is required");
@@ -64,7 +66,7 @@ export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Pro
     }
     let row;
     try {
-      row = await repo.updateUserProfile(String(user.id), profile, new Date());
+      row = await updateUserProfile(db, String(user.id), profile, new Date());
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "23505") {
         throw new HttpError(409, "that name is taken");

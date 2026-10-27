@@ -1,3 +1,4 @@
+import type pg from "pg";
 import {
   EMBED_BUDGET,
   EMBED_DEPTH,
@@ -16,7 +17,7 @@ import {
   type EmbedStep,
 } from "../artifacts/index.js";
 import { taskDisplayPath } from "../agents/task.js";
-import type { Repositories } from "../db/repositories.js";
+import { listAgents } from "../db/agents.js";
 
 export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
 
@@ -311,7 +312,7 @@ function deepen(
 // ---------------------------------------------------------------------------
 // Loading: the guild's files as the operator may read them, each Task's run as its agent reads.
 
-export type ReferenceDeps = { repo: Repositories; artifacts: ArtifactStore };
+export type ReferenceDeps = { db: pg.Pool; artifacts: ArtifactStore };
 
 type Reached = { files: ReferenceFile[]; unresolved: UnresolvedLink[] };
 type Resolved = { file?: ReferenceFile; unresolved?: UnresolvedLink };
@@ -326,7 +327,7 @@ export async function loadGuildReferences(
   actor: ArtifactActor,
   guildId: string,
 ): Promise<GuildReferences> {
-  const agents = await deps.repo.listAgents(guildId);
+  const agents = await listAgents(deps.db, guildId);
   const tasks = agents.map((agent) => referenceTask(actor.orgId, agent));
   const state = await loadStateFiles(deps.artifacts, actor, {
     guildId,

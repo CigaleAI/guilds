@@ -1,13 +1,14 @@
+import type pg from "pg";
 import { installedConnectors } from "../connectors/index.js";
 import { serverManifest } from "../connectors/load.js";
 import { authFields, type AuthField, type Manifest } from "../connectors/manifest.js";
-import type { Repositories } from "../db/repositories.js";
 import {
   connectorIntegrationId,
   setConnectorIntegrations,
   type Integration,
   type IntegrationField,
 } from "./integrations.js";
+import { listMcpServers } from "../db/connectors.js";
 
 /**
  * What a connector's manifest holds at instance level of its own: a platform key (token auth
@@ -98,8 +99,8 @@ export function platformConnectors(): PlatformConnector[] {
  * Reads the platform rows and lists the integrations their manifests declare of their own, so
  * Platform keys offers them. Runs at boot and after a connector is installed, changed, or removed.
  */
-export async function refreshConnectorIntegrations(repo: Repositories): Promise<void> {
-  const listed = (await repo.listMcpServers()).filter((row) => !row.owner_org_id);
+export async function refreshConnectorIntegrations(db: pg.Pool): Promise<void> {
+  const listed = (await listMcpServers(db)).filter((row) => !row.owner_org_id);
   const next: PlatformConnector[] = [];
   for (const row of listed) {
     const manifest = serverManifest(row);

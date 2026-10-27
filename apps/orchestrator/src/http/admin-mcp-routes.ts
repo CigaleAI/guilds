@@ -13,6 +13,7 @@ import { HttpError } from "./errors.js";
 import { refreshConnectorIntegrations } from "../instance/connectors.js";
 import { requireInstanceAdmin } from "./instance-admin.js";
 import { bodyOf, param } from "./request.js";
+import { getMcpServer, listMcpServers } from "../db/connectors.js";
 
 function catalogHttp(error: unknown): never {
   if (error instanceof CatalogError) {
@@ -22,10 +23,10 @@ function catalogHttp(error: unknown): never {
 }
 
 export async function registerAdminMcpRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { repo } = deps;
+  const { db } = deps;
 
   async function requireServer(request: FastifyRequest): Promise<Record<string, unknown>> {
-    const server = await repo.getMcpServer(param(request, "server_id"));
+    const server = await getMcpServer(db, param(request, "server_id"));
     if (!server || server.owner_org_id) {
       throw new HttpError(404, "mcp server not found");
     }
@@ -34,15 +35,15 @@ export async function registerAdminMcpRoutes(app: FastifyInstance, deps: AppDeps
 
   app.get("/api/admin/mcp/servers", async (request) => {
     await requireInstanceAdmin(deps, request);
-    const servers = (await repo.listMcpServers()).filter((server) => !server.owner_org_id);
+    const servers = (await listMcpServers(db)).filter((server) => !server.owner_org_id);
     return { servers: servers.map((server) => catalogServerItem(server)) };
   });
 
   app.post("/api/admin/mcp/servers", async (request, reply) => {
     await requireInstanceAdmin(deps, request);
     try {
-      const row = await createConnector(repo, bodyOf(request));
-      await refreshConnectorIntegrations(repo);
+      const row = await createConnector(db, bodyOf(request));
+      await refreshConnectorIntegrations(db);
       reply.code(201);
       return catalogServerItem(row);
     } catch (error) {
@@ -62,8 +63,8 @@ export async function registerAdminMcpRoutes(app: FastifyInstance, deps: AppDeps
     await requireInstanceAdmin(deps, request);
     const server = await requireServer(request);
     try {
-      const patched = await patchConnector(repo, server, bodyOf(request));
-      await refreshConnectorIntegrations(repo);
+      const patched = await patchConnector(db, server, bodyOf(request));
+      await refreshConnectorIntegrations(db);
       return catalogServerItem(patched);
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -77,7 +78,7 @@ export async function registerAdminMcpRoutes(app: FastifyInstance, deps: AppDeps
     await requireInstanceAdmin(deps, request);
     const server = await requireServer(request);
     try {
-      return catalogServerItem(await patchConnectorTool(repo, server, param(request, "name"), bodyOf(request)));
+      return catalogServerItem(await patchConnectorTool(db, server, param(request, "name"), bodyOf(request)));
     } catch (error) {
       catalogHttp(error);
     }

@@ -1,11 +1,18 @@
+import type pg from "pg";
 import { unlink } from "node:fs/promises";
 import { SecretNameTaken } from "../db/errors.js";
-import type { NewSecret } from "../db/secrets.js";
 import { AgentFileError, homeOfDirectory, readAgentFile } from "../lib/agent-file.js";
 import { CredentialError, secretPayload, validateSecretDescription, validateSecretName } from "../credentials/validate.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
 import { secretGrants } from "./access.js";
+import {
+  countSecretsCreatedByAgent,
+  getSecretByName,
+  insertSecret,
+  updateSecret,
+} from "../db/secrets.js";
+import { bindQuery } from "../db/pg.js";
 
 /** Secrets one agent may have created in its organisation. */
 export const AGENT_SECRET_CAP = 20;
@@ -19,16 +26,17 @@ export class AgentSecretError extends Error {
   }
 }
 
-export type AgentSecretsDatabase = {
-  getSecretByName(orgId: string, name: string): Promise<Record<string, unknown> | null>;
-  countSecretsCreatedByAgent(agentId: string): Promise<number>;
-  insertSecret(secret: NewSecret, now: Date): Promise<Record<string, unknown>>;
-  updateSecret(
-    secretId: string,
-    changes: { description?: string | null; ciphertext?: Buffer | null; nonce?: Buffer | null },
-    now: Date,
-  ): Promise<Record<string, unknown> | null>;
-};
+/** The db/ functions the secrets an agent creates are written through, on `db`. */
+export function agentSecretsDatabase(db: pg.Pool) {
+  return {
+    getSecretByName: bindQuery(db, getSecretByName),
+    countSecretsCreatedByAgent: bindQuery(db, countSecretsCreatedByAgent),
+    insertSecret: bindQuery(db, insertSecret),
+    updateSecret: bindQuery(db, updateSecret),
+  };
+}
+
+export type AgentSecretsDatabase = ReturnType<typeof agentSecretsDatabase>;
 
 /** What `secret_store` changed, for the caller to refresh environments with. */
 export type StoredSecret = {

@@ -254,8 +254,8 @@ test("sync DexPaprika writes the curated catalog", async () => {
   const db = new MemoryDb();
   const connection = { id: "conn_dp", status: "connected", ciphertext, nonce };
   const server = { id: "mcp_dexpaprika", slug: "dexpaprika", auth: "token" };
-  const first = await pool.syncTools(db, connection, server, { force: true });
-  const second = await pool.syncTools(db, connection, server);
+  const first = await pool.syncTools(db as never, connection, server, { force: true });
+  const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `dexpaprika_${spec.name}`));
   assert.deepEqual(first, second);
@@ -272,7 +272,7 @@ test("sync DexPaprika rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb(), { id: "conn_dp", status: "connected", ciphertext, nonce }, { id: "mcp_dexpaprika", slug: "dexpaprika", auth: "token" }, { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, { id: "conn_dp", status: "connected", ciphertext, nonce }, { id: "mcp_dexpaprika", slug: "dexpaprika", auth: "token" }, { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -291,7 +291,7 @@ test("call DexPaprika dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "api_test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb(),
+    new MemoryDb() as never,
     { id: "conn_dp", status: "connected", ciphertext, nonce },
     { id: "mcp_dexpaprika", slug: "dexpaprika", auth: "token" },
     "search",

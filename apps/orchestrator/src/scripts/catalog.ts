@@ -1,5 +1,5 @@
+import type pg from "pg";
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
-import type { AgentScriptRow, NewAgentScript } from "../db/agents.js";
 import { AsyncLock } from "../lib/lock.js";
 import { newId } from "../lib/ids.js";
 import type { ArtifactActor } from "../artifacts/types.js";
@@ -13,6 +13,13 @@ import {
   validateScriptParameters,
   validateScriptSource,
 } from "./validation.js";
+import {
+  deleteAgentScript,
+  getAgentScript,
+  listAgentScripts,
+  upsertAgentScript,
+} from "../db/agents.js";
+import { bindQuery } from "../db/pg.js";
 
 export function rowParameters(row: Record<string, unknown>): Record<string, unknown> | null {
   let value = row.parameters;
@@ -64,20 +71,17 @@ export function scriptItem(
   return item;
 }
 
-export type ScriptDatabase = {
-  getAgentScript(agentId: string, name: string): Promise<AgentScriptRow | null>;
-  upsertAgentScript(
-    script: NewAgentScript,
-    actor: ArtifactActor,
-    now: Date,
-  ): Promise<AgentScriptRow>;
-  listAgentScripts(agentId: string): Promise<AgentScriptRow[]>;
-  deleteAgentScript(
-    actor: ArtifactActor,
-    agentId: string,
-    name: string,
-  ): Promise<AgentScriptRow | null>;
-};
+/** The db/ functions an agent's scripts are read and written through, on `db`. */
+export function scriptDatabase(db: pg.Pool) {
+  return {
+    getAgentScript: bindQuery(db, getAgentScript),
+    upsertAgentScript: bindQuery(db, upsertAgentScript),
+    listAgentScripts: bindQuery(db, listAgentScripts),
+    deleteAgentScript: bindQuery(db, deleteAgentScript),
+  };
+}
+
+export type ScriptDatabase = ReturnType<typeof scriptDatabase>;
 
 export class Scripts {
   private readonly lock = new AsyncLock();

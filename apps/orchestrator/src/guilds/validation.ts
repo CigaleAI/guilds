@@ -1,5 +1,7 @@
 import { NAME_RE } from "../lib/names.js";
 import { jsonObj } from "../db/json.js";
+import { countGuildAgents, getGuild } from "../db/guilds.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 
 export const ABOUT_MAX = 200;
 export const DESCRIPTION_MAX = 8000;
@@ -112,21 +114,28 @@ export class GuildAgentLimitError extends Error {
   }
 }
 
+/** The db/ functions a guild's agent cap is checked through, on `db`. */
+export function guildAgentRoom(db: Queryable) {
+  return {
+    getGuild: bindQuery(db, getGuild),
+    countGuildAgents: bindQuery(db, countGuildAgents),
+  };
+}
+
+export type GuildAgentRoom = ReturnType<typeof guildAgentRoom>;
+
 export async function assertGuildAgentRoom(
-  repo: {
-    getGuild(guildId: string): Promise<Record<string, unknown> | null>;
-    countGuildAgents(guildId: string): Promise<number>;
-  },
+  db: GuildAgentRoom,
   guildId: string | null,
   adding: number,
 ): Promise<void> {
   if (adding <= 0) {
     return;
   }
-  const row = guildId ? await repo.getGuild(guildId) : null;
+  const row = guildId ? await db.getGuild(guildId) : null;
   const limit = Number(row?.max_agents ?? DEFAULT_GUILD_AGENTS);
   const cap = Number.isInteger(limit) && limit > 0 ? limit : DEFAULT_GUILD_AGENTS;
-  const count = guildId ? await repo.countGuildAgents(guildId) : 0;
+  const count = guildId ? await db.countGuildAgents(guildId) : 0;
   if (count + adding > cap) {
     throw new GuildAgentLimitError(cap);
   }

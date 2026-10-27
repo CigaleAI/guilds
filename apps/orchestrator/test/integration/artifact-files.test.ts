@@ -1,27 +1,28 @@
+import type pg from "pg";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
-import { persistAgent } from "../../src/agents/persist.js";
+import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import { ArtifactFiles, fileBlobKey } from "../../src/artifacts/files.js";
 import { agentActor, listFileChanges, operatorActor } from "../../src/artifacts/index.js";
 import { ArtifactStore } from "../../src/artifacts/store.js";
 import { connect, type Database } from "../../src/db/client.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
-import { Repositories } from "../../src/db/repositories.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { insertGuild } from "../../src/db/guilds.js";
 
 const dbName = uniqueDbName("agent_platform_files");
 let database: Database;
 let store: ArtifactStore;
 let blobs: MemoryBlobStore;
 let files: ArtifactFiles;
-let repo: Repositories;
+let db: pg.Pool;
 
 const CONFIG = {
   model: "openrouter/openai/gpt-5.6-luna",
@@ -35,7 +36,7 @@ const CONFIG = {
 
 before(async () => {
   database = await connect(await createIsolatedDatabase(dbName));
-  repo = new Repositories(database.pool);
+  db = database.pool;
   store = new ArtifactStore(database.pool, templatesRoot());
   blobs = new MemoryBlobStore();
   files = new ArtifactFiles(store, blobs);
@@ -48,7 +49,7 @@ after(async () => {
 
 async function seedAgent(agentId: string, guildId: string, guildName: string, name: string) {
   const notes = new NotesStore(tempDir(`guilds-${name}-notes-`), templatesRoot());
-  await persistAgent(repo, notes, {
+  await persistAgent(agentDatabase(db), notes, {
     agentId,
     guildId,
     guildName,
@@ -68,11 +69,11 @@ const beta = agentActor({ orgId: "org_home", guildId: "guild_beta", agentId: "a_
 describe("shared files", { concurrency: 1 }, () => {
   before(async () => {
     const now = new Date();
-    await repo.insertGuild(
+    await insertGuild(db,
       { guildId: "guild_alpha", name: "alpha", orgId: "org_home", about: "" },
       now,
     );
-    await repo.insertGuild(
+    await insertGuild(db,
       { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
       now,
     );
