@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import { writeAgentTask } from "../../src/agents/task.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
@@ -11,7 +12,6 @@ import { listUsersInSeedOrder } from "../../src/users/directory.js";
 import { getMembership, listOrgsForUser } from "../../src/db/orgs.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { addAgent } from "../../src/agents/persist.js";
-import { writeAgentTask } from "../../src/db/agents.js";
 import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
 import { getUsage } from "../../src/db/usage.js";
 

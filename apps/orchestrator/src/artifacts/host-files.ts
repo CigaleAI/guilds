@@ -12,14 +12,9 @@ import {
   MEMORY_KEY,
   TASK_KEY,
 } from "./index.js";
-import { taskDisplayPath } from "../agents/task.js";
+import { taskDisplayPath, writeAgentTask } from "../agents/task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
-import {
-  getAgentTask,
-  listAgentTaskRevisions,
-  writeAgentTask,
-  type AgentRow,
-} from "../db/agents.js";
+import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 
 /** What host files are read and written through: the artifact store, and the database an agent's Task lives in. */

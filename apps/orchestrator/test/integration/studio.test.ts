@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { writeBinding } from "../../src/access/bindings.js";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { writeAgentTask } from "../../src/agents/task.js";
 import { agentActor, ArtifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { runItem } from "../../src/db/views.js";
@@ -56,7 +57,7 @@ import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js
 import { getGuild, insertGuild } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
-import { getAgentTask, writeAgentTask } from "../../src/db/agents.js";
+import { getAgentTask } from "../../src/db/agents.js";
 import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
 import { createRun, createScheduleRun, getRun } from "../../src/db/runs.js";
 import { insertIssue } from "../../src/db/issues.js";

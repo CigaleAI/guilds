@@ -94,7 +94,7 @@ export class MemoryScriptDB implements ScriptDatabase {
     return this.rows.filter((row) => row.agent_id === agentId);
   }
 
-  async upsertAgentScript(
+  async writeAgentScript(
     script: NewAgentScript,
     actor: ArtifactActor,
     now: Date,
@@ -135,7 +135,7 @@ export class MemoryScriptDB implements ScriptDatabase {
     return this.rows.find((row) => row.agent_id === agentId && row.name === name) ?? null;
   }
 
-  async deleteAgentScript(
+  async removeAgentScript(
     _actor: ArtifactActor,
     agentId: string,
     name: string,
@@ -152,9 +152,9 @@ function attachScripts<T extends object>(target: T, scripts: MemoryScriptDB): T 
   const bound = target as T & MemoryScriptDB;
   bound.rows = scripts.rows;
   bound.listAgentScripts = scripts.listAgentScripts.bind(scripts);
-  bound.upsertAgentScript = scripts.upsertAgentScript.bind(scripts);
+  bound.writeAgentScript = scripts.writeAgentScript.bind(scripts);
   bound.getAgentScript = scripts.getAgentScript.bind(scripts);
-  bound.deleteAgentScript = scripts.deleteAgentScript.bind(scripts);
+  bound.removeAgentScript = scripts.removeAgentScript.bind(scripts);
   return bound;
 }
 

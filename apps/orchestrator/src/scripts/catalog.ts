@@ -1,6 +1,7 @@
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
 import { AsyncLock } from "../lib/lock.js";
 import { newId } from "../lib/ids.js";
+import { displayPathFor } from "../artifacts/paths.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import { snapshotAgentScripts, type RunScriptSnapshot } from "./snapshot.js";
 import {
@@ -17,9 +18,11 @@ import {
   deleteAgentScript,
   getAgentScript,
   listAgentScripts,
+  type NewAgentScript,
   upsertAgentScript,
 } from "../db/agents.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
+import { recordFileChange } from "../db/file-changes.js";
+import { bindQuery, type Queryable, withTransaction } from "../db/pg.js";
 
 /** An agent's script: its row without the timestamps. */
 export type AgentScript = Omit<AgentScriptRow, "created_at" | "updated_at">;
@@ -61,13 +64,63 @@ export function scriptItem(script: AgentScript): ScriptItem {
   };
 }
 
+/** Where an agent's script shows in the file-change log. */
+function scriptDisplayPath(orgId: string, agentId: string, name: string): string {
+  return displayPathFor({ orgId, level: "agent", ownerId: agentId, kind: "script", path: "scripts", key: name });
+}
+
+/** Writes an agent's script and logs the change against `actor`. */
+export async function writeAgentScript(
+  db: Queryable,
+  script: NewAgentScript,
+  actor: ArtifactActor,
+  now: Date,
+): Promise<AgentScriptRow> {
+  return withTransaction(db, async (client) => {
+    const written = await upsertAgentScript(client, script, actor, now);
+    await recordFileChange(client, actor, {
+      orgId: written.orgId,
+      artifactId: written.script.id,
+      displayPath: scriptDisplayPath(written.orgId, script.agentId, script.name),
+      operation: written.created ? "create" : "update",
+      version: written.version,
+      createdAt: now,
+    });
+    return written.script;
+  });
+}
+
+/** Deletes an agent's script and logs the delete against `actor`; null when it has none such. */
+export async function removeAgentScript(
+  db: Queryable,
+  actor: ArtifactActor,
+  agentId: string,
+  name: string,
+): Promise<AgentScriptRow | null> {
+  return withTransaction(db, async (client) => {
+    const deleted = await deleteAgentScript(client, actor, agentId, name);
+    if (!deleted) {
+      return null;
+    }
+    await recordFileChange(client, actor, {
+      orgId: deleted.orgId,
+      artifactId: deleted.script.id,
+      displayPath: scriptDisplayPath(deleted.orgId, agentId, name),
+      operation: "delete",
+      version: deleted.version,
+      createdAt: new Date(deleted.script.updated_at),
+    });
+    return deleted.script;
+  });
+}
+
 /** The db/ functions an agent's scripts are read and written through, on `db`. */
 export function scriptDatabase(db: Queryable) {
   return {
     getAgentScript: bindQuery(db, getAgentScript),
-    upsertAgentScript: bindQuery(db, upsertAgentScript),
+    writeAgentScript: bindQuery(db, writeAgentScript),
     listAgentScripts: bindQuery(db, listAgentScripts),
-    deleteAgentScript: bindQuery(db, deleteAgentScript),
+    removeAgentScript: bindQuery(db, removeAgentScript),
   };
 }
 
@@ -103,7 +156,7 @@ export class Scripts {
           throw new ScriptError(`this agent is limited to ${maxScripts} scripts`);
         }
       }
-      const row = await this.db.upsertAgentScript(
+      const row = await this.db.writeAgentScript(
         {
           scriptId: existing ? existing.id : newId("scr"),
           agentId,
@@ -140,7 +193,7 @@ export class Scripts {
   async delete(actor: ArtifactActor, agentId: string, name: unknown): Promise<AgentScript> {
     const token = validateScriptName(name);
     return this.lock.run(async () => {
-      const row = await this.db.deleteAgentScript(actor, agentId, token);
+      const row = await this.db.removeAgentScript(actor, agentId, token);
       if (row === null) {
         throw new ScriptError("script not found", 404);
       }
@@ -152,7 +205,7 @@ export class Scripts {
     return this.lock.run(async () => {
       const deleted: AgentScript[] = [];
       for (const row of await this.db.listAgentScripts(agentId)) {
-        const gone = await this.db.deleteAgentScript(actor, agentId, row.name);
+        const gone = await this.db.removeAgentScript(actor, agentId, row.name);
         if (gone) {
           deleted.push(agentScript(gone));
         }

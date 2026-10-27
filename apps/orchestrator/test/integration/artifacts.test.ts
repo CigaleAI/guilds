@@ -1,6 +1,7 @@
 import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import { writeAgentTask } from "../../src/agents/task.js";
 import { ArtifactStore } from "../../src/artifacts/store.js";
 import {
   agentActor,
@@ -23,7 +24,7 @@ import { listConfigChanges } from "../../src/db/config-changes.js";
 import { buildMemoryTimeline } from "../../src/memory/timeline.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
-import { getAgentTask, listAgentTaskRevisions, writeAgentTask } from "../../src/db/agents.js";
+import { getAgentTask, listAgentTaskRevisions } from "../../src/db/agents.js";
 import { insertRun } from "../../src/db/runs.js";
 
 const dbName = uniqueDbName("agent_platform_artifacts");

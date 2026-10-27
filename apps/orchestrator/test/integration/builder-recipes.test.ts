@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { writeAgentTask } from "../../src/agents/task.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
@@ -26,7 +27,7 @@ import {
 import { getGuild, listGuilds } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
-import { getAgentTask, listAgents, writeAgentTask } from "../../src/db/agents.js";
+import { getAgentTask, listAgents } from "../../src/db/agents.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 

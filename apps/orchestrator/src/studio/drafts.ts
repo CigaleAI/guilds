@@ -1,3 +1,4 @@
+import { writeAgentTaskInTransaction } from "../agents/task.js";
 import {
   ArtifactError,
   collectTaskEmbeds,
@@ -27,7 +28,7 @@ import type { StudioToolContext } from "./tools.js";
 import { resolveSourceGuildAgent, sourceGuildAgents, studioAgentHandleFromArgs } from "./tools.js";
 import { argString } from "../toolbox/schema.js";
 import { excerptBytes } from "./system.js";
-import { getAgent, getAgentTask, listAgents, writeAgentTaskInTransaction } from "../db/agents.js";
+import { getAgent, getAgentTask, listAgents } from "../db/agents.js";
 import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
 import {

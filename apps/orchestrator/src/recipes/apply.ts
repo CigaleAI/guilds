@@ -1,4 +1,5 @@
 import { writeBinding } from "../access/bindings.js";
+import { writeAgentTask } from "../agents/task.js";
 import { getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { pickEntry, type RegistryIndex } from "../registry/index.js";
@@ -102,7 +103,7 @@ import {
   getMembership,
 } from "../db/orgs.js";
 import { deleteGuild, getGuild, listGuildRepositories } from "../db/guilds.js";
-import { deleteAgent, listAgents, writeAgentTask } from "../db/agents.js";
+import { deleteAgent, listAgents } from "../db/agents.js";
 import { listMachines } from "../db/machines.js";
 import { listSchedules } from "../db/schedules.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";

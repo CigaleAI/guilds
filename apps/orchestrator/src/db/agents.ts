@@ -1,14 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
-import type pg from "pg";
-import {
-  hashTaskContent,
-  taskDisplayPath,
-  type AgentTaskRow,
-} from "../agents/task.js";
-import { ArtifactError } from "../artifacts/errors.js";
-import { recordFileChange } from "./file-changes.js";
-import { displayPathFor } from "../artifacts/paths.js";
-import { TASK_REVISIONS_MAX, WRITE_MAX_BYTES, type ArtifactActor } from "../artifacts/types.js";
+import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
@@ -65,6 +56,27 @@ export type AgentConfigPatch = {
   avatarColor?: string | null | undefined;
   focus?: string | null | undefined;
   wakeTriggers?: string | null | undefined;
+};
+
+/** An agent's standing task as its file reads: `task.md`'s text, version, and hash. */
+export type AgentTaskRow = {
+  org_id: Agent["org_id"];
+  agent_id: Agent["id"];
+  content_text: Agent["task"];
+  version: Agent["task_version"];
+  content_hash: Agent["task_hash"];
+  updated_at: Agent["task_updated_at"];
+};
+
+/** A task's new text and its hash. */
+export type TaskContent = { text: string; hash: string };
+
+/** A script as written: the row, its organisation, its version, and whether the write created it. */
+export type WrittenAgentScript = {
+  script: AgentScriptRow;
+  orgId: string;
+  version: number;
+  created: boolean;
 };
 
 export type AgentTaskRevisionRow = Pick<
@@ -315,100 +327,82 @@ export async function getAgentTask(
   return result.rows[0] ?? null;
 }
 
-export async function writeAgentTask(
-  pool: Queryable,
-  actor: ArtifactActor,
+const TASK_COLUMNS = `org_id, id AS agent_id, task AS content_text, task_version AS version,
+  task_hash AS content_hash, task_updated_at AS updated_at`;
+
+/** An agent's task, locked for the rest of the transaction `db` runs; null when there is no such agent. */
+export async function lockAgentTask(
+  db: Queryable,
+  orgId: string,
   agentId: string,
-  content: string,
-  expectedVersion?: number,
-): Promise<AgentTaskRow> {
-  return withTransaction(pool, (client) =>
-    writeAgentTaskInTransaction(client, actor, agentId, content, expectedVersion),
+): Promise<AgentTaskRow | null> {
+  const result = await db.query<AgentTaskRow>(
+    `SELECT ${TASK_COLUMNS} FROM agents WHERE org_id = $1 AND id = $2 FOR UPDATE`,
+    [orgId, agentId],
+  );
+  return result.rows[0] ?? null;
+}
+
+/** Keeps the text of a task being replaced as a revision, stamped with who replaced it. */
+export async function insertTaskRevision(
+  db: Queryable,
+  replaced: AgentTaskRow,
+  actor: ChangeActor,
+  now: Date,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO task_revisions (
+       id, org_id, agent_id, version, content_text, replaced_at,
+       replaced_by_type, replaced_by_id, replaced_by_name, created_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $6)`,
+    [
+      newId("trev"),
+      replaced.org_id,
+      replaced.agent_id,
+      replaced.version,
+      replaced.content_text,
+      stamp(now),
+      actor.actorType,
+      actor.actorId,
+      actor.actorName,
+    ],
   );
 }
 
-/** Writes the agent's task inside the transaction `tx` runs. */
-export async function writeAgentTaskInTransaction(
-  tx: pg.PoolClient,
-  actor: ArtifactActor,
+/** Drops an agent's task revisions past the newest `keep`. */
+export async function pruneTaskRevisions(
+  db: Queryable,
+  orgId: string,
   agentId: string,
-  content: string,
-  expectedVersion?: number,
-): Promise<AgentTaskRow> {
-  if (!actor.operator) {
-    throw new ArtifactError("task is not writable", 422);
-  }
-  if (Buffer.byteLength(content, "utf8") > WRITE_MAX_BYTES) {
-    throw new ArtifactError("write exceeds 256 KB", 422);
-  }
-  const lockedResult = await tx.query<AgentTaskRow>(
-    `SELECT org_id, id AS agent_id, task AS content_text, task_version AS version,
-            task_hash AS content_hash, task_updated_at AS updated_at
-       FROM agents
-      WHERE org_id = $1 AND id = $2
-      FOR UPDATE`,
-    [actor.orgId, agentId],
+  keep: number,
+): Promise<void> {
+  await db.query(
+    `DELETE FROM task_revisions
+      WHERE id IN (
+        SELECT id FROM task_revisions
+         WHERE org_id = $1 AND agent_id = $2
+         ORDER BY version DESC
+        OFFSET $3
+      )`,
+    [orgId, agentId, keep],
   );
-  const locked = lockedResult.rows[0] ?? null;
-  if (!locked) {
-    throw new ArtifactError("task.md not found", 404);
-  }
-  if (expectedVersion !== undefined && locked.version !== expectedVersion) {
-    throw new ArtifactError("version conflict", 409);
-  }
-  const hash = hashTaskContent(content);
-  if (locked.content_hash === hash) {
-    return locked;
-  }
-  if (locked.content_text) {
-    await tx.query(
-      `INSERT INTO task_revisions (
-         id, org_id, agent_id, version, content_text, replaced_at,
-         replaced_by_type, replaced_by_id, replaced_by_name, created_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $6)`,
-      [
-        newId("trev"),
-        locked.org_id,
-        agentId,
-        locked.version,
-        locked.content_text,
-        stamp(new Date()),
-        actor.actorType,
-        actor.actorId,
-        actor.actorName,
-      ],
-    );
-    await tx.query(
-      `DELETE FROM task_revisions
-        WHERE id IN (
-          SELECT id FROM task_revisions
-           WHERE org_id = $1 AND agent_id = $2
-           ORDER BY version DESC
-          OFFSET $3
-        )`,
-      [locked.org_id, agentId, TASK_REVISIONS_MAX],
-    );
-  }
-  const result = await tx.query<AgentTaskRow>(
+}
+
+/** Replaces the task `replaced` holds with `content`, one version up; null when its version moved on. */
+export async function updateAgentTask(
+  db: Queryable,
+  replaced: AgentTaskRow,
+  content: TaskContent,
+  now: Date,
+): Promise<AgentTaskRow | null> {
+  const result = await db.query<AgentTaskRow>(
     `UPDATE agents
         SET task = $2, task_hash = $3, task_version = task_version + 1, task_updated_at = $4
       WHERE id = $1 AND org_id = $5 AND task_version = $6
-      RETURNING org_id, id AS agent_id, task AS content_text, task_version AS version,
-                task_hash AS content_hash, task_updated_at AS updated_at`,
-    [agentId, content, hash, stamp(new Date()), actor.orgId, locked.version],
+      RETURNING ${TASK_COLUMNS}`,
+    [replaced.agent_id, content.text, content.hash, stamp(now), replaced.org_id, replaced.version],
   );
-  const task = result.rows[0] ?? null;
-  if (!task) {
-    throw new ArtifactError("version conflict", 409);
-  }
-  await recordFileChange(tx, actor, {
-    orgId: task.org_id,
-    taskAgentId: task.agent_id,
-    displayPath: taskDisplayPath(task.org_id, task.agent_id),
-    operation: "update",
-    version: task.version,
-  });
-  return task;
+  return result.rows[0] ?? null;
 }
 
 export async function listAgentTaskRevisions(
@@ -481,12 +475,13 @@ export async function updateAgentConfig(
   return options.name ? withTransaction(pool, writeConfigPatch) : writeConfigPatch(pool);
 }
 
+/** Writes an agent's script, reviving a deleted one of the same name. */
 export async function upsertAgentScript(
   pool: Queryable,
   script: NewAgentScript,
-  actor: ArtifactActor,
+  actor: ChangeActor,
   now: Date,
-): Promise<AgentScriptRow> {
+): Promise<WrittenAgentScript> {
   const { scriptId, agentId, name, description, parameters, source, sourceHash } = script;
   return withTransaction(pool, async (client) => {
     const agentResult = await client.query<{
@@ -564,22 +559,12 @@ export async function upsertAgentScript(
     if (!row) {
       throw new RowMissing("agent script upsert failed");
     }
-    await recordFileChange(client, actor, {
+    return {
+      script: scriptArtifactRow(row),
       orgId: agent.org_id,
-      artifactId: row.id,
-      displayPath: displayPathFor({
-        orgId: agent.org_id,
-        level: "agent",
-        ownerId: agentId,
-        kind: "script",
-        path: "scripts",
-        key: name,
-      }),
-      operation: liveId && !previous?.deleted_at ? "update" : "create",
       version: row.version,
-      createdAt: now,
-    });
-    return scriptArtifactRow(row);
+      created: !liveId || Boolean(previous?.deleted_at),
+    };
   });
 }
 
@@ -614,42 +599,23 @@ export async function getAgentScript(
   return row ? scriptArtifactRow(row) : null;
 }
 
+/** Deletes an agent's script by name, stamped with the time of the delete; null when it has none such. */
 export async function deleteAgentScript(
   pool: Queryable,
-  actor: ArtifactActor,
+  actor: ChangeActor,
   agentId: string,
   name: string,
-): Promise<AgentScriptRow | null> {
-  return withTransaction(pool, async (client) => {
-    const now = new Date();
-    const result = await client.query<ScriptQueryRow>(
-      `UPDATE artifacts
-          SET deleted_at = $3, updated_at = $3, updated_by_type = $4,
-              updated_by_id = $5, updated_by_name = $6
-        WHERE agent_id = $1 AND kind = 'script' AND path = 'scripts' AND key = $2
-          AND deleted_at IS NULL
-        RETURNING ${SCRIPT_RETURNING}`,
-      [agentId, name, stamp(now), actor.actorType, actor.actorId, actor.actorName],
-    );
-    const row = result.rows[0] ?? null;
-    if (!row) {
-      return null;
-    }
-    await recordFileChange(client, actor, {
-      orgId: row.org_id,
-      artifactId: row.id,
-      displayPath: displayPathFor({
-        orgId: row.org_id,
-        level: "agent",
-        ownerId: agentId,
-        kind: "script",
-        path: "scripts",
-        key: name,
-      }),
-      operation: "delete",
-      version: row.version,
-      createdAt: now,
-    });
-    return scriptArtifactRow(row);
-  });
+): Promise<Omit<WrittenAgentScript, "created"> | null> {
+  const now = new Date();
+  const result = await pool.query<ScriptQueryRow>(
+    `UPDATE artifacts
+        SET deleted_at = $3, updated_at = $3, updated_by_type = $4,
+            updated_by_id = $5, updated_by_name = $6
+      WHERE agent_id = $1 AND kind = 'script' AND path = 'scripts' AND key = $2
+        AND deleted_at IS NULL
+      RETURNING ${SCRIPT_RETURNING}`,
+    [agentId, name, stamp(now), actor.actorType, actor.actorId, actor.actorName],
+  );
+  const row = result.rows[0] ?? null;
+  return row ? { script: scriptArtifactRow(row), orgId: row.org_id, version: row.version } : null;
 }
