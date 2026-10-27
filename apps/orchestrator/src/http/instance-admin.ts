@@ -1,8 +1,7 @@
-import { SEED_ORG_ID } from "../organisations/index.js";
+import { ownsSeedOrg } from "../organisations/service.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser, identityDatabase, type IdentityRequest } from "./identity.js";
-import { getMembership } from "../db/orgs.js";
 
 /** Decides whether a user may administer the instance, in place of core's rule. */
 export type InstanceAdmin = (userId: string) => Promise<boolean>;
@@ -18,8 +17,7 @@ export async function isInstanceAdmin(
   if (deps.instanceAdmin) {
     return deps.instanceAdmin(userId);
   }
-  const membership = await getMembership(deps.db, SEED_ORG_ID, userId);
-  return membership?.role === "owner";
+  return ownsSeedOrg(deps.db, userId);
 }
 
 /** The request's user when they administer the instance; otherwise the route does not exist (404). */

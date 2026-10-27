@@ -22,6 +22,7 @@ import {
   canManageSettings,
   memberItem,
   orgItem,
+  SEED_ORG_ID,
   validateOrgName,
   validateRole,
   validateSlug,
@@ -77,6 +78,24 @@ export async function requireMembership(
     throw new OrgError(404, NOT_FOUND);
   }
   return membership;
+}
+
+/** The user's membership of an organisation they manage, as an owner or admin; any other is a 404. */
+export async function requireOrgManager(
+  db: Queryable,
+  orgId: string,
+  userId: string,
+): Promise<OrgMembershipRow> {
+  const membership = await requireMembership(db, orgId, userId);
+  if (!canManageSettings(membership.role)) {
+    throw new OrgError(404, NOT_FOUND);
+  }
+  return membership;
+}
+
+/** Whether the user owns the seed organisation: core's rule for who administers the instance. */
+export async function ownsSeedOrg(db: Queryable, userId: string): Promise<boolean> {
+  return (await getMembership(db, SEED_ORG_ID, userId))?.role === "owner";
 }
 
 export async function listUserOrgs(db: Queryable, userId: string): Promise<Item[]> {

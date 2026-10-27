@@ -1,62 +1,17 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { visibleGuildIds } from "../machines/access.js";
 import {
-  allocatedWorkspaceMib,
-  machineSize,
-  machineSizeChanged,
-  plannedLoad,
-  validateMachineInput,
-  type MachineWithAgents,
-} from "../machines/index.js";
-import { canManageSettings } from "../organisations/index.js";
-import { OPEN_POLICY, machineCap } from "../policy/index.js";
+  changeMachine,
+  createMachine,
+  listOrgMachines,
+  removeMachine,
+  type MachineMember,
+  type MachineServices,
+} from "../machines/service.js";
+import { requireMembership } from "../organisations/service.js";
+import { OPEN_POLICY } from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
-import { HttpError } from "./errors.js";
 import { currentUser, identityDatabase } from "./identity.js";
 import { bodyOf, param } from "./request.js";
-import { getMembership } from "../db/orgs.js";
-import {
-  deleteMachine,
-  getMachine,
-  getMachineWithAgents,
-  insertMachine,
-  listMachines,
-  updateMachine,
-} from "../db/machines.js";
-
-/**
- * A machine as the operator app shows it: its size, the agents on it, their planned load (the sum
- * of their minimums), and its disk with what its agents' own caps reserve of it. Agents of guilds
- * the viewer cannot see count toward the planned load, the reserved disk, and `hidden_agents`,
- * with no name or guild.
- */
-export function machineItem(machine: MachineWithAgents, visibleGuildIds: ReadonlySet<string>): Record<string, unknown> {
-  const size = machineSize(machine);
-  const visible = machine.agents.filter((agent) => visibleGuildIds.has(agent.guild_id));
-  const planned = plannedLoad(machine.agents);
-  return {
-    id: machine.id,
-    name: machine.name,
-    box: machine.box,
-    cpu: size.cpu,
-    memory_mib: size.memory_mib,
-    max_workspace_mib: machine.max_workspace_mib,
-    workspace_mib: machine.workspace_mib,
-    allocated_workspace_mib: allocatedWorkspaceMib(machine.agents),
-    harnesses: machine.harnesses,
-    planned_cpu: planned.cpu,
-    planned_mib: planned.memory_mib,
-    agents: visible.map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      guild_id: agent.guild_id,
-      guild_name: agent.guild_name,
-      browser: agent.browser,
-      coding: agent.coding,
-    })),
-    hidden_agents: machine.agents.length - visible.length,
-  };
-}
 
 /**
  * An organisation's machines: every member lists them; owners and admins create, resize, and
@@ -65,72 +20,33 @@ export function machineItem(machine: MachineWithAgents, visibleGuildIds: Readonl
 export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const identityDb = identityDatabase(db);
-  const policy = deps.policy ?? OPEN_POLICY;
+  const services: MachineServices = {
+    db,
+    policy: deps.policy ?? OPEN_POLICY,
+    generation: deps.generation ?? null,
+  };
 
-  async function requireMember(request: FastifyRequest): Promise<{ orgId: string; userId: string; role: string }> {
-    const orgId = param(request, "org_id");
+  async function memberOf(request: FastifyRequest): Promise<MachineMember> {
     const user = await currentUser(identityDb, request, deps);
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    return { orgId, userId: String(user.id), role: String(membership.role) };
+    const membership = await requireMembership(db, param(request, "org_id"), String(user.id));
+    return { membership, userId: String(user.id) };
   }
 
-  async function requireManager(request: FastifyRequest): Promise<{ orgId: string; userId: string }> {
-    const member = await requireMember(request);
-    if (!canManageSettings(member.role)) {
-      throw new HttpError(403, "only owners and admins manage machines");
-    }
-    return member;
-  }
-
-  async function itemOf(orgId: string, machineId: string, userId: string): Promise<Record<string, unknown>> {
-    const machine = await getMachineWithAgents(db, orgId, machineId);
-    if (machine === null) {
-      throw new HttpError(404, "machine not found");
-    }
-    return machineItem(machine, await visibleGuildIds(db, orgId, userId));
-  }
-
-  app.get("/api/orgs/:org_id/machines", async (request) => {
-    const { orgId, userId } = await requireMember(request);
-    const visible = await visibleGuildIds(db, orgId, userId);
-    return (await listMachines(db, orgId)).map((machine) => machineItem(machine, visible));
-  });
+  app.get("/api/orgs/:org_id/machines", async (request) =>
+    listOrgMachines(db, await memberOf(request)),
+  );
 
   app.post("/api/orgs/:org_id/machines", async (request, reply) => {
-    const { orgId, userId } = await requireManager(request);
-    const input = validateMachineInput(bodyOf(request));
-    const machine = await insertMachine(db, orgId, input, new Date(), await machineCap(policy, orgId));
-    reply.code(201);
-    return await itemOf(orgId, machine.id, userId);
+    const machine = await createMachine(services, await memberOf(request), bodyOf(request));
+    return reply.code(201).send(machine);
   });
 
-  app.patch("/api/orgs/:org_id/machines/:machine_id", async (request) => {
-    const { orgId, userId } = await requireManager(request);
-    const machineId = param(request, "machine_id");
-    const current = await getMachine(db, orgId, machineId);
-    if (current === null) {
-      throw new HttpError(404, "machine not found");
-    }
-    const changed = await updateMachine(db, orgId, machineId, validateMachineInput(bodyOf(request), current), new Date());
-    if (changed === null) {
-      throw new HttpError(404, "machine not found");
-    }
-    if (machineSizeChanged(changed.before, changed.after)) {
-      await deps.generation?.machineChanged(machineId);
-    }
-    return await itemOf(orgId, machineId, userId);
-  });
+  app.patch("/api/orgs/:org_id/machines/:machine_id", async (request) =>
+    changeMachine(services, await memberOf(request), param(request, "machine_id"), bodyOf(request)),
+  );
 
   app.delete("/api/orgs/:org_id/machines/:machine_id", async (request, reply) => {
-    const { orgId } = await requireManager(request);
-    const machineId = param(request, "machine_id");
-    if ((await deleteMachine(db, orgId, machineId)) === null) {
-      throw new HttpError(404, "machine not found");
-    }
-    await deps.generation?.deleteMachine(machineId);
+    await removeMachine(services, await memberOf(request), param(request, "machine_id"));
     return reply.code(204).send();
   });
 }

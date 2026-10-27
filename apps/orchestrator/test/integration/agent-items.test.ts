@@ -5,7 +5,9 @@ import { connect } from "../../src/db/client.js";
 import { insertAgent } from "../../src/db/agents.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertIssue } from "../../src/db/issues.js";
+import { insertMember } from "../../src/db/orgs.js";
 import { insertRun } from "../../src/db/runs.js";
+import { insertUser } from "../../src/db/users.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -23,7 +25,7 @@ after(async () => {
 });
 
 test(
-  "an operator's scripts, routines, issues, runs, notes, tables and bindings answer for what is there and what is not",
+  "an operator's scripts, routines, issues, runs, notes, tables, bindings and machines answer for what is there and what is not",
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -229,6 +231,42 @@ test(
         headers: OWNER,
       });
       assert.equal(image.statusCode, 503, "a box without an image store serves none");
+
+      const member = await insertUser(
+        db,
+        { userId: "user_items_member", name: "items-member" },
+        new Date(),
+      );
+      await insertMember(db, "org_home", member.id, "member", new Date());
+      const MEMBER = {
+        "X-Guilds-User": member.id,
+        "X-Guilds-Org": "org_home",
+        "content-type": "application/json",
+      };
+      const machines = "/api/orgs/org_home/machines";
+      assert.equal(
+        (await app.inject({ method: "GET", url: machines, headers: MEMBER })).statusCode,
+        200,
+      );
+      const byMember = await app.inject({
+        method: "POST",
+        url: machines,
+        headers: MEMBER,
+        payload: { name: "spare" },
+      });
+      assert.equal(byMember.statusCode, 403, "a member does not manage machines");
+      const unknownMachine = await app.inject({
+        method: "PATCH",
+        url: `${machines}/mach_missing`,
+        headers: JSON_OWNER,
+        payload: { name: "renamed" },
+      });
+      assert.equal(unknownMachine.statusCode, 404);
+      assert.equal(
+        (await app.inject({ method: "DELETE", url: `${machines}/mach_missing`, headers: OWNER }))
+          .statusCode,
+        404,
+      );
 
       const bind = (payload: object) =>
         app.inject({ method: "PUT", url: "/api/bindings", headers: JSON_OWNER, payload });

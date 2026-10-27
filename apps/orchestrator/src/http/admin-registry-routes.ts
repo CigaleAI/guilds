@@ -10,7 +10,7 @@ import { syncInstanceLogins } from "../connectors/instance.js";
 import { refreshConnectorIntegrations } from "../instance/connectors.js";
 import { requireInstanceAdmin } from "./instance-admin.js";
 import { bodyOf, param } from "./request.js";
-import { getMcpServer, listMcpServers } from "../db/connectors.js";
+import { listPlatformServers, reloadServer } from "../mcp/servers.js";
 
 /** The box's registry client: the one the deps carry, else `REGISTRY_URL`'s; null while offline. */
 export function registryOf(deps: AppDeps): RegistryClient | null {
@@ -78,7 +78,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
     try {
       const index = await client.index();
       const installed = new Map(
-        (await listMcpServers(db)).filter((row) => !row.owner_org_id).map((row) => [String(row.slug), row]),
+        (await listPlatformServers(db)).map((row) => [row.slug, row]),
       );
       return {
         offline: false,
@@ -108,7 +108,7 @@ export async function registerAdminRegistryRoutes(app: FastifyInstance, deps: Ap
       });
       await applyChange();
       reply.code(201);
-      return catalogServerItem((await getMcpServer(db, String(row.id))) ?? row);
+      return catalogServerItem(await reloadServer(db, row));
     } catch (error) {
       registryHttp(error);
     }

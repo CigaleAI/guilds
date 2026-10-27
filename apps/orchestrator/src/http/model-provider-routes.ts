@@ -2,31 +2,24 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { modelsDatabase, ModelsError, ModelsService } from "../llm/models.js";
 import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { isProvider } from "../llm/providers.js";
-import { canManageSettings } from "../organisations/index.js";
+import { requireMembership, requireOrgManager } from "../organisations/service.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser, identityDatabase } from "./identity.js";
 import { bodyOf, param } from "./request.js";
-import { getMembership } from "../db/orgs.js";
 
-async function requireMembership(
+async function requireMember(deps: AppDeps, request: FastifyRequest, orgId: string): Promise<void> {
+  const user = await currentUser(identityDatabase(deps.db), request, deps);
+  await requireMembership(deps.db, orgId, String(user.id));
+}
+
+async function requireManager(
   deps: AppDeps,
   request: FastifyRequest,
   orgId: string,
-): Promise<Record<string, unknown>> {
+): Promise<void> {
   const user = await currentUser(identityDatabase(deps.db), request, deps);
-  const membership = await getMembership(deps.db, orgId, String(user.id));
-  if (membership === null) {
-    throw new HttpError(404, "organisation not found");
-  }
-  return membership;
-}
-
-async function requireOrgManager(deps: AppDeps, request: FastifyRequest, orgId: string): Promise<void> {
-  const membership = await requireMembership(deps, request, orgId);
-  if (!canManageSettings(String(membership.role))) {
-    throw new HttpError(404, "organisation not found");
-  }
+  await requireOrgManager(deps.db, orgId, String(user.id));
 }
 
 function providerParam(request: FastifyRequest): string {
@@ -65,13 +58,13 @@ export async function registerModelProviderRoutes(app: FastifyInstance, deps: Ap
 
   app.get("/api/orgs/:org_id/models", async (request) => {
     const orgId = param(request, "org_id");
-    await requireMembership(deps, request, orgId);
+    await requireMember(deps, request, orgId);
     return models.read(orgId);
   });
 
   app.get("/api/orgs/:org_id/model-providers/:provider/catalog", async (request) => {
     const orgId = param(request, "org_id");
-    await requireMembership(deps, request, orgId);
+    await requireMember(deps, request, orgId);
     try {
       return { models: await models.providerCatalog(orgId, providerParam(request)) };
     } catch (error) {
@@ -81,7 +74,7 @@ export async function registerModelProviderRoutes(app: FastifyInstance, deps: Ap
 
   app.put("/api/orgs/:org_id/model-providers/:provider", async (request) => {
     const orgId = param(request, "org_id");
-    await requireOrgManager(deps, request, orgId);
+    await requireManager(deps, request, orgId);
     const provider = providerParam(request);
     try {
       return await models.connect(orgId, provider, bodyOf(request));
@@ -92,7 +85,7 @@ export async function registerModelProviderRoutes(app: FastifyInstance, deps: Ap
 
   app.put("/api/orgs/:org_id/default-model", async (request) => {
     const orgId = param(request, "org_id");
-    await requireOrgManager(deps, request, orgId);
+    await requireManager(deps, request, orgId);
     try {
       return await models.setDefault(orgId, bodyOf(request).model ?? null);
     } catch (error) {
@@ -102,7 +95,7 @@ export async function registerModelProviderRoutes(app: FastifyInstance, deps: Ap
 
   app.delete("/api/orgs/:org_id/model-providers/:provider", async (request, reply) => {
     const orgId = param(request, "org_id");
-    await requireOrgManager(deps, request, orgId);
+    await requireManager(deps, request, orgId);
     const provider = providerParam(request);
     let removed: boolean;
     try {

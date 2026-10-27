@@ -13,6 +13,7 @@ import { GuildValidationError } from "../guilds/validation.js";
 import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
 import { MachineError } from "../machines/index.js";
+import { CatalogError } from "../mcp/catalog.js";
 import { OperatorCallError } from "../mcp/operator-call.js";
 import { ConnectionError } from "../mcp/visibility.js";
 import { NotesError } from "../notes/store.js";
@@ -131,6 +132,7 @@ const REFUSALS = [
   ConnectionError,
   ConnectError,
   OperatorCallError,
+  CatalogError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */

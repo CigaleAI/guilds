@@ -60,11 +60,11 @@ A repository that extends core holds this one as a submodule
 | `toolbox/` | Native tools, the sandbox command runner (`shell.ts`), and the result pipeline (`output.ts`) ([Native tools](../tools-and-connectors/native.md)) |
 | `connectors/` | One folder per connector, the manifest schema, the adapter contract, and the connector registry ([Connectors](../tools-and-connectors/connectors.md)) |
 | `registry/` | Installing connectors from a registry, and the code tier ([Connector registry](../tools-and-connectors/connector-registry.md)) |
-| `mcp/` | `McpPool`, the catalog and its policy, tool names, an operator's direct tool call (`operator-call.ts`), the logins an operator reads, uses and sets up (`connections.ts`), and who sees a connector and a login (`visibility.ts`) |
+| `mcp/` | `McpPool`, the catalog and its policy, the catalog's servers as the instance admin and an organisation's managers change them (`servers.ts`), tool names, an operator's direct tool call (`operator-call.ts`), the logins an operator reads, uses and sets up (`connections.ts`), and who sees a connector and a login (`visibility.ts`) |
 | `oauth/` | Connect flows from each manifest's `auth.oauth`: a login started (`connect-start.ts`), the provider's callback (`connect-callback.ts`), and a GitHub App installation traded, picked or installed (`github-install.ts`) |
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
 | `coding/` | Guild repositories, a coding run's git side, the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
-| `machines/` | Tiers, sizes, slots, placement and its access, and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
+| `machines/` | Tiers, sizes, slots, placement and its access, an organisation's machines as its members manage them (`service.ts`), and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
 | `access/` | Binding resolution, a run's tools, MCP, and secrets, the access view a scope's page shows (`view.ts`), and the bindings an operator sets (`operator.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM, environment fingerprints, connection views, and validation |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, redaction, and an organisation's secrets as its members manage them (`service.ts`) ([Secrets](../concepts/secrets.md)) |

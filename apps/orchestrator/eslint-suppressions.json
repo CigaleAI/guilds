@@ -429,16 +429,6 @@
       "count": 1
     }
   },
-  "src/http/admin-mcp-routes.ts": {
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/http/admin-registry-routes.ts": {
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 1
-    }
-  },
   "src/http/builder-capability-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -466,16 +456,6 @@
       "count": 3
     }
   },
-  "src/http/instance-admin.ts": {
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/http/machine-routes.ts": {
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 2
-    }
-  },
   "src/http/me-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -485,16 +465,6 @@
     },
     "complexity": {
       "count": 1
-    }
-  },
-  "src/http/model-provider-routes.ts": {
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 1
-    }
-  },
-  "src/http/org-connector-routes.ts": {
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 3
     }
   },
   "src/http/recipe-routes.ts": {
