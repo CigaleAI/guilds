@@ -56,24 +56,6 @@ export type ConfigChangeView = {
   created_at: string;
 };
 
-/** A person acting through the app or the API. */
-export function userActor(user: Record<string, unknown>): ChangeActor {
-  return {
-    actorType: "user",
-    actorId: String(user.id),
-    actorName: String(user.name ?? "operator"),
-    toolCall: null,
-  };
-}
-
-/** An agent's run acting through one of its tool calls. */
-export function runActor(
-  run: { runId: string; agentName: string },
-  toolCall: { id: string; name: string },
-): ChangeActor {
-  return { actorType: "run", actorId: run.runId, actorName: run.agentName, toolCall };
-}
-
 /** The actor, run, tool call, and coach message columns `file_changes` and `config_changes` share, in that order. */
 export function actorColumns(actor: ChangeActor): unknown[] {
   return [

@@ -61,7 +61,8 @@ import {
   type MachineWithAgents,
 } from "../machines/index.js";
 import { jsonObj } from "../db/json.js";
-import { userActor, type ChangeActor } from "../db/config-changes.js";
+import { type ChangeActor } from "../db/config-changes.js";
+import { userActor } from "../lib/change-actor.js";
 import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";

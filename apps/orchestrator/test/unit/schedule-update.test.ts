@@ -4,7 +4,7 @@ import { ScheduleError } from "../../src/schedules/cron.js";
 import { Schedules, changedFields, type ScheduleDatabase } from "../../src/schedules/service.js";
 import { rowTiming } from "../../src/schedules/timing.js";
 import type { PlannedWake } from "../../src/schedules/window.js";
-import { userActor } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
 import type { ScheduleKey, ScheduleRow, ScheduleUpdate } from "../../src/db/schedules.js";
 
 const ACTOR = userActor({ id: "user_operator", name: "operator" });

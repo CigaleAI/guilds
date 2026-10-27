@@ -46,7 +46,8 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
-import { listConfigChanges, userActor } from "../../src/db/config-changes.js";
+import { listConfigChanges } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
 import { createToolContext } from "../../src/toolbox/index.js";
 import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js";
 import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";

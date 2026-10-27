@@ -40,7 +40,7 @@ import {
 } from "../attachments/index.js";
 import type { AttachmentRef } from "../attachments/index.js";
 import { jsonObj } from "../db/json.js";
-import { userActor } from "../db/config-changes.js";
+import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { awaitingSettings, markDisconnected, mcpDatabase } from "../mcp/index.js";
 import {

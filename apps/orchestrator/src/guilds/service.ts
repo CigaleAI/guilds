@@ -1,5 +1,5 @@
 import { listAgents } from "../db/agents.js";
-import { userActor } from "../db/config-changes.js";
+import { userActor } from "../lib/change-actor.js";
 import {
   getGuild,
   listGuildsForUser,

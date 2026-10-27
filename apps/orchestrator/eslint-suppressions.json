@@ -530,9 +530,6 @@
   "src/http/recipe-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
-    },
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 1
     }
   },
   "src/http/request.ts": {
@@ -545,7 +542,7 @@
       "count": 20
     },
     "@typescript-eslint/no-restricted-imports": {
-      "count": 16
+      "count": 15
     },
     "complexity": {
       "count": 13

@@ -14,7 +14,7 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
-import { userActor } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
 import { getSchedule } from "../../src/db/schedules.js";
 import { createRun } from "../../src/db/runs.js";
 

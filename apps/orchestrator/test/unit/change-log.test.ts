@@ -8,7 +8,8 @@ import {
   collectionDeleted,
 } from "../../src/artifacts/collection-changes.js";
 import { ArtifactStore } from "../../src/artifacts/store.js";
-import { actorColumns, runActor, studioLink, userActor } from "../../src/db/config-changes.js";
+import { actorColumns, studioLink } from "../../src/db/config-changes.js";
+import { runActor, userActor } from "../../src/lib/change-actor.js";
 import type { ScheduleRow } from "../../src/db/schedules.js";
 import { guildTextChange } from "../../src/guilds/changes.js";
 import { routineChange, routineUpdateSummary } from "../../src/schedules/changes.js";

@@ -1,4 +1,5 @@
-import { runActor, type ChangeActor } from "../db/config-changes.js";
+import { type ChangeActor } from "../db/config-changes.js";
+import { runActor } from "../lib/change-actor.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { formatScheduleStamp, timingText } from "../schedules/item.js";
 import { scheduleChanges } from "../schedules/service.js";

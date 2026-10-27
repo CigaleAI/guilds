@@ -13,7 +13,7 @@ import { StudioService } from "../../src/studio/index.js";
 import { tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { userActor } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { postAgentGroupMessage, postUserGroupMessage } from "../../src/db/group-chat.js";
 import {

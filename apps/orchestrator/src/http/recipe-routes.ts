@@ -8,7 +8,7 @@ import {
 } from "../recipes/library.js";
 import type { FastifyInstance } from "fastify";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { userActor } from "../db/config-changes.js";
+import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { captureDatabase, captureGuild } from "../recipes/capture.js";
 import {

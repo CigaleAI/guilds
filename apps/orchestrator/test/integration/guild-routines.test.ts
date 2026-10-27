@@ -13,7 +13,7 @@ import {
   dropIsolatedDatabase,
   uniqueDbName,
 } from "../helpers/postgres.js";
-import { userActor } from "../../src/db/config-changes.js";
+import { userActor } from "../../src/lib/change-actor.js";
 import { getSchedule, listDueSchedules } from "../../src/db/schedules.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
