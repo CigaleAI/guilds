@@ -1,21 +1,15 @@
-import { existsSync, statSync } from "node:fs";
+
 import {
-  AgentValidationError,
   DEFAULT_MAX_INPUT_TOKENS,
   DEFAULT_MAX_TOOL_CALLS,
   DEFAULT_MAX_WORKSPACE_MIB,
   keepToolResultGenerationsOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
-  memoryOf,
   secretAliasesOf,
-  validateConfig,
-  type AgentConfig,
 } from "../agents/validation.js";
 
-import { FILE_TOOLS, NOTE_TOOLS } from "../db/seed/catalog.js";
 import {
-  agentRuntime,
   agentSecrets,
   applySecretAliases,
   snapshotEnvValues,
@@ -33,7 +27,7 @@ import {
   type GroupRunner,
   wakeMessage,
 } from "../groupchat/index.js";
-import { guildOperators } from "../guilds/validation.js";
+
 import { OPEN_POLICY, PolicyError, type OrgPolicy } from "../policy/index.js";
 import { attachmentImageCount, countRunInputTokens } from "../attachments/hydrate.js";
 import { IMAGE_INPUT_TOKENS, type AttachmentRef, type AttachmentService } from "../attachments/index.js";
@@ -62,32 +56,17 @@ import {
   type Completion,
   type ModelEvent,
 } from "../llm/index.js";
-import { readMemory } from "../memory/index.js";
+
 import { mcpDatabase, McpDisconnectedError, McpError, McpPool } from "../mcp/index.js";
 import {
-  ArtifactError,
   ArtifactFiles,
   ArtifactStore,
   agentActor,
-  collectTaskEmbeds,
-  displayPathFor,
-  inlineTaskEmbeds,
-  operatorActor,
-  snapshotTaskEmbeds,
-  snapshotTaskCollections,
-  taskEmbedActor,
 } from "../artifacts/index.js";
-import { NotesError, type NotesStore } from "../notes/store.js";
+import { type NotesStore } from "../notes/store.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
-import {
-  PromptError,
-  composeSystemPrompt,
-  connectorGuidance,
-  hydratePrompts,
-  hydrateStanding,
-  standingForCapabilities,
-} from "../prompts/index.js";
+
 import {
   agentRunDir,
   agentSandbox,
@@ -111,15 +90,16 @@ import type {
 } from "../db/schedules.js";
 import { redact } from "../secrets/index.js";
 import { readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
-import { collectRunState } from "../state/index.js";
+
 import { instanceRedactions } from "../connectors/instance.js";
 import {
   defaultGroupRouter,
-  serializeHistoryDecision,
   type GroupRouter,
 } from "../typesafe/index.js";
 import { ActiveGenerations, AdmissionCoordinator } from "./admission.js";
+import { guildRepositories } from "./coding.js";
 import { RunEvents } from "./events.js";
+import { RunPreparation, type ConnectorPool } from "./prepare.js";
 import { AgentMachines, agentMachine, agentSeat, type GenerationSandboxes } from "./machines.js";
 import {
   chainOf,
@@ -145,7 +125,7 @@ import {
 } from "../toolbox/index.js";
 import { agentGitIdentity, cloneFailures, RepositoryTokens } from "../coding/git.js";
 import { RepositoryAccessError } from "../github/tokens.js";
-import { codingRepositories, stateRepositories } from "../coding/repositories.js";
+
 import {
   harnessModelOf,
   harnessOf,
@@ -154,7 +134,7 @@ import {
   type Harness,
 } from "../coding/harnesses.js";
 import { harnessEffortOf } from "../coding/harness-models.js";
-import { GITHUB_SERVER_ID } from "../github/index.js";
+
 import {
   measureMachine,
   measureWorkspace,
@@ -180,8 +160,7 @@ import type { AgentSecretStore } from "../toolbox/types.js";
 import { Issues } from "../issues/index.js";
 
 import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
-import type { DirectoryNotes } from "../directories/index.js";
-import type { PromptNotes } from "../prompts/index.js";
+
 import {
   appendRunError,
   completeGroupDelivery,
@@ -355,26 +334,6 @@ function runHitTerminalCap(run: Record<string, unknown>): boolean {
   });
 }
 
-function isDir(value: string): boolean {
-  return Boolean(value) && existsSync(value) && statSync(value).isDirectory();
-}
-
-function hasScriptTools(names: string[]): boolean {
-  return SCRIPT_TOOLS.some((name) => names.includes(name));
-}
-
-function hasNoteTools(names: string[]): boolean {
-  return NOTE_TOOLS.some((name) => names.includes(name));
-}
-
-function hasFileTools(names: string[]): boolean {
-  return FILE_TOOLS.some((name) => names.includes(name));
-}
-
-function hasMemoryTool(names: string[]): boolean {
-  return names.includes("memory_write");
-}
-
 async function tokenRedactionsForConnection(
   db: { getMcpConnection(connectionId: string): Promise<Record<string, unknown> | null> },
   connectionId: string,
@@ -479,28 +438,10 @@ export function generationDatabase(db: Queryable) {
 
 export type GenerationDatabase = ReturnType<typeof generationDatabase>;
 
-export type GenerationNotes = Partial<DirectoryNotes> &
-  Partial<PromptNotes> & {
-    agentDir(orgSlug: string, guildName: string, agentName: string): string;
-    systemPath(): string;
-    deleteAgent?(orgSlug: string, guildName: string, name: string): Promise<void>;
-    deleteGuild?(orgSlug: string, name: string): Promise<void>;
-    writeMemory?(
-      orgSlug: string,
-      guildName: string,
-      agentName: string,
-      content: string,
-      options: { source: string; replacedBy: string },
-    ): Promise<unknown>;
-    ensureSystemPrompt?(): Promise<void>;
-    createGuild?(orgSlug: string, name: string): Promise<void>;
-    createAgent?(orgSlug: string, guildName: string, name: string, task?: string): Promise<void>;
-  };
-
 export class GenerationLoop implements GroupRunner {
   db: GenerationDatabase;
-  notes: GenerationNotes;
-  mcp: McpPool | { call: McpPool["call"]; syncTools?: McpPool["syncTools"] };
+  notes: NotesStore;
+  mcp: ConnectorPool;
   groupChat: GroupChat;
   issues: Issues;
   schedules: Schedules;
@@ -513,16 +454,16 @@ export class GenerationLoop implements GroupRunner {
   generations: ActiveGenerations;
   events: RunEvents;
   machines: AgentMachines;
+  preparation: RunPreparation;
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
   _scheduler_tick_ms: number;
   _scheduler_abort: AbortController | null = null;
   _scheduler_task: Promise<void> | null = null;
-  _group_router: GroupRouter;
 
   constructor(
     db: GenerationDatabase,
-    notes: GenerationNotes,
+    notes: NotesStore,
     workspaceRoot: string,
     sandboxes: GenerationSandboxes,
     options: {
@@ -530,7 +471,7 @@ export class GenerationLoop implements GroupRunner {
       schedulerTickMs?: number;
       cancelGraceMs?: number;
       shutdownTimeoutMs?: number;
-      mcp?: McpPool | { call: McpPool["call"]; syncTools?: McpPool["syncTools"] } | null;
+      mcp?: ConnectorPool | null;
       artifacts?: ArtifactStore | null;
       files?: ArtifactFiles | null;
       attachments?: AttachmentService | null;
@@ -568,10 +509,19 @@ export class GenerationLoop implements GroupRunner {
       router: groupRouter,
     });
     this.groupChat.bind(this);
-    this._group_router = groupRouter;
     this.issues = new Issues(db);
     this.schedules = new Schedules(db);
     this.scripts = new Scripts(db);
+    this.preparation = new RunPreparation({
+      db,
+      notes,
+      artifacts: this.artifacts,
+      mcp: this.mcp,
+      scripts: this.scripts,
+      groupRouter,
+      generations: this.generations,
+      machines: this.machines,
+    });
   }
 
   isGenerating(runId: string): boolean {
@@ -590,7 +540,7 @@ export class GenerationLoop implements GroupRunner {
   ): Promise<Record<string, unknown>> {
     const attachments = options.attachments ?? [];
     const opening = message === null && attachments.length ? "" : message;
-    const prepared = await this._prepare_run(agentId);
+    const prepared = await this.preparation.prepare(agentId, null);
     if (opening !== null && this.generations.isAgentBusy(agentId)) {
       throw new RunRequestError(409, "agent is already generating");
     }
@@ -637,7 +587,7 @@ export class GenerationLoop implements GroupRunner {
     const { agentId, throughSeq, deliveredThrough, recipients } = delivery;
     let prepared: PreparedRun;
     try {
-      prepared = await this._prepare_run(agentId, { throughSeq });
+      prepared = await this.preparation.prepare(agentId, throughSeq);
     } catch (error) {
       if (error instanceof RunRequestError) {
         throw new DeliveryCreateError(error.detail);
@@ -695,7 +645,7 @@ export class GenerationLoop implements GroupRunner {
     const agentId = schedule.agent_id;
     let prepared: PreparedRun;
     try {
-      prepared = await this._prepare_run(agentId);
+      prepared = await this.preparation.prepare(agentId, null);
     } catch (error) {
       if (error instanceof RunRequestError) {
         throw new DeliveryCreateError(error.detail);
@@ -976,7 +926,7 @@ export class GenerationLoop implements GroupRunner {
 
   /** The guild repositories a coding run of the agent clones, by their folder under `repos/`. */
   async codingRepositoryNames(agent: AgentRow): Promise<string[]> {
-    return (await this._guild_repositories(agent)).map((row) => String(row.name));
+    return (await guildRepositories(this.db, agent)).map((row) => String(row.name));
   }
 
   /**
@@ -1009,7 +959,7 @@ export class GenerationLoop implements GroupRunner {
     this.generations.holdAgent(agentId);
     try {
       await this.machines.removeAgent(agent);
-      await this.notes.deleteAgent?.(
+      await this.notes.deleteAgent(
         String(agent.org_slug),
         String(agent.guild_name),
         String(agent.name),
@@ -1040,7 +990,7 @@ export class GenerationLoop implements GroupRunner {
           await this.machines.removeAgent(agent);
         }
       }
-      await this.notes.deleteGuild?.(String(guild.org_slug), String(guild.name));
+      await this.notes.deleteGuild(String(guild.org_slug), String(guild.name));
       await this.db.deleteGuild(guildId);
     } finally {
       this.generations.releaseGuild(guildId, agentIds);
@@ -1193,248 +1143,6 @@ export class GenerationLoop implements GroupRunner {
 
   runView(row: Record<string, unknown>): Record<string, unknown> {
     return runItem(row, { generating: this.isGenerating(String(row.id)) });
-  }
-
-  async _hydrate(agent: AgentRow): Promise<[string, string, string]> {
-    if (this.artifacts && typeof agent.org_id === "string" && agent.org_id) {
-      let system: string;
-      try {
-        system = hydrateStanding({
-          systemPath: this.notes.systemPath(),
-          agentName: String(agent.name),
-          agentId: String(agent.id),
-        });
-      } catch (error) {
-        if (error instanceof PromptError) {
-          throw new RunRequestError(422, error.message);
-        }
-        throw error;
-      }
-      const operator = operatorActor({
-        orgId: agent.org_id,
-        actorId: "hydrate",
-        actorName: "operator",
-        guildId: String(agent.guild_id),
-        agentId: String(agent.id),
-      });
-      try {
-        const task = await inlineTaskEmbeds(
-          this.artifacts,
-          taskEmbedActor(agent.org_id, agent),
-          String(agent.task ?? ""),
-        );
-        const memory = await this.artifacts.readMemory(operator, String(agent.id));
-        return [system, task, memory];
-      } catch (error) {
-        if (error instanceof ArtifactError) {
-          throw new RunRequestError(422, error.message);
-        }
-        throw error;
-      }
-    }
-    const agentDir = this.notes.agentDir(
-      String(agent.org_slug),
-      String(agent.guild_name),
-      String(agent.name),
-    );
-    if (!isDir(agentDir)) {
-      throw new RunRequestError(422, "agent folder not found");
-    }
-    let system: string;
-    let task: string | null;
-    try {
-      [system, task] = hydratePrompts(agentDir, {
-        systemPath: this.notes.systemPath(),
-        includeTask: true,
-        notes: this.notes as PromptNotes,
-        orgSlug: String(agent.org_slug),
-        guildName: String(agent.guild_name),
-        agentName: String(agent.name),
-        agentId: String(agent.id),
-      });
-    } catch (error) {
-      if (error instanceof PromptError || error instanceof NotesError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
-    if (typeof task !== "string") {
-      throw new RunRequestError(422, "task prompt is required");
-    }
-    return [system, task, readMemory(agentDir)];
-  }
-
-  async _prepare_run(
-    agentId: string,
-    options: { throughSeq?: number | null } = {},
-  ): Promise<PreparedRun> {
-    const agent = await this.generations.runnableAgent(agentId);
-    let config: AgentConfig;
-    let access;
-    try {
-      config = validateConfig(recordOf(agent.config));
-      access = await agentRuntime(this.db, agent, { mcpPool: this.mcp });
-    } catch (error) {
-      if (error instanceof AgentValidationError || error instanceof McpDisconnectedError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
-    const members = await this.db.listAgents(String(agent.guild_id));
-    const [rawStanding, task, memory] = await this._hydrate(agent);
-    const caps = {
-      scripts: config.scripting && hasScriptTools(access.tools),
-      notes: hasNoteTools(access.tools),
-      files: hasFileTools(access.tools),
-      browser: Boolean(config.browser),
-      coding: Boolean(config.coding),
-      memory: memoryOf(config),
-      memoryWrite: memoryOf(config) && hasMemoryTool(access.tools),
-    };
-    const standing = standingForCapabilities(rawStanding, caps);
-    const historyRows = await this.db.listGroupMessages(String(agent.guild_id), {
-      throughSeq: options.throughSeq ?? null,
-    });
-    const historyDecision = await this._group_router.history({
-      rows: historyRows,
-      agentName: String(agent.name),
-      agentFocus: String(agent.focus ?? ""),
-    });
-    const selectedHistory = historyDecision.rows;
-    const scripts = caps.scripts ? await this.scripts.snapshot(String(agent.id)) : [];
-    const taskSource = await this._taskSource(agent);
-    const typesafe =
-      historyDecision.source === "limit"
-        ? null
-        : { history: serializeHistoryDecision(historyDecision) };
-    const system = composeSystemPrompt(
-      standing,
-      task,
-      await this._run_state(
-        agent,
-        members,
-        selectedHistory,
-        access.secrets,
-        config.max_tool_calls,
-        await this._connector_state(agent),
-        caps.scripts ? await this.scripts.catalog(String(agent.id)) : [],
-        caps.coding ? stateRepositories(await this._guild_repositories(agent), String(agent.id)) : null,
-      ),
-      memory,
-      caps,
-      connectorGuidance(access.mcp.map((group) => String(group.slug))),
-    );
-    return {
-      agent,
-      config,
-      access,
-      members,
-      historyRows,
-      standing,
-      system,
-      task,
-      memory,
-      scripts,
-      taskSource,
-      typesafe,
-    };
-  }
-
-  async _taskSource(agent: AgentRow): Promise<Record<string, unknown> | null> {
-    if (!this.artifacts || typeof agent.org_id !== "string" || !agent.org_id) {
-      return null;
-    }
-    const actor = taskEmbedActor(agent.org_id, agent);
-    const source = String(agent.task ?? "");
-    const version = Number(agent.task_version ?? 1);
-    const hash = String(agent.task_hash ?? "");
-    let embeds: Array<Record<string, unknown>> = [];
-    let collections: string[] = [];
-    try {
-      embeds = await snapshotTaskEmbeds(this.artifacts, actor, source);
-      collections = await snapshotTaskCollections(this.artifacts, actor, source);
-    } catch {
-      /* keep empty embeds */
-    }
-    return {
-      version,
-      hash,
-      display_path: displayPathFor({
-        orgId: agent.org_id,
-        level: "agent",
-        ownerId: String(agent.id),
-        kind: "task",
-        path: "",
-        key: "task.md",
-      }),
-      embeds,
-      collections,
-      has_embeds: collectTaskEmbeds(source).length > 0,
-    };
-  }
-
-  async _connector_state(agent: AgentRow): Promise<Record<string, unknown>> {
-    return "state" in this.mcp ? this.mcp.state(this.db, agent) : {};
-  }
-
-  async _run_state(
-    agent: AgentRow,
-    members: Array<Record<string, unknown>>,
-    historyRows: Array<Record<string, unknown>>,
-    secrets: Array<Record<string, unknown>> | null,
-    maxToolCalls: number,
-    connectors: Record<string, unknown> = {},
-    scripts: unknown[] = [],
-    repositories: Array<Record<string, string>> | null = null,
-  ): Promise<Record<string, unknown>> {
-    const machineId = String(agent.machine_id);
-    prepareWorkspace(await this.machines.workspaceRootFor(machineId), machineId, String(agent.id), {
-      browser: Boolean(recordOf(agent.config).browser),
-    });
-    let collections: unknown[] = [];
-    if (this.artifacts && typeof agent.org_id === "string" && agent.org_id) {
-      const actor = agentActor({
-        orgId: agent.org_id,
-        guildId: String(agent.guild_id),
-        agentId: String(agent.id),
-        agentName: String(agent.name),
-      });
-      try {
-        collections = await this.artifacts.catalog(actor);
-      } catch (error) {
-        if (error instanceof ArtifactError) {
-          collections = [];
-        } else {
-          throw error;
-        }
-      }
-    }
-    try {
-      return collectRunState(
-        this.artifacts ? null : (this.notes as DirectoryNotes),
-        String(agent.org_slug),
-        String(agent.guild_name),
-        String(agent.name),
-        {
-          members,
-          operators: guildOperators({ operators: agent.guild_operators }),
-          historyRows,
-          guildAbout: String(agent.guild_about || ""),
-          guildDescription: String(agent.guild_description || ""),
-          collections,
-          secrets,
-          scripts,
-          maxToolCalls,
-          connectors,
-          repositories,
-        },
-      );
-    } catch (error) {
-      if (error instanceof NotesError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
   }
 
   /** Admits a generation of the run on its agent; the agent's machine stops counting down to its idle stop. */
@@ -1926,7 +1634,7 @@ export class GenerationLoop implements GroupRunner {
       await this._fail(runId, generation, missing.code, missing, extra);
       return;
     }
-    if (snapshot.coding === true && !(await this._guild_repositories(agent)).length) {
+    if (snapshot.coding === true && !(await guildRepositories(this.db, agent)).length) {
       await this._fail(runId, generation, REPOSITORIES_MISSING, new Error(REPOSITORIES_MISSING_MESSAGE), extra);
       return;
     }
@@ -2017,7 +1725,7 @@ export class GenerationLoop implements GroupRunner {
       guild_id: String(agent.guild_id),
       sandbox,
       secrets,
-      notes: this.notes as NotesStore,
+      notes: this.notes,
       artifacts: this.artifacts,
       files: this.files,
       workspace_dir: await this.machines.agentWorkspace(agent),
@@ -2119,31 +1827,6 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  async _effective_github_connection(agent: AgentRow): Promise<Record<string, unknown> | null> {
-    const lookup = this.db.getMcpConnectionForOwner?.bind(this.db);
-    if (!lookup) {
-      return null;
-    }
-    const connected = async (scope: string, ownerId: unknown) => {
-      if (typeof ownerId !== "string" || !ownerId) {
-        return null;
-      }
-      const row = await lookup(GITHUB_SERVER_ID, scope, ownerId);
-      return row !== null && row.status === "connected" ? row : null;
-    };
-    return (
-      (await connected("agent", agent.id)) ??
-      (await connected("guild", agent.guild_id)) ??
-      (await connected("org", agent.org_id)) ??
-      null
-    );
-  }
-
-  async _guild_repositories(agent: AgentRow): Promise<Array<Record<string, unknown>>> {
-    const guildRepos = (await this.db.listGuildRepositories?.(String(agent.guild_id))) ?? [];
-    return codingRepositories(guildRepos, await this._effective_github_connection(agent));
-  }
-
   /**
    * A coding generation's repositories: installation tokens for those with a GitHub
    * connection (written under /run/guilds and added to redaction), the agent's git
@@ -2159,7 +1842,7 @@ export class GenerationLoop implements GroupRunner {
     secrets: Record<string, string>,
     extra: Record<string, string>,
   ): Promise<boolean> {
-    const repositories = await this._guild_repositories(agent);
+    const repositories = await guildRepositories(this.db, agent);
     const tokens = new RepositoryTokens(this.db as never, repositories);
     const redact = () => {
       tokens.values.forEach((value, index) => {
@@ -2495,7 +2178,7 @@ export class GenerationLoop implements GroupRunner {
       previous.group_chat_through_seq === null || previous.group_chat_through_seq === undefined
         ? null
         : Number(previous.group_chat_through_seq);
-    const prepared = await this._prepare_run(agentId, kind === "group" ? { throughSeq } : {});
+    const prepared = await this.preparation.prepare(agentId, kind === "group" ? throughSeq : null);
     const runId = newId("r");
     const now = new Date();
     const opening = continuationMessage(String(previous.id), handoff);

@@ -4,7 +4,7 @@ import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
 import type { ArtifactActor } from "../../src/artifacts/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
-import { GenerationLoop, type GenerationDatabase, type GenerationNotes } from "../../src/generation/index.js";
+import { GenerationLoop, type GenerationDatabase } from "../../src/generation/index.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -312,6 +312,15 @@ export class FakeDB {
     return this.run.id === runId ? this.run : null;
   }
 
+  /** A guild has no repositories until a test gives it some. */
+  async listGuildRepositories(_guildId: string): Promise<Array<Record<string, unknown>>> {
+    return [];
+  }
+
+  async getMcpConnectionForOwner(_serverId: string, _scope: string, _ownerId: string | null) {
+    return null;
+  }
+
   async getAgent(agentId: string) {
     return this.agent.id === agentId ? this.agent : null;
   }
@@ -517,6 +526,15 @@ export class RecordingDB {
   constructor(agent: Record<string, unknown>) {
     this.agent = agent;
     attachScripts(this, new MemoryScriptDB());
+  }
+
+  /** A guild has no repositories until a test gives it some. */
+  async listGuildRepositories(_guildId: string): Promise<Array<Record<string, unknown>>> {
+    return [];
+  }
+
+  async getMcpConnectionForOwner(_serverId: string, _scope: string, _ownerId: string | null) {
+    return null;
   }
 
   async getAgent(agentId: string) {
@@ -896,7 +914,7 @@ export function makeLoop(
 ): GenerationLoop {
   return new GenerationLoop(
     db as GenerationDatabase,
-    notes as GenerationNotes,
+    notes as NotesStore,
     workspaceRoot,
     sandboxes as GenerationSandboxes,
     { idleTimeoutMs: 0, credentials: TEST_CREDENTIALS, ...options },

@@ -297,9 +297,10 @@ flowchart TD
   Save --> SSE["SSE subscribers"]
 ```
 
-`PreparedRun` hydrates `task` + `memory`. It builds the State JSON.
-It resolves bindings and the agent's secrets. It hashes the opening
-system prompt.
+`RunPreparation` (`generation/prepare.ts`) builds the `PreparedRun`:
+it hydrates `task` + `memory`, builds the State JSON, and resolves
+bindings and the agent's secrets. The run row keeps the hashes of
+its opening prompts.
 
 That prompt and the ordered message rows are the stored history.
 Each model call projects tool results from those rows

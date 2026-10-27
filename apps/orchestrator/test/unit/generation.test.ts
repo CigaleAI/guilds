@@ -1257,8 +1257,7 @@ describe("generation", { concurrency: 1 }, () => {
   });
 
   test("create_run_group_context_uses_typesafe_history_and_falls_back", async () => {
-    const { loop, db } = await seededLoop();
-    loop.generateInBackground = () => undefined;
+    const { db, notes, tmp } = await seededLoop();
     db.group_messages = Array.from({ length: 15 }, (_, index) => ({
       id: index + 1,
       guild_id: "guild_1",
@@ -1283,7 +1282,10 @@ describe("generation", { concurrency: 1 }, () => {
         }),
       }),
     });
-    (loop as { _group_router: typeof keepLatestAndOne })._group_router = keepLatestAndOne;
+    const loop = makeLoop(db, notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
+      groupRouter: keepLatestAndOne,
+    });
+    loop.generateInBackground = () => undefined;
     await loop.createRun("a_1", "hello");
     const state = parsedState(String(db.create_args?.system_content));
     const history = (state.group as { history: Array<{ content: string }> }).history;
@@ -2412,7 +2414,7 @@ describe("generation", { concurrency: 1 }, () => {
     const loop = makeLoop(new FakeDB({}), notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
       artifacts: artifacts as never,
     });
-    const [, task] = await loop._hydrate(agentRow({ task: `![[${rules}]] then ![[${shut}]]` }));
+    const [, task] = await loop.preparation.prompts(agentRow({ task: `![[${rules}]] then ![[${shut}]]` }));
     assert.equal(task, `<rules path="${rules}" level="guild">\nCite sources.\n</rules> then ${unreachableMarker(shut)}`);
     assert.deepEqual(readers, [false, false]);
   });
