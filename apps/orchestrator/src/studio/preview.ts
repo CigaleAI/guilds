@@ -1,7 +1,7 @@
 import { agentActor, type ArtifactStore } from "../artifacts/index.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
 import { accessDatabase, agentSecrets, resolveMcpTool } from "../access/runtime.js";
-import { listAgents } from "../db/agents.js";
+import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { isReadOnlyRemote, listedFromRows, mcpSchema, previewConnectorState } from "../mcp/index.js";
@@ -31,29 +31,29 @@ export type PreviewDeps = {
 
 export async function previewCurrentState(
   deps: PreviewDeps,
-  agent: Record<string, unknown>,
+  agent: AgentRow,
 ): Promise<{ state: Record<string, unknown>; projected_at: string }> {
   const projectedAt = new Date().toISOString();
-  const orgId = String(agent.org_id);
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const secrets = await agentSecrets(deps.db, agent);
   const members = await deps.db.listAgents(guildId);
   const historyRows = await deps.db.listGroupMessages(guildId);
-  const actor = agentActor({ orgId, guildId, agentId, agentName: String(agent.name) });
+  const actor = agentActor({ orgId, guildId, agentId, agentName: agent.name });
   let collections: unknown[] = [];
   try {
     collections = await deps.artifacts.listCollections(actor);
   } catch {
     /* keep empty collections */
   }
-  const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
-  const state = collectRunState(null, String(agent.org_slug ?? ""), String(agent.guild_name ?? ""), String(agent.name), {
+  const config = agent.config;
+  const state = collectRunState(null, agent.org_slug, agent.guild_name, agent.name, {
     members,
     operators: guildOperators({ operators: agent.guild_operators }),
     historyRows: historyRows.slice(-CONTEXT_HISTORY_LIMIT),
-    guildAbout: String(agent.guild_about || agent.about || ""),
-    guildDescription: String(agent.guild_description || agent.description || ""),
+    guildAbout: agent.guild_about,
+    guildDescription: agent.guild_description,
     collections,
     secrets,
     scripts: await deps.scripts.catalog(agentId),
@@ -141,16 +141,16 @@ export async function projectGuildConnections(
 // stored MCP catalog: no remote list, no credential decryption.
 export async function projectAgentAccess(
   deps: PreviewDeps,
-  agent: Record<string, unknown>,
+  agent: AgentPlaceRow,
 ): Promise<{
   native_tools: string[];
   scripts: Array<Record<string, unknown>>;
   secrets: Array<{ name: string; description: string }>;
   connections: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }>;
 }> {
-  const orgId = String(agent.org_id);
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const scope = { orgId, guildId, agentId };
   const nativeTools = enabledToolNames(resolvedTools(rows, scope));
@@ -189,15 +189,15 @@ export async function projectAgentAccess(
 
 export async function projectOfferedToolSchemas(
   deps: PreviewDeps,
-  agent: Record<string, unknown>,
+  agent: Pick<AgentRow, "id" | "guild_id" | "org_id" | "config">,
 ): Promise<{
   schemas: Array<Record<string, unknown>>;
   catalog_revision: string | null;
   config_hash: string;
 }> {
-  const orgId = String(agent.org_id);
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const nativeNames = enabledToolNames(resolvedTools(rows, { orgId, guildId, agentId })).filter(
     (name) => memoryOf(agent.config as Record<string, unknown> | undefined) || name !== "memory_write",

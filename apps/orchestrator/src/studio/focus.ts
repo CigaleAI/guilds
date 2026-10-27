@@ -20,7 +20,7 @@ import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
 import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { studioReachesParsed } from "./reach.js";
-import { getAgent, getAgentTask } from "../db/agents.js";
+import { getAgent, getAgentTask, type AgentRow } from "../db/agents.js";
 import { getRun, listMessages } from "../db/runs.js";
 import { getSchedule } from "../db/schedules.js";
 import { getIssue } from "../db/issues.js";
@@ -94,10 +94,10 @@ function runKindLabel(kind: string): string {
   return "Direct run";
 }
 
-function emptyFocus(kind: StudioFocusKind, agent: Record<string, unknown>): StudioFocus {
+function emptyFocus(kind: StudioFocusKind, agent: Pick<AgentRow, "id" | "name">): StudioFocus {
   return {
     kind,
-    agent_id: String(agent.id),
+    agent_id: agent.id,
     agent_name: String(agent.name ?? ""),
     label: "",
     run_id: null,
@@ -116,12 +116,12 @@ function emptyFocus(kind: StudioFocusKind, agent: Record<string, unknown>): Stud
 async function guildAgent(
   deps: StudioFocusDeps,
   agentId: string,
-): Promise<Record<string, unknown>> {
+): Promise<AgentRow> {
   const agent = agentId ? await getAgent(deps.db, agentId) : null;
   if (
     !agent ||
-    String(agent.guild_id) !== deps.sourceGuildId ||
-    String(agent.org_id) !== deps.orgId
+    agent.guild_id !== deps.sourceGuildId ||
+    agent.org_id !== deps.orgId
   ) {
     throw new StudioUnprocessableError("focus agent is not in the source guild");
   }
@@ -165,7 +165,7 @@ async function resolveRun(
     error_count: errorList.length,
   };
   const lines: string[] = [
-    `${runKindLabel(kind)} ${runId} by ${String(agent.name)} (${String(run.status)})${createdAt ? ` started ${createdAt}` : ""}.`,
+    `${runKindLabel(kind)} ${runId} by ${agent.name} (${String(run.status)})${createdAt ? ` started ${createdAt}` : ""}.`,
   ];
   if (errorList.length) {
     lines.push(
@@ -281,11 +281,11 @@ async function resolveMemoryVersion(
     String(deps.user.name ?? "operator"),
     {
       guildId: deps.sourceGuildId,
-      agentId: String(agent.id),
+      agentId: agent.id,
     },
   );
-  const live = await deps.artifacts.getMemoryRow(actor, String(agent.id));
-  const revisions = await deps.artifacts.listRevisions(actor, String(agent.id));
+  const live = await deps.artifacts.getMemoryRow(actor, agent.id);
+  const revisions = await deps.artifacts.listRevisions(actor, agent.id);
   const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
   const entry = findEntry(entries, input);
   if (!entry) {
@@ -301,7 +301,7 @@ async function resolveMemoryVersion(
       ? "unknown (oldest archived version)"
       : entry.actor.detail || `${entry.actor.type} ${entry.actor.name ?? ""}`;
   const body = [
-    `Memory version ${entry.index} of ${String(agent.name)}${entry.revision_id === null ? " (the live memory)" : ""}.`,
+    `Memory version ${entry.index} of ${agent.name}${entry.revision_id === null ? " (the live memory)" : ""}.`,
     `Written by: ${writer}${entry.written_at ? ` at ${entry.written_at}` : ""}.`,
     entry.previous_content === null
       ? "This is the oldest version on record; there is no previous version to compare."
@@ -319,7 +319,7 @@ async function resolveMemoryVersion(
     ? `revision_id="${entry.revision_id}"`
     : `version_index=${entry.index}`;
   const tail = [
-    `Load the full version with studio_get_memory_version(agent_id="${String(agent.id)}", ${versionRef}).`,
+    `Load the full version with studio_get_memory_version(agent_id="${agent.id}", ${versionRef}).`,
     entry.run_id
       ? `The run that wrote it: studio_get_run(run_id="${entry.run_id}", tool_name="memory_write") returns its memory_write call and result.`
       : "",
@@ -352,7 +352,7 @@ async function resolveRoutine(
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
   const scheduleId = trimmedText(input.schedule_id);
-  const row = scheduleId ? await getSchedule(deps.db, String(agent.id), scheduleId) : null;
+  const row = scheduleId ? await getSchedule(deps.db, agent.id, scheduleId) : null;
   if (!row) {
     throw new StudioUnprocessableError("focus routine not found");
   }
@@ -362,7 +362,7 @@ async function resolveRoutine(
   focus.label = `Routine · ${String(item.description || item.label)}`;
   const timing = item.cron ? `${String(item.cron)} (${String(item.label)})` : String(item.label);
   const body = [
-    `Routine ${scheduleId} of ${String(agent.name)}: ${timing}, ${item.paused ? "paused" : "active"}.`,
+    `Routine ${scheduleId} of ${agent.name}: ${timing}, ${item.paused ? "paused" : "active"}.`,
     `Description: ${String(item.description || "")}`,
     `Next fire: ${String(item.next_run_at ?? "—")}. Last fire: ${String(item.last_run_at ?? "never")}.`,
     "",
@@ -384,7 +384,7 @@ async function resolveRoutine(
         last_run_at: item.last_run_at,
       },
       body.join("\n"),
-      `List the runs this routine produced with studio_list_runs(agent_id="${String(agent.id)}", schedule_id="${scheduleId}"), then studio_get_run on one of them.`,
+      `List the runs this routine produced with studio_list_runs(agent_id="${agent.id}", schedule_id="${scheduleId}"), then studio_get_run on one of them.`,
     ),
   };
 }
@@ -393,7 +393,7 @@ async function loadFileForFocus(
   deps: StudioFocusDeps,
   displayPath: string,
 ): Promise<{
-  agent: Record<string, unknown> | null;
+  agent: AgentRow | null;
   kind: string;
   version: number | null;
   content: string;
@@ -413,7 +413,7 @@ async function loadFileForFocus(
   if (parsed.kind === "collection") {
     throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
   }
-  let agent: Record<string, unknown> | null = null;
+  let agent: AgentRow | null = null;
   if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
     agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
   } else if (!(await studioReachesParsed(deps, parsed))) {
@@ -427,7 +427,7 @@ async function loadFileForFocus(
     String(deps.user.name ?? "operator"),
     {
       guildId: deps.sourceGuildId,
-      ...(agent ? { agentId: String(agent.id) } : {}),
+      ...(agent ? { agentId: agent.id } : {}),
     },
   );
   if (
@@ -437,7 +437,7 @@ async function loadFileForFocus(
     parsed.key === "task.md" &&
     agent
   ) {
-    const task = await getAgentTask(deps.db, deps.orgId, String(agent.id));
+    const task = await getAgentTask(deps.db, deps.orgId, agent.id);
     return {
       agent,
       kind: "task",

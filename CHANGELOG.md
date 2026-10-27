@@ -8,6 +8,10 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The Studio's Tools view takes an organisation's
+bindings into account for every agent of the guild: a tool the
+organisation turns off is no longer listed as offered.
+
 **Rebuild.** Agents share whole files. A file is an artifact at agent,
 guild, or organisation level with a description and an access list;
 its bytes sit in the blob store under `ATTACHMENTS_ROOT`. Agents move

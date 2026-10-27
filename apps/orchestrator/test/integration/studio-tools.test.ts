@@ -17,6 +17,8 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 import { insertGuild } from "../../src/db/guilds.js";
 import { createScheduleRun } from "../../src/db/runs.js";
 import { userRow } from "../helpers/users.js";
+import { writeBinding } from "../../src/access/bindings.js";
+import { userActor } from "../../src/lib/change-actor.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 
@@ -136,6 +138,21 @@ test("studio lists the guild's tools with who is offered each and how their call
     assert.equal(created.statusCode, 200, created.body);
     const session = created.json() as { id: string };
 
+    // An organisation's binding reaches every agent of its guilds.
+    await writeBinding(
+      db,
+      {
+        bindingId: "bind_org_note_find",
+        catalogKind: "native_tool",
+        catalogId: "note_find",
+        scope: "org",
+        scopeId: "org_home",
+        enabled: false,
+        connectionId: null,
+      },
+      now,
+      userActor(userRow()),
+    );
     const listed = await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/tools?hours=24`, headers: AUTH });
     assert.equal(listed.statusCode, 200, listed.body);
     type Row = {
@@ -168,9 +185,10 @@ test("studio lists the guild's tools with who is offered each and how their call
     assert.deepEqual(retired?.offered_to, []);
     assert.equal(retired?.source, null);
     assert.equal(retired?.calls, 1);
-    const neverCalled = rows.find((row) => row.name === "note_find");
+    const neverCalled = rows.find((row) => row.name === "note_write");
     assert.equal(neverCalled?.calls, 0);
     assert.deepEqual(neverCalled?.offered_to, ["a_scout", "a_writer"]);
+    assert.equal(rows.find((row) => row.name === "note_find"), undefined);
     assert.equal(
       (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/tools?hours=-1`, headers: AUTH })).statusCode,
       422,

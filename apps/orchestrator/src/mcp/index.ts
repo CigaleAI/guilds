@@ -45,6 +45,7 @@ import { instanceCredentials } from "../connectors/instance.js";
 export { awaitingSettings, connectionSettings } from "../connectors/login.js";
 import { writeLog } from "../observability/log.js";
 import { llmToolParameters, omitEmptyOptionalStrings } from "../toolbox/schema.js";
+import type { AgentPlaceRow } from "../db/agents.js";
 
 export { namespacedName } from "./names.js";
 export { isReadOnlyRemote } from "./policy.js";
@@ -659,7 +660,7 @@ export type StateDatabase = AccessDatabase & LoginDb;
 /** Studio's stand-in for `McpPool.state`: each key the agent's connectors fill, without calling them. */
 export async function previewConnectorState(
   db: AccessDatabase,
-  agent: Record<string, unknown>,
+  agent: AgentPlaceRow,
   connectors: ConnectorRegistry = installedConnectors(),
 ): Promise<Record<string, unknown>> {
   const state: Record<string, unknown> = {};
@@ -1253,7 +1254,7 @@ export class McpPool {
    * server the agent has on with a connected login. Hooks run in parallel under one budget; a
    * hook that fails, times out, or returns too much yields `{ unavailable }` under its key.
    */
-  async state(db: StateDatabase, agent: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async state(db: StateDatabase, agent: AgentPlaceRow): Promise<Record<string, unknown>> {
     const entries = this.registry.entries().filter((entry) => entry.manifest.state && entry.adapter.state);
     if (!entries.length) {
       return {};

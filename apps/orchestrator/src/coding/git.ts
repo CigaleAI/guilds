@@ -12,6 +12,7 @@ import { bindQuery, type Queryable } from "../db/pg.js";
 import { markDisconnected } from "../mcp/index.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
+import type { AgentRow } from "../db/agents.js";
 
 /** Where an agent's repository tokens are kept in its machine, outside every home. */
 export function gitTokensPath(agentId: string): string {
@@ -23,11 +24,11 @@ const CODING_PERMISSIONS: TokenPermissions = { contents: "write", pull_requests:
 
 /** The agent's git identity: its name, and a valid email (guild override or the platform default). */
 export function agentGitIdentity(
-  agent: Record<string, unknown>,
+  agent: Pick<AgentRow, "id" | "name">,
   options: { email?: string | null } = {},
 ): { name: string; email: string } {
   const email = typeof options.email === "string" ? options.email.trim() : "";
-  return { name: String(agent.name), email: email || `${String(agent.id)}@agents.guilds.run` };
+  return { name: agent.name, email: email || `${agent.id}@agents.guilds.run` };
 }
 
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };

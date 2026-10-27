@@ -86,6 +86,7 @@ import {
   updateStudioSession,
 } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
+import type { AgentRow } from "../db/agents.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -473,7 +474,7 @@ export class StudioService {
       }
       if (agentId) {
         const agent = await getAgent(this.deps.db, agentId);
-        if (!agent || String(agent.guild_id) !== locked.source_guild_id) {
+        if (!agent || agent.guild_id !== locked.source_guild_id) {
           throw new StudioUnprocessableError("agent is not in the source guild");
         }
       }
@@ -546,8 +547,8 @@ export class StudioService {
     const memory = await this.deps.artifacts.getMemoryRow(actor, agentId);
     const standing = hydrateStanding({
       systemPath: this.deps.notesSystemPath,
-      agentName: String(agent.name),
-      agentId: String(agent.id),
+      agentName: agent.name,
+      agentId: agent.id,
     });
     const preview = await previewCurrentState(this.previewDeps(), agent);
     let effectiveTask = task?.content_text ?? "";
@@ -665,7 +666,7 @@ export class StudioService {
       user.name,
       { guildId: session.source_guild_id, agentId },
     );
-    return memoryHistory(this.deps, actor, { id: String(agent.id), name: String(agent.name) });
+    return memoryHistory(this.deps, actor, { id: agent.id, name: agent.name });
   }
 
   /** The system message for this generation, from the roster rows the caller already read. */
@@ -1028,9 +1029,9 @@ export class StudioService {
     }
   }
 
-  async requireGuildAgent(session: StudioSessionRow, agentId: string): Promise<Record<string, unknown>> {
+  async requireGuildAgent(session: StudioSessionRow, agentId: string): Promise<AgentRow> {
     const agent = await getAgent(this.deps.db, agentId);
-    if (!agent || String(agent.guild_id) !== session.source_guild_id) {
+    if (!agent || agent.guild_id !== session.source_guild_id) {
       throw new StudioError(404, "agent not found");
     }
     return agent;

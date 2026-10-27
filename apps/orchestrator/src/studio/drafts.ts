@@ -28,7 +28,7 @@ import type { StudioToolContext } from "./tools.js";
 import { resolveSourceGuildAgent, sourceGuildAgents, studioAgentHandleFromArgs } from "./tools.js";
 import { argString } from "../toolbox/schema.js";
 import { excerptBytes } from "./system.js";
-import { getAgent, getAgentTask, listAgents } from "../db/agents.js";
+import { getAgent, getAgentTask, listAgents, type AgentRow } from "../db/agents.js";
 import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
 import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioSessionRow } from "../db/studio.js";
@@ -68,7 +68,7 @@ export class StudioDrafts implements StudioDraftService {
     if (!agent) {
       throw new StudioUnprocessableError(await missingDraftAgentMessage(ctx, handle));
     }
-    const targetId = String(agent.id);
+    const targetId = agent.id;
     const proposed = argString(args, "proposed_content");
     const rationale = argString(args, "rationale");
     if (!proposed.trim() || !rationale.trim()) {
@@ -137,7 +137,7 @@ export class StudioDrafts implements StudioDraftService {
       return {
         widget: STUDIO_TASK_DRAFT_WIDGET,
         await_operator: true,
-        agent: { id: targetId, name: String(agent.name) },
+        agent: { id: targetId, name: agent.name },
         draft_id: draft.id,
         rationale,
         draft: viewDraft(draft),
@@ -321,19 +321,19 @@ export class StudioDrafts implements StudioDraftService {
   }
 
   private async runPreflight(
-    agent: Record<string, unknown>,
+    agent: AgentRow,
     proposed: string,
     args: { preview: StudioToolContext["preview"]; notesSystemPath: string },
   ): Promise<Record<string, unknown>> {
     const actor = this.artifacts.operatorContext(
-      String(agent.org_id),
+      agent.org_id,
       "studio-preflight",
       "studio",
-      { guildId: String(agent.guild_id), agentId: String(agent.id) },
+      { guildId: agent.guild_id, agentId: agent.id },
     );
     let expanded: string;
     try {
-      expanded = await inlineTaskEmbeds(this.artifacts, taskEmbedActor(String(agent.org_id), agent), proposed);
+      expanded = await inlineTaskEmbeds(this.artifacts, taskEmbedActor(agent.org_id, agent), proposed);
     } catch (error) {
       if (error instanceof ArtifactError) {
         throw new StudioUnprocessableError(error.message);
@@ -342,10 +342,10 @@ export class StudioDrafts implements StudioDraftService {
     }
     const standing = hydrateStanding({
       systemPath: args.notesSystemPath,
-      agentName: String(agent.name),
-      agentId: String(agent.id),
+      agentName: agent.name,
+      agentId: agent.id,
     });
-    const memoryRow = await this.artifacts.getMemoryRow(actor, String(agent.id));
+    const memoryRow = await this.artifacts.getMemoryRow(actor, agent.id);
     const preview = await previewCurrentState(args.preview, agent);
     const tools = await projectOfferedToolSchemas(args.preview, agent);
     const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
@@ -368,7 +368,7 @@ export class StudioDrafts implements StudioDraftService {
     if (liveContent) {
       try {
         priorEffective = promptHash(
-          await inlineTaskEmbeds(this.artifacts, taskEmbedActor(String(agent.org_id), agent), liveContent),
+          await inlineTaskEmbeds(this.artifacts, taskEmbedActor(agent.org_id, agent), liveContent),
         );
       } catch {
         priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;

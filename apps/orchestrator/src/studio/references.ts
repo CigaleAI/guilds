@@ -16,7 +16,7 @@ import {
   type EmbedStep,
 } from "../artifacts/index.js";
 import { taskDisplayPath } from "../agents/task.js";
-import { listAgents } from "../db/agents.js";
+import { listAgents, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 
 export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
@@ -350,11 +350,11 @@ export async function loadGuildReferences(
   });
 }
 
-function referenceTask(orgId: string, agent: Record<string, unknown>): ReferenceTask {
-  const agentId = String(agent.id);
+function referenceTask(orgId: string, agent: Pick<AgentRow, "id" | "name" | "task">): ReferenceTask {
+  const agentId = agent.id;
   return {
     agent_id: agentId,
-    label: String(agent.name),
+    label: agent.name,
     display_path: taskDisplayPath(orgId, agentId),
     text: String(agent.task ?? ""),
   };
@@ -495,7 +495,7 @@ type AgentRuns = Pick<ReferenceInput, "walks" | "unreachable">;
 async function walkAgentRuns(
   store: ArtifactStore,
   orgId: string,
-  agents: Array<Record<string, unknown>>,
+  agents: Array<Pick<AgentRow, "id" | "guild_id" | "name" | "task">>,
 ): Promise<AgentRuns> {
   const runs: AgentRuns = { walks: new Map(), unreachable: new Map() };
   for (const agent of agents) {
@@ -505,8 +505,8 @@ async function walkAgentRuns(
       storeNoteReader(store, actor),
       EMBED_DEPTH + 1,
     );
-    runs.walks.set(String(agent.id), steps);
-    runs.unreachable.set(String(agent.id), await unreachableEmbeds(store, actor, steps));
+    runs.walks.set(agent.id, steps);
+    runs.unreachable.set(agent.id, await unreachableEmbeds(store, actor, steps));
   }
   return runs;
 }

@@ -15,6 +15,7 @@ export type AgentSummaryRow = Pick<Agent, "id" | "guild_id" | "name" | "avatar_s
 export type GuildAgentRow = AgentSummaryRow &
   Pick<
     Agent,
+    | "org_id"
     | "focus"
     | "wake_triggers"
     | "config"
@@ -32,7 +33,7 @@ export type GuildAgentRow = AgentSummaryRow &
   };
 
 export type AgentRow = GuildAgentRow &
-  Pick<Agent, "workspace_mib" | "harness_logins" | "org_id"> & {
+  Pick<Agent, "workspace_mib" | "harness_logins"> & {
     machine_cpu: Machine["cpu"];
     machine_memory_mib: Machine["memory_mib"];
     machine_max_workspace_mib: Machine["max_workspace_mib"];
@@ -44,6 +45,9 @@ export type AgentRow = GuildAgentRow &
     org_slug: InferSelectModel<typeof orgs>["slug"];
     guild_operators: GuildOperatorRow[];
   };
+
+/** Where an agent sits: its id, guild, and organisation. */
+export type AgentPlaceRow = Pick<AgentRow, "id" | "guild_id" | "org_id">;
 
 export type AgentConfigRow = Pick<
   Agent,
@@ -160,7 +164,7 @@ export async function listAllAgents(pool: Queryable): Promise<AgentSummaryRow[]>
 
 export async function listAgents(pool: Queryable, guildId: string): Promise<GuildAgentRow[]> {
   const result = await pool.query<GuildAgentRow>(
-    `SELECT a.id, a.guild_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
+    `SELECT a.id, a.guild_id, a.org_id, a.name, a.focus, a.wake_triggers, a.avatar_shape, a.avatar_color, a.config,
             a.created_at, a.updated_at, a.task, a.task_version, a.task_hash, a.task_updated_at,
             a.machine_id, a.machine_slot, m.name AS machine_name, m.box AS machine_box
      FROM agents a JOIN machines m ON m.id = a.machine_id

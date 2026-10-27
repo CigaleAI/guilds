@@ -6,7 +6,7 @@ import { offeredToolNames } from "../toolbox/offered.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { projectAgentAccess, type PreviewDeps } from "./preview.js";
 import type { ActivityWindow } from "./activity.js";
-import { listAgents } from "../db/agents.js";
+import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 
@@ -68,7 +68,7 @@ export function nativeGroup(name: string): string {
 
 type AgentAccess = Awaited<ReturnType<typeof projectAgentAccess>>;
 
-function nativeEntries(agent: Record<string, unknown>, access: AgentAccess): ToolEntry[] {
+function nativeEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
   const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
   const offered = offeredToolNames(access.native_tools, {
     browser: Boolean(config.browser),
@@ -84,12 +84,12 @@ function nativeEntries(agent: Record<string, unknown>, access: AgentAccess): Too
     group: nativeGroup(name),
     description: REGISTRY[name]?.description ?? "",
     serverId: null,
-    agentId: String(agent.id),
+    agentId: agent.id,
     offered: true,
   }));
 }
 
-function scriptEntries(agent: Record<string, unknown>, access: AgentAccess, scripting: boolean): ToolEntry[] {
+function scriptEntries(agent: Pick<AgentRow, "id">, access: AgentAccess, scripting: boolean): ToolEntry[] {
   return access.scripts
     .filter((script) => script.parameters !== null && script.parameters !== undefined)
     .map((script) => ({
@@ -98,12 +98,12 @@ function scriptEntries(agent: Record<string, unknown>, access: AgentAccess, scri
       group: "scripts",
       description: String(script.description ?? ""),
       serverId: null,
-      agentId: String(agent.id),
+      agentId: agent.id,
       offered: scripting,
     }));
 }
 
-function connectorEntries(agent: Record<string, unknown>, access: AgentAccess): ToolEntry[] {
+function connectorEntries(agent: Pick<AgentRow, "id">, access: AgentAccess): ToolEntry[] {
   return access.connections.flatMap((connection) =>
     connection.tools.map((tool) => ({
       name: tool.name,
@@ -111,14 +111,14 @@ function connectorEntries(agent: Record<string, unknown>, access: AgentAccess): 
       group: connection.server.display_name,
       description: tool.description,
       serverId: connection.server.id,
-      agentId: String(agent.id),
+      agentId: agent.id,
       offered: connection.offered_tools.includes(tool.name),
     })),
   );
 }
 
 /** Every tool one agent is offered now, and every script or connection tool it is withheld. */
-export function agentToolEntries(agent: Record<string, unknown>, access: AgentAccess): ToolEntry[] {
+export function agentToolEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
   const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
   return [
     ...nativeEntries(agent, access),

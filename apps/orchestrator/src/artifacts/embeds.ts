@@ -4,6 +4,7 @@ import { ArtifactError } from "./errors.js";
 import { isDisplayPath, parseDisplayPath } from "./paths.js";
 import { EMBED_BUDGET, type ArtifactActor } from "./types.js";
 import type { ArtifactRow, ArtifactStore } from "./store.js";
+import type { AgentRow } from "../db/agents.js";
 
 const EMBED_RE = /!\[\[([^\]]+)\]\]/g;
 
@@ -39,12 +40,12 @@ export function unreachableMarker(href: string): string {
 }
 
 /** The actor a Task's embeds resolve as: the agent whose Task it is. */
-export function taskEmbedActor(orgId: string, agent: Record<string, unknown>): ArtifactActor {
+export function taskEmbedActor(orgId: string, agent: Pick<AgentRow, "id" | "guild_id" | "name">): ArtifactActor {
   return agentActor({
     orgId,
-    guildId: String(agent.guild_id),
-    agentId: String(agent.id),
-    agentName: String(agent.name),
+    guildId: agent.guild_id,
+    agentId: agent.id,
+    agentName: agent.name,
   });
 }
 

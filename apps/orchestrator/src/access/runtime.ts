@@ -16,6 +16,7 @@ import {
 import { MissingSecretError } from "../secrets/index.js";
 import { serverManifest, type LoadedConnector } from "../connectors/load.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
+import type { AgentPlaceRow } from "../db/agents.js";
 
 export const PLATFORM_SEED_TOOLS = ACCESS_NATIVE_TOOLS;
 
@@ -80,11 +81,11 @@ export function resolveMcpTool(
 }
 
 /** The agent's environment as the run snapshot carries it: id, name, and description of each secret. */
-export async function agentSecrets(db: AccessDatabase, agent: Record<string, unknown>): Promise<Array<Record<string, string>>> {
+export async function agentSecrets(db: AccessDatabase, agent: AgentPlaceRow): Promise<Array<Record<string, string>>> {
   const rows = await db.listAgentSecrets({
-    orgId: String(agent.org_id),
-    guildId: String(agent.guild_id),
-    agentId: String(agent.id),
+    orgId: agent.org_id,
+    guildId: agent.guild_id,
+    agentId: agent.id,
   });
   return rows.map((row) => ({
     id: String(row.id),
@@ -99,12 +100,12 @@ export async function agentSecrets(db: AccessDatabase, agent: Record<string, unk
  */
 export async function agentMcpConnection(
   db: AccessDatabase,
-  agent: Record<string, unknown>,
+  agent: AgentPlaceRow,
   slug: string,
 ): Promise<McpConnectionRow | null> {
-  const orgId = (agent.org_id as string | null | undefined) ?? null;
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const scope = { orgId, guildId, agentId };
   const server = (await db.listMcpServers(orgId)).find((row) => row.slug === slug);
   if (!server) {
@@ -131,7 +132,7 @@ export async function agentMcpConnection(
  */
 export async function agentToolConnection(
   db: AccessDatabase,
-  agent: Record<string, unknown>,
+  agent: AgentPlaceRow,
   slug: string,
   remoteName: string,
 ): Promise<McpConnectionRow | null> {
@@ -139,9 +140,9 @@ export async function agentToolConnection(
   if (!connection) {
     return null;
   }
-  const orgId = (agent.org_id as string | null | undefined) ?? null;
-  const guildId = String(agent.guild_id);
-  const agentId = String(agent.id);
+  const orgId = agent.org_id;
+  const guildId = agent.guild_id;
+  const agentId = agent.id;
   const scope = { orgId, guildId, agentId };
   const server = (await db.listMcpServers(orgId)).find((row) => row.slug === slug);
   if (!server) {
@@ -224,13 +225,13 @@ async function loginsById(db: AccessDatabase, scope: RuntimeScope): Promise<Map<
 
 export async function agentRuntime(
   db: AccessDatabase,
-  agent: Record<string, unknown>,
+  agent: AgentPlaceRow,
   options: { mcpPool?: ToolSync } = {},
 ): Promise<RuntimeAccess> {
   const scope: RuntimeScope = {
-    orgId: (agent.org_id as string | null | undefined) ?? null,
-    guildId: String(agent.guild_id),
-    agentId: String(agent.id),
+    orgId: agent.org_id,
+    guildId: agent.guild_id,
+    agentId: agent.id,
   };
   const rows = await db.listBindingsCovering(scope);
   const tools = enabledToolNames(resolvedTools(rows, scope));

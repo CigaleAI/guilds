@@ -21,7 +21,7 @@ import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
-import { getAgent, listAgents } from "../db/agents.js";
+import { getAgent, listAgents, type AgentRow } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage } from "../db/conversations.js";
@@ -110,13 +110,13 @@ async function sourceAgentIds(scope: EditScope): Promise<Set<string>> {
   return new Set(agents.map((row) => String(row.id)));
 }
 
-export async function loadMemoryBase(scope: EditScope, agent: Record<string, unknown>): Promise<EditBase> {
-  const agentId = String(agent.id);
+export async function loadMemoryBase(scope: EditScope, agent: Pick<AgentRow, "id" | "name">): Promise<EditBase> {
+  const agentId = agent.id;
   const row = await scope.artifacts.getMemoryRow(editActor(scope, { agentId }), agentId);
   return {
     kind: "memory",
     agentId,
-    agentName: String(agent.name),
+    agentName: agent.name,
     guildId: scope.sourceGuildId,
     version: Number(row?.version ?? 0),
     content: row?.content_text ?? "",
@@ -408,7 +408,7 @@ async function reviewNoteCreate(
     if (!agent) {
       throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
     }
-    ownerId = String(agent.id);
+    ownerId = agent.id;
     reader = `Only ${agent.name} reads it.`;
   } else if (level === "guild") {
     const guild = await getGuild(scope.db, scope.sourceGuildId);
@@ -632,7 +632,7 @@ async function loadBaseFor(scope: EditScope, record: EditRecord): Promise<EditBa
   const target = (edit.target ?? {}) as Record<string, unknown>;
   if (record.toolName === "studio_edit_memory") {
     const agent = await getAgent(scope.db, String(target.agent_id ?? ""));
-    if (!agent || String(agent.guild_id) !== scope.sourceGuildId) {
+    if (!agent || agent.guild_id !== scope.sourceGuildId) {
       throw new StudioUnprocessableError("agent is not in the source guild");
     }
     return loadMemoryBase(scope, agent);
