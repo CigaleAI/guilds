@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFil
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { validateConfig, withCodingLimits } from "../../src/agents/validation.js";
-import { agentWorkspaceMaxMib, generationLive } from "../../src/generation/index.js";
+import { agentWorkspaceMaxMib } from "../../src/generation/index.js";
+import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import type { Completion } from "../../src/llm/index.js";

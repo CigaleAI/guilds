@@ -8,6 +8,7 @@ import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
 import { ArtifactError, operatorActor } from "../../src/artifacts/index.js";
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import * as generationMod from "../../src/generation/index.js";
+import { generationLive } from "../../src/generation/completion.js";
 import { PolicyError } from "../../src/policy/index.js";
 import { ConflictError, RunLimitError } from "../../src/generation/errors.js";
 import { pendingToolCalls } from "../../src/generation/tool-calls.js";
@@ -49,7 +50,7 @@ import { limitedPolicy } from "../helpers/policy.js";
 
 const HOME = "/home/a_1";
 
-const live = generationMod.generationLive;
+const live = generationLive;
 const originalStream = live.streamCompletion;
 const originalCount = live.countInputTokens;
 const scriptOperator = operatorActor({
@@ -2288,7 +2289,7 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(
       () =>
-        loop._llm_completion("r_1", {
+        loop.completion.complete("r_1", {
           model: "kimi/kimi-for-coding",
           messages: [],
           temperature: 0,
@@ -2316,7 +2317,7 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(
       () =>
-        loop._llm_completion("r_1", {
+        loop.completion.complete("r_1", {
           model: "openrouter/openai/gpt-5.6-luna",
           messages: [],
           temperature: 0,
@@ -2354,7 +2355,7 @@ describe("generation", { concurrency: 1 }, () => {
       },
     });
     await loop.beginGeneration("r_1", "a_1");
-    const completion = await loop._llm_completion("r_1", {
+    const completion = await loop.completion.complete("r_1", {
       model: "openrouter/openai/gpt-5.6-luna",
       messages: [],
       temperature: 0,
@@ -2378,7 +2379,7 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.beginGeneration("r_1", "a_1");
     await assert.rejects(
       () =>
-        loop._llm_completion("r_1", {
+        loop.completion.complete("r_1", {
           model: "openrouter/openai/gpt-5.6-luna",
           messages: [],
           temperature: 0,

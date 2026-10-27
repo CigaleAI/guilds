@@ -366,16 +366,16 @@
   },
   "src/generation/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 17
+      "count": 16
     },
     "@typescript-eslint/max-params": {
       "count": 5
     },
     "complexity": {
-      "count": 9
+      "count": 8
     },
     "max-depth": {
-      "count": 5
+      "count": 2
     },
     "max-lines": {
       "count": 1

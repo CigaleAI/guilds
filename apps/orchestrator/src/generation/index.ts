@@ -3,7 +3,6 @@ import {
   DEFAULT_MAX_INPUT_TOKENS,
   DEFAULT_MAX_TOOL_CALLS,
   DEFAULT_MAX_WORKSPACE_MIB,
-  keepToolResultGenerationsOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
   secretAliasesOf,
@@ -24,34 +23,17 @@ import {
   type GroupRunner,
 } from "../groupchat/index.js";
 
-import { OPEN_POLICY, PolicyError, type OrgPolicy } from "../policy/index.js";
-import { attachmentImageCount, countRunInputTokens } from "../attachments/hydrate.js";
-import { IMAGE_INPUT_TOKENS, type AttachmentRef, type AttachmentService } from "../attachments/index.js";
+import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
+import { countRunInputTokens } from "../attachments/hydrate.js";
+import { type AttachmentRef, type AttachmentService } from "../attachments/index.js";
+
 import {
-  AGENT_TOOL_RESULT_STUB_HINT,
-  MIN_UNSTUBBED_TOOL_RESULTS,
-  TOOL_RESULT_STUB_MIN_BYTES,
-  projectToolResults,
-} from "../conversation/projection.js";
-import { modelCatalog } from "../llm/catalog.js";
-import {
-  ModelNotConnectedError,
   coreModelCredentials,
-  modelUsageOf,
-  reportModelUsage,
-  resolveModelCredentials,
-  type ModelCredentials,
   type ModelCredentialsProvider,
 } from "../llm/credentials.js";
 
 import { sleep } from "../lib/event.js";
-import {
-  LLMError,
-  countInputTokens,
-  streamCompletion,
-  type Completion,
-  type ModelEvent,
-} from "../llm/index.js";
+import { type Completion } from "../llm/index.js";
 
 import { mcpDatabase, McpDisconnectedError, McpError, McpPool } from "../mcp/index.js";
 import {
@@ -91,6 +73,7 @@ import {
 } from "../typesafe/index.js";
 import { ActiveGenerations, AdmissionCoordinator } from "./admission.js";
 import { guildRepositories } from "./coding.js";
+import { countInputTokensImpl, generationLive, ModelCompletion } from "./completion.js";
 import { RunEvents } from "./events.js";
 import { RunPreparation, type ConnectorPool } from "./prepare.js";
 import { Runs } from "./runs.js";
@@ -247,8 +230,6 @@ export { RunRequestError } from "./errors.js";
 
 export const SANDBOX_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 export const SCHEDULER_TICK_MS = 30_000;
-export const CANCEL_GRACE_MS = 2_000;
-export const SHUTDOWN_TIMEOUT_MS = 15_000;
 export const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
 export const INPUT_TOKEN_LIMIT_MESSAGE = "Input token limit reached. Start a new run to continue.";
 export const REMAINING_TOOL_CALLS_PREFIX = "remaining_tool_calls: ";
@@ -268,20 +249,6 @@ export function agentWorkspaceMaxMib(
 ): number {
   return Math.min(maxWorkspaceMibOf(config), workspaceMaxMib(env));
 }
-
-export const generationLive = {
-  streamCompletion,
-  countInputTokens,
-  cancelGraceMs: CANCEL_GRACE_MS,
-  shutdownTimeoutMs: SHUTDOWN_TIMEOUT_MS,
-};
-
-export const streamCompletionImpl = (...args: Parameters<typeof streamCompletion>) =>
-  generationLive.streamCompletion(...args);
-export const countInputTokensImpl = (...args: Parameters<typeof countInputTokens>) =>
-  generationLive.countInputTokens(...args);
-export const cancelGraceMs = CANCEL_GRACE_MS;
-export const shutdownTimeoutMs = SHUTDOWN_TIMEOUT_MS;
 
 /** A coding run's prompt reached the hand-off share of its input limit. */
 class HandoffDue extends Error {
@@ -443,6 +410,7 @@ export class GenerationLoop implements GroupRunner {
   events: RunEvents;
   machines: AgentMachines;
   preparation: RunPreparation;
+  completion: ModelCompletion;
   runs: Runs;
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
@@ -506,6 +474,14 @@ export class GenerationLoop implements GroupRunner {
       groupRouter,
       generations: this.generations,
       machines: this.machines,
+    });
+    this.completion = new ModelCompletion({
+      db,
+      generations: this.generations,
+      events: this.events,
+      policy: this.policy,
+      credentials: this.credentials,
+      attachments: this.attachments,
     });
     this.runs = new Runs(
       {
@@ -1122,169 +1098,6 @@ export class GenerationLoop implements GroupRunner {
     return sandbox === null ? null : { agent, sandbox };
   }
 
-  async _modelMessages(
-    runId: string,
-    agent: AgentRow | null,
-    options: {
-      generation: number;
-      snapshot: Record<string, unknown>;
-      tools: unknown[];
-    },
-  ): Promise<{
-    rows: Array<Record<string, unknown>>;
-    payloads: Array<Record<string, unknown>>;
-  }> {
-    const listed = await this.db.listMessages(runId);
-    const maxInput = positiveInt(options.snapshot.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS);
-    const projectedPayloads = projectToolResults({
-      history: listed,
-      currentGeneration: options.generation,
-      keepGenerations: keepToolResultGenerationsOf(options.snapshot),
-      hint: AGENT_TOOL_RESULT_STUB_HINT,
-      minUnstubbed: MIN_UNSTUBBED_TOOL_RESULTS,
-      minStubBytes: TOOL_RESULT_STUB_MIN_BYTES,
-      budget: {
-        model: String(options.snapshot.model ?? ""),
-        schemas: options.tools,
-        maxInput,
-        countInputTokens: (model, messages, tools) =>
-          countInputTokensImpl(model, messages, tools) +
-          attachmentImageCount(listed) * IMAGE_INPUT_TOKENS,
-      },
-    });
-    const rows = listed.map((row, index) => {
-      const projected = projectedPayloads[index];
-      return projected === undefined || projected === row.payload ? row : { ...row, payload: projected };
-    });
-    if (!this.attachments) {
-      return { rows, payloads: projectedPayloads };
-    }
-    const model = agent?.config.model;
-    return {
-      rows,
-      payloads: await this.attachments.projectMessages(
-        agent?.org_id ?? "",
-        rows,
-        typeof model === "string" ? model : "",
-      ),
-    };
-  }
-
-  async _llm_completion(
-    runId: string,
-    options: {
-      model: string;
-      messages: Array<Record<string, unknown>>;
-      temperature: number;
-      max_tokens: number;
-      tools: unknown[] | null;
-      thinking_level?: string;
-    },
-  ): Promise<Completion> {
-    const cancelEvent = this.generations.cancelEvent(runId);
-    const abort = new AbortController();
-    const orgId = this.generations.orgOf(runId);
-    if (orgId) {
-      const { blocked } = await this.policy.standing(orgId);
-      if (blocked) {
-        throw new RunLimitError("generation.subscription", blocked.message);
-      }
-    }
-    const credentials = await this._model_credentials(orgId ?? "", options.model);
-    void modelCatalog.ensureFresh();
-    const agen = streamCompletionImpl({
-      model: options.model,
-      messages: options.messages,
-      temperature: options.temperature,
-      max_tokens: options.max_tokens,
-      tools: options.tools,
-      signal: abort.signal,
-      apiKey: credentials.apiKey,
-      ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
-      ...(options.thinking_level ? { thinking_level: options.thinking_level } : {}),
-    });
-    const iterator = agen[Symbol.asyncIterator]();
-    let completion: Completion | null = null;
-    const closeIterator = async () => {
-      abort.abort();
-      try {
-        await iterator.return?.(undefined);
-      } catch {
-        // Python ignores RuntimeError on aclose.
-      }
-    };
-    try {
-      while (true) {
-        const nextPromise = iterator.next();
-        let result: IteratorResult<ModelEvent>;
-        if (cancelEvent) {
-          const waitAbort = new AbortController();
-          try {
-            const winner = await Promise.race([
-              nextPromise.then((value) => ({ cancelled: false as const, value })),
-              cancelEvent.wait(waitAbort.signal).then(
-                () => ({ cancelled: true as const }),
-                () => ({ cancelled: false as const, aborted: true as const, value: undefined }),
-              ),
-            ]);
-            if (winner.cancelled) {
-              abort.abort();
-              void nextPromise.catch(() => undefined);
-              await closeIterator();
-              throw new GenerationCancelled();
-            }
-            if ("aborted" in winner && winner.aborted) {
-              result = await nextPromise;
-            } else {
-              result = winner.value as IteratorResult<ModelEvent>;
-            }
-          } finally {
-            waitAbort.abort();
-          }
-        } else {
-          result = await nextPromise;
-        }
-        if (result.done) {
-          break;
-        }
-        const [kind, value] = result.value;
-        if (kind === "delta") {
-          await this.events.publish(runId, "assistant.delta", { text: value });
-        } else if (kind === "reasoning") {
-          await this.events.publish(runId, "assistant.reasoning.delta", { text: value });
-        } else {
-          completion = value;
-        }
-      }
-    } finally {
-      try {
-        await closeIterator();
-      } catch {
-        // Python ignores RuntimeError on aclose.
-      }
-    }
-    if (completion === null) {
-      throw new LLMError("empty completion");
-    }
-    await reportModelUsage(credentials, modelUsageOf(runId, options.model, completion.metadata));
-    return completion;
-  }
-
-  /** The credentials the run calls the model with; a provider that is not connected ends the run. */
-  async _model_credentials(orgId: string, model: string): Promise<ModelCredentials> {
-    try {
-      return await resolveModelCredentials(this.credentials, orgId, model);
-    } catch (error) {
-      if (error instanceof ModelNotConnectedError) {
-        throw new RunLimitError("generation.model_key", error.message);
-      }
-      if (error instanceof PolicyError) {
-        throw new RunLimitError("generation.model_credentials", error.message);
-      }
-      throw error;
-    }
-  }
-
   _on_cancel = async (
     runId: string,
     generation: number,
@@ -1728,11 +1541,7 @@ export class GenerationLoop implements GroupRunner {
     const handoffAt = Math.floor(maxInputTokens * HANDOFF_FRACTION);
     const modelStep = async (): Promise<Array<Record<string, unknown>>> => {
       const agent = await this.db.getAgent(String(run.agent_id));
-      const { rows, payloads } = await this._modelMessages(runId, agent, {
-        generation,
-        snapshot,
-        tools: Array.isArray(tools) ? tools : [],
-      });
+      const { rows, payloads } = await this.completion.modelHistory({ runId, generation, log: extra }, agent, snapshot, tools);
       const tokens = countRunInputTokens(
         String(snapshot.model),
         rows,
@@ -1745,7 +1554,7 @@ export class GenerationLoop implements GroupRunner {
       if (chainable && tokens >= handoffAt) {
         throw new HandoffDue();
       }
-      const completion = await this._llm_completion(runId, {
+      const completion = await this.completion.complete(runId, {
         model: String(snapshot.model),
         messages: payloads,
         temperature: Number(snapshot.temperature),
@@ -1857,11 +1666,7 @@ export class GenerationLoop implements GroupRunner {
       { generation, source: "handoff" },
     );
     const agent = await this.db.getAgent(String(run.agent_id));
-    const { rows, payloads } = await this._modelMessages(runId, agent, {
-      generation,
-      snapshot,
-      tools: Array.isArray(tools) ? tools : [],
-    });
+    const { rows, payloads } = await this.completion.modelHistory({ runId, generation, log: extra }, agent, snapshot, tools);
     if (
       countRunInputTokens(
         String(snapshot.model),
@@ -1882,7 +1687,7 @@ export class GenerationLoop implements GroupRunner {
     }
     let completion: Completion;
     try {
-      completion = await this._llm_completion(runId, {
+      completion = await this.completion.complete(runId, {
         model: String(snapshot.model),
         messages: payloads,
         temperature: Number(snapshot.temperature),
