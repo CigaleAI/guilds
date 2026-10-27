@@ -10,11 +10,8 @@ import {
 } from "../credentials/items.js";
 import {
   CredentialError,
-  secretPayload,
   type OwnerScope,
   validateOwner,
-  validateSecretDescription,
-  validateSecretName,
 } from "../credentials/validate.js";
 import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
@@ -69,19 +66,6 @@ import { registerAttachmentRoutes } from "./attachment-routes.js";
 import { registerUsageRoutes } from "./usage-routes.js";
 import { registerStudioRoutes } from "./studio-routes.js";
 import { registerFileRoutes } from "./file-routes.js";
-import { SecretNameTaken } from "../db/errors.js";
-import {
-  SecretAccessError,
-  accessOf,
-  canCreateSecret,
-  canManageSecret,
-  managesOrgSecrets,
-  secretGrants,
-  secretMetadata,
-  validateSecretAccess,
-  type SecretAccess,
-  type SecretViewer,
-} from "../secrets/access.js";
 import type { AppDeps, RouteDeps } from "./deps.js";
 import { HttpError, missingBodyFields } from "./errors.js";
 import { registerCodingRoutes } from "./coding-routes.js";
@@ -99,6 +83,7 @@ import { registerRunRoutes } from "./run-routes.js";
 import { registerSandboxRoutes } from "./sandbox-routes.js";
 import { registerScheduleRoutes } from "./schedule-routes.js";
 import { registerScriptRoutes } from "./script-routes.js";
+import { registerSecretRoutes } from "./secret-routes.js";
 import { registerUserRoutes } from "./user-routes.js";
 import { registerModelProviderRoutes } from "./model-provider-routes.js";
 import {
@@ -132,7 +117,6 @@ import {
 } from "../db/orgs.js";
 import {
   getGuild,
-  listGuildsForUser,
 } from "../db/guilds.js";
 import { getAgent } from "../db/agents.js";
 import {
@@ -149,16 +133,6 @@ import {
   updateMcpConnectionSettings,
 } from "../db/mcp.js";
 import { getMcpServer, listMcpServers, updateConnector } from "../db/connectors.js";
-import {
-  deleteSecret,
-  getSecret,
-  insertSecret,
-  listAgentIdsReached,
-  listSecrets,
-  secretGrantTargets,
-  setSecretAccess,
-  updateSecret,
-} from "../db/secrets.js";
 import {
   deleteBinding,
   getBinding,
@@ -256,6 +230,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
   await registerNoteRoutes(app, deps);
   await registerCollectionRoutes(app, deps);
   await registerArtifactAccessRoutes(app, deps);
+  await registerSecretRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -674,231 +649,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
   }
 
   /** The caller's role in the organisation and the guilds they can see there; null for a non-member. */
-  async function secretViewer(orgId: string, user: Record<string, unknown>): Promise<SecretViewer | null> {
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      return null;
-    }
-    const guilds = await listGuildsForUser(db, orgId, String(user.id));
-    return {
-      role: String(membership.role),
-      visibleGuildIds: new Set(guilds.map((guild) => String(guild.id))),
-    };
-  }
-
-  /** A secret of an organisation the caller belongs to, with the caller as viewer. */
-  async function memberSecret(
-    secretId: string,
-    user: Record<string, unknown>,
-  ): Promise<[Record<string, unknown>, SecretViewer]> {
-    const row = await getSecret(db, secretId);
-    const viewer = row === null ? null : await secretViewer(String(row.org_id), user);
-    if (row === null || viewer === null) {
-      throw new HttpError(404, "secret not found");
-    }
-    return [row, viewer];
-  }
-
-  /** Each granted agent's guild; refuses a guild or agent outside the organisation. */
-  async function grantTargets(orgId: string, access: SecretAccess): Promise<Map<string, string>> {
-    const found = await secretGrantTargets(db, orgId, access.guild_ids, access.agent_ids);
-    for (const id of access.guild_ids) {
-      if (!found.guildIds.has(id)) {
-        throw new HttpError(422, `unknown guild ${id}`);
-      }
-    }
-    for (const id of access.agent_ids) {
-      if (!found.agentGuilds.has(id)) {
-        throw new HttpError(422, `unknown agent ${id}`);
-      }
-    }
-    return found.agentGuilds;
-  }
-
-  function secretHttp(error: unknown): unknown {
-    if (error instanceof CredentialError || error instanceof SecretAccessError) {
-      return new HttpError(422, error.message);
-    }
-    if (error instanceof SecretNameTaken) {
-      return new HttpError(409, error.message);
-    }
-    return error;
-  }
-
-  app.get("/api/secrets", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const orgId = String(org.id);
-    const query = request.query as { guild_id?: string; agent_id?: string };
-    if (query.guild_id && String((await requireVisibleGuild(db, query.guild_id, String(user.id))).org_id) !== orgId) {
-      throw new HttpError(404, "guild not found");
-    }
-    if (query.agent_id && String((await requireVisibleAgent(db, query.agent_id, String(user.id))).org_id) !== orgId) {
-      throw new HttpError(404, "agent not found");
-    }
-    const viewer = await secretViewer(orgId, user);
-    if (viewer === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    const rows = await listSecrets(db, orgId, {
-      guildId: query.guild_id ?? null,
-      agentId: query.agent_id ?? null,
-    });
-    return { secrets: rows.map((row) => secretMetadata(row, viewer)) };
-  });
-
-  app.post("/api/secrets", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const orgId = String(org.id);
-    const missing = missingBodyFields(request.body, ["name", "description", "value"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const name = validateSecretName(body.name);
-      const description = validateSecretDescription(body.description);
-      const payload = secretPayload(body.value);
-      const access = validateSecretAccess(body);
-      const viewer = await secretViewer(orgId, user);
-      if (viewer === null) {
-        throw new HttpError(404, "organisation not found");
-      }
-      const agentGuilds = await grantTargets(orgId, access);
-      if (!canCreateSecret(access, viewer, agentGuilds)) {
-        throw new HttpError(
-          403,
-          "only an org owner or admin can create an organisation-wide or unassigned secret, or grant one outside your guilds",
-        );
-      }
-      const [ciphertext, nonce] = encrypt(payload);
-      const row = await insertSecret(db,
-        {
-          secretId: newId("sec"),
-          orgId,
-          name,
-          description,
-          access,
-          ciphertext,
-          nonce,
-          createdByUserId: String(user.id),
-        },
-        new Date(),
-      );
-      await deps.generation?.secretAccessChanged(await listAgentIdsReached(db, orgId, access));
-      await send(reply, 201, secretMetadata(row, viewer));
-    } catch (error) {
-      throw secretHttp(error);
-    }
-  });
-
-  app.get("/api/secrets/:secret_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const [row, viewer] = await memberSecret(param(request, "secret_id"), user);
-    return secretMetadata(row, viewer);
-  });
-
-  app.patch("/api/secrets/:secret_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const secretId = param(request, "secret_id");
-    const [row, viewer] = await memberSecret(secretId, user);
-    if (!canManageSecret(row, viewer)) {
-      throw new HttpError(403, "only an org owner or admin can change this secret");
-    }
-    const body = bodyOf(request);
-    const given = (field: string) => body[field] !== undefined && body[field] !== null;
-    if (!given("name") && !given("description") && !given("value")) {
-      throw new HttpError(422, "name, description, or value is required");
-    }
-    try {
-      let ciphertext: Buffer | null = null;
-      let nonce: Buffer | null = null;
-      if (given("value")) {
-        [ciphertext, nonce] = encrypt(secretPayload(body.value));
-      }
-      const updated = await updateSecret(db,
-        secretId,
-        {
-          name: given("name") ? validateSecretName(body.name) : null,
-          description: given("description") ? validateSecretDescription(body.description) : null,
-          ciphertext,
-          nonce,
-        },
-        new Date(),
-      );
-      if (updated === null) {
-        throw new HttpError(404, "secret not found");
-      }
-      await deps.generation?.secretChanged(secretId);
-      return secretMetadata(updated, viewer);
-    } catch (error) {
-      throw secretHttp(error);
-    }
-  });
-
-  app.put("/api/secrets/:secret_id/access", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const secretId = param(request, "secret_id");
-    const [row, viewer] = await memberSecret(secretId, user);
-    if (!managesOrgSecrets(viewer.role)) {
-      throw new HttpError(403, "only an org owner or admin can change who gets a secret");
-    }
-    const missing = missingBodyFields(request.body, ["org_wide"]);
-    if (missing) {
-      throw missing;
-    }
-    try {
-      const access = validateSecretAccess(bodyOf(request));
-      if (!access.org_wide) {
-        // Grants in guilds the caller cannot see stay: the caller cannot name them.
-        for (const grant of secretGrants(row)) {
-          if (viewer.visibleGuildIds.has(grant.in_guild_id)) {
-            continue;
-          }
-          if (grant.guild_id && !access.guild_ids.includes(grant.guild_id)) {
-            access.guild_ids.push(grant.guild_id);
-          }
-          if (grant.agent_id && !access.agent_ids.includes(grant.agent_id)) {
-            access.agent_ids.push(grant.agent_id);
-          }
-        }
-      }
-      const orgId = String(row.org_id);
-      await grantTargets(orgId, access);
-      const before = await listAgentIdsReached(db, orgId, accessOf(row));
-      const updated = await setSecretAccess(db, secretId, access, new Date());
-      if (updated === null) {
-        throw new HttpError(404, "secret not found");
-      }
-      const after = await listAgentIdsReached(db, orgId, access);
-      const reached = new Set(after);
-      const left = new Set(before);
-      await deps.generation?.secretAccessChanged([
-        ...before.filter((id) => !reached.has(id)),
-        ...after.filter((id) => !left.has(id)),
-      ]);
-      return secretMetadata(updated, viewer);
-    } catch (error) {
-      throw secretHttp(error);
-    }
-  });
-
-  app.delete("/api/secrets/:secret_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const secretId = param(request, "secret_id");
-    const [row, viewer] = await memberSecret(secretId, user);
-    if (!canManageSecret(row, viewer)) {
-      throw new HttpError(403, "only an org owner or admin can delete this secret");
-    }
-    const reached = await listAgentIdsReached(db, String(row.org_id), accessOf(row));
-    if ((await deleteSecret(db, secretId)) === null) {
-      throw new HttpError(404, "secret not found");
-    }
-    await deps.generation?.secretAccessChanged(reached);
-    await send(reply, 204);
-  });
-
   app.put("/api/bindings", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const missing = missingBodyFields(request.body, ["catalog_kind", "catalog_id", "scope", "enabled"]);

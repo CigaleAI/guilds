@@ -199,6 +199,7 @@ test("owners and admins write any secret; members write secrets local to their g
   assert.equal(local.json().can_manage, true);
   assert.deepEqual(local.json().created_by, { kind: "user", id: "user_secret_member", name: "secret-member" });
   assert.equal((await call(MEMBER, "PATCH", `/api/secrets/${localId}`, { description: "rotated" })).statusCode, 200);
+  assert.equal((await call(MEMBER, "PATCH", `/api/secrets/${localId}`, {})).statusCode, 422, "a change names a field");
   const memberAccess = await call(MEMBER, "PUT", `/api/secrets/${localId}/access`, {
     org_wide: false,
     guild_ids: ["guild_open"],

@@ -1,5 +1,6 @@
 import { ArtifactError } from "../artifacts/errors.js";
 import { AttachmentError } from "../attachments/index.js";
+import { CredentialError } from "../credentials/validate.js";
 import { AgentError } from "../agents/errors.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { RunRequestError } from "../generation/index.js";
@@ -16,6 +17,8 @@ import { PolicyError } from "../policy/index.js";
 import { RecipeConflictError } from "../recipes/errors.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { ScriptError } from "../scripts/validation.js";
+import { SecretAccessError } from "../secrets/access.js";
+import { SecretError } from "../secrets/service.js";
 import { UserError } from "../users/directory.js";
 import { UserValidationError } from "../users/index.js";
 
@@ -118,6 +121,7 @@ const REFUSALS = [
   ScriptError,
   IssueError,
   AttachmentError,
+  SecretError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
@@ -126,6 +130,8 @@ const INVALID = [
   OrgValidationError,
   GuildValidationError,
   AgentValidationError,
+  CredentialError,
+  SecretAccessError,
 ] as const;
 
 /**

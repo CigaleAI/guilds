@@ -509,16 +509,16 @@
   },
   "src/http/routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 11
-    },
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 8
-    },
-    "complexity": {
       "count": 10
     },
+    "@typescript-eslint/no-restricted-imports": {
+      "count": 6
+    },
+    "complexity": {
+      "count": 9
+    },
     "max-depth": {
-      "count": 4
+      "count": 1
     },
     "max-lines": {
       "count": 1
