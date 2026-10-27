@@ -159,30 +159,6 @@
       "count": 1
     }
   },
-  "src/connectors/drive/content.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
-  "src/connectors/drive/folder.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 13
-    },
-    "complexity": {
-      "count": 6
-    },
-    "max-depth": {
-      "count": 2
-    }
-  },
-  "src/connectors/drive/upload.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/connectors/format.ts": {
     "complexity": {
       "count": 1
