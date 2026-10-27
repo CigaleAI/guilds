@@ -1,6 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
+import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
-import { actorColumns, type ChangeActor, type ChangeLink, studioLink } from "./config-changes.js";
+import { actorColumns, type ChangeLink, studioLink } from "./config-changes.js";
 import { type Queryable, stamp } from "./pg.js";
 import type { agents, fileChanges, runs } from "./schema/index.js";
 import { iso, isoOrNull } from "./views.js";

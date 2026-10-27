@@ -1,4 +1,4 @@
-import type { ChangeActor } from "../db/config-changes.js";
+import type { ChangeActor } from "../lib/change-actor.js";
 
 export const ARTIFACT_LEVELS = ["agent", "guild", "org"] as const;
 export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];

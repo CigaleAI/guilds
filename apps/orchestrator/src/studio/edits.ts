@@ -15,7 +15,7 @@ import { GuildValidationError, validateAbout, validateGuildDescription } from ".
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess, reviewAccessRequest } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
-import type { StudioOrigin } from "../db/config-changes.js";
+import type { StudioOrigin } from "../lib/change-actor.js";
 import { editActor } from "./actor.js";
 import { editActionOf } from "./actions.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";

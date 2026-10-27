@@ -1,8 +1,9 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { guildTextChange } from "../guilds/changes.js";
 import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../guilds/validation.js";
+import type { ChangeActor } from "../lib/change-actor.js";
 import { pickColumns } from "./columns.js";
-import { recordChangeIfAny, type ChangeActor } from "./config-changes.js";
+import { recordChangeIfAny } from "./config-changes.js";
 import { GuildNameTaken, LastGuildAdmin, RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
 import { guildOperators, guildRepositories, guilds, mcpConnections, orgs, users } from "./schema/index.js";

@@ -2,7 +2,7 @@ import { newId } from "../lib/ids.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
 import { formatScheduleRow, rowDescription, scheduleItem, type ScheduleItem } from "./item.js";
 import { planWake, rowTiming, validateTiming } from "./timing.js";
-import type { ChangeActor } from "../db/config-changes.js";
+import type { ChangeActor } from "../lib/change-actor.js";
 import type {
   ScheduleDefinition,
   ScheduleFields,

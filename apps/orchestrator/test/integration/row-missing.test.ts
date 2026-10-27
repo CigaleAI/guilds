@@ -10,7 +10,7 @@ import {
   upsertPlatformBinding,
 } from "../../src/db/bindings.js";
 import { connect, type Database } from "../../src/db/client.js";
-import type { ChangeActor } from "../../src/db/config-changes.js";
+import type { ChangeActor } from "../../src/lib/change-actor.js";
 import { insertConnector } from "../../src/db/connectors.js";
 import { RowMissing } from "../../src/db/errors.js";
 import { postAgentGroupMessage, postUserGroupMessage } from "../../src/db/group-chat.js";

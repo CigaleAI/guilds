@@ -1,4 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
+import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { pickColumns } from "./columns.js";
 import { type Queryable, stamp } from "./pg.js";
@@ -6,21 +7,6 @@ import { configChanges } from "./schema/index.js";
 import { iso } from "./views.js";
 
 type ConfigChangeRow = Omit<InferSelectModel<typeof configChanges>, "org_id">;
-
-/** The coach message an operator applied a change from: its Studio session and sequence. */
-export type StudioOrigin = { sessionId: string; seq: number };
-
-/**
- * Who made a change: a person, an agent, or an agent's run, with the tool
- * call that carried it and, for an edit applied in the Studio, its coach message.
- */
-export type ChangeActor = {
-  actorType: "user" | "agent" | "run";
-  actorId: string;
-  actorName: string;
-  toolCall: { id: string; name: string } | null;
-  studio?: StudioOrigin;
-};
 
 export type ConfigTargetKind = ConfigChangeRow["target_kind"];
 export type ConfigOperation = ConfigChangeRow["operation"];
