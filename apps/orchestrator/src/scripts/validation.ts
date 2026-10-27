@@ -51,10 +51,14 @@ export const NATIVE_TOOL_NAMES = new Set([
   "secret_request",
 ]);
 
+/** A refused script request, with the HTTP status it answers with: 404 for one that does not exist, else 422. */
 export class ScriptError extends Error {
-  constructor(message: string) {
+  status: 404 | 422;
+
+  constructor(message: string, status: 404 | 422 = 422) {
     super(message);
     this.name = "ScriptError";
+    this.status = status;
   }
 }
 

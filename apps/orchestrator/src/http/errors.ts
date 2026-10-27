@@ -4,6 +4,7 @@ import { RunRequestError } from "../generation/index.js";
 import { GroupChatError } from "../groupchat/index.js";
 import { GuildError } from "../guilds/errors.js";
 import { GuildValidationError } from "../guilds/validation.js";
+import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
 import { MachineError } from "../machines/index.js";
 import { NotesError } from "../notes/store.js";
@@ -11,6 +12,8 @@ import { OrgValidationError } from "../organisations/index.js";
 import { OrgError } from "../organisations/service.js";
 import { PolicyError } from "../policy/index.js";
 import { RecipeConflictError } from "../recipes/errors.js";
+import { ScheduleError } from "../schedules/cron.js";
+import { ScriptError } from "../scripts/validation.js";
 import { UserError } from "../users/directory.js";
 import { UserValidationError } from "../users/index.js";
 
@@ -100,6 +103,9 @@ const REFUSALS = [
   ArtifactError,
   RunRequestError,
   GroupChatError,
+  ScheduleError,
+  ScriptError,
+  IssueError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */

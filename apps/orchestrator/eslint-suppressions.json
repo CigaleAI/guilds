@@ -539,10 +539,10 @@
   },
   "src/http/routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 20
+      "count": 19
     },
     "@typescript-eslint/no-restricted-imports": {
-      "count": 15
+      "count": 14
     },
     "complexity": {
       "count": 13

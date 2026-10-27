@@ -6,7 +6,6 @@ import { agentDatabase, persistAgent } from "../agents/persist.js";
 import {
   AgentValidationError,
   browserLanguageOf,
-  maxScriptsOf,
   maxWorkspaceMibOf,
   validateAvatarColor,
   validateAvatarShape,
@@ -91,20 +90,13 @@ import {
 } from "../guilds/validation.js";
 import {
   ArtifactError,
-  displayPathFor,
   inspectTaskEmbeds,
   listFileChanges,
   taskEmbedActor,
 } from "../artifacts/index.js";
 import { NotesError } from "../notes/store.js";
-import { scriptItem } from "../scripts/catalog.js";
-import { ScriptError } from "../scripts/validation.js";
-import { scheduleItem } from "../schedules/item.js";
-import { ScheduleError } from "../schedules/cron.js";
-import { scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
-import { IssueError, Issues, issuesDatabase } from "../issues/index.js";
 import { Notifications, notificationsDatabase } from "../notifications/index.js";
 import { usageFields } from "../usage.js";
 import { usageForOrg } from "./usage-view.js";
@@ -176,8 +168,11 @@ import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
 import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
+import { registerIssueRoutes } from "./issue-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOrgRoutes } from "./org-routes.js";
+import { registerScheduleRoutes } from "./schedule-routes.js";
+import { registerScriptRoutes } from "./script-routes.js";
 import { registerUserRoutes } from "./user-routes.js";
 import { registerModelProviderRoutes } from "./model-provider-routes.js";
 import {
@@ -211,7 +206,7 @@ import {
   agentWithAccess,
 } from "./items.js";
 import { pipeSse } from "./sse.js";
-import { bodyOf, param } from "./request.js";
+import { bodyOf, param, queryOf } from "./request.js";
 import {
   getMembership,
 } from "../db/orgs.js";
@@ -221,7 +216,6 @@ import {
 } from "../db/guilds.js";
 import { placementMachine } from "../db/machines.js";
 import { getAgent, listAgents, updateAgentConfig } from "../db/agents.js";
-import { getSchedule, listSchedules } from "../db/schedules.js";
 import { listMessages } from "../db/runs.js";
 import { getUsage } from "../db/usage.js";
 import {
@@ -374,35 +368,11 @@ async function send(reply: FastifyReply, status: number, payload?: unknown): Pro
   return reply.code(status).send(payload);
 }
 
-function queryOf(request: FastifyRequest): Record<string, string> {
-  const query = request.query;
-  if (query && typeof query === "object" && !Array.isArray(query)) {
-    const out: Record<string, string> = {};
-    for (const [key, value] of Object.entries(query as Record<string, unknown>)) {
-      if (value === undefined || value === null) {
-        continue;
-      }
-      out[key] = String(value);
-    }
-    return out;
-  }
-  return {};
-}
-
 function generationOf(deps: AppDeps): GenerationLoop {
   if (!deps.generation) {
     throw new HttpError(503, "generation is unavailable");
   }
   return deps.generation;
-}
-
-/** How a routine change reads on the guild's stream: a pause or resume alone, or an edit. */
-function routineAction(changes: ScheduleChanges): string {
-  const fields = Object.keys(changes).filter((key) => key !== "paused");
-  if (fields.length || changes.paused === undefined) {
-    return "edit";
-  }
-  return changes.paused ? "pause" : "resume";
 }
 
 async function scopeGuild(
@@ -451,11 +421,10 @@ async function agentPayload(
 }
 
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
-  const { db, notes, scripts, schedules, artifacts } = deps;
+  const { db, notes, artifacts } = deps;
   const identityDb = identityDatabase(db);
   const policy = deps.policy ?? OPEN_POLICY;
   const modelCredentials = deps.modelCredentials ?? coreModelCredentials(modelProviderStore(db), deps.masterKey);
-  const issues = new Issues(issuesDatabase(db));
   const notifications = new Notifications(notificationsDatabase(db));
 
   /**
@@ -501,6 +470,9 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerGuildRoutes(app, deps);
   await registerGroupChatRoutes(app, deps, notifications);
   await registerNotificationRoutes(app, deps, notifications);
+  await registerScheduleRoutes(app, deps);
+  await registerScriptRoutes(app, deps);
+  await registerIssueRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -1172,74 +1144,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     }
   });
 
-  app.get("/api/guilds/:guild_id/schedules", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    return schedules.listForGuild(param(request, "guild_id"));
-  });
-
-  app.get("/api/guilds/:guild_id/issues", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    try {
-      return await issues.listForGuild(param(request, "guild_id"), queryOf(request).status);
-    } catch (error) {
-      if (error instanceof IssueError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.post("/api/guilds/:guild_id/issues/resolve", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    try {
-      const resolved = await issues.resolveOpen(
-        String(guild.id),
-        typeof user.name === "string" ? user.name : "user",
-      );
-      if (resolved > 0) {
-        await publishGroup(deps, String(guild.id), "guild.issues.changed", {
-          action: "resolved",
-        });
-      }
-      return { resolved };
-    } catch (error) {
-      if (error instanceof IssueError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.patch("/api/guilds/:guild_id/issues/:issue_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const body = bodyOf(request);
-    if (body.status === undefined) {
-      throw new HttpError(422, "status is required");
-    }
-    try {
-      const row = await issues.setStatus(
-        String(guild.id),
-        param(request, "issue_id"),
-        body.status,
-        typeof user.name === "string" ? user.name : "user",
-      );
-      await publishGroup(deps, String(guild.id), "guild.issues.changed", {
-        action: String(body.status),
-        issue_id: row.id,
-      });
-      return row;
-    } catch (error) {
-      if (error instanceof IssueError) {
-        throw new HttpError(error.message === "issue not found" ? 404 : 422, error.message);
-      }
-      throw error;
-    }
-  });
-
   app.get("/api/agents/:agent_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
@@ -1402,227 +1306,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(404, "agent not found");
     }
     return agentPayload(deps, detail);
-  });
-
-  app.get("/api/agents/:agent_id/schedules", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    await requireVisibleAgent(db, agentId, String(user.id));
-    const items = [];
-    for (const row of await listSchedules(db, agentId)) {
-      items.push(await schedules.view(row));
-    }
-    return items;
-  });
-
-  app.post("/api/agents/:agent_id/schedules", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const agent = await requireVisibleAgent(db, agentId, String(user.id));
-    const missing = missingBodyFields(request.body, ["description", "instruction"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const row = await schedules.create(
-        userActor(user),
-        agentId,
-        { cron: body.cron, window: body.window },
-        body.description,
-        body.instruction,
-      );
-      await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
-        agent_id: agentId,
-        action: "create",
-        schedule_id: row.id,
-      });
-      await send(reply, 201, scheduleItem(row));
-    } catch (error) {
-      if (error instanceof ScheduleError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.patch("/api/agents/:agent_id/schedules/:schedule_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const scheduleId = param(request, "schedule_id");
-    const agent = await requireVisibleAgent(db, agentId, String(user.id));
-    if ((await getSchedule(db, agentId, scheduleId)) === null) {
-      throw new HttpError(404, "schedule not found");
-    }
-    const changes = scheduleChanges(bodyOf(request));
-    try {
-      const row = await schedules.update(userActor(user), agentId, scheduleId, changes);
-      await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
-        agent_id: agentId,
-        action: routineAction(changes),
-        schedule_id: row.id,
-      });
-      return scheduleItem(row);
-    } catch (error) {
-      if (error instanceof ScheduleError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.delete("/api/agents/:agent_id/schedules/:schedule_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const scheduleId = param(request, "schedule_id");
-    const agent = await requireVisibleAgent(db, agentId, String(user.id));
-    try {
-      await schedules.delete(userActor(user), agentId, scheduleId);
-      await publishGroup(deps, String(agent.guild_id), "agent.routines.changed", {
-        agent_id: agentId,
-        action: "delete",
-        schedule_id: scheduleId,
-      });
-      await send(reply, 204);
-    } catch (error) {
-      if (error instanceof ScheduleError) {
-        throw new HttpError(404, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/agents/:agent_id/scripts", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const agent = await requireVisibleAgent(db, agentId, String(user.id));
-    try {
-      const rows = await scripts.listForAgent(agentId);
-      return rows.map((row) => ({
-        ...scriptItem(row),
-        display_path: displayPathFor({
-          orgId: String(agent.org_id),
-          level: "agent",
-          ownerId: agentId,
-          kind: "script",
-          path: "scripts",
-          key: String(row.name),
-        }),
-      }));
-    } catch (error) {
-      if (error instanceof ScriptError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.post("/api/agents/:agent_id/scripts", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const agent = await requireVisibleAgent(db, agentId, String(user.id));
-    const missing = missingBodyFields(request.body, ["name", "description", "source"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const row = await scripts.create(
-        await operatorFor(db, user, {
-          orgId: String(agent.org_id),
-          guildId: String(agent.guild_id),
-          agentId,
-        }),
-        agentId,
-        body.name,
-        body.description,
-        body.source,
-        body.parameters ?? null,
-        { maxScripts: maxScriptsOf(agentConfigObject(agent)) },
-      );
-      await publishGroup(deps, String(agent.guild_id), "agent.scripts.changed", {
-        agent_id: agentId,
-        action: "create",
-        name: row.name,
-      });
-      await send(reply, 201, scriptItem(row));
-    } catch (error) {
-      if (error instanceof ScriptError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.delete("/api/agents/:agent_id/scripts", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const agent = await requireVisibleAgent(db, agentId, String(user.id));
-    try {
-      await scripts.deleteAll(
-        await operatorFor(db, user, {
-          orgId: String(agent.org_id),
-          guildId: String(agent.guild_id),
-          agentId,
-        }),
-        agentId,
-      );
-      await publishGroup(deps, String(agent.guild_id), "agent.scripts.changed", {
-        agent_id: agentId,
-        action: "clear",
-      });
-      await send(reply, 204);
-    } catch (error) {
-      if (error instanceof ScriptError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/agents/:agent_id/scripts/:name", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const name = param(request, "name");
-    await requireVisibleAgent(db, agentId, String(user.id));
-    try {
-      const row = await scripts.get(agentId, name);
-      return scriptItem(row);
-    } catch (error) {
-      if (error instanceof ScriptError) {
-        throw new HttpError(404, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.delete("/api/agents/:agent_id/scripts/:name", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const name = param(request, "name");
-    const agent = await requireVisibleAgent(db, agentId, String(user.id));
-    try {
-      await scripts.delete(
-        await operatorFor(db, user, {
-          orgId: String(agent.org_id),
-          guildId: String(agent.guild_id),
-          agentId,
-        }),
-        agentId,
-        name,
-      );
-      await publishGroup(deps, String(agent.guild_id), "agent.scripts.changed", {
-        agent_id: agentId,
-        action: "delete",
-        name,
-      });
-      await send(reply, 204);
-    } catch (error) {
-      if (error instanceof ScriptError) {
-        throw new HttpError(404, error.message);
-      }
-      throw error;
-    }
   });
 
   app.get("/api/agents/:agent_id/notes", async (request) => {

@@ -108,6 +108,14 @@ export class Schedules {
     return items;
   }
 
+  async viewsForAgent(agentId: string): Promise<ScheduleItem[]> {
+    const items: ScheduleItem[] = [];
+    for (const row of await this.db.listSchedules(agentId)) {
+      items.push(await this.view(row));
+    }
+    return items;
+  }
+
   async view(row: ScheduleRow): Promise<ScheduleItem> {
     const item = scheduleItem(row);
     const instruction = await this.instructionFor(row.agent_id, row);
@@ -127,7 +135,7 @@ export class Schedules {
     }
     const row = await this.db.deleteSchedule(agentId, token, actor);
     if (row === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     return row;
   }
@@ -144,7 +152,7 @@ export class Schedules {
     }
     const row = await this.db.getSchedule(agentId, token);
     if (row === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     const now = new Date();
     const key = { agentId, scheduleId: token };
@@ -152,7 +160,7 @@ export class Schedules {
       ? await this.db.pauseSchedule(key, now, actor)
       : await this.db.resumeSchedule(key, planWake(rowTiming(row), now), now, actor);
     if (updated === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     return updated;
   }
@@ -170,7 +178,7 @@ export class Schedules {
   ): Promise<ScheduleRow> {
     const row = await this.db.getSchedule(agentId, (scheduleId || "").trim());
     if (row === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     const fields = changedFields(row, changes);
     const replan = !fields.paused && (changes.when !== undefined || row.paused);
@@ -182,7 +190,7 @@ export class Schedules {
       actor,
     );
     if (updated === null) {
-      throw new ScheduleError("schedule not found");
+      throw new ScheduleError("schedule not found", 404);
     }
     return updated;
   }

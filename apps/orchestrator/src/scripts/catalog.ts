@@ -131,7 +131,7 @@ export class Scripts {
     return this.lock.run(async () => {
       const row = await this.db.getAgentScript(agentId, token);
       if (row === null) {
-        throw new ScriptError("script not found");
+        throw new ScriptError("script not found", 404);
       }
       return agentScript(row);
     });
@@ -142,7 +142,7 @@ export class Scripts {
     return this.lock.run(async () => {
       const row = await this.db.deleteAgentScript(actor, agentId, token);
       if (row === null) {
-        throw new ScriptError("script not found");
+        throw new ScriptError("script not found", 404);
       }
       return agentScript(row);
     });

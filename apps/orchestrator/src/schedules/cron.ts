@@ -7,10 +7,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // Any UTC day: a routine wakes at the same times of day on every day it fires.
 const PATTERN_DAY_MS = Date.UTC(2000, 0, 3);
 
+/** A refused routine request, with the HTTP status it answers with: 404 for one that does not exist, else 422. */
 export class ScheduleError extends Error {
-  constructor(message: string) {
+  status: 404 | 422;
+
+  constructor(message: string, status: 404 | 422 = 422) {
     super(message);
     this.name = "ScheduleError";
+    this.status = status;
   }
 }
 

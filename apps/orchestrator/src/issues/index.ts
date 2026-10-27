@@ -24,10 +24,14 @@ export const ISSUE_TOOL_NAME_MAX = 120;
 export const ISSUE_OPEN_CAP = 100;
 
 
+/** A refused issue request, with the HTTP status it answers with: 404 for one that does not exist, else 422. */
 export class IssueError extends Error {
-  constructor(message: string) {
+  status: 404 | 422;
+
+  constructor(message: string, status: 404 | 422 = 422) {
     super(message);
     this.name = "IssueError";
+    this.status = status;
   }
 }
 
@@ -156,7 +160,7 @@ export class Issues {
     const agentName = requiredText(args.agentName, "agent name", 80);
     const guild = await this.db.getGuild(args.guildId);
     if (guild === null) {
-      throw new IssueError("guild not found");
+      throw new IssueError("guild not found", 404);
     }
     const open = await this.db.countOpenIssues(args.guildId);
     if (open >= ISSUE_OPEN_CAP) {
@@ -205,7 +209,7 @@ export class Issues {
     const next = oneOf(status, ISSUE_STATUSES, "status");
     const existing = await this.db.getIssue(guildId, token);
     if (existing === null) {
-      throw new IssueError("issue not found");
+      throw new IssueError("issue not found", 404);
     }
     const now = new Date();
     const resolvedAt = next === "resolved" ? now : null;
@@ -217,7 +221,7 @@ export class Issues {
       now,
     );
     if (updated === null) {
-      throw new IssueError("issue not found");
+      throw new IssueError("issue not found", 404);
     }
     return issueItem(updated);
   }
