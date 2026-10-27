@@ -34,16 +34,18 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
   const db = database.pool;
   const diffs: Array<[string, string, string | null]> = [];
   const logs: Array<[string, string, string]> = [];
-  // Only what the routes reach: the group-chat feed they observe, and the diff and log read from the machine.
+  // Only what the routes reach: the group-chat feed they observe, and the diff and log the coding runs read from the machine.
   const generation = {
     groupChat: { observe: () => undefined },
-    async runDiff(runId: string, repository: string, task: string | null = null) {
-      diffs.push([runId, repository, task]);
-      return { diff: "+print('hello, guild')\n", truncated: false };
-    },
-    async harnessLog(runId: string, callId: string, harness: string) {
-      logs.push([runId, callId, harness]);
-      return { lines: ["Bash: ls"], raw: '{"type":"init"}\n', bytes: 16 };
+    coding: {
+      async runDiff(runId: string, repository: string, task: string | null = null) {
+        diffs.push([runId, repository, task]);
+        return { diff: "+print('hello, guild')\n", truncated: false };
+      },
+      async harnessLog(runId: string, callId: string, harness: string) {
+        logs.push([runId, callId, harness]);
+        return { lines: ["Bash: ls"], raw: '{"type":"init"}\n', bytes: 16 };
+      },
     },
   } as unknown as GenerationLoop;
   const app = await buildApp(database, {

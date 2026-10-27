@@ -5,7 +5,8 @@ import type { AgentRow } from "../db/agents.js";
 import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
-import { RunRequestError, type GenerationLoop } from "../generation/index.js";
+import type { CodingRuns } from "../generation/coding.js";
+import { RunRequestError } from "../generation/errors.js";
 import { harnessEffortOf } from "./harness-models.js";
 import {
   HARNESSES,
@@ -21,20 +22,17 @@ import {
 /** What a coding agent's harness and a coding run's changes are read through, built once from the app's services. */
 export type RunReviewServices = {
   db: Queryable;
-  /** The generation loop whose sandboxes hold the repositories; absent on a box without one. */
-  generation: Pick<
-    GenerationLoop,
-    "runDiff" | "harnessLog" | "codingRepositoryNames" | "checkHarness"
-  > | null;
+  /** The coding runs whose machines hold the repositories; absent on a box without a generation loop. */
+  coding: Pick<CodingRuns, "runDiff" | "harnessLog" | "repositoryNames" | "checkHarness"> | null;
 };
 
 type Item = Record<string, unknown>;
 
-function generationOf(services: RunReviewServices): NonNullable<RunReviewServices["generation"]> {
-  if (services.generation === null) {
+function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["coding"]> {
+  if (services.coding === null) {
     throw new RunRequestError(503, "generation is unavailable");
   }
-  return services.generation;
+  return services.coding;
 }
 
 /** The repository a `code_task` result's diff is in, or null when the result has no end checkpoint. */
@@ -100,7 +98,7 @@ export async function loadHarnessView(services: RunReviewServices, agent: AgentR
     harness_model: harnessModelOf(config),
     harness_effort: harnessEffortOf(config),
     machine_harnesses: carried,
-    repositories: (await services.generation?.codingRepositoryNames(agent)) ?? [],
+    repositories: (await services.coding?.repositoryNames(agent)) ?? [],
     harnesses: HARNESSES.map((harness) => harnessView(harness, logins, aliases, granted)),
   };
 }
@@ -114,7 +112,7 @@ export async function checkAgentHarness(
   if (!isHarness(harness)) {
     throw new RunRequestError(422, `harness must be one of: ${HARNESSES.join(", ")}`);
   }
-  return generationOf(services).checkHarness(agent.id, harness);
+  return codingOf(services).checkHarness(agent.id, harness);
 }
 
 export function listRunChanges(run: RunRow): { repositories: Item[] } {
@@ -130,7 +128,7 @@ export async function repositoryDiff(
   if (!changedRepositories(run).some((item) => item.name === repository)) {
     throw new RunRequestError(404, "the run changed nothing in that repository");
   }
-  return { repository, ...(await generationOf(services).runDiff(run.id, repository)) };
+  return { repository, ...(await codingOf(services).runDiff(run.id, repository)) };
 }
 
 /** What one `code_task` call of a run changed. */
@@ -143,7 +141,7 @@ export async function taskDiff(
   if (repository === null) {
     throw new RunRequestError(404, "that call has no task diff");
   }
-  return { repository, ...(await generationOf(services).runDiff(run.id, repository, callId)) };
+  return { repository, ...(await codingOf(services).runDiff(run.id, repository, callId)) };
 }
 
 /** The log the harness of one `code_task` call kept. */
@@ -152,5 +150,5 @@ export async function taskLog(services: RunReviewServices, run: RunRow, callId: 
   if (harness === null) {
     throw new RunRequestError(404, "that call has no harness log");
   }
-  return generationOf(services).harnessLog(run.id, callId, harness);
+  return codingOf(services).harnessLog(run.id, callId, harness);
 }

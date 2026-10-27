@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-49](#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read) | A run's diff and a code task's log were served unredacted when the agent's secrets could not be read | Fixed 2026-10-27 |
 | [SEC-48](#sec-48--a-run-that-listed-a-logins-tools-for-the-first-time-was-offered-the-ones-that-start-off) | A run that listed a login's tools for the first time was offered the ones that start Off | Fixed 2026-10-26 |
 | [SEC-47](#sec-47--github-content-an-agent-reads-through-its-tools-can-steer-its-writes-to-the-logins-repositories) | GitHub content an agent reads through its tools can steer its writes to the login's repositories | Open |
 | [SEC-46](#sec-46--deleting-an-agent-a-guild-or-an-organisation-leaves-its-files-bytes-in-the-blob-store) | Deleting an agent, a guild, or an organisation leaves its files' bytes in the blob store | Open |
@@ -57,6 +58,31 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-49 — A run's diff and a code task's log were served unredacted when the agent's secrets could not be read
+
+**Status:** fixed 2026-10-27.
+
+**Found:** 2026-10-27, moving the coding-run steps out of the
+generation loop.
+
+**Where:** `runDiff` and `harnessLog` in
+`apps/orchestrator/src/generation/coding.ts`, behind
+`GET /api/runs/:run_id/changes/:repository/diff`,
+`GET /api/runs/:run_id/tasks/:call_id/diff`, and
+`GET /api/runs/:id/tasks/:call_id/log`.
+
+**Exposure:** both read the agent's secret values to redact what
+they return. When that read failed, they redacted with no values
+and served the output as written. A diff or a harness log that
+printed a secret then showed it to any member who can see the run's
+guild.
+
+**Fix:** a failure to read the agent's secrets refuses the request
+with 503; the output is never served without them.
+
+**Residual risk:** what SEC-32 describes: values that are not the
+agent's secrets show as written.
 
 ## SEC-48 — A run that listed a login's tools for the first time was offered the ones that start Off
 
@@ -624,7 +650,7 @@ name lookups to the instance admin.
 
 **Where:** `GET /api/runs/:id/tasks/:call_id/log`
 (`apps/orchestrator/src/http/coding-routes.ts`), `harnessLog` in
-`apps/orchestrator/src/generation/index.ts`, `readHarnessLog` in
+`apps/orchestrator/src/generation/coding.ts`, `readHarnessLog` in
 `apps/orchestrator/src/toolbox/harness.ts`, and the `log` op of
 `runtime/guilds-harness`.
 
@@ -1461,7 +1487,8 @@ can (SEC-24).
 
 **Found:** 2026-09-30, building coding agents.
 
-**Where:** the workspace check in `GenerationLoop` and
+**Where:** the workspace check in `WorkspaceLimits`
+(`apps/orchestrator/src/generation/workspace.ts`) and
 `workspace_size` in `runtime/guilds-code`.
 
 **Exposure:** a coding agent installs packages, builds, and

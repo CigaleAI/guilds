@@ -279,16 +279,7 @@ export class FakeDB {
       updated_at: now,
       metadata: {},
     };
-    this.agent = {
-      id: "a_1",
-      guild_id: "guild_1",
-      name: "researcher",
-      guild_name: "research",
-      org_id: "org_1",
-      org_slug: "acme",
-      config: {},
-      ...AGENT_MACHINE,
-    };
+    this.agent = agentRow({ guild_name: "research", org_slug: "acme", config: {} });
     this.messages = [
       {
         id: 1,
@@ -311,6 +302,15 @@ export class FakeDB {
   async getRun(runId: string) {
     return this.run.id === runId ? this.run : null;
   }
+
+  /** Sizes, logins and harness lists a generation stores are dropped until a test records them. */
+  async setAgentWorkspaceMib(_agentId: string, _mib: number): Promise<void> {}
+
+  async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
+
+  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+
+  async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
 
   /** A guild has no repositories until a test gives it some. */
   async listGuildRepositories(_guildId: string): Promise<Array<Record<string, unknown>>> {
@@ -527,6 +527,15 @@ export class RecordingDB {
     this.agent = agent;
     attachScripts(this, new MemoryScriptDB());
   }
+
+  /** Sizes, logins and harness lists a generation stores are dropped until a test records them. */
+  async setAgentWorkspaceMib(_agentId: string, _mib: number): Promise<void> {}
+
+  async setMachineWorkspaceMib(_machineId: string, _mib: number): Promise<void> {}
+
+  async markHarnessLogin(_agentId: string, _harness: string, _now: Date, _account?: unknown): Promise<void> {}
+
+  async clearHarnessLogin(_agentId: string, _harness: string): Promise<void> {}
 
   /** A guild has no repositories until a test gives it some. */
   async listGuildRepositories(_guildId: string): Promise<Array<Record<string, unknown>>> {
@@ -932,16 +941,7 @@ export async function seededLoop(
   await notes.ensureSystemPrompt();
   await notes.createGuild("acme", "research");
   await notes.createAgent("acme", "research", "researcher");
-  const db = new RecordingDB({
-    id: "a_1",
-    guild_id: "guild_1",
-    name: "researcher",
-    guild_name: "research",
-    org_id: "org_1",
-    org_slug: "acme",
-    config: { ...AGENT_CONFIG },
-    ...AGENT_MACHINE,
-  });
+  const db = new RecordingDB(agentRow({ guild_name: "research", org_slug: "acme" }));
   const loop = makeLoop(db, notes, workspaceRoot, new FakeSandboxes());
   return { loop, db, notes, tmp };
 }

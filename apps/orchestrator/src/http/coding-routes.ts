@@ -33,7 +33,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
   const { db } = deps;
   const identityDb = identityDatabase(db);
   const repositories: RepositoryServices = { db, mcp: deps.mcp ?? null, masterKey: deps.masterKey };
-  const review: RunReviewServices = { db, generation: deps.generation ?? null };
+  const review: RunReviewServices = { db, coding: deps.generation?.coding ?? null };
 
   app.get("/api/guilds/:guild_id/repositories", async (request) => {
     const user = await currentUser(identityDb, request, deps);

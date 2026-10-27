@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFil
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { validateConfig, withCodingLimits } from "../../src/agents/validation.js";
-import { agentWorkspaceMaxMib } from "../../src/generation/index.js";
+import { agentWorkspaceMaxMib } from "../../src/generation/workspace.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
@@ -674,7 +674,7 @@ describe("repositories in a coding generation", () => {
     assert.notEqual(second.end_sha, first.end_sha);
     assert.equal(second.insertions, 2);
 
-    const { diff, truncated } = await loop.runDiff("r_1", "shop");
+    const { diff, truncated } = await loop.coding.runDiff("r_1", "shop");
     assert.equal(truncated, false);
     assert.match(diff, /^diff --git a\/README\.md b\/README\.md/);
     assert.match(diff, /\n\+one\n\+two\n/);
