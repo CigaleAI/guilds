@@ -354,11 +354,6 @@
       "count": 1
     }
   },
-  "src/db/schema/index.ts": {
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/generation/admission.ts": {
     "max-depth": {
       "count": 1

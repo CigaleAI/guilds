@@ -430,9 +430,10 @@ An extension keeps its tables and its record in a schema of its own
 ([Extension points](extension-points.md#data)).
 
 New core schema lands as the next numbered SQL file in
-`apps/orchestrator/drizzle/`. It is mirrored in
-`src/db/schema/index.ts`, which the row types in `db/` derive from,
-and stamped after the migration before it.
+`apps/orchestrator/drizzle/`. It is mirrored in `src/db/schema/`,
+one file per table family that `index.ts` re-exports, which the row
+types in `db/` derive from, and stamped after the migration before
+it.
 
 Core's tables:
 

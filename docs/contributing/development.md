@@ -246,7 +246,8 @@ HTTP fixture when the catalog's shapes change.
 
 New schema lands as the next numbered SQL file in
 `apps/orchestrator/drizzle/`. It is mirrored in
-`src/db/schema/index.ts` and recorded in
+`src/db/schema/`, one file per table family that `index.ts`
+re-exports, and recorded in
 `drizzle/meta/_journal.json` with a stamp later than the
 migration before it.
 
