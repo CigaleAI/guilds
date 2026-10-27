@@ -3,7 +3,7 @@ import type pg from "pg";
 import type { BlobStore } from "./lib/blob-store.js";
 import type { AppConfig } from "./config/index.js";
 import type { OrgCreatedHook } from "./db/orgs.js";
-import type { GenerationSandboxes } from "./generation/index.js";
+import type { GenerationSandboxes } from "./generation/machines.js";
 import type { AppDeps } from "./http/deps.js";
 import type { IdentityProvider } from "./http/identity.js";
 import type { InstanceAdmin } from "./http/instance-admin.js";

@@ -1,11 +1,9 @@
-import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
-import path from "node:path";
+import { existsSync, statSync } from "node:fs";
 import {
   AgentValidationError,
   DEFAULT_MAX_INPUT_TOKENS,
   DEFAULT_MAX_TOOL_CALLS,
   DEFAULT_MAX_WORKSPACE_MIB,
-  browserLanguageOf,
   keepToolResultGenerationsOf,
   maxScriptsOf,
   maxWorkspaceMibOf,
@@ -57,7 +55,6 @@ import {
 } from "../llm/credentials.js";
 import { newId } from "../lib/ids.js";
 import { sleep } from "../lib/event.js";
-import { IdleTimers } from "./idle.js";
 import {
   LLMError,
   countInputTokens,
@@ -95,21 +92,13 @@ import {
   agentRunDir,
   agentSandbox,
   applyRunScripts,
-  machineSpec,
   prepareWorkspace,
-  SandboxError,
   seatEnvironment,
-  type AgentSeat,
-  type MachineSpec,
   type SandboxHandle,
 } from "../sandbox/index.js";
 import {
-  agentDirectory,
   DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
-  machineDirectory,
-  machineFromRow,
   slotPorts,
-  type AgentNeeds,
 } from "../machines/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
@@ -131,6 +120,7 @@ import {
 } from "../typesafe/index.js";
 import { ActiveGenerations, AdmissionCoordinator } from "./admission.js";
 import { RunEvents } from "./events.js";
+import { AgentMachines, agentMachine, agentSeat, type GenerationSandboxes } from "./machines.js";
 import {
   chainOf,
   continuationMessage,
@@ -223,6 +213,7 @@ import {
   markHarnessLogin,
   setAgentWorkspaceMib,
   upsertAgentScript,
+  type AgentRow,
 } from "../db/agents.js";
 import { deleteGuild, getGuild, listGuildRepositories } from "../db/guilds.js";
 import { listGroupMessages } from "../db/group-chat.js";
@@ -506,63 +497,9 @@ export type GenerationNotes = Partial<DirectoryNotes> &
     createAgent?(orgSlug: string, guildName: string, name: string, task?: string): Promise<void>;
   };
 
-/**
- * The machines agents run on: one container per machine, every agent's commands in its own home
- * there, and each agent's browser and terminal on the ports of its slot.
- */
-export type GenerationSandboxes = {
-  /** The machine's running container, created when there is none or replaced when its size changed. */
-  ensure(machine: MachineSpec): Promise<SandboxHandle>;
-  connectRunning(machineId: string): Promise<SandboxHandle | null>;
-  /** The harness CLIs the machine's container carries, read when the provider created it. */
-  harnessesOf?(machineId: string): string[] | null;
-  destroy(machineId: string): Promise<void>;
-  listRunningMachineIds(): Promise<Iterable<string>>;
-  /** Starts the agent's display, Chrome, and noVNC when they are not up, and waits until they answer. */
-  startBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
-  stopBrowser(sandbox: SandboxHandle, seat: AgentSeat): Promise<void>;
-  /** Stops the agent's browser and terminal; with `purge`, also removes its runtime files. */
-  stopAgent(sandbox: SandboxHandle, seat: AgentSeat, options?: { purge?: boolean }): Promise<void>;
-  novncTarget(sandbox: SandboxHandle, seat: AgentSeat): Promise<[string, Record<string, string>]>;
-  startCli(sandbox: SandboxHandle, seat: AgentSeat): Promise<string>;
-  cliTarget(sandbox: SandboxHandle, seat: AgentSeat, token: string): Promise<[string, Record<string, string>]>;
-  /** The host a machine runs on, and its workspace root there; core runs every machine on one. */
-  machineHost?(machineId: string): Promise<{
-    hostId: string;
-    workspaceRoot: string;
-    proxyUrl: string;
-  } | null>;
-};
-
-/** The machine an agent row sits on, as its container runs it. */
-export function agentMachine(agent: Record<string, unknown>): MachineSpec {
-  return machineSpec({
-    id: String(agent.machine_id),
-    org_id: String(agent.org_id),
-    box: machineFromRow({ box: agent.machine_box }).box,
-    cpu: agent.machine_cpu === null || agent.machine_cpu === undefined ? null : Number(agent.machine_cpu),
-    memory_mib:
-      agent.machine_memory_mib === null || agent.machine_memory_mib === undefined
-        ? null
-        : Number(agent.machine_memory_mib),
-  });
-}
-
-/** An agent row's seat on its machine. */
-export function agentSeat(agent: Record<string, unknown>): AgentSeat {
-  return {
-    agentId: String(agent.id),
-    machineId: String(agent.machine_id),
-    slot: Number(agent.machine_slot),
-    browserLanguage: browserLanguageOf(recordOf(agent.config)),
-  };
-}
-
 export class GenerationLoop implements GroupRunner {
   db: GenerationDatabase;
   notes: GenerationNotes;
-  workspaceRoot: string;
-  sandboxes: GenerationSandboxes;
   mcp: McpPool | { call: McpPool["call"]; syncTools?: McpPool["syncTools"] };
   groupChat: GroupChat;
   issues: Issues;
@@ -575,16 +512,7 @@ export class GenerationLoop implements GroupRunner {
   credentials: ModelCredentialsProvider;
   generations: ActiveGenerations;
   events: RunEvents;
-  /** Each running machine's idle stop, by machine id. */
-  _idle_tasks: IdleTimers;
-  /** Each running Chrome's idle stop, by agent id. */
-  _browser_idle: IdleTimers;
-  /** The machine of each agent whose Browser or CLI view started or had input, until it moves or goes. */
-  _touched_machine = new Map<string, string>();
-  /** Machines whose tier or size changed while an agent on them generated. */
-  _stale_machines = new Set<string>();
-  /** The harness list each machine's row was last given. */
-  _harness_reports = new Map<string, string>();
+  machines: AgentMachines;
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
   _scheduler_tick_ms: number;
@@ -615,8 +543,6 @@ export class GenerationLoop implements GroupRunner {
   ) {
     this.db = db;
     this.notes = notes;
-    this.workspaceRoot = workspaceRoot;
-    this.sandboxes = sandboxes;
     this.mcp = options.mcp ?? new McpPool();
     this.artifacts = options.artifacts ?? null;
     this.files = options.files ?? null;
@@ -625,9 +551,10 @@ export class GenerationLoop implements GroupRunner {
     this.generations = new ActiveGenerations(db, options.admission ?? new AdmissionCoordinator(), this.policy);
     this.events = new RunEvents(db);
     this.credentials = options.credentials ?? coreModelCredentials(db);
-    const idleTimeoutMs = options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS;
-    this._idle_tasks = new IdleTimers(idleTimeoutMs);
-    this._browser_idle = new IdleTimers(idleTimeoutMs);
+    this.machines = new AgentMachines(
+      { db, sandboxes, workspaceRoot, generations: this.generations },
+      options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS,
+    );
     this._scheduler_tick_ms = options.schedulerTickMs ?? SCHEDULER_TICK_MS;
     if (options.cancelGraceMs !== undefined) {
       generationLive.cancelGraceMs = options.cancelGraceMs;
@@ -865,12 +792,7 @@ export class GenerationLoop implements GroupRunner {
     const abort = this._scheduler_abort;
     this._scheduler_abort = null;
     abort?.abort();
-    for (const machineId of this._idle_tasks.keys()) {
-      this._cancel_idle(machineId);
-    }
-    for (const agentId of this._browser_idle.keys()) {
-      this._cancel_browser_idle(agentId);
-    }
+    this.machines.cancelTimers();
     if (this._scheduler_task) {
       const abortWait = new AbortController();
       await Promise.race([this._scheduler_task, sleep(50, abortWait.signal)]);
@@ -945,67 +867,6 @@ export class GenerationLoop implements GroupRunner {
     return this.generations.waitForLockRelease(seen);
   }
 
-  _cancel_idle(machineId: string): void {
-    this._idle_tasks.cancel(machineId);
-  }
-
-  /** Arms a machine's idle stop: its container goes after the idle timeout without work or input. */
-  _schedule_idle(machineId: string): void {
-    this._idle_tasks.arm(machineId, () => this._idle_stop(machineId));
-  }
-
-  async _idle_stop(machineId: string): Promise<void> {
-    try {
-      if (this.generations.isMachineBusy(machineId)) {
-        return;
-      }
-      await this.sandboxes.destroy(machineId);
-      this._stale_machines.delete(machineId);
-    } catch (error) {
-      writeLog(
-        "error",
-        "idle sandbox stop failed",
-        {
-          machine_id: machineId,
-          operation: "sandbox.idle.stop",
-          error_type: errorName(error),
-        },
-        error,
-      );
-    }
-  }
-
-  _cancel_browser_idle(agentId: string): void {
-    this._browser_idle.cancel(agentId);
-  }
-
-  /** Arms an agent's Chrome idle stop: it stops after the idle timeout without a browser call or input. */
-  _schedule_browser_idle(agentId: string): void {
-    this._browser_idle.arm(agentId, () => this.stopAgentBrowser(agentId));
-  }
-
-  /** Stops the agent's Chrome when its machine runs. Its profile and logins stay in its home. */
-  async stopAgentBrowser(agentId: string): Promise<void> {
-    this._cancel_browser_idle(agentId);
-    const agent = await this.db.getAgent(agentId);
-    if (agent === null) {
-      return;
-    }
-    try {
-      const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
-      if (sandbox !== null) {
-        await this.sandboxes.stopBrowser(sandbox, agentSeat(agent));
-      }
-    } catch (error) {
-      writeLog(
-        "error",
-        "browser stop failed",
-        { agent_id: agentId, operation: "browser.stop", error_type: errorName(error) },
-        error,
-      );
-    }
-  }
-
   /** A secret's value, name, or description changed: the active runs it reaches get a fresh snapshot. */
   async secretChanged(secretId: string): Promise<void> {
     await this.refreshEnvironments(await this.db.listActiveRunAgentIdsForSecret(secretId));
@@ -1029,7 +890,7 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  async syncRunSecrets(agent: Record<string, unknown>): Promise<Array<Record<string, string>>> {
+  async syncRunSecrets(agent: AgentRow): Promise<Array<Record<string, string>>> {
     const refs = await agentSecrets(this.db, agent);
     const now = new Date();
     for (const run of await this.db.listRuns(String(agent.id))) {
@@ -1048,172 +909,6 @@ export class GenerationLoop implements GroupRunner {
   }
 
   /**
-   * A machine's tier or size changed: an idle container goes now, a busy one once the last
-   * generation on it ends. The next work on the machine starts a container of the new size.
-   */
-  async machineChanged(machineId: string): Promise<void> {
-    this._stale_machines.add(machineId);
-    if (this.generations.isMachineBusy(machineId)) {
-      return;
-    }
-    this._cancel_idle(machineId);
-    try {
-      await this.sandboxes.destroy(machineId);
-      this._stale_machines.delete(machineId);
-    } catch (error) {
-      writeLog(
-        "error",
-        "sandbox refresh failed",
-        { machine_id: machineId, operation: "sandbox.refresh", error_type: errorName(error) },
-        error,
-      );
-    }
-  }
-
-  /**
-   * A deleted machine: its container goes, and its directory with it. A container that fails to
-   * go is retried by the machine's idle stop.
-   */
-  async deleteMachine(machineId: string): Promise<void> {
-    this._cancel_idle(machineId);
-    this._stale_machines.delete(machineId);
-    try {
-      await this.sandboxes.destroy(machineId);
-    } catch (error) {
-      writeLog(
-        "error",
-        "deleted machine sandbox stop failed",
-        { machine_id: machineId, operation: "machine.delete", error_type: errorName(error) },
-        error,
-      );
-      this._schedule_idle(machineId);
-    }
-    const directory = machineDirectory(await this.workspaceRootFor(machineId), machineId);
-    if (existsSync(directory)) {
-      rmSync(directory, { recursive: true, force: true });
-    }
-  }
-
-  /**
-   * The agent's browser settings changed: its Chrome stops, and the next browser call or Browser
-   * tab starts it again with them. Other agents on the machine keep theirs.
-   */
-  async agentBrowserChanged(agentId: string): Promise<void> {
-    await this.stopAgentBrowser(agentId);
-  }
-
-  /** The agent's Chrome for the Browser tab: its machine woken, its display and noVNC up. */
-  async ensureBrowser(agentId: string): Promise<unknown> {
-    const agent = await this.generations.runnableAgent(agentId);
-    const config = this._valid_config(agent);
-    if (!config.browser) {
-      throw new RunRequestError(409, "browser is not enabled");
-    }
-    const sandbox = await this.wakeSandbox(agentId);
-    this._touched_machine.set(agentId, String(agent.machine_id));
-    await this.startAgentBrowser(agent, sandbox);
-    return sandbox;
-  }
-
-  /** Starts the agent's Chrome on its machine and arms its idle stop. */
-  async startAgentBrowser(agent: Record<string, unknown>, sandbox: SandboxHandle): Promise<void> {
-    const agentId = String(agent.id);
-    try {
-      await this.sandboxes.startBrowser(sandbox, agentSeat(agent));
-    } catch (error) {
-      if (error instanceof SandboxError) {
-        throw new RunRequestError(503, error.message);
-      }
-      throw error;
-    }
-    this._schedule_browser_idle(agentId);
-  }
-
-  async browserProxyTarget(agentId: string): Promise<[string, Record<string, string>]> {
-    const agent = await this.generations.runnableAgent(agentId);
-    const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
-    if (sandbox === null) {
-      throw new RunRequestError(503, "sandbox is not running");
-    }
-    try {
-      return await this.sandboxes.novncTarget(sandbox, agentSeat(agent));
-    } catch {
-      throw new RunRequestError(503, "browser view is unavailable");
-    }
-  }
-
-  /** Wakes the agent's machine and starts the agent's terminal in its home. */
-  async ensureCli(agentId: string): Promise<unknown> {
-    const agent = await this.generations.runnableAgent(agentId);
-    const sandbox = await this.wakeSandbox(agentId);
-    this._touched_machine.set(agentId, String(agent.machine_id));
-    await this.startCliOn(sandbox, agent);
-    return sandbox;
-  }
-
-  /** The agent's config, refused with 422 when it does not validate. */
-  _valid_config(agent: Record<string, unknown>): AgentConfig {
-    try {
-      return validateConfig(recordOf(agent.config));
-    } catch (error) {
-      if (error instanceof AgentValidationError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * The agent's machine, running: the container as is while an agent on it generates, otherwise
-   * ensured, with the agent's home ready and the machine's idle timer armed.
-   */
-  async wakeSandbox(agentId: string): Promise<SandboxHandle> {
-    const agent = await this.generations.runnableAgent(agentId);
-    const config = this._valid_config(agent);
-    const machine = agentMachine(agent);
-    try {
-      prepareWorkspace(await this.workspaceRootFor(machine.id), machine.id, agentId, { browser: config.browser });
-    } catch (error) {
-      throw new RunRequestError(503, errorMessage(error));
-    }
-    if (this.generations.isMachineBusy(machine.id)) {
-      const sandbox = await this.sandboxes.connectRunning(machine.id);
-      if (sandbox === null) {
-        throw new RunRequestError(503, "sandbox is not running");
-      }
-      return sandbox;
-    }
-    let sandbox: SandboxHandle;
-    try {
-      sandbox = await this.sandboxes.ensure(machine);
-    } catch (error) {
-      if (error instanceof SandboxError) {
-        throw new RunRequestError(503, error.message);
-      }
-      throw error;
-    }
-    this._stale_machines.delete(machine.id);
-    this._schedule_idle(machine.id);
-    this._report_harnesses(machine.id);
-    return sandbox;
-  }
-
-  /**
-   * Keeps on the machine's row the harness CLIs its container carries, as the provider read
-   * them when it created the container.
-   */
-  _report_harnesses(machineId: string): void {
-    const listed = this.sandboxes.harnessesOf?.(machineId) ?? null;
-    if (listed === null || this._harness_reports.get(machineId) === listed.join(" ")) {
-      return;
-    }
-    this._harness_reports.set(machineId, listed.join(" "));
-    void Promise.resolve(this.db.setMachineHarnesses?.(machineId, listed)).catch((error: unknown) => {
-      writeLog("warn", errorMessage(error), { operation: "machine.harnesses", error_type: errorName(error) });
-    });
-  }
-
-  /**
    * The diff a run made in one repository, between its start and end checkpoints, or with
    * `task` between one `code_task` call's, from the agent's machine (woken as the CLI tab
    * wakes it), at most 256 KiB and redacted.
@@ -1229,7 +924,7 @@ export class GenerationLoop implements GroupRunner {
     }
     const agentId = String(run.agent_id);
     const agent = await this.generations.runnableAgent(agentId);
-    const sandbox = await this.wakeSandbox(agentId);
+    const sandbox = await this.machines.wakeSandbox(agentId);
     let result;
     try {
       const args = task === null ? { repository } : { repository, task: callSegment(task) };
@@ -1260,7 +955,7 @@ export class GenerationLoop implements GroupRunner {
     }
     const agentId = String(run.agent_id);
     const agent = await this.generations.runnableAgent(agentId);
-    const sandbox = await this.wakeSandbox(agentId);
+    const sandbox = await this.machines.wakeSandbox(agentId);
     let secrets: Record<string, string>;
     try {
       secrets = await snapshotEnvValues(this.db, await agentSecrets(this.db, agent));
@@ -1280,7 +975,7 @@ export class GenerationLoop implements GroupRunner {
   }
 
   /** The guild repositories a coding run of the agent clones, by their folder under `repos/`. */
-  async codingRepositoryNames(agent: Record<string, unknown>): Promise<string[]> {
+  async codingRepositoryNames(agent: AgentRow): Promise<string[]> {
     return (await this._guild_repositories(agent)).map((row) => String(row.name));
   }
 
@@ -1291,7 +986,7 @@ export class GenerationLoop implements GroupRunner {
    */
   async checkHarness(agentId: string, harness: Harness): Promise<HarnessCheck> {
     const agent = await this.generations.runnableAgent(agentId);
-    const sandbox = await this.wakeSandbox(agentId);
+    const sandbox = await this.machines.wakeSandbox(agentId);
     let check: HarnessCheck;
     try {
       check = await checkHarnessOn(this._maintenance_ctx("", agent, sandbox), harness);
@@ -1306,90 +1001,6 @@ export class GenerationLoop implements GroupRunner {
     return check;
   }
 
-  async cliProxyTarget(agentId: string): Promise<[string, Record<string, string>]> {
-    const agent = await this.generations.runnableAgent(agentId);
-    const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
-    if (sandbox === null) {
-      throw new RunRequestError(503, "sandbox is not running");
-    }
-    const token = await this.startCliOn(sandbox, agent);
-    try {
-      return await this.sandboxes.cliTarget(sandbox, agentSeat(agent), token);
-    } catch {
-      throw new RunRequestError(503, "terminal is unavailable");
-    }
-  }
-
-  private async startCliOn(sandbox: SandboxHandle, agent: Record<string, unknown>): Promise<string> {
-    try {
-      return await this.sandboxes.startCli(sandbox, agentSeat(agent));
-    } catch (error) {
-      if (error instanceof SandboxError) {
-        throw new RunRequestError(503, error.message);
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Operator input on a proxied Browser or CLI view counts as activity: the armed idle timers of
-   * the agent's machine and of its Chrome restart.
-   */
-  touchSandbox(agentId: string): void {
-    if (this._browser_idle.has(agentId)) {
-      this._schedule_browser_idle(agentId);
-    }
-    const known = this._touched_machine.get(agentId);
-    if (known !== undefined) {
-      this.touchMachine(known);
-      return;
-    }
-    void this.db.getAgent(agentId).then(
-      (agent) => {
-        if (agent !== null) {
-          this._touched_machine.set(agentId, String(agent.machine_id));
-          this.touchMachine(String(agent.machine_id));
-        }
-      },
-      () => undefined,
-    );
-  }
-
-  /** Input on a running machine's views arms its idle stop again. */
-  private touchMachine(machineId: string): void {
-    if (!this.generations.isMachineBusy(machineId) && this._idle_tasks.has(machineId)) {
-      this._schedule_idle(machineId);
-    }
-  }
-
-  /**
-   * Stops the agent's processes on its machine when it runs, and removes its runtime files and
-   * its home. The machine's container stays up for the other agents on it.
-   */
-  private async removeAgentFromMachine(agent: Record<string, unknown>): Promise<void> {
-    const agentId = String(agent.id);
-    const machineId = String(agent.machine_id);
-    this._cancel_browser_idle(agentId);
-    this._touched_machine.delete(agentId);
-    const sandbox = await this.sandboxes.connectRunning(machineId);
-    if (sandbox !== null) {
-      try {
-        await this.sandboxes.stopAgent(sandbox, agentSeat(agent), { purge: true });
-      } catch (error) {
-        writeLog(
-          "error",
-          "agent stop failed",
-          { agent_id: agentId, machine_id: machineId, operation: "agent.stop", error_type: errorName(error) },
-          error,
-        );
-      }
-    }
-    const workspace = agentDirectory(await this.workspaceRootFor(machineId), machineId, agentId);
-    if (existsSync(workspace)) {
-      rmSync(workspace, { recursive: true, force: true });
-    }
-  }
-
   async deleteAgent(agentId: string): Promise<void> {
     const agent = await this.db.getAgent(agentId);
     if (agent === null) {
@@ -1397,7 +1008,7 @@ export class GenerationLoop implements GroupRunner {
     }
     this.generations.holdAgent(agentId);
     try {
-      await this.removeAgentFromMachine(agent);
+      await this.machines.removeAgent(agent);
       await this.notes.deleteAgent?.(
         String(agent.org_slug),
         String(agent.guild_name),
@@ -1426,7 +1037,7 @@ export class GenerationLoop implements GroupRunner {
       for (const agentId of agentIds) {
         const agent = await this.db.getAgent(agentId);
         if (agent !== null) {
-          await this.removeAgentFromMachine(agent);
+          await this.machines.removeAgent(agent);
         }
       }
       await this.notes.deleteGuild?.(String(guild.org_slug), String(guild.name));
@@ -1434,78 +1045,6 @@ export class GenerationLoop implements GroupRunner {
     } finally {
       this.generations.releaseGuild(guildId, agentIds);
     }
-  }
-
-  /**
-   * Moves an agent to another machine of its organisation: its processes stop on the one it
-   * leaves, its home moves with it, and it takes the lowest free slot on the other. Both machines
-   * must keep their directories under one workspace root. A home that moved is moved back when
-   * the database refuses the move.
-   */
-  async moveAgent(
-    agentId: string,
-    machineId: string,
-    options: { maxAgentsPerMachine?: number | null; needs?: AgentNeeds } = {},
-  ): Promise<void> {
-    const agent = await this.db.getAgent(agentId);
-    if (agent === null) {
-      throw new RunRequestError(404, "agent not found");
-    }
-    const from = String(agent.machine_id);
-    if (from === machineId) {
-      return;
-    }
-    const { source, target, move } = await this.assertMovable(agentId, from, machineId);
-    this.generations.holdAgent(agentId);
-    this._touched_machine.delete(agentId);
-    try {
-      this._cancel_browser_idle(agentId);
-      const sandbox = await this.sandboxes.connectRunning(from);
-      if (sandbox !== null) {
-        await this.sandboxes.stopAgent(sandbox, agentSeat(agent), { purge: true });
-      }
-      const homeMoved = existsSync(source);
-      if (homeMoved) {
-        mkdirSync(path.dirname(target), { recursive: true });
-        renameSync(source, target);
-      }
-      try {
-        if ((await move(agentId, machineId, options)) === null) {
-          throw new RunRequestError(404, "agent not found");
-        }
-      } catch (error) {
-        if (homeMoved) {
-          renameSync(target, source);
-        }
-        throw error;
-      }
-    } finally {
-      this.generations.releaseAgent(agentId);
-    }
-  }
-
-  /** Refuses a move of a busy agent, where moves are unsupported, across hosts, or onto a home already there. */
-  private async assertMovable(
-    agentId: string,
-    from: string,
-    to: string,
-  ): Promise<{ source: string; target: string; move: NonNullable<GenerationDatabase["moveAgent"]> }> {
-    if (this.generations.isAgentBusy(agentId)) {
-      throw new RunRequestError(409, "agent is already generating");
-    }
-    if (!this.db.moveAgent) {
-      throw new RunRequestError(501, "agents cannot move here");
-    }
-    const sourceRoot = await this.workspaceRootFor(from);
-    const targetRoot = await this.workspaceRootFor(to);
-    if (path.resolve(sourceRoot) !== path.resolve(targetRoot)) {
-      throw new RunRequestError(409, "the machines keep their homes on different hosts");
-    }
-    const target = agentDirectory(targetRoot, to, agentId);
-    if (existsSync(target)) {
-      throw new RunRequestError(409, "the target machine already holds a home for this agent");
-    }
-    return { source: agentDirectory(sourceRoot, from, agentId), target, move: this.db.moveAgent.bind(this.db) };
   }
 
   async resumeRun(runId: string): Promise<Record<string, unknown>> {
@@ -1645,11 +1184,7 @@ export class GenerationLoop implements GroupRunner {
       }
     }
     await this.groupChat.resume_all();
-    for (const machineId of await this.sandboxes.listRunningMachineIds()) {
-      if (!this.generations.isMachineBusy(machineId)) {
-        this._schedule_idle(machineId);
-      }
-    }
+    await this.machines.armIdleForRunning();
   }
 
   async listRunViews(agentId: string): Promise<Array<Record<string, unknown>>> {
@@ -1660,7 +1195,7 @@ export class GenerationLoop implements GroupRunner {
     return runItem(row, { generating: this.isGenerating(String(row.id)) });
   }
 
-  async _hydrate(agent: Record<string, unknown>): Promise<[string, string, string]> {
+  async _hydrate(agent: AgentRow): Promise<[string, string, string]> {
     if (this.artifacts && typeof agent.org_id === "string" && agent.org_id) {
       let system: string;
       try {
@@ -1805,7 +1340,7 @@ export class GenerationLoop implements GroupRunner {
     };
   }
 
-  async _taskSource(agent: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  async _taskSource(agent: AgentRow): Promise<Record<string, unknown> | null> {
     if (!this.artifacts || typeof agent.org_id !== "string" || !agent.org_id) {
       return null;
     }
@@ -1838,12 +1373,12 @@ export class GenerationLoop implements GroupRunner {
     };
   }
 
-  async _connector_state(agent: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async _connector_state(agent: AgentRow): Promise<Record<string, unknown>> {
     return "state" in this.mcp ? this.mcp.state(this.db, agent) : {};
   }
 
   async _run_state(
-    agent: Record<string, unknown>,
+    agent: AgentRow,
     members: Array<Record<string, unknown>>,
     historyRows: Array<Record<string, unknown>>,
     secrets: Array<Record<string, unknown>> | null,
@@ -1853,7 +1388,7 @@ export class GenerationLoop implements GroupRunner {
     repositories: Array<Record<string, string>> | null = null,
   ): Promise<Record<string, unknown>> {
     const machineId = String(agent.machine_id);
-    prepareWorkspace(await this.workspaceRootFor(machineId), machineId, String(agent.id), {
+    prepareWorkspace(await this.machines.workspaceRootFor(machineId), machineId, String(agent.id), {
       browser: Boolean(recordOf(agent.config).browser),
     });
     let collections: unknown[] = [];
@@ -1906,7 +1441,7 @@ export class GenerationLoop implements GroupRunner {
   async beginGeneration(runId: string, agentId: string): Promise<void> {
     const machineId = await this.generations.begin(runId, agentId);
     if (machineId !== null) {
-      this._cancel_idle(machineId);
+      this.machines.cancelIdle(machineId);
     }
   }
 
@@ -1916,13 +1451,8 @@ export class GenerationLoop implements GroupRunner {
    */
   endGeneration(runId: string): void {
     const machineId = this.generations.end(runId);
-    if (machineId === null || this.generations.isMachineBusy(machineId)) {
-      return;
-    }
-    if (this._stale_machines.has(machineId)) {
-      void this.machineChanged(machineId);
-    } else {
-      this._schedule_idle(machineId);
+    if (machineId !== null && !this.generations.isMachineBusy(machineId)) {
+      this.machines.releaseMachine(machineId);
     }
   }
 
@@ -2104,18 +1634,18 @@ export class GenerationLoop implements GroupRunner {
   /** The agent and its machine's sandbox when that machine is running, else null. */
   async _running_agent_sandbox(
     agentId: string,
-  ): Promise<{ agent: Record<string, unknown>; sandbox: SandboxHandle } | null> {
+  ): Promise<{ agent: AgentRow; sandbox: SandboxHandle } | null> {
     const agent = await this.db.getAgent(agentId);
     if (!agent?.machine_id) {
       return null;
     }
-    const sandbox = await this.sandboxes.connectRunning(String(agent.machine_id));
+    const sandbox = await this.machines.sandboxes.connectRunning(String(agent.machine_id));
     return sandbox === null ? null : { agent, sandbox };
   }
 
   async _modelMessages(
     runId: string,
-    agent: Record<string, unknown>,
+    agent: AgentRow | null,
     options: {
       generation: number;
       snapshot: Record<string, unknown>;
@@ -2150,11 +1680,11 @@ export class GenerationLoop implements GroupRunner {
     if (!this.attachments) {
       return { rows, payloads: projectedPayloads };
     }
-    const model = recordOf(agent.config).model;
+    const model = agent?.config.model;
     return {
       rows,
       payloads: await this.attachments.projectMessages(
-        String(agent.org_id ?? ""),
+        agent?.org_id ?? "",
         rows,
         typeof model === "string" ? model : "",
       ),
@@ -2385,7 +1915,7 @@ export class GenerationLoop implements GroupRunner {
     runId: string,
     generation: number,
     run: Record<string, unknown>,
-    agent: Record<string, unknown>,
+    agent: AgentRow,
     extra: Record<string, string>,
   ): Promise<void> {
     const machine = agentMachine(agent);
@@ -2401,9 +1931,9 @@ export class GenerationLoop implements GroupRunner {
       return;
     }
     try {
-      const workspaceRoot = await this.workspaceRootFor(machine.id);
-      if (this.sandboxes.machineHost) {
-        const host = await this.sandboxes.machineHost(machine.id);
+      const workspaceRoot = await this.machines.workspaceRootFor(machine.id);
+      if (this.machines.sandboxes.machineHost) {
+        const host = await this.machines.sandboxes.machineHost(machine.id);
         if (host) {
           extra.host_id = host.hostId;
           await this.db.mergeRunMetadata(runId, { host_id: host.hostId }, new Date());
@@ -2433,18 +1963,7 @@ export class GenerationLoop implements GroupRunner {
         ? (snapshot.scripts as RunScriptSnapshot[])
         : await this.scripts.snapshot(String(agent.id));
       const liveRows = await this.scripts.listForAgent(String(agent.id));
-      // While another agent on the machine generates, its container stays as it is, even when
-      // the machine was resized: the new size comes once the last generation on it ends.
-      const shared = this.generations.isMachineBusy(machine.id, seat.agentId)
-        ? await this.sandboxes.connectRunning(machine.id)
-        : null;
-      if (shared !== null) {
-        machineSandbox = shared;
-      } else {
-        machineSandbox = await this.sandboxes.ensure(machine);
-        this._stale_machines.delete(machine.id);
-      }
-      this._report_harnesses(machine.id);
+      machineSandbox = await this.machines.sandboxForGeneration(agent);
       sandbox = agentSandbox(machineSandbox, agentHome(seat.agentId), { ...env, ...seatEnvironment(seat) });
       await applyRunScripts(sandbox, agentHome(seat.agentId), pinned, liveExtraForAgent(pinned, liveRows));
     } catch (error) {
@@ -2501,7 +2020,7 @@ export class GenerationLoop implements GroupRunner {
       notes: this.notes as NotesStore,
       artifacts: this.artifacts,
       files: this.files,
-      workspace_dir: await this.agentWorkspace(agent),
+      workspace_dir: await this.machines.agentWorkspace(agent),
       artifact_actor:
         typeof agent.org_id === "string" && agent.org_id
           ? agentActor({
@@ -2520,13 +2039,7 @@ export class GenerationLoop implements GroupRunner {
       agent_home: agentHome(seat.agentId),
       cdp_port: snapshot.browser ? slotPorts(seat.slot).cdp : null,
       ensure_browser: snapshot.browser
-        ? async () => {
-            if (this._browser_idle.has(seat.agentId)) {
-              this._schedule_browser_idle(seat.agentId);
-              return;
-            }
-            await this.startAgentBrowser(agent, machineSandbox);
-          }
+        ? () => this.machines.ensureRunBrowser(agent, machineSandbox)
         : null,
       group_chat: this.groupChat,
       issues: this.issues,
@@ -2606,7 +2119,7 @@ export class GenerationLoop implements GroupRunner {
     }
   }
 
-  async _effective_github_connection(agent: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  async _effective_github_connection(agent: AgentRow): Promise<Record<string, unknown> | null> {
     const lookup = this.db.getMcpConnectionForOwner?.bind(this.db);
     if (!lookup) {
       return null;
@@ -2626,7 +2139,7 @@ export class GenerationLoop implements GroupRunner {
     );
   }
 
-  async _guild_repositories(agent: Record<string, unknown>): Promise<Array<Record<string, unknown>>> {
+  async _guild_repositories(agent: AgentRow): Promise<Array<Record<string, unknown>>> {
     const guildRepos = (await this.db.listGuildRepositories?.(String(agent.guild_id))) ?? [];
     return codingRepositories(guildRepos, await this._effective_github_connection(agent));
   }
@@ -2640,7 +2153,7 @@ export class GenerationLoop implements GroupRunner {
   async _prepare_repositories(
     runId: string,
     generation: number,
-    agent: Record<string, unknown>,
+    agent: AgentRow,
     sandbox: SandboxHandle,
     ctx: ReturnType<typeof createToolContext>,
     secrets: Record<string, string>,
@@ -2719,7 +2232,7 @@ export class GenerationLoop implements GroupRunner {
   }
 
   /** The end checkpoint of every working tree, and what the run changed since its start. */
-  async _record_checkpoints(runId: string, agent: Record<string, unknown>, sandbox: SandboxHandle): Promise<void> {
+  async _record_checkpoints(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
     try {
       const result = await runCodeHelper(
         this._maintenance_ctx(runId, agent, sandbox),
@@ -2761,7 +2274,7 @@ export class GenerationLoop implements GroupRunner {
     const handoffAt = Math.floor(maxInputTokens * HANDOFF_FRACTION);
     const modelStep = async (): Promise<Array<Record<string, unknown>>> => {
       const agent = await this.db.getAgent(String(run.agent_id));
-      const { rows, payloads } = await this._modelMessages(runId, agent ?? { org_id: "" }, {
+      const { rows, payloads } = await this._modelMessages(runId, agent, {
         generation,
         snapshot,
         tools: Array.isArray(tools) ? tools : [],
@@ -2890,7 +2403,7 @@ export class GenerationLoop implements GroupRunner {
       { generation, source: "handoff" },
     );
     const agent = await this.db.getAgent(String(run.agent_id));
-    const { rows, payloads } = await this._modelMessages(runId, agent ?? { org_id: "" }, {
+    const { rows, payloads } = await this._modelMessages(runId, agent, {
       generation,
       snapshot,
       tools: Array.isArray(tools) ? tools : [],
@@ -3086,7 +2599,7 @@ export class GenerationLoop implements GroupRunner {
           call,
           secrets,
           maxBytes,
-          await this.agentWorkspace(owner),
+          await this.machines.agentWorkspace(owner),
           orgId,
         );
       } else {
@@ -3115,7 +2628,7 @@ export class GenerationLoop implements GroupRunner {
   async _workspace_has_room(
     runId: string,
     generation: number,
-    agent: Record<string, unknown>,
+    agent: AgentRow,
     sandbox: SandboxHandle,
     extra: Record<string, string>,
   ): Promise<boolean> {
@@ -3163,7 +2676,7 @@ export class GenerationLoop implements GroupRunner {
   }
 
   /** Measures the agent's home and its machine's directory and stores both sizes. */
-  async _record_workspace_size(runId: string, agent: Record<string, unknown>, sandbox: SandboxHandle): Promise<void> {
+  async _record_workspace_size(runId: string, agent: AgentRow, sandbox: SandboxHandle): Promise<void> {
     const ctx = this._maintenance_ctx(runId, agent, sandbox);
     try {
       const home = await measureWorkspace(ctx);
@@ -3182,7 +2695,7 @@ export class GenerationLoop implements GroupRunner {
   /** A tool context for platform work in the sandbox: not cancellable, not tracked, no secrets. */
   _maintenance_ctx(
     runId: string,
-    agent: Record<string, unknown>,
+    agent: AgentRow,
     sandbox: SandboxHandle,
   ): ReturnType<typeof createToolContext> {
     const seat = agentSeat(agent);
@@ -3291,11 +2804,11 @@ export class GenerationLoop implements GroupRunner {
    * `secret_store` for one agent: reads the value file from its workspace, saves the
    * secret granted to it, removes the file, and refreshes environments the change reaches.
    */
-  private agentSecretStore(agent: Record<string, unknown>): AgentSecretStore {
+  private agentSecretStore(agent: AgentRow): AgentSecretStore {
     const agentId = String(agent.id);
     return {
       store: async (input) => {
-        const file = await readSecretFile(await this.agentWorkspace(agent), input.file);
+        const file = await readSecretFile(await this.machines.agentWorkspace(agent), input.file);
         const stored = await storeAgentSecret(
           this.db,
           { id: agentId, orgId: String(agent.org_id) },
@@ -3312,24 +2825,4 @@ export class GenerationLoop implements GroupRunner {
     };
   }
 
-  /** The agent's home on the host: its folder in its machine's directory. */
-  private async agentWorkspace(agent: Record<string, unknown> | null): Promise<string> {
-    if (agent === null) {
-      throw new Error("agent not found");
-    }
-    const machineId = String(agent.machine_id);
-    return agentDirectory(await this.workspaceRootFor(machineId), machineId, String(agent.id));
-  }
-
-  /** Where the machine's directory is kept: its host's workspace root, or core's one root. */
-  private async workspaceRootFor(machineId: string): Promise<string> {
-    if (!this.sandboxes.machineHost) {
-      return this.workspaceRoot;
-    }
-    const host = await this.sandboxes.machineHost(machineId);
-    if (!host) {
-      return this.workspaceRoot;
-    }
-    return host.workspaceRoot;
-  }
 }

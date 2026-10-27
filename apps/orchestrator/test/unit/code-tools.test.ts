@@ -543,12 +543,12 @@ describe("coding runs in the generation loop", () => {
     let carried: string[] | null = null;
     sandboxes.harnessesOf = () => carried;
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    loop._report_harnesses("mach_1");
+    loop.machines.reportHarnesses("mach_1");
     carried = ["codex", "claude-code"];
-    loop._report_harnesses("mach_1");
-    loop._report_harnesses("mach_1");
+    loop.machines.reportHarnesses("mach_1");
+    loop.machines.reportHarnesses("mach_1");
     carried = ["codex"];
-    loop._report_harnesses("mach_1");
+    loop.machines.reportHarnesses("mach_1");
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(written, [
       ["mach_1", ["codex", "claude-code"]],
@@ -677,7 +677,7 @@ describe("repositories in a coding generation", () => {
     assert.equal(truncated, false);
     assert.match(diff, /^diff --git a\/README\.md b\/README\.md/);
     assert.match(diff, /\n\+one\n\+two\n/);
-    loop._cancel_idle("a_1");
+    loop.machines.cancelIdle("a_1");
   });
 
   test("a generation uses the guild's commit author email", async () => {
@@ -697,7 +697,7 @@ describe("repositories in a coding generation", () => {
       }).trim();
     assert.equal(git(["config", "--global", "user.email"]), "dev@example.com");
     assert.equal(git(["config", "--global", "user.name"]), "researcher");
-    loop._cancel_idle("a_1");
+    loop.machines.cancelIdle("a_1");
   });
 
   test("a repository that cannot be cloned fails the generation at start", async () => {

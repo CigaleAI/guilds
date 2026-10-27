@@ -16,6 +16,7 @@ import type { GuildRow } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
 import type { GenerationLoop } from "../generation/index.js";
+import type { AgentMachines } from "../generation/machines.js";
 import { assertGuildAgentRoom, guildAgentRoom } from "../guilds/validation.js";
 import { newId } from "../lib/ids.js";
 import { assertModelConnected, type ModelCredentialsProvider } from "../llm/credentials.js";
@@ -53,10 +54,11 @@ export type AgentServices = {
   policy: OrgPolicy;
   modelCredentials: ModelCredentialsProvider;
   /** The generation loop that runs the agents; absent on a box without one. */
-  generation: Pick<
-    GenerationLoop,
-    "isDeletingGuild" | "isAgentBusy" | "deleteAgent" | "moveAgent" | "agentBrowserChanged"
-  > | null;
+  generation:
+    | (Pick<GenerationLoop, "isDeletingGuild" | "isAgentBusy" | "deleteAgent"> & {
+        machines: Pick<AgentMachines, "moveAgent" | "agentBrowserChanged">;
+      })
+    | null;
 };
 
 /** A new agent as it is asked for, before validation. */
@@ -261,7 +263,7 @@ async function writeAgentSettings(
   const { machine, maxAgentsPerMachine, moves } = placement;
   const needs = { browser: change.config.browser, coding: change.config.coding };
   if (moves) {
-    await generationOf(services).moveAgent(agent.id, machine.id, { maxAgentsPerMachine, needs });
+    await generationOf(services).machines.moveAgent(agent.id, machine.id, { maxAgentsPerMachine, needs });
   }
   let row;
   try {
@@ -269,7 +271,7 @@ async function writeAgentSettings(
   } catch (error) {
     if (moves) {
       const previous = agentConfigObject(agent);
-      await generationOf(services).moveAgent(agent.id, agent.machine_id, {
+      await generationOf(services).machines.moveAgent(agent.id, agent.machine_id, {
         needs: { browser: Boolean(previous.browser), coding: Boolean(previous.coding) },
       });
     }
@@ -331,7 +333,7 @@ export async function reconfigureAgent(
   const browserOff = Boolean(previous.browser) && !config.browser;
   const newLanguage = config.browser && browserLanguageOf(previous) !== config.browser_language;
   if ((browserOff || newLanguage) && services.generation) {
-    await services.generation.agentBrowserChanged(agent.id);
+    await services.generation.machines.agentBrowserChanged(agent.id);
   }
   return reloadAgent(services.db, agent.id);
 }
@@ -361,7 +363,7 @@ export async function moveAgentToMachine(
     machineId: agent.machine_id,
   });
   if (moves) {
-    await generationOf(services).moveAgent(agent.id, machine.id, { maxAgentsPerMachine });
+    await generationOf(services).machines.moveAgent(agent.id, machine.id, { maxAgentsPerMachine });
   }
   return reloadAgent(services.db, agent.id);
 }

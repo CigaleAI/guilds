@@ -4,12 +4,8 @@ import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
 import type { ArtifactActor } from "../../src/artifacts/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
-import {
-  GenerationLoop,
-  type GenerationDatabase,
-  type GenerationNotes,
-  type GenerationSandboxes,
-} from "../../src/generation/index.js";
+import { GenerationLoop, type GenerationDatabase, type GenerationNotes } from "../../src/generation/index.js";
+import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbox/index.js";
@@ -17,7 +13,7 @@ import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
 import type { PlannedWake } from "../../src/schedules/window.js";
-import type { AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
+import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
 import type { ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow } from "../../src/db/schedules.js";
@@ -48,6 +44,38 @@ export function scheduleRow(
     last_run_at: null,
     created_at: "2026-10-12T09:00:00.000Z",
     updated_at: "2026-10-12T09:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** An agent row as `getAgent` returns it, on its organisation's default machine. */
+export function agentRow(overrides: Partial<AgentRow> = {}): AgentRow {
+  return {
+    id: "a_1",
+    guild_id: "guild_1",
+    org_id: "org_1",
+    name: "researcher",
+    avatar_shape: "teardrop",
+    avatar_color: "#7c5cff",
+    focus: "",
+    wake_triggers: "",
+    config: { ...AGENT_CONFIG },
+    task: "",
+    task_version: 1,
+    task_hash: "",
+    task_updated_at: "2026-10-12T09:00:00.000Z",
+    created_at: "2026-10-12T09:00:00.000Z",
+    updated_at: "2026-10-12T09:00:00.000Z",
+    workspace_mib: null,
+    harness_logins: {},
+    ...AGENT_MACHINE,
+    machine_box: "standard",
+    machine_harnesses: [],
+    guild_name: "guild",
+    guild_about: "",
+    guild_description: "",
+    org_slug: "org",
+    guild_operators: [],
     ...overrides,
   };
 }
@@ -976,7 +1004,7 @@ export function guildDb(agentIds: string[]) {
     getGuild: (guildId: string) => Promise<Record<string, unknown> | null>;
     listAgents: (guildId: string) => Promise<Array<Record<string, unknown>>>;
     deleteGuild: (guildId: string) => Promise<void>;
-    getAgent?: (agentId: string) => Promise<Record<string, unknown> | null>;
+    getAgent?: (agentId: string) => Promise<AgentRow | null>;
   } = {
     purged: [],
     async getGuild(guildId: string) {
@@ -990,7 +1018,7 @@ export function guildDb(agentIds: string[]) {
     },
     async getAgent(agentId: string) {
       const slot = agentIds.indexOf(agentId);
-      return slot < 0 ? null : { id: agentId, ...AGENT_MACHINE, machine_slot: slot };
+      return slot < 0 ? null : agentRow({ id: agentId, machine_slot: slot });
     },
     async deleteGuild(guildId: string) {
       db.purged.push(guildId);

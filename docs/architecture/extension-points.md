@@ -127,7 +127,7 @@ and `trusted-header`. Paths below are under
   which is the extensions' hooks unless the caller of `buildApp`
   gives its own.
 - **Sandbox provider.** `GenerationSandboxes`
-  (`generation/index.ts`), keyed by machine: `ensure(machine)`,
+  (`generation/machines.ts`), keyed by machine: `ensure(machine)`,
   `connectRunning`, `destroy`, `listRunningMachineIds`, and an
   optional `harnessesOf(machineId)` (the harness CLIs the machine's
   container carries). On an agent's seat (agent id, machine id, slot,

@@ -24,7 +24,7 @@ export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps)
   const services: MachineServices = {
     db,
     policy: deps.policy ?? OPEN_POLICY,
-    generation: deps.generation ?? null,
+    containers: deps.generation?.machines ?? null,
   };
 
   async function memberOf(request: FastifyRequest): Promise<MachineMember> {

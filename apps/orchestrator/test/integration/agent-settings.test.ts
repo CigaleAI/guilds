@@ -79,11 +79,13 @@ test(
         deleteAgent: async (agentId) => {
           calls.push(`delete ${agentId}`);
         },
-        moveAgent: async (agentId, machineId) => {
-          calls.push(`move ${agentId} ${machineId}`);
-        },
-        agentBrowserChanged: async (agentId) => {
-          calls.push(`browser ${agentId}`);
+        machines: {
+          moveAgent: async (agentId, machineId) => {
+            calls.push(`move ${agentId} ${machineId}`);
+          },
+          agentBrowserChanged: async (agentId) => {
+            calls.push(`browser ${agentId}`);
+          },
         },
       },
     };

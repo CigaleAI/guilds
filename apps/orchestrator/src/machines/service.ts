@@ -8,7 +8,7 @@ import {
 } from "../db/machines.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
-import type { GenerationLoop } from "../generation/index.js";
+import type { AgentMachines } from "../generation/machines.js";
 import { canManageSettings } from "../organisations/index.js";
 import { machineCap, type OrgPolicy } from "../policy/index.js";
 import { visibleGuildIds } from "./access.js";
@@ -26,8 +26,8 @@ import {
 export type MachineServices = {
   db: Queryable;
   policy: OrgPolicy;
-  /** The generation loop whose sandboxes run on the machines; absent on a box without one. */
-  generation: Pick<GenerationLoop, "machineChanged" | "deleteMachine"> | null;
+  /** The containers the machines run in; absent on a box without a generation loop. */
+  containers: Pick<AgentMachines, "machineChanged" | "deleteMachine"> | null;
 };
 
 /** A member of the organisation acting on its machines: their membership, and who they are. */
@@ -142,7 +142,7 @@ export async function changeMachine(
     throw new MachineError(404, "machine not found");
   }
   if (machineSizeChanged(changed.before, changed.after)) {
-    await services.generation?.machineChanged(machineId);
+    await services.containers?.machineChanged(machineId);
   }
   return viewMachine(services.db, member, machineId);
 }
@@ -157,5 +157,5 @@ export async function removeMachine(
   if ((await deleteMachine(services.db, member.membership.id, machineId)) === null) {
     throw new MachineError(404, "machine not found");
   }
-  await services.generation?.deleteMachine(machineId);
+  await services.containers?.deleteMachine(machineId);
 }

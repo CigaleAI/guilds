@@ -10,9 +10,9 @@ import {
   generationDatabase,
   generationLive,
   GenerationLoop,
-  type GenerationSandboxes,
   RunRequestError,
 } from "../../src/generation/index.js";
+import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
