@@ -1,133 +1,55 @@
-
-
+import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
+import type { ArtifactFiles, ArtifactStore } from "../artifacts/index.js";
+import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
+import { deleteGuild, getGuild } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
-import { runItem } from "../db/views.js";
-import {
-  GroupChat,
-  groupChatDatabase,
-  type GroupDelivery,
-  type GroupRunner,
-} from "../groupchat/index.js";
-
-import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
-
-import { type AttachmentRef, type AttachmentService } from "../attachments/index.js";
-
-import {
-  coreModelCredentials,
-  type ModelCredentialsProvider,
-} from "../llm/credentials.js";
-
-import { sleep } from "../lib/event.js";
-
-import { mcpDatabase, McpPool } from "../mcp/index.js";
-import {
-  ArtifactFiles,
-  ArtifactStore,
-} from "../artifacts/index.js";
-import { type NotesStore } from "../notes/store.js";
-
-import { errorMessage, errorName, writeLog } from "../observability/log.js";
-
-import { Scripts } from "../scripts/catalog.js";
-
-import { Schedules } from "../schedules/service.js";
-
-import {
-  defaultGroupRouter,
-  type GroupRouter,
-} from "../typesafe/index.js";
-import { ActiveGenerations, AdmissionCoordinator } from "./admission.js";
-import { CodingRuns } from "./coding.js";
-import { WorkspaceLimits } from "./workspace.js";
-import { generationLive, ModelCompletion } from "./completion.js";
-import { RunEvents } from "./events.js";
-import { RunPreparation, type ConnectorPool } from "./prepare.js";
-import { RunSecrets } from "./run-secrets.js";
-import { Runs } from "./runs.js";
-import { RunGenerator, runWasResumed } from "./generate.js";
-import { AgentMachines, type GenerationSandboxes } from "./machines.js";
-import { continuedBy, RunChains } from "./chain.js";
-import { withRemainingToolCalls as _withRemainingToolCalls } from "../toolbox/index.js";
-
-import { Issues } from "../issues/index.js";
-
+import { getOrgModelProvider } from "../db/orgs.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
 import {
   appendRunError,
   completeGroupDelivery,
   completeRun,
-  createGroupRun,
-  createRun,
-  createScheduleRun,
   getRun,
   insertMessage,
   listActiveRuns,
-  listMessages,
-  listPayloads,
   listRuns,
-  mergeRunMetadata,
   nextGeneration,
   nextSeq,
   reopenRun,
-  updateRunScripts,
-  updateRunSecrets,
   type RunRow,
 } from "../db/runs.js";
-import {
-  clearHarnessLogin,
-  deleteAgent,
-  deleteAgentScript,
-  getAgent,
-  getAgentScript,
-  listAgentScripts,
-  listAgents,
-  markHarnessLogin,
-  setAgentWorkspaceMib,
-  upsertAgentScript,
-} from "../db/agents.js";
-import { deleteGuild, getGuild, listGuildRepositories } from "../db/guilds.js";
-import { listGroupMessages } from "../db/group-chat.js";
-import { moveAgent, setMachineHarnesses, setMachineWorkspaceMib } from "../db/machines.js";
-import {
-  deleteSchedule,
-  getSchedule,
-  insertSchedule,
-  listDueSchedules,
-  listSchedules,
-  listSchedulesForGuild,
-  markScheduleFired,
-  pauseSchedule,
-  resumeSchedule,
-  setScheduleNextRun,
-  updateSchedule,
-} from "../db/schedules.js";
-import { listActiveRunAgentIdsForSecret } from "../db/secrets.js";
-import { getMcpConnection, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
-import { getMcpServer } from "../db/connectors.js";
-import {
-  countOpenIssues,
-  getIssue,
-  insertIssue,
-  listIssuesForGuild,
-  resolveOpenIssues,
-  setIssueStatus,
-} from "../db/issues.js";
-import { getOrgMonthlyUsage } from "../db/usage.js";
-import { getOrgModelProvider } from "../db/orgs.js";
-import { bindQuery, type Queryable } from "../db/pg.js";
-import { agentSecretsDatabase } from "../secrets/agent.js";
-
-import {
-  ConflictError,
-  RunRequestError,
-} from "./errors.js";
-
-import { ToolCalls } from "./tool-calls.js";
+import { runItem } from "../db/views.js";
+import { GroupChat, groupChatDatabase, type GroupDelivery, type GroupRunner } from "../groupchat/index.js";
+import { Issues, issuesDatabase } from "../issues/index.js";
+import { sleep } from "../lib/event.js";
+import { coreModelCredentials, type ModelCredentialsProvider } from "../llm/credentials.js";
+import { McpPool } from "../mcp/index.js";
+import type { NotesStore } from "../notes/store.js";
+import { errorMessage, errorName, writeLog } from "../observability/log.js";
+import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
+import { Schedules, scheduleDatabase } from "../schedules/service.js";
+import { Scripts, scriptDatabase } from "../scripts/catalog.js";
+import { defaultGroupRouter, type GroupRouter } from "../typesafe/index.js";
+import { ActiveGenerations, activeGenerationsDatabase, AdmissionCoordinator } from "./admission.js";
+import { continuedBy, RunChains, runChainsDatabase } from "./chain.js";
+import { CodingRuns, codingRunsDatabase } from "./coding.js";
+import { generationLive, ModelCompletion, modelCompletionDatabase } from "./completion.js";
+import { ConflictError, RunRequestError } from "./errors.js";
+import { RunEvents, runEventsDatabase } from "./events.js";
+import { RunGenerator, runGeneratorDatabase, runWasResumed } from "./generate.js";
+import { AgentMachines, agentMachinesDatabase, type GenerationSandboxes } from "./machines.js";
+import { RunPreparation, runPreparationDatabase, type ConnectorPool } from "./prepare.js";
+import { RunSecrets, runSecretsDatabase } from "./run-secrets.js";
+import { Runs, runsDatabase } from "./runs.js";
+import { ToolCalls, toolCallsDatabase } from "./tool-calls.js";
+import { WorkspaceLimits, workspaceLimitsDatabase } from "./workspace.js";
 
 export { RunRequestError } from "./errors.js";
 
-const SANDBOX_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-const SCHEDULER_TICK_MS = 30_000;
+/** How long a loop's machines wait idle before they stop, and how often its scheduler wakes the due schedules. */
+export type GenerationLoopTimings = { idleTimeoutMs: number; schedulerTickMs: number };
+
+export const LOOP_TIMINGS: GenerationLoopTimings = { idleTimeoutMs: 5 * 60 * 1000, schedulerTickMs: 30_000 };
 
 const TERMINAL_CAP_OPERATIONS = new Set([
   "generation.max_tool_calls",
@@ -140,76 +62,80 @@ function runHitTerminalCap(run: RunRow): boolean {
   return run.errors.some((entry) => isPlainRecord(entry) && TERMINAL_CAP_OPERATIONS.has(String(entry.operation ?? "")));
 }
 
-/** The db/ functions a generation reads and writes through, on `db`. */
-export function generationDatabase(db: Queryable) {
+/** The db/ functions the loop's own run and delete operations read and write through, on `db`. */
+function loopDatabase(db: Queryable) {
   return {
-    ...mcpDatabase(db),
-    ...agentSecretsDatabase(db),
-    ...groupChatDatabase(db),
     getRun: bindQuery(db, getRun),
     getAgent: bindQuery(db, getAgent),
     getGuild: bindQuery(db, getGuild),
     listAgents: bindQuery(db, listAgents),
     listRuns: bindQuery(db, listRuns),
     listActiveRuns: bindQuery(db, listActiveRuns),
-    listGroupMessages: bindQuery(db, listGroupMessages),
-    createRun: bindQuery(db, createRun),
-    createGroupRun: bindQuery(db, createGroupRun),
-    createScheduleRun: bindQuery(db, createScheduleRun),
-    insertMessage: bindQuery(db, insertMessage),
-    listMessages: bindQuery(db, listMessages),
-    listPayloads: bindQuery(db, listPayloads),
-    nextSeq: bindQuery(db, nextSeq),
     nextGeneration: bindQuery(db, nextGeneration),
+    nextSeq: bindQuery(db, nextSeq),
+    insertMessage: bindQuery(db, insertMessage),
     appendRunError: bindQuery(db, appendRunError),
-    mergeRunMetadata: bindQuery(db, mergeRunMetadata),
-    markHarnessLogin: bindQuery(db, markHarnessLogin),
-    clearHarnessLogin: bindQuery(db, clearHarnessLogin),
-    setMachineHarnesses: bindQuery(db, setMachineHarnesses),
     completeRun: bindQuery(db, completeRun),
     reopenRun: bindQuery(db, reopenRun),
     completeGroupDelivery: bindQuery(db, completeGroupDelivery),
-    updateRunSecrets: bindQuery(db, updateRunSecrets),
-    updateRunScripts: bindQuery(db, updateRunScripts),
-    listDueSchedules: bindQuery(db, listDueSchedules),
-    markScheduleFired: bindQuery(db, markScheduleFired),
-    listActiveRunAgentIdsForSecret: bindQuery(db, listActiveRunAgentIdsForSecret),
     deleteAgent: bindQuery(db, deleteAgent),
     deleteGuild: bindQuery(db, deleteGuild),
-    getMcpConnection: bindQuery(db, getMcpConnection),
-    getMcpServer: bindQuery(db, getMcpServer),
-    getAgentScript: bindQuery(db, getAgentScript),
-    upsertAgentScript: bindQuery(db, upsertAgentScript),
-    listAgentScripts: bindQuery(db, listAgentScripts),
-    deleteAgentScript: bindQuery(db, deleteAgentScript),
-    insertSchedule: bindQuery(db, insertSchedule),
-    deleteSchedule: bindQuery(db, deleteSchedule),
-    getSchedule: bindQuery(db, getSchedule),
-    pauseSchedule: bindQuery(db, pauseSchedule),
-    resumeSchedule: bindQuery(db, resumeSchedule),
-    listSchedules: bindQuery(db, listSchedules),
-    listSchedulesForGuild: bindQuery(db, listSchedulesForGuild),
-    updateSchedule: bindQuery(db, updateSchedule),
-    setScheduleNextRun: bindQuery(db, setScheduleNextRun),
-    insertIssue: bindQuery(db, insertIssue),
-    listIssuesForGuild: bindQuery(db, listIssuesForGuild),
-    getIssue: bindQuery(db, getIssue),
-    setIssueStatus: bindQuery(db, setIssueStatus),
-    resolveOpenIssues: bindQuery(db, resolveOpenIssues),
-    countOpenIssues: bindQuery(db, countOpenIssues),
-    setAgentWorkspaceMib: bindQuery(db, setAgentWorkspaceMib),
-    setMachineWorkspaceMib: bindQuery(db, setMachineWorkspaceMib),
-    moveAgent: bindQuery(db, moveAgent),
-    listGuildRepositories: bindQuery(db, listGuildRepositories),
-    getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
-    saveMcpConnection: bindQuery(db, saveMcpConnection),
-    getOrgMonthlyUsage: bindQuery(db, getOrgMonthlyUsage),
     getOrgModelProvider: bindQuery(db, getOrgModelProvider),
+  };
+}
+
+/** The db/ functions a generation loop and each of its parts read and write through, on `db`. */
+export function generationDatabase(db: Queryable) {
+  return {
+    ...groupChatDatabase(db),
+    ...issuesDatabase(db),
+    ...scheduleDatabase(db),
+    ...scriptDatabase(db),
+    ...activeGenerationsDatabase(db),
+    ...runEventsDatabase(db),
+    ...agentMachinesDatabase(db),
+    ...runPreparationDatabase(db),
+    ...modelCompletionDatabase(db),
+    ...codingRunsDatabase(db),
+    ...workspaceLimitsDatabase(db),
+    ...toolCallsDatabase(db),
+    ...runSecretsDatabase(db),
+    ...runsDatabase(db),
+    ...runChainsDatabase(db),
+    ...runGeneratorDatabase(db),
+    ...loopDatabase(db),
   };
 }
 
 export type GenerationDatabase = ReturnType<typeof generationDatabase>;
 
+/**
+ * What a generation loop runs with, built once at composition: its database, notes, and
+ * machines, and the services its runs call. A service left out takes core's own.
+ */
+export type GenerationLoopServices = {
+  db: GenerationDatabase;
+  notes: NotesStore;
+  /** Where machine directories are kept when the provider names no host for a machine. */
+  workspaceRoot: string;
+  sandboxes: GenerationSandboxes;
+  mcp?: ConnectorPool;
+  artifacts?: ArtifactStore | null;
+  files?: ArtifactFiles | null;
+  attachments?: AttachmentService | null;
+  /** The cap on generations this loop shares with Studio and Builder sessions. */
+  admission?: AdmissionCoordinator;
+  policy?: OrgPolicy;
+  /** What a model provider is called with; core's own rows over `db` when absent. */
+  credentials?: ModelCredentialsProvider;
+  groupRouter?: GroupRouter;
+};
+
+/**
+ * The generation loop: runs are created, generated, cancelled, resumed, and reconciled after
+ * a restart here, each part of a generation in the module named for it, and agents, guilds,
+ * and machines are deleted or moved without a generation under way on them.
+ */
 export class GenerationLoop implements GroupRunner {
   db: GenerationDatabase;
   notes: NotesStore;
@@ -235,48 +161,20 @@ export class GenerationLoop implements GroupRunner {
   chains: RunChains;
   generator: RunGenerator;
   runs: Runs;
-  constructor(
-    db: GenerationDatabase,
-    notes: NotesStore,
-    workspaceRoot: string,
-    sandboxes: GenerationSandboxes,
-    options: {
-      idleTimeoutMs?: number;
-      schedulerTickMs?: number;
-      cancelGraceMs?: number;
-      shutdownTimeoutMs?: number;
-      mcp?: ConnectorPool | null;
-      artifacts?: ArtifactStore | null;
-      files?: ArtifactFiles | null;
-      attachments?: AttachmentService | null;
-      admission?: AdmissionCoordinator;
-      policy?: OrgPolicy;
-      /** What a model provider is called with; core's own rows over `db` when absent. */
-      credentials?: ModelCredentialsProvider;
-      groupRouter?: GroupRouter;
-    } = {},
-  ) {
+  constructor(services: GenerationLoopServices, timings: GenerationLoopTimings = LOOP_TIMINGS) {
+    const { db, notes, workspaceRoot, sandboxes } = services;
     this.db = db;
     this.notes = notes;
-    this.mcp = options.mcp ?? new McpPool();
-    this.artifacts = options.artifacts ?? null;
-    this.files = options.files ?? null;
-    this.attachments = options.attachments ?? null;
-    this.policy = options.policy ?? OPEN_POLICY;
-    this.generations = new ActiveGenerations(db, options.admission ?? new AdmissionCoordinator(), this.policy);
+    this.mcp = services.mcp ?? new McpPool();
+    this.artifacts = services.artifacts ?? null;
+    this.files = services.files ?? null;
+    this.attachments = services.attachments ?? null;
+    this.policy = services.policy ?? OPEN_POLICY;
+    this.generations = new ActiveGenerations(db, services.admission ?? new AdmissionCoordinator(), this.policy);
     this.events = new RunEvents(db);
-    this.credentials = options.credentials ?? coreModelCredentials(db);
-    this.machines = new AgentMachines(
-      { db, sandboxes, workspaceRoot, generations: this.generations },
-      options.idleTimeoutMs ?? SANDBOX_IDLE_TIMEOUT_MS,
-    );
-    if (options.cancelGraceMs !== undefined) {
-      generationLive.cancelGraceMs = options.cancelGraceMs;
-    }
-    if (options.shutdownTimeoutMs !== undefined) {
-      generationLive.shutdownTimeoutMs = options.shutdownTimeoutMs;
-    }
-    const groupRouter = options.groupRouter ?? defaultGroupRouter();
+    this.credentials = services.credentials ?? coreModelCredentials(db);
+    this.machines = new AgentMachines({ db, sandboxes, workspaceRoot, generations: this.generations }, timings.idleTimeoutMs);
+    const groupRouter = services.groupRouter ?? defaultGroupRouter();
     this.groupChat = new GroupChat(db, {
       is_deleting: (guildId) => this.isDeletingGuild(guildId),
       router: groupRouter,
@@ -322,7 +220,7 @@ export class GenerationLoop implements GroupRunner {
         schedules: this.schedules,
         starter: this,
       },
-      options.schedulerTickMs ?? SCHEDULER_TICK_MS,
+      timings.schedulerTickMs,
     );
     this.chains = new RunChains({ db, events: this.events, completion: this.completion, runs: this.runs });
     this.generator = new RunGenerator({
@@ -439,11 +337,7 @@ export class GenerationLoop implements GroupRunner {
     this.generations.holdAgent(agentId);
     try {
       await this.machines.removeAgent(agent);
-      await this.notes.deleteAgent(
-        String(agent.org_slug),
-        String(agent.guild_name),
-        String(agent.name),
-      );
+      await this.notes.deleteAgent(agent.org_slug, agent.guild_name, agent.name);
       await this.db.deleteAgent(agentId);
     } finally {
       this.generations.releaseAgent(agentId);
@@ -470,7 +364,7 @@ export class GenerationLoop implements GroupRunner {
           await this.machines.removeAgent(agent);
         }
       }
-      await this.notes.deleteGuild(String(guild.org_slug), String(guild.name));
+      await this.notes.deleteGuild(guild.org_slug, guild.name);
       await this.db.deleteGuild(guildId);
     } finally {
       this.generations.releaseGuild(guildId, agentIds);
@@ -495,24 +389,41 @@ export class GenerationLoop implements GroupRunner {
     if (runHitTerminalCap(run)) {
       throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
     }
-    const agent = await this.db.getAgent(String(run.agent_id));
-    if (agent === null) {
+    if ((await this.db.getAgent(run.agent_id)) === null) {
       throw new RunRequestError(404, "agent not found");
     }
-    const now = new Date();
-    await this.db.reopenRun(runId, now);
-    const row = await this.db.getRun(runId);
-    if (row === null) {
-      throw new RunRequestError(404, "run not found");
-    }
-    return this.runView(row);
+    await this.db.reopenRun(runId, new Date());
+    return this.currentRunView(runId);
   }
 
+  /** Adds the operator's message to the run as its next generation, and generates it. */
   async addMessage(
     runId: string,
     content: string,
     attachments: AttachmentRef[] = [],
   ): Promise<Record<string, unknown>> {
+    const run = await this.runTakingMessages(runId);
+    try {
+      await this.beginGeneration(runId, run.agent_id);
+    } catch (error) {
+      if (error instanceof ConflictError) {
+        throw new RunRequestError(409, error.message);
+      }
+      throw error;
+    }
+    let generation: number;
+    try {
+      generation = await this.insertOperatorMessage(run, content, attachments);
+    } catch (error) {
+      this.endGeneration(runId);
+      throw error;
+    }
+    this.generateInBackground(runId, generation);
+    return this.currentRunView(runId);
+  }
+
+  /** The run, refused unless it takes an operator's message: active, direct or resumed, and not continued. */
+  private async runTakingMessages(runId: string): Promise<RunRow> {
     const run = await this.db.getRun(runId);
     if (run === null) {
       throw new RunRequestError(404, "run not found");
@@ -527,42 +438,28 @@ export class GenerationLoop implements GroupRunner {
     if (run.status !== "active") {
       throw new RunRequestError(409, "this run has ended; resume it to continue");
     }
-    try {
-      await this.beginGeneration(runId, String(run.agent_id));
-    } catch (error) {
-      if (error instanceof ConflictError) {
-        throw new RunRequestError(409, error.message);
-      }
-      throw error;
+    return run;
+  }
+
+  /** Inserts the operator's message as the run's next generation, with the run's secrets synced; returns its number. */
+  private async insertOperatorMessage(run: RunRow, content: string, attachments: AttachmentRef[]): Promise<number> {
+    const now = new Date();
+    const generation = await this.db.nextGeneration(run.id);
+    const agent = await this.db.getAgent(run.agent_id);
+    const seq = await this.db.nextSeq(run.id);
+    if (agent !== null) {
+      await this.secrets.sync(agent);
     }
-    let generation: number;
-    try {
-      const now = new Date();
-      generation = await this.db.nextGeneration(runId);
-      const agent = await this.db.getAgent(String(run.agent_id));
-      const seq = await this.db.nextSeq(runId);
-      if (agent !== null) {
-        await this.secrets.sync(agent);
-      }
-      await this.db.insertMessage(
-        {
-          runId,
-          seq,
-          payload: { role: "user", content },
-          metadata: { generation, source: "ui", ...(attachments.length ? { attachments } : {}) },
-        },
-        now,
-      );
-    } catch (error) {
-      this.endGeneration(runId);
-      throw error;
-    }
-    this.generateInBackground(runId, generation);
-    const row = await this.db.getRun(runId);
-    if (row === null) {
-      throw new RunRequestError(404, "run not found");
-    }
-    return this.runView(row);
+    await this.db.insertMessage(
+      {
+        runId: run.id,
+        seq,
+        payload: { role: "user", content },
+        metadata: { generation, source: "ui", ...(attachments.length ? { attachments } : {}) },
+      },
+      now,
+    );
+    return generation;
   }
 
   async cancel(runId: string): Promise<Record<string, unknown> | null> {
@@ -619,8 +516,16 @@ export class GenerationLoop implements GroupRunner {
     return (await this.db.listRuns(agentId)).map((item) => this.runView(item));
   }
 
-  runView(row: Record<string, unknown>): Record<string, unknown> {
-    return runItem(row, { generating: this.isGenerating(String(row.id)) });
+  runView(row: RunRow): Record<string, unknown> {
+    return runItem(row, { generating: this.isGenerating(row.id) });
+  }
+
+  private async currentRunView(runId: string): Promise<Record<string, unknown>> {
+    const row = await this.db.getRun(runId);
+    if (row === null) {
+      throw new RunRequestError(404, "run not found");
+    }
+    return this.runView(row);
   }
 
   /** Admits a generation of the run on its agent; the agent's machine stops counting down to its idle stop. */

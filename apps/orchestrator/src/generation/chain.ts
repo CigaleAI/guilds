@@ -1,8 +1,8 @@
 import { DEFAULT_MAX_INPUT_TOKENS } from "../agents/validation.js";
 import { getAgent } from "../db/agents.js";
-import { jsonObj } from "../db/json.js";
+import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { completeRun, getRun, listMessages, mergeRunMetadata } from "../db/runs.js";
+import { completeRun, getRun, listMessages, mergeRunMetadata, type RunRow } from "../db/runs.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE, type Completion } from "../llm/index.js";
 import { remainingAfter, stampToolResult } from "../toolbox/index.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
@@ -35,33 +35,24 @@ export const MAX_CHAIN_MESSAGE = `This task reached ${MAX_CHAIN_RUNS} chained ru
 export type ChainPosition = { root_run_id: string; index: number; previous_run_id: string | null };
 
 /** Where a run sits in its chain: a run without `metadata.chain` is the first of its own. */
-export function chainOf(run: Record<string, unknown>): ChainPosition {
-  const metadata = jsonObj(run.metadata);
-  const chain =
-    metadata && typeof metadata === "object" && !Array.isArray(metadata)
-      ? (metadata as Record<string, unknown>).chain
-      : null;
-  if (chain && typeof chain === "object" && !Array.isArray(chain)) {
-    const record = chain as Record<string, unknown>;
-    const index = Number(record.index);
-    if (typeof record.root_run_id === "string" && Number.isInteger(index) && index >= 1) {
+export function chainOf(run: Pick<RunRow, "id" | "metadata">): ChainPosition {
+  const chain = run.metadata.chain;
+  if (isPlainRecord(chain)) {
+    const index = Number(chain.index);
+    if (typeof chain.root_run_id === "string" && Number.isInteger(index) && index >= 1) {
       return {
-        root_run_id: record.root_run_id,
+        root_run_id: chain.root_run_id,
         index,
-        previous_run_id: typeof record.previous_run_id === "string" ? record.previous_run_id : null,
+        previous_run_id: typeof chain.previous_run_id === "string" ? chain.previous_run_id : null,
       };
     }
   }
-  return { root_run_id: String(run.id), index: 1, previous_run_id: null };
+  return { root_run_id: run.id, index: 1, previous_run_id: null };
 }
 
 /** The run that continued this one, when it did. */
-export function continuedBy(run: Record<string, unknown>): string | null {
-  const metadata = jsonObj(run.metadata);
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return null;
-  }
-  const next = (metadata as Record<string, unknown>).continued_by_run_id;
+export function continuedBy(run: Pick<RunRow, "metadata">): string | null {
+  const next = run.metadata.continued_by_run_id;
   return typeof next === "string" && next ? next : null;
 }
 
@@ -73,7 +64,7 @@ export function handoffText(payload: Record<string, unknown>): string {
   }
   if (Array.isArray(content)) {
     return content
-      .map((part) => (part && typeof part === "object" ? String((part as { text?: unknown }).text ?? "") : ""))
+      .map((part) => (isPlainRecord(part) ? String(part.text ?? "") : ""))
       .join("")
       .trim();
   }

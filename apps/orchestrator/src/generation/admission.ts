@@ -56,16 +56,8 @@ export class AdmissionCoordinator {
       if (this.maxTotal > 0 && this.slots.size >= this.maxTotal) {
         throw new AdmissionConflictError("the server is at its generation limit; try again shortly");
       }
-      if (orgId && Number.isFinite(maxConcurrent)) {
-        let busy = 0;
-        for (const slot of this.slots.values()) {
-          if (slot.orgId === orgId) {
-            busy += 1;
-          }
-        }
-        if (busy >= Number(maxConcurrent)) {
-          throw new AdmissionConflictError("plan limit reached: concurrent generations");
-        }
+      if (orgId && Number.isFinite(maxConcurrent) && this.orgCount(orgId) >= Number(maxConcurrent)) {
+        throw new AdmissionConflictError("plan limit reached: concurrent generations");
       }
       this.slots.set(key, { kind, id, orgId });
     } finally {

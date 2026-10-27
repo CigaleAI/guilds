@@ -35,12 +35,12 @@ test(
     await notes.ensureSystemPrompt();
     const db = database.pool;
     const workspaceRoot = tempDir("guilds-group-read-workspaces-");
-    const generation = new GenerationLoop(
-      generationDatabase(db),
+    const generation = new GenerationLoop({
+      db: generationDatabase(db),
       notes,
       workspaceRoot,
-      new ExportSandboxes(workspaceRoot),
-    );
+      sandboxes: new ExportSandboxes(workspaceRoot),
+    });
     const app = await buildApp(database, {
       db,
       notes,

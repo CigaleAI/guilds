@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
@@ -45,11 +45,17 @@ test(
     const upstream = await startSandboxUpstream({ subprotocol: "tty" });
     sandboxes.cliBase = upstream.base;
     const secret = `/t/${sandboxes.cliToken}`;
-    const generation = new GenerationLoop(generationDatabase(db), notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
-      mcp: new McpPool(),
-      artifacts,
-      idleTimeoutMs: 5 * 60 * 1000,
-    });
+    const generation = new GenerationLoop(
+      {
+        db: generationDatabase(db),
+        notes,
+        workspaceRoot: env.WORKSPACE_ROOT ?? "",
+        sandboxes,
+        mcp: new McpPool(),
+        artifacts,
+      },
+      { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
+    );
     const app = await buildApp(database, {
       db,
       notes,

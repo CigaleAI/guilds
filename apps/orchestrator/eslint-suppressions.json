@@ -354,21 +354,6 @@
       "count": 1
     }
   },
-  "src/generation/admission.ts": {
-    "max-depth": {
-      "count": 1
-    }
-  },
-  "src/generation/chain.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
-    }
-  },
-  "src/generation/index.ts": {
-    "complexity": {
-      "count": 2
-    }
-  },
   "src/github/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 12

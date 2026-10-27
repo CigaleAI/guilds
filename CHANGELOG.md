@@ -18,6 +18,11 @@ new **State › Files** view of a guild and of an agent, and give each
 file an access list like a note's ([Files](docs/concepts/files.md)).
 Migration 0013 adds the `file` kind.
 
+**Rebuild.** The diff of a run's changes, the diff of a `code_task`,
+and its log answer 503 when the agent's secrets cannot be read, where
+they were shown unredacted
+([SEC-49](docs/architecture/security-register.md#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read)).
+
 **Breaking for API clients.** The notes routes moved from `/files` to
 `/notes`: `/api/agents/:id/notes`, `/api/guilds/:id/notes`, and
 `/api/org/notes`. The guild's notes view is **State › Notes** at

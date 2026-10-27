@@ -4,7 +4,13 @@ import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
 import type { ArtifactActor } from "../../src/artifacts/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
-import { GenerationLoop, type GenerationDatabase } from "../../src/generation/index.js";
+import {
+  GenerationLoop,
+  LOOP_TIMINGS,
+  type GenerationDatabase,
+  type GenerationLoopServices,
+  type GenerationLoopTimings,
+} from "../../src/generation/index.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -916,19 +922,28 @@ export function parsedState(system: string): Record<string, unknown> {
   return JSON.parse(rest) as Record<string, unknown>;
 }
 
+/** The services and timings a test loop is built with besides its database, notes, root, and sandboxes. */
+export type LoopOptions = Partial<Omit<GenerationLoopServices, "db" | "notes" | "workspaceRoot" | "sandboxes">> &
+  Partial<GenerationLoopTimings>;
+
 export function makeLoop(
   db: object,
   notes: object,
   workspaceRoot: string,
   sandboxes: object,
-  options: ConstructorParameters<typeof GenerationLoop>[4] = {},
+  options: LoopOptions = {},
 ): GenerationLoop {
+  const { idleTimeoutMs = 0, schedulerTickMs = LOOP_TIMINGS.schedulerTickMs, ...services } = options;
   return new GenerationLoop(
-    db as GenerationDatabase,
-    notes as NotesStore,
-    workspaceRoot,
-    sandboxes as GenerationSandboxes,
-    { idleTimeoutMs: 0, credentials: TEST_CREDENTIALS, ...options },
+    {
+      db: db as GenerationDatabase,
+      notes: notes as NotesStore,
+      workspaceRoot,
+      sandboxes: sandboxes as GenerationSandboxes,
+      credentials: TEST_CREDENTIALS,
+      ...services,
+    },
+    { idleTimeoutMs, schedulerTickMs },
   );
 }
 

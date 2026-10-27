@@ -33,7 +33,12 @@ test("an operator's inbox holds open issues and unread tags from the guilds they
   await notes.ensureSystemPrompt();
   const db = database.pool;
   const workspaceRoot = tempDir("guilds-notifications-workspaces-");
-  const generation = new GenerationLoop(generationDatabase(db), notes, workspaceRoot, new ExportSandboxes(workspaceRoot));
+  const generation = new GenerationLoop({
+    db: generationDatabase(db),
+    notes,
+    workspaceRoot,
+    sandboxes: new ExportSandboxes(workspaceRoot),
+  });
   const app = await buildApp(database, {
     db,
     notes,

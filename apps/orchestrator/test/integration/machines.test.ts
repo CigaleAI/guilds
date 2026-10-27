@@ -5,7 +5,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/db/client.js";
-import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
@@ -39,11 +39,17 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const workspaceRoot = env.WORKSPACE_ROOT ?? "";
   const sandboxes = new ExportSandboxes(workspaceRoot);
-  const generation = new GenerationLoop(generationDatabase(db), notes, workspaceRoot, sandboxes, {
-    mcp: new McpPool(),
-    artifacts,
-    idleTimeoutMs: 5 * 60 * 1000,
-  });
+  const generation = new GenerationLoop(
+    {
+      db: generationDatabase(db),
+      notes,
+      workspaceRoot,
+      sandboxes,
+      mcp: new McpPool(),
+      artifacts,
+    },
+    { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
+  );
   const app = await buildApp(database, {
     db,
     notes,

@@ -94,7 +94,11 @@ test("R6 HTTP SSE and WS recordings replay over real HTTP", { timeout: 180_000 }
   const stream = new StreamScript();
   live.streamCompletion = ((options: Parameters<typeof originalStream>[0]) =>
     stream.run(options)) as typeof live.streamCompletion;
-  const generation = new GenerationLoop(generationDatabase(db), notes, env.WORKSPACE_ROOT ?? "", sandboxes, {
+  const generation = new GenerationLoop({
+    db: generationDatabase(db),
+    notes,
+    workspaceRoot: env.WORKSPACE_ROOT ?? "",
+    sandboxes,
     mcp: new McpPool(),
     artifacts,
   });

@@ -6,7 +6,7 @@ import { buildApp } from "../../src/app.js";
 import { ArtifactStore } from "../../src/artifacts/index.js";
 import { connect } from "../../src/db/client.js";
 import { HANDOFF_REQUEST, HANDOFF_TOOL_REFUSED } from "../../src/generation/chain.js";
-import { generationDatabase, GenerationLoop, RunRequestError } from "../../src/generation/index.js";
+import { generationDatabase, GenerationLoop, LOOP_TIMINGS, RunRequestError } from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
@@ -87,11 +87,17 @@ test("a coding run near its input limit hands off and continues in a new run", {
     sandboxes.running.add(agentId);
     return sandbox;
   }) as unknown as FakeSandboxes["ensure"];
-  const loop = new GenerationLoop(generationDatabase(db), notes, tempDir("guilds-chain-ws-"), sandboxes as unknown as GenerationSandboxes, {
-    mcp: new McpPool(),
-    artifacts,
-    idleTimeoutMs: 0,
-  });
+  const loop = new GenerationLoop(
+    {
+      db: generationDatabase(db),
+      notes,
+      workspaceRoot: tempDir("guilds-chain-ws-"),
+      sandboxes: sandboxes as unknown as GenerationSandboxes,
+      mcp: new McpPool(),
+      artifacts,
+    },
+    { ...LOOP_TIMINGS, idleTimeoutMs: 0 },
+  );
   // One hundred tokens per message: with a 1000-token input limit, the hand-off comes at 7 messages.
   live.countInputTokens = ((_model: string, payloads: unknown[]) => payloads.length * 100) as typeof live.countInputTokens;
 

@@ -47,7 +47,11 @@ test("operators upload images, attach them to a run, and cannot read another org
   const attachments = new AttachmentService(attachmentDatabase(db), new MemoryBlobStore());
   const artifacts = new ArtifactStore(database.pool, notes.templates);
   const workspaceRoot = tempDir("guilds-attachments-workspaces-");
-  const generation = new GenerationLoop(generationDatabase(db), notes, workspaceRoot, new ExportSandboxes(workspaceRoot), {
+  const generation = new GenerationLoop({
+    db: generationDatabase(db),
+    notes,
+    workspaceRoot,
+    sandboxes: new ExportSandboxes(workspaceRoot),
     attachments,
     artifacts,
   });

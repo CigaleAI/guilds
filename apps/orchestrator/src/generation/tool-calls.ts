@@ -5,7 +5,7 @@ import { getAgent, type AgentRow } from "../db/agents.js";
 import { isPlainRecord, recordOf } from "../db/json.js";
 import { getMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { getRun, listMessages } from "../db/runs.js";
+import { getRun, listMessages, type RunRow } from "../db/runs.js";
 import { McpDisconnectedError, McpError, mcpDatabase } from "../mcp/index.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { callSegment, repeatedReadStep, repeatedReadText } from "../toolbox/code.js";
@@ -54,9 +54,13 @@ function callArguments(call: Record<string, unknown>): Record<string, unknown> {
 }
 
 /** A lost `code_task` call, from what its run remembered about it and from the call's own arguments. */
-export function lostCodeTask(run: Record<string, unknown>, call: Record<string, unknown>, harness: Harness): LostCodeTask {
+export function lostCodeTask(
+  run: Pick<RunRow, "id" | "metadata">,
+  call: Record<string, unknown>,
+  harness: Harness,
+): LostCodeTask {
   const callId = callSegment(String(call.id ?? ""));
-  const remembered = recordOf(recordOf(run.metadata).harness_task);
+  const remembered = recordOf(run.metadata.harness_task);
   const known = remembered.call_id === callId ? remembered : {};
   const args = callArguments(call);
   return {
@@ -64,7 +68,7 @@ export function lostCodeTask(run: Record<string, unknown>, call: Record<string, 
     repository: optionalText(known.repository) ?? optionalText(args.repo),
     session_id: optionalText(known.session_id) ?? optionalText(args.session_id),
     log_path: optionalText(known.log_path),
-    run_id: String(run.id),
+    run_id: run.id,
     call_id: callId,
   };
 }

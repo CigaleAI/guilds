@@ -129,7 +129,11 @@ export async function createServer(
   const files = new ArtifactFiles(artifacts, blobs);
   // Agent runs, Studio sessions and Builder sessions share one cap on the generations in progress.
   const admission = new AdmissionCoordinator(config.maxConcurrentGenerations);
-  const generation = new GenerationLoop(generationDatabase(db), notes, config.workspaceRoot, sandboxes, {
+  const generation = new GenerationLoop({
+    db: generationDatabase(db),
+    notes,
+    workspaceRoot: config.workspaceRoot,
+    sandboxes,
     mcp,
     artifacts,
     files,
