@@ -1,6 +1,4 @@
-import { existsSync, renameSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
 import {
@@ -85,17 +83,6 @@ import {
 } from "../access/index.js";
 import { RunRequestError, type GenerationLoop } from "../generation/index.js";
 import { GroupChatError } from "../groupchat/index.js";
-import {
-  canManageMembers,
-  canManageOwners,
-  canManageSettings,
-  memberItem,
-  OrgValidationError,
-  orgItem,
-  validateOrgName,
-  validateRole,
-  validateSlug,
-} from "../organisations/index.js";
 import { guildDatabase, persistGuild } from "../guilds/persist.js";
 import {
   assertGuildAgentRoom,
@@ -135,17 +122,10 @@ import { usageForOrg } from "./usage-view.js";
 import { registerStudioRoutes } from "./studio-routes.js";
 import { registerFileRoutes } from "./file-routes.js";
 import { publishGroup } from "./publish.js";
-import {
-  SEED_USER_IDS,
-  userItem,
-  UserValidationError,
-  validateUserEmail,
-  validateUserName,
-} from "../users/index.js";
 import { messageItem } from "../db/views.js";
 import { memoryHistory } from "../memory/history.js";
 import { isUniqueViolation } from "../db/pg.js";
-import { GuildNameTaken, LastGuildAdmin, LastOrgOwner, SecretNameTaken } from "../db/errors.js";
+import { GuildNameTaken, LastGuildAdmin, SecretNameTaken } from "../db/errors.js";
 import { assertCanPlaceOn } from "../machines/access.js";
 import type { AgentNeeds, MachineRow } from "../machines/index.js";
 import {
@@ -207,6 +187,8 @@ import {
 } from "./artifact-notes.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
+import { registerOrgRoutes } from "./org-routes.js";
+import { registerUserRoutes } from "./user-routes.js";
 import { registerModelProviderRoutes } from "./model-provider-routes.js";
 import {
   clearGithubOauthStateCookie,
@@ -231,7 +213,7 @@ import { registerBuilderCapabilityRoutes } from "./builder-capability-routes.js"
 import { registerBuilderSessionRoutes } from "./builder-routes.js";
 import { registerRecipeRoutes } from "./recipe-routes.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
-import { currentOrg, currentUser, identityDatabase, type IdentityRequest } from "./identity.js";
+import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import {
   administeredGuild,
@@ -246,31 +228,15 @@ import {
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { bodyOf, param } from "./request.js";
 import {
-  deleteMember,
   getMembership,
-  insertMember,
-  insertOrg,
-  listMembers,
-  listOrgsForUser,
-  updateMemberRole,
-  updateOrg,
 } from "../db/orgs.js";
 import {
   getGuild,
   listGuildsForUser,
   setGuildOperator,
-  soleAdminGuilds,
   updateGuild,
 } from "../db/guilds.js";
 import { placementMachine } from "../db/machines.js";
-import {
-  deleteUser,
-  getUser,
-  getUserByName,
-  insertUser,
-  listUsers,
-  setUserEmail,
-} from "../db/users.js";
 import { getAgent, listAgents, updateAgentConfig } from "../db/agents.js";
 import { getGroupChatSeenThrough, markGroupChatSeen } from "../db/group-chat.js";
 import { getSchedule, listSchedules } from "../db/schedules.js";
@@ -554,32 +520,6 @@ async function setOperator(
   }
 }
 
-/** Runs an owner change, answering 409 when it would leave the organisation without an owner. */
-async function refuseLastOrgOwner<T>(change: () => Promise<T>): Promise<T> {
-  try {
-    return await change();
-  } catch (error) {
-    if (error instanceof LastOrgOwner) {
-      throw new HttpError(409, error.message);
-    }
-    throw error;
-  }
-}
-
-// Leaving a guild without an admin would strand it, so removing the user
-// waits until another admin is named.
-async function refuseSoleGuildAdmin(
-  db: AppDeps["db"],
-  userId: string,
-  orgId: string | null,
-): Promise<void> {
-  const guilds = await soleAdminGuilds(db, userId, orgId);
-  if (guilds.length) {
-    const names = guilds.map((guild) => String(guild.name)).join(", ");
-    throw new HttpError(409, `user is the only admin of ${names}; name another admin first`);
-  }
-}
-
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, notes, scripts, schedules, artifacts } = deps;
   const identityDb = identityDatabase(db);
@@ -626,6 +566,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     deps.identity?.onSend?.(request, reply);
     return payload;
   });
+  await registerUserRoutes(app, deps);
+  await registerOrgRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -688,333 +630,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
-  });
-
-  /**
-   * The user directory. On a compat-cookie box whoever reaches it may act as any user, so it is
-   * open; behind an authenticating proxy it is the instance administrator's; a mode an extension
-   * adds has none.
-   */
-  async function requireUserDirectory(request: IdentityRequest): Promise<void> {
-    const mode = deps.config?.authMode ?? "compat-cookie";
-    if (mode === "compat-cookie") {
-      return;
-    }
-    if (mode === "trusted-header" && !deps.identity) {
-      const user = await currentUser(identityDb, request, deps);
-      if (await isInstanceAdmin(deps, String(user.id))) {
-        return;
-      }
-    }
-    throw new HttpError(404, "Not Found");
-  }
-
-  /** The 409 for a user insert or update that broke a unique index. */
-  function userConflict(error: unknown): HttpError {
-    const index = (error as { constraint?: string }).constraint;
-    return new HttpError(409, index === "users_email_lower_unique" ? "email already belongs to a user" : "user name already exists");
-  }
-
-  async function requireInstanceAdminUnlessCompat(user: Record<string, unknown>): Promise<void> {
-    if ((deps.config?.authMode ?? "compat-cookie") === "compat-cookie") {
-      return;
-    }
-    if (!(await isInstanceAdmin(deps, String(user.id)))) {
-      throw new HttpError(404, "Not Found");
-    }
-  }
-
-  app.get("/api/users", async (request) => {
-    await requireUserDirectory(request);
-    return (await listUsers(db)).map((row) => userItem(row));
-  });
-
-  app.post("/api/users", async (request, reply) => {
-    await requireUserDirectory(request);
-    const missing = missingBodyFields(request.body, ["name"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const name = validateUserName(String(body.name ?? ""));
-      const email = validateUserEmail(body.email ?? null);
-      const row = await insertUser(
-        db,
-        { userId: newId("user"), name, image: null, email },
-        new Date(),
-        deps.orgCreated,
-      );
-      await send(reply, 201, userItem(row));
-    } catch (error) {
-      if (error instanceof UserValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      if (isUniqueViolation(error)) {
-        throw userConflict(error);
-      }
-      throw error;
-    }
-  });
-
-  /** Sets the email a user is identified by behind an authenticating proxy; null clears it. */
-  app.patch("/api/users/:user_id", async (request) => {
-    await requireUserDirectory(request);
-    const body = bodyOf(request);
-    if (!("email" in body)) {
-      throw new HttpError(422, "email is required");
-    }
-    let row;
-    try {
-      row = await setUserEmail(db, param(request, "user_id"), validateUserEmail(body.email), new Date());
-    } catch (error) {
-      if (error instanceof UserValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      if (isUniqueViolation(error)) {
-        throw userConflict(error);
-      }
-      throw error;
-    }
-    if (row === null) {
-      throw new HttpError(404, "user not found");
-    }
-    return userItem(row);
-  });
-
-  app.delete("/api/users/:user_id", async (request, reply) => {
-    await requireUserDirectory(request);
-    const userId = param(request, "user_id");
-    const row = await getUser(db, userId);
-    if (row === null) {
-      throw new HttpError(404, "user not found");
-    }
-    if (SEED_USER_IDS.has(userId)) {
-      throw new HttpError(400, "seed user cannot be deleted");
-    }
-    await refuseSoleGuildAdmin(db, userId, null);
-    const deleted = await refuseLastOrgOwner(() => deleteUser(db, userId));
-    if (deleted === null) {
-      throw new HttpError(404, "user not found");
-    }
-    await send(reply, 204);
-  });
-
-  app.get("/api/orgs", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    return (await listOrgsForUser(db, String(user.id))).map((row) => orgItem(row));
-  });
-
-  app.post("/api/orgs", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireInstanceAdminUnlessCompat(user);
-    const missing = missingBodyFields(request.body, ["name", "slug"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const name = validateOrgName(String(body.name ?? ""));
-      const slug = validateSlug(String(body.slug ?? ""));
-      const row = await insertOrg(
-        db,
-        { orgId: newId("org"), name, slug, userId: String(user.id) },
-        new Date(),
-        deps.orgCreated,
-      );
-      const item = orgItem(row);
-      item.role = "owner";
-      await send(reply, 201, item);
-    } catch (error) {
-      if (error instanceof OrgValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      if (isUniqueViolation(error)) {
-        throw new HttpError(409, "organisation slug already exists");
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/orgs/:org_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const orgId = param(request, "org_id");
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    return orgItem(membership);
-  });
-
-  app.patch("/api/orgs/:org_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const orgId = param(request, "org_id");
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    if (!canManageSettings(String(membership.role))) {
-      throw new HttpError(404, "organisation not found");
-    }
-    const body = bodyOf(request);
-    let name: string | null = null;
-    let slug: string | null = null;
-    try {
-      if (body.name !== undefined) {
-        name = validateOrgName(String(body.name ?? ""));
-      }
-      if (body.slug !== undefined) {
-        slug = validateSlug(String(body.slug ?? ""));
-      }
-    } catch (error) {
-      if (error instanceof OrgValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-    const previousSlug = String(membership.slug);
-    let row;
-    try {
-      row = await updateOrg(db, orgId, new Date(), { name, slug });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new HttpError(409, "organisation slug already exists");
-      }
-      throw error;
-    }
-    if (row === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    if (slug && slug !== previousSlug) {
-      const src = path.join(notes.root, "orgs", previousSlug);
-      const dest = path.join(notes.root, "orgs", slug);
-      if (existsSync(src) && !existsSync(dest)) {
-        renameSync(src, dest);
-      }
-    }
-    const item = orgItem(row);
-    item.role = membership.role;
-    return item;
-  });
-
-  app.get("/api/orgs/:org_id/members", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const orgId = param(request, "org_id");
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    return (await listMembers(db, orgId)).map((row) => memberItem(row));
-  });
-
-  app.post("/api/orgs/:org_id/members", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const orgId = param(request, "org_id");
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    const body = bodyOf(request);
-    if (!("name" in body)) {
-      const missing = missingBodyFields(request.body, ["user_id"]);
-      if (missing) {
-        throw missing;
-      }
-    }
-    let role;
-    try {
-      role = validateRole(String(body.role ?? "member"));
-    } catch (error) {
-      if (error instanceof OrgValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-    if (role === "owner") {
-      if (!canManageOwners(String(membership.role))) {
-        throw new HttpError(404, "organisation not found");
-      }
-    } else if (!canManageMembers(String(membership.role))) {
-      throw new HttpError(404, "organisation not found");
-    }
-    const target =
-      "name" in body
-        ? await getUserByName(db, String(body.name ?? "").trim().replace(/^@/, "").toLowerCase())
-        : await getUser(db, String(body.user_id));
-    if (target === null) {
-      throw new HttpError(404, "user not found");
-    }
-    const userId = String(target.id);
-    try {
-      await insertMember(db, orgId, userId, role, new Date());
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new HttpError(409, "member already exists");
-      }
-      throw error;
-    }
-    const rows = await listMembers(db, orgId);
-    const added = rows.find((row) => row.user_id === userId);
-    await send(reply, 201, memberItem(added ?? {}));
-  });
-
-  app.patch("/api/orgs/:org_id/members/:user_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const orgId = param(request, "org_id");
-    const userId = param(request, "user_id");
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    const body = bodyOf(request);
-    let role;
-    try {
-      role = validateRole(String(body.role ?? ""));
-    } catch (error) {
-      if (error instanceof OrgValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-    const existing = await getMembership(db, orgId, userId);
-    if (existing === null) {
-      throw new HttpError(404, "member not found");
-    }
-    if (existing.role === "owner" || role === "owner") {
-      if (!canManageOwners(String(membership.role))) {
-        throw new HttpError(404, "organisation not found");
-      }
-    } else if (!canManageMembers(String(membership.role))) {
-      throw new HttpError(404, "organisation not found");
-    }
-    const updated = await refuseLastOrgOwner(() => updateMemberRole(db, orgId, userId, role));
-    if (updated === null) {
-      throw new HttpError(404, "member not found");
-    }
-    const rows = await listMembers(db, orgId);
-    const row = rows.find((item) => item.user_id === userId);
-    return memberItem(row ?? {});
-  });
-
-  app.delete("/api/orgs/:org_id/members/:user_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const orgId = param(request, "org_id");
-    const userId = param(request, "user_id");
-    const membership = await getMembership(db, orgId, String(user.id));
-    if (membership === null) {
-      throw new HttpError(404, "organisation not found");
-    }
-    const existing = await getMembership(db, orgId, userId);
-    if (existing === null) {
-      throw new HttpError(404, "member not found");
-    }
-    const manages = existing.role === "owner" ? canManageOwners : canManageMembers;
-    if (userId !== String(user.id) && !manages(String(membership.role))) {
-      throw new HttpError(404, "organisation not found");
-    }
-    await refuseSoleGuildAdmin(db, userId, orgId);
-    await refuseLastOrgOwner(() => deleteMember(db, orgId, userId));
-    await send(reply, 204);
   });
 
   app.get("/api/guilds", async (request) => {

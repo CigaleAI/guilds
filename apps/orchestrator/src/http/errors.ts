@@ -1,8 +1,13 @@
 import { ArtifactError } from "../artifacts/errors.js";
+import { GuildOperatorError } from "../guilds/operators.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
 import { MachineError } from "../machines/index.js";
+import { OrgValidationError } from "../organisations/index.js";
+import { OrgError } from "../organisations/service.js";
 import { PolicyError } from "../policy/index.js";
 import { RecipeConflictError } from "../recipes/errors.js";
+import { UserError } from "../users/directory.js";
+import { UserValidationError } from "../users/index.js";
 
 export class HttpError extends Error {
   status: number;
@@ -69,13 +74,26 @@ export function notesReadHttp(error: Error): HttpError {
   return new HttpError(message === "invalid path" ? 422 : 404, message);
 }
 
+/** Domain errors that carry the status they answer with. */
+const REFUSALS = [MachineError, PolicyError, ModelNotConnectedError, UserError, OrgError, GuildOperatorError] as const;
+
+/** Domain errors for a value a validator refused, each a 422. */
+const INVALID = [UserValidationError, OrgValidationError] as const;
+
 /**
- * The HTTP answer for a refusal a domain module raises with its own status: a machine request, a
- * policy limit, or a model with no key. Any other error is null.
+ * The HTTP answer for a refusal a domain module raises: one with its own status, or a value its
+ * validator refused. Any other error is null.
  */
 export function domainHttp(error: unknown): HttpError | null {
-  if (error instanceof MachineError || error instanceof PolicyError || error instanceof ModelNotConnectedError) {
-    return new HttpError(error.status, error.message);
+  for (const kind of REFUSALS) {
+    if (error instanceof kind) {
+      return new HttpError(error.status, error.message);
+    }
+  }
+  for (const kind of INVALID) {
+    if (error instanceof kind) {
+      return new HttpError(422, error.message);
+    }
   }
   return null;
 }
