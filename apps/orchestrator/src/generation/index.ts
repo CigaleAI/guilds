@@ -517,7 +517,7 @@ export class GenerationLoop implements GroupRunner {
   }
 
   runView(row: RunRow): Record<string, unknown> {
-    return runItem(row, { generating: this.isGenerating(row.id) });
+    return runItem(row, this.isGenerating(row.id));
   }
 
   private async currentRunView(runId: string): Promise<Record<string, unknown>> {

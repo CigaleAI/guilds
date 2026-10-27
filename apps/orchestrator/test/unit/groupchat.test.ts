@@ -788,15 +788,18 @@ describe("groupchat", { concurrency: 1 }, () => {
     const now = new Date();
     const item = groupMessageItem({
       id: 42,
+      guild_id: "guild_1",
       seq: 7,
       author_type: "agent",
       author_name: "researcher",
       author_agent_id: "a_1",
+      author_user_id: null,
       source_run_id: "r_1",
       content: "found it",
       tagged_names: ["writer"],
       tagged_agent_ids: ["a_2"],
-      created_at: now,
+      tagged_user_ids: [],
+      created_at: now.toISOString(),
     });
     assert.equal(item.id, 42);
     assert.equal(item.seq, 7);

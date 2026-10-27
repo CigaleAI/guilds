@@ -138,7 +138,7 @@ export class Runs {
     if (row === null) {
       throw new RunRequestError(404, "run not found");
     }
-    return runItem(row, { generating: this.generations.isGenerating(row.id) });
+    return runItem(row, this.generations.isGenerating(row.id));
   }
 
   /** Creates the group run a delivery asks for, waits for its generation, and completes the delivery. */

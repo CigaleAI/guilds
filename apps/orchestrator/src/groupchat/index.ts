@@ -11,8 +11,7 @@ import {
   type RecipientDecision,
 } from "../typesafe/index.js";
 import { groupChatHistory, storedTags } from "./history.js";
-import {
-  advanceGroupCursor,
+import { advanceGroupCursor,
   appendGroupChatError,
   clearGroupMessages,
   getGroupChatState,
@@ -20,8 +19,7 @@ import {
   listPendingGroupAgents,
   postAgentGroupMessage,
   postUserGroupMessage,
-  updateGroupAgentMessageLimit,
-} from "../db/group-chat.js";
+  updateGroupAgentMessageLimit, type GroupMessageRow } from "../db/group-chat.js";
 import { getGuild, listGuilds } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
 import { getRun } from "../db/runs.js";
@@ -631,7 +629,7 @@ export class GroupChat {
     if (agent === null || agent.guild_id !== guildId) {
       throw new Error("agent is not a member of this guild");
     }
-    let row: Record<string, unknown> | null;
+    let row: GroupMessageRow | null;
     try {
       row = await this.db.postAgentGroupMessage(
         {

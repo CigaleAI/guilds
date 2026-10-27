@@ -169,7 +169,6 @@ test("run and message views match R0 fixtures", () => {
       payload: { role: "user", content: "hi" },
       metadata: { generation: 1 },
       created_at: "2026-09-13T12:00:00.123456+00:00",
-      cost_usd: 0.001,
     }),
     fixture.message_us,
   );
@@ -199,18 +198,21 @@ test("run and message views match R0 fixtures", () => {
         updated_at: "2026-09-13T12:00:00.123456+00:00",
         kind: "direct",
         group_chat_through_seq: null,
+        schedule_id: null,
       },
-      { generating: true },
+      true,
     ),
     fixture.run,
   );
   assert.deepEqual(
     groupMessageItem({
       id: 9,
+      guild_id: "guild_1",
       seq: 1,
       author_type: "user",
       author_name: "operator",
       author_agent_id: null,
+      author_user_id: null,
       source_run_id: null,
       content: "hello @ada",
       tagged_names: ["ada"],

@@ -830,10 +830,10 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     const routineRows = routines.json() as Array<{ id: string; run_count: number; latest_run: { id: string } | null }>;
     assert.equal(routineRows[0]?.run_count, 1);
     assert.equal(routineRows[0]?.latest_run?.id, "r_ev_wake");
-    const wakeView = runItem((await getRun(db, "r_ev_wake")) as Record<string, unknown>, { generating: false });
+    const wakeView = runItem((await getRun(db, "r_ev_wake"))!, false);
     assert.equal(wakeView.schedule_id, scheduleId);
     assert.equal(wakeView.instruction_hash, "h1");
-    const directView = runItem((await getRun(db, "r_ev_direct")) as Record<string, unknown>, { generating: false });
+    const directView = runItem((await getRun(db, "r_ev_direct"))!, false);
     assert.equal("schedule_id" in directView, false);
 
     // Memory timeline: three versions, the newest written by the wake run with its memory_write call.

@@ -4,7 +4,7 @@ import { getAgent, type AgentRow } from "../db/agents.js";
 import { isPlainRecord, recordOf } from "../db/json.js";
 import { getMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { getRun, listMessages, type RunRow } from "../db/runs.js";
+import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
 import type { Harness } from "../db/schema/index.js";
 import { McpDisconnectedError, McpError, mcpDatabase } from "../mcp/index.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
@@ -78,10 +78,10 @@ export function toolCallsOf(payload: Record<string, unknown>): Array<Record<stri
   return Array.isArray(calls) ? calls.filter(isPlainRecord) : [];
 }
 
-export function executedToolCalls(rows: Array<Record<string, unknown>>): number {
+export function executedToolCalls(rows: Array<Pick<MessageRow, "payload">>): number {
   let total = 0;
   for (const row of rows) {
-    if (recordOf(row.payload).role === "tool") {
+    if (row.payload.role === "tool") {
       total += 1;
     }
   }
@@ -127,13 +127,13 @@ function forgetResolvedToolCall(
 }
 
 export function pendingToolCalls(
-  rows: Array<Record<string, unknown>>,
+  rows: Array<Pick<MessageRow, "payload" | "metadata">>,
 ): Array<[Record<string, unknown>, number]> {
   const pending = new Map<string, [Record<string, unknown>, number]>();
   const order: string[] = [];
   for (const row of rows) {
-    const payload = recordOf(row.payload);
-    const generation = Number(recordOf(row.metadata).generation || 1);
+    const payload = row.payload;
+    const generation = Number(row.metadata.generation || 1);
     if (payload.role === "assistant") {
       rememberPendingAssistantCalls(pending, order, payload, generation);
     } else if (payload.role === "tool") {
@@ -234,8 +234,8 @@ export class ToolCalls {
     let executed = executedToolCalls(history);
     const owner = await db.getAgent(tools.ctx.agent_id);
     const reads = history
-      .filter((row) => recordOf(row.payload).role === "tool")
-      .map((row) => ({ seq: row.seq, metadata: recordOf(row.metadata) }));
+      .filter((row) => row.payload.role === "tool")
+      .map((row) => ({ seq: row.seq, metadata: row.metadata }));
     for (const call of calls) {
       if (generations.isCancelled(turn.runId)) {
         throw new GenerationCancelled();

@@ -59,7 +59,7 @@ test("pendingToolCalls leaves unmatched tool rows out of the pending map", () =>
       },
       metadata: { generation: 1 },
     },
-    { payload: { role: "tool", tool_call_id: "call_other", content: "ok" } },
+    { payload: { role: "tool", tool_call_id: "call_other", content: "ok" }, metadata: {} },
   ]);
   assert.equal(pending.length, 1);
   assert.equal(pending[0]?.[0].id, "call_1");
