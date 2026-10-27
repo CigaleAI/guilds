@@ -1,10 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import { loadOperatorActor, displayPathFor } from "../artifacts/index.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { maxScriptsOf } from "../agents/validation.js";
-import { displayPathFor } from "../artifacts/index.js";
 import type { AgentRow } from "../db/agents.js";
 import { scriptItem, type AgentScript } from "../scripts/catalog.js";
-import { operatorFor } from "./artifact-notes.js";
 import type { AppDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";
 import { currentUser, identityDatabase } from "./identity.js";
@@ -31,7 +30,7 @@ export async function registerScriptRoutes(app: FastifyInstance, deps: AppDeps):
   const identityDb = identityDatabase(db);
 
   async function scriptOperator(user: Record<string, unknown>, agent: AgentRow) {
-    return operatorFor(db, user, {
+    return loadOperatorActor(db, user, {
       orgId: agent.org_id,
       guildId: agent.guild_id,
       agentId: agent.id,

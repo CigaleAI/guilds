@@ -21,7 +21,7 @@ export {
   type StateArtifact,
 } from "./store.js";
 export { ArtifactFiles, fileBlobKey, mimeForName, normalizeMime, validateFileDescription, type FileView } from "./files.js";
-export { agentActor, operatorActor } from "./actors.js";
+export { agentActor, loadOperatorActor, operatorActor, type OperatorScope } from "./actors.js";
 export { type AccessEntry, type AccessList } from "./access.js";
 export {
   inlineTaskEmbeds,

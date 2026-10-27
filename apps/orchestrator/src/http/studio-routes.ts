@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { loadOperatorActor, ArtifactError, collectTaskEmbeds } from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { canManageSettings } from "../organisations/index.js";
-import { ArtifactError, collectTaskEmbeds } from "../artifacts/index.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import type { AppDeps } from "./deps.js";
@@ -12,7 +12,6 @@ import { activityWindow, loadGuildActivity } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
 import { loadGuildReferences } from "../studio/references.js";
 import { loadStateHistory, loadStateItem, loadStateList, parseOperation, parseStateKind } from "../studio/state-data.js";
-import { operatorFor } from "./artifact-notes.js";
 import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
 import { viewDraft } from "../studio/drafts.js";
@@ -404,7 +403,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
     studio.assertLive(session);
     const guildId = String(session.source_guild_id);
-    const actor = await operatorFor(db, user, { orgId: String(session.org_id), guildId });
+    const actor = await loadOperatorActor(db, user, { orgId: String(session.org_id), guildId });
     return { actor, guildId, deps: { db, artifacts: studio.deps.artifacts } };
   };
 
@@ -485,7 +484,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const guildId = String(session.source_guild_id);
-      const actor = await operatorFor(db, user, { orgId: String(session.org_id), guildId });
+      const actor = await loadOperatorActor(db, user, { orgId: String(session.org_id), guildId });
       return await loadGuildReferences({ db, artifacts: studio.deps.artifacts }, actor, guildId);
     } catch (error) {
       mapStudioError(error);

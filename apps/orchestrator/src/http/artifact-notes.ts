@@ -4,7 +4,6 @@ import {
   hostFileDisplayPath,
   listLatestFileChanges,
   normalizeNoteKey,
-  operatorActor,
   parseDisplayPath,
   type ArtifactActor,
   type ArtifactLevel,
@@ -14,7 +13,6 @@ import {
 import { taskDisplayPath } from "../agents/task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { artifactHttp, HttpError } from "./errors.js";
-import { hiddenGuildsFor } from "../db/guilds.js";
 import { getAgentTask, listAgentTaskRevisions, writeAgentTask } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 
@@ -28,21 +26,6 @@ export async function ensureAgentArtifacts(
     guildId: String(agent.guild_id),
     agentId: String(agent.id),
     actor,
-  });
-}
-
-export async function operatorFor(
-  db: Queryable,
-  user: Record<string, unknown>,
-  scope: { orgId: string; guildId?: string | null; agentId?: string | null },
-): Promise<ArtifactActor> {
-  return operatorActor({
-    orgId: scope.orgId,
-    actorId: String(user.id),
-    actorName: String(user.name ?? "operator"),
-    guildId: scope.guildId ?? null,
-    agentId: scope.agentId ?? null,
-    hidden: await hiddenGuildsFor(db, scope.orgId, String(user.id)),
   });
 }
 
