@@ -14,7 +14,7 @@ import {
   validateConfig,
   type AgentConfig,
 } from "../agents/validation.js";
-import { enabledToolNames, resolvedTools } from "../access/index.js";
+
 import { FILE_TOOLS, NOTE_TOOLS } from "../db/seed/catalog.js";
 import {
   agentRuntime,
@@ -23,7 +23,7 @@ import {
   snapshotEnvValues,
 } from "../access/runtime.js";
 import { decryptPayload } from "../credentials/crypto.js";
-import { jsonObj } from "../db/json.js";
+import { isPlainRecord, recordOf } from "../db/json.js";
 import { iso, messageItem, runItem } from "../db/views.js";
 import {
   DeliveryBusyError,
@@ -42,7 +42,6 @@ import { IMAGE_INPUT_TOKENS, type AttachmentRef, type AttachmentService } from "
 import {
   AGENT_TOOL_RESULT_STUB_HINT,
   MIN_UNSTUBBED_TOOL_RESULTS,
-  RUN_PROJECTION_POLICY_VERSION,
   TOOL_RESULT_STUB_MIN_BYTES,
   projectToolResults,
 } from "../conversation/projection.js";
@@ -90,7 +89,6 @@ import {
   connectorGuidance,
   hydratePrompts,
   hydrateStanding,
-  promptHash,
   standingForCapabilities,
 } from "../prompts/index.js";
 import {
@@ -150,8 +148,6 @@ import {
   parseArguments,
   processOutput,
   remainingAfter,
-  REGISTRY,
-  schemasFor,
   stampToolResult,
   toolResultMaxBytes,
   withRemainingToolCalls as _withRemainingToolCalls,
@@ -192,8 +188,8 @@ import {
 } from "../toolbox/harness.js";
 import type { AgentSecretStore } from "../toolbox/types.js";
 import { Issues } from "../issues/index.js";
-import { offeredToolNames } from "../toolbox/offered.js";
-import { dynamicScriptTools, firstClassScriptSchemas, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
+
+import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
 import type { DirectoryNotes } from "../directories/index.js";
 import type { PromptNotes } from "../prompts/index.js";
 import {
@@ -260,15 +256,37 @@ import { getOrgModelProvider } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { agentSecretsDatabase } from "../secrets/agent.js";
 
-export {
-  LOW_TOOL_CALL_BUDGET,
-  LOW_TOOL_CALL_WRAP_UP,
-  remainingAfter,
-  stampToolResult,
-  withRemainingToolCalls,
-} from "../toolbox/index.js";
+import {
+  ConflictError,
+  GenerationCancelled,
+  RunLimitError,
+  RunRequestError,
+} from "./errors.js";
+import {
+  positiveInt,
+  preparedPromptHashes,
+  preparedRunMetadata,
+  preparedSnapshot,
+  type PreparedRun,
+} from "./snapshot.js";
+import {
+  liveOfferedNames,
+  mcpIndex,
+  snapshotOfferedNames,
+  toolSchemaName,
+  withFirstClassScriptTools,
+} from "./offered-tools.js";
+import {
+  executedToolCalls,
+  interruptionRecord,
+  lostCodeTask,
+  pendingToolCalls,
+  toolCallsOf,
+  type LostCodeTask,
+} from "./tool-calls.js";
 
-export const INTERRUPTED_CONTENT = "ERROR: execution interrupted";
+export { RunRequestError } from "./errors.js";
+
 export const SANDBOX_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 export const SCHEDULER_TICK_MS = 30_000;
 export const CANCEL_GRACE_MS = 2_000;
@@ -308,94 +326,12 @@ export const countInputTokensImpl = (...args: Parameters<typeof countInputTokens
 export const cancelGraceMs = CANCEL_GRACE_MS;
 export const shutdownTimeoutMs = SHUTDOWN_TIMEOUT_MS;
 
-export class ConflictError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ConflictError";
-  }
-}
-
-export class RunRequestError extends Error {
-  status: number;
-  detail: string;
-
-  constructor(status: number, detail: string) {
-    super(detail);
-    this.name = "RunRequestError";
-    this.status = status;
-    this.detail = detail;
-  }
-}
-
-export class GenerationCancelled extends Error {
-  constructor(message = "cancelled") {
-    super(message);
-    this.name = "GenerationCancelled";
-  }
-}
-
 /** A coding run's prompt reached the hand-off share of its input limit. */
 class HandoffDue extends Error {
   constructor() {
     super("hand-off due");
     this.name = "HandoffDue";
   }
-}
-
-export class RunLimitError extends Error {
-  operation: string;
-
-  constructor(operation: string, message: string) {
-    super(message);
-    this.name = "RunLimitError";
-    this.operation = operation;
-  }
-}
-
-function asObj(value: unknown): Record<string, unknown> {
-  const loaded = jsonObj(value);
-  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
-    return {};
-  }
-  return loaded as Record<string, unknown>;
-}
-
-/** A `code_task` call the orchestrator lost track of when it restarted. */
-type LostCodeTask = {
-  harness: Harness;
-  repository: string | null;
-  session_id: string | null;
-  log_path: string | null;
-  run_id: string;
-  call_id: string;
-};
-
-function optionalText(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
-
-function callArguments(call: Record<string, unknown>): Record<string, unknown> {
-  try {
-    return parseArguments(call);
-  } catch {
-    return {};
-  }
-}
-
-/** A lost `code_task` call, from what its run remembered about it and from the call's own arguments. */
-function lostCodeTask(run: Record<string, unknown>, call: Record<string, unknown>, harness: Harness): LostCodeTask {
-  const callId = callSegment(String(call.id ?? ""));
-  const remembered = asObj(asObj(run.metadata).harness_task);
-  const known = remembered.call_id === callId ? remembered : {};
-  const args = callArguments(call);
-  return {
-    harness,
-    repository: optionalText(known.repository) ?? optionalText(args.repo),
-    session_id: optionalText(known.session_id) ?? optionalText(args.session_id),
-    log_path: optionalText(known.log_path),
-    run_id: String(run.id),
-    call_id: callId,
-  };
 }
 
 function runKind(run: Record<string, unknown> | null | undefined): string {
@@ -407,7 +343,7 @@ function runKind(run: Record<string, unknown> | null | undefined): string {
 }
 
 function runWasResumed(run: Record<string, unknown>): boolean {
-  const resumedAt = asObj(run.metadata).resumed_at;
+  const resumedAt = recordOf(run.metadata).resumed_at;
   return typeof resumedAt === "string" && resumedAt.length > 0;
 }
 
@@ -427,18 +363,6 @@ function runHitTerminalCap(run: Record<string, unknown>): boolean {
     }
     return TERMINAL_CAP_OPERATIONS.has(String((entry as { operation?: unknown }).operation ?? ""));
   });
-}
-
-function positiveInt(value: unknown, fallback: number): number {
-  if (
-    typeof value === "boolean" ||
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < 1
-  ) {
-    return fallback;
-  }
-  return value;
 }
 
 function isDir(value: string): boolean {
@@ -465,35 +389,6 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-function toolSchemaName(tool: unknown): string {
-  if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
-    return "";
-  }
-  const record = tool as Record<string, unknown>;
-  const fn =
-    record.function && typeof record.function === "object" && !Array.isArray(record.function)
-      ? (record.function as Record<string, unknown>)
-      : null;
-  return (
-    (fn && typeof fn.name === "string" ? fn.name : "") ||
-    (typeof record.name === "string" ? record.name : "")
-  );
-}
-
-function snapshotOfferedNames(tools: unknown): Set<string> {
-  const names = new Set<string>();
-  if (!Array.isArray(tools)) {
-    return names;
-  }
-  for (const tool of tools) {
-    const name = toolSchemaName(tool);
-    if (name) {
-      names.add(name);
-    }
-  }
-  return names;
-}
-
 function hasScriptTools(names: string[]): boolean {
   return SCRIPT_TOOLS.some((name) => names.includes(name));
 }
@@ -508,192 +403,6 @@ function hasFileTools(names: string[]): boolean {
 
 function hasMemoryTool(names: string[]): boolean {
   return names.includes("memory_write");
-}
-
-/** First-class script schemas follow `script_run`, not the frozen native/MCP list. */
-function withFirstClassScriptTools(
-  tools: unknown[],
-  runScripts: RunScriptSnapshot[],
-  scriptRunOffered: boolean,
-): unknown[] {
-  const firstClass = new Set(
-    runScripts.filter((row) => row.parameters !== null).map((row) => row.name),
-  );
-  const kept = tools.filter((tool) => !firstClass.has(toolSchemaName(tool)));
-  if (!scriptRunOffered) {
-    return kept;
-  }
-  return [...kept, ...firstClassScriptSchemas(runScripts)];
-}
-
-function liveOfferedNames(
-  snapshotNames: Set<string>,
-  rows: Array<Record<string, unknown>>,
-  options: {
-    orgId?: string | null;
-    guildId?: string | null;
-    agentId?: string | null;
-    browser: boolean;
-    coding: boolean;
-    scripting: boolean;
-    memory: boolean;
-    schedules: boolean;
-    direct: boolean;
-  },
-): Set<string> {
-  const nativeRows = rows.filter((row) => row.catalog_kind === "native_tool");
-  if (!nativeRows.length) {
-    return snapshotNames;
-  }
-  const liveNative = new Set(
-    offeredToolNames(enabledToolNames(resolvedTools(rows, options)), {
-      browser: options.browser,
-      coding: options.coding,
-      scripting: options.scripting,
-      memory: options.memory,
-      schedules: options.schedules,
-      direct: options.direct,
-    }),
-  );
-  const offered = new Set<string>();
-  for (const name of snapshotNames) {
-    if (name in REGISTRY && !liveNative.has(name)) {
-      continue;
-    }
-    offered.add(name);
-  }
-  return offered;
-}
-
-function mcpGroupRecord(group: unknown): Record<string, unknown> | null {
-  if (!group || typeof group !== "object" || Array.isArray(group)) {
-    return null;
-  }
-  return group as Record<string, unknown>;
-}
-
-function schemasFromMcpTool(tool: unknown): Array<Record<string, unknown>> {
-  const record = mcpGroupRecord(tool);
-  if (!record) {
-    return [];
-  }
-  const schema = record.schema;
-  return schema && typeof schema === "object" && !Array.isArray(schema)
-    ? [schema as Record<string, unknown>]
-    : [];
-}
-
-function schemasFromMcpGroups(mcp: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  return mcp.flatMap((group) => {
-    const tools = group.tools;
-    return Array.isArray(tools) ? tools.flatMap(schemasFromMcpTool) : [];
-  });
-}
-
-function mcpToolNamePairs(tools: unknown): Array<{ name: unknown; remote_name: unknown }> {
-  if (!Array.isArray(tools)) {
-    return [];
-  }
-  return tools.flatMap((tool) => {
-    const record = mcpGroupRecord(tool);
-    return record ? [{ name: record.name, remote_name: record.remote_name }] : [];
-  });
-}
-
-export function configSnapshot(
-  config: AgentConfig | Record<string, unknown>,
-  options: {
-    tools: string[];
-    secrets: Array<Record<string, string>>;
-    mcp?: Array<Record<string, unknown>> | null;
-    schedules?: boolean;
-    direct?: boolean;
-    scripts?: RunScriptSnapshot[];
-  },
-): Record<string, unknown> {
-  const mcp = options.mcp ?? [];
-  const native = schemasFor(
-    offeredToolNames(options.tools, {
-      browser: Boolean(config.browser),
-      coding: Boolean(config.coding),
-      scripting: config.scripting !== false,
-      memory: memoryOf(config),
-      schedules: Boolean(options.schedules),
-      direct: Boolean(options.direct),
-    }),
-  );
-  const snapshot: Record<string, unknown> = {
-    model: config.model,
-    temperature: config.temperature,
-    max_tokens: config.max_tokens,
-    max_steps: config.max_steps,
-    max_tool_calls: positiveInt(config.max_tool_calls, DEFAULT_MAX_TOOL_CALLS),
-    max_input_tokens: positiveInt(config.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS),
-    keep_tool_result_generations: keepToolResultGenerationsOf(config),
-    projection_policy_version: RUN_PROJECTION_POLICY_VERSION,
-    browser: Boolean(config.browser),
-    browser_language: browserLanguageOf(config),
-    coding: Boolean(config.coding),
-    harness: harnessOf(config),
-    harness_model: harnessModelOf(config),
-    harness_effort: harnessEffortOf(config),
-    secret_aliases: secretAliasesOf(config),
-    scripting: config.scripting !== false,
-    memory: memoryOf(config),
-    thinking_level: config.thinking_level ?? "none",
-    database: false,
-    tools: [...native, ...schemasFromMcpGroups(mcp), ...firstClassScriptSchemas(options.scripts ?? [])],
-    mcp: mcp.map((group) => ({
-      connection_id: group.connection_id,
-      server_id: group.server_id,
-      slug: group.slug,
-      tools: mcpToolNamePairs(group.tools),
-    })),
-    secrets: [...options.secrets],
-  };
-  if (options.scripts) {
-    snapshot.scripts = options.scripts;
-  }
-  return snapshot;
-}
-
-// Maps a run snapshot's connection tools to `[connection_id, remote_name]`.
-// A name the native registry owns is never a connection tool, whatever the
-// snapshot lists: native dispatch wins.
-function indexConnectionTools(
-  index: Record<string, [string, string]>,
-  connectionId: string,
-  tools: unknown,
-): void {
-  if (!Array.isArray(tools)) {
-    return;
-  }
-  for (const tool of tools) {
-    const item = mcpGroupRecord(tool);
-    if (!item) {
-      continue;
-    }
-    const name = item.name;
-    const remote = item.remote_name;
-    if (typeof name === "string" && typeof remote === "string" && !(name in REGISTRY)) {
-      index[name] = [connectionId, remote];
-    }
-  }
-}
-
-export function mcpIndex(mcp: unknown): Record<string, [string, string]> {
-  const index: Record<string, [string, string]> = {};
-  if (!Array.isArray(mcp)) {
-    return index;
-  }
-  for (const group of mcp) {
-    const record = mcpGroupRecord(group);
-    if (!record || typeof record.connection_id !== "string") {
-      continue;
-    }
-    indexConnectionTools(index, record.connection_id, record.tools);
-  }
-  return index;
 }
 
 async function tokenRedactionsForConnection(
@@ -722,186 +431,12 @@ export async function mcpRedactions(
     return values;
   }
   for (const group of mcp) {
-    const record = mcpGroupRecord(group);
-    if (!record || typeof record.connection_id !== "string") {
+    if (!isPlainRecord(group) || typeof group.connection_id !== "string") {
       continue;
     }
-    Object.assign(values, await tokenRedactionsForConnection(db, record.connection_id));
+    Object.assign(values, await tokenRedactionsForConnection(db, group.connection_id));
   }
   return values;
-}
-
-export function toolCallsOf(payload: Record<string, unknown>): Array<Record<string, unknown>> {
-  const calls = payload.tool_calls || [];
-  return Array.isArray(calls) ? (calls as Array<Record<string, unknown>>) : [];
-}
-
-export function executedToolCalls(rows: Array<Record<string, unknown>>): number {
-  let total = 0;
-  for (const row of rows) {
-    if (asObj(row.payload).role === "tool") {
-      total += 1;
-    }
-  }
-  return total;
-}
-
-function assistantCallId(call: unknown): string | null {
-  if (!call || typeof call !== "object") {
-    return null;
-  }
-  const callId = (call as Record<string, unknown>).id;
-  return typeof callId === "string" && callId ? callId : null;
-}
-
-function rememberPendingAssistantCalls(
-  pending: Map<string, [Record<string, unknown>, number]>,
-  order: string[],
-  payload: Record<string, unknown>,
-  generation: number,
-): void {
-  for (const call of toolCallsOf(payload)) {
-    const callId = assistantCallId(call);
-    if (!callId) {
-      continue;
-    }
-    if (!pending.has(callId)) {
-      order.push(callId);
-    }
-    pending.set(callId, [call, generation]);
-  }
-}
-
-function forgetResolvedToolCall(
-  pending: Map<string, [Record<string, unknown>, number]>,
-  order: string[],
-  payload: Record<string, unknown>,
-): void {
-  const callId = payload.tool_call_id;
-  if (typeof callId !== "string") {
-    return;
-  }
-  pending.delete(callId);
-  const index = order.indexOf(callId);
-  if (index >= 0) {
-    order.splice(index, 1);
-  }
-}
-
-export function pendingToolCalls(
-  rows: Array<Record<string, unknown>>,
-): Array<[Record<string, unknown>, number]> {
-  const pending = new Map<string, [Record<string, unknown>, number]>();
-  const order: string[] = [];
-  for (const row of rows) {
-    const payload = asObj(row.payload);
-    const generation = Number(asObj(row.metadata).generation || 1);
-    if (payload.role === "assistant") {
-      rememberPendingAssistantCalls(pending, order, payload, generation);
-    } else if (payload.role === "tool") {
-      forgetResolvedToolCall(pending, order, payload);
-    }
-  }
-  return order.flatMap((callId) => {
-    const item = pending.get(callId);
-    return item ? [item] : [];
-  });
-}
-
-function toolCallNameAndId(call: Record<string, unknown>): { name: string; callId: string } {
-  const fn =
-    call.function && typeof call.function === "object" && !Array.isArray(call.function)
-      ? (call.function as Record<string, unknown>)
-      : {};
-  return {
-    name: typeof fn.name === "string" ? fn.name : "",
-    callId: typeof call.id === "string" ? call.id : "",
-  };
-}
-
-export function interruptionRecord(
-  call: Record<string, unknown>,
-  generation: number,
-): [Record<string, unknown>, Record<string, unknown>] {
-  const { name, callId } = toolCallNameAndId(call);
-  const payload = {
-    role: "tool",
-    tool_call_id: callId,
-    content: INTERRUPTED_CONTENT,
-  };
-  const metadata: Record<string, unknown> = {
-    generation,
-    tool_name: name,
-    tool_call_id: callId,
-    duration_ms: 0,
-    output_filter: "identity",
-    truncated: false,
-    original_bytes: Buffer.from(INTERRUPTED_CONTENT, "utf8").length,
-    stored_bytes: Buffer.from(INTERRUPTED_CONTENT, "utf8").length,
-    error: "execution interrupted",
-  };
-  if (name === "script_run" || name === "shell") {
-    metadata.exit_code = null;
-  }
-  return [payload, metadata];
-}
-
-export class PreparedRun {
-  constructor(
-    public agent: Record<string, unknown>,
-    public config: AgentConfig,
-    public access: {
-      tools: string[];
-      secrets: Array<Record<string, string>>;
-      mcp: Array<Record<string, unknown>>;
-    },
-    public members: Array<Record<string, unknown>>,
-    public history_rows: Array<Record<string, unknown>>,
-    public standing: string,
-    public system: string,
-    public task: string,
-    public memory: string,
-    public scripts: RunScriptSnapshot[] = [],
-    public taskSource: Record<string, unknown> | null = null,
-    public typesafe: Record<string, unknown> | null = null,
-  ) {}
-
-  get secrets(): Array<Record<string, string>> {
-    return this.access.secrets;
-  }
-
-  get hashes(): { system: string; task: string; memory: string } {
-    return {
-      system: promptHash(this.standing),
-      task: promptHash(this.task),
-      memory: promptHash(this.memory),
-    };
-  }
-
-  snapshot(options: { schedules?: boolean; direct?: boolean } = {}): Record<string, unknown> {
-    return configSnapshot(this.config, {
-      tools: this.access.tools,
-      secrets: this.access.secrets,
-      mcp: this.access.mcp,
-      schedules: Boolean(options.schedules),
-      direct: Boolean(options.direct),
-      scripts: this.scripts,
-    });
-  }
-}
-
-function preparedRunMetadata(
-  prepared: PreparedRun,
-  extra?: Record<string, unknown> | null,
-): Record<string, unknown> | undefined {
-  const metadata: Record<string, unknown> = {};
-  if (prepared.taskSource) {
-    metadata.task_source = prepared.taskSource;
-  }
-  if (prepared.typesafe || extra) {
-    metadata.typesafe = { ...(prepared.typesafe ?? {}), ...(extra ?? {}) };
-  }
-  return Object.keys(metadata).length ? metadata : undefined;
 }
 
 /** The db/ functions a generation reads and writes through, on `db`. */
@@ -1040,7 +575,7 @@ export function agentSeat(agent: Record<string, unknown>): AgentSeat {
     agentId: String(agent.id),
     machineId: String(agent.machine_id),
     slot: Number(agent.machine_slot),
-    browserLanguage: browserLanguageOf(asObj(agent.config)),
+    browserLanguage: browserLanguageOf(recordOf(agent.config)),
   };
 }
 
@@ -1193,7 +728,6 @@ export class GenerationLoop implements GroupRunner {
     }
     const runId = newId("r");
     const now = new Date();
-    const current = prepared.hashes;
     const runMetadata = preparedRunMetadata(prepared);
     const userMetadata = attachments.length ? { attachments } : undefined;
     const create = () =>
@@ -1201,13 +735,11 @@ export class GenerationLoop implements GroupRunner {
         {
           runId,
           agentId,
-          configSnapshot: prepared.snapshot({ schedules: true, direct: true }),
+          configSnapshot: preparedSnapshot(prepared, "direct"),
           systemContent: prepared.system,
           taskContent: prepared.task,
           userContent: opening,
-          systemPromptHash: current.system,
-          taskPromptHash: current.task,
-          memoryPromptHash: current.memory,
+          ...preparedPromptHashes(prepared),
           startedByUserId: options.startedByUserId ?? null,
           ...(runMetadata ? { runMetadata } : {}),
           ...(userMetadata ? { userMetadata } : {}),
@@ -1251,29 +783,26 @@ export class GenerationLoop implements GroupRunner {
     const projected = [
       groupChatUserMessage({
         members: prepared.members,
-        rows: prepared.history_rows,
+        rows: prepared.historyRows,
         viewerName: String(agent.name),
         deliveredThrough,
       }),
     ];
     const runId = newId("r");
     const now = new Date();
-    const current = prepared.hashes;
     const runMetadata = preparedRunMetadata(prepared, recipients ? { recipients } : null);
-    const woke = wakeMessage(prepared.history_rows, agentId, deliveredThrough);
+    const woke = wakeMessage(prepared.historyRows, agentId, deliveredThrough);
     const create = () =>
       this.db.createGroupRun(
         {
           runId,
           agentId,
-          configSnapshot: prepared.snapshot({ schedules: true }),
+          configSnapshot: preparedSnapshot(prepared, "group"),
           systemContent: prepared.system,
           taskContent: prepared.task,
           projected,
           throughSeq,
-          systemPromptHash: current.system,
-          taskPromptHash: current.task,
-          memoryPromptHash: current.memory,
+          ...preparedPromptHashes(prepared),
           wakeGroupMessageId: woke ? Number(woke.id) : null,
           ...(runMetadata ? { runMetadata } : {}),
         },
@@ -1319,7 +848,6 @@ export class GenerationLoop implements GroupRunner {
     ];
     const runId = newId("r");
     const now = new Date();
-    const current = prepared.hashes;
     const runMetadata = {
       ...(preparedRunMetadata(prepared) ?? {}),
       instruction_hash: instructionHash(instruction),
@@ -1329,13 +857,11 @@ export class GenerationLoop implements GroupRunner {
         {
           runId,
           agentId,
-          configSnapshot: prepared.snapshot(),
+          configSnapshot: preparedSnapshot(prepared, "schedule"),
           systemContent: prepared.system,
           taskContent: prepared.task,
           projected,
-          systemPromptHash: current.system,
-          taskPromptHash: current.task,
-          memoryPromptHash: current.memory,
+          ...preparedPromptHashes(prepared),
           scheduleId: schedule.id,
           runMetadata,
         },
@@ -1585,7 +1111,7 @@ export class GenerationLoop implements GroupRunner {
       if (run.status !== "active") {
         continue;
       }
-      const snapshot = asObj(run.config_snapshot);
+      const snapshot = recordOf(run.config_snapshot);
       if (JSON.stringify(snapshot.secrets) === JSON.stringify(refs)) {
         continue;
       }
@@ -1703,7 +1229,7 @@ export class GenerationLoop implements GroupRunner {
   /** The agent's config, refused with 422 when it does not validate. */
   _valid_config(agent: Record<string, unknown>): AgentConfig {
     try {
-      return validateConfig(asObj(agent.config));
+      return validateConfig(recordOf(agent.config));
     } catch (error) {
       if (error instanceof AgentValidationError) {
         throw new RunRequestError(422, error.message);
@@ -2331,7 +1857,7 @@ export class GenerationLoop implements GroupRunner {
     let config: AgentConfig;
     let access;
     try {
-      config = validateConfig(asObj(agent.config));
+      config = validateConfig(recordOf(agent.config));
       access = await agentRuntime(this.db, agent, { mcpPool: this.mcp });
     } catch (error) {
       if (error instanceof AgentValidationError || error instanceof McpDisconnectedError) {
@@ -2383,7 +1909,7 @@ export class GenerationLoop implements GroupRunner {
       caps,
       connectorGuidance(access.mcp.map((group) => String(group.slug))),
     );
-    return new PreparedRun(
+    return {
       agent,
       config,
       access,
@@ -2396,7 +1922,7 @@ export class GenerationLoop implements GroupRunner {
       scripts,
       taskSource,
       typesafe,
-    );
+    };
   }
 
   async _taskSource(agent: Record<string, unknown>): Promise<Record<string, unknown> | null> {
@@ -2448,7 +1974,7 @@ export class GenerationLoop implements GroupRunner {
   ): Promise<Record<string, unknown>> {
     const machineId = String(agent.machine_id);
     prepareWorkspace(await this.workspaceRootFor(machineId), machineId, String(agent.id), {
-      browser: Boolean(asObj(agent.config).browser),
+      browser: Boolean(recordOf(agent.config).browser),
     });
     let collections: unknown[] = [];
     if (this.artifacts && typeof agent.org_id === "string" && agent.org_id) {
@@ -2694,7 +2220,7 @@ export class GenerationLoop implements GroupRunner {
     const rows = await this.db.listMessages(runId);
     const pending = pendingToolCalls(rows);
     const run = await this.db.getRun(runId);
-    const snapshot = asObj(run?.config_snapshot);
+    const snapshot = recordOf(run?.config_snapshot);
     const maxToolCalls = positiveInt(snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
     let executed = executedToolCalls(rows);
     for (const [call, callGeneration] of pending) {
@@ -2720,7 +2246,7 @@ export class GenerationLoop implements GroupRunner {
     call: Record<string, unknown>,
     record: [Record<string, unknown>, Record<string, unknown>],
   ): Promise<[Record<string, unknown>, Record<string, unknown>]> {
-    const harness = harnessOf(asObj(run.config_snapshot));
+    const harness = harnessOf(recordOf(run.config_snapshot));
     if (harness === null) {
       return record;
     }
@@ -2827,7 +2353,7 @@ export class GenerationLoop implements GroupRunner {
     if (!this.attachments) {
       return { rows, payloads: projectedPayloads };
     }
-    const model = asObj(agent.config).model;
+    const model = recordOf(agent.config).model;
     return {
       rows,
       payloads: await this.attachments.projectMessages(
@@ -3084,7 +2610,7 @@ export class GenerationLoop implements GroupRunner {
   ): Promise<void> {
     const machine = agentMachine(agent);
     const seat = agentSeat(agent);
-    const snapshot = asObj(run.config_snapshot);
+    const snapshot = recordOf(run.config_snapshot);
     if (snapshot.coding === true && harnessOf(snapshot) === null) {
       const missing = harnessMissingError();
       await this._fail(runId, generation, missing.code, missing, extra);
@@ -3159,7 +2685,7 @@ export class GenerationLoop implements GroupRunner {
       agentId: String(agent.id),
     };
     const rows = await this.db.listBindingsCovering(scope);
-    const liveConfig = asObj(agent.config);
+    const liveConfig = recordOf(agent.config);
     const liveBrowser =
       typeof liveConfig.browser === "boolean" ? liveConfig.browser : Boolean(snapshot.browser);
     const liveCoding =
@@ -3630,7 +3156,7 @@ export class GenerationLoop implements GroupRunner {
     const maxToolCalls = positiveInt(snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
     let executed = executedToolCalls(await this.db.listMessages(runId));
     for (const call of toolCallsOf(completion.payload)) {
-      const fn = asObj(call.function);
+      const fn = recordOf(call.function);
       executed += 1;
       const [payload, metadata] = stampToolResult(
         { role: "tool", tool_call_id: String(call.id ?? ""), content: HANDOFF_TOOL_REFUSED },
@@ -3679,16 +3205,13 @@ export class GenerationLoop implements GroupRunner {
     const prepared = await this._prepare_run(agentId, kind === "group" ? { throughSeq } : {});
     const runId = newId("r");
     const now = new Date();
-    const hashes = prepared.hashes;
     const opening = continuationMessage(String(previous.id), handoff);
     const runMetadata: Record<string, unknown> = {
       ...(preparedRunMetadata(prepared) ?? {}),
       chain: { root_run_id: position.root_run_id, index: position.index + 1, previous_run_id: String(previous.id) },
     };
     const options = {
-      systemPromptHash: hashes.system,
-      taskPromptHash: hashes.task,
-      memoryPromptHash: hashes.memory,
+      ...preparedPromptHashes(prepared),
       runMetadata,
     };
     if (kind === "group") {
@@ -3696,7 +3219,7 @@ export class GenerationLoop implements GroupRunner {
         {
           runId,
           agentId,
-          configSnapshot: prepared.snapshot({ schedules: true }),
+          configSnapshot: preparedSnapshot(prepared, "group"),
           systemContent: prepared.system,
           taskContent: prepared.task,
           projected: [opening],
@@ -3706,12 +3229,12 @@ export class GenerationLoop implements GroupRunner {
         now,
       );
     } else if (kind === "schedule") {
-      const instruction = asObj(previous.metadata).instruction_hash;
+      const instruction = recordOf(previous.metadata).instruction_hash;
       await this.db.createScheduleRun(
         {
           runId,
           agentId,
-          configSnapshot: prepared.snapshot(),
+          configSnapshot: preparedSnapshot(prepared, "schedule"),
           systemContent: prepared.system,
           taskContent: prepared.task,
           projected: [opening],
@@ -3729,7 +3252,7 @@ export class GenerationLoop implements GroupRunner {
         {
           runId,
           agentId,
-          configSnapshot: prepared.snapshot({ schedules: true, direct: true }),
+          configSnapshot: preparedSnapshot(prepared, "direct"),
           systemContent: prepared.system,
           taskContent: prepared.task,
           userContent: null,
@@ -3757,8 +3280,8 @@ export class GenerationLoop implements GroupRunner {
     const owner = await this.db.getAgent(ctx.agent_id);
     const orgId = typeof owner?.org_id === "string" && owner.org_id ? owner.org_id : undefined;
     const reads = history
-      .filter((row) => asObj(row.payload).role === "tool")
-      .map((row) => ({ seq: row.seq, metadata: asObj(row.metadata) }));
+      .filter((row) => recordOf(row.payload).role === "tool")
+      .map((row) => ({ seq: row.seq, metadata: recordOf(row.metadata) }));
     for (const call of calls) {
       if (this._cancelled(runId)) {
         throw new GenerationCancelled();
@@ -3819,7 +3342,7 @@ export class GenerationLoop implements GroupRunner {
     const ctx = this._maintenance_ctx(runId, agent, sandbox);
     const checks = [
       {
-        limit: agentWorkspaceMaxMib(asObj(agent.config)),
+        limit: agentWorkspaceMaxMib(recordOf(agent.config)),
         stored: agent.workspace_mib,
         measure: () => measureWorkspace(ctx),
         store: (mib: number) => this.db.setAgentWorkspaceMib?.(String(agent.id), mib),
@@ -3904,8 +3427,8 @@ export class GenerationLoop implements GroupRunner {
       let instruction = "";
       const prefix = "Schedule wake-up: ";
       for (const row of rows) {
-        const meta = asObj(row.metadata);
-        const payload = asObj(row.payload);
+        const meta = recordOf(row.metadata);
+        const payload = recordOf(row.payload);
         if (meta.source !== "schedule") {
           continue;
         }
@@ -3928,7 +3451,7 @@ export class GenerationLoop implements GroupRunner {
     if (kind === "group") {
       let tags: string[] = [];
       for (const row of rows) {
-        const meta = asObj(row.metadata);
+        const meta = recordOf(row.metadata);
         if (meta.source !== "group_chat") {
           continue;
         }

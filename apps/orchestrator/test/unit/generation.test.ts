@@ -9,18 +9,15 @@ import { ArtifactError, operatorActor } from "../../src/artifacts/index.js";
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import * as generationMod from "../../src/generation/index.js";
 import { PolicyError } from "../../src/policy/index.js";
-import {
-  ConflictError,
-  pendingToolCalls,
-  RunRequestError,
-  withRemainingToolCalls,
-} from "../../src/generation/index.js";
+import { ConflictError, RunLimitError } from "../../src/generation/errors.js";
+import { pendingToolCalls } from "../../src/generation/tool-calls.js";
+import { RunRequestError } from "../../src/generation/index.js";
 import { LLMError } from "../../src/llm/index.js";
 import { sleep } from "../../src/lib/event.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { nextRunAt } from "../../src/schedules/cron.js";
 import { NOTE_TOOLS } from "../../src/db/seed/catalog.js";
-import { schemasFor } from "../../src/toolbox/index.js";
+import { schemasFor, withRemainingToolCalls } from "../../src/toolbox/index.js";
 import { SCRIPT_TOOLS } from "../../src/toolbox/script.js";
 import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.js";
 import { createGroupRouter, createTypeSafeClient } from "../../src/typesafe/index.js";
@@ -2302,7 +2299,7 @@ describe("generation", { concurrency: 1 }, () => {
           tools: null,
         }),
       (error: unknown) => {
-        assert.ok(error instanceof generationMod.RunLimitError);
+        assert.ok(error instanceof RunLimitError);
         assert.equal(error.operation, "generation.model_key");
         assert.match(error.message, /connect a Kimi Code key on Model keys/);
         return true;
@@ -2330,7 +2327,7 @@ describe("generation", { concurrency: 1 }, () => {
           tools: null,
         }),
       (error: unknown) => {
-        assert.ok(error instanceof generationMod.RunLimitError);
+        assert.ok(error instanceof RunLimitError);
         assert.equal(error.operation, "generation.model_credentials");
         assert.equal(error.message, "budget exhausted: top up to continue");
         return true;
@@ -2392,7 +2389,7 @@ describe("generation", { concurrency: 1 }, () => {
           tools: null,
         }),
       (error: unknown) => {
-        assert.ok(error instanceof generationMod.RunLimitError);
+        assert.ok(error instanceof RunLimitError);
         assert.equal(error.operation, "generation.subscription");
         assert.equal(error.message, "subscription required: the trial has ended");
         return true;

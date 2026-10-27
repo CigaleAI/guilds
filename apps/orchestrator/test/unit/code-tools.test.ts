@@ -4,11 +4,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFil
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { validateConfig, withCodingLimits } from "../../src/agents/validation.js";
-import {
-  agentWorkspaceMaxMib,
-  configSnapshot,
-  generationLive,
-} from "../../src/generation/index.js";
+import { agentWorkspaceMaxMib, generationLive } from "../../src/generation/index.js";
+import { configSnapshot } from "../../src/generation/snapshot.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import type { Completion } from "../../src/llm/index.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
@@ -270,29 +267,29 @@ test("coding offers code_task and the code tools; without it they are refused na
     scripting: false,
   });
   assert.deepEqual(noScripts, ["note_find", "report_issue"]);
-  const snapshot = configSnapshot({ ...AGENT_CONFIG, coding: true, harness: "codex" }, { tools: [], secrets: [] });
+  const snapshot = configSnapshot({ ...AGENT_CONFIG, coding: true, harness: "codex" }, { tools: [], secrets: [], mcp: [] }, "schedule");
   assert.equal(snapshot.coding, true);
   assert.equal(snapshot.harness, "codex");
   assert.equal(snapshot.harness_model, null, "the subscription's default");
   const pinned = configSnapshot(
     { ...AGENT_CONFIG, coding: true, harness: "claude-code", harness_model: "opus" },
-    { tools: [], secrets: [] },
+    { tools: [], secrets: [], mcp: [] }, "schedule",
   );
   assert.equal(pinned.harness_model, "opus");
   assert.equal(snapshot.harness_effort, null, "the harness's default effort");
   const effort = configSnapshot(
     { ...AGENT_CONFIG, coding: true, harness: "claude-code", harness_model: "opus", harness_effort: "high" },
-    { tools: [], secrets: [] },
+    { tools: [], secrets: [], mcp: [] }, "schedule",
   );
   assert.equal(effort.harness_effort, "high");
   assert.deepEqual(snapshot.secret_aliases, {});
   const aliased = configSnapshot(
     { ...AGENT_CONFIG, secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" } },
-    { tools: [], secrets: [] },
+    { tools: [], secrets: [], mcp: [] }, "schedule",
   );
   assert.deepEqual(aliased.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
   assert.deepEqual(
-    configSnapshot({ ...AGENT_CONFIG, secret_aliases: { SAME: "SAME" } }, { tools: [], secrets: [] }).secret_aliases,
+    configSnapshot({ ...AGENT_CONFIG, secret_aliases: { SAME: "SAME" } }, { tools: [], secrets: [], mcp: [] }, "schedule").secret_aliases,
     {},
     "aliases that do not validate are left out",
   );
@@ -325,7 +322,7 @@ describe("coding runs in the generation loop", () => {
   });
 
   function codingSnapshot(): Record<string, unknown> {
-    return configSnapshot(CODER, { tools: [], secrets: [] });
+    return configSnapshot(CODER, { tools: [], secrets: [], mcp: [] }, "schedule");
   }
 
   function scripted(db: FakeDB, turns: Array<Array<Record<string, unknown>>>) {
@@ -445,7 +442,7 @@ describe("coding runs in the generation loop", () => {
   test("a coding run without a harness fails at start, naming the fix; a run with coding off is unaffected", async () => {
     const sandbox = new HostCodeSandbox();
     const legacy = { ...AGENT_CONFIG, coding: true };
-    const db = new FakeDB(configSnapshot(legacy, { tools: [], secrets: [] }));
+    const db = new FakeDB(configSnapshot(legacy, { tools: [], secrets: [], mcp: [] }, "schedule"));
     db.agent.config = { ...legacy };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes, machines } = codingSandboxes(sandbox);
@@ -456,7 +453,7 @@ describe("coding runs in the generation loop", () => {
     assert.equal(errors.at(-1)?.operation, "harness.missing");
     assert.match(String(errors.at(-1)?.message), /no harness is picked: choose Claude Code, Codex, Cursor, or Antigravity in the agent's Settings/);
 
-    const plain = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [] }));
+    const plain = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [], mcp: [] }, "schedule"));
     live.streamCompletion = scripted(plain, []) as typeof live.streamCompletion;
     await makeLoop(plain, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
     assert.equal(plain.llm_histories.length, 1);
@@ -466,7 +463,7 @@ describe("coding runs in the generation loop", () => {
     const sandbox = readySandbox();
     const aliases = { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" };
     const config = { ...CODER, secret_aliases: aliases };
-    const db = withRepositories(new FakeDB(configSnapshot(config, { tools: [], secrets: [] })), ["shop", "admin"]);
+    const db = withRepositories(new FakeDB(configSnapshot(config, { tools: [], secrets: [], mcp: [] }, "schedule")), ["shop", "admin"]);
     db.agent.config = { ...config };
     db.secrets = [liveSecret("BOB_TOKEN")];
     live.streamCompletion = scripted(db, [
@@ -536,7 +533,7 @@ describe("coding runs in the generation loop", () => {
 
   test("a machine's row keeps the harness CLIs its container carries, written when they change", async () => {
     const written: Array<[string, string[]]> = [];
-    const db = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [] })) as FakeDB & {
+    const db = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [], mcp: [] }, "schedule")) as FakeDB & {
       setMachineHarnesses(id: string, harnesses: string[]): Promise<void>;
     };
     db.setMachineHarnesses = async (id, harnesses) => {
@@ -562,7 +559,7 @@ describe("coding runs in the generation loop", () => {
   test("a non-coding generation records the workspace size and stops when it is over the agent's max", async () => {
     const sandbox = new HostCodeSandbox();
     const sizes: number[] = [];
-    const db = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [] })) as FakeDB & {
+    const db = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [], mcp: [] }, "schedule")) as FakeDB & {
       setAgentWorkspaceMib(id: string, mib: number): Promise<void>;
     };
     db.setAgentWorkspaceMib = async (_id, mib) => {
@@ -632,7 +629,7 @@ describe("repositories in a coding generation", () => {
 
   function setup(url: string) {
     const sandbox = readySandbox({ clones: true });
-    const db = withRepositories(new FakeDB(configSnapshot(CODER, { tools: [], secrets: [] })), ["shop"], url);
+    const db = withRepositories(new FakeDB(configSnapshot(CODER, { tools: [], secrets: [], mcp: [] }, "schedule")), ["shop"], url);
     db.agent.config = { ...CODER };
     const sandboxes = new FakeSandboxes();
     sandboxes.ensure = (async (machine: MachineSpec) => {

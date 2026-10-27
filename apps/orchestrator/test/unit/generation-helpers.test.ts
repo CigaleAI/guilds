@@ -3,14 +3,13 @@ import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import {
   INTERRUPTED_CONTENT,
-  configSnapshot,
   executedToolCalls,
   interruptionRecord,
-  mcpIndex,
-  mcpRedactions,
   pendingToolCalls,
-  workspaceMaxMib,
-} from "../../src/generation/index.js";
+} from "../../src/generation/tool-calls.js";
+import { configSnapshot } from "../../src/generation/snapshot.js";
+import { mcpIndex } from "../../src/generation/offered-tools.js";
+import { mcpRedactions, workspaceMaxMib } from "../../src/generation/index.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { AGENT_CONFIG } from "../helpers/generation.js";
@@ -119,7 +118,7 @@ test("configSnapshot skips invalid mcp tool entries", () => {
       { connection_id: "conn_1", tools: "nope" },
       { connection_id: "conn_2", tools: [null, { name: "ok", remote_name: "r", schema: { type: "object" } }] },
     ],
-  });
+  }, "schedule");
   const tools = snapshot.tools as Array<Record<string, unknown>>;
   assert.equal(tools.some((tool) => tool.type === "object"), true);
   const mcp = snapshot.mcp as Array<{ tools: unknown[] }>;
