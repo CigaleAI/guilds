@@ -11,6 +11,7 @@ import { insertUser } from "../../src/db/users.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { StudioError } from "../../src/studio/errors.js";
 import { readGuildRun } from "../../src/studio/inspector.js";
+import { usageForOrg, usageForPlatform } from "../../src/usage/view.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -233,6 +234,12 @@ test(
         headers: OWNER,
       });
       assert.equal(image.statusCode, 503, "a box without an image store serves none");
+      const whole = await usageForOrg({ db }, { id: "org_home", name: "Home", slug: "home" }, null);
+      assert.ok(
+        Array.isArray(whole.guilds),
+        "an organisation's usage lists every guild for the instance admin",
+      );
+      assert.ok(Array.isArray((await usageForPlatform({ db })).organisations));
 
       const repos = `${guild}/repositories`;
       const repo = { name: "docs", url: "https://git.example.com/docs.git" };

@@ -23,7 +23,9 @@ Migration 0013 adds the `file` kind.
 `/api/org/notes`. The guild's notes view is **State › Notes** at
 `/guilds/<id>/state/notes`. The live event `guild.files.changed` is
 `guild.artifacts.changed`. An extension that imported `BlobStore` from
-`attachments/types.js` imports it from `lib/blob-store.js`.
+`attachments/types.js` imports it from `lib/blob-store.js`. `GET` and
+`DELETE /api/agents/:id/scripts/:name` answer a name that is not a
+script name with 422 in place of 404.
 
 **Breaking for extensions.** `Repositories` and the export
 `db/repositories.js` are gone. The `ServerExtension` factories and
@@ -35,6 +37,11 @@ argument, and each takes one input object per write. A new
 organisation's hook is `AppDeps.orgCreated`. `ModelsRepository` is
 `ModelsDatabase`, built with `modelsDatabase(db)`
 ([Extension points](docs/architecture/extension-points.md)).
+The export `usage.js` is `usage/index.js`, and `http/usage-view.js` is
+`usage/view.js`: `usageForOrg` and `usageForPlatform` take
+`{ db, studio, builder }`, which `AppDeps` satisfies. `identityDatabase`,
+which `currentUser` and `currentOrg` take, is exported from
+`users/identity.js`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

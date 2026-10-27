@@ -11,11 +11,7 @@ import { param } from "./request.js";
 export async function registerUsageRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const identityDb = identityDatabase(db);
-  const services: UsageServices = {
-    db,
-    studio: deps.studio ?? null,
-    builder: deps.builder ?? null,
-  };
+  const services: UsageServices = deps;
 
   app.get("/api/usage", async (request) => {
     const user = await currentUser(identityDb, request, deps);

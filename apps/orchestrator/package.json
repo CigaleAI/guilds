@@ -35,7 +35,6 @@
     "./http/deps.js": "./src/http/deps.ts",
     "./http/errors.js": "./src/http/errors.ts",
     "./http/identity.js": "./src/http/identity.ts",
-    "./http/usage-view.js": "./src/http/usage-view.ts",
     "./instance/integrations.js": "./src/instance/integrations.ts",
     "./lib/agent-file.js": "./src/lib/agent-file.ts",
     "./lib/blob-store.js": "./src/lib/blob-store.ts",
@@ -68,7 +67,9 @@
     "./test/helpers/http.js": "./test/helpers/http.ts",
     "./test/helpers/opensandbox-sdk-stub.js": "./test/helpers/opensandbox-sdk-stub.ts",
     "./test/helpers/postgres.js": "./test/helpers/postgres.ts",
-    "./usage.js": "./src/usage.ts"
+    "./usage/index.js": "./src/usage/index.ts",
+    "./usage/view.js": "./src/usage/view.ts",
+    "./users/identity.js": "./src/users/identity.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

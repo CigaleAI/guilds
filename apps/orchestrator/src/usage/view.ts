@@ -2,6 +2,7 @@ import type { AgentRow } from "../db/agents.js";
 import { listAgents, listAllAgents } from "../db/agents.js";
 import { listGuilds, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
+import { listOrgs } from "../db/orgs.js";
 import { getUsage, listUsageCounters } from "../db/usage.js";
 import { agentConfigObject } from "../agents/view.js";
 import { maxWorkspaceMibOf } from "../agents/validation.js";
@@ -11,12 +12,11 @@ import { usageCounterKey, usageFields, usageTree } from "./index.js";
 /** A coach whose conversations spend tokens, by organisation. */
 type CoachUsage = { usageByOrg(): Promise<Map<string, unknown>> };
 
-/** What usage is read through, built once from the app's services. */
+/** What usage is read through: the database, and the Studio and Builder coaches a box runs. */
 export type UsageServices = {
   db: Queryable;
-  /** The Studio and Builder coaches; absent on a box without them. */
-  studio: CoachUsage | null;
-  builder: CoachUsage | null;
+  studio?: CoachUsage | undefined;
+  builder?: CoachUsage | undefined;
 };
 
 async function counters(db: Queryable): Promise<Map<string, unknown>> {
@@ -27,15 +27,23 @@ async function counters(db: Queryable): Promise<Map<string, unknown>> {
   return map;
 }
 
-/** One organisation's usage by guild and agent, limited to the guilds `userId` may see. */
+/** What the Studio and Builder coaches spent, per organisation. */
+async function coachUsage(services: UsageServices) {
+  return {
+    studioByOrg: services.studio ? await services.studio.usageByOrg() : new Map(),
+    builderByOrg: services.builder ? await services.builder.usageByOrg() : new Map(),
+  };
+}
+
+/** One organisation's usage by guild and agent, limited to the guilds `userId` may see; every guild when null. */
 export async function usageForOrg(
   services: UsageServices,
   org: Record<string, unknown>,
-  userId: string,
+  userId: string | null,
 ): Promise<Record<string, unknown>> {
   const orgId = String(org.id);
   const guilds = (await listGuilds(services.db)).filter(
-    (guild) => guild.org_id === orgId && canSeeGuild(guild, userId),
+    (guild) => guild.org_id === orgId && (userId === null || canSeeGuild(guild, userId)),
   );
   const guildIds = new Set(guilds.map((guild) => guild.id));
   const agents = (await listAllAgents(services.db)).filter((agent) => guildIds.has(agent.guild_id));
@@ -44,12 +52,28 @@ export async function usageForOrg(
     guilds,
     agents,
     counters: await counters(services.db),
-    studioByOrg: services.studio ? await services.studio.usageByOrg() : new Map(),
-    builderByOrg: services.builder ? await services.builder.usageByOrg() : new Map(),
+    ...(await coachUsage(services)),
   });
   const organisations = tree.organisations;
   const first: unknown = Array.isArray(organisations) ? organisations[0] : undefined;
   return first && typeof first === "object" ? { ...first } : { id: orgId };
+}
+
+/** Every organisation's usage plus the server total, for the instance admin. */
+export async function usageForPlatform(services: UsageServices): Promise<Record<string, unknown>> {
+  const { db } = services;
+  const [orgs, guilds, agents] = await Promise.all([
+    listOrgs(db),
+    listGuilds(db),
+    listAllAgents(db),
+  ]);
+  return usageTree({
+    orgs,
+    guilds,
+    agents,
+    counters: await counters(db),
+    ...(await coachUsage(services)),
+  });
 }
 
 /** A guild's usage, and each of its agents'. */
