@@ -85,22 +85,11 @@ import {
 } from "../access/index.js";
 import { RunRequestError, type GenerationLoop } from "../generation/index.js";
 import { GroupChatError } from "../groupchat/index.js";
-import { guildDatabase, persistGuild } from "../guilds/persist.js";
 import {
   assertGuildAgentRoom,
   canSeeGuild,
   GuildAgentLimitError,
   guildAgentRoom,
-  guildOperators,
-  GuildValidationError,
-  validateAbout,
-  validateGitAuthorEmail,
-  validateGuildDescription,
-  validateGuildName,
-  validateGuildOperatorRole,
-  validateMaxAgents,
-  validateRoutinesEnabled,
-  validateVisibility,
 } from "../guilds/validation.js";
 import {
   ArtifactError,
@@ -127,7 +116,7 @@ import { publishGroup } from "./publish.js";
 import { messageItem } from "../db/views.js";
 import { memoryHistory } from "../memory/history.js";
 import { isUniqueViolation } from "../db/pg.js";
-import { GuildNameTaken, LastGuildAdmin, SecretNameTaken } from "../db/errors.js";
+import { GuildNameTaken, SecretNameTaken } from "../db/errors.js";
 import { assertCanPlaceOn } from "../machines/access.js";
 import type { AgentNeeds, MachineRow } from "../machines/index.js";
 import {
@@ -150,11 +139,9 @@ import {
 } from "../llm/credentials.js";
 import {
   assertCanCreateAgent,
-  assertCanCreateGuild,
   assertCanEnableBrowser,
   assertCanEnableCoding,
   assertCanPlaceAgents,
-  LimitError,
   machineCounts,
   OPEN_POLICY,
   orgCounts,
@@ -189,6 +176,7 @@ import {
 } from "./artifact-notes.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
+import { registerGuildRoutes } from "./guild-routes.js";
 import { registerOrgRoutes } from "./org-routes.js";
 import { registerUserRoutes } from "./user-routes.js";
 import { registerModelProviderRoutes } from "./model-provider-routes.js";
@@ -221,7 +209,6 @@ import {
   agentConfigObject,
   agentItem,
   agentWithAccess,
-  guildItem,
 } from "./items.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { bodyOf, param } from "./request.js";
@@ -231,8 +218,6 @@ import {
 import {
   getGuild,
   listGuildsForUser,
-  setGuildOperator,
-  updateGuild,
 } from "../db/guilds.js";
 import { placementMachine } from "../db/machines.js";
 import { getAgent, listAgents, updateAgentConfig } from "../db/agents.js";
@@ -498,26 +483,6 @@ async function pipeSse(
   }
 }
 
-async function setOperator(
-  db: AppDeps["db"],
-  guildId: string,
-  userId: string,
-  role: "admin" | "operator" | null,
-): Promise<Record<string, unknown>> {
-  try {
-    const row = await setGuildOperator(db, guildId, userId, role, new Date());
-    if (row === null) {
-      throw new HttpError(404, "guild not found");
-    }
-    return row;
-  } catch (error) {
-    if (error instanceof LastGuildAdmin || error instanceof GuildNameTaken) {
-      throw new HttpError(409, error.message);
-    }
-    throw error;
-  }
-}
-
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, notes, scripts, schedules, artifacts } = deps;
   const identityDb = identityDatabase(db);
@@ -566,6 +531,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
   await registerUserRoutes(app, deps);
   await registerOrgRoutes(app, deps);
+  await registerGuildRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -628,196 +594,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       }
       throw error;
     }
-  });
-
-  app.get("/api/guilds", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    return (await listGuildsForUser(db, String(org.id), String(user.id))).map(guildItem);
-  });
-
-  app.post("/api/guilds", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const missing = missingBodyFields(request.body, ["name"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const name = validateGuildName(String(body.name ?? ""));
-      const about = validateAbout(body.about === undefined ? "" : String(body.about));
-      const description = validateGuildDescription(body.description === undefined ? "" : String(body.description));
-      const visibility = validateVisibility(body.visibility);
-      await assertCanCreateGuild(policy, orgCounts(db), String(org.id));
-      const guildId = newId("guild");
-      await persistGuild(guildDatabase(db), notes, {
-        guildId,
-        name,
-        now: new Date(),
-        orgId: String(org.id),
-        orgSlug: String(org.slug),
-        about,
-        description,
-        visibility,
-        creatorUserId: String(user.id),
-      });
-      const created = await getGuild(db, guildId);
-      if (created === null) {
-        throw new HttpError(500, "guild not found after create");
-      }
-      await send(reply, 201, guildItem(created));
-    } catch (error) {
-      if (error instanceof GuildValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      if (error instanceof LimitError) {
-        throw new HttpError(409, error.message);
-      }
-      if (isUniqueViolation(error)) {
-        throw new HttpError(409, "guild name already exists");
-      }
-      if (error instanceof ArtifactError) {
-        throw catchArtifact(error);
-      }
-      if (error instanceof NotesError) {
-        throw notesWriteHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/guilds/:guild_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    return guildItem(await requireVisibleGuild(db, param(request, "guild_id"), String(user.id)));
-  });
-
-  app.put("/api/guilds/:guild_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guildId = param(request, "guild_id");
-    const existing = await requireVisibleGuild(db, guildId, String(user.id));
-    const body = bodyOf(request);
-    try {
-      const name = body.name !== undefined ? validateGuildName(String(body.name ?? "")) : null;
-      const about = body.about !== undefined ? validateAbout(String(body.about ?? "")) : null;
-      const description =
-        body.description !== undefined ? validateGuildDescription(String(body.description ?? "")) : null;
-      const maxAgents = body.max_agents !== undefined ? validateMaxAgents(body.max_agents) : null;
-      const gitAuthorEmail =
-        body.git_author_email !== undefined ? validateGitAuthorEmail(body.git_author_email) : null;
-      let visibility: string | null = null;
-      const routinesEnabled =
-        body.routines_enabled !== undefined ? validateRoutinesEnabled(body.routines_enabled) : undefined;
-      const patch: {
-        name: string | null;
-        about: string | null;
-        description: string | null;
-        maxAgents: number | null;
-        gitAuthorEmail: string | null;
-        visibility: string | null;
-        routinesEnabled?: boolean;
-      } = {
-        name,
-        about,
-        description,
-        maxAgents,
-        gitAuthorEmail,
-        visibility,
-        ...(routinesEnabled !== undefined ? { routinesEnabled } : {}),
-      };
-      if (body.visibility !== undefined) {
-        visibility = validateVisibility(body.visibility);
-        patch.visibility = visibility;
-        if (visibility !== String(existing.visibility ?? "org")) {
-          await requireAdministeredGuild(db, guildId, String(user.id));
-        }
-      }
-      const previousName = String(existing.name);
-      if (name && name !== previousName) {
-        if (deps.generation?.deleting_guild(guildId)) {
-          throw new HttpError(409, "guild is being deleted");
-        }
-        const members = await listAgents(db, guildId);
-        if (members.some((row) => busy(deps, String(row.id)))) {
-          throw new HttpError(409, "a member agent is already generating");
-        }
-      }
-      const turningOn = routinesEnabled === true && existing.routines_enabled === false;
-      const row = await updateGuild(db, guildId, new Date(), patch, userActor(user));
-      if (row === null) {
-        throw new HttpError(404, "guild not found");
-      }
-      if (name && name !== previousName) {
-        try {
-          await notes.renameGuild(String(existing.org_slug), previousName, name);
-        } catch (error) {
-          await updateGuild(db, guildId, new Date(), { name: previousName }, userActor(user));
-          throw error;
-        }
-      }
-      if (turningOn) {
-        await schedules.releaseGuild(guildId);
-      }
-      return guildItem(row);
-    } catch (error) {
-      if (error instanceof GuildValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      if (isUniqueViolation(error)) {
-        throw new HttpError(409, "guild name already exists");
-      }
-      if (error instanceof NotesError) {
-        throw notesWriteHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.delete("/api/guilds/:guild_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guildId = param(request, "guild_id");
-    await requireAdministeredGuild(db, guildId, String(user.id));
-    try {
-      await generationOf(deps).delete_guild(guildId);
-      await send(reply, 204);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      if (error instanceof NotesError) {
-        throw notesWriteHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.put("/api/guilds/:guild_id/operators/:user_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
-    const userId = param(request, "user_id");
-    let role;
-    try {
-      role = validateGuildOperatorRole(bodyOf(request).role);
-    } catch (error) {
-      if (error instanceof GuildValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-    if ((await getMembership(db, String(guild.org_id), userId)) === null) {
-      throw new HttpError(422, "operators must be members of the organisation");
-    }
-    return guildItem(await setOperator(db, String(guild.id), userId, role));
-  });
-
-  app.delete("/api/guilds/:guild_id/operators/:user_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
-    const userId = param(request, "user_id");
-    if (!guildOperators(guild).some((operator) => operator.user_id === userId)) {
-      throw new HttpError(404, "operator not found");
-    }
-    return guildItem(await setOperator(db, String(guild.id), userId, null));
   });
 
   app.get("/api/guilds/:guild_id/group-chat", async (request) => {

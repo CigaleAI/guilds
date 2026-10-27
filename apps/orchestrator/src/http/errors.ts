@@ -1,8 +1,12 @@
 import { ArtifactError } from "../artifacts/errors.js";
 import { AgentError } from "../agents/errors.js";
+import { RunRequestError } from "../generation/index.js";
+import { GroupChatError } from "../groupchat/index.js";
 import { GuildError } from "../guilds/errors.js";
+import { GuildValidationError } from "../guilds/validation.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
 import { MachineError } from "../machines/index.js";
+import { NotesError } from "../notes/store.js";
 import { OrgValidationError } from "../organisations/index.js";
 import { OrgError } from "../organisations/service.js";
 import { PolicyError } from "../policy/index.js";
@@ -59,6 +63,15 @@ export function notesWriteHttp(error: Error): HttpError {
   return new HttpError(status, message);
 }
 
+/** Awaits a write that touches the notes folder, answering a refused one as `notesWriteHttp` does. */
+export async function notesWrite<T>(write: Promise<T>): Promise<T> {
+  try {
+    return await write;
+  } catch (error) {
+    throw error instanceof NotesError ? notesWriteHttp(error) : error;
+  }
+}
+
 export function artifactHttp(error: ArtifactError): HttpError {
   return new HttpError(error.status, error.message);
 }
@@ -84,10 +97,13 @@ const REFUSALS = [
   OrgError,
   GuildError,
   AgentError,
+  ArtifactError,
+  RunRequestError,
+  GroupChatError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
-const INVALID = [UserValidationError, OrgValidationError] as const;
+const INVALID = [UserValidationError, OrgValidationError, GuildValidationError] as const;
 
 /**
  * The HTTP answer for a refusal a domain module raises: one with its own status, or a value its
