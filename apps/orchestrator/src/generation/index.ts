@@ -33,7 +33,7 @@ import {
 import { sleep } from "../lib/event.js";
 import { type Completion } from "../llm/index.js";
 
-import { mcpDatabase, McpDisconnectedError, McpError, McpPool } from "../mcp/index.js";
+import { mcpDatabase, McpPool } from "../mcp/index.js";
 import {
   ArtifactFiles,
   ArtifactStore,
@@ -84,13 +84,8 @@ import {
 } from "./chain.js";
 import {
   createToolContext,
-  identityOutput,
-  invokeTool,
-  parseArguments,
-  processOutput,
   remainingAfter,
   stampToolResult,
-  toolResultMaxBytes,
   withRemainingToolCalls as _withRemainingToolCalls,
 } from "../toolbox/index.js";
 
@@ -102,10 +97,6 @@ import {
 } from "../coding/harnesses.js";
 import { harnessEffortOf } from "../coding/harness-models.js";
 
-import {
-  repeatedReadStep,
-  repeatedReadText,
-} from "../toolbox/code.js";
 import {
   harnessMissingError,
   shownProgressLines,
@@ -195,12 +186,7 @@ import {
   toolSchemaName,
   withFirstClassScriptTools,
 } from "./offered-tools.js";
-import {
-  executedToolCalls,
-  interruptionRecord,
-  pendingToolCalls,
-  toolCallsOf,
-} from "./tool-calls.js";
+import { executedToolCalls, ToolCalls, toolCallsOf } from "./tool-calls.js";
 
 export { RunRequestError } from "./errors.js";
 
@@ -373,6 +359,7 @@ export class GenerationLoop implements GroupRunner {
   completion: ModelCompletion;
   coding: CodingRuns;
   workspace: WorkspaceLimits;
+  toolCalls: ToolCalls;
   runs: Runs;
   /** A run that handed off, to the run that continues it once its generation ends. */
   _continuations = new Map<string, string>();
@@ -447,6 +434,14 @@ export class GenerationLoop implements GroupRunner {
     });
     this.coding = new CodingRuns({ db, generations: this.generations, machines: this.machines, events: this.events });
     this.workspace = new WorkspaceLimits(db, this.events);
+    this.toolCalls = new ToolCalls({
+      db,
+      mcp: this.mcp,
+      events: this.events,
+      generations: this.generations,
+      machines: this.machines,
+      coding: this.coding,
+    });
     this.runs = new Runs(
       {
         db,
@@ -746,7 +741,7 @@ export class GenerationLoop implements GroupRunner {
   async reconcile(): Promise<void> {
     const now = new Date();
     for (const run of await this.db.listActiveRuns()) {
-      await this._resolve_unresolved(run.id);
+      await this.toolCalls.resolveUnresolved(run.id, null);
       const kind = runKind(run);
       if ((kind !== "group" && kind !== "schedule") || runWasResumed(run)) {
         continue;
@@ -812,100 +807,12 @@ export class GenerationLoop implements GroupRunner {
     );
   };
 
-  async _invoke_mcp(
-    target: [string, string],
-    call: Record<string, unknown>,
-    secrets: Record<string, string>,
-    maxBytes: number,
-    workspaceDir?: string,
-    orgId?: string,
-  ): Promise<[Record<string, unknown>, Record<string, unknown>]> {
-    const [connectionId, remoteName] = target;
-    const fn =
-      call.function && typeof call.function === "object" && !Array.isArray(call.function)
-        ? (call.function as Record<string, unknown>)
-        : {};
-    const name = typeof fn.name === "string" ? fn.name : "";
-    const callId = typeof call.id === "string" ? call.id : "";
-    const started = performance.now();
-    let error: string | null = null;
-    let raw: string;
-    try {
-      const arguments_ = parseArguments(call);
-      const connection = await this.db.getMcpConnection(connectionId);
-      if (connection === null) {
-        throw new McpDisconnectedError("connection not found");
-      }
-      const server = await this.db.getMcpServer(connection.mcp_server_id);
-      if (server === null) {
-        throw new McpError("mcp server not found");
-      }
-      const result = await this.mcp.call(
-        this.db as never,
-        connection,
-        server,
-        remoteName,
-        arguments_,
-        { ...(workspaceDir ? { workspaceDir } : {}), ...(orgId ? { orgId } : {}) },
-      );
-      if (typeof result !== "string") {
-        throw new TypeError("mcp tool must return str");
-      }
-      raw = result;
-    } catch (caught) {
-      writeLog("warn", errorMessage(caught), {
-        operation: `tool.${name}`,
-        run_id: callId,
-        error_type: errorName(caught),
-      });
-      raw = `ERROR: ${errorMessage(caught)}`;
-      error = errorMessage(caught);
-    }
-    const [content, pipeline] = processOutput(raw, identityOutput, secrets, maxBytes);
-    if (typeof pipeline.error === "string" && pipeline.error) {
-      error = pipeline.error;
-    }
-    return [
-      { role: "tool", tool_call_id: callId, content },
-      {
-        tool_name: name,
-        tool_call_id: callId,
-        duration_ms: Math.trunc(performance.now() - started),
-        output_filter: "identity",
-        truncated: pipeline.truncated,
-        original_bytes: pipeline.original_bytes,
-        stored_bytes: pipeline.stored_bytes,
-        error,
-      },
-    ];
-  }
-
-  async _resolve_unresolved(runId: string, generation?: number | null): Promise<number> {
-    const rows = await this.db.listMessages(runId);
-    const pending = pendingToolCalls(rows);
-    const run = await this.db.getRun(runId);
-    const snapshot = recordOf(run?.config_snapshot);
-    const maxToolCalls = positiveInt(snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
-    let executed = executedToolCalls(rows);
-    for (const [call, callGeneration] of pending) {
-      let [payload, metadata] = interruptionRecord(call, generation ?? callGeneration);
-      if (metadata.tool_name === "code_task" && run) {
-        [payload, metadata] = await this.coding.interruptedCodeTask(run, call, [payload, metadata]);
-      }
-      executed += 1;
-      const remaining = remainingAfter(maxToolCalls, executed);
-      [payload, metadata] = stampToolResult(payload, metadata, remaining);
-      await this.events.commitMessage(runId, payload, metadata);
-    }
-    return pending.length;
-  }
-
   _on_cancel = async (
     runId: string,
     generation: number,
     extra: Record<string, string>,
   ): Promise<void> => {
-    await this._resolve_unresolved(runId, generation);
+    await this.toolCalls.resolveUnresolved(runId, generation);
     await this._fail(runId, generation, "generation.cancelled", new GenerationCancelled(), extra);
   };
 
@@ -1211,7 +1118,6 @@ export class GenerationLoop implements GroupRunner {
     const maxSteps = Number(snapshot.max_steps);
     const maxToolCalls = positiveInt(snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
     const maxInputTokens = positiveInt(snapshot.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS);
-    const maxBytes = toolResultMaxBytes();
 
     const chainable = Boolean(snapshot.coding);
     const handoffAt = Math.floor(maxInputTokens * HANDOFF_FRACTION);
@@ -1241,15 +1147,10 @@ export class GenerationLoop implements GroupRunner {
       await this.events.commitMessage(runId, completion.payload, { generation, ...completion.metadata });
       const calls = toolCallsOf(completion.payload);
       if (calls.length) {
-        await this._execute_tool_calls(
-          runId,
-          generation,
+        await this.toolCalls.execute(
+          { runId, generation, log: extra },
+          { ctx, schemas: tools, secrets, connections: mcpTools, maxToolCalls },
           calls,
-          ctx,
-          secrets,
-          maxBytes,
-          mcpTools,
-          maxToolCalls,
         );
       }
       return calls;
@@ -1412,67 +1313,6 @@ export class GenerationLoop implements GroupRunner {
     await this.db.mergeRunMetadata(runId, { continued_by_run_id: next }, new Date());
     await this.db.completeRun(runId, new Date());
     this._continuations.set(runId, next);
-  }
-
-  async _execute_tool_calls(
-    runId: string,
-    generation: number,
-    calls: Array<Record<string, unknown>>,
-    ctx: ReturnType<typeof createToolContext>,
-    secrets: Record<string, string>,
-    maxBytes: number,
-    mcpTools: Record<string, [string, string]>,
-    maxToolCalls: number,
-  ): Promise<void> {
-    const history = await this.db.listMessages(runId);
-    let executed = executedToolCalls(history);
-    const owner = await this.db.getAgent(ctx.agent_id);
-    const orgId = typeof owner?.org_id === "string" && owner.org_id ? owner.org_id : undefined;
-    const reads = history
-      .filter((row) => recordOf(row.payload).role === "tool")
-      .map((row) => ({ seq: row.seq, metadata: recordOf(row.metadata) }));
-    for (const call of calls) {
-      if (this.generations.isCancelled(runId)) {
-        throw new GenerationCancelled();
-      }
-      if (!call || typeof call !== "object") {
-        continue;
-      }
-      const fn =
-        call.function && typeof call.function === "object" && !Array.isArray(call.function)
-          ? (call.function as Record<string, unknown>)
-          : {};
-      const toolName = typeof fn.name === "string" ? fn.name : "";
-      let payload: Record<string, unknown>;
-      let metadata: Record<string, unknown>;
-      const allowed =
-        ctx.offered_tools === null ||
-        ctx.offered_tools.has(toolName) ||
-        toolName in ctx.dynamic_tools;
-      if (allowed && toolName in mcpTools) {
-        [payload, metadata] = await this._invoke_mcp(
-          mcpTools[toolName] as [string, string],
-          call,
-          secrets,
-          maxBytes,
-          await this.machines.agentWorkspace(owner),
-          orgId,
-        );
-      } else {
-        [payload, metadata] = await invokeTool(ctx, call, secrets, maxBytes);
-        const step = repeatedReadStep(reads, metadata);
-        if (step !== null) {
-          const [content, pipeline] = processOutput(repeatedReadText(metadata, step), identityOutput, secrets, maxBytes);
-          payload = { ...payload, content };
-          metadata = { ...metadata, ...pipeline, repeat_of: step };
-        }
-      }
-      executed += 1;
-      const remaining = remainingAfter(maxToolCalls, executed);
-      [payload, metadata] = stampToolResult(payload, metadata, remaining);
-      const row = await this.events.commitMessage(runId, payload, { generation, ...metadata });
-      reads.push({ seq: Number(row.seq), metadata });
-    }
   }
 
   async _memory_replaced_by(run: Record<string, unknown>): Promise<string> {

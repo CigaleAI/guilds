@@ -70,7 +70,7 @@ generation loop.
 `apps/orchestrator/src/generation/coding.ts`, behind
 `GET /api/runs/:run_id/changes/:repository/diff`,
 `GET /api/runs/:run_id/tasks/:call_id/diff`, and
-`GET /api/runs/:id/tasks/:call_id/log`.
+`GET /api/runs/:run_id/tasks/:call_id/log`.
 
 **Exposure:** both read the agent's secret values to redact what
 they return. When that read failed, they redacted with no values
