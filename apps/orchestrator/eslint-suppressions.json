@@ -213,14 +213,6 @@
       "count": 1
     }
   },
-  "src/connectors/tavily/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 7
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/connectors/types.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1

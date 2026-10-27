@@ -1,4 +1,7 @@
+import { Value } from "@sinclair/typebox/value";
+import { decode } from "../../lib/decode.js";
 import type { FetchFn } from "../../net/http.js";
+import { ErrorBody, ErrorDetail, SearchResponse } from "./responses.js";
 
 export const BASE_URL = "https://api.tavily.com";
 const SEARCH_URL = `${BASE_URL}/search`;
@@ -13,20 +16,15 @@ export class TavilyError extends Error {
   }
 }
 
-export function formatSearch(payload: Record<string, unknown>): string {
-  const results = payload.results;
-  if (!Array.isArray(results) || results.length === 0) {
-    return "no results";
-  }
+/** A field as text, trimmed; null when it is not text or is blank. */
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function formatSearch(payload: SearchResponse): string {
   const blocks: string[] = [];
-  for (const item of results) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const row = item as Record<string, unknown>;
-    const lines = [row.title, row.url, row.content]
-      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
-      .map((value) => value.trim());
+  for (const row of payload.results ?? []) {
+    const lines = [row.title, row.url, row.content].map(text).filter((value) => value !== null);
     if (lines.length) {
       blocks.push(lines.join("\n"));
     }
@@ -34,31 +32,32 @@ export function formatSearch(payload: Record<string, unknown>): string {
   return blocks.length ? blocks.join("\n\n") : "no results";
 }
 
+/** The message of an error body, as text or one object deeper. */
+function errorMessage(payload: unknown): string | null {
+  if (!Value.Check(ErrorBody, payload)) {
+    return null;
+  }
+  const detail = payload.detail ?? payload.error ?? payload.message;
+  if (Value.Check(ErrorDetail, detail)) {
+    return text(detail.error ?? detail.message);
+  }
+  return text(detail);
+}
+
 async function errorDetail(response: Response): Promise<string> {
-  const text = await response.text();
+  const body = await response.text();
   let payload: unknown;
   try {
-    payload = text ? JSON.parse(text) : {};
+    payload = body ? JSON.parse(body) : {};
   } catch {
-    const stripped = text.trim();
+    const stripped = body.trim();
     return stripped || `Tavily HTTP ${response.status}`;
   }
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const detail = (payload as { detail?: unknown; error?: unknown; message?: unknown }).detail
-      ?? (payload as { error?: unknown }).error
-      ?? (payload as { message?: unknown }).message;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail.trim();
-    }
-    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
-      const inner = (detail as { error?: unknown; message?: unknown }).error
-        ?? (detail as { message?: unknown }).message;
-      if (typeof inner === "string" && inner.trim()) {
-        return inner.trim();
-      }
-    }
-  }
-  return `Tavily HTTP ${response.status}`;
+  return errorMessage(payload) ?? `Tavily HTTP ${response.status}`;
+}
+
+function unexpected(problem: string): TavilyError {
+  return new TavilyError(`Tavily returned an unexpected response at ${problem}`);
 }
 
 export type SearchOptions = {
@@ -89,8 +88,5 @@ export async function search(query: string, options: SearchOptions): Promise<str
   } catch {
     throw new TavilyError("Tavily returned a non-JSON body");
   }
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new TavilyError("Tavily returned a non-object");
-  }
-  return formatSearch(payload as Record<string, unknown>);
+  return formatSearch(decode(SearchResponse, payload, unexpected));
 }
