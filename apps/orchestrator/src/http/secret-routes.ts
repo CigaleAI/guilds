@@ -30,7 +30,7 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     const query = queryOf(request);
     const scope = { guildId: query.guild_id || null, agentId: query.agent_id || null };
-    return listOrgSecrets(db, String(org.id), String(user.id), scope);
+    return listOrgSecrets(db, String(org.id), user.id, scope);
   });
 
   app.post("/api/secrets", async (request, reply) => {
@@ -49,19 +49,19 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
     };
     return reply
       .code(201)
-      .send(await createSecret(services, String(org.id), String(user.id), draft));
+      .send(await createSecret(services, String(org.id), user.id, draft));
   });
 
   app.get("/api/secrets/:secret_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     return viewHeldSecret(
-      await requireMemberSecret(db, param(request, "secret_id"), String(user.id)),
+      await requireMemberSecret(db, param(request, "secret_id"), user.id),
     );
   });
 
   app.patch("/api/secrets/:secret_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const held = await requireMemberSecret(db, param(request, "secret_id"), String(user.id));
+    const held = await requireMemberSecret(db, param(request, "secret_id"), user.id);
     const body = bodyOf(request);
     return changeSecret(services, held, {
       name: body.name,
@@ -72,7 +72,7 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.put("/api/secrets/:secret_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const held = await requireMemberSecret(db, param(request, "secret_id"), String(user.id));
+    const held = await requireMemberSecret(db, param(request, "secret_id"), user.id);
     const missing = missingBodyFields(request.body, ["org_wide"]);
     if (missing) {
       throw missing;
@@ -82,7 +82,7 @@ export async function registerSecretRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.delete("/api/secrets/:secret_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const held = await requireMemberSecret(db, param(request, "secret_id"), String(user.id));
+    const held = await requireMemberSecret(db, param(request, "secret_id"), user.id);
     await deleteOrgSecret(services, held);
     return reply.code(204).send();
   });

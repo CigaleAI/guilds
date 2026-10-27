@@ -4,6 +4,8 @@ import { USER_COOKIE, USER_HEADER, resolveUser } from "../users/index.js";
 import type { AppDeps } from "./deps.js";
 import { requestCookies } from "./cookies.js";
 import { HttpError } from "./errors.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
+import type { UserRow } from "../db/users.js";
 import type { IdentityDatabase } from "../users/identity.js";
 
 export type IdentityRequest = {
@@ -17,7 +19,7 @@ export type IdentityReply = {
 /** How an extension identifies a request's user, in place of core's modes. */
 export type IdentityProvider = {
   /** The request's user, or a 401. */
-  currentUser(request: IdentityRequest): Promise<Record<string, unknown>>;
+  currentUser(request: IdentityRequest): Promise<UserRow>;
   /** Runs as each response is sent, for a provider that renews a credential. */
   onSend?(request: IdentityRequest, reply: IdentityReply): void;
   /** What its sign-in page needs to know, answered with the mode at `GET /api/auth/config`. */
@@ -36,7 +38,7 @@ export async function currentUser(
   db: IdentityDatabase,
   request: IdentityRequest,
   deps: Pick<AppDeps, "config" | "identity"> = {},
-): Promise<Record<string, unknown>> {
+): Promise<UserRow> {
   if (deps.identity) {
     return deps.identity.currentUser(request);
   }
@@ -51,7 +53,7 @@ export async function currentUser(
   const token = headerOrCookie(request, USER_HEADER, USER_COOKIE);
   const users = await db.listUsers();
   try {
-    return resolveUser(users as Array<{ id: string }>, token) as Record<string, unknown>;
+    return resolveUser(users, token);
   } catch (error) {
     throw identityHttp(error);
   }
@@ -60,12 +62,12 @@ export async function currentUser(
 export async function currentOrg(
   db: IdentityDatabase,
   request: IdentityRequest,
-  user: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
+  user: UserRow,
+): Promise<OrgMembershipRow> {
   const token = headerOrCookie(request, ORG_HEADER, ORG_COOKIE);
-  const memberships = await db.listOrgsForUser(String(user.id));
+  const memberships = await db.listOrgsForUser(user.id);
   try {
-    return resolveOrg(memberships as Array<{ id: string }>, token) as Record<string, unknown>;
+    return resolveOrg(memberships, token);
   } catch (error) {
     throw identityHttp(error);
   }
@@ -75,7 +77,7 @@ async function trustedHeaderUser(
   db: IdentityDatabase,
   request: IdentityRequest,
   deps: Pick<AppDeps, "config">,
-): Promise<Record<string, unknown>> {
+): Promise<UserRow> {
   const expected = deps.config?.trustedProxySecret ?? "";
   const provided = String(request.headers["x-guilds-proxy-secret"] ?? "");
   if (!expected || provided !== expected) {

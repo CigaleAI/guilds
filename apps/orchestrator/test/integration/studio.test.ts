@@ -64,6 +64,7 @@ import { insertIssue } from "../../src/db/issues.js";
 import { getSchedule, listSchedules } from "../../src/db/schedules.js";
 import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq } from "../../src/db/conversations.js";
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
+import { userRow } from "../helpers/users.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -287,7 +288,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     const createdDraft = await studio.drafts.createFromTool(
       {
         session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
-        user: { id: "user_operator", name: "operator" },
+        user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
         generation: 1,
@@ -328,7 +329,7 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     const second = await studio.drafts.createFromTool(
       {
         session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
-        user: { id: "user_operator", name: "operator" },
+        user: userRow({ id: "user_operator", name: "operator" }),
         orgId: "org_home",
         sourceGuildId: "guild_studio",
         generation: 1,
@@ -506,7 +507,7 @@ test("studio reads agent access, script source, and granted connections", { time
 
     const toolContext = async (): Promise<StudioToolContext> => ({
       session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
-      user: { id: "user_operator", name: "operator" },
+      user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_access",
       generation: 1,
@@ -873,7 +874,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     // Focus pins: each kind inserts an evidence row before the question; foreign ids are refused.
     const toolCtx = (): StudioToolContext => ({
       session: { id: session.id, org_id: "org_home", source_guild_id: "guild_ev" },
-      user: { id: "user_operator", name: "operator" },
+      user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_ev",
       generation: 1,
@@ -910,7 +911,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     ];
     for (const pin of pins) {
       const before = (await listConversationMessages(db, "studio", session.id)).length;
-      await studio.postMessage(await sessionRow(), { id: "user_operator", name: "operator" }, `Question about ${String(pin.kind)}`, pin);
+      await studio.postMessage(await sessionRow(), userRow({ id: "user_operator", name: "operator" }), `Question about ${String(pin.kind)}`, pin);
       await studio.runner.wait(session.id);
       const rows = await listConversationMessages(db, "studio", session.id);
       const focusRow = rows[before] as unknown as { payload: { role: string; content: string }; metadata: { source: string; focus: { kind: string; label: string } } };
@@ -1102,7 +1103,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
       session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
-      user: { id: "user_operator", name: "operator" },
+      user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_ed",
       generation: 1,
@@ -1321,7 +1322,7 @@ test("studio proposes tables to create, change, and delete that the operator app
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
       session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
-      user: { id: "user_operator", name: "operator" },
+      user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_tb",
       generation: 1,
@@ -1662,7 +1663,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
       session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
-      user: { id: "user_operator", name: "operator" },
+      user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_nw",
       generation: 1,
@@ -1920,7 +1921,7 @@ test("studio proposes routines to create, change, and delete that the operator a
     const session = created.json() as { id: string };
     const ctx = async (): Promise<StudioToolContext> => ({
       session: (await getStudioSession(db, session.id)) as Record<string, unknown>,
-      user: { id: "user_operator", name: "operator" },
+      user: userRow({ id: "user_operator", name: "operator" }),
       orgId: "org_home",
       sourceGuildId: "guild_rt",
       generation: 1,

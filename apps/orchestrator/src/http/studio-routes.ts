@@ -17,6 +17,7 @@ import type { StudioService } from "../studio/index.js";
 import { bodyOf, param, queryOf } from "./request.js";
 import { isOrgManager } from "../organisations/service.js";
 import { listAgentRoutines, listAgentRunHeaders, readGuildRun, type InspectorServices } from "../studio/inspector.js";
+import type { UserRow } from "../db/users.js";
 
 
 function studioOf(deps: AppDeps): StudioService {
@@ -47,7 +48,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/studio/sessions", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return studioOf(deps).listSessions(String(org.id), String(user.id));
+    return studioOf(deps).listSessions(String(org.id), user.id);
   });
 
   app.post("/api/studio/sessions", async (request) => {
@@ -179,7 +180,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/studio/guilds/:guild_id/inventory", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const studio = studioOf(deps);
     const rows = await studio.guildInventory(String(guild.id));
     return rows.map((row) => studio.inventoryItem(row));
@@ -291,7 +292,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/studio/orphan-drafts", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    if (!(await isOrgManager(db, String(org.id), String(user.id)))) {
+    if (!(await isOrgManager(db, String(org.id), user.id))) {
       throw new HttpError(403, "forbidden");
     }
     return (await studioOf(deps).orphanDrafts(String(org.id))).map(viewDraft);
@@ -530,7 +531,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
 
 async function loadDraft(
   deps: AppDeps,
-  user: Record<string, unknown>,
+  user: UserRow,
   org: Record<string, unknown>,
   draftId: string,
 ): Promise<Record<string, unknown>> {
@@ -540,10 +541,10 @@ async function loadDraft(
 
 async function loadDraftContext(
   deps: AppDeps,
-  user: Record<string, unknown>,
+  user: UserRow,
   org: Record<string, unknown>,
   draftId: string,
-): Promise<{ session: Record<string, unknown>; draft: Record<string, unknown>; user: Record<string, unknown>; orphan: boolean }> {
+): Promise<{ session: Record<string, unknown>; draft: Record<string, unknown>; user: UserRow; orphan: boolean }> {
   const studio = studioOf(deps);
   const found = await studio.orgDraft(String(org.id), draftId);
   if (!found) {
@@ -553,11 +554,11 @@ async function loadDraftContext(
   if (!session) {
     throw new HttpError(404, "studio session not found");
   }
-  if (session.created_by_user_id && String(session.created_by_user_id) === String(user.id)) {
+  if (session.created_by_user_id && String(session.created_by_user_id) === user.id) {
     return { session, draft, user, orphan: false };
   }
   if (!session.created_by_user_id) {
-    if (await isOrgManager(deps.db, String(org.id), String(user.id))) {
+    if (await isOrgManager(deps.db, String(org.id), user.id)) {
       return { session, draft, user, orphan: true };
     }
   }

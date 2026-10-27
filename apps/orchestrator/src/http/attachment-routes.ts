@@ -35,7 +35,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance, deps: AppDe
       }
       const row = await attachments().upload({
         orgId: String(org.id),
-        userId: String(user.id),
+        userId: user.id,
         filename: String(request.headers["x-filename"] ?? ""),
         bytes: request.body,
       });

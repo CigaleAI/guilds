@@ -1,6 +1,7 @@
 import { hiddenGuildsFor } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { NO_HIDDEN_GUILDS, type ArtifactActor, type HiddenGuilds } from "./types.js";
+import type { UserRow } from "../db/users.js";
 
 export function operatorActor(args: {
   orgId: string;
@@ -49,15 +50,15 @@ export type OperatorScope = { orgId: string; guildId?: string | null; agentId?: 
 /** The user as an artifact actor in `scope`, with the private guilds they do not operate hidden from them. */
 export async function loadOperatorActor(
   db: Queryable,
-  user: Record<string, unknown>,
+  user: UserRow,
   scope: OperatorScope,
 ): Promise<ArtifactActor> {
   return operatorActor({
     orgId: scope.orgId,
-    actorId: String(user.id),
-    actorName: String(user.name ?? "operator"),
+    actorId: user.id,
+    actorName: user.name,
     guildId: scope.guildId ?? null,
     agentId: scope.agentId ?? null,
-    hidden: await hiddenGuildsFor(db, scope.orgId, String(user.id)),
+    hidden: await hiddenGuildsFor(db, scope.orgId, user.id),
   });
 }

@@ -48,14 +48,14 @@ export async function registerArtifactAccessRoutes(
 
   app.get("/api/guilds/:guild_id/reach", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const actor = await loadOperatorActor(db, user, { orgId: guild.org_id });
     return store.reachOf(actor, { type: "guild", id: guild.id, guildId: guild.id });
   });
 
   app.get("/api/agents/:agent_id/reach", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const actor = await loadOperatorActor(db, user, { orgId: agent.org_id });
     return store.reachOf(actor, { type: "agent", id: agent.id, guildId: agent.guild_id });
   });

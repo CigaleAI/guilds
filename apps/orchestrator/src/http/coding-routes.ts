@@ -37,20 +37,20 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/repositories", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    return listGuildRepositoryView(db, guild, String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
+    return listGuildRepositoryView(db, guild, user.id);
   });
 
   app.post("/api/guilds/:guild_id/repositories", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const added = await addGuildRepository(repositories, guild, String(user.id), bodyOf(request));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
+    const added = await addGuildRepository(repositories, guild, user.id, bodyOf(request));
     return reply.code(201).send(added);
   });
 
   app.delete("/api/guilds/:guild_id/repositories/:repository_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     await removeGuildRepository(db, guild, param(request, "repository_id"));
     return reply.code(204).send();
   });
@@ -60,7 +60,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     const connection = await requireVisibleGithubConnection(
       db,
       param(request, "connection_id"),
-      String(user.id),
+      user.id,
     );
     return { repositories: await reachableRepositories(repositories, connection) };
   });
@@ -70,7 +70,7 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     const connection = await requireVisibleGithubConnection(
       db,
       param(request, "connection_id"),
-      String(user.id),
+      user.id,
     );
     return selectGithubRepositories(repositories, connection, bodyOf(request).repositories);
   });
@@ -84,36 +84,36 @@ export async function registerCodingRoutes(app: FastifyInstance, deps: AppDeps):
     const user = await currentUser(identityDb, request, deps);
     return loadHarnessView(
       review,
-      await requireVisibleAgent(db, param(request, "agent_id"), String(user.id)),
+      await requireVisibleAgent(db, param(request, "agent_id"), user.id),
     );
   });
 
   app.post("/api/agents/:agent_id/harness/check", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return checkAgentHarness(review, agent, bodyOf(request).harness);
   });
 
   app.get("/api/runs/:run_id/changes", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    return listRunChanges(await requireVisibleRun(db, param(request, "run_id"), String(user.id)));
+    return listRunChanges(await requireVisibleRun(db, param(request, "run_id"), user.id));
   });
 
   app.get("/api/runs/:run_id/tasks/:call_id/diff", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
+    const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return taskDiff(review, run, param(request, "call_id"));
   });
 
   app.get("/api/runs/:run_id/tasks/:call_id/log", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
+    const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return taskLog(review, run, param(request, "call_id"));
   });
 
   app.get("/api/runs/:run_id/changes/:repository/diff", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
+    const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return repositoryDiff(review, run, param(request, "repository"));
   });
 }

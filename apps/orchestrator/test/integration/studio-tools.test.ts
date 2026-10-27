@@ -16,6 +16,7 @@ import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { createScheduleRun } from "../../src/db/runs.js";
+import { userRow } from "../helpers/users.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 
@@ -235,7 +236,7 @@ test("studio lists the guild's tools with who is offered each and how their call
       pool: database.pool,
       orgId: "org_home",
       sourceGuildId: "guild_tl",
-      user: { id: "user_operator", name: "operator" },
+      user: userRow(),
     };
     const pinned = await resolveStudioFocus(deps, { kind: "tool", tool_name: "note_get" });
     assert.equal(pinned.focus.kind, "tool");

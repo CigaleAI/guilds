@@ -58,7 +58,7 @@ export async function registerOAuthRoutes(app: FastifyInstance, deps: AppDeps): 
       throw missing;
     }
     const body = bodyOf(request);
-    const started = await startConnection(services, String(user.id), {
+    const started = await startConnection(services, user.id, {
       serverId: String(body.mcp_server_id ?? ""),
       ownerScope: String(body.owner_scope ?? ""),
       ownerId: body.owner_id,

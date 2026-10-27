@@ -13,6 +13,7 @@ import type { GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import type { GroupChat } from "../groupchat/index.js";
 import { memoryHistory } from "../memory/history.js";
+import type { UserRow } from "../db/users.js";
 
 /** What an operator's notes are read and written through, built once from the app's services. */
 export type OperatorNotesServices = {
@@ -45,7 +46,7 @@ function hostOwnerOf(owner: NotesOwner): HostFileOwner {
 async function actorFor(
   services: OperatorNotesServices,
   owner: NotesOwner,
-  user: Record<string, unknown>,
+  user: UserRow,
 ): Promise<ArtifactActor> {
   if (owner.level === "org") {
     return loadOperatorActor(services.db, user, { orgId: owner.orgId });
@@ -101,7 +102,7 @@ function validateExpectedVersion(value: unknown): number | undefined {
 export async function listOwnerNotes(
   services: OperatorNotesServices,
   owner: NotesOwner,
-  user: Record<string, unknown>,
+  user: UserRow,
 ): Promise<Array<Record<string, unknown>>> {
   return listHostFiles(
     services.artifacts,
@@ -113,7 +114,7 @@ export async function listOwnerNotes(
 export async function readOwnerNote(
   services: OperatorNotesServices,
   owner: NotesOwner,
-  user: Record<string, unknown>,
+  user: UserRow,
   path: string,
 ): Promise<Record<string, unknown>> {
   const actor = await actorFor(services, owner, user);
@@ -129,7 +130,7 @@ export async function readOwnerNote(
 export async function writeOwnerNote(
   services: OperatorNotesServices,
   owner: NotesOwner,
-  user: Record<string, unknown>,
+  user: UserRow,
   write: NoteWrite,
 ): Promise<Record<string, unknown>> {
   const expectedVersion =
@@ -146,7 +147,7 @@ export async function writeOwnerNote(
 export async function deleteOwnerNote(
   services: OperatorNotesServices,
   owner: NotesOwner,
-  user: Record<string, unknown>,
+  user: UserRow,
   path: string,
 ): Promise<void> {
   await deleteHostFile(
@@ -162,7 +163,7 @@ export async function deleteOwnerNote(
 export async function readMemoryHistory(
   services: OperatorNotesServices,
   agent: AgentRow,
-  user: Record<string, unknown>,
+  user: UserRow,
 ): Promise<unknown> {
   const actor = await actorFor(services, { level: "agent", agent }, user);
   return memoryHistory({ artifacts: services.artifacts, db: services.db }, actor, {

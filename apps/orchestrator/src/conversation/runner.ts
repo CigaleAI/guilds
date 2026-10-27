@@ -37,6 +37,7 @@ import {
   type ProjectionBudget,
 } from "./projection.js";
 import { writeLog } from "../observability/log.js";
+import type { UserRow } from "../db/users.js";
 
 export const generationLive = {
   streamCompletion,
@@ -122,7 +123,7 @@ export class ConversationRunner {
 
   start(args: {
     session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    user: UserRow;
     generation: number;
     generationContext: string;
     systemContent?: string;
@@ -154,7 +155,7 @@ export class ConversationRunner {
 
   private async run(args: {
     session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    user: UserRow;
     generation: number;
     generationContext: string;
     systemContent?: string;

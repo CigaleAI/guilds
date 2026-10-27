@@ -27,20 +27,20 @@ export async function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): Pr
   /** The request's membership of the organisation the route names. */
   async function membershipOf(request: FastifyRequest) {
     const user = await currentUser(identityDb, request, deps);
-    const membership = await requireMembership(db, param(request, "org_id"), String(user.id));
+    const membership = await requireMembership(db, param(request, "org_id"), user.id);
     return { user, membership };
   }
 
   app.get("/api/orgs", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    return listUserOrgs(db, String(user.id));
+    return listUserOrgs(db, user.id);
   });
 
   /** Behind an authenticating proxy only the instance administrator creates organisations. */
   app.post("/api/orgs", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const compat = (deps.config?.authMode ?? "compat-cookie") === "compat-cookie";
-    if (!compat && !(await isInstanceAdmin(deps, String(user.id)))) {
+    if (!compat && !(await isInstanceAdmin(deps, user.id))) {
       throw new HttpError(404, "Not Found");
     }
     const missing = missingBodyFields(request.body, ["name", "slug"]);
@@ -51,7 +51,7 @@ export async function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): Pr
     const draft = {
       name: String(body.name ?? ""),
       slug: String(body.slug ?? ""),
-      ownerId: String(user.id),
+      ownerId: user.id,
     };
     return reply.code(201).send(await createOrg(db, draft, deps.orgCreated));
   });
@@ -104,7 +104,7 @@ export async function registerOrgRoutes(app: FastifyInstance, deps: AppDeps): Pr
 
   app.delete("/api/orgs/:org_id/members/:user_id", async (request, reply) => {
     const { user, membership } = await membershipOf(request);
-    await removeOrgMember(db, membership, param(request, "user_id"), String(user.id));
+    await removeOrgMember(db, membership, param(request, "user_id"), user.id);
     return reply.code(204).send();
   });
 }

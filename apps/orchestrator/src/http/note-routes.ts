@@ -21,6 +21,7 @@ import { notesRead, notesWrite } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
 import { bodyOf, filePathParam, param, queryOf } from "./request.js";
+import type { UserRow } from "../db/users.js";
 
 /** The paths a comma-separated query value or a JSON array in a body lists. */
 function pathsOf(raw: unknown): string[] {
@@ -46,7 +47,7 @@ export async function registerNoteRoutes(app: FastifyInstance, deps: RouteDeps):
     prefix: string,
     resolve: (
       request: FastifyRequest,
-    ) => Promise<{ owner: NotesOwner; user: Record<string, unknown> }>,
+    ) => Promise<{ owner: NotesOwner; user: UserRow }>,
   ): void {
     app.get(prefix, async (request) => {
       const { owner, user } = await resolve(request);
@@ -78,13 +79,13 @@ export async function registerNoteRoutes(app: FastifyInstance, deps: RouteDeps):
 
   registerOwnerNotes("/api/guilds/:guild_id/notes", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return { owner: { level: "guild", guild }, user };
   });
 
   registerOwnerNotes("/api/agents/:agent_id/notes", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return { owner: { level: "agent", agent }, user };
   });
 
@@ -96,7 +97,7 @@ export async function registerNoteRoutes(app: FastifyInstance, deps: RouteDeps):
 
   app.get("/api/agents/:agent_id/memory", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return readMemoryHistory(services, agent, user);
   });
 

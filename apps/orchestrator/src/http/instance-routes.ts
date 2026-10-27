@@ -15,7 +15,7 @@ export async function registerInstanceRoutes(app: FastifyInstance, deps: AppDeps
    */
   app.get("/api/instance", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const audit = await isInstanceAdmin(deps, String(user.id));
+    const audit = await isInstanceAdmin(deps, user.id);
     return {
       auth_mode: deps.config?.authMode ?? "compat-cookie",
       integrations: integrationStatuses(

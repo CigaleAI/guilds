@@ -26,6 +26,7 @@ import { getSchedule } from "../db/schedules.js";
 import { getIssue } from "../db/issues.js";
 import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
+import type { UserRow } from "../db/users.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -66,7 +67,7 @@ export type StudioFocusDeps = {
   artifacts: ArtifactStore;
   orgId: string;
   sourceGuildId: string;
-  user: Record<string, unknown>;
+  user: UserRow;
 };
 
 function trimmedText(value: unknown): string {

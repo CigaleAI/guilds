@@ -25,6 +25,7 @@ import {
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import { blockingErrors, validateRecipe } from "../recipes/validate.js";
 import { PolicyError } from "../policy/index.js";
+import type { UserRow } from "../db/users.js";
 import type { AppDeps } from "./deps.js";
 import { pickEntry, RegistryError } from "../registry/index.js";
 import { latestEntries, registryHttp, registryOf } from "./admin-registry-routes.js";
@@ -94,7 +95,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   /** Adds an imported document to the organisation's library as a private draft. */
-  async function importRecipe(org: Record<string, unknown>, user: Record<string, unknown>, document: unknown) {
+  async function importRecipe(org: Record<string, unknown>, user: UserRow, document: unknown) {
     const parsed = resetImported(parseRecipe(document));
     if (hasForbiddenSecrets(parsed)) {
       throw new RecipeError("recipe must not contain secrets or ciphertext");
@@ -104,7 +105,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
       {
         recipeId: newId("rcp"),
         orgId: String(org.id),
-        createdByUserId: String(user.id),
+        createdByUserId: user.id,
         name: parsed.meta.name,
         description: parsed.meta.description,
         body: parsed,
@@ -174,7 +175,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
       throw new HttpError(422, "recipes are not available");
     }
     try {
-      const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+      const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
       const body = bodyOf(request);
       const parsed = await captureGuild(
         {
@@ -194,7 +195,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
         {
           recipeId: newId("rcp"),
           orgId: String(guild.org_id),
-          createdByUserId: String(user.id),
+          createdByUserId: user.id,
           name: parsed.meta.name,
           description: parsed.meta.description,
           body: parsed,
@@ -363,7 +364,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/apply", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return applyOf(deps).guildApplyState(String(guild.id));
   });
 

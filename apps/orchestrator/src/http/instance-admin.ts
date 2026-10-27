@@ -3,6 +3,7 @@ import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentUser, type IdentityRequest } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
+import type { UserRow } from "../db/users.js";
 
 /** Decides whether a user may administer the instance, in place of core's rule. */
 export type InstanceAdmin = (userId: string) => Promise<boolean>;
@@ -25,9 +26,9 @@ export async function isInstanceAdmin(
 export async function requireInstanceAdmin(
   deps: Pick<AppDeps, "db" | "instanceAdmin" | "config" | "identity">,
   request: IdentityRequest,
-): Promise<Record<string, unknown>> {
+): Promise<UserRow> {
   const user = await currentUser(identityDatabase(deps.db), request, deps);
-  if (!(await isInstanceAdmin(deps, String(user.id)))) {
+  if (!(await isInstanceAdmin(deps, user.id))) {
     throw new HttpError(404, "Not Found");
   }
   return user;

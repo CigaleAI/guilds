@@ -57,7 +57,9 @@ idle as its second argument, `reportPoolError` from
 are exported from `connectors/servers.js`; the functions of
 `db/connectors.js` return the stored row, `ConnectorRow`, and are
 `getConnector`, `getConnectorBySlug`, `listOrgConnectors`, and
-`setConnectorOauthClient`.
+`setConnectorOauthClient`. An `IdentityProvider`'s `currentUser`
+resolves to a `UserRow` (`db/users.js`), and `serverItem`
+(`credentials/items.js`) takes a `LoadedConnector`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

@@ -49,7 +49,7 @@ type FileOwner = { level: ArtifactLevel; ownerId: string; guildId: string | null
 
 async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
   const user = await currentUser(identityDatabase(deps.db), request, deps);
-  const row = await requireVisibleAgent(deps.db, param(request, "agent_id"), String(user.id));
+  const row = await requireVisibleAgent(deps.db, param(request, "agent_id"), user.id);
   const actor = await loadOperatorActor(deps.db, user, {
     orgId: String(row.org_id),
     guildId: String(row.guild_id),
@@ -60,7 +60,7 @@ async function agentOwner(deps: AppDeps, request: FastifyRequest): Promise<FileO
 
 async function guildOwner(deps: AppDeps, request: FastifyRequest): Promise<FileOwner> {
   const user = await currentUser(identityDatabase(deps.db), request, deps);
-  const row = await requireVisibleGuild(deps.db, param(request, "guild_id"), String(user.id));
+  const row = await requireVisibleGuild(deps.db, param(request, "guild_id"), user.id);
   const actor = await loadOperatorActor(deps.db, user, { orgId: String(row.org_id), guildId: String(row.id) });
   return { level: "guild", ownerId: String(row.id), guildId: String(row.id), actor };
 }

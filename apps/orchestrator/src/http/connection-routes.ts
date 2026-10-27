@@ -46,14 +46,14 @@ export async function registerConnectionRoutes(app: FastifyInstance, deps: AppDe
     const org = await currentOrg(identityDb, request, user);
     const query = queryOf(request);
     const scope = { guildId: query.guild_id || null, agentId: query.agent_id || null };
-    return listConnections(db, String(org.id), String(user.id), scope);
+    return listConnections(db, String(org.id), user.id, scope);
   });
 
   app.get("/api/mcp/connections/:connection_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     return viewConnection(
       db,
-      await requireVisibleConnection(db, param(request, "connection_id"), String(user.id)),
+      await requireVisibleConnection(db, param(request, "connection_id"), user.id),
     );
   });
 
@@ -62,7 +62,7 @@ export async function registerConnectionRoutes(app: FastifyInstance, deps: AppDe
     const connection = await requireVisibleConnection(
       db,
       param(request, "connection_id"),
-      String(user.id),
+      user.id,
     );
     const body = bodyOf(request);
     return callConnectionTool(services, connection, {
@@ -90,7 +90,7 @@ export async function registerConnectionRoutes(app: FastifyInstance, deps: AppDe
     const connection = await requireVisibleConnection(
       db,
       param(request, "connection_id"),
-      String(user.id),
+      user.id,
     );
     const query = queryOf(request);
     return lookupWithLogin(services, connection, {
@@ -104,7 +104,7 @@ export async function registerConnectionRoutes(app: FastifyInstance, deps: AppDe
     const connection = await requireVisibleConnection(
       db,
       param(request, "connection_id"),
-      String(user.id),
+      user.id,
     );
     return saveConnectionSettings(services, connection, bodyOf(request).settings);
   });
@@ -114,7 +114,7 @@ export async function registerConnectionRoutes(app: FastifyInstance, deps: AppDe
     const connection = await requireVisibleConnection(
       db,
       param(request, "connection_id"),
-      String(user.id),
+      user.id,
     );
     await deleteConnection(services, connection);
     return reply.code(204).send();

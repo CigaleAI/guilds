@@ -18,7 +18,7 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/platform", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    if (!(await isInstanceAdmin(deps, String(user.id)))) {
+    if (!(await isInstanceAdmin(deps, user.id))) {
       throw new HttpError(404, "Not Found");
     }
     return loadAccessView(mcpDatabase(db), { viewScope: "platform", mcp });
@@ -32,7 +32,7 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/guilds/:guild_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return loadAccessView(mcpDatabase(db), {
       orgId: guild.org_id,
       guildId: guild.id,
@@ -43,7 +43,7 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
 
   app.get("/api/agents/:agent_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return loadAccessView(mcpDatabase(db), {
       orgId: agent.org_id,
       guildId: agent.guild_id,

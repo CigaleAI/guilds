@@ -39,6 +39,7 @@ import {
   updateStudioDraft,
 } from "../db/studio.js";
 import { listConversationMessages } from "../db/conversations.js";
+import type { UserRow } from "../db/users.js";
 
 export type StudioDraftService = {
   createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -57,7 +58,7 @@ const REF_KINDS = new Set([
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
 
-function userIdOf(user: Record<string, unknown>): string | null {
+function userIdOf(user: UserRow): string | null {
   return typeof user.id === "string" ? user.id : null;
 }
 
@@ -154,7 +155,7 @@ export class StudioDrafts implements StudioDraftService {
 
   async revise(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     draftId: string,
     proposed: string,
     expectedHeadId: string,
@@ -195,7 +196,7 @@ export class StudioDrafts implements StudioDraftService {
 
   async discard(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     draftId: string,
   ): Promise<Record<string, unknown>> {
     const now = new Date();
@@ -218,7 +219,7 @@ export class StudioDrafts implements StudioDraftService {
 
   async publish(args: {
     session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    user: UserRow;
     draftId: string;
     db: StudioToolContext["db"];
     preview: StudioToolContext["preview"];
@@ -255,7 +256,7 @@ export class StudioDrafts implements StudioDraftService {
       const actor = this.artifacts.operatorContext(
         String(session.org_id),
         String(user.id ?? "orphan"),
-        String(user.name ?? "operator"),
+        user.name,
         { guildId: String(draft.source_guild_id), agentId: String(draft.target_agent_id) },
       );
       const live = await getAgentTask(client ?? args.db, String(session.org_id), String(draft.target_agent_id));

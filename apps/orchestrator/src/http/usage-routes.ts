@@ -16,14 +16,14 @@ export async function registerUsageRoutes(app: FastifyInstance, deps: AppDeps): 
   app.get("/api/usage", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return { organisation: await usageForOrg(services, org, String(user.id)) };
+    return { organisation: await usageForOrg(services, org, user.id) };
   });
 
   app.get("/api/guilds/:guild_id/usage", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     return usageForGuild(
       db,
-      await requireVisibleGuild(db, param(request, "guild_id"), String(user.id)),
+      await requireVisibleGuild(db, param(request, "guild_id"), user.id),
     );
   });
 
@@ -31,7 +31,7 @@ export async function registerUsageRoutes(app: FastifyInstance, deps: AppDeps): 
     const user = await currentUser(identityDb, request, deps);
     return usageForAgent(
       db,
-      await requireVisibleAgent(db, param(request, "agent_id"), String(user.id)),
+      await requireVisibleAgent(db, param(request, "agent_id"), user.id),
     );
   });
 }

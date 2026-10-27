@@ -23,7 +23,7 @@ export async function registerUserRoutes(app: FastifyInstance, deps: AppDeps): P
     }
     if (mode === "trusted-header" && !deps.identity) {
       const user = await currentUser(identityDb, request, deps);
-      if (await isInstanceAdmin(deps, String(user.id))) {
+      if (await isInstanceAdmin(deps, user.id)) {
         return;
       }
     }

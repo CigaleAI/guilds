@@ -34,6 +34,7 @@ import { listSchedules } from "../db/schedules.js";
 import { listSecrets } from "../db/secrets.js";
 import { listGuildRepositories } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import type { UserRow } from "../db/users.js";
 
 /** The db/ functions a guild is captured into a recipe through, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -157,7 +158,7 @@ export async function captureGuild(
   deps: CaptureDeps,
   args: {
     guild: Record<string, unknown>;
-    user: Record<string, unknown>;
+    user: UserRow;
     includeNotes?: string[];
   },
 ): Promise<RecipeDocument> {

@@ -11,7 +11,7 @@ import { bodyOf, param } from "./request.js";
 
 async function requireMember(deps: AppDeps, request: FastifyRequest, orgId: string): Promise<void> {
   const user = await currentUser(identityDatabase(deps.db), request, deps);
-  await requireMembership(deps.db, orgId, String(user.id));
+  await requireMembership(deps.db, orgId, user.id);
 }
 
 async function requireManager(
@@ -20,7 +20,7 @@ async function requireManager(
   orgId: string,
 ): Promise<void> {
   const user = await currentUser(identityDatabase(deps.db), request, deps);
-  await requireOrgManager(deps.db, orgId, String(user.id));
+  await requireOrgManager(deps.db, orgId, user.id);
 }
 
 function providerParam(request: FastifyRequest): string {

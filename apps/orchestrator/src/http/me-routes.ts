@@ -6,16 +6,17 @@ import { currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { bodyOf } from "./request.js";
+import type { UserRow } from "../db/users.js";
 
 /** How this server identifies a request, and the request's own user. */
 export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const identityDb = identityDatabase(db);
 
-  async function me(user: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async function me(user: UserRow): Promise<Record<string, unknown>> {
     return {
-      ...userItem(user as never),
-      platform_admin: await isInstanceAdmin(deps, String(user.id)),
+      ...userItem(user),
+      platform_admin: await isInstanceAdmin(deps, user.id),
     };
   }
 
@@ -39,7 +40,7 @@ export async function registerMeRoutes(app: FastifyInstance, deps: AppDeps): Pro
       ...("timezone" in body ? { timezone: body.timezone } : {}),
       ...("color" in body ? { color: body.color } : {}),
     };
-    return me(await changeOwnProfile(db, String(user.id), change));
+    return me(await changeOwnProfile(db, user.id, change));
   });
 
 }

@@ -13,6 +13,7 @@ import { newId } from "../lib/ids.js";
 import { serverVisible } from "../mcp/visibility.js";
 import { resetBinding, writeBinding } from "./bindings.js";
 import { BindingError, validateBinding, validateCatalog, validateScope } from "./index.js";
+import type { UserRow } from "../db/users.js";
 
 /** A binding as an operator asks for it, before validation; `connectionId` absent keeps the stored login. */
 export type BindingRequest = {
@@ -97,13 +98,13 @@ async function loadBoundConnector(
  */
 export async function setBinding(
   db: Queryable,
-  user: Record<string, unknown>,
+  user: UserRow,
   request: BindingRequest,
 ): Promise<Record<string, unknown>> {
   const [catalogKind, catalogId] = validateCatalog(request.catalogKind, request.catalogId);
   const [scope, scopeId] = validateScope(request.scope, request.scopeId);
   const key = { catalogKind, catalogId, scope, scopeId };
-  const guildId = await assertChangesScope(db, scope, scopeId, String(user.id));
+  const guildId = await assertChangesScope(db, scope, scopeId, user.id);
   const orgId = await scopeOrgId(db, scope, scopeId);
   const replacesConnection = request.connectionId !== undefined;
   const connectionId = request.connectionId ?? null;
@@ -141,12 +142,12 @@ export async function setBinding(
 /** Removes a binding at a scope the user may change. */
 export async function removeBinding(
   db: Queryable,
-  user: Record<string, unknown>,
+  user: UserRow,
   request: BindingKey,
 ): Promise<void> {
   const [catalogKind, catalogId] = validateCatalog(request.catalogKind, request.catalogId);
   const [scope, scopeId] = validateScope(request.scope, request.scopeId);
-  await assertChangesScope(db, scope, scopeId, String(user.id));
+  await assertChangesScope(db, scope, scopeId, user.id);
   if (
     (await resetBinding(db, { catalogKind, catalogId, scope, scopeId }, userActor(user))) === null
   ) {

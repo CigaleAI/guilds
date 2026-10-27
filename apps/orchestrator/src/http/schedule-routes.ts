@@ -27,19 +27,19 @@ export async function registerScheduleRoutes(app: FastifyInstance, deps: AppDeps
 
   app.get("/api/guilds/:guild_id/schedules", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return schedules.listForGuild(guild.id);
   });
 
   app.get("/api/agents/:agent_id/schedules", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return schedules.viewsForAgent(agent.id);
   });
 
   app.post("/api/agents/:agent_id/schedules", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const missing = missingBodyFields(request.body, ["description", "instruction"]);
     if (missing) {
       throw missing;
@@ -63,7 +63,7 @@ export async function registerScheduleRoutes(app: FastifyInstance, deps: AppDeps
 
   app.patch("/api/agents/:agent_id/schedules/:schedule_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const changes = scheduleChanges(bodyOf(request));
     const row = await schedules.update(
       userActor(user),
@@ -81,7 +81,7 @@ export async function registerScheduleRoutes(app: FastifyInstance, deps: AppDeps
 
   app.delete("/api/agents/:agent_id/schedules/:schedule_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const scheduleId = param(request, "schedule_id");
     await schedules.delete(userActor(user), agent.id, scheduleId);
     await publishGroup(deps, agent.guild_id, "agent.routines.changed", {

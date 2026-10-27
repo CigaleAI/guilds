@@ -120,7 +120,7 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
     if (body.confirm_replace !== true) {
       await assertKeyChangeConfirmed(db, integration, keys.current(integration.id), values);
     }
-    const { previous } = await keys.put(integration, values, String(user.id));
+    const { previous } = await keys.put(integration, values, user.id);
     const { disconnected } = await applyKeyChange(
       { db, masterKey: deps.masterKey, mcp: deps.mcp },
       integration.id,
@@ -171,7 +171,7 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
       }
     }
     const state = newState();
-    pending.set(state, { userId: String(user.id), returnTo, expiresAt: now + PENDING_MS });
+    pending.set(state, { userId: user.id, returnTo, expiresAt: now + PENDING_MS });
     appendSetCookie(reply, githubManifestStateCookie(state, secure()));
     return {
       action: manifestAction(owner || null, state),

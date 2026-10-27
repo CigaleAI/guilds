@@ -14,6 +14,7 @@ import {
   type ServerExtension,
 } from "../../src/extension.js";
 import { OPEN_POLICY } from "../../src/policy/index.js";
+import { userRow } from "../helpers/users.js";
 
 const db = {} as pg.Pool;
 const client = {} as pg.PoolClient;
@@ -48,7 +49,7 @@ test("every extension's hook for a new organisation runs, in order", async () =>
 });
 
 test("the first extension that supplies a policy or an identity is the one used", async () => {
-  const identity = { currentUser: async () => ({ id: "user_1" }) };
+  const identity = { currentUser: async () => userRow({ id: "user_1" }) };
   const extensions: ServerExtension[] = [
     { name: "a", identity: () => undefined },
     { name: "b", policy: () => OPEN_POLICY, identity: () => identity },

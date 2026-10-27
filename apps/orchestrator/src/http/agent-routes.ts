@@ -45,19 +45,19 @@ export async function registerAgentRoutes(app: FastifyInstance, deps: RouteDeps)
 
   app.get("/api/guilds/:guild_id/agents", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return listGuildAgents(services, guild.id);
   });
 
   app.get("/api/guilds/:guild_id/embed-status", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return { agents: await listBrokenTaskEmbeds(services, guild) };
   });
 
   app.post("/api/guilds/:guild_id/agents", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const missing = missingBodyFields(request.body, ["name", "config"]);
     if (missing) {
       throw missing;
@@ -80,19 +80,19 @@ export async function registerAgentRoutes(app: FastifyInstance, deps: RouteDeps)
 
   app.get("/api/agents/:agent_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    return viewOf(await requireVisibleAgent(db, param(request, "agent_id"), String(user.id)));
+    return viewOf(await requireVisibleAgent(db, param(request, "agent_id"), user.id));
   });
 
   app.delete("/api/agents/:agent_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     await notesWrite(deleteAgent(services, agent));
     return reply.code(204).send();
   });
 
   app.put("/api/agents/:agent_id/config", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const body = bodyOf(request);
     const text = (key: string) => (body[key] === undefined ? undefined : String(body[key] ?? ""));
     const avatar = (key: string) => (body[key] === undefined ? undefined : String(body[key]));
@@ -105,13 +105,13 @@ export async function registerAgentRoutes(app: FastifyInstance, deps: RouteDeps)
       avatarShape: avatar("avatar_shape"),
       avatarColor: avatar("avatar_color"),
     };
-    return viewOf(await notesWrite(reconfigureAgent(services, agent, String(user.id), patch)));
+    return viewOf(await notesWrite(reconfigureAgent(services, agent, user.id, patch)));
   });
 
   app.put("/api/agents/:agent_id/machine", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const machineId = bodyOf(request).machine_id;
-    return viewOf(await moveAgentToMachine(services, agent, String(user.id), machineId));
+    return viewOf(await moveAgentToMachine(services, agent, user.id, machineId));
   });
 }

@@ -166,12 +166,12 @@ test("table deletes, delete all, and column renames or removals are logged again
 });
 
 test("change actors fill the shared actor, run, call, and coach columns", () => {
-  const person = userActor({ id: "user_ada" });
-  assert.equal(person.actorName, "operator");
+  const person = userActor({ id: "user_ada", name: "ada" });
+  assert.equal(person.actorName, "ada");
   assert.deepEqual(actorColumns({ ...person, studio: { sessionId: "ss_1", seq: 7 } }), [
     "user",
     "user_ada",
-    "operator",
+    "ada",
     null,
     null,
     null,

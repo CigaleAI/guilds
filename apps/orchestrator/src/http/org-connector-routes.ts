@@ -30,7 +30,7 @@ export async function registerOrgConnectorRoutes(
   /** The organisation the route names, which the request's user manages. */
   async function managedOrgId(request: FastifyRequest): Promise<string> {
     const user = await currentUser(identityDb, request, deps);
-    return (await requireOrgManager(db, param(request, "org_id"), String(user.id))).id;
+    return (await requireOrgManager(db, param(request, "org_id"), user.id)).id;
   }
 
   app.get("/api/orgs/:org_id/mcp/servers", async (request) => {

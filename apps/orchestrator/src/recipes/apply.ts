@@ -111,6 +111,7 @@ import { listBindingsCovering } from "../db/bindings.js";
 import { getSecretByName, listAgentSecrets, listSecrets, setSecretAccess } from "../db/secrets.js";
 import { mcpDatabase } from "../mcp/index.js";
 import type { Queryable } from "../db/pg.js";
+import type { UserRow } from "../db/users.js";
 
 export type ApplyDeps = {
   db: Queryable;
@@ -413,7 +414,7 @@ export class RecipeApplyService {
     org: Record<string, unknown>,
     recipeRow: Record<string, unknown>,
     choices: ApplyChoices = {},
-    user?: Record<string, unknown>,
+    user?: UserRow,
   ): Promise<Record<string, unknown>> {
     const recipe = parseRecipe(recipeRow.body);
     const unreviewed = unreviewedFields(recipe);
@@ -517,7 +518,7 @@ export class RecipeApplyService {
     orgId: string,
     recipe: RecipeDocument,
     chosen: string | undefined,
-    user: Record<string, unknown> | undefined,
+    user: UserRow | undefined,
   ): Promise<{
     machines: MachineChoice[];
     machineId: string | null;
@@ -539,7 +540,7 @@ export class RecipeApplyService {
       throw new RecipeError("machine not found", 404);
     }
     const { limits } = await this.policy.standing(orgId);
-    const visible = user ? await visibleGuildIds(this.deps.db, orgId, String(user.id)) : null;
+    const visible = user ? await visibleGuildIds(this.deps.db, orgId, user.id) : null;
     const findings = machineFindings(recipe, machine, {
       maxAgents: Math.min(limits.maxAgentsPerMachine ?? MAX_AGENTS_PER_MACHINE, MAX_AGENTS_PER_MACHINE),
       private: visible !== null && !hostsOnlyVisible(machine, visible),
@@ -549,7 +550,7 @@ export class RecipeApplyService {
 
   async createSkeleton(
     org: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     recipeRow: Record<string, unknown>,
     choices: ApplyChoices = {},
   ): Promise<Record<string, unknown>> {
@@ -621,8 +622,8 @@ export class RecipeApplyService {
     let applied: Record<string, unknown>;
     const actor = operatorActor({
       orgId: String(org.id),
-      actorId: String(user.id),
-      actorName: String(user.name ?? "operator"),
+      actorId: user.id,
+      actorName: user.name,
       guildId,
     });
     try {
@@ -636,7 +637,7 @@ export class RecipeApplyService {
           about: recipe.guild.about,
           description: recipe.guild.objective,
           groupAgentMessageLimit: recipe.guild.group_agent_message_limit,
-          creatorUserId: String(user.id),
+          creatorUserId: user.id,
         });
         createdGuild = true;
       } else {
@@ -692,8 +693,8 @@ export class RecipeApplyService {
         const written = await this.deps.artifacts.writeNote(
           operatorActor({
             orgId: String(org.id),
-            actorId: String(user.id),
-            actorName: String(user.name ?? "operator"),
+            actorId: user.id,
+            actorName: user.name,
             guildId,
             agentId,
           }),
@@ -726,8 +727,8 @@ export class RecipeApplyService {
           await writeAgentTask(this.deps.db,
             operatorActor({
               orgId: String(org.id),
-              actorId: String(user.id),
-              actorName: String(user.name ?? "operator"),
+              actorId: user.id,
+              actorName: user.name,
               guildId,
               agentId,
             }),
@@ -745,8 +746,8 @@ export class RecipeApplyService {
           await this.deps.scripts.create(
             operatorActor({
               orgId: String(org.id),
-              actorId: String(user.id),
-              actorName: String(user.name ?? "operator"),
+              actorId: user.id,
+              actorName: user.name,
               guildId,
               agentId,
             }),
@@ -1115,7 +1116,7 @@ export class RecipeApplyService {
   }
 
   /** The operator actor a preview lists with; a preview only reads. */
-  private operator(org: Record<string, unknown>, user?: Record<string, unknown>): ArtifactActor {
+  private operator(org: Record<string, unknown>, user?: UserRow): ArtifactActor {
     return operatorActor({
       orgId: String(org.id),
       actorId: String(user?.id ?? org.id),
@@ -1131,7 +1132,7 @@ export class RecipeApplyService {
   private async planCollections(
     org: Record<string, unknown>,
     recipe: RecipeDocument,
-    user?: Record<string, unknown>,
+    user?: UserRow,
   ): Promise<CollectionPlan[]> {
     if (!recipe.collections.length) {
       return [];
@@ -1338,11 +1339,11 @@ export class RecipeApplyService {
    */
   private async grantReusedSecrets(
     applyRow: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
   ): Promise<Record<string, unknown>> {
     const orgId = String(applyRow.org_id);
     const guildId = String(applyRow.guild_id);
-    const membership = await getMembership(this.deps.db, orgId, String(user.id));
+    const membership = await getMembership(this.deps.db, orgId, user.id);
     const plan = (jsonObj(applyRow.plan) ?? {}) as Record<string, unknown>;
     if (membership && managesOrgSecrets(String(membership.role))) {
       for (const secret of (plan.secrets as Array<Record<string, unknown>>) ?? []) {

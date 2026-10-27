@@ -65,10 +65,11 @@ import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getStudioSession } from "../db/studio.js";
+import type { UserRow } from "../db/users.js";
 
 export type StudioToolContext = {
   session: Record<string, unknown>;
-  user: Record<string, unknown>;
+  user: UserRow;
   orgId: string;
   sourceGuildId: string;
   generation: number;

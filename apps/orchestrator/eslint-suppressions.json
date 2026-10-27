@@ -393,11 +393,6 @@
   },
   "src/http/identity.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
-    }
-  },
-  "src/http/me-routes.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },

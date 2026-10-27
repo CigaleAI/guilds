@@ -25,6 +25,7 @@ import { getAgent, listAgents } from "../db/agents.js";
 import { getGuild } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage } from "../db/conversations.js";
+import type { UserRow } from "../db/users.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
 // the operator applies or declines the proposal from the Studio log.
@@ -72,7 +73,7 @@ export type EditScope = {
   sessionId: string;
   /** The coach message being applied; set by `applyEdit` so every write links to it. */
   origin?: StudioOrigin;
-  user: Record<string, unknown>;
+  user: UserRow;
   db: Queryable;
   artifacts: ArtifactStore;
   schedules: Schedules;

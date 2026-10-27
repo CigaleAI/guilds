@@ -7,8 +7,9 @@ import { currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
 import { publishGroup } from "./publish.js";
 import { bodyOf, param, queryOf } from "./request.js";
+import type { UserRow } from "../db/users.js";
 
-function resolverOf(user: Record<string, unknown>): string {
+function resolverOf(user: UserRow): string {
   return typeof user.name === "string" ? user.name : "user";
 }
 
@@ -20,13 +21,13 @@ export async function registerIssueRoutes(app: FastifyInstance, deps: AppDeps): 
 
   app.get("/api/guilds/:guild_id/issues", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     return issues.listForGuild(guild.id, queryOf(request).status);
   });
 
   app.post("/api/guilds/:guild_id/issues/resolve", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const resolved = await issues.resolveOpen(guild.id, resolverOf(user));
     if (resolved > 0) {
       await publishGroup(deps, guild.id, "guild.issues.changed", { action: "resolved" });
@@ -36,7 +37,7 @@ export async function registerIssueRoutes(app: FastifyInstance, deps: AppDeps): 
 
   app.patch("/api/guilds/:guild_id/issues/:issue_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const status = bodyOf(request).status;
     if (status === undefined) {
       throw new HttpError(422, "status is required");

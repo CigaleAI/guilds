@@ -17,9 +17,10 @@ import { currentOrg, currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
 import { guildItem } from "../guilds/view.js";
 import { bodyOf, param } from "./request.js";
+import type { UserRow } from "../db/users.js";
 
-function actorOf(user: Record<string, unknown>): GuildActor {
-  return { id: String(user.id), name: String(user.name ?? "operator") };
+function actorOf(user: UserRow): GuildActor {
+  return { id: user.id, name: user.name };
 }
 
 /** The organisation's guilds, their settings, and their operators. */
@@ -37,7 +38,7 @@ export async function registerGuildRoutes(app: FastifyInstance, deps: AppDeps): 
   app.get("/api/guilds", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return (await listUserGuilds(db, String(org.id), String(user.id))).map(guildItem);
+    return (await listUserGuilds(db, String(org.id), user.id)).map(guildItem);
   });
 
   app.post("/api/guilds", async (request, reply) => {
@@ -61,12 +62,12 @@ export async function registerGuildRoutes(app: FastifyInstance, deps: AppDeps): 
 
   app.get("/api/guilds/:guild_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    return guildItem(await requireVisibleGuild(db, param(request, "guild_id"), String(user.id)));
+    return guildItem(await requireVisibleGuild(db, param(request, "guild_id"), user.id));
   });
 
   app.put("/api/guilds/:guild_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
     const body = bodyOf(request);
     const text = (key: string) =>
       body[key] === undefined ? {} : { [key]: String(body[key] ?? "") };
@@ -84,14 +85,14 @@ export async function registerGuildRoutes(app: FastifyInstance, deps: AppDeps): 
 
   app.delete("/api/guilds/:guild_id", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), user.id);
     await notesWrite(deleteGuild(services, guild));
     return reply.code(204).send();
   });
 
   app.put("/api/guilds/:guild_id/operators/:user_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), user.id);
     return guildItem(
       await setOperatorRole(db, guild, param(request, "user_id"), bodyOf(request).role),
     );
@@ -99,7 +100,7 @@ export async function registerGuildRoutes(app: FastifyInstance, deps: AppDeps): 
 
   app.delete("/api/guilds/:guild_id/operators/:user_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), String(user.id));
+    const guild = await requireAdministeredGuild(db, param(request, "guild_id"), user.id);
     return guildItem(await removeOperator(db, guild, param(request, "user_id")));
   });
 }

@@ -11,6 +11,7 @@ import {
 import type { ArtifactStore } from "../../src/artifacts/index.js";
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
+import { userRow } from "../helpers/users.js";
 
 const GUILD = {
   id: "guild_live",
@@ -21,7 +22,7 @@ const GUILD = {
   group_agent_message_limit: 12,
 };
 
-const USER = { id: "user_operator", name: "operator" };
+const USER = userRow();
 
 const SEEN_MAIL_COLUMNS = [
   { name: "thread_id", type: "text", description: "mail thread id", required: true, unique: true },

@@ -23,7 +23,7 @@ export async function registerSandboxRoutes(app: FastifyInstance, deps: AppDeps)
 
   async function visibleAgentId(request: FastifyRequest): Promise<string> {
     const user = await currentUser(identityDb, request, deps);
-    return (await requireVisibleAgent(db, param(request, "agent_id"), String(user.id))).id;
+    return (await requireVisibleAgent(db, param(request, "agent_id"), user.id)).id;
   }
 
   async function proxySandbox(

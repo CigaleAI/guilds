@@ -54,6 +54,7 @@ import type { BuilderMcpClient } from "./connected.js";
 import { composeBuilderGenerationContext, composeBuilderSystemMessage } from "./system.js";
 import { connectedDatabase } from "./connected.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
+import type { UserRow } from "../db/users.js";
 
 export type BuilderServiceDeps = {
   db: Queryable;
@@ -119,14 +120,14 @@ export class BuilderService {
 
   async getOwnedSession(
     sessionId: string,
-    user: Record<string, unknown>,
+    user: UserRow,
     org: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const session = await getBuilderSession(this.deps.db, sessionId);
     if (!session || String(session.org_id) !== String(org.id)) {
       throw new BuilderError(404, "builder session not found");
     }
-    if (session.created_by_user_id && String(session.created_by_user_id) !== String(user.id)) {
+    if (session.created_by_user_id && String(session.created_by_user_id) !== user.id) {
       throw new BuilderError(404, "builder session not found");
     }
     return session;
@@ -164,7 +165,7 @@ export class BuilderService {
   }
 
   async createSession(args: {
-    user: Record<string, unknown>;
+    user: UserRow;
     org: Record<string, unknown>;
     model: string;
     temperature?: number;
@@ -265,7 +266,7 @@ export class BuilderService {
 
   async postMessage(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     content: string,
   ): Promise<Record<string, unknown>> {
     if (!content.trim()) {
@@ -454,7 +455,7 @@ export class BuilderService {
   async deploy(
     session: Record<string, unknown>,
     org: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     choices: ApplyChoices = {},
   ) {
     const recipe = await this.recipeFor(session);

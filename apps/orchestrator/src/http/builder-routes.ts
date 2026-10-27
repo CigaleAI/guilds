@@ -39,7 +39,7 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
   app.get("/api/builder/sessions", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return builderOf(deps).listSessions(String(org.id), String(user.id));
+    return builderOf(deps).listSessions(String(org.id), user.id);
   });
 
   app.post("/api/builder/sessions", async (request) => {

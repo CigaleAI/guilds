@@ -85,6 +85,7 @@ import {
   studioInventory,
   updateStudioSession,
 } from "../db/studio.js";
+import type { UserRow } from "../db/users.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -137,7 +138,7 @@ export class StudioService {
   }
 
   async createSession(args: {
-    user: Record<string, unknown>;
+    user: UserRow;
     org: Record<string, unknown>;
     mode: string;
     sourceGuildId: string;
@@ -284,12 +285,12 @@ export class StudioService {
       .map((row) => this.viewSession(row));
   }
 
-  async getOwnedSession(sessionId: string, user: Record<string, unknown>, org: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async getOwnedSession(sessionId: string, user: UserRow, org: Record<string, unknown>): Promise<Record<string, unknown>> {
     const session = await getStudioSession(this.deps.db, sessionId);
     if (!session || String(session.org_id) !== String(org.id)) {
       throw new StudioError(404, "studio session not found");
     }
-    if (session.created_by_user_id && String(session.created_by_user_id) !== String(user.id)) {
+    if (session.created_by_user_id && String(session.created_by_user_id) !== user.id) {
       throw new StudioError(404, "studio session not found");
     }
     if (!session.created_by_user_id) {
@@ -299,7 +300,7 @@ export class StudioService {
     // user who can no longer see a private guild loses its sessions too.
     if (session.source_guild_id) {
       const guild = await getGuild(this.deps.db, String(session.source_guild_id));
-      if (guild && !canSeeGuild(guild, String(user.id))) {
+      if (guild && !canSeeGuild(guild, user.id)) {
         throw new StudioError(404, "studio session not found");
       }
     }
@@ -416,7 +417,7 @@ export class StudioService {
   // login to the session. The session lock serialises answers.
   async resolveLogin(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     seq: number,
     decision: "grant" | "decline",
   ): Promise<Record<string, unknown>> {
@@ -529,13 +530,13 @@ export class StudioService {
     };
   }
 
-  async inspector(session: Record<string, unknown>, user: Record<string, unknown>, agentId: string): Promise<Record<string, unknown>> {
+  async inspector(session: Record<string, unknown>, user: UserRow, agentId: string): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
     const actor = this.deps.artifacts.operatorContext(
       String(session.org_id),
-      String(user.id),
-      String(user.name ?? "operator"),
+      user.id,
+      user.name,
       { guildId: String(session.source_guild_id), agentId },
     );
     const task = await getAgentTask(this.deps.db, String(session.org_id), agentId);
@@ -650,15 +651,15 @@ export class StudioService {
 
   async memoryTimeline(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     agentId: string,
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
     const actor = this.deps.artifacts.operatorContext(
       String(session.org_id),
-      String(user.id),
-      String(user.name ?? "operator"),
+      user.id,
+      user.name,
       { guildId: String(session.source_guild_id), agentId },
     );
     return memoryHistory(this.deps, actor, { id: String(agent.id), name: String(agent.name) });
@@ -723,7 +724,7 @@ export class StudioService {
 
   async postMessage(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     content: string,
     focusInput?: unknown,
   ): Promise<Record<string, unknown>> {
@@ -887,7 +888,7 @@ export class StudioService {
 
   async continueSession(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     org: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     if (session.blocked_reason !== "input_token_limit" && session.status !== "blocked") {
@@ -914,7 +915,7 @@ export class StudioService {
 
   async publishDraft(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     draftId: string,
     options: { orphan?: boolean } = {},
   ): Promise<Record<string, unknown>> {
@@ -937,7 +938,7 @@ export class StudioService {
     };
   }
 
-  private editScope(session: Record<string, unknown>, user: Record<string, unknown>): EditScope {
+  private editScope(session: Record<string, unknown>, user: UserRow): EditScope {
     return {
       orgId: String(session.org_id),
       sourceGuildId: String(session.source_guild_id),
@@ -951,7 +952,7 @@ export class StudioService {
 
   async getEdit(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     seq: number,
   ): Promise<Record<string, unknown>> {
     if (!session.source_guild_id) {
@@ -965,13 +966,13 @@ export class StudioService {
   // serialises answers, so a request resolves once.
   async resolveEdit(
     session: Record<string, unknown>,
-    user: Record<string, unknown>,
+    user: UserRow,
     seq: number,
     decision: "apply" | "decline",
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const scope = this.editScope(session, user);
-    const userId = user.id === undefined || user.id === null ? null : String(user.id);
+    const userId = user.id === undefined || user.id === null ? null : user.id;
     const outcome = await withLockedSession(this.deps.db, String(session.id), async () => {
       const record = findEditRecord(await listConversationMessages(this.deps.db, "studio", String(session.id)), seq);
       if (editStatus(record) !== "pending") {

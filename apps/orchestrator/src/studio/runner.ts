@@ -18,6 +18,7 @@ import {
 import type { ModelCredentialsProvider } from "../llm/credentials.js";
 import type { Queryable } from "../db/pg.js";
 import { studioToolMap, type StudioTool, type StudioToolContext } from "./tools.js";
+import type { UserRow } from "../db/users.js";
 
 export { generationLive };
 
@@ -84,7 +85,7 @@ export class StudioRunner {
 
   start(args: {
     session: Record<string, unknown>;
-    user: Record<string, unknown>;
+    user: UserRow;
     toolContext: Omit<StudioToolContext, "generation">;
     generation: number;
     generationContext: string;

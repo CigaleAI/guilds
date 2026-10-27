@@ -16,19 +16,19 @@ export async function registerNotificationRoutes(
   app.get("/api/notifications", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return notifications.list(String(org.id), String(user.id));
+    return notifications.list(String(org.id), user.id);
   });
 
   app.post("/api/notifications/read", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return notifications.markMentionsRead(String(org.id), String(user.id));
+    return notifications.markMentionsRead(String(org.id), user.id);
   });
 
   app.get("/api/notifications/stream", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    const userId = String(user.id);
+    const userId = user.id;
     await pipeSse(
       request,
       reply,

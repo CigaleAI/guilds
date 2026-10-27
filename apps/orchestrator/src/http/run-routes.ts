@@ -28,26 +28,26 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
 
   app.get("/api/agents/:agent_id/runs", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     return loop().listRunViews(agent.id);
   });
 
   app.post("/api/agents/:agent_id/runs", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
+    const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
     const body = bodyOf(request);
     const start = {
       message: body.message,
       attachmentIds: validateAttachmentIds(body.attachment_ids),
     };
-    const { run, withMessage } = await startRun(services, agent, String(user.id), start);
+    const { run, withMessage } = await startRun(services, agent, user.id, start);
     return reply.code(withMessage ? 202 : 201).send(run);
   });
 
   app.get("/api/runs/:run_id", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     return loop().runView(
-      await requireVisibleRun(db, param(request, "run_id"), String(user.id)),
+      await requireVisibleRun(db, param(request, "run_id"), user.id),
     );
   });
 
@@ -55,19 +55,19 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
     const user = await currentUser(identityDb, request, deps);
     return listRunMessages(
       db,
-      await requireVisibleRun(db, param(request, "run_id"), String(user.id)),
+      await requireVisibleRun(db, param(request, "run_id"), user.id),
     );
   });
 
   app.post("/api/runs/:run_id/resume", async (request) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
+    const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     return loop().resumeRun(run.id);
   });
 
   app.post("/api/runs/:run_id/messages", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
+    const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     const body = bodyOf(request);
     const attachmentIds = validateAttachmentIds(body.attachment_ids);
     if (!attachmentIds.length) {
@@ -83,14 +83,14 @@ export async function registerRunRoutes(app: FastifyInstance, deps: AppDeps): Pr
 
   app.post("/api/runs/:run_id/cancel", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
+    const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     const cancelled = await loop().cancel(run.id);
     return cancelled === null ? reply.code(204).send() : reply.code(202).send(cancelled);
   });
 
   app.get("/api/runs/:run_id/stream", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
+    const run = await requireVisibleRun(db, param(request, "run_id"), user.id);
     const generation = loop();
     await pipeSse(
       request,

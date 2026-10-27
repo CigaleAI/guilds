@@ -29,8 +29,8 @@ export async function registerMachineRoutes(app: FastifyInstance, deps: AppDeps)
 
   async function memberOf(request: FastifyRequest): Promise<MachineMember> {
     const user = await currentUser(identityDb, request, deps);
-    const membership = await requireMembership(db, param(request, "org_id"), String(user.id));
-    return { membership, userId: String(user.id) };
+    const membership = await requireMembership(db, param(request, "org_id"), user.id);
+    return { membership, userId: user.id };
   }
 
   app.get("/api/orgs/:org_id/machines", async (request) =>

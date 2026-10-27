@@ -14,11 +14,11 @@ export type ChangeActor = {
 };
 
 /** A person acting through the app or the API. */
-export function userActor(user: Record<string, unknown>): ChangeActor {
+export function userActor(user: { id: string; name: string }): ChangeActor {
   return {
     actorType: "user",
-    actorId: String(user.id),
-    actorName: String(user.name ?? "operator"),
+    actorId: user.id,
+    actorName: user.name,
     toolCall: null,
   };
 }
