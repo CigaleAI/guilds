@@ -136,7 +136,7 @@ describe("generation", { concurrency: 1 }, () => {
       { id: "call_2", function: { name: "script_run", arguments: '{"name":"two"}' } },
     ];
     live.streamCompletion = fakeStream(db, calls);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.deepEqual(sandboxes.created, [{ id: "mach_1", orgId: "org_1", box: "standard", cpu: 1, memoryMib: 2048 }]);
     assert.deepEqual(sandboxes.browser_starts, []);
     assert.ok(existsSync(path.join(tmp, "mach_1", "a_1", "scripts")));
@@ -212,7 +212,7 @@ describe("generation", { concurrency: 1 }, () => {
         },
       ];
     };
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const toolPayloads = db.messages
       .filter((row) => (row.payload as Record<string, unknown>).role === "tool")
       .map((row) => row.payload as Record<string, unknown>);
@@ -245,7 +245,7 @@ describe("generation", { concurrency: 1 }, () => {
       throw new Error("model should not be called");
       yield ["done", completionReply("nope")];
     };
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.ok(db.messages.every((row) => (row.payload as Record<string, unknown>).role !== "assistant"));
     assert.equal(db.run.status, "completed");
     const errors = db.run.errors as Array<Record<string, unknown>>;
@@ -302,7 +302,7 @@ describe("generation", { concurrency: 1 }, () => {
       yield ["done", completionReply("ok")];
     };
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
-    await loop._generate("r_1", 2);
+    await loop.generator.generate("r_1", 2);
     const tool = seen.find((item) => item.role === "tool");
     assert.match(String(tool?.content), /"stub":true/);
     assert.match(String(tool?.content), /file_read/);
@@ -400,7 +400,7 @@ describe("generation", { concurrency: 1 }, () => {
     live.streamCompletion = async function* reply() {
       yield ["done", completionReply("ok")];
     };
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.equal(db.run.status, "active");
     restoreBindings();
   });
@@ -454,7 +454,7 @@ describe("generation", { concurrency: 1 }, () => {
     live.streamCompletion = fakeStream(db, [
       { id: "call_1", function: { name: "notion_search", arguments: '{"query":"notes"}' } },
     ]);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.deepEqual(calls, [["conn_u", "search", { query: "notes" }]]);
     const tool = db.messages
       .filter((row) => (row.payload as Record<string, unknown>).role === "tool")
@@ -512,7 +512,7 @@ describe("generation", { concurrency: 1 }, () => {
     live.streamCompletion = fakeStream(db, [
       { id: "call_1", function: { name: "notion_search", arguments: "{}" } },
     ]);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.equal(sandboxes.created.length, 1);
     const tool = db.messages
       .filter((row) => (row.payload as Record<string, unknown>).role === "tool")
@@ -757,6 +757,7 @@ describe("generation", { concurrency: 1 }, () => {
       kind: "group",
       config_snapshot: {},
       errors: [],
+      metadata: {},
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -777,6 +778,7 @@ describe("generation", { concurrency: 1 }, () => {
       kind: "schedule",
       config_snapshot: {},
       errors: [],
+      metadata: {},
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -943,7 +945,7 @@ describe("generation", { concurrency: 1 }, () => {
       artifacts: artifacts as never,
     });
     live.streamCompletion = fakeStream(db, calls);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const toolPayloads = db.messages
       .filter((row) => (row.payload as Record<string, unknown>).role === "tool")
       .map((row) => row.payload as Record<string, unknown>);
@@ -1150,7 +1152,7 @@ describe("generation", { concurrency: 1 }, () => {
         },
       },
     ]);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const tool = db.messages
       .filter((row) => (row.payload as Record<string, unknown>).role === "tool")
       .map((row) => row.payload as Record<string, unknown>);
@@ -1180,7 +1182,7 @@ describe("generation", { concurrency: 1 }, () => {
     live.streamCompletion = fakeStream(db, [
       { id: "call_1", function: { name: "browser_navigate", arguments: '{"url":"https://example.com"}' } },
     ]);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const tools = db.messages
       .filter((row) => (row.payload as Record<string, unknown>).role === "tool")
       .map((row) => row.payload as Record<string, unknown>);
@@ -1634,8 +1636,8 @@ describe("generation", { concurrency: 1 }, () => {
       },
     };
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    const originalOnCancel = loop._on_cancel;
-    loop._on_cancel = async (...args) => {
+    const originalOnCancel = loop.generator.recordCancel;
+    loop.generator.recordCancel = async (...args) => {
       settling.resolve();
       await sleep(50);
       await originalOnCancel(...args);
@@ -1738,7 +1740,7 @@ describe("generation", { concurrency: 1 }, () => {
     live.streamCompletion = async function* stream() {
       yield ["done", completionReply("done")];
     };
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.deepEqual(sandboxes.browser_starts, [], "Chrome starts on the first browser call, not with the run");
     assert.ok(existsSync(path.join(loop.machines.workspaceRoot, "mach_1", "a_1", ".browser")));
     restoreBindings();
@@ -1941,7 +1943,7 @@ describe("generation", { concurrency: 1 }, () => {
         },
       ];
     };
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const names = offered.map((tool) => {
       const record = tool as { function?: { name?: string } };
       return record.function?.name;
@@ -2118,7 +2120,7 @@ describe("generation", { concurrency: 1 }, () => {
     live.streamCompletion = fakeStream(db, [
       { id: "call_1", function: { name: "script_run", arguments: '{"name":"sign"}' } },
     ]);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const commands = sandboxes.commands as FakeCommands;
     const run = commands.commands.indexOf(launcherCommand(HOME, "sign"));
     const envs = commands.options[run]?.envs as Record<string, string>;

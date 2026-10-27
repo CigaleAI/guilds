@@ -284,7 +284,7 @@ flowchart TD
   Start["createRun / deliverGroupRun / schedule wake"] --> Prep["PreparedRun"]
   Prep --> Snap["Snapshot: prompts, tools, secrets, scripts"]
   Snap --> Persist["Insert run + messages in Postgres"]
-  Persist --> Loop["_generate"]
+  Persist --> Loop["RunGenerator.generate"]
   Loop --> WS["prepareWorkspace: the agent's home"]
   WS --> Box["sandboxes.ensure(machine)"]
   Box --> Step["streamCompletion"]

@@ -1,12 +1,6 @@
 
-import {
-  DEFAULT_MAX_INPUT_TOKENS,
-  DEFAULT_MAX_TOOL_CALLS,
-  maxScriptsOf,
-  secretAliasesOf,
-} from "../agents/validation.js";
 
-import { recordOf } from "../db/json.js";
+import { isPlainRecord } from "../db/json.js";
 import { runItem } from "../db/views.js";
 import {
   GroupChat,
@@ -16,7 +10,7 @@ import {
 } from "../groupchat/index.js";
 
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
-import { countRunInputTokens } from "../attachments/hydrate.js";
+
 import { type AttachmentRef, type AttachmentService } from "../attachments/index.js";
 
 import {
@@ -25,29 +19,17 @@ import {
 } from "../llm/credentials.js";
 
 import { sleep } from "../lib/event.js";
-import { type Completion } from "../llm/index.js";
 
 import { mcpDatabase, McpPool } from "../mcp/index.js";
 import {
   ArtifactFiles,
   ArtifactStore,
-  agentActor,
 } from "../artifacts/index.js";
 import { type NotesStore } from "../notes/store.js";
 
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 
-import {
-  agentSandbox,
-  applyRunScripts,
-  prepareWorkspace,
-  seatEnvironment,
-  type SandboxHandle,
-} from "../sandbox/index.js";
-import { slotPorts } from "../machines/index.js";
-import { agentHome } from "../lib/agent-file.js";
 import { Scripts } from "../scripts/catalog.js";
-import type { RunScriptSnapshot } from "../scripts/snapshot.js";
 
 import { Schedules } from "../schedules/service.js";
 
@@ -56,47 +38,19 @@ import {
   type GroupRouter,
 } from "../typesafe/index.js";
 import { ActiveGenerations, AdmissionCoordinator } from "./admission.js";
-import { CodingRuns, guildRepositories } from "./coding.js";
+import { CodingRuns } from "./coding.js";
 import { WorkspaceLimits } from "./workspace.js";
-import { countInputTokensImpl, generationLive, ModelCompletion } from "./completion.js";
+import { generationLive, ModelCompletion } from "./completion.js";
 import { RunEvents } from "./events.js";
 import { RunPreparation, type ConnectorPool } from "./prepare.js";
 import { RunSecrets } from "./run-secrets.js";
 import { Runs } from "./runs.js";
-import { AgentMachines, agentMachine, agentSeat, type GenerationSandboxes } from "./machines.js";
-import {
-  chainOf,
-  continuedBy,
-  HANDOFF_FRACTION,
-  HANDOFF_REQUEST,
-  HANDOFF_TOOL_REFUSED,
-  handoffText,
-  MAX_CHAIN_MESSAGE,
-  MAX_CHAIN_RUNS,
-} from "./chain.js";
-import {
-  createToolContext,
-  remainingAfter,
-  stampToolResult,
-  withRemainingToolCalls as _withRemainingToolCalls,
-} from "../toolbox/index.js";
-
-import {
-  harnessModelOf,
-  harnessOf,
-  REPOSITORIES_MISSING,
-  REPOSITORIES_MISSING_MESSAGE,
-} from "../coding/harnesses.js";
-import { harnessEffortOf } from "../coding/harness-models.js";
-
-import {
-  harnessMissingError,
-  shownProgressLines,
-} from "../toolbox/harness.js";
+import { RunGenerator, runWasResumed } from "./generate.js";
+import { AgentMachines, type GenerationSandboxes } from "./machines.js";
+import { continuedBy, RunChains } from "./chain.js";
+import { withRemainingToolCalls as _withRemainingToolCalls } from "../toolbox/index.js";
 
 import { Issues } from "../issues/index.js";
-
-import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
 
 import {
   appendRunError,
@@ -130,7 +84,6 @@ import {
   markHarnessLogin,
   setAgentWorkspaceMib,
   upsertAgentScript,
-  type AgentRow,
 } from "../db/agents.js";
 import { deleteGuild, getGuild, listGuildRepositories } from "../db/guilds.js";
 import { listGroupMessages } from "../db/group-chat.js";
@@ -166,48 +119,15 @@ import { agentSecretsDatabase } from "../secrets/agent.js";
 
 import {
   ConflictError,
-  GenerationCancelled,
-  RunLimitError,
   RunRequestError,
 } from "./errors.js";
-import { positiveInt } from "./snapshot.js";
-import {
-  liveOfferedNames,
-  mcpIndex,
-  snapshotOfferedNames,
-  toolSchemaName,
-  withFirstClassScriptTools,
-} from "./offered-tools.js";
-import { executedToolCalls, ToolCalls, toolCallsOf } from "./tool-calls.js";
+
+import { ToolCalls } from "./tool-calls.js";
 
 export { RunRequestError } from "./errors.js";
 
-export const SANDBOX_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-export const SCHEDULER_TICK_MS = 30_000;
-export const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to continue.";
-export const INPUT_TOKEN_LIMIT_MESSAGE = "Input token limit reached. Start a new run to continue.";
-export const REMAINING_TOOL_CALLS_PREFIX = "remaining_tool_calls: ";
-
-/** A coding run's prompt reached the hand-off share of its input limit. */
-class HandoffDue extends Error {
-  constructor() {
-    super("hand-off due");
-    this.name = "HandoffDue";
-  }
-}
-
-function runKind(run: Record<string, unknown> | null | undefined): string {
-  if (!run) {
-    return "direct";
-  }
-  const kind = run.kind;
-  return typeof kind === "string" && kind ? kind : "direct";
-}
-
-function runWasResumed(run: Record<string, unknown>): boolean {
-  const resumedAt = recordOf(run.metadata).resumed_at;
-  return typeof resumedAt === "string" && resumedAt.length > 0;
-}
+const SANDBOX_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const SCHEDULER_TICK_MS = 30_000;
 
 const TERMINAL_CAP_OPERATIONS = new Set([
   "generation.max_tool_calls",
@@ -215,16 +135,9 @@ const TERMINAL_CAP_OPERATIONS = new Set([
   "generation.max_chain",
 ]);
 
-function runHitTerminalCap(run: Record<string, unknown>): boolean {
-  if (!Array.isArray(run.errors)) {
-    return false;
-  }
-  return run.errors.some((entry) => {
-    if (!entry || typeof entry !== "object") {
-      return false;
-    }
-    return TERMINAL_CAP_OPERATIONS.has(String((entry as { operation?: unknown }).operation ?? ""));
-  });
+/** Whether the run ended on its tool-call, input-token, or chain cap, which a resume cannot lift. */
+function runHitTerminalCap(run: RunRow): boolean {
+  return run.errors.some((entry) => isPlainRecord(entry) && TERMINAL_CAP_OPERATIONS.has(String(entry.operation ?? "")));
 }
 
 /** The db/ functions a generation reads and writes through, on `db`. */
@@ -319,10 +232,9 @@ export class GenerationLoop implements GroupRunner {
   workspace: WorkspaceLimits;
   toolCalls: ToolCalls;
   secrets: RunSecrets;
+  chains: RunChains;
+  generator: RunGenerator;
   runs: Runs;
-  /** A run that handed off, to the run that continues it once its generation ends. */
-  _continuations = new Map<string, string>();
-
   constructor(
     db: GenerationDatabase,
     notes: NotesStore,
@@ -412,6 +324,27 @@ export class GenerationLoop implements GroupRunner {
       },
       options.schedulerTickMs ?? SCHEDULER_TICK_MS,
     );
+    this.chains = new RunChains({ db, events: this.events, completion: this.completion, runs: this.runs });
+    this.generator = new RunGenerator({
+      db,
+      notes,
+      artifacts: this.artifacts,
+      files: this.files,
+      groupChat: this.groupChat,
+      issues: this.issues,
+      schedules: this.schedules,
+      scripts: this.scripts,
+      events: this.events,
+      generations: this.generations,
+      machines: this.machines,
+      completion: this.completion,
+      coding: this.coding,
+      workspace: this.workspace,
+      toolCalls: this.toolCalls,
+      secrets: this.secrets,
+      chains: this.chains,
+      starter: this,
+    });
   }
 
   isGenerating(runId: string): boolean {
@@ -557,7 +490,7 @@ export class GenerationLoop implements GroupRunner {
     }
     const next = continuedBy(run);
     if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await this._latest_in_chain(next)}`);
+      throw new RunRequestError(409, `this run continued in run ${await this.chains.latestInChain(next)}`);
     }
     if (runHitTerminalCap(run)) {
       throw new RunRequestError(409, "this run hit its tool, token, or chain cap; start a new run");
@@ -584,13 +517,12 @@ export class GenerationLoop implements GroupRunner {
     if (run === null) {
       throw new RunRequestError(404, "run not found");
     }
-    const kind = runKind(run);
-    if ((kind === "group" || kind === "schedule") && !runWasResumed(run)) {
-      throw new RunRequestError(409, `${kind}-triggered runs do not accept later messages`);
+    if (run.kind !== "direct" && !runWasResumed(run)) {
+      throw new RunRequestError(409, `${run.kind}-triggered runs do not accept later messages`);
     }
     const next = continuedBy(run);
     if (next !== null) {
-      throw new RunRequestError(409, `this run continued in run ${await this._latest_in_chain(next)}; send the message there`);
+      throw new RunRequestError(409, `this run continued in run ${await this.chains.latestInChain(next)}; send the message there`);
     }
     if (run.status !== "active") {
       throw new RunRequestError(409, "this run has ended; resume it to continue");
@@ -661,8 +593,7 @@ export class GenerationLoop implements GroupRunner {
     const now = new Date();
     for (const run of await this.db.listActiveRuns()) {
       await this.toolCalls.resolveUnresolved(run.id, null);
-      const kind = runKind(run);
-      if ((kind !== "group" && kind !== "schedule") || runWasResumed(run)) {
+      if (run.kind === "direct" || runWasResumed(run)) {
         continue;
       }
       const entry = {
@@ -673,7 +604,7 @@ export class GenerationLoop implements GroupRunner {
         message: "orchestrator restarted",
       };
       await this.db.appendRunError(run.id, entry, now);
-      if (kind === "group") {
+      if (run.kind === "group") {
         const through = run.group_chat_through_seq;
         await this.db.completeGroupDelivery(run.id, run.agent_id, through || 0, now);
       } else {
@@ -715,7 +646,7 @@ export class GenerationLoop implements GroupRunner {
   generateInBackground = (runId: string, generation: number): void => {
     this.generations.setTask(
       runId,
-      this._generate(runId, generation).catch((error) => {
+      this.generator.generate(runId, generation).catch((error) => {
         writeLog(
           "error",
           errorMessage(error),
@@ -725,583 +656,5 @@ export class GenerationLoop implements GroupRunner {
       }),
     );
   };
-
-  _on_cancel = async (
-    runId: string,
-    generation: number,
-    extra: Record<string, string>,
-  ): Promise<void> => {
-    await this.toolCalls.resolveUnresolved(runId, generation);
-    await this._fail(runId, generation, "generation.cancelled", new GenerationCancelled(), extra);
-  };
-
-  async _settle_cancel(
-    runId: string,
-    generation: number,
-    extra: Record<string, string>,
-  ): Promise<void> {
-    try {
-      await this.generations.settlement(runId, () => this._on_cancel(runId, generation, extra));
-    } catch (error) {
-      writeLog(
-        "error",
-        "cancel settlement failed",
-        { ...extra, operation: "generation.cancelled", error_type: errorName(error) },
-        error,
-      );
-    }
-  }
-
-  async _generate(runId: string, generation: number): Promise<void> {
-    let extra: Record<string, string> = { run_id: runId };
-    let cancelled = false;
-    try {
-      await this.events.publish(runId, "generation.started", { generation });
-      const run = await this.db.getRun(runId);
-      if (run === null) {
-        return;
-      }
-      const agent = await this.db.getAgent(String(run.agent_id));
-      if (agent === null) {
-        await this._fail(runId, generation, "generation", new Error("agent not found"), extra);
-        return;
-      }
-      extra = {
-        run_id: runId,
-        agent_id: String(agent.id),
-        guild_id: String(agent.guild_id),
-      };
-      await this._generate_steps(runId, generation, run, agent, extra);
-    } catch (error) {
-      if (error instanceof GenerationCancelled) {
-        cancelled = true;
-      } else {
-        await this._fail(runId, generation, "generation", error, extra);
-      }
-    } finally {
-      try {
-        if (cancelled) {
-          await this._settle_cancel(runId, generation, extra);
-        }
-        await this.events.publish(runId, "generation.finished", { generation });
-        const finished = await this.db.getRun(runId);
-        if (finished !== null && !runWasResumed(finished)) {
-          const kind = runKind(finished);
-          // A group continuation completes itself; the group delivery completes the chain's first run.
-          if (kind === "schedule" || (kind === "group" && chainOf(finished).index > 1)) {
-            await this.db.completeRun(runId, new Date());
-          }
-        }
-      } finally {
-        const next = this._continuations.get(runId);
-        this._continuations.delete(runId);
-        if (next !== undefined && !cancelled) {
-          await this._continue(runId, next);
-        } else {
-          this.endGeneration(runId);
-        }
-      }
-    }
-  }
-
-  /**
-   * Hands the agent's generation lock from a run to its continuation without releasing it,
-   * tells the first run's subscribers where the work went, and generates the continuation.
-   * The agent stays busy across the chain.
-   */
-  async _continue(fromRunId: string, toRunId: string): Promise<void> {
-    this.generations.handOver(fromRunId, toRunId);
-    await this.events.publish(fromRunId, "run.continued", { run_id: toRunId });
-    const task = this._generate(toRunId, 1);
-    this.generations.setTask(toRunId, task);
-    await task;
-  }
-
-  /** The last run of the chain that `runId` belongs to, following each continuation. */
-  async _latest_in_chain(runId: string): Promise<string> {
-    let current = runId;
-    for (let hop = 0; hop < MAX_CHAIN_RUNS; hop += 1) {
-      const row = await this.db.getRun(current);
-      const next = row ? continuedBy(row) : null;
-      if (next === null) {
-        return current;
-      }
-      current = next;
-    }
-    return current;
-  }
-
-  async _generate_steps(
-    runId: string,
-    generation: number,
-    run: RunRow,
-    agent: AgentRow,
-    extra: Record<string, string>,
-  ): Promise<void> {
-    const machine = agentMachine(agent);
-    const seat = agentSeat(agent);
-    const snapshot = recordOf(run.config_snapshot);
-    if (snapshot.coding === true && harnessOf(snapshot) === null) {
-      const missing = harnessMissingError();
-      await this._fail(runId, generation, missing.code, missing, extra);
-      return;
-    }
-    if (snapshot.coding === true && !(await guildRepositories(this.db, agent)).length) {
-      await this._fail(runId, generation, REPOSITORIES_MISSING, new Error(REPOSITORIES_MISSING_MESSAGE), extra);
-      return;
-    }
-    try {
-      const workspaceRoot = await this.machines.workspaceRootFor(machine.id);
-      if (this.machines.sandboxes.machineHost) {
-        const host = await this.machines.sandboxes.machineHost(machine.id);
-        if (host) {
-          extra.host_id = host.hostId;
-          await this.db.mergeRunMetadata(runId, { host_id: host.hostId }, new Date());
-        }
-      }
-      prepareWorkspace(workspaceRoot, machine.id, seat.agentId, { browser: Boolean(snapshot.browser) });
-    } catch (error) {
-      await this._fail(runId, generation, "workspace.create", error, extra);
-      return;
-    }
-    let secretRefs: Array<Record<string, string>>;
-    let env: Record<string, string>;
-    let secrets: Record<string, string>;
-    try {
-      ({ refs: secretRefs, env, values: secrets } = await this.secrets.resolve(agent, snapshot));
-    } catch (error) {
-      await this._fail(runId, generation, "secrets.resolve", error, extra);
-      return;
-    }
-    let sandbox: SandboxHandle;
-    let machineSandbox: SandboxHandle;
-    try {
-      const pinned = Array.isArray(snapshot.scripts)
-        ? (snapshot.scripts as RunScriptSnapshot[])
-        : await this.scripts.snapshot(String(agent.id));
-      const liveRows = await this.scripts.listForAgent(String(agent.id));
-      machineSandbox = await this.machines.sandboxForGeneration(agent);
-      sandbox = agentSandbox(machineSandbox, agentHome(seat.agentId), { ...env, ...seatEnvironment(seat) });
-      await applyRunScripts(sandbox, agentHome(seat.agentId), pinned, liveExtraForAgent(pinned, liveRows));
-    } catch (error) {
-      await this._fail(runId, generation, "sandbox.ensure", error, extra);
-      return;
-    }
-    let tools = snapshot.tools || [];
-    if (!Array.isArray(tools)) {
-      tools = [];
-    }
-    const mcpTools = mcpIndex(snapshot.mcp);
-    const runScripts = Array.isArray(snapshot.scripts)
-      ? (snapshot.scripts as RunScriptSnapshot[])
-      : [];
-    const scope = {
-      orgId: typeof agent.org_id === "string" && agent.org_id ? agent.org_id : null,
-      guildId: String(agent.guild_id),
-      agentId: String(agent.id),
-    };
-    const rows = await this.db.listBindingsCovering(scope);
-    const liveConfig = recordOf(agent.config);
-    const liveBrowser =
-      typeof liveConfig.browser === "boolean" ? liveConfig.browser : Boolean(snapshot.browser);
-    const liveCoding =
-      typeof liveConfig.coding === "boolean" ? liveConfig.coding : Boolean(snapshot.coding);
-    const liveScripting =
-      typeof liveConfig.scripting === "boolean"
-        ? liveConfig.scripting
-        : snapshot.scripting !== false;
-    const liveMemory =
-      typeof liveConfig.memory === "boolean" ? liveConfig.memory : snapshot.memory !== false;
-    const offered = liveOfferedNames(snapshotOfferedNames(tools), rows, {
-      orgId: scope.orgId,
-      guildId: scope.guildId,
-      agentId: scope.agentId,
-      browser: liveBrowser,
-      coding: liveCoding,
-      scripting: liveScripting,
-      memory: liveMemory,
-      schedules: runKind(run) !== "schedule",
-      direct: runKind(run) === "direct",
-    });
-    tools = withFirstClassScriptTools(
-      (tools as unknown[]).filter((tool) => offered.has(toolSchemaName(tool))),
-      runScripts,
-      offered.has("script_run"),
-    );
-    const ctx = createToolContext({
-      run_id: runId,
-      agent_id: String(agent.id),
-      guild_id: String(agent.guild_id),
-      sandbox,
-      secrets,
-      notes: this.notes,
-      artifacts: this.artifacts,
-      files: this.files,
-      workspace_dir: await this.machines.agentWorkspace(agent),
-      artifact_actor:
-        typeof agent.org_id === "string" && agent.org_id
-          ? agentActor({
-              orgId: agent.org_id,
-              guildId: String(agent.guild_id),
-              agentId: String(agent.id),
-              agentName: String(agent.name),
-              runId,
-            })
-          : null,
-      guild_name: String(agent.guild_name),
-      agent_name: String(agent.name),
-      org_slug: String(agent.org_slug),
-      cancel_event: this.generations.cancelEvent(runId),
-      track_command: (executionId) => this.generations.trackCommand(runId, sandbox, executionId),
-      agent_home: agentHome(seat.agentId),
-      cdp_port: snapshot.browser ? slotPorts(seat.slot).cdp : null,
-      ensure_browser: snapshot.browser
-        ? () => this.machines.ensureRunBrowser(agent, machineSandbox)
-        : null,
-      group_chat: this.groupChat,
-      issues: this.issues,
-      schedules: this.schedules,
-      scripts: SCRIPT_TOOLS.some((name) => offered.has(name)) ? this.scripts : null,
-      run_kind: runKind(run),
-      secret_names: secretRefs.map((ref) => String(ref.name)),
-      secret_store: this.secrets.secretStore(agent),
-      memory_replaced_by: await this._memory_replaced_by(run),
-      run_scripts: runScripts,
-      persist_run_scripts: async (scripts) => {
-        await this.db.updateRunScripts(runId, scripts, new Date());
-      },
-      max_scripts: maxScriptsOf(liveConfig),
-      dynamic_tools: offered.has("script_run") ? dynamicScriptTools(runScripts) : {},
-      connection_tool_names: Object.keys(mcpTools),
-      offered_tools: offered,
-      harness: harnessOf(snapshot),
-      harness_model: harnessModelOf(snapshot),
-      harness_effort: harnessEffortOf(snapshot),
-      secret_aliases: secretAliasesOf(snapshot),
-      // `secrets` holds the run's values and, once minted, its GitHub tokens.
-      publish_progress: async (toolCallId, update) => {
-        await this.events.publish(runId, "tool.progress", {
-          run_id: runId,
-          tool_call_id: toolCallId,
-          lines: shownProgressLines(update.lines, secrets),
-          session_id: update.session_id,
-        });
-      },
-      remember_harness_task: async (task) => {
-        await this.db.mergeRunMetadata(runId, { harness_task: task }, new Date());
-      },
-      harness_login_seen: async (harness, account) => {
-        await this.db.markHarnessLogin?.(String(agent.id), harness, new Date(), account);
-      },
-      harness_login_lost: async (harness) => {
-        await this.db.clearHarnessLogin?.(String(agent.id), harness);
-      },
-    });
-    const coding = Boolean(snapshot.coding);
-    // Platform work runs on the machine's own sandbox: the agent's home and ports, none of its secrets.
-    if (!(await this.workspace.hasRoom({ runId, generation, log: extra }, agent, machineSandbox))) {
-      return;
-    }
-    if (coding && !(await this.coding.harnessReady({ runId, generation, log: extra }, ctx))) {
-      return;
-    }
-    if (coding && !(await this.coding.prepareRepositories({ runId, generation, log: extra }, agent, machineSandbox, { ctx, secrets }))) {
-      return;
-    }
-    try {
-      await this._run_steps(runId, generation, run, snapshot, ctx, tools as unknown[], secrets, mcpTools, extra);
-    } finally {
-      if (coding) {
-        await this.coding.recordCheckpoints(runId, agent, machineSandbox);
-      }
-      if (!this.generations.isCancelled(runId)) {
-        await this.workspace.recordSize(runId, agent, machineSandbox);
-      }
-    }
-  }
-
-  async _run_steps(
-    runId: string,
-    generation: number,
-    run: RunRow,
-    snapshot: Record<string, unknown>,
-    ctx: ReturnType<typeof createToolContext>,
-    tools: unknown[],
-    secrets: Record<string, string>,
-    mcpTools: Record<string, [string, string]>,
-    extra: Record<string, string>,
-  ): Promise<void> {
-    const maxSteps = Number(snapshot.max_steps);
-    const maxToolCalls = positiveInt(snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
-    const maxInputTokens = positiveInt(snapshot.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS);
-
-    const chainable = Boolean(snapshot.coding);
-    const handoffAt = Math.floor(maxInputTokens * HANDOFF_FRACTION);
-    const modelStep = async (): Promise<Array<Record<string, unknown>>> => {
-      const agent = await this.db.getAgent(String(run.agent_id));
-      const { rows, payloads } = await this.completion.modelHistory({ runId, generation, log: extra }, agent, snapshot, tools);
-      const tokens = countRunInputTokens(
-        String(snapshot.model),
-        rows,
-        Array.isArray(tools) ? tools : null,
-        countInputTokensImpl,
-      );
-      if (tokens > maxInputTokens) {
-        throw new RunLimitError("generation.max_input_tokens", INPUT_TOKEN_LIMIT_MESSAGE);
-      }
-      if (chainable && tokens >= handoffAt) {
-        throw new HandoffDue();
-      }
-      const completion = await this.completion.complete(runId, {
-        model: String(snapshot.model),
-        messages: payloads,
-        temperature: Number(snapshot.temperature),
-        max_tokens: Number(snapshot.max_tokens),
-        tools: (tools as unknown[]).length ? (tools as unknown[]) : null,
-        ...(snapshot.thinking_level ? { thinking_level: String(snapshot.thinking_level) } : {}),
-      });
-      await this.events.commitMessage(runId, completion.payload, { generation, ...completion.metadata });
-      const calls = toolCallsOf(completion.payload);
-      if (calls.length) {
-        await this.toolCalls.execute(
-          { runId, generation, log: extra },
-          { ctx, schemas: tools, secrets, connections: mcpTools, maxToolCalls },
-          calls,
-        );
-      }
-      return calls;
-    };
-
-    for (let step = 0; step < maxSteps; step += 1) {
-      if (this.generations.isCancelled(runId)) {
-        throw new GenerationCancelled();
-      }
-      if (executedToolCalls(await this.db.listMessages(runId)) >= maxToolCalls) {
-        await this._fail(
-          runId,
-          generation,
-          "generation.max_tool_calls",
-          new RunLimitError("generation.max_tool_calls", TOOL_CALL_LIMIT_MESSAGE),
-          extra,
-        );
-        await this._end_run(runId);
-        return;
-      }
-      let calls: Array<Record<string, unknown>>;
-      try {
-        calls = await modelStep();
-      } catch (error) {
-        if (error instanceof GenerationCancelled) {
-          throw error;
-        }
-        if (error instanceof HandoffDue) {
-          await this._handoff(runId, generation, run, snapshot, tools, maxInputTokens, extra);
-          return;
-        }
-        if (error instanceof RunLimitError) {
-          await this._fail(runId, generation, error.operation, error, extra);
-          await this._end_run(runId);
-          return;
-        }
-        await this._fail(runId, generation, "llm.complete", error, extra);
-        return;
-      }
-      if (!calls.length) {
-        return;
-      }
-      if (executedToolCalls(await this.db.listMessages(runId)) >= maxToolCalls) {
-        await this._fail(
-          runId,
-          generation,
-          "generation.max_tool_calls",
-          new RunLimitError("generation.max_tool_calls", TOOL_CALL_LIMIT_MESSAGE),
-          extra,
-        );
-        await this._end_run(runId);
-        return;
-      }
-      if (step === maxSteps - 1) {
-        await this._fail(
-          runId,
-          generation,
-          "generation.max_steps",
-          new Error("max_steps reached"),
-          extra,
-        );
-        return;
-      }
-    }
-  }
-
-  /**
-   * A coding run's prompt reached the hand-off share of its input limit: the agent is asked
-   * for a hand-off, given one step, and the run continues in a new one of the same kind.
-   * The fifth run of a chain completes with `generation.max_chain` instead.
-   */
-  async _handoff(
-    runId: string,
-    generation: number,
-    run: RunRow,
-    snapshot: Record<string, unknown>,
-    tools: unknown[],
-    maxInputTokens: number,
-    extra: Record<string, string>,
-  ): Promise<void> {
-    const position = chainOf(run);
-    if (position.index >= MAX_CHAIN_RUNS) {
-      await this._fail(runId, generation, "generation.max_chain", new RunLimitError("generation.max_chain", MAX_CHAIN_MESSAGE), extra);
-      await this._end_run(runId);
-      return;
-    }
-    await this.events.commitMessage(
-      runId,
-      { role: "user", content: HANDOFF_REQUEST },
-      { generation, source: "handoff" },
-    );
-    const agent = await this.db.getAgent(String(run.agent_id));
-    const { rows, payloads } = await this.completion.modelHistory({ runId, generation, log: extra }, agent, snapshot, tools);
-    if (
-      countRunInputTokens(
-        String(snapshot.model),
-        rows,
-        tools.length ? tools : null,
-        countInputTokensImpl,
-      ) > maxInputTokens
-    ) {
-      await this._fail(
-        runId,
-        generation,
-        "generation.max_input_tokens",
-        new RunLimitError("generation.max_input_tokens", INPUT_TOKEN_LIMIT_MESSAGE),
-        extra,
-      );
-      await this._end_run(runId);
-      return;
-    }
-    let completion: Completion;
-    try {
-      completion = await this.completion.complete(runId, {
-        model: String(snapshot.model),
-        messages: payloads,
-        temperature: Number(snapshot.temperature),
-        max_tokens: Number(snapshot.max_tokens),
-        tools: tools.length ? tools : null,
-        ...(snapshot.thinking_level ? { thinking_level: String(snapshot.thinking_level) } : {}),
-      });
-    } catch (error) {
-      if (error instanceof GenerationCancelled) {
-        throw error;
-      }
-      await this._fail(runId, generation, "llm.complete", error, extra);
-      return;
-    }
-    await this.events.commitMessage(runId, completion.payload, { generation, ...completion.metadata });
-    // Tool schemas stay fixed for the run, so the model may still call one: each call gets a
-    // refusal, which keeps the history valid, and is not run.
-    const maxToolCalls = positiveInt(snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
-    let executed = executedToolCalls(await this.db.listMessages(runId));
-    for (const call of toolCallsOf(completion.payload)) {
-      const fn = recordOf(call.function);
-      executed += 1;
-      const [payload, metadata] = stampToolResult(
-        { role: "tool", tool_call_id: String(call.id ?? ""), content: HANDOFF_TOOL_REFUSED },
-        {
-          tool_name: String(fn.name ?? ""),
-          tool_call_id: String(call.id ?? ""),
-          duration_ms: 0,
-          output_filter: "identity",
-          truncated: false,
-          original_bytes: Buffer.byteLength(HANDOFF_TOOL_REFUSED),
-          stored_bytes: Buffer.byteLength(HANDOFF_TOOL_REFUSED),
-          error: "a hand-off was requested",
-        },
-        remainingAfter(maxToolCalls, executed),
-      );
-      await this.events.commitMessage(runId, payload, { generation, ...metadata });
-    }
-    let next: string;
-    try {
-      next = await this.runs.createContinuation(run, handoffText(completion.payload), position);
-    } catch (error) {
-      await this._fail(runId, generation, "generation.continue", error, extra);
-      return;
-    }
-    await this.db.mergeRunMetadata(runId, { continued_by_run_id: next }, new Date());
-    await this.db.completeRun(runId, new Date());
-    this._continuations.set(runId, next);
-  }
-
-  async _memory_replaced_by(run: Record<string, unknown>): Promise<string> {
-    const kind = runKind(run);
-    const runId = String(run.id);
-    const position = chainOf(run);
-    if (position.previous_run_id !== null) {
-      return `run ${runId} (continuation of ${position.previous_run_id})`;
-    }
-    const rows = await this.db.listMessages(runId);
-    if (kind === "schedule") {
-      let instruction = "";
-      const prefix = "Schedule wake-up: ";
-      for (const row of rows) {
-        const meta = recordOf(row.metadata);
-        const payload = recordOf(row.payload);
-        if (meta.source !== "schedule") {
-          continue;
-        }
-        const raw = payload.content;
-        if (typeof raw !== "string") {
-          break;
-        }
-        if (raw.startsWith(prefix)) {
-          try {
-            const info = JSON.parse(raw.slice(prefix.length)) as Record<string, unknown>;
-            instruction = String(info.instruction || "");
-          } catch {
-            instruction = raw.slice(prefix.length);
-          }
-        }
-        break;
-      }
-      return `run ${runId} (schedule wake-up: "${instruction}")`;
-    }
-    if (kind === "group") {
-      let tags: string[] = [];
-      for (const row of rows) {
-        const meta = recordOf(row.metadata);
-        if (meta.source !== "group_chat") {
-          continue;
-        }
-        const tagged = meta.tagged || [];
-        if (Array.isArray(tagged)) {
-          tags = tagged.filter((item) => item).map((item) => String(item));
-        }
-        break;
-      }
-      if (tags.length) {
-        const label = tags.map((name) => `@${name}`).join(", ");
-        return `run ${runId} (group delivery: ${label})`;
-      }
-      return `run ${runId} (group delivery)`;
-    }
-    return `run ${runId} (direct)`;
-  }
-
-  async _end_run(runId: string): Promise<void> {
-    const run = await this.db.getRun(runId);
-    if (run === null || run.status !== "active") {
-      return;
-    }
-    await this.db.completeRun(runId, new Date());
-  }
-
-  async _fail(
-    runId: string,
-    generation: number,
-    operation: string,
-    error: unknown,
-    extra?: Record<string, string>,
-  ): Promise<void> {
-    await this.events.recordError({ runId, generation, log: extra ?? { run_id: runId } }, operation, error);
-  }
 
 }

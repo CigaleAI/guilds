@@ -1,4 +1,17 @@
+import { DEFAULT_MAX_INPUT_TOKENS } from "../agents/validation.js";
+import { getAgent } from "../db/agents.js";
 import { jsonObj } from "../db/json.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import { completeRun, getRun, listMessages, mergeRunMetadata } from "../db/runs.js";
+import { INPUT_TOKEN_LIMIT_MESSAGE, type Completion } from "../llm/index.js";
+import { remainingAfter, stampToolResult } from "../toolbox/index.js";
+import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
+import { GenerationCancelled, RunLimitError } from "./errors.js";
+import type { RunEvents } from "./events.js";
+import type { Generation } from "./generate.js";
+import type { Runs } from "./runs.js";
+import { positiveInt } from "./snapshot.js";
+import { executedToolCalls, toolCallNameAndId, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 
 /**
  * Run chains. A coding run whose prompt reaches this share of `max_input_tokens` asks the
@@ -80,4 +93,157 @@ export function continuationMessage(
     { role: "user", content: `Continuation: ${JSON.stringify(body, null, 2)}` },
     { generation: 1, source: "continuation", previous_run_id: previousRunId },
   ];
+}
+
+/** The db/ functions a chain is followed and handed off through, on `db`. */
+export function runChainsDatabase(db: Queryable) {
+  return {
+    getRun: bindQuery(db, getRun),
+    getAgent: bindQuery(db, getAgent),
+    listMessages: bindQuery(db, listMessages),
+    mergeRunMetadata: bindQuery(db, mergeRunMetadata),
+    completeRun: bindQuery(db, completeRun),
+  };
+}
+
+export type RunChainsDatabase = ReturnType<typeof runChainsDatabase>;
+
+/** Completes the run unless it already ended. */
+export async function completeIfActive(
+  db: Pick<RunChainsDatabase, "getRun" | "completeRun">,
+  runId: string,
+): Promise<void> {
+  const run = await db.getRun(runId);
+  if (run !== null && run.status === "active") {
+    await db.completeRun(runId, new Date());
+  }
+}
+
+/** What chains are handed off with, built once by the loop. */
+export type RunChainsServices = {
+  db: RunChainsDatabase;
+  events: RunEvents;
+  completion: ModelCompletion;
+  runs: Pick<Runs, "createContinuation">;
+};
+
+/** The run chains of a loop: each hand-off, the continuation it creates, and the way to a chain's last run. */
+export class RunChains {
+  /** A run that handed off, to the run that continues it once its generation ends. */
+  private readonly continuations = new Map<string, string>();
+
+  constructor(private readonly services: RunChainsServices) {}
+
+  /** The run that continues `runId` once its generation ends, taken once; null when it handed off to none. */
+  takeContinuation(runId: string): string | null {
+    const next = this.continuations.get(runId) ?? null;
+    this.continuations.delete(runId);
+    return next;
+  }
+
+  /** The last run of the chain that `runId` belongs to, following each continuation. */
+  async latestInChain(runId: string): Promise<string> {
+    let current = runId;
+    for (let hop = 0; hop < MAX_CHAIN_RUNS; hop += 1) {
+      const row = await this.services.db.getRun(current);
+      const next = row ? continuedBy(row) : null;
+      if (next === null) {
+        return current;
+      }
+      current = next;
+    }
+    return current;
+  }
+
+  /**
+   * A coding run's prompt reached the hand-off share of its input limit: the agent is asked
+   * for a hand-off, given one step, and the run continues in a new one of the same kind.
+   * The fifth run of a chain completes with `generation.max_chain` instead.
+   */
+  async handOff(gen: Generation, tools: GenerationTools): Promise<void> {
+    const { db, events, runs } = this.services;
+    const position = chainOf(gen.run);
+    if (position.index >= MAX_CHAIN_RUNS) {
+      await events.recordError(gen, "generation.max_chain", new RunLimitError("generation.max_chain", MAX_CHAIN_MESSAGE));
+      await completeIfActive(db, gen.runId);
+      return;
+    }
+    await events.commitMessage(
+      gen.runId,
+      { role: "user", content: HANDOFF_REQUEST },
+      { generation: gen.generation, source: "handoff" },
+    );
+    const reply = await this.handoffReply(gen, tools);
+    if (reply === null) {
+      return;
+    }
+    await events.commitMessage(gen.runId, reply.payload, { generation: gen.generation, ...reply.metadata });
+    await this.refuseToolCalls(gen, tools, reply);
+    let next: string;
+    try {
+      next = await runs.createContinuation(gen.run, handoffText(reply.payload), position);
+    } catch (error) {
+      await events.recordError(gen, "generation.continue", error);
+      return;
+    }
+    await db.mergeRunMetadata(gen.runId, { continued_by_run_id: next }, new Date());
+    await db.completeRun(gen.runId, new Date());
+    this.continuations.set(gen.runId, next);
+  }
+
+  /**
+   * The agent's reply to the hand-off request; null when the history no longer fits the input
+   * limit or the model fails, and the run says why.
+   */
+  private async handoffReply(gen: Generation, tools: GenerationTools): Promise<Completion | null> {
+    const { db, events, completion } = this.services;
+    const agent = await db.getAgent(gen.run.agent_id);
+    const history = await completion.modelHistory(gen, agent, gen.snapshot, tools.schemas);
+    if (historyTokens(gen.snapshot, history, tools.schemas) > positiveInt(gen.snapshot.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS)) {
+      await events.recordError(
+        gen,
+        "generation.max_input_tokens",
+        new RunLimitError("generation.max_input_tokens", INPUT_TOKEN_LIMIT_MESSAGE),
+      );
+      await completeIfActive(db, gen.runId);
+      return null;
+    }
+    try {
+      return await completion.complete(gen.runId, completionRequest(gen.snapshot, history.payloads, tools.schemas));
+    } catch (error) {
+      if (error instanceof GenerationCancelled) {
+        throw error;
+      }
+      await events.recordError(gen, "llm.complete", error);
+      return null;
+    }
+  }
+
+  /**
+   * Tool schemas stay fixed for the run, so the model may still call one in its hand-off: each
+   * call gets a refusal, which keeps the history valid, and is not run.
+   */
+  private async refuseToolCalls(gen: Generation, tools: GenerationTools, reply: Completion): Promise<void> {
+    const { db, events } = this.services;
+    let executed = executedToolCalls(await db.listMessages(gen.runId));
+    for (const call of toolCallsOf(reply.payload)) {
+      const { name, callId } = toolCallNameAndId(call);
+      executed += 1;
+      const [payload, metadata] = stampToolResult(
+        { role: "tool", tool_call_id: callId, content: HANDOFF_TOOL_REFUSED },
+        {
+          tool_name: name,
+          tool_call_id: callId,
+          duration_ms: 0,
+          output_filter: "identity",
+          truncated: false,
+          original_bytes: Buffer.byteLength(HANDOFF_TOOL_REFUSED),
+          stored_bytes: Buffer.byteLength(HANDOFF_TOOL_REFUSED),
+          error: "a hand-off was requested",
+        },
+        remainingAfter(tools.maxToolCalls, executed),
+      );
+      await events.commitMessage(gen.runId, payload, { generation: gen.generation, ...metadata });
+    }
+  }
 }

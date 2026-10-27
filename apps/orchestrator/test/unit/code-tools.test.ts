@@ -372,7 +372,7 @@ describe("coding runs in the generation loop", () => {
     ]) as typeof live.streamCompletion;
     const { sandboxes, machines } = codingSandboxes(sandbox);
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.equal(machines[0]?.id, "mach_1");
     const tools = db.messages.filter((row) => (row.payload as Record<string, unknown>).role === "tool");
     const contents = tools.map((row) => String((row.payload as Record<string, unknown>).content).split("\n\nremaining_tool_calls")[0]);
@@ -398,7 +398,7 @@ describe("coding runs in the generation loop", () => {
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes } = codingSandboxes(sandbox);
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.equal(sizes.length, 1);
     assert.equal(db.llm_histories.length, 1);
 
@@ -407,7 +407,7 @@ describe("coding runs in the generation loop", () => {
     const previous = process.env.WORKSPACE_MAX_MIB;
     process.env.WORKSPACE_MAX_MIB = "2";
     try {
-      await loop._generate("r_1", 2);
+      await loop.generator.generate("r_1", 2);
     } finally {
       if (previous === undefined) {
         delete process.env.WORKSPACE_MAX_MIB;
@@ -433,7 +433,7 @@ describe("coding runs in the generation loop", () => {
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes } = codingSandboxes(sandbox);
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "workspace.full");
@@ -447,7 +447,7 @@ describe("coding runs in the generation loop", () => {
     db.agent.config = { ...legacy };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes, machines } = codingSandboxes(sandbox);
-    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes)._generate("r_1", 1);
+    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes).generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
     assert.equal(machines.length, 0, "the machine is not woken");
     const errors = db.run.errors as Array<Record<string, unknown>>;
@@ -456,7 +456,7 @@ describe("coding runs in the generation loop", () => {
 
     const plain = new FakeDB(configSnapshot({ ...AGENT_CONFIG }, { tools: [], secrets: [], mcp: [] }, "schedule"));
     live.streamCompletion = scripted(plain, []) as typeof live.streamCompletion;
-    await makeLoop(plain, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    await makeLoop(plain, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes).generator.generate("r_1", 1);
     assert.equal(plain.llm_histories.length, 1);
   });
 
@@ -480,7 +480,7 @@ describe("coding runs in the generation loop", () => {
         },
       ],
     ]) as typeof live.streamCompletion;
-    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes).generator.generate("r_1", 1);
     const tool = db.messages.find((row) => (row.payload as Record<string, unknown>).role === "tool");
     assert.match(String((tool?.payload as Record<string, unknown>).content), /^same\n/);
   });
@@ -491,7 +491,7 @@ describe("coding runs in the generation loop", () => {
     db.agent.config = { ...CODER };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes, machines } = codingSandboxes(sandbox);
-    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes)._generate("r_1", 1);
+    await makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes).generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
     assert.equal(machines.length, 0, "the machine is not woken");
     const errors = db.run.errors as Array<Record<string, unknown>>;
@@ -511,7 +511,7 @@ describe("coding runs in the generation loop", () => {
     };
     db.agent.config = { ...CODER };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
-    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes).generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "harness.credential");
@@ -525,7 +525,7 @@ describe("coding runs in the generation loop", () => {
     const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]);
     db.agent.config = { ...CODER };
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
-    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes)._generate("r_1", 1);
+    await makeLoop(db, {}, tempDir("guilds-gen-"), codingSandboxes(sandbox).sandboxes).generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "harness.not_installed");
@@ -570,14 +570,14 @@ describe("coding runs in the generation loop", () => {
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
     const { sandboxes } = codingSandboxes(sandbox);
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.equal(sizes.length, 1);
     assert.equal(db.llm_histories.length, 1);
 
     writeFileSync(path.join(sandbox.home, "blob"), Buffer.alloc(3 * 1024 * 1024));
     db.agent.workspace_mib = 50;
     db.agent.config = { ...AGENT_CONFIG, max_workspace_mib: 2 };
-    await loop._generate("r_1", 2);
+    await loop.generator.generate("r_1", 2);
     assert.equal(db.llm_histories.length, 1);
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "workspace.full");
@@ -648,7 +648,7 @@ describe("repositories in a coding generation", () => {
       function: { name: "shell", arguments: JSON.stringify({ command: `echo ${text} >> README.md && pwd` }) },
     });
     live.streamCompletion = scripted(db, [[edit("c1", "one")]]) as typeof live.streamCompletion;
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const clone = path.join(sandbox.home, "repos/shop");
     assert.equal(readFileSync(path.join(clone, "README.md"), "utf8"), "shop\none\n");
     const tool = db.messages.find((row) => (row.payload as Record<string, unknown>).role === "tool");
@@ -668,7 +668,7 @@ describe("repositories in a coding generation", () => {
     assert.equal(git(["status", "--porcelain"]), "M README.md");
 
     live.streamCompletion = scripted(db, [[edit("c2", "two")]]) as typeof live.streamCompletion;
-    await loop._generate("r_1", 2);
+    await loop.generator.generate("r_1", 2);
     const second = ((db.run.metadata as Record<string, unknown>).repos as Array<Record<string, unknown>>)[0]!;
     assert.equal(second.start_sha, first.start_sha);
     assert.notEqual(second.end_sha, first.end_sha);
@@ -690,7 +690,7 @@ describe("repositories in a coding generation", () => {
       git_author_email: "dev@example.com",
     });
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     const git = (args: string[]) =>
       execFileSync("git", ["-C", path.join(sandbox.home, "repos/shop"), ...args], {
         env: gitEnv(sandbox.home),
@@ -704,7 +704,7 @@ describe("repositories in a coding generation", () => {
   test("a repository that cannot be cloned fails the generation at start", async () => {
     const { db, loop } = setup(`file://${tempDir("guilds-missing-")}/nothing.git`);
     live.streamCompletion = scripted(db, []) as typeof live.streamCompletion;
-    await loop._generate("r_1", 1);
+    await loop.generator.generate("r_1", 1);
     assert.equal(db.llm_histories.length, 0);
     const errors = db.run.errors as Array<Record<string, unknown>>;
     assert.equal(errors.at(-1)?.operation, "repository.clone");

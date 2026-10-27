@@ -142,7 +142,7 @@ export function pendingToolCalls(
   });
 }
 
-function toolCallNameAndId(call: Record<string, unknown>): { name: string; callId: string } {
+export function toolCallNameAndId(call: Record<string, unknown>): { name: string; callId: string } {
   const fn = recordOf(call.function);
   return {
     name: typeof fn.name === "string" ? fn.name : "",

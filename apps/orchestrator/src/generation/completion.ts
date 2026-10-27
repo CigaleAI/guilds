@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_INPUT_TOKENS, keepToolResultGenerationsOf } from "../agents/validation.js";
-import { attachmentImageCount } from "../attachments/hydrate.js";
+import { attachmentImageCount, countRunInputTokens } from "../attachments/hydrate.js";
 import { IMAGE_INPUT_TOKENS, type AttachmentService } from "../attachments/index.js";
 import {
   AGENT_TOOL_RESULT_STUB_HINT,
@@ -73,6 +73,27 @@ export type ModelHistory = {
   rows: MessageRow[];
   payloads: Array<Record<string, unknown>>;
 };
+
+/** The input tokens the run's history takes with the schemas it is offered. */
+export function historyTokens(snapshot: Record<string, unknown>, history: ModelHistory, schemas: unknown[]): number {
+  return countRunInputTokens(String(snapshot.model), history.rows, schemas.length ? schemas : null, countInputTokensImpl);
+}
+
+/** A model call with the settings of the run's snapshot. */
+export function completionRequest(
+  snapshot: Record<string, unknown>,
+  messages: Array<Record<string, unknown>>,
+  schemas: unknown[],
+): CompletionRequest {
+  return {
+    model: String(snapshot.model),
+    messages,
+    temperature: Number(snapshot.temperature),
+    max_tokens: Number(snapshot.max_tokens),
+    tools: schemas.length ? schemas : null,
+    ...(snapshot.thinking_level ? { thinking_level: String(snapshot.thinking_level) } : {}),
+  };
+}
 
 type RacedEvent =
   | { kind: "event"; result: IteratorResult<ModelEvent> }
