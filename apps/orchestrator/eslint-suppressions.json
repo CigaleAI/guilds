@@ -919,31 +919,13 @@
       "count": 1
     }
   },
-  "src/schedules/window.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/scripts/catalog.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "@typescript-eslint/max-params": {
       "count": 1
     }
   },
   "src/scripts/materialise.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "src/scripts/snapshot.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/scripts/validation.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
   },

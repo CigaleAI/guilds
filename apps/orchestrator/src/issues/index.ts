@@ -81,7 +81,29 @@ function optionalId(value: unknown): string | null {
   return text || null;
 }
 
-export function issueItem(row: GuildIssueRow): Record<string, unknown> {
+/** An issue as the API and the tools show it, with the agent that reported it. */
+export type IssueItem = Pick<
+  GuildIssueRow,
+  | "id"
+  | "guild_id"
+  | "agent_id"
+  | "agent_name"
+  | "run_id"
+  | "kind"
+  | "severity"
+  | "status"
+  | "summary"
+  | "detail"
+  | "tool_name"
+  | "resolved_by"
+> & {
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  agent: { id: string; name: string; avatar_shape: string; avatar_color: string } | null;
+};
+
+export function issueItem(row: GuildIssueRow): IssueItem {
   return {
     id: row.id,
     guild_id: row.guild_id,
@@ -161,7 +183,7 @@ export class Issues {
     );
   }
 
-  async listForGuild(guildId: string, status?: unknown): Promise<Array<Record<string, unknown>>> {
+  async listForGuild(guildId: string, status?: unknown): Promise<IssueItem[]> {
     let filter: string | null = null;
     if (status !== undefined && status !== null && status !== "" && status !== "all") {
       filter = oneOf(status, ISSUE_STATUSES, "status");
@@ -175,7 +197,7 @@ export class Issues {
     issueId: string,
     status: unknown,
     resolvedBy: string | null,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<IssueItem> {
     const token = (issueId || "").trim();
     if (!token) {
       throw new IssueError("issue_id is required");

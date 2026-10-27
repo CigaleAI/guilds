@@ -14,6 +14,7 @@ import {
   validateScriptSource,
 } from "./validation.js";
 import {
+  type AgentScriptRow,
   deleteAgentScript,
   getAgentScript,
   listAgentScripts,
@@ -21,54 +22,44 @@ import {
 } from "../db/agents.js";
 import { bindQuery } from "../db/pg.js";
 
-export function rowParameters(row: Record<string, unknown>): Record<string, unknown> | null {
-  let value = row.parameters;
-  if (typeof value === "string") {
-    value = JSON.parse(value);
-  }
-  if (value === null || value === undefined) {
-    return null;
-  }
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new ScriptError("parameters must be a JSON object");
-  }
-  return value as Record<string, unknown>;
-}
+/** An agent's script: its row without the timestamps. */
+export type AgentScript = Omit<AgentScriptRow, "created_at" | "updated_at">;
 
-export function scriptRow(row: Record<string, unknown>): Record<string, unknown> {
+/** A script as the agent's catalog lists it: the parameters only when the script declares them. */
+export type ScriptCatalogItem = Pick<AgentScript, "name" | "description"> & {
+  parameters?: Record<string, unknown>;
+};
+
+/** A script as the API shows it. */
+export type ScriptItem = Pick<AgentScript, "name" | "description" | "parameters" | "source">;
+
+export function agentScript(row: AgentScriptRow): AgentScript {
   return {
     id: row.id,
     agent_id: row.agent_id,
     name: row.name,
     description: row.description,
-    parameters: rowParameters(row),
+    parameters: row.parameters,
     source: row.source,
     source_hash: row.source_hash,
   };
 }
 
-export function catalogItem(row: Record<string, unknown>): Record<string, unknown> {
-  const item: Record<string, unknown> = { name: row.name, description: row.description };
-  const parameters = rowParameters(row);
-  if (parameters !== null) {
-    item.parameters = parameters;
-  }
-  return item;
+export function catalogItem(script: AgentScript): ScriptCatalogItem {
+  return {
+    name: script.name,
+    description: script.description,
+    ...(script.parameters !== null ? { parameters: script.parameters } : {}),
+  };
 }
 
-export function scriptItem(
-  row: Record<string, unknown>,
-  options: { source?: boolean } = {},
-): Record<string, unknown> {
-  const item: Record<string, unknown> = {
-    name: row.name,
-    description: row.description,
-    parameters: rowParameters(row),
+export function scriptItem(script: AgentScript): ScriptItem {
+  return {
+    name: script.name,
+    description: script.description,
+    parameters: script.parameters,
+    source: script.source,
   };
-  if (options.source) {
-    item.source = row.source;
-  }
-  return item;
 }
 
 /** The db/ functions an agent's scripts are read and written through, on `db`. */
@@ -96,7 +87,7 @@ export class Scripts {
     source: unknown,
     parameters: unknown = null,
     options: { reservedNames?: Iterable<string>; maxScripts?: number } = {},
-  ): Promise<Record<string, unknown>> {
+  ): Promise<AgentScript> {
     const token = validateScriptName(name);
     assertAvailableScriptName(token, options.reservedNames ?? []);
     const text = validateScriptDescription(description);
@@ -126,52 +117,52 @@ export class Scripts {
         actor,
         now,
       );
-      return scriptRow(row);
+      return agentScript(row);
     });
   }
 
-  async listForAgent(agentId: string): Promise<Array<Record<string, unknown>>> {
+  async listForAgent(agentId: string): Promise<AgentScript[]> {
     return this.lock.run(async () =>
-      (await this.db.listAgentScripts(agentId)).map(scriptRow),
+      (await this.db.listAgentScripts(agentId)).map(agentScript),
     );
   }
 
-  async get(agentId: string, name: unknown): Promise<Record<string, unknown>> {
+  async get(agentId: string, name: unknown): Promise<AgentScript> {
     const token = validateScriptName(name);
     return this.lock.run(async () => {
       const row = await this.db.getAgentScript(agentId, token);
       if (row === null) {
         throw new ScriptError("script not found");
       }
-      return scriptRow(row);
+      return agentScript(row);
     });
   }
 
-  async delete(actor: ArtifactActor, agentId: string, name: unknown): Promise<Record<string, unknown>> {
+  async delete(actor: ArtifactActor, agentId: string, name: unknown): Promise<AgentScript> {
     const token = validateScriptName(name);
     return this.lock.run(async () => {
       const row = await this.db.deleteAgentScript(actor, agentId, token);
       if (row === null) {
         throw new ScriptError("script not found");
       }
-      return scriptRow(row);
+      return agentScript(row);
     });
   }
 
-  async deleteAll(actor: ArtifactActor, agentId: string): Promise<Array<Record<string, unknown>>> {
+  async deleteAll(actor: ArtifactActor, agentId: string): Promise<AgentScript[]> {
     return this.lock.run(async () => {
-      const deleted: Array<Record<string, unknown>> = [];
+      const deleted: AgentScript[] = [];
       for (const row of await this.db.listAgentScripts(agentId)) {
         const gone = await this.db.deleteAgentScript(actor, agentId, row.name);
         if (gone) {
-          deleted.push(scriptRow(gone));
+          deleted.push(agentScript(gone));
         }
       }
       return deleted;
     });
   }
 
-  async catalog(agentId: string): Promise<Array<Record<string, unknown>>> {
+  async catalog(agentId: string): Promise<ScriptCatalogItem[]> {
     return (await this.listForAgent(agentId)).map(catalogItem);
   }
 

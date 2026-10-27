@@ -108,11 +108,11 @@ test("Scripts catalog create list get delete", async () => {
   assert.equal(created.parameters, null);
   const listed = await scripts.listForAgent("a_1");
   assert.equal(listed.length, 1);
-  assert.deepEqual(catalogItem(listed[0] ?? {}), {
+  assert.deepEqual(catalogItem(listed[0]!), {
     name: "send_usdc",
     description: "Sign and send USDC",
   });
-  assert.deepEqual(scriptItem(listed[0] ?? {}, { source: true }), {
+  assert.deepEqual(scriptItem(listed[0]!), {
     name: "send_usdc",
     description: "Sign and send USDC",
     parameters: null,

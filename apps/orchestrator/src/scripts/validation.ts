@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isPlainRecord } from "../db/json.js";
 
 export const SCRIPTS_DIR = "scripts";
 export const SCRIPT_NAME = /^[a-z][a-z0-9_-]{0,62}$/;
@@ -108,14 +109,13 @@ export function validateScriptParameters(
   if (value === null || value === undefined) {
     return null;
   }
-  if (typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainRecord(value)) {
     throw new ScriptError("parameters must be a JSON object");
   }
-  const schema = value as Record<string, unknown>;
-  if (schema.type !== "object") {
+  if (value.type !== "object") {
     throw new ScriptError("parameters must be a JSON Schema object");
   }
-  return schema;
+  return value;
 }
 
 export function assertAvailableScriptName(

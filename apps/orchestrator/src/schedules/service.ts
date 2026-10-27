@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { newId } from "../lib/ids.js";
 import { ScheduleError, validateInstruction, validateScheduleDescription } from "./cron.js";
-import { formatScheduleRow, rowDescription, scheduleItem } from "./item.js";
+import { formatScheduleRow, rowDescription, scheduleItem, type ScheduleItem } from "./item.js";
 import { planWake, rowTiming, validateTiming } from "./timing.js";
 import type { ChangeActor } from "../db/config-changes.js";
 import type {
@@ -38,6 +38,11 @@ export function scheduleDatabase(db: pg.Pool) {
 }
 
 export type ScheduleDatabase = ReturnType<typeof scheduleDatabase>;
+
+/** A routine of a guild's listing, with the agent it wakes. */
+export type GuildScheduleItem = ScheduleItem & {
+  agent: { id: string; name: string; avatar_shape: string; avatar_color: string };
+};
 
 /**
  * Routines of agents. Every write takes the actor it is logged against in the
@@ -87,22 +92,24 @@ export class Schedules {
     return lines.join("\n\n");
   }
 
-  async listForGuild(guildId: string): Promise<Array<Record<string, unknown>>> {
-    const items: Array<Record<string, unknown>> = [];
+  async listForGuild(guildId: string): Promise<GuildScheduleItem[]> {
+    const items: GuildScheduleItem[] = [];
     for (const row of await this.db.listSchedulesForGuild(guildId)) {
       const item = await this.view(row);
-      item.agent = {
-        id: row.agent_id,
-        name: row.agent_name,
-        avatar_shape: row.avatar_shape || "teardrop",
-        avatar_color: row.avatar_color || "#7c5cff",
-      };
-      items.push(item);
+      items.push({
+        ...item,
+        agent: {
+          id: row.agent_id,
+          name: row.agent_name,
+          avatar_shape: row.avatar_shape || "teardrop",
+          avatar_color: row.avatar_color || "#7c5cff",
+        },
+      });
     }
     return items;
   }
 
-  async view(row: ScheduleRow): Promise<Record<string, unknown>> {
+  async view(row: ScheduleRow): Promise<ScheduleItem> {
     const item = scheduleItem(row);
     const instruction = await this.instructionFor(row.agent_id, row);
     item.instruction = instruction;

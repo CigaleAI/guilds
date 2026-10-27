@@ -242,7 +242,7 @@ test("script create stores parameters in catalog", async () => {
       parameters: schema,
     },
   ]);
-  assert.deepEqual(scriptItem(row, { source: true }).parameters, schema);
+  assert.deepEqual(scriptItem(row).parameters, schema);
   assert.equal(row.source_hash, scriptSourceHash("print('sent')\n"));
 });
 

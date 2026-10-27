@@ -3,6 +3,30 @@ import { iso, isoOrNull } from "../db/views.js";
 import { promptHash } from "../prompts/index.js";
 import { describeTiming, rowTiming, type ScheduleTiming } from "./timing.js";
 
+/** A routine as the API and the tools show it. */
+export type ScheduleItem = ScheduleTiming & {
+  id: string;
+  agent_id: string;
+  label: string;
+  description: string;
+  instruction: string;
+  instruction_hash: string;
+  paused: boolean;
+  guild_routines_enabled?: boolean;
+  next_run_at: string;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** The metadata of the user message a routine's wake-up opens its run with. */
+export type ScheduleWakeMetadata = {
+  generation: number;
+  source: "schedule";
+  schedule_id: string;
+  instruction_hash: string;
+};
+
 function rowDescription(row: ScheduleDefinition, instruction?: string | null): string {
   const text = row.description.trim();
   if (text) {
@@ -24,13 +48,12 @@ export function timingText(timing: ScheduleTiming): string {
   return timing.cron ? `${timing.cron}  ${describeTiming(timing)}` : describeTiming(timing);
 }
 
-export function scheduleItem(row: ScheduleRow | AgentScheduleRow): Record<string, unknown> {
+export function scheduleItem(row: ScheduleRow | AgentScheduleRow): ScheduleItem {
   const timing = rowTiming(row);
   return {
     id: row.id,
     agent_id: row.agent_id,
-    cron: timing.cron,
-    window: timing.window,
+    ...timing,
     label: describeTiming(timing),
     description: rowDescription(row),
     instruction: row.instruction,
@@ -51,7 +74,7 @@ export function scheduleWakeUserMessage(row: {
   timing: ScheduleTiming;
   instruction: string;
   previousRunAt: string | null;
-}): [{ role: string; content: string }, Record<string, unknown>] {
+}): [{ role: string; content: string }, ScheduleWakeMetadata] {
   const info = {
     id: row.id,
     ...(row.timing.cron ? { cron: row.timing.cron } : { window: row.timing.window }),

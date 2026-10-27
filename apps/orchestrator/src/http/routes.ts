@@ -2281,7 +2281,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const rows = await scripts.listForAgent(agentId);
       return rows.map((row) => ({
-        ...scriptItem(row, { source: true }),
+        ...scriptItem(row),
         display_path: displayPathFor({
           orgId: String(agent.org_id),
           level: "agent",
@@ -2327,7 +2327,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
         action: "create",
         name: row.name,
       });
-      await send(reply, 201, scriptItem(row, { source: true }));
+      await send(reply, 201, scriptItem(row));
     } catch (error) {
       if (error instanceof ScriptError) {
         throw new HttpError(422, error.message);
@@ -2369,7 +2369,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     await ownedAgent(db, agentId, user);
     try {
       const row = await scripts.get(agentId, name);
-      return scriptItem(row, { source: true });
+      return scriptItem(row);
     } catch (error) {
       if (error instanceof ScriptError) {
         throw new HttpError(404, error.message);
