@@ -8,6 +8,14 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The built-in connectors (CoinGecko, X, TwitterAPI.io,
+Alchemy, DexPaprika, Google Drive, Gmail, Qonto, Tavily) check each
+provider response against the shape they read. A response that does
+not match fails the tool call with the field at fault, such as
+`CoinGecko returned an unexpected response at /coins/0: …`, where a
+malformed item was skipped before. Output for well-formed responses
+is unchanged.
+
 **Rebuild.** Migration 0014 gives every stored agent config each
 setting it predates, with the value the app already read for it, so
 a config holds every key. Applying a recipe refuses a role whose
