@@ -3,6 +3,7 @@ import { visibleAt } from "../credentials/visibility.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { connectorFacts } from "../connectors/view.js";
 import { awaitingSettings, connectionSettings } from "../connectors/login.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 export const NOTE_TOOLS = [
   "note_find",
@@ -128,7 +129,7 @@ export function validateBinding(args: {
   enabled: boolean;
   guildId?: string | null;
   orgId?: string | null;
-  server?: Record<string, unknown> | null;
+  server?: LoadedConnector | null;
   connection?: Record<string, unknown> | null;
   connectionId?: string | null;
 }): Overlay {
@@ -290,16 +291,16 @@ export function enabledToolNames(items: Resolved[]): string[] {
 
 export function resolvedMcp(
   rows: Array<Record<string, unknown>>,
-  servers: Array<Record<string, unknown>>,
+  servers: LoadedConnector[],
   options: {
     orgId?: string | null | undefined;
     guildId?: string | null | undefined;
     agentId?: string | null | undefined;
     viewScope?: string | undefined;
   } = {},
-): Array<[Resolved, Record<string, unknown>]> {
+): Array<[Resolved, LoadedConnector]> {
   return servers.map((server) => [
-    resolveItem(rows, "mcp", String(server.id), {
+    resolveItem(rows, "mcp", server.id, {
       orgId: options.orgId,
       guildId: options.guildId,
       agentId: options.agentId,
@@ -351,7 +352,7 @@ export function mcpToolView(
 
 export function mcpView(
   item: Resolved,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   connection: Record<string, unknown> | null,
   options: { tools?: Array<Record<string, unknown>> | null } = {},
 ): Record<string, unknown> {
@@ -368,11 +369,11 @@ export function mcpView(
     name: server.display_name,
     auth: server.auth,
     description: server.description || "",
-    limitations: server.limitations ?? null,
-    setup_hint: server.setup_hint ?? null,
-    oauth_strategy: server.oauth_strategy ?? null,
+    limitations: server.limitations,
+    setup_hint: server.setup_hint,
+    oauth_strategy: server.oauth_strategy,
     oauth_setup_state: oauthSetupState(server),
-    catalog_enabled: server.enabled !== false,
+    catalog_enabled: server.enabled,
     org_owned: Boolean(server.owner_org_id),
     enabled: item.enabled,
     source_scope: item.source_scope,
@@ -395,7 +396,7 @@ export function accessPayload(args: {
   guildId?: string | null | undefined;
   agentId?: string | null | undefined;
   viewScope: string;
-  servers?: Array<Record<string, unknown>> | null | undefined;
+  servers?: LoadedConnector[] | null | undefined;
   connections?: Array<Record<string, unknown>> | null | undefined;
   listedTools?: Record<string, unknown[]> | null | undefined;
 }): Record<string, unknown> {

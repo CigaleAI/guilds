@@ -1294,7 +1294,7 @@ export class RecipeApplyService {
       const bound = bindings.some(
         (row) =>
           row.catalog_kind === "mcp" &&
-          String(row.catalog_id) === String(server.id) &&
+          String(row.catalog_id) === server.id &&
           (row.scope === "guild" || row.scope === "agent"),
       );
       return bound

@@ -20,6 +20,7 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import { awaitingSettings, mcpDatabase, type McpPool } from "./index.js";
 import { callOwnedConnectionTool } from "./operator-call.js";
 import { ConnectionError, seesConnection, serverVisible } from "./visibility.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 /** What an operator's connector logins are read, used and changed through, built once from the app's services. */
 export type ConnectionServices = {
@@ -236,7 +237,7 @@ async function syncAfterSettings(
   services: ConnectionServices,
   mcp: McpPool,
   row: McpConnectionRow,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
 ): Promise<void> {
   try {
     await mcp.syncTools(mcpDatabase(services.db), row, server, { force: true, validate: false });

@@ -1,6 +1,7 @@
 import type { Manifest } from "../db/schema/index.js";
 import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
+import type { LoadedConnector } from "./load.js";
 
 /** Where an installed connector came from: shipped with core, pulled from a registry, or added on this box. */
 export type ConnectorSource = "core" | "registry" | "local";
@@ -96,14 +97,8 @@ export class ConnectorRegistry {
   }
 
   /** The entry behind a server row, by its id, else by its slug; null for a server created by hand. */
-  forServer(server: Record<string, unknown>): ConnectorEntry | null {
-    if (typeof server.id === "string" && server.id) {
-      const entry = this.byId(server.id);
-      if (entry) {
-        return entry;
-      }
-    }
-    return typeof server.slug === "string" ? this.bySlug(server.slug) : null;
+  forServer(server: Pick<LoadedConnector, "id" | "slug">): ConnectorEntry | null {
+    return (server.id ? this.byId(server.id) : null) ?? this.bySlug(server.slug);
   }
 
   /** A copy of this registry with `adapter` merged over the connector's own code. */

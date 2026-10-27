@@ -4,7 +4,7 @@ import path from "node:path";
 import { DEFAULT_MAX_WORKSPACE_MIB } from "../src/agents/validation.js";
 import { repoRoot } from "../src/lib/paths.js";
 import { installedConnectors } from "../src/connectors/index.js";
-import { loadConnector, manifestTools } from "../src/connectors/load.js";
+import { loadConnector, manifestTools, type LoadedConnector } from "../src/connectors/load.js";
 import type { ConnectorEntry } from "../src/connectors/registry.js";
 import { connectorFacts } from "../src/connectors/view.js";
 import { serverItem } from "../src/credentials/items.js";
@@ -14,7 +14,7 @@ import { REGISTRY } from "../src/toolbox/index.js";
 const routesPath = path.join(repoRoot(import.meta.url), "fixtures/compat/http/routes.json");
 
 /** A connector as a freshly seeded box loads it. */
-function seededServer(entry: ConnectorEntry): Record<string, unknown> {
+function seededServer(entry: ConnectorEntry): LoadedConnector {
   const seededAt = new Date().toISOString();
   return loadConnector({
     id: entry.id,
@@ -35,8 +35,8 @@ function seededServer(entry: ConnectorEntry): Record<string, unknown> {
   });
 }
 
-function manifestOf(row: Record<string, unknown>): Record<string, unknown> | undefined {
-  const entry = installedConnectors().forServer(row);
+function manifestOf(row: Record<string, unknown>): LoadedConnector | undefined {
+  const entry = installedConnectors().forServer({ id: String(row.id ?? ""), slug: String(row.slug ?? "") });
   return entry ? seededServer(entry) : undefined;
 }
 
@@ -437,7 +437,7 @@ function withSystemMetadata(row: Record<string, unknown>): Record<string, unknow
   };
 }
 
-function catalogMissing(items: Array<Record<string, unknown>>): Record<string, unknown>[] {
+function catalogMissing(items: Array<Record<string, unknown>>): LoadedConnector[] {
   const have = new Set(items.flatMap((item) => [String(item.id ?? ""), String(item.slug ?? "")]));
   return installedConnectors()
     .entries()

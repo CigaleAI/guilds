@@ -33,7 +33,7 @@ export async function requirePlatformServer(
 }
 
 /** Adds a connector to the platform's catalog, and the integrations it brings. */
-export async function createPlatformServer(db: Queryable, body: Item): Promise<Item> {
+export async function createPlatformServer(db: Queryable, body: Item): Promise<LoadedConnector> {
   try {
     const row = await createConnector(db, body);
     await refreshConnectorIntegrations(db);
@@ -48,7 +48,7 @@ export async function patchPlatformServer(
   db: Queryable,
   server: LoadedConnector,
   body: Item,
-): Promise<Item> {
+): Promise<LoadedConnector> {
   try {
     const patched = await patchConnector(db, server, body);
     await refreshConnectorIntegrations(db);
@@ -59,8 +59,8 @@ export async function patchPlatformServer(
 }
 
 /** A connector row as every reader sees it, once it is installed: the stored row when it does not load. */
-export async function reloadServer(db: Queryable, row: Item): Promise<Item> {
-  return (await getMcpServer(db, String(row.id))) ?? row;
+export async function reloadServer(db: Queryable, row: LoadedConnector): Promise<LoadedConnector> {
+  return (await getMcpServer(db, row.id)) ?? row;
 }
 
 /** The organisation's own connectors. */
@@ -87,7 +87,7 @@ export async function createOrgServer(
   policy: OrgPolicy,
   orgId: string,
   body: Item,
-): Promise<Item> {
+): Promise<LoadedConnector> {
   const { limits } = await policy.standing(orgId);
   if (
     limits.maxMcpServers !== null &&
@@ -106,7 +106,7 @@ export async function patchOrgServer(
   db: Queryable,
   server: LoadedConnector,
   body: Item,
-): Promise<Item> {
+): Promise<LoadedConnector> {
   try {
     return await patchConnector(db, server, body);
   } catch (error) {

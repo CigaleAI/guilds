@@ -14,6 +14,8 @@ import {
 } from "../../src/access/index.js";
 import { visibleAt } from "../../src/credentials/visibility.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
+import { serverRow } from "../helpers/servers.js";
+import type { LoadedConnector } from "../../src/connectors/load.js";
 
 const fixture = loadJsonFixture<{
   inherited: Record<string, unknown>;
@@ -44,13 +46,8 @@ function binding(
   };
 }
 
-function server(serverId = "mcp_notion", slug = "notion"): Record<string, unknown> {
-  return {
-    id: serverId,
-    slug,
-    display_name: slug[0]?.toUpperCase() + slug.slice(1),
-    auth: "oauth",
-  };
+function server(serverId = "mcp_notion", slug = "notion"): LoadedConnector {
+  return serverRow(slug, { id: serverId, display_name: slug[0]?.toUpperCase() + slug.slice(1), auth: "oauth" });
 }
 
 function connection(

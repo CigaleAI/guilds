@@ -33,23 +33,15 @@ import { CONNECTORS } from "../../src/connectors/index.js";
 import { loadTextFixture } from "../helpers/fixtures.js";
 import { storeKeys } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
+import type { Manifest } from "../../src/db/schema/index.js";
 
 const GMAIL_SCOPES = CONNECTORS.bySlug("gmail")!.manifest.auth.oauth!.scopes!;
 const DRIVE_SCOPES = CONNECTORS.bySlug("drive")!.manifest.auth.oauth!.scopes!;
 
-const GMAIL_SERVER = {
-  id: "mcp_gmail",
-  slug: "gmail",
-  auth: "oauth",
-  config: {},
-};
+const GMAIL_SERVER = serverRow("gmail", { id: "mcp_gmail", auth: "oauth", config: {} });
 
-const DRIVE_SERVER = {
-  id: "mcp_drive",
-  slug: "drive",
-  auth: "oauth",
-  config: { url: "https://drivemcp.googleapis.com/mcp/v1" },
-};
+const DRIVE_SERVER = serverRow("drive", { id: "mcp_drive", auth: "oauth", config: { url: "https://drivemcp.googleapis.com/mcp/v1" } });
 
 function googleDiscoveryHandler(resource: string, extraScopes: string[]) {
   return (url: string, init?: RequestInit) => {
@@ -90,11 +82,11 @@ test("pkce pair is S256", () => {
   const [verifier, challenge] = pkcePair();
   const digest = createHash("sha256").update(verifier, "ascii").digest();
   assert.equal(challenge, digest.toString("base64url").replace(/=+$/, ""));
-  assert.equal(startsBrowserOauth({ auth: "oauth", slug: "notion" }), true);
-  assert.equal(startsBrowserOauth({ auth: "oauth", slug: "gmail" }), true);
-  assert.equal(startsBrowserOauth({ auth: "oauth", slug: "drive" }), true);
-  assert.equal(startsBrowserOauth({ auth: "oauth", slug: "other" }), true);
-  assert.equal(startsBrowserOauth({ auth: "token", slug: "other" }), false);
+  assert.equal(startsBrowserOauth(serverRow("notion", { auth: "oauth" })), true);
+  assert.equal(startsBrowserOauth(serverRow("gmail", { auth: "oauth" })), true);
+  assert.equal(startsBrowserOauth(serverRow("drive", { auth: "oauth" })), true);
+  assert.equal(startsBrowserOauth(serverRow("other", { auth: "oauth" })), true);
+  assert.equal(startsBrowserOauth(serverRow("other", { auth: "token" })), false);
 });
 
 test("oauth callback URL prefers PUBLIC_BASE_URL over the inbound hop", () => {
@@ -250,15 +242,13 @@ test("token redactions and pending oauth", () => {
 });
 
 test("stored client requires matching redirect", () => {
-  const server = {
-    config: {
+  const server = serverRow("custom", { config: {
       url: "https://mcp.notion.com/mcp",
       oauth_client: {
         client_id: "cid",
         redirect_uris: ["http://127.0.0.1:8080/api/mcp/oauth/callback"],
       },
-    },
-  };
+    } });
   const client = storedClient(server);
   assert.ok(client);
   assert.equal(clientCoversRedirect(client, "http://127.0.0.1:8080/api/mcp/oauth/callback"), true);
@@ -410,12 +400,12 @@ test("gmail and drive take their OAuth client from the Google connectors keys", 
   assert.deepEqual(providerClient(GMAIL_SERVER, google), { client_id: "gid", client_secret: "gsecret" });
   assert.equal(configuredClient(GMAIL_SERVER, google)?.client_id, "gid");
   assert.deepEqual(providerClient(DRIVE_SERVER, google), { client_id: "gid", client_secret: "gsecret" });
-  assert.equal(providerClient({ slug: "notion", config: {} }, google), null);
+  assert.equal(providerClient(serverRow("notion", { config: {} }), google), null);
   const env = { env: { GMAIL_OAUTH_CLIENT_ID: "gid", GMAIL_OAUTH_CLIENT_SECRET: "gsecret" }, keys: {} };
   assert.equal(providerClient(GMAIL_SERVER, env), null, "the environment no longer serves the client");
 });
 
-const ACME_MANIFEST = {
+const ACME_MANIFEST: Manifest = {
   slug: "acme",
   display_name: "Acme",
   endpoint: { url: "https://acme.example/mcp" },
@@ -423,14 +413,7 @@ const ACME_MANIFEST = {
   description: "",
 };
 
-const ACME_SERVER = {
-  id: "mcp_acme",
-  slug: "acme",
-  auth: "oauth",
-  oauth_strategy: "configured",
-  config: { url: "https://acme.example/mcp" },
-  manifest: ACME_MANIFEST,
-};
+const ACME_SERVER = serverRow("acme", { id: "mcp_acme", auth: "oauth", oauth_strategy: "configured", config: { url: "https://acme.example/mcp" }, manifest: ACME_MANIFEST });
 
 test("a connector's own configured client is the instance key connector:<slug>, and discovers from its endpoint", async () => {
   const empty = { keys: {} };
@@ -443,14 +426,10 @@ test("a connector's own configured client is the instance key connector:<slug>, 
   assert.equal(oauthSetupState(ACME_SERVER, own), "configured");
   const google = { keys: storeKeys({ "google-connectors": { client_id: "gid", client_secret: "gsecret" } }) };
   assert.equal(providerClient(ACME_SERVER, google), null, "the box's Google client is not this connector's");
-  const dynamic = {
-    ...ACME_SERVER,
-    oauth_strategy: "dynamic",
-    manifest: { ...ACME_MANIFEST, auth: { kind: "oauth", oauth: { strategy: "dynamic" } } },
-  };
+  const dynamic = serverRow("custom", { ...ACME_SERVER, oauth_strategy: "dynamic", manifest: { ...ACME_MANIFEST, auth: { kind: "oauth", oauth: { strategy: "dynamic" } } } });
   assert.equal(providerClient(dynamic, own), null);
   assert.equal(oauthSetupState(dynamic, own), "dynamic");
-  await assert.rejects(() => serverDiscovery({ ...ACME_SERVER, config: {} }), /missing a url/);
+  await assert.rejects(() => serverDiscovery(serverRow("custom", { ...ACME_SERVER, config: {} })), /missing a url/);
 });
 
 test("a connector with no endpoint discovers its provider's OAuth endpoints", async () => {
@@ -464,7 +443,7 @@ test("a connector with no endpoint discovers its provider's OAuth endpoints", as
   assert.equal(discovery.token_endpoint, "https://oauth2.googleapis.com/token");
   assert.equal(discovery.registration_endpoint, null);
   assert.deepEqual(discovery.scopes, [...GMAIL_SCOPES]);
-  await assert.rejects(() => serverDiscovery({ slug: "custom", auth: "oauth", config: {} }), /missing a url/);
+  await assert.rejects(() => serverDiscovery(serverRow("custom", { auth: "oauth", config: {} })), /missing a url/);
 });
 
 test("ensureClient gmail uses the Google connectors keys and restricts scopes", async () => {

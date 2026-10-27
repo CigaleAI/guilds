@@ -1,5 +1,5 @@
 import { installedConnectors } from "../connectors/index.js";
-import { loadConnector, manifestTools, OVERRIDE_FIELDS, overridesOf, toolStartsOff } from "../connectors/load.js";
+import { loadConnector, manifestTools, OVERRIDE_FIELDS, overridesOf, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
 import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
 import { getMcpServerBySlug } from "../connectors/servers.js";
 import { connectorFacts } from "../connectors/view.js";
@@ -29,11 +29,11 @@ export class CatalogError extends Error {
 }
 
 /** Whether the admin edits the connector's own fields (a server made on this box) or overrides its manifest. */
-function editsFields(server: Record<string, unknown>): boolean {
+function editsFields(server: LoadedConnector): boolean {
   return server.source === "local";
 }
 
-function catalogToolItems(server: Record<string, unknown>): Array<Record<string, unknown>> {
+function catalogToolItems(server: LoadedConnector): Array<Record<string, unknown>> {
   const overrides = overridesOf(server.overrides).tools ?? {};
   const prefix = String(server.tool_prefix || server.slug);
   const items = manifestTools(server).map((tool) => ({
@@ -61,8 +61,8 @@ function catalogToolItems(server: Record<string, unknown>): Array<Record<string,
 }
 
 /** A connector as the Admin tab shows it: the effective copy, what overrides it, and its tools. */
-export function catalogServerItem(server: Record<string, unknown>): Record<string, unknown> {
-  const upstream = (server.upstream ?? {}) as Partial<Manifest>;
+export function catalogServerItem(server: LoadedConnector): Record<string, unknown> {
+  const upstream = server.upstream;
   const overrides = overridesOf(server.overrides);
   const config = jsonObj(server.config) as { url?: unknown } | null;
   return {
@@ -73,12 +73,12 @@ export function catalogServerItem(server: Record<string, unknown>): Record<strin
     oauth_strategy: server.oauth_strategy,
     oauth_setup_state: oauthSetupState(server),
     description: server.description || "",
-    limitations: server.limitations ?? null,
-    setup_hint: server.setup_hint ?? null,
+    limitations: server.limitations,
+    setup_hint: server.setup_hint,
     url: typeof config?.url === "string" ? config.url : null,
-    enabled: server.enabled !== false,
+    enabled: server.enabled,
     tool_prefix: server.tool_prefix,
-    version: server.version ?? "",
+    version: server.version,
     editable: editsFields(server) ? "fields" : "overrides",
     upstream: {
       display_name: upstream.display_name ?? "",
@@ -253,7 +253,7 @@ export async function createConnector(
   body: Record<string, unknown>,
   now = new Date(),
   ownerOrgId: string | null = null,
-): Promise<Record<string, unknown>> {
+): Promise<LoadedConnector> {
   const slug = validateSlug(requireString(body.slug, "slug"));
   await assertSlugFree(db, slug, ownerOrgId);
   const auth = validateAuth(String(body.auth ?? "token"));
@@ -299,10 +299,10 @@ export async function createConnector(
  */
 export async function patchConnector(
   db: Queryable,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   body: Record<string, unknown>,
   now = new Date(),
-): Promise<Record<string, unknown>> {
+): Promise<LoadedConnector> {
   const patch: { slug?: string; manifest?: Manifest; overrides?: Overrides; enabled?: boolean } = {};
   if (body.enabled !== undefined) {
     if (typeof body.enabled !== "boolean") {
@@ -311,11 +311,11 @@ export async function patchConnector(
     patch.enabled = body.enabled;
   }
   if (editsFields(server)) {
-    const current = server.manifest as Manifest;
+    const current = server.manifest;
     const slug = body.slug !== undefined ? validateSlug(String(body.slug)) : current.slug;
     const ownerOrgId = server.owner_org_id ? String(server.owner_org_id) : null;
     if (slug !== current.slug) {
-      await assertSlugFree(db, slug, ownerOrgId, String(server.id));
+      await assertSlugFree(db, slug, ownerOrgId, server.id);
       patch.slug = slug;
     }
     const auth = body.auth !== undefined ? validateAuth(String(body.auth)) : current.auth.kind;
@@ -365,7 +365,7 @@ export async function patchConnector(
     }
     patch.overrides = overrides;
   }
-  const updated = await updateConnector(db, String(server.id), patch, now);
+  const updated = await updateConnector(db, server.id, patch, now);
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }
@@ -375,11 +375,11 @@ export async function patchConnector(
 /** Edits one tool by name: its description, its input schema, and whether it starts On. Null clears an edit. */
 export async function patchConnectorTool(
   db: Queryable,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   name: string,
   body: Record<string, unknown>,
   now = new Date(),
-): Promise<Record<string, unknown>> {
+): Promise<LoadedConnector> {
   const toolName = name.trim();
   if (!toolName || toolName.length > 128) {
     throw new CatalogError("tool name is invalid");
@@ -420,7 +420,7 @@ export async function patchConnectorTool(
   } else {
     delete overrides.tools;
   }
-  const updated = await updateConnector(db, String(server.id), { overrides }, now);
+  const updated = await updateConnector(db, server.id, { overrides }, now);
   if (!updated) {
     throw new CatalogError("mcp server not found", 404);
   }
@@ -428,6 +428,6 @@ export async function patchConnectorTool(
 }
 
 /** The connector in the folder format: its manifest with the admin's overrides applied. */
-export function exportManifest(server: Record<string, unknown>): Manifest {
-  return server.manifest as Manifest;
+export function exportManifest(server: LoadedConnector): Manifest {
+  return server.manifest;
 }

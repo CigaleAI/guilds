@@ -8,6 +8,7 @@ import {
   callOwnedConnectionTool,
 } from "../../src/mcp/operator-call.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
+import { serverRow } from "../helpers/servers.js";
 
 const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
 
@@ -52,7 +53,7 @@ function call(args: {
         (args.mcp ?? (async () => "ok"))(remoteName, arguments_),
     },
     connection: args.connection ?? connection(),
-    server: { slug: "coingecko", tool_prefix: "coingecko" },
+    server: serverRow("coingecko"),
     tool: args.tool ?? "coingecko_search",
     arguments: args.arguments ?? { query: "eth" },
     masterKey,

@@ -25,6 +25,7 @@ import { ListedTool, McpDisconnectedError, McpPool } from "../../src/mcp/index.j
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
@@ -435,7 +436,7 @@ test("sync Gmail writes the curated catalog", async () => {
   const [ciphertext, nonce] = encryptPayload({ access_token: TOKEN }, KEY);
   const db = new MemoryDb();
   const connection = { id: "conn_gmail", status: "connected", ciphertext, nonce };
-  const server = { id: "mcp_gmail", slug: "gmail", auth: "oauth", config: { url: "https://gmail.googleapis.com/gmail/v1" } };
+  const server = serverRow("gmail", { id: "mcp_gmail", auth: "oauth", config: { url: "https://gmail.googleapis.com/gmail/v1" } });
   const first = await pool.syncTools(db as never, connection, server, { force: true });
   const second = await pool.syncTools(db as never, connection, server);
   assert.equal(pinged, 1);
@@ -466,7 +467,7 @@ test("call Gmail dispatches with the stored access token", async () => {
   const stored = await pool.call(
     new MemoryDb() as never,
     { id: "conn_gmail", status: "connected", ciphertext, nonce },
-    { id: "mcp_gmail", slug: "gmail", auth: "oauth" },
+    serverRow("gmail", { id: "mcp_gmail", auth: "oauth" }),
     "search_threads",
     { query: "from:ada" },
   );
@@ -489,7 +490,7 @@ test("sync Gmail disconnects a login with no token to refresh", async () => {
       new McpPool().syncTools(
         db as never,
         { id: "conn_gmail", status: "connected", ciphertext, nonce },
-        { id: "mcp_gmail", slug: "gmail", auth: "oauth" },
+        serverRow("gmail", { id: "mcp_gmail", auth: "oauth" }),
         { force: true },
       ),
     (error: unknown) => error instanceof McpDisconnectedError,

@@ -6,6 +6,7 @@ import { getMembership } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { canSeeGuild } from "../guilds/validation.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 /** A request about a connector login refused, with the HTTP status it answers with. */
 export class ConnectionError extends Error {
@@ -21,7 +22,7 @@ export class ConnectionError extends Error {
 }
 
 /** Whether an organisation sees a server: the platform's, or one of its own. */
-export function serverVisible(server: Record<string, unknown>, orgId: string | null): boolean {
+export function serverVisible(server: LoadedConnector, orgId: string | null): boolean {
   return !server.owner_org_id || server.owner_org_id === orgId;
 }
 

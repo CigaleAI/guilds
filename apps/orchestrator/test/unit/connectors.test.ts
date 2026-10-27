@@ -26,6 +26,7 @@ import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { QUOTES, WITH_QUOTES } from "../helpers/quotes.js";
 import { endpointManifest } from "../helpers/registry.js";
+import { serverRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -119,7 +120,7 @@ test("manifests keep their tools, endpoints, settings, and state within the rule
     }
   }
   for (const entry of CONNECTORS.entries()) {
-    const server = { id: entry.id, slug: entry.manifest.slug, tool_prefix: entry.manifest.slug };
+    const server = serverRow("custom", { id: entry.id, slug: entry.manifest.slug, tool_prefix: entry.manifest.slug });
     for (const tool of manifestTools(server)) {
       if (tool.mutating) {
         assert.equal(tool.default_enabled, false, `${entry.manifest.slug} ${tool.remote_name}`);
@@ -196,7 +197,7 @@ test("the registry refuses an entry that cannot run", () => {
 
 test("the registry finds a server row by id, then by slug", () => {
   assert.equal(CONNECTORS.forServer({ id: "mcp_qonto", slug: "other" })?.manifest.slug, "qonto");
-  assert.equal(CONNECTORS.forServer({ slug: "qonto" })?.manifest.slug, "qonto");
+  assert.equal(CONNECTORS.forServer(serverRow("qonto"))?.manifest.slug, "qonto");
   assert.equal(CONNECTORS.forServer({ id: "mcp_custom", slug: "custom" }), null);
 });
 
@@ -278,7 +279,7 @@ test("a REST adapter's upstream 401 reaches the pool as an McpError", async () =
   const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; } };
   await assert.rejects(
     () =>
-      pool.syncTools(db as never, { id: "conn_cg", status: "connected", ciphertext, nonce }, { id: "mcp_coingecko", slug: "coingecko", auth: "token" }, { force: true }),
+      pool.syncTools(db as never, { id: "conn_cg", status: "connected", ciphertext, nonce }, serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -291,14 +292,14 @@ test("validate checks credentials before a login exists", async () => {
       return "Elektro";
     },
   });
-  assert.equal(await pool.validate({ id: "mcp_qonto", slug: "qonto" }, { login: "org", secret_key: "secret" }), "Elektro");
+  assert.equal(await pool.validate(serverRow("qonto", { id: "mcp_qonto" }), { login: "org", secret_key: "secret" }), "Elektro");
   pool.connectors = CONNECTORS.withAdapter("qonto", {
     async validate() {
       throw new ConnectorError("bad key", 401);
     },
   });
   await assert.rejects(
-    () => pool.validate({ id: "mcp_qonto", slug: "qonto" }, {}),
+    () => pool.validate(serverRow("qonto", { id: "mcp_qonto" }), {}),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "bad key",
   );
 });
@@ -311,10 +312,10 @@ test("lookup runs the adapter's search with the form's credentials", async () =>
     assert.equal((init?.headers as Record<string, string>).Authorization, "Bearer qk");
     return { status: 200, json: { results: [{ id: "ethereum", name: "Ethereum" }] } };
   });
-  const options = await pool.lookup({ id: "mcp_quotes", slug: "quotes" }, "symbols", "eth", { token: "qk" });
+  const options = await pool.lookup(serverRow("quotes", { id: "mcp_quotes" }), "symbols", "eth", { token: "qk" });
   assert.deepEqual(options, [{ value: { id: "ethereum", name: "Ethereum" }, label: "Ethereum" }]);
   await assert.rejects(
-    () => pool.lookup({ id: "mcp_qonto", slug: "qonto" }, "symbols", "eth", {}),
+    () => pool.lookup(serverRow("qonto", { id: "mcp_qonto" }), "symbols", "eth", {}),
     (error: unknown) => error instanceof McpError && error.status === 404,
   );
 });
@@ -339,7 +340,7 @@ test("a listed tool carries the endpoint's annotations", async () => {
       },
     }) as never;
   const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; } };
-  const listed = await pool.syncTools(db as never, { id: "conn_n", status: "connected" }, { id: "mcp_notion", slug: "notion", auth: "token" });
+  const listed = await pool.syncTools(db as never, { id: "conn_n", status: "connected" }, serverRow("notion", { id: "mcp_notion", auth: "token" }));
   assert.deepEqual(listed.map((tool) => tool.namespaced_name), ["notion_search", "notion_delete_page"]);
   assert.deepEqual(
     seen.map((tool) => [tool.read_only_hint, tool.destructive_hint]),
@@ -479,8 +480,8 @@ class ConnectRepoStub {
   }
 }
 
-const QONTO = { id: "mcp_qonto", slug: "qonto", auth: "token", display_name: "Qonto" };
-const X_SERVER = { id: "mcp_x", slug: "x", auth: "token", display_name: "X" };
+const QONTO = serverRow("qonto", { display_name: "Qonto" });
+const X_SERVER = serverRow("x", { display_name: "X" });
 
 test("connect stores a two-field login under the manifest's names with the validated hint", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -622,7 +623,7 @@ test("connect stores a login that lacks required settings as pending, and one wi
       return "1 symbol";
     },
   });
-  const server = { id: "mcp_quotes", slug: "quotes", auth: "token", display_name: "Quotes" };
+  const server = serverRow("quotes", { id: "mcp_quotes", auth: "token", display_name: "Quotes" });
   const waiting = await connect(repo as never, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { token: "qk" } }, new Date(), { connectors: WITH_QUOTES });
   assert.equal(waiting.connection.status, "pending");
   assert.deepEqual(repo.tools, []);
@@ -649,16 +650,16 @@ test("connect stores a login that lacks required settings as pending, and one wi
 });
 
 test("a listed tool the manifest does not name starts by its annotations and its name", () => {
-  const server = { id: "mcp_acme", slug: "acme", tool_prefix: "acme" };
+  const server = serverRow("acme", { id: "mcp_acme", tool_prefix: "acme" });
   assert.equal(toolStartsOff(server, "search_orders"), false);
   assert.equal(toolStartsOff(server, "search_orders", { destructiveHint: false }), false);
   assert.equal(toolStartsOff(server, "search_orders", { destructiveHint: true }), true);
   assert.equal(toolStartsOff(server, "cancelOrder"), true);
   assert.equal(toolStartsOff(server, "delete-page"), true);
-  const edited = { ...server, overrides: { tools: { cancelOrder: { default: true }, search_orders: { default: false } } } };
+  const edited = serverRow("custom", { ...server, overrides: { tools: { cancelOrder: { default: true }, search_orders: { default: false } } } });
   assert.equal(toolStartsOff(edited, "cancelOrder"), false);
   assert.equal(toolStartsOff(edited, "search_orders"), true);
-  const opensea = { id: "mcp_opensea", slug: "opensea", tool_prefix: "opensea" };
+  const opensea = serverRow("opensea", { id: "mcp_opensea", tool_prefix: "opensea" });
   assert.equal(toolStartsOff(opensea, "get_favorites"), true);
   assert.equal(toolStartsOff(opensea, "search"), false);
 });
@@ -699,7 +700,7 @@ test("a sync keeps each listed tool's annotations", async () => {
   await pool.syncTools(
     db as never,
     { id: "conn_acme", status: "connected", owner_scope: "org", owner_id: "org_1" },
-    { id: "mcp_acme", slug: "acme", tool_prefix: "acme", auth: "token" },
+    serverRow("acme", { id: "mcp_acme", tool_prefix: "acme", auth: "token" }),
   );
   assert.deepEqual(
     stored.map((tool) => [tool.remote_name, tool.read_only_hint, tool.destructive_hint]),

@@ -10,6 +10,7 @@ import {
 import { LOG_KEYS, logWriter } from "../../src/observability/log.js";
 import { sentryCapture } from "../../src/observability/sentry.js";
 import { McpDisconnectedError, McpPool } from "../../src/mcp/index.js";
+import { serverRow } from "../helpers/servers.js";
 
 function captureStdout(run: () => Promise<void> | void): Promise<{
   lines: Record<string, unknown>[];
@@ -182,7 +183,7 @@ test("MCP disconnected calls log at warn and rethrow", async () => {
         pool.call(
           {} as never,
           { id: "conn_1", status: "disconnected" },
-          { slug: "notion" },
+          serverRow("notion"),
           "search",
           {},
         ),

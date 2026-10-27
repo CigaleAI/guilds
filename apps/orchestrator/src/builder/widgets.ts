@@ -7,6 +7,7 @@ import {
   resolvePublishedServer,
   type ConnectedDatabase,
 } from "./connected.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 export const CONNECT_WIDGET = "connect";
 export const QUESTION_WIDGET = "question";
@@ -18,7 +19,7 @@ export type ConnectWidgetScope = (typeof CONNECT_SCOPES)[number];
 
 export type ConnectWidgetMode = "org" | "any";
 
-function compactServer(row: Record<string, unknown>, extras: Record<string, unknown> = {}): Record<string, unknown> {
+function compactServer(row: LoadedConnector, extras: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: row.id,
     slug: row.slug,
@@ -46,7 +47,7 @@ export async function buildOrgConnectWidget(args: {
     return { error: "unknown or unpublished connector" };
   }
   const connection = await findReusableOrgConnection(args.db, args.orgId, server);
-  const slug = String(server.slug);
+  const slug = server.slug;
   return {
     widget: CONNECT_WIDGET,
     mode: "org" as ConnectWidgetMode,

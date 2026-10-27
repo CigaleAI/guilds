@@ -19,6 +19,8 @@ import {
 import { TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
+import { serverRow } from "../helpers/servers.js";
+import type { Manifest } from "../../src/db/schema/index.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -107,7 +109,7 @@ test("hosted MCP calls drop empty optional strings only", async () => {
   const result = await pool.call(
     db as never,
     { id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) },
-    { slug: "cigale", auth: "token", config: { url: "https://api.cigale.ai/api/v1/public/mcp" } },
+    serverRow("cigale", { auth: "token", config: { url: "https://api.cigale.ai/api/v1/public/mcp" } }),
     "generate_reply_options",
     {
       tweetId: "",
@@ -376,7 +378,7 @@ test("syncTools uses stored catalog within TTL", async () => {
   pool.session = async () => session as never;
   const db = new MemoryDb();
   const connection = { id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) };
-  const server = { id: "mcp_notion", slug: "notion", auth: "oauth" };
+  const server = serverRow("notion", { id: "mcp_notion", auth: "oauth" });
   const first = await pool.syncTools(db as never, connection, server);
   const second = await pool.syncTools(db as never, connection, server);
   assert.equal(session.listed, 1);
@@ -393,7 +395,7 @@ test("syncTools treats listed_at as fresh across a new pool", async () => {
   } };
   const db = new MemoryDb();
   const connection = { id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) };
-  const server = { id: "mcp_notion", slug: "notion", auth: "oauth" };
+  const server = serverRow("notion", { id: "mcp_notion", auth: "oauth" });
   const firstPool = new McpPool(10 * 60 * 1000);
   firstPool.session = async () => session as never;
   await firstPool.syncTools(db as never, connection, server);
@@ -423,7 +425,7 @@ test("syncTools re-lists when listed_at is older than the TTL", async () => {
   await pool.syncTools(
     db as never,
     { id: "conn_1", status: "connected", ciphertext: Buffer.alloc(0), nonce: Buffer.alloc(0) },
-    { id: "mcp_notion", slug: "notion", auth: "oauth" },
+    serverRow("notion", { id: "mcp_notion", auth: "oauth" }),
   );
   assert.equal(session.listed, 1);
 });
@@ -431,22 +433,22 @@ test("syncTools re-lists when listed_at is older than the TTL", async () => {
 test("auth headers send OpenSea API key", () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const connection = connectionOf("os-test");
-  assert.deepEqual(authHeaders(connection, { slug: "opensea" }), { "X-API-KEY": "os-test" });
-  assert.deepEqual(authHeaders(connection, { slug: "cigale" }), { Authorization: "Bearer os-test" });
-  assert.deepEqual(authHeaders(connection, { slug: "etherscan" }), { Authorization: "Bearer os-test" });
+  assert.deepEqual(authHeaders(connection, serverRow("opensea")), { "X-API-KEY": "os-test" });
+  assert.deepEqual(authHeaders(connection, serverRow("cigale")), { Authorization: "Bearer os-test" });
+  assert.deepEqual(authHeaders(connection, serverRow("etherscan")), { Authorization: "Bearer os-test" });
 });
 
 test("a platform login sends the key its connector declares of its own; an organisation's login its own token", () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const manifest = {
+  const manifest: Manifest = {
     slug: "acme",
     display_name: "Acme",
     endpoint: { url: "https://mcp.acme.example.com/mcp" },
     auth: { kind: "token", header: { name: "X-Acme-Key", prefix: "" }, instance: { own: true } },
     description: "",
   };
-  const server = { id: "mcp_acme", slug: "acme", auth: "token", manifest };
-  const bearer = { ...server, manifest: { ...manifest, auth: { kind: "token", instance: { own: true } } } };
+  const server = serverRow("acme", { id: "mcp_acme", auth: "token", manifest });
+  const bearer = serverRow("custom", { ...server, manifest: { ...manifest, auth: { kind: "token", instance: { own: true } } } });
   const [ciphertext, nonce] = encryptPayload({}, KEY);
   const platform = { id: "conn_platform", status: "connected", owner_scope: "platform", owner_id: null, ciphertext, nonce };
   const org = connectionOf("org-token", { owner_scope: "org", owner_id: "org_1" });
@@ -457,7 +459,7 @@ test("a platform login sends the key its connector declares of its own; an organ
     assert.deepEqual(authHeaders(platform, server), { "X-Acme-Key": "platform-key" });
     assert.deepEqual(authHeaders(platform, bearer), { Authorization: "Bearer platform-key" });
     assert.deepEqual(authHeaders(org, server), { "X-Acme-Key": "org-token" }, "an organisation's login keeps its own token");
-    assert.deepEqual(authHeaders(platform, { ...server, manifest: { ...manifest, auth: { kind: "token" } } }), {}, "no platform key without auth.instance");
+    assert.deepEqual(authHeaders(platform, serverRow("custom", { ...server, manifest: { ...manifest, auth: { kind: "token" } } })), {}, "no platform key without auth.instance");
   } finally {
     setInstanceKeys({});
   }
@@ -466,7 +468,7 @@ test("a platform login sends the key its connector declares of its own; an organ
 
 test("an endpoint session sends a login's first credential field when it is not named token", () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const manifest = {
+  const manifest: Manifest = {
     slug: "acme",
     display_name: "Acme",
     endpoint: { url: "https://mcp.acme.example.com/mcp" },
@@ -478,7 +480,7 @@ test("an endpoint session sends a login's first credential field when it is not 
     },
     description: "",
   };
-  const server = { id: "mcp_acme", slug: "acme", auth: "token", manifest };
+  const server = serverRow("acme", { id: "mcp_acme", auth: "token", manifest });
   const [orgCiphertext, orgNonce] = encryptPayload({ api_key: "org-key" }, KEY);
   const org = { id: "conn_org", status: "connected", owner_scope: "org", owner_id: "org_1", ciphertext: orgCiphertext, nonce: orgNonce };
   const [ciphertext, nonce] = encryptPayload({}, KEY);
@@ -505,7 +507,7 @@ test("sync OpenSea writes default-off and destructive tools Off, and reads On", 
     },
   }) as never;
   const db = new MemoryDb();
-  const server = { id: "mcp_opensea", slug: "opensea", auth: "token" };
+  const server = serverRow("opensea", { id: "mcp_opensea", auth: "token" });
   const first = await pool.syncTools(db as never, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server, { force: true });
   const second = await pool.syncTools(db as never, connectionOf("os-test", { owner_scope: "guild", owner_id: "guild_1" }), server);
   assert.deepEqual(
@@ -528,7 +530,7 @@ test("sync OpenSea rejects an unauthenticated catalog", async () => {
     },
   }) as never;
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionOf("bad"), { id: "mcp_opensea", slug: "opensea", auth: "token" }, { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, connectionOf("bad"), serverRow("opensea", { id: "mcp_opensea", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && /api key was rejected/.test(error.message),
   );
 });
@@ -540,7 +542,7 @@ const GITHUB_APP_KEYS = {
   client_id: "Iv1.client",
   client_secret: "client-secret",
 };
-const GITHUB_SERVER = { id: "mcp_github", slug: "github", auth: "oauth", config: { url: "https://api.githubcopilot.com/mcp/" } };
+const GITHUB_SERVER = serverRow("github", { id: "mcp_github", auth: "oauth", config: { url: "https://api.githubcopilot.com/mcp/" } });
 
 function githubLogin(repositories: unknown[]): Record<string, unknown> {
   const [ciphertext, nonce] = encryptPayload({ installation_id: 77, account: "acme" }, KEY);

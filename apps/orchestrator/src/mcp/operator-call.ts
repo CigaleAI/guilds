@@ -3,6 +3,7 @@ import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
 import { listedFromRows, McpDisconnectedError, McpError, type McpDatabase } from "./index.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 export const OPERATOR_TOOL_RESULT_MAX_BYTES = 64 * 1024;
 
@@ -20,7 +21,7 @@ export type OperatorCallMcp = {
   call(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
   ): Promise<string>;
@@ -31,7 +32,7 @@ export async function callOwnedConnectionTool(args: {
   db: McpDatabase;
   mcp: OperatorCallMcp;
   connection: Record<string, unknown>;
-  server: Record<string, unknown>;
+  server: LoadedConnector;
   tool: string;
   arguments: Record<string, unknown>;
   masterKey?: Buffer;
@@ -70,7 +71,7 @@ export async function callOwnedConnectionTool(args: {
       const rejected = error.status === 401 || error.status === 403;
       throw new OperatorCallError(
         rejected ? 422 : 502,
-        rejected ? "api key was rejected" : `${String(server.slug)} call failed: ${error.message}`,
+        rejected ? "api key was rejected" : `${server.slug} call failed: ${error.message}`,
       );
     }
     throw error;

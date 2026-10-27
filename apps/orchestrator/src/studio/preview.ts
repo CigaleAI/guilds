@@ -11,6 +11,7 @@ import { memoryOf } from "../agents/validation.js";
 import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 /** The db/ functions a preview of an agent's run state reads, on `db`. */
 export function previewDatabase(db: Queryable) {
@@ -71,10 +72,10 @@ export type ProjectedConnection = {
   tools: Array<{ name: string; remote_name: string; description: string; read_only: boolean }>;
 };
 
-function serverSummary(server: Record<string, unknown>): ProjectedConnection["server"] {
+function serverSummary(server: LoadedConnector): ProjectedConnection["server"] {
   return {
-    id: String(server.id),
-    slug: String(server.slug),
+    id: server.id,
+    slug: server.slug,
     display_name: String(server.display_name || server.slug),
   };
 }
@@ -82,9 +83,9 @@ function serverSummary(server: Record<string, unknown>): ProjectedConnection["se
 export async function projectConnection(
   deps: PreviewDeps,
   connection: Record<string, unknown>,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
 ): Promise<ProjectedConnection> {
-  const slug = String(server.slug);
+  const slug = server.slug;
   const listed = listedFromRows(await deps.db.listMcpTools(String(connection.id)));
   return {
     id: String(connection.id),
@@ -99,7 +100,7 @@ export async function projectConnection(
       description: tool.description,
       read_only: isReadOnlyRemote(slug, tool.remote_name, {
         readOnlyHint: tool.read_only_hint,
-        verified: server.verified === true,
+        verified: server.verified,
       }),
     })),
   };
@@ -112,9 +113,9 @@ export async function projectGuildConnections(
   orgId: string,
   guildId: string,
 ): Promise<ProjectedConnection[]> {
-  const servers = new Map<string, Record<string, unknown>>();
+  const servers = new Map<string, LoadedConnector>();
   for (const server of await deps.db.listMcpServers(orgId)) {
-    servers.set(String(server.id), server);
+    servers.set(server.id, server);
   }
   const members = await deps.db.listAgents(guildId);
   const seen = new Map<string, Record<string, unknown>>();

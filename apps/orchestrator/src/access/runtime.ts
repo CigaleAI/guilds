@@ -14,7 +14,7 @@ import {
   type McpPool,
 } from "../mcp/index.js";
 import { MissingSecretError } from "../secrets/index.js";
-import { serverManifest } from "../connectors/load.js";
+import { serverManifest, type LoadedConnector } from "../connectors/load.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
 
 export const PLATFORM_SEED_TOOLS = ACCESS_NATIVE_TOOLS;
@@ -111,7 +111,7 @@ export async function agentMcpConnection(
     return null;
   }
   const rows = await db.listBindingsCovering(scope);
-  const item = resolveItem(rows, "mcp", String(server.id), scope);
+  const item = resolveItem(rows, "mcp", server.id, scope);
   if (!item.enabled || item.connection_id === null) {
     return null;
   }
@@ -162,7 +162,7 @@ type RuntimeScope = { orgId: string | null; guildId: string; agentId: string };
 type ToolSync = McpPool | { syncTools?: McpPool["syncTools"] } | null;
 
 /** A login and the tools it lists, for one connector the agent has on. */
-type Listing = { connection: Record<string, unknown>; server: Record<string, unknown>; listed: ListedTool[] };
+type Listing = { connection: Record<string, unknown>; server: LoadedConnector; listed: ListedTool[] };
 
 /**
  * The connected login a connector the agent has on resolves to, or null when it offers nothing:
@@ -171,7 +171,7 @@ type Listing = { connection: Record<string, unknown>; server: Record<string, unk
  */
 function connectedLogin(
   item: Resolved,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   connections: Map<string, Record<string, unknown>>,
 ): Record<string, unknown> | null {
   const connection = item.enabled && item.connection_id !== null ? connections.get(item.connection_id) : undefined;
@@ -198,7 +198,7 @@ async function loginTools(db: AccessDatabase, mcpPool: ToolSync, listing: Omit<L
     }
     writeLog("warn", "mcp tool sync failed; using stored catalog", {
       agent_id: agentId,
-      operation: `mcp.sync.${String(server.slug)}`,
+      operation: `mcp.sync.${server.slug}`,
       error_type: error instanceof Error ? error.name : "Error",
     }, error);
   }

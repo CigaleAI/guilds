@@ -15,12 +15,13 @@ import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
+import { serverRow } from "../helpers/servers.js";
 
 const fixture = loadJsonFixture<{ results: string; empty: string }>("adapters/tavily.json");
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TAVILY = CONNECTORS.bySlug("tavily")!;
-const SERVER = { id: "mcp_tavily", slug: "tavily", auth: "token" };
+const SERVER = serverRow("tavily", { id: "mcp_tavily", auth: "token" });
 
 /** Holds the web search key in the process's instance keys for one block, then empties them. */
 async function withInstanceKey<T>(value: string, work: () => Promise<T>): Promise<T> {

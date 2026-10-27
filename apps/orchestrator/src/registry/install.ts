@@ -1,5 +1,5 @@
 import { rmSync } from "node:fs";
-import { loadConnector } from "../connectors/load.js";
+import { loadConnector, type LoadedConnector } from "../connectors/load.js";
 import { getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
 import { connectorIntegrationId } from "../instance/integrations.js";
 import { serverIdOf } from "../connectors/manifest.js";
@@ -99,7 +99,7 @@ export async function installConnector(
   client: RegistryClient,
   slug: string,
   options: InstallOptions = {},
-): Promise<{ row: Record<string, unknown>; code: boolean }> {
+): Promise<{ row: LoadedConnector; code: boolean }> {
   const entry = chosenEntry(await client.index(), slug, options.version, options);
   try {
     await assertSlugFree(db, slug, null);

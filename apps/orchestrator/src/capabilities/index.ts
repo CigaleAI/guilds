@@ -2,7 +2,7 @@ import { listMcpServers } from "../connectors/servers.js";
 import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { modelsDatabase, ModelsService } from "../llm/models.js";
 import { isSearchable } from "../connectors/builder.js";
-import { manifestTools, overriddenTool, toolStartsOff } from "../connectors/load.js";
+import { manifestTools, overriddenTool, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
 import { connectorFacts } from "../connectors/view.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
@@ -35,7 +35,7 @@ export type CapabilityOrgContext = {
 };
 
 
-function capabilityServer(row: Record<string, unknown>): Record<string, unknown> {
+function capabilityServer(row: LoadedConnector): Record<string, unknown> {
   return {
     slug: row.slug,
     display_name: row.display_name,
@@ -116,7 +116,7 @@ export class CapabilityService {
 
   /** The enabled servers the organisation may use, with its logins on each. */
   private async servers(ctx: CapabilityOrgContext): Promise<
-    Array<{ server: Record<string, unknown>; mine: Array<Record<string, unknown>> }>
+    Array<{ server: LoadedConnector; mine: Array<Record<string, unknown>> }>
   > {
     const servers = (await listMcpServers(this.db, ctx.orgId)).filter((row) => row.enabled !== false);
     const connections = await listMcpConnections(this.db, { orgId: ctx.orgId });
@@ -130,7 +130,7 @@ export class CapabilityService {
   }
 
   /** A server's manifest tools, then the tools the organisation's connected logins list that the manifest does not name. */
-  private async tools(server: Record<string, unknown>, mine: Array<Record<string, unknown>>): Promise<CapabilityTool[]> {
+  private async tools(server: LoadedConnector, mine: Array<Record<string, unknown>>): Promise<CapabilityTool[]> {
     const tools: CapabilityTool[] = manifestTools(server).map((tool) => ({
       remote_name: tool.remote_name,
       namespaced_name: tool.namespaced_name,
@@ -226,9 +226,9 @@ export class CapabilityService {
     const hits: Array<Record<string, unknown>> = [];
     for (const { server, mine } of await this.servers(ctx)) {
       const serverFields = [
-        String(server.slug),
-        String(server.display_name ?? ""),
-        String(server.description ?? ""),
+        server.slug,
+        server.display_name,
+        server.description,
         String(server.limitations ?? ""),
       ];
       const serverScore = q ? Math.max(...serverFields.map((text) => matchScore(q, text))) : 0;
@@ -236,7 +236,7 @@ export class CapabilityService {
         server: server.slug,
         display_name: server.display_name,
         server_description: server.description || "",
-        limitations: server.limitations ?? null,
+        limitations: server.limitations,
         auth: server.auth,
       };
       const tools = await this.tools(server, mine);

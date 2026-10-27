@@ -17,6 +17,7 @@ import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
 import { getBinding, listBindingsCovering } from "../db/bindings.js";
 import { listMcpConnections, listMcpTools } from "../db/mcp.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
 // tools, and the connections and connection tools it is offered. A change is an agent-level overlay; the guild's and the
@@ -53,7 +54,7 @@ type Snapshot = {
   agentName: string;
   scope: { orgId: string; guildId: string; agentId: string };
   rows: Array<Record<string, unknown>>;
-  servers: Array<Record<string, unknown>>;
+  servers: LoadedConnector[];
   connections: Map<string, AgentConnection>;
 };
 
@@ -87,7 +88,7 @@ async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot
   const resolveScope = { orgId: scope.orgId, guildId: scope.sourceGuildId, agentId };
   const rows = await listBindingsCovering(scope.db, resolveScope);
   const servers = await listMcpServers(scope.db, scope.orgId);
-  const serverById = new Map(servers.map((server) => [String(server.id), server]));
+  const serverById = new Map(servers.map((server) => [server.id, server]));
   const connections = new Map<string, AgentConnection>();
   for (const connection of await listMcpConnections(scope.db, resolveScope)) {
     const server = serverById.get(String(connection.mcp_server_id));
@@ -97,14 +98,14 @@ async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot
     const account = String(connection.account_hint ?? "");
     connections.set(String(connection.id), {
       id: String(connection.id),
-      serverId: String(server.id),
+      serverId: server.id,
       label: `${name} (${connection.owner_scope} login${account ? `, ${account}` : ""})`,
       status: String(connection.status),
       tools: listed.map((tool) => ({
         name: tool.namespaced_name,
-        readOnly: isReadOnlyRemote(String(server.slug), tool.remote_name, {
+        readOnly: isReadOnlyRemote(server.slug, tool.remote_name, {
           readOnlyHint: tool.read_only_hint,
-          verified: server.verified === true,
+          verified: server.verified,
         }),
       })),
     });

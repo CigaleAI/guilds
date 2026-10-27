@@ -1,23 +1,23 @@
 import { isoOrNull } from "../db/views.js";
 import { jsonObj } from "../db/json.js";
+import type { LoadedConnector } from "../connectors/load.js";
 import { connectorFacts } from "../connectors/view.js";
 
-export function serverItem(row: Record<string, unknown>): Record<string, unknown> {
-  const config = jsonObj(row.config) as { url?: unknown } | null;
+export function serverItem(row: LoadedConnector): Record<string, unknown> {
   return {
     id: row.id,
     slug: row.slug,
     display_name: row.display_name,
     transport: row.transport,
-    config: typeof config?.url === "string" ? { url: config.url } : {},
+    config: row.config.url === undefined ? {} : { url: row.config.url },
     auth: row.auth,
-    description: row.description || "",
-    limitations: row.limitations ?? null,
-    setup_hint: row.setup_hint ?? null,
-    enabled: row.enabled !== false,
-    owner_org_id: row.owner_org_id ?? null,
-    tool_prefix: row.tool_prefix ?? row.slug,
-    oauth_strategy: row.oauth_strategy ?? (row.auth === "oauth" ? "dynamic" : "none"),
+    description: row.description,
+    limitations: row.limitations,
+    setup_hint: row.setup_hint,
+    enabled: row.enabled,
+    owner_org_id: row.owner_org_id,
+    tool_prefix: row.tool_prefix,
+    oauth_strategy: row.oauth_strategy,
     ...connectorFacts(row),
   };
 }

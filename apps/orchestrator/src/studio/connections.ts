@@ -16,6 +16,7 @@ import { StudioError, StudioUnprocessableError } from "./errors.js";
 import { getMcpConnection, listMcpTools } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";
 
@@ -63,7 +64,7 @@ export type StudioMcpClient = {
   call(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
   ): Promise<string>;
@@ -71,7 +72,7 @@ export type StudioMcpClient = {
 
 export type ReachableConnection = {
   connection: Record<string, unknown>;
-  server: Record<string, unknown>;
+  server: LoadedConnector;
 };
 
 // A connection is in Studio's reach when an agent of the source guild could
@@ -141,7 +142,7 @@ export async function callConnectionTool(args: {
   if (connection.status !== "connected") {
     throw new StudioUnprocessableError(`connection is ${String(connection.status)}`);
   }
-  const slug = String(server.slug);
+  const slug = server.slug;
   const wanted = args.tool.trim();
   const listed = listedFromRows(await listMcpTools(args.db, String(connection.id))).find(
     (tool) => tool.namespaced_name === wanted || tool.remote_name === wanted,
@@ -149,7 +150,7 @@ export async function callConnectionTool(args: {
   if (!listed) {
     throw new StudioUnprocessableError(`tool ${wanted} is not listed on this connection`);
   }
-  if (!isReadOnlyRemote(slug, listed.remote_name, { readOnlyHint: listed.read_only_hint, verified: server.verified === true })) {
+  if (!isReadOnlyRemote(slug, listed.remote_name, { readOnlyHint: listed.read_only_hint, verified: server.verified })) {
     throw new StudioUnprocessableError(`tool ${listed.namespaced_name} is not read-only; Studio proxies read-only tools`);
   }
   let redactions: Record<string, string>;

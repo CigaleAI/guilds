@@ -3,13 +3,14 @@ import { resolveMcpTool } from "./runtime.js";
 import { manifestTools } from "../connectors/load.js";
 import { isPlainRecord } from "../db/json.js";
 import { listedFromRows, type McpDatabase, type McpPool } from "../mcp/index.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 function visibleServers(
-  servers: Array<Record<string, unknown>>,
+  servers: LoadedConnector[],
   connections: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
+): LoadedConnector[] {
   const connected = new Set(connections.map((row) => String(row.mcp_server_id)));
-  return servers.filter((server) => server.enabled !== false || connected.has(String(server.id)));
+  return servers.filter((server) => server.enabled || connected.has(server.id));
 }
 
 /**
@@ -21,9 +22,9 @@ async function listConnectionTools(
   db: McpDatabase,
   mcp: McpPool | { syncTools?: McpPool["syncTools"] } | null | undefined,
   connections: Array<Record<string, unknown>>,
-  servers: Array<Record<string, unknown>>,
+  servers: LoadedConnector[],
 ): Promise<Record<string, unknown[]>> {
-  const serversById = new Map(servers.map((server) => [String(server.id), server]));
+  const serversById = new Map(servers.map((server) => [server.id, server]));
   const rawListed: Record<string, unknown[]> = {};
   for (const connection of connections) {
     const server = serversById.get(String(connection.mcp_server_id));

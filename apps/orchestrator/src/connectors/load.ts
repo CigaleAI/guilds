@@ -120,7 +120,7 @@ export function loadConnector(row: ConnectorRow): LoadedConnector {
 }
 
 /** The effective manifest of a server row: the loaded one, else its installed connector's. */
-export function serverManifest(server: Record<string, unknown>): Manifest | null {
+export function serverManifest(server: LoadedConnector): Manifest | null {
   const loaded = server.manifest;
   if (loaded && typeof loaded === "object" && !Array.isArray(loaded)) {
     return loaded as Manifest;
@@ -128,7 +128,7 @@ export function serverManifest(server: Record<string, unknown>): Manifest | null
   return installedConnectors().forServer(server)?.manifest ?? null;
 }
 
-function serverOverrides(server: Record<string, unknown>): Overrides {
+function serverOverrides(server: LoadedConnector): Overrides {
   return overridesOf(server.overrides);
 }
 
@@ -156,7 +156,7 @@ export function manifestExcludes(manifest: Manifest | null, name: string): boole
  * absent hint decides nothing, and `readOnlyHint` never turns a tool On.
  */
 export function toolStartsOff(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   name: string,
   listing: { destructiveHint?: boolean | null } = {},
 ): boolean {
@@ -176,7 +176,7 @@ export function toolStartsOff(
 
 /** A listed tool with the admin's edits to its copy and schema. */
 export function overriddenTool<T extends { remote_name: string; description: string; input_schema: Record<string, unknown> }>(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   tool: T,
 ): T {
   const edit = serverOverrides(server).tools?.[tool.remote_name];
@@ -200,7 +200,7 @@ export type CatalogTool = {
 };
 
 /** The tools a server's manifest names, by namespaced name, as the builder and the access views show them. */
-export function manifestTools(server: Record<string, unknown>): CatalogTool[] {
+export function manifestTools(server: LoadedConnector): CatalogTool[] {
   const manifest = serverManifest(server);
   const prefix = String(server.tool_prefix || server.slug);
   return (manifest?.tools ?? []).map((tool: ManifestTool) => ({

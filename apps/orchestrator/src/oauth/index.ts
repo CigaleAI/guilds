@@ -10,7 +10,7 @@ import {
   type Integration,
   type IntegrationSources,
 } from "../instance/integrations.js";
-import { serverManifest } from "../connectors/load.js";
+import { serverManifest, type LoadedConnector } from "../connectors/load.js";
 import { saveMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { mcpConnections, type Manifest } from "../db/schema/index.js";
@@ -44,7 +44,7 @@ const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
 };
 
 /** The effective manifest's OAuth block for a server, or null for a non-OAuth one. */
-function manifestOauth(server: Record<string, unknown>): NonNullable<Manifest["auth"]["oauth"]> | null {
+function manifestOauth(server: LoadedConnector): NonNullable<Manifest["auth"]["oauth"]> | null {
   return serverManifest(server)?.auth.oauth ?? null;
 }
 
@@ -52,7 +52,7 @@ function manifestOauth(server: Record<string, unknown>): NonNullable<Manifest["a
  * The integration that holds a server's OAuth client: the shipped one its manifest's provider
  * names, or, for a configured client with no provider, the connector's own.
  */
-function providerOf(server: Record<string, unknown>): OAuthProvider | null {
+function providerOf(server: LoadedConnector): OAuthProvider | null {
   const manifest = serverManifest(server);
   const oauth = manifest?.auth.oauth;
   if (!manifest || !oauth) {
@@ -71,7 +71,7 @@ function providerOf(server: Record<string, unknown>): OAuthProvider | null {
 }
 
 /** Whether the server's login is the platform GitHub App's installation flow. */
-export function isGithubApp(server: Record<string, unknown>): boolean {
+export function isGithubApp(server: LoadedConnector): boolean {
   return manifestOauth(server)?.strategy === "github_app";
 }
 
@@ -105,7 +105,7 @@ export class OAuthUnsupportedError extends OAuthError {
   }
 }
 
-export function oauthStrategy(server: Record<string, unknown>): "none" | "dynamic" | "configured" {
+export function oauthStrategy(server: LoadedConnector): "none" | "dynamic" | "configured" {
   const explicit = server.oauth_strategy;
   if (explicit === "dynamic" || explicit === "configured" || explicit === "none") {
     return explicit;
@@ -117,12 +117,12 @@ export function oauthStrategy(server: Record<string, unknown>): "none" | "dynami
   return strategy === "configured" || strategy === "github_app" ? "configured" : "dynamic";
 }
 
-export function startsBrowserOauth(server: Record<string, unknown>): boolean {
+export function startsBrowserOauth(server: LoadedConnector): boolean {
   return server.auth === "oauth";
 }
 
 export function oauthSetupState(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   sources?: IntegrationSources,
 ): "not_applicable" | "dynamic" | "configured" | "unsupported" {
   if (isGithubApp(server)) {
@@ -201,14 +201,14 @@ export function authorizationUrl(
   return `${discovery.authorization_endpoint}?${params.toString()}`;
 }
 
-function configOf(server: Record<string, unknown>): Record<string, unknown> {
+function configOf(server: LoadedConnector): Record<string, unknown> {
   const config = jsonObj(server.config);
   return config && typeof config === "object" && !Array.isArray(config)
     ? { ...(config as Record<string, unknown>) }
     : {};
 }
 
-export function storedClient(server: Record<string, unknown>): Record<string, unknown> | null {
+export function storedClient(server: LoadedConnector): Record<string, unknown> | null {
   const client = configOf(server).oauth_client;
   if (client && typeof client === "object" && !Array.isArray(client) && typeof (client as { client_id?: unknown }).client_id === "string") {
     return client as Record<string, unknown>;
@@ -218,7 +218,7 @@ export function storedClient(server: Record<string, unknown>): Record<string, un
 
 /** The OAuth client the manifest's provider integration holds, or null while that integration is off. */
 export function providerClient(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   sources?: IntegrationSources,
 ): Record<string, unknown> | null {
   const provider = providerOf(server);
@@ -233,7 +233,7 @@ export function providerClient(
 }
 
 export function configuredClient(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   sources?: IntegrationSources,
 ): Record<string, unknown> | null {
   return storedClient(server) ?? providerClient(server, sources);
@@ -407,7 +407,7 @@ async function getJson(fetchFn: FetchFn, urls: string[]): Promise<Record<string,
   throw new OAuthError(last);
 }
 
-function scopedDiscovery(server: Record<string, unknown>, discovery: OAuthDiscovery): OAuthDiscovery {
+function scopedDiscovery(server: LoadedConnector, discovery: OAuthDiscovery): OAuthDiscovery {
   const scopes = manifestOauth(server)?.scopes;
   if (!scopes?.length) {
     return discovery;
@@ -424,7 +424,7 @@ function scopedDiscovery(server: Record<string, unknown>, discovery: OAuthDiscov
  * connector with no endpoint, the one its provider integration names.
  */
 export async function serverDiscovery(
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   options: { client?: FetchFn | undefined; proxyUrl?: string | undefined } = {},
 ): Promise<OAuthDiscovery> {
   const url = configOf(server).url;
@@ -614,7 +614,7 @@ export type OauthDatabase = ReturnType<typeof oauthDatabase>;
 
 export async function ensureClient(
   db: OauthDatabase,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   redirectUri: string,
   options: { client?: FetchFn | undefined; proxyUrl?: string | undefined; sources?: IntegrationSources | undefined } = {},
 ): Promise<[OAuthDiscovery, Record<string, unknown>]> {
@@ -641,14 +641,14 @@ export async function ensureClient(
   }
   const registered = await registerClient(discovery, redirectUri, options);
   const config = { ...configOf(server), oauth_client: registered };
-  await db.updateMcpServerConfig(String(server.id), config, new Date());
+  await db.updateMcpServerConfig(server.id, config, new Date());
   return [discovery, registered];
 }
 
 export async function refreshConnection(
   db: OauthDatabase,
   connection: Record<string, unknown>,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   options: {
     client?: FetchFn | undefined;
     proxyUrl?: string | undefined;

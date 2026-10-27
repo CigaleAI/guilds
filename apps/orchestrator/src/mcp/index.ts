@@ -38,7 +38,7 @@ import { redact } from "../secrets/index.js";
 import type { OrgPolicy } from "../policy/index.js";
 
 import { namespacedName } from "./names.js";
-import { manifestExcludes, overriddenTool, serverManifest, toolStartsOff } from "../connectors/load.js";
+import { manifestExcludes, overriddenTool, serverManifest, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
 import { awaitingSettings, connectionSettings } from "../connectors/login.js";
 import { instanceCredentials } from "../connectors/instance.js";
 
@@ -283,7 +283,7 @@ function callText(result: unknown): string {
   return JSON.stringify(result);
 }
 
-function serverUrl(server: Record<string, unknown>): string {
+function serverUrl(server: LoadedConnector): string {
   const config = jsonObj(server.config);
   const url = config && typeof config === "object" && !Array.isArray(config)
     ? (config as { url?: unknown }).url
@@ -358,7 +358,7 @@ function headersFor(token: string, manifest: Manifest | null): Record<string, st
 
 export function authHeaders(
   connection: Record<string, unknown>,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
   connectors: ConnectorRegistry = installedConnectors(),
 ): Record<string, string> {
   const manifest = connectors.forServer(server)?.manifest ?? serverManifest(server);
@@ -630,7 +630,7 @@ function translateConnectorError(error: unknown): unknown {
   return isConnectorError(error) ? new McpError(error.message, error.status) : error;
 }
 
-function isOauth(server: Record<string, unknown>): boolean {
+function isOauth(server: LoadedConnector): boolean {
   return server.auth === "oauth";
 }
 
@@ -687,7 +687,7 @@ export class McpPool {
   /** The login's pooled session, reopened once the credential it sends is within `TOKEN_REFRESH_MS` of expiry. */
   session: (
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     db: LoginDb,
   ) => Promise<McpSession>;
 
@@ -720,7 +720,7 @@ export class McpPool {
   private async sessionAuth(
     db: LoginDb,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
   ): Promise<SessionAuth> {
     if (!isGithubApp(server)) {
       return { headers: authHeaders(connection, server, this.registry), expiresAt: null };
@@ -756,7 +756,7 @@ export class McpPool {
     this.syncedAt.clear();
   }
 
-  private resolve(server: Record<string, unknown>): Resolved {
+  private resolve(server: LoadedConnector): Resolved {
     const entry = this.registry.forServer(server);
     if (entry === null) {
       return { manifest: null, adapter: {}, endpoint: true };
@@ -784,7 +784,7 @@ export class McpPool {
   private async persistTools(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     listed: ListedTool[],
     now: Date,
   ): Promise<void> {
@@ -797,7 +797,7 @@ export class McpPool {
   private async writeDefaultOff(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     listed: ListedTool[],
     now: Date,
   ): Promise<void> {
@@ -844,7 +844,7 @@ export class McpPool {
   private async ready(
     db: LoginDb,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
   ): Promise<Record<string, unknown>> {
     if (connection.status !== "connected" && !awaitingSettings(connection)) {
       throw new McpDisconnectedError("connection is not connected");
@@ -859,7 +859,7 @@ export class McpPool {
   private async refresh(
     db: LoginDb,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
   ): Promise<Record<string, unknown>> {
     let refreshed: Record<string, unknown>;
     try {
@@ -881,7 +881,7 @@ export class McpPool {
   private async reauthorize(
     db: LoginDb,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
   ): Promise<Record<string, unknown>> {
     if (isGithubApp(server)) {
       this.drop(String(connection.id));
@@ -893,7 +893,7 @@ export class McpPool {
   private async withAuthRetry<T>(
     db: LoginDb,
     login: Login,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     action: (session: McpSession) => Promise<T>,
   ): Promise<T> {
     let session = await this.session(login.connection, server, db);
@@ -910,7 +910,7 @@ export class McpPool {
   }
 
   /** The endpoint's session for a saved login: pooled, inside the auth retry, dropped on error. */
-  private remoteFor(db: LoginDb, login: Login, server: Record<string, unknown>): RemoteSession {
+  private remoteFor(db: LoginDb, login: Login, server: LoadedConnector): RemoteSession {
     const run = async <T>(action: (session: McpSession) => Promise<T>): Promise<T> => {
       try {
         return await this.withAuthRetry(db, login, server, action);
@@ -931,7 +931,7 @@ export class McpPool {
   }
 
   /** An unpooled session for credentials that are not saved yet. */
-  private remoteForCredentials(server: Record<string, unknown>, resolved: Resolved, credentials: Credentials): RemoteSession {
+  private remoteForCredentials(server: LoadedConnector, resolved: Resolved, credentials: Credentials): RemoteSession {
     const session = new McpSession(
       serverUrl(server),
       headersFor(credentialToken(credentials, resolved.manifest), resolved.manifest ?? serverManifest(server)),
@@ -967,7 +967,7 @@ export class McpPool {
   private async onLogin<T>(
     db: LoginDb,
     login: Login,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     resolved: Resolved,
     work: (credentials: Credentials, ctx: ConnectorContext) => Promise<T>,
     workspaceDir?: string,
@@ -1005,7 +1005,7 @@ export class McpPool {
 
   /** Runs adapter code on credentials that are not saved yet. */
   private async onCredentials<T>(
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     credentials: Credentials,
     settings: Record<string, unknown>,
     work: (resolved: Resolved, ctx: ConnectorContext) => Promise<T>,
@@ -1041,7 +1041,7 @@ export class McpPool {
 
   /** Checks credentials and settings before they are saved. Returns the account hint. */
   async validate(
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     credentials: Credentials,
     settings: Record<string, unknown> = {},
   ): Promise<string> {
@@ -1052,7 +1052,7 @@ export class McpPool {
 
   /** Values for a settings property marked `x-lookup`. */
   async lookup(
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     property: string,
     query: string,
     credentials: Credentials,
@@ -1060,7 +1060,7 @@ export class McpPool {
   ): Promise<LookupOption[]> {
     return this.onCredentials(server, credentials, settings, (resolved, ctx) => {
       if (!resolved.adapter.lookup) {
-        throw new ConnectorError(`${String(server.slug)} has no lookup`, 404);
+        throw new ConnectorError(`${server.slug} has no lookup`, 404);
       }
       return resolved.adapter.lookup(property, query, credentials, ctx);
     });
@@ -1070,7 +1070,7 @@ export class McpPool {
   async validateLogin(
     db: LoginDb,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     settings: Record<string, unknown>,
   ): Promise<string> {
     const resolved = this.resolve(server);
@@ -1089,7 +1089,7 @@ export class McpPool {
   async describeEndpoint(
     db: LoginDb,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
   ): Promise<RemoteInfo> {
     const resolved = this.resolve(server);
     return this.onLogin(db, { connection }, server, resolved, (_credentials, ctx) => ctx.remote.initialize());
@@ -1099,14 +1099,14 @@ export class McpPool {
   async lookupLogin(
     db: LoginDb,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     property: string,
     query: string,
   ): Promise<LookupOption[]> {
     const resolved = this.resolve(server);
     return this.onLogin(db, { connection }, server, resolved, (credentials, ctx) => {
       if (!resolved.adapter.lookup) {
-        throw new ConnectorError(`${String(server.slug)} has no lookup`, 404);
+        throw new ConnectorError(`${server.slug} has no lookup`, 404);
       }
       return resolved.adapter.lookup(property, query, credentials, ctx);
     });
@@ -1115,7 +1115,7 @@ export class McpPool {
   async syncTools(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     options: { force?: boolean; validate?: boolean } = {},
   ): Promise<ListedTool[]> {
     const force = options.force ?? false;
@@ -1157,7 +1157,7 @@ export class McpPool {
   async call(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
     extras: { workspaceDir?: string; orgId?: string } = {},
@@ -1182,7 +1182,7 @@ export class McpPool {
         return await this.invokeCall(db, connection, server, remoteName, argumentsForCall, extras);
       } finally {
         if (metered !== null) {
-          await db.recordConnectorCall(metered, String(server.id), utcMonth(), new Date());
+          await db.recordConnectorCall(metered, server.id, utcMonth(), new Date());
         }
       }
     } catch (error) {
@@ -1209,24 +1209,24 @@ export class McpPool {
    * The tool result for a call the organisation's cap on this connector's platform login
    * refuses this month, or null while it may call.
    */
-  private async overCap(db: McpDatabase, orgId: string, server: Record<string, unknown>): Promise<string | null> {
+  private async overCap(db: McpDatabase, orgId: string, server: LoadedConnector): Promise<string | null> {
     if (this.policy === null) {
       return null;
     }
     const { limits } = await this.policy.standing(orgId);
-    const slug = String(server.slug);
+    const slug = server.slug;
     const cap = limits.monthlyConnectorCalls[slug];
     if (cap === undefined) {
       return null;
     }
-    const calls = await db.countConnectorCalls(orgId, String(server.id), utcMonth());
+    const calls = await db.countConnectorCalls(orgId, server.id, utcMonth());
     return calls >= cap ? `ERROR: ${limits.source} limit reached: ${slug} calls this month` : null;
   }
 
   private async invokeCall(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
     extras: { workspaceDir?: string } = {},
@@ -1259,7 +1259,7 @@ export class McpPool {
       return {};
     }
     const orgId = typeof agent.org_id === "string" ? agent.org_id : null;
-    const servers = (await db.listMcpServers(orgId)) as Array<Record<string, unknown>>;
+    const servers = await db.listMcpServers(orgId);
     const values = await Promise.all(
       entries.map(async (entry): Promise<[string, unknown] | null> => {
         const key = entry.manifest.state!.key;

@@ -4,7 +4,7 @@
       "count": 10
     },
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/access/runtime.ts": {
@@ -304,14 +304,6 @@
       "count": 1
     }
   },
-  "src/connectors/view.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/connectors/x/client.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 25
@@ -345,11 +337,6 @@
     }
   },
   "src/credentials/crypto.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
-  "src/credentials/items.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
     }
@@ -523,15 +510,15 @@
   },
   "src/mcp/catalog.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 8
+      "count": 5
     },
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/mcp/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 21
+      "count": 20
     },
     "@typescript-eslint/max-params": {
       "count": 4

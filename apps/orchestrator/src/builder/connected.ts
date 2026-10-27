@@ -2,6 +2,7 @@ import { defaultSearchServer, isSearchable, storageHint } from "../connectors/bu
 import { getMcpServer, getMcpServerBySlug } from "../connectors/servers.js";
 import { type McpDatabase, mcpDatabase, McpError } from "../mcp/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
@@ -13,7 +14,7 @@ export type BuilderMcpClient = {
   call(
     db: McpDatabase,
     connection: Record<string, unknown>,
-    server: Record<string, unknown>,
+    server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
   ): Promise<string>;
@@ -57,7 +58,7 @@ export async function resolvePublishedServer(
   db: ConnectedDatabase,
   serverRef: string,
   orgId: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<LoadedConnector | null> {
   const trimmed = serverRef.trim();
   if (!trimmed) {
     return null;
@@ -73,13 +74,13 @@ export async function resolvePublishedServer(
 export async function findReusableOrgConnection(
   db: ConnectedDatabase,
   orgId: string,
-  server: Record<string, unknown>,
+  server: LoadedConnector,
 ): Promise<Record<string, unknown> | null> {
   const connections = await db.listMcpConnections({ orgId });
   return (
     connections.find(
       (row) =>
-        String(row.mcp_server_id) === String(server.id) &&
+        String(row.mcp_server_id) === server.id &&
         row.status === "connected" &&
         (row.owner_scope === "org" || row.owner_scope === "platform"),
     ) ?? null
@@ -290,7 +291,7 @@ export async function searchConnectedWorkspace(args: {
       error: "unknown or unpublished connector",
     };
   }
-  const slug = String(server.slug);
+  const slug = server.slug;
   const displayName = String(server.display_name || slug);
   const connection = await findReusableOrgConnection(args.db, args.orgId, server);
   if (!connection) {
