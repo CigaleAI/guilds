@@ -58,17 +58,6 @@ export function machineItem(machine: MachineWithAgents, visibleGuildIds: Readonl
   };
 }
 
-/** A body's `machine_id`: a machine id, or null when the body names none. */
-export function machineIdOf(value: unknown): string | null {
-  if (value === undefined || value === null) {
-    return null;
-  }
-  if (typeof value !== "string" || !value) {
-    throw new HttpError(422, "machine_id must be a machine id");
-  }
-  return value;
-}
-
 /**
  * An organisation's machines: every member lists them; owners and admins create, resize, and
  * delete them. Another organisation's id is a 404.

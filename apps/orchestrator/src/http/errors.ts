@@ -1,5 +1,6 @@
 import { ArtifactError } from "../artifacts/errors.js";
 import { AgentError } from "../agents/errors.js";
+import { AgentValidationError } from "../agents/validation.js";
 import { RunRequestError } from "../generation/index.js";
 import { GroupChatError } from "../groupchat/index.js";
 import { GuildError } from "../guilds/errors.js";
@@ -109,7 +110,12 @@ const REFUSALS = [
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
-const INVALID = [UserValidationError, OrgValidationError, GuildValidationError] as const;
+const INVALID = [
+  UserValidationError,
+  OrgValidationError,
+  GuildValidationError,
+  AgentValidationError,
+] as const;
 
 /**
  * The HTTP answer for a refusal a domain module raises: one with its own status, or a value its

@@ -2,26 +2,12 @@ import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   loadOperatorActor,
-  ArtifactError,
-  inspectTaskEmbeds,
   listFileChanges,
-  taskEmbedActor,
 } from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent, requireVisibleRun } from "../agents/access.js";
-import { agentDatabase, persistAgent } from "../agents/persist.js";
 import {
-  AgentValidationError,
-  browserLanguageOf,
   maxWorkspaceMibOf,
-  validateAvatarColor,
-  validateAvatarShape,
-  assertCodingAgent,
-  validateConfig,
-  withCodingLimits,
-  validateFocus,
-  validateAgentName,
-  validateWakeTriggers,
 } from "../agents/validation.js";
 import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import {
@@ -90,10 +76,7 @@ import {
 } from "../access/index.js";
 import { RunRequestError, type GenerationLoop } from "../generation/index.js";
 import {
-  assertGuildAgentRoom,
   canSeeGuild,
-  GuildAgentLimitError,
-  guildAgentRoom,
 } from "../guilds/validation.js";
 import { NotesError } from "../notes/store.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
@@ -106,10 +89,7 @@ import { registerFileRoutes } from "./file-routes.js";
 import { publishGroup } from "./publish.js";
 import { messageItem } from "../db/views.js";
 import { memoryHistory } from "../memory/history.js";
-import { isUniqueViolation } from "../db/pg.js";
-import { GuildNameTaken, SecretNameTaken } from "../db/errors.js";
-import { assertCanPlaceOn } from "../machines/access.js";
-import type { AgentNeeds, MachineRow } from "../machines/index.js";
+import { SecretNameTaken } from "../db/errors.js";
 import {
   SecretAccessError,
   accessOf,
@@ -122,24 +102,7 @@ import {
   type SecretAccess,
   type SecretViewer,
 } from "../secrets/access.js";
-import {
-  assertModelConnected,
-  coreModelCredentials,
-  ModelNotConnectedError,
-  modelProviderStore,
-} from "../llm/credentials.js";
-import {
-  assertCanCreateAgent,
-  assertCanEnableBrowser,
-  assertCanEnableCoding,
-  assertCanPlaceAgents,
-  machineCounts,
-  OPEN_POLICY,
-  orgCounts,
-  PolicyError,
-} from "../policy/index.js";
 import type { AppDeps } from "./deps.js";
-import type { AgentRow } from "../db/agents.js";
 import { loadAccessView } from "../access/view.js";
 import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 import { HttpError, missingBodyFields, notesReadHttp, notesWriteHttp } from "./errors.js";
@@ -167,6 +130,7 @@ import {
 } from "./artifact-notes.js";
 import { registerCodingRoutes } from "./coding-routes.js";
 import { registerMeRoutes } from "./me-routes.js";
+import { registerAgentRoutes } from "./agent-routes.js";
 import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
 import { registerIssueRoutes } from "./issue-routes.js";
@@ -194,14 +158,14 @@ import {
 import { registerAdminMcpRoutes } from "./admin-mcp-routes.js";
 import { registerAdminRegistryRoutes } from "./admin-registry-routes.js";
 import { registerOrgConnectorRoutes } from "./org-connector-routes.js";
-import { machineIdOf, registerMachineRoutes } from "./machine-routes.js";
+import { registerMachineRoutes } from "./machine-routes.js";
 import { registerBuilderCapabilityRoutes } from "./builder-capability-routes.js";
 import { registerBuilderSessionRoutes } from "./builder-routes.js";
 import { registerRecipeRoutes } from "./recipe-routes.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-import { agentConfigObject, agentItem, loadAgentView } from "../agents/view.js";
+import { agentConfigObject } from "../agents/view.js";
 import { pipeSse } from "./sse.js";
 import { bodyOf, param, queryOf } from "./request.js";
 import {
@@ -211,8 +175,7 @@ import {
   getGuild,
   listGuildsForUser,
 } from "../db/guilds.js";
-import { placementMachine } from "../db/machines.js";
-import { getAgent, listAgents, updateAgentConfig } from "../db/agents.js";
+import { getAgent, listAgents } from "../db/agents.js";
 import { listMessages } from "../db/runs.js";
 import { getUsage } from "../db/usage.js";
 import {
@@ -396,40 +359,11 @@ async function scopeGuild(
   return String(row.guild_id);
 }
 
-function busy(deps: AppDeps, agentId: string): boolean {
-  return deps.generation?.agent_is_busy(agentId) ?? false;
-}
-
-async function agentPayload(deps: AppDeps, row: AgentRow): Promise<Record<string, unknown>> {
-  return loadAgentView(deps.db, deps.mcp ?? null, row, busy(deps, row.id));
-}
-
 export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db, notes, artifacts } = deps;
   const identityDb = identityDatabase(db);
-  const policy = deps.policy ?? OPEN_POLICY;
-  const modelCredentials = deps.modelCredentials ?? coreModelCredentials(modelProviderStore(db), deps.masterKey);
   const notifications = new Notifications(notificationsDatabase(db));
 
-  /**
-   * The machine an agent goes on, with the policy's per-machine cap: the one named, else the
-   * agent's current one, else the organisation's only one. A machine other than the current one
-   * must take one more agent and host no agent of a guild the user cannot see.
-   */
-  async function placement(
-    orgId: string,
-    user: Record<string, unknown>,
-    requested: unknown,
-    agent: { needs: AgentNeeds; machineId?: string },
-  ): Promise<{ machine: MachineRow; maxAgentsPerMachine: number | null; moves: boolean }> {
-    const machine = await placementMachine(db, orgId, machineIdOf(requested) ?? agent.machineId, agent.needs);
-    if (machine.id === agent.machineId) {
-      return { machine, maxAgentsPerMachine: null, moves: false };
-    }
-    await assertCanPlaceOn(db, orgId, machine.id, String(user.id));
-    const maxAgentsPerMachine = await assertCanPlaceAgents(policy, machineCounts(db), orgId, machine.id, 1);
-    return { machine, maxAgentsPerMachine, moves: true };
-  }
   deps.generation?.group_chat.observe((guildId, event, data) => notifications.observe(guildId, event, data));
   await registerMeRoutes(app, deps);
   await registerCodingRoutes(app, deps);
@@ -457,6 +391,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerScheduleRoutes(app, deps);
   await registerScriptRoutes(app, deps);
   await registerIssueRoutes(app, deps);
+  await registerAgentRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -516,116 +451,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     } catch (error) {
       if (error instanceof AttachmentError) {
         throw new HttpError(error.status, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/guilds/:guild_id/agents", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    return (await listAgents(db, String(guild.id))).map((row) => agentItem(row, busy(deps, String(row.id))));
-  });
-
-  app.get("/api/guilds/:guild_id/embed-status", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    const agents = await listAgents(db, String(guild.id));
-    if (!artifacts) {
-      return { agents: agents.map((row) => ({ id: row.id, broken_embeds: [] as string[] })) };
-    }
-    const items = [];
-    for (const row of agents) {
-      const actor = taskEmbedActor(String(guild.org_id), row);
-      const inspected = await inspectTaskEmbeds(artifacts, actor, String(row.task ?? ""));
-      items.push({
-        id: row.id,
-        broken_embeds: inspected.filter((item) => !item.ok).map((item) => item.href),
-      });
-    }
-    return { agents: items };
-  });
-
-  app.post("/api/guilds/:guild_id/agents", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const guild = await requireVisibleGuild(db, param(request, "guild_id"), String(user.id));
-    if (deps.generation?.deleting_guild(String(guild.id))) {
-      throw new HttpError(409, "guild is being deleted");
-    }
-    const missing = missingBodyFields(request.body, ["name", "config"]);
-    if (missing) {
-      throw missing;
-    }
-    const body = bodyOf(request);
-    try {
-      const name = validateAgentName(String(body.name ?? ""));
-      const focus = validateFocus(body.focus === undefined ? "" : String(body.focus));
-      const wakeTriggers = validateWakeTriggers(
-        body.wake_triggers === undefined ? "" : String(body.wake_triggers),
-      );
-      const avatarShape = validateAvatarShape(
-        body.avatar_shape === undefined ? undefined : String(body.avatar_shape),
-      );
-      const avatarColor = validateAvatarColor(
-        body.avatar_color === undefined ? undefined : String(body.avatar_color),
-      );
-      const config = validateConfig(withCodingLimits((body.config ?? {}) as Record<string, unknown>));
-      assertCodingAgent(config);
-      await assertModelConnected(modelCredentials, String(guild.org_id), config.model);
-      await assertCanCreateAgent(policy, orgCounts(db), String(guild.org_id), {
-        browser: config.browser,
-        coding: config.coding,
-      });
-      await assertGuildAgentRoom(guildAgentRoom(db), String(guild.id), 1);
-      const { machine, maxAgentsPerMachine } = await placement(String(guild.org_id), user, body.machine_id, {
-        needs: { browser: config.browser, coding: config.coding },
-      });
-      const agentId = newId("a");
-      await persistAgent(agentDatabase(db), notes, {
-        agentId,
-        guildId: String(guild.id),
-        guildName: String(guild.name),
-        orgSlug: String(guild.org_slug),
-        name,
-        config,
-        now: new Date(),
-        focus,
-        wakeTriggers,
-        avatarShape,
-        avatarColor,
-        orgId: String(guild.org_id),
-        artifacts: artifacts ?? null,
-        actor: await loadOperatorActor(db, user, {
-          orgId: String(guild.org_id),
-          guildId: String(guild.id),
-          agentId,
-        }),
-        machineId: machine.id,
-        maxAgentsPerMachine,
-      });
-      const created = await getAgent(db, agentId);
-      if (created === null) {
-        throw new HttpError(500, "agent not found after create");
-      }
-      await send(reply, 201, await agentPayload(deps, created));
-    } catch (error) {
-      if (error instanceof AgentValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      if (error instanceof PolicyError || error instanceof ModelNotConnectedError) {
-        throw new HttpError(error.status, error.message);
-      }
-      if (error instanceof GuildAgentLimitError || error instanceof GuildNameTaken) {
-        throw new HttpError(409, error.message);
-      }
-      if (isUniqueViolation(error)) {
-        throw new HttpError(409, "agent name already exists");
-      }
-      if (error instanceof ArtifactError) {
-        throw catchArtifact(error);
-      }
-      if (error instanceof NotesError) {
-        throw notesWriteHttp(error);
       }
       throw error;
     }
@@ -1126,170 +951,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
     } catch (error) {
       catchArtifact(error);
     }
-  });
-
-  app.get("/api/agents/:agent_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    return agentPayload(deps, row);
-  });
-
-  app.delete("/api/agents/:agent_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    await requireVisibleAgent(db, agentId, String(user.id));
-    try {
-      await generationOf(deps).delete_agent(agentId);
-      await send(reply, 204);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      if (error instanceof NotesError) {
-        throw notesWriteHttp(error);
-      }
-      throw error;
-    }
-  });
-
-  app.put("/api/agents/:agent_id/config", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const existing = await requireVisibleAgent(db, agentId, String(user.id));
-    const body = bodyOf(request);
-    try {
-      const config = validateConfig((body.config ?? {}) as Record<string, unknown>);
-      const previous = agentConfigObject(existing);
-      assertCodingAgent(config, previous);
-      await assertModelConnected(modelCredentials, String(existing.org_id), config.model);
-      const needs = { browser: config.browser, coding: config.coding };
-      const { machine, maxAgentsPerMachine, moves } = await placement(String(existing.org_id), user, body.machine_id, {
-        needs,
-        machineId: String(existing.machine_id),
-      });
-      if (config.browser && !previous.browser) {
-        await assertCanEnableBrowser(policy, orgCounts(db), String(existing.org_id), false);
-      }
-      if (config.coding && !previous.coding) {
-        await assertCanEnableCoding(policy, orgCounts(db), String(existing.org_id));
-      }
-      const avatarShape =
-        body.avatar_shape !== undefined ? validateAvatarShape(String(body.avatar_shape)) : null;
-      const avatarColor =
-        body.avatar_color !== undefined ? validateAvatarColor(String(body.avatar_color)) : null;
-      const focus = body.focus !== undefined ? validateFocus(String(body.focus ?? "")) : null;
-      const wakeTriggers =
-        body.wake_triggers !== undefined ? validateWakeTriggers(String(body.wake_triggers ?? "")) : null;
-      const name = body.name !== undefined ? validateAgentName(String(body.name ?? "")) : null;
-      const previousName = String(existing.name);
-      if (name && name !== previousName) {
-        if (deps.generation?.deleting_guild(String(existing.guild_id))) {
-          throw new HttpError(409, "guild is being deleted");
-        }
-        if (busy(deps, agentId)) {
-          throw new HttpError(409, "agent is already generating");
-        }
-      }
-      if (moves) {
-        await generationOf(deps).moveAgent(agentId, machine.id, { maxAgentsPerMachine, needs });
-      }
-      let row: Record<string, unknown> | null;
-      try {
-        row = await updateAgentConfig(db, agentId, config, new Date(), {
-            name,
-            avatarShape,
-            avatarColor,
-            focus,
-            wakeTriggers,
-          });
-      } catch (error) {
-        if (moves) {
-          await generationOf(deps).moveAgent(agentId, String(existing.machine_id), {
-            needs: { browser: Boolean(previous.browser), coding: Boolean(previous.coding) },
-          });
-        }
-        throw error;
-      }
-      if (row === null) {
-        throw new HttpError(404, "agent not found");
-      }
-      if (name && name !== previousName) {
-        try {
-          await notes.renameAgent(
-            String(existing.org_slug),
-            String(existing.guild_name),
-            previousName,
-            name,
-          );
-        } catch (error) {
-          await updateAgentConfig(db, agentId, config, new Date(), { name: previousName });
-          throw error;
-        }
-      }
-      const browserChanged =
-        (Boolean(previous.browser) && !config.browser) ||
-        (config.browser && browserLanguageOf(previous) !== config.browser_language);
-      if (browserChanged && deps.generation) {
-        await deps.generation.agentBrowserChanged(agentId);
-      }
-      const detail = await getAgent(db, agentId);
-      if (detail === null) {
-        throw new HttpError(404, "agent not found");
-      }
-      return agentPayload(deps, detail);
-    } catch (error) {
-      if (error instanceof AgentValidationError) {
-        throw new HttpError(422, error.message);
-      }
-      if (error instanceof GuildNameTaken) {
-        throw new HttpError(409, error.message);
-      }
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      if (isUniqueViolation(error)) {
-        throw new HttpError(409, "agent name already exists");
-      }
-      if (error instanceof NotesError) {
-        throw notesWriteHttp(error);
-      }
-      if (error instanceof PolicyError || error instanceof ModelNotConnectedError) {
-        throw new HttpError(error.status, error.message);
-      }
-      throw error;
-    }
-  });
-
-  app.put("/api/agents/:agent_id/machine", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agentId = param(request, "agent_id");
-    const existing = await requireVisibleAgent(db, agentId, String(user.id));
-    const body = bodyOf(request);
-    if (machineIdOf(body.machine_id) === null) {
-      throw new HttpError(422, "machine_id is required");
-    }
-    try {
-      const { machine, maxAgentsPerMachine, moves } = await placement(String(existing.org_id), user, body.machine_id, {
-        needs: {
-          browser: agentConfigObject(existing).browser === true,
-          coding: agentConfigObject(existing).coding === true,
-        },
-        machineId: String(existing.machine_id),
-      });
-      if (moves) {
-        await generationOf(deps).moveAgent(agentId, machine.id, { maxAgentsPerMachine });
-      }
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-    const detail = await getAgent(db, agentId);
-    if (detail === null) {
-      throw new HttpError(404, "agent not found");
-    }
-    return agentPayload(deps, detail);
   });
 
   app.get("/api/agents/:agent_id/notes", async (request) => {

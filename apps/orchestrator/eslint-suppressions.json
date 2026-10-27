@@ -523,13 +523,13 @@
   },
   "src/http/routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 19
+      "count": 16
     },
     "@typescript-eslint/no-restricted-imports": {
-      "count": 14
+      "count": 12
     },
     "complexity": {
-      "count": 13
+      "count": 11
     },
     "max-depth": {
       "count": 4

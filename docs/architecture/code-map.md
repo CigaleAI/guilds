@@ -65,7 +65,7 @@ A repository that extends core holds this one as a submodule
 | `oauth/` | Connect flows from each manifest's `auth.oauth` |
 | `github/` | The GitHub App, its manifest flow, and the installation tokens minted for a login's repositories ([GitHub](../tools-and-connectors/github.md)) |
 | `coding/` | Guild repositories, a coding run's git side, the harnesses (`harnesses.ts`), and each harness's models and efforts (`harness-models.ts`) ([Coding agents](../concepts/coding/index.md)) |
-| `machines/` | Tiers, sizes, slots, placement access, and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
+| `machines/` | Tiers, sizes, slots, placement and its access, and the boot layout of agent homes ([Machines](../concepts/machines.md)) |
 | `access/` | Binding resolution, a run's tools, MCP, and secrets, and the access view a scope's page shows (`view.ts`) ([Access](../concepts/access.md)) |
 | `credentials/` | AES-GCM, environment fingerprints, connection views, and validation |
 | `secrets/` | Who reaches and manages a secret, `secret_store`, and redaction ([Secrets](../concepts/secrets.md)) |
@@ -77,7 +77,7 @@ A repository that extends core holds this one as a submodule
 | `memory/` | Hydration, the cap, the archive, and the version history ([Memory](../concepts/memory.md)) |
 | `prompts/` | Prompt composition and the `system.md` and `task.md` templates ([System prompt](../concepts/system-prompt.md)) |
 | `state/` | The State JSON a run sees |
-| `groupchat/` | Group history, tags, and the dispatcher ([Group chat](../concepts/group-chat.md)) |
+| `groupchat/` | Group history, tags, the dispatcher, and what an operator reads and posts (`operator.ts`) ([Group chat](../concepts/group-chat.md)) |
 | `typesafe/` | The group routing client |
 | `schedules/` | Routine timing and the `Schedules` service ([Routines](../concepts/routines.md)) |
 | `scripts/` | The agent `script` catalog and its materialisation ([Scripts](../concepts/scripts.md)) |
@@ -92,13 +92,13 @@ A repository that extends core holds this one as a submodule
 | `recipes/` | The `guilds.recipe` schema, capture, rewrite, validation, and apply ([Recipes](../concepts/recipes.md)) |
 | `conversation/` | The shared coach runner and tool-result projection |
 | `capabilities/` | The catalog facts the builder may name |
-| `guilds/`, `agents/`, `organisations/`, `users/` | Validation and persistence |
+| `guilds/`, `agents/`, `organisations/`, `users/` | Validation, persistence, who sees what (`access.ts`), the API views (`view.ts`), and what an operator creates, changes and deletes (`service.ts`, `operators.ts`, `directory.ts`) |
 | `config/` | Environment → `AppConfig` ([Configuration](orchestrator.md#configuration)) |
 | `instance/` | Instance keys: the integration registry, the encrypted store, write effects, and connector-declared integrations ([Instance keys](extension-points.md#instance-keys)) |
 | `cli/` | `seed:system`, `seed:operator`, `migrate`, and `pnpm connector` |
 | `observability/` | Logs, request ids, client-error intake, Sentry, and runtime metrics ([Observability](orchestrator.md#observability)) |
 | `net/` | Outbound HTTP and endpoint validation |
-| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, an agent's home files (`agent-file.ts`), and the blob store under attachments and shared files (`blob-store.ts`) |
+| `lib/` | Shared helpers: ids, paths, locks, the event queue, the clock, JSON, names, numbers, change actors (`change-actor.ts`), an agent's home files (`agent-file.ts`), and the blob store under attachments and shared files (`blob-store.ts`) |
 
 ## `apps/web/`
 
