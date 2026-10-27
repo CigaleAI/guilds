@@ -539,7 +539,8 @@ What a repository can still steer is recorded in
 
 `apps/orchestrator/src/coding/harnesses.ts` (the harnesses, `HARNESSES_OFF`,
 credential fixes), `apps/orchestrator/src/coding/harness-models.ts` (the
-catalogue), `apps/orchestrator/src/http/coding-routes.ts` (routes),
+catalogue), `apps/orchestrator/src/coding/run-review.ts` (the harness
+view and check), `apps/orchestrator/src/http/coding-routes.ts` (routes),
 `runtime/guilds-harness` (drivers), `runtime/agy`, `runtime/Dockerfile`,
 and in the app `apps/web/src/features/agent/settings/configForm.tsx`,
 `apps/web/src/features/agent/settings/HarnessReadiness.tsx`, and

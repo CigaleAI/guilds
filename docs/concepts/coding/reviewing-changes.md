@@ -179,5 +179,6 @@ repository that sets its own hooks path skips it.
 
 `runtime/guilds-code` (`checkpoint`, `diff`),
 `runtime/git-template/hooks/prepare-commit-msg`,
+`apps/orchestrator/src/coding/run-review.ts`,
 `apps/orchestrator/src/http/coding-routes.ts`, and in the app
 `apps/web/src/features/agent/chat/ChangesPanel.tsx`.

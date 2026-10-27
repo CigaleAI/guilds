@@ -1,5 +1,6 @@
 import { ArtifactError } from "../artifacts/errors.js";
 import { AttachmentError } from "../attachments/index.js";
+import { RepositoryValidationError } from "../coding/repositories.js";
 import { ConnectError } from "../connectors/connect.js";
 import { SettingsError } from "../connectors/settings.js";
 import { CredentialError } from "../credentials/validate.js";
@@ -135,6 +136,7 @@ const REFUSALS = [
   OperatorCallError,
   CatalogError,
   InstanceKeyError,
+  RepositoryValidationError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */

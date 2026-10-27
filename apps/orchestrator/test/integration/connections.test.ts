@@ -168,6 +168,12 @@ test(
       });
       assert.equal(platformDelete.statusCode, 400);
 
+      const notGithub = await app.inject({
+        method: "GET",
+        url: `/api/mcp/connections/${connectionId}/github/repositories`,
+        headers: HOME,
+      });
+      assert.equal(notGithub.statusCode, 422, "only a GitHub login reaches repositories");
       await assert.rejects(readConnectorLogo("srv_missing"), refusedWith(404, /logo/));
       const removed = await app.inject({
         method: "DELETE",

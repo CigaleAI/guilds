@@ -25,7 +25,7 @@ after(async () => {
 });
 
 test(
-  "an operator's scripts, routines, issues, runs, notes, tables, bindings and machines answer for what is there and what is not",
+  "an operator's scripts, routines, issues, runs, notes, tables, bindings, machines and repositories answer for what is there and what is not",
   { timeout: 60_000 },
   async () => {
     process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
@@ -231,6 +231,39 @@ test(
         headers: OWNER,
       });
       assert.equal(image.statusCode, 503, "a box without an image store serves none");
+
+      const repos = `${guild}/repositories`;
+      const repo = { name: "docs", url: "https://git.example.com/docs.git" };
+      const addRepo = () =>
+        app.inject({ method: "POST", url: repos, headers: JSON_OWNER, payload: repo });
+      assert.equal((await addRepo()).statusCode, 201);
+      assert.equal((await addRepo()).statusCode, 409, "a guild names each repository once");
+      assert.equal(
+        (await app.inject({ method: "DELETE", url: `${repos}/repo_missing`, headers: OWNER }))
+          .statusCode,
+        404,
+      );
+      const check = await app.inject({
+        method: "POST",
+        url: `${agent}/harness/check`,
+        headers: JSON_OWNER,
+        payload: { harness: "abacus" },
+      });
+      assert.equal(check.statusCode, 422);
+      assert.deepEqual(
+        (
+          await app.inject({ method: "GET", url: "/api/runs/run_items/changes", headers: OWNER })
+        ).json(),
+        {
+          repositories: [],
+        },
+      );
+      const unchanged = await app.inject({
+        method: "GET",
+        url: "/api/runs/run_items/changes/docs/diff",
+        headers: OWNER,
+      });
+      assert.equal(unchanged.statusCode, 404, "a run that changed nothing has no diff");
 
       const member = await insertUser(
         db,
