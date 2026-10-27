@@ -1,5 +1,7 @@
 import { ArtifactError } from "../artifacts/errors.js";
 import { AttachmentError } from "../attachments/index.js";
+import { ConnectError } from "../connectors/connect.js";
+import { SettingsError } from "../connectors/settings.js";
 import { CredentialError } from "../credentials/validate.js";
 import { AgentError } from "../agents/errors.js";
 import { AgentValidationError } from "../agents/validation.js";
@@ -11,6 +13,7 @@ import { GuildValidationError } from "../guilds/validation.js";
 import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
 import { MachineError } from "../machines/index.js";
+import { OperatorCallError } from "../mcp/operator-call.js";
 import { ConnectionError } from "../mcp/visibility.js";
 import { NotesError } from "../notes/store.js";
 import { OrgValidationError } from "../organisations/index.js";
@@ -126,6 +129,8 @@ const REFUSALS = [
   SecretError,
   BindingError,
   ConnectionError,
+  ConnectError,
+  OperatorCallError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */
@@ -136,6 +141,7 @@ const INVALID = [
   AgentValidationError,
   CredentialError,
   SecretAccessError,
+  SettingsError,
 ] as const;
 
 /**

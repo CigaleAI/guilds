@@ -1,12 +1,9 @@
-import { readFile } from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import {
-  bindingItem,
   connectionMetadata,
-  serverItem,
 } from "../credentials/items.js";
 import {
   CredentialError,
@@ -14,20 +11,16 @@ import {
   validateOwner,
 } from "../credentials/validate.js";
 import { newId } from "../lib/ids.js";
-import { awaitingSettings, markDisconnected, mcpDatabase } from "../mcp/index.js";
+import { markDisconnected, mcpDatabase } from "../mcp/index.js";
 import {
   connect,
   connectDatabase,
   ConnectError,
-  connectFailure,
-  tokenCredentials,
 } from "../connectors/connect.js";
-import { settingsComplete, SettingsError, validateSettings } from "../connectors/settings.js";
+import { settingsComplete } from "../connectors/settings.js";
 import type { Manifest } from "../connectors/manifest.js";
 import { DESCRIPTION_MAX } from "../mcp/catalog.js";
 import { installedConnectors } from "../connectors/index.js";
-import { logoPath } from "../connectors/view.js";
-import { callOwnedConnectionTool, OperatorCallError } from "../mcp/operator-call.js";
 import {
   accountHint,
   authorizationUrl,
@@ -48,9 +41,6 @@ import {
   startsBrowserOauth,
   tokenPayload,
 } from "../oauth/index.js";
-import {
-  canSeeGuild,
-} from "../guilds/validation.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import { registerAdminInstanceRoutes } from "./admin-instance-routes.js";
 import { Notifications, notificationsDatabase } from "../notifications/index.js";
@@ -67,6 +57,7 @@ import { registerAgentRoutes } from "./agent-routes.js";
 import { registerArtifactAccessRoutes } from "./artifact-access-routes.js";
 import { registerBindingRoutes } from "./binding-routes.js";
 import { registerCollectionRoutes } from "./collection-routes.js";
+import { registerConnectionRoutes } from "./connection-routes.js";
 import { registerGroupChatRoutes } from "./group-chat-routes.js";
 import { registerGuildRoutes } from "./guild-routes.js";
 import { registerIssueRoutes } from "./issue-routes.js";
@@ -103,9 +94,9 @@ import { registerBuilderCapabilityRoutes } from "./builder-capability-routes.js"
 import { registerBuilderSessionRoutes } from "./builder-routes.js";
 import { registerRecipeRoutes } from "./recipe-routes.js";
 import { cookieSecure, requestCookies } from "./cookies.js";
-import { currentOrg, currentUser, identityDatabase } from "./identity.js";
+import { currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
-import { bodyOf, param, queryOf } from "./request.js";
+import { bodyOf, queryOf } from "./request.js";
 import {
   getMembership,
 } from "../db/orgs.js";
@@ -117,30 +108,12 @@ import {
   bindMcpConnection,
   connectMcp,
   deleteMcpConnection,
-  getMcpConnection,
   getMcpConnectionByOauthState,
   getMcpConnectionForOwner,
   getPendingGithubConnectionForUser,
-  listMcpConnections,
   saveMcpConnection,
-  updateMcpConnectionSettings,
 } from "../db/mcp.js";
-import { getMcpServer, listMcpServers, updateConnector } from "../db/connectors.js";
-import {
-  listBindingsForConnection,
-} from "../db/bindings.js";
-
-/** Answers a connector's failure as HTTP: a rejected credential or a bad setting is a 422, anything else upstream a 502. */
-function failure(error: unknown, server: Record<string, unknown>): never {
-  try {
-    connectFailure(error, server);
-  } catch (mapped) {
-    if (mapped instanceof ConnectError) {
-      throw new HttpError(mapped.status, mapped.message);
-    }
-    throw mapped;
-  }
-}
+import { getMcpServer, updateConnector } from "../db/connectors.js";
 
 /** Whether an organisation sees a server: the platform's, or one of its own. */
 function serverVisible(server: Record<string, unknown>, orgId: string | null): boolean {
@@ -197,6 +170,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
   await registerArtifactAccessRoutes(app, deps);
   await registerSecretRoutes(app, deps);
   await registerBindingRoutes(app, deps);
+  await registerConnectionRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -210,36 +184,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
       integrations: integrationStatuses(deps.integrations ?? installedIntegrations(), undefined, undefined, { audit }),
     };
   });
-
-  async function visibleCredential(row: Record<string, unknown>, user: Record<string, unknown>): Promise<boolean> {
-    const ownerScope = row.owner_scope;
-    const ownerId = row.owner_id;
-    if (ownerScope === "platform") {
-      return true;
-    }
-    if (ownerScope === "org") {
-      const membership = await getMembership(db, String(ownerId || ""), String(user.id));
-      return membership !== null;
-    }
-    if (ownerScope === "guild") {
-      const guild = await getGuild(db, String(ownerId || ""));
-      if (guild === null || !canSeeGuild(guild, String(user.id))) {
-        return false;
-      }
-      const membership = await getMembership(db, String(guild.org_id), String(user.id));
-      return membership !== null;
-    }
-    const agent = await getAgent(db, String(ownerId || ""));
-    if (agent === null) {
-      return false;
-    }
-    const membership = await getMembership(db, String(agent.org_id), String(user.id));
-    if (membership === null) {
-      return false;
-    }
-    const guild = await getGuild(db, String(agent.guild_id));
-    return guild !== null && canSeeGuild(guild, String(user.id));
-  }
 
   /** The organisation a login's owner belongs to; null for the platform. */
   async function ownerOrgId(ownerScope: string, ownerId: string | null): Promise<string | null> {
@@ -613,48 +557,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
     }
     return { row, payload, userToken: token };
   }
-
-  app.get("/api/mcp/servers", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const rows = await listMcpServers(db, String(org.id));
-    return { servers: rows.map((row) => serverItem(row)) };
-  });
-
-  app.get("/api/mcp/servers/:server_id/logo", async (request, reply) => {
-    await currentUser(identityDb, request, deps);
-    const file = logoPath(installedConnectors().byId(param(request, "server_id")));
-    if (file === null) {
-      throw new HttpError(404, "logo not found");
-    }
-    return reply
-      .code(200)
-      .header("content-type", "image/svg+xml")
-      .header("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'")
-      .header("x-content-type-options", "nosniff")
-      .header("cache-control", "private, max-age=3600")
-      .send(await readFile(file));
-  });
-
-  app.get("/api/mcp/connections", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const query = request.query as { guild_id?: string; agent_id?: string };
-    const guildId = query.guild_id;
-    const agentId = query.agent_id;
-    if (guildId) {
-      await requireVisibleGuild(db, guildId, String(user.id));
-    }
-    if (agentId) {
-      await requireVisibleAgent(db, agentId, String(user.id));
-    }
-    const rows = await listMcpConnections(db, {
-      orgId: String(org.id),
-      guildId: guildId ?? null,
-      agentId: agentId ?? null,
-    });
-    return { connections: rows.map((row) => connectionMetadata(row)) };
-  });
 
   app.post("/api/mcp/connections", async (request, reply) => {
     const user = await currentUser(identityDb, request, deps);
@@ -1037,192 +939,5 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: RouteDeps
       const message = caught instanceof GithubError || caught instanceof OAuthError || caught instanceof Error ? caught.message : String(caught);
       throw new HttpError(400, message);
     }
-  });
-
-  app.get("/api/mcp/connections/:connection_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const connectionId = param(request, "connection_id");
-    const row = await getMcpConnection(db, connectionId);
-    if (row === null || !(await visibleCredential(row, user))) {
-      throw new HttpError(404, "connection not found");
-    }
-    const bindings = await listBindingsForConnection(db, connectionId);
-    return { ...connectionMetadata(row), bindings: bindings.map((item) => bindingItem(item)) };
-  });
-
-  app.post("/api/mcp/connections/:connection_id/call", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const connectionId = param(request, "connection_id");
-    const row = await getMcpConnection(db, connectionId);
-    if (row === null || !(await visibleCredential(row, user))) {
-      throw new HttpError(404, "connection not found");
-    }
-    const server = await getMcpServer(db, String(row.mcp_server_id));
-    if (server === null) {
-      throw new HttpError(404, "mcp server not found");
-    }
-    if (!deps.mcp) {
-      throw new HttpError(409, "tool calls are unavailable");
-    }
-    const body = bodyOf(request);
-    const tool = String(body.tool ?? "").trim();
-    if (!tool) {
-      throw new HttpError(422, "tool is required");
-    }
-    const rawArgs = body.arguments;
-    if (rawArgs !== undefined && (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs))) {
-      throw new HttpError(422, "arguments must be an object");
-    }
-    try {
-      return await callOwnedConnectionTool({
-        db: mcpDatabase(db),
-        mcp: deps.mcp,
-        connection: row,
-        server,
-        tool,
-        arguments: (rawArgs as Record<string, unknown> | undefined) ?? {},
-        ...(deps.masterKey ? { masterKey: deps.masterKey } : {}),
-      });
-    } catch (error) {
-      if (error instanceof OperatorCallError) {
-        throw new HttpError(error.status, error.message);
-      }
-      throw error;
-    }
-  });
-
-  /** Values for a settings property marked `x-lookup`, searched with the credentials a Connect form holds. */
-  app.post("/api/mcp/servers/:server_id/lookup", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const org = await currentOrg(identityDb, request, user);
-    const server = await getMcpServer(db, param(request, "server_id"));
-    if (server === null || server.enabled === false || !serverVisible(server, String(org.id))) {
-      throw new HttpError(404, "mcp server not found");
-    }
-    if (!deps.mcp) {
-      throw new HttpError(409, "lookups are unavailable");
-    }
-    const body = bodyOf(request);
-    const property = String(body.property ?? "").trim();
-    const query = String(body.q ?? "").trim();
-    if (!property || !query) {
-      throw new HttpError(422, "property and q are required");
-    }
-    const raw = body.credentials;
-    const credentials = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-    try {
-      return { options: await deps.mcp.lookup(server, property, query, tokenCredentials(server, credentials)) };
-    } catch (error) {
-      if (error instanceof ConnectError) {
-        throw new HttpError(error.status, error.message);
-      }
-      failure(error, server);
-    }
-  });
-
-  /** Values for a settings property marked `x-lookup`, searched with a saved login. */
-  app.get("/api/mcp/connections/:connection_id/lookup", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const connection = await getMcpConnection(db, param(request, "connection_id"));
-    if (connection === null || !(await visibleCredential(connection, user))) {
-      throw new HttpError(404, "connection not found");
-    }
-    const server = await getMcpServer(db, String(connection.mcp_server_id));
-    if (server === null) {
-      throw new HttpError(404, "mcp server not found");
-    }
-    if (!deps.mcp) {
-      throw new HttpError(409, "lookups are unavailable");
-    }
-    const query = queryOf(request);
-    const property = (query.property ?? "").trim();
-    const q = (query.q ?? "").trim();
-    if (!property || !q) {
-      throw new HttpError(422, "property and q are required");
-    }
-    try {
-      return { options: await deps.mcp.lookupLogin(mcpDatabase(db), connection, server, property, q) };
-    } catch (error) {
-      failure(error, server);
-    }
-  });
-
-  /**
-   * Stores a login's settings after checking them against the manifest's schema and with the
-   * connector's `validate`. A login that waited for its settings connects and lists its tools.
-   */
-  app.put("/api/mcp/connections/:connection_id/settings", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const connection = await getMcpConnection(db, param(request, "connection_id"));
-    if (connection === null || !(await visibleCredential(connection, user))) {
-      throw new HttpError(404, "connection not found");
-    }
-    if (connection.owner_scope === "platform") {
-      throw new HttpError(400, "platform-owned credentials cannot be changed here");
-    }
-    const server = await getMcpServer(db, String(connection.mcp_server_id));
-    if (server === null) {
-      throw new HttpError(404, "mcp server not found");
-    }
-    const schema = installedConnectors().forServer(server)?.manifest.settings_schema;
-    if (!schema) {
-      throw new HttpError(422, "this connector has no settings");
-    }
-    if (connection.status !== "connected" && !awaitingSettings(connection)) {
-      throw new HttpError(409, "sign in before saving settings");
-    }
-    if (!deps.mcp) {
-      throw new HttpError(409, "settings are unavailable");
-    }
-    let settings: Record<string, unknown>;
-    try {
-      settings = validateSettings(schema, bodyOf(request).settings ?? null);
-    } catch (error) {
-      if (error instanceof SettingsError) {
-        throw new HttpError(422, error.message);
-      }
-      throw error;
-    }
-    let hint = "";
-    try {
-      hint = await deps.mcp.validateLogin(mcpDatabase(db), connection, server, settings);
-    } catch (error) {
-      failure(error, server);
-    }
-    const connects = awaitingSettings(connection) && settingsComplete(schema, settings);
-    const row = await updateMcpConnectionSettings(db, String(connection.id), settings, new Date(), {
-        connect: connects,
-        accountHint: hint,
-      });
-    if (row === null) {
-      throw new HttpError(404, "connection not found");
-    }
-    deps.mcp.forget(String(row.id));
-    if (row.status === "connected") {
-      try {
-        await deps.mcp.syncTools(mcpDatabase(db), row, server, { force: true, validate: false });
-      } catch {
-        // The settings stand; the login's tools list on the next sync.
-      }
-    }
-    return connectionMetadata(row);
-  });
-
-  app.delete("/api/mcp/connections/:connection_id", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const connectionId = param(request, "connection_id");
-    const existing = await getMcpConnection(db, connectionId);
-    if (existing === null || !(await visibleCredential(existing, user))) {
-      throw new HttpError(404, "connection not found");
-    }
-    if (existing.owner_scope === "platform") {
-      throw new HttpError(400, "platform-owned credentials cannot be changed here");
-    }
-    const row = await deleteMcpConnection(db, connectionId);
-    if (row === null) {
-      throw new HttpError(404, "connection not found");
-    }
-    deps.mcp?.forget(connectionId);
-    await send(reply, 204);
   });
 }
