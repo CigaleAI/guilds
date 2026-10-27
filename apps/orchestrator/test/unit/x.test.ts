@@ -36,22 +36,20 @@ class MemoryDb {
 }
 
 test("formatSearch is compact TSV", () => {
-  const stored = formatSearch(
-    {
-      data: [{
-        id: "123",
-        author_id: "44196397",
-        created_at: "2026-09-13T12:00:00.000Z",
-        text: "hello world",
-        public_metrics: { like_count: 12, retweet_count: 3, reply_count: 1, quote_count: 0 },
-      }],
-      includes: {
-        users: [{ id: "44196397", username: "elonmusk", name: "Elon Musk", profile_image_url: "https://example.com/elon.jpg" }],
-      },
-      meta: { result_count: 1, next_token: "page-2" },
+  const payload = {
+    data: [{
+      id: "123",
+      author_id: "44196397",
+      created_at: "2026-09-13T12:00:00.000Z",
+      text: "hello world",
+      public_metrics: { like_count: 12, retweet_count: 3, reply_count: 1, quote_count: 0 },
+    }],
+    includes: {
+      users: [{ id: "44196397", username: "elonmusk", name: "Elon Musk", profile_image_url: "https://example.com/elon.jpg" }],
     },
-    { query: "from:elonmusk" },
-  );
+    meta: { result_count: 1, next_token: "page-2" },
+  };
+  const stored = formatSearch(payload, { query: "from:elonmusk" });
   assert.equal(
     stored,
     "from:elonmusk  n=1\n"
@@ -81,7 +79,7 @@ test("formatPosts caps rows and clips text", () => {
 });
 
 test("formatUser and formatPost keep metrics", () => {
-  const user = formatUser({
+  const profile = {
     data: {
       id: "44196397",
       username: "elonmusk",
@@ -93,7 +91,8 @@ test("formatUser and formatPost keep metrics", () => {
       profile_image_url: "https://example.com/elon.jpg",
       public_metrics: { followers_count: 200_000_000, following_count: 800, tweet_count: 50_000 },
     },
-  });
+  };
+  const user = formatUser(profile);
   assert.equal(
     user,
     "44196397  @elonmusk  Elon Musk  blue  followers=2e+08  "

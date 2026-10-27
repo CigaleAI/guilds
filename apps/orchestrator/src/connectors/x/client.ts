@@ -1,5 +1,17 @@
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import { decode } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import { LIST_DEFAULT, argStr, clipRows, clipText, fmtNum, joinParts, rowLimit } from "../format.js";
+import {
+  ErrorBody,
+  ErrorEntry,
+  ErrorList,
+  PostsResponse,
+  UserResponse,
+  type XPost,
+  type XUser,
+} from "./responses.js";
 
 export const API_BASE = "https://api.x.com/2";
 export const PING_USERNAME = "X";
@@ -38,84 +50,52 @@ function handle(value: unknown): string {
   return text ? `@${text}` : "";
 }
 
-function dataObj(payload: Record<string, unknown>): Record<string, unknown> | null {
-  const data = payload.data;
-  if (data && typeof data === "object" && !Array.isArray(data) && Object.keys(data).length) {
-    return data as Record<string, unknown>;
-  }
-  if (Array.isArray(data) && data.length && data[0] && typeof data[0] === "object" && !Array.isArray(data[0])) {
-    return data[0] as Record<string, unknown>;
-  }
-  return null;
-}
-
-function dataList(payload: Record<string, unknown>): Array<Record<string, unknown>> {
-  const data = payload.data;
+/** The item of `data`: the object itself, or the first of a list; none when it is empty. */
+function dataObj<T extends object>(data: T[] | T | null | undefined): T | null {
   if (Array.isArray(data)) {
-    return data.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+    return data[0] ?? null;
   }
-  if (data && typeof data === "object" && Object.keys(data).length) {
-    return [data as Record<string, unknown>];
-  }
-  return [];
+  return data && Object.keys(data).length ? data : null;
 }
 
-function usersById(payload: Record<string, unknown>): Record<string, Record<string, unknown>> {
-  const includes =
-    payload.includes && typeof payload.includes === "object" && !Array.isArray(payload.includes)
-      ? (payload.includes as Record<string, unknown>)
-      : null;
-  const users = includes?.users;
-  if (!Array.isArray(users)) {
-    return {};
+/** The items of `data`: the list itself, or the one object; none when it is empty. */
+function dataList<T extends object>(data: T[] | T | null | undefined): T[] {
+  if (Array.isArray(data)) {
+    return data;
   }
-  const mapped: Record<string, Record<string, unknown>> = {};
-  for (const user of users) {
-    if (user && typeof user === "object" && !Array.isArray(user) && (user as { id?: unknown }).id != null && (user as { id?: unknown }).id !== "") {
-      mapped[String((user as { id: unknown }).id)] = user as Record<string, unknown>;
+  return data && Object.keys(data).length ? [data] : [];
+}
+
+function usersById(payload: PostsResponse): Record<string, XUser> {
+  const mapped: Record<string, XUser> = {};
+  for (const user of payload.includes?.users ?? []) {
+    if (user.id != null && user.id !== "") {
+      mapped[String(user.id)] = user;
     }
   }
   return mapped;
 }
 
-function nextToken(payload: Record<string, unknown>): string {
-  const meta =
-    payload.meta && typeof payload.meta === "object" && !Array.isArray(payload.meta)
-      ? (payload.meta as Record<string, unknown>)
-      : null;
-  const token = meta?.next_token;
+function nextToken(payload: PostsResponse): string {
+  const token = payload.meta?.next_token;
   return typeof token === "string" && token.trim() ? token.trim() : "";
 }
 
-function resultCount(payload: Record<string, unknown>): string {
-  const meta =
-    payload.meta && typeof payload.meta === "object" && !Array.isArray(payload.meta)
-      ? (payload.meta as Record<string, unknown>)
-      : null;
-  let count = meta?.result_count;
-  if (count === null || count === undefined) {
-    count = dataList(payload).length;
-  }
-  return fmtNum(count);
+function resultCount(payload: PostsResponse): string {
+  return fmtNum(payload.meta?.result_count ?? dataList(payload.data).length);
 }
 
-function tweetText(item: Record<string, unknown>): string {
-  const note = item.note_tweet;
-  if (note && typeof note === "object" && !Array.isArray(note)) {
-    const text = (note as { text?: unknown }).text;
-    if (typeof text === "string" && text.trim()) {
-      return text;
-    }
+function tweetText(item: XPost): string {
+  const text = item.note_tweet?.text;
+  if (typeof text === "string" && text.trim()) {
+    return text;
   }
   return typeof item.text === "string" ? item.text : "";
 }
 
-function postRow(item: Record<string, unknown>, users: Record<string, Record<string, unknown>>): string {
+function postRow(item: XPost, users: Record<string, XUser>): string {
   const author = users[String(item.author_id ?? "")] ?? {};
-  const metrics =
-    item.public_metrics && typeof item.public_metrics === "object" && !Array.isArray(item.public_metrics)
-      ? (item.public_metrics as Record<string, unknown>)
-      : {};
+  const metrics = item.public_metrics ?? {};
   return joinParts(
     item.id,
     handle(author.username),
@@ -129,25 +109,26 @@ function postRow(item: Record<string, unknown>, users: Record<string, Record<str
   );
 }
 
-export function formatUser(payload: Record<string, unknown>): string {
-  const item = dataObj(payload);
+/** The verification mark of a user: its kind, or `verified`; none when unverified. */
+function verifiedMark(item: XUser): string[] {
+  if (item.verified !== true) {
+    return [];
+  }
+  const kind = item.verified_type;
+  return [typeof kind === "string" && kind.trim() ? kind.trim() : "verified"];
+}
+
+export function formatUser(payload: UserResponse): string {
+  const item = dataObj(payload.data);
   if (!item) {
     return "no results";
   }
-  const metrics =
-    item.public_metrics && typeof item.public_metrics === "object" && !Array.isArray(item.public_metrics)
-      ? (item.public_metrics as Record<string, unknown>)
-      : {};
-  const marks: string[] = [];
-  if (item.verified === true) {
-    const kind = item.verified_type;
-    marks.push(typeof kind === "string" && kind.trim() ? kind.trim() : "verified");
-  }
+  const metrics = item.public_metrics ?? {};
   const head = joinParts(
     item.id,
     handle(item.username),
     item.name,
-    ...marks,
+    ...verifiedMark(item),
     `followers=${fmtNum(metrics.followers_count)}`,
     `following=${fmtNum(metrics.following_count)}`,
     `posts=${fmtNum(metrics.tweet_count)}`,
@@ -157,11 +138,10 @@ export function formatUser(payload: Record<string, unknown>): string {
   return [head, bio].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatPosts(payload: Record<string, unknown>, options: { limit?: number } = {}): string {
+export function formatPosts(payload: PostsResponse, options: { limit?: number } = {}): string {
   const limit = options.limit ?? LIST_DEFAULT;
-  const items = dataList(payload);
   const users = usersById(payload);
-  const rows = items.map((item) => postRow(item, users));
+  const rows = dataList(payload.data).map((item) => postRow(item, users));
   const body = clipRows(rows.filter(Boolean), limit);
   if (body === "no results") {
     return body;
@@ -174,10 +154,7 @@ export function formatPosts(payload: Record<string, unknown>, options: { limit?:
   return parts.join("\n");
 }
 
-export function formatSearch(
-  payload: Record<string, unknown>,
-  options: { query: string; limit?: number },
-): string {
+export function formatSearch(payload: PostsResponse, options: { query: string; limit?: number }): string {
   const body = options.limit === undefined ? formatPosts(payload) : formatPosts(payload, { limit: options.limit });
   if (body === "no results") {
     return body;
@@ -185,13 +162,12 @@ export function formatSearch(
   return [joinParts(options.query, `n=${resultCount(payload)}`), body].join("\n");
 }
 
-export function formatPost(payload: Record<string, unknown>): string {
-  const item = dataObj(payload);
+export function formatPost(payload: PostsResponse): string {
+  const item = dataObj(payload.data);
   if (!item) {
     return "no results";
   }
-  const users = usersById(payload);
-  const row = postRow(item, users);
+  const row = postRow(item, usersById(payload));
   const conversation = item.conversation_id;
   let extra = "";
   if (
@@ -204,6 +180,26 @@ export function formatPost(payload: Record<string, unknown>): string {
   return [row, extra].filter(Boolean).join("\n") || "no results";
 }
 
+function trimmed(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** The message of an error body: the first error's, else the body's own. */
+function errorMessage(payload: unknown): string | null {
+  if (!Value.Check(ErrorBody, payload)) {
+    return null;
+  }
+  const errors = payload.errors;
+  if (Value.Check(ErrorList, errors) && Value.Check(ErrorEntry, errors[0])) {
+    const first = errors[0];
+    const inner = trimmed(first.message ?? first.detail ?? first.title);
+    if (inner) {
+      return inner;
+    }
+  }
+  return trimmed(payload.detail ?? payload.title ?? payload.error);
+}
+
 async function errorDetail(response: Response): Promise<string> {
   const text = await response.text();
   let payload: unknown;
@@ -213,29 +209,7 @@ async function errorDetail(response: Response): Promise<string> {
     const stripped = text.trim();
     return stripped || `X HTTP ${response.status}`;
   }
-  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-    const errors = (payload as { errors?: unknown }).errors;
-    if (Array.isArray(errors) && errors.length) {
-      const first = errors[0];
-      if (first && typeof first === "object" && !Array.isArray(first)) {
-        const inner =
-          (first as { message?: unknown; detail?: unknown; title?: unknown }).message
-          ?? (first as { detail?: unknown }).detail
-          ?? (first as { title?: unknown }).title;
-        if (typeof inner === "string" && inner.trim()) {
-          return inner.trim();
-        }
-      }
-    }
-    const detail =
-      (payload as { detail?: unknown; title?: unknown; error?: unknown }).detail
-      ?? (payload as { title?: unknown }).title
-      ?? (payload as { error?: unknown }).error;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail.trim();
-    }
-  }
-  return `X HTTP ${response.status}`;
+  return errorMessage(payload) ?? `X HTTP ${response.status}`;
 }
 
 function tweetParams(maxResults?: number): Record<string, string> {
@@ -250,59 +224,57 @@ function tweetParams(maxResults?: number): Record<string, string> {
   return params;
 }
 
-async function getJson(
-  path: string,
-  params: Record<string, string>,
+type XOptions = { client?: FetchFn; proxyUrl?: string };
+
+type ToolOptions = XOptions & { apiKey: string };
+
+function unexpected(problem: string): XError {
+  return new XError(`X returned an unexpected response at ${problem}`);
+}
+
+/** The response at `path` with `params`, as `schema` describes it. */
+async function getJson<T extends TSchema>(
+  request: { path: string; params: Record<string, string>; schema: T },
   apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<unknown> {
+  options: XOptions = {},
+): Promise<Static<T>> {
   const key = apiKey.trim();
   if (!key) {
     throw new XError("X bearer token is missing", 401);
   }
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
-  const response = await fetchFn(withQuery(`${API_BASE}${path}`, params), {
+  const response = await fetchFn(withQuery(`${API_BASE}${request.path}`, request.params), {
     method: "GET",
     headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
   });
   if (response.status >= 400) {
     throw new XError(await errorDetail(response), response.status);
   }
+  let payload: unknown;
   try {
-    return JSON.parse(await response.text());
+    payload = JSON.parse(await response.text());
   } catch {
     throw new XError("X returned a non-JSON body");
   }
+  return decode(request.schema, payload, unexpected);
 }
 
-async function lookupUser(
-  value: string,
-  apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<Record<string, unknown>> {
+async function lookupUser(value: string, apiKey: string, options: XOptions = {}): Promise<UserResponse> {
   const handleValue = value.replace(/^@+/, "").trim();
   if (!handleValue) {
     throw new XError("user is required");
   }
   const path = isUserId(handleValue) ? `/users/${handleValue}` : `/users/by/username/${handleValue}`;
-  const payload = await getJson(path, { "user.fields": USER_FIELDS }, apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new XError("X returned a non-object");
-  }
-  return payload as Record<string, unknown>;
+  return getJson({ path, params: { "user.fields": USER_FIELDS }, schema: UserResponse }, apiKey, options);
 }
 
-export async function ping(
-  apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<void> {
-  await getJson(`/users/by/username/${PING_USERNAME}`, {}, apiKey, options);
+const PING = Type.Unknown();
+
+export async function ping(apiKey: string, options: XOptions = {}): Promise<void> {
+  await getJson({ path: `/users/by/username/${PING_USERNAME}`, params: {}, schema: PING }, apiKey, options);
 }
 
-export async function searchTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const query = argStr(arguments_, "query");
   if (!query) {
     throw new XError("query is required");
@@ -314,29 +286,29 @@ export async function searchTool(
   if (pageKey) {
     params.pagination_token = pageKey;
   }
-  const payload = await getJson("/tweets/search/recent", params, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new XError("X returned a non-object");
-  }
-  return formatSearch(payload as Record<string, unknown>, { query, limit });
+  const payload = await getJson(
+    { path: "/tweets/search/recent", params, schema: PostsResponse },
+    options.apiKey,
+    options,
+  );
+  return formatSearch(payload, { query, limit });
 }
 
-export async function userTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
-  const payload = await lookupUser(argStr(arguments_, "user"), options.apiKey, options);
-  return formatUser(payload);
+export async function userTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+  return formatUser(await lookupUser(argStr(arguments_, "user"), options.apiKey, options));
 }
 
-export async function postsTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
-  const userPayload = await lookupUser(argStr(arguments_, "user"), options.apiKey, options);
-  const item = dataObj(userPayload);
+/** The page with `user` among its users, so each post can name its author. */
+function withAuthor(payload: PostsResponse, user: XUser): PostsResponse {
+  const users = payload.includes?.users ?? [];
+  return { ...payload, includes: { ...payload.includes, users: [...users, user] } };
+}
+
+export async function postsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+  const user = await lookupUser(argStr(arguments_, "user"), options.apiKey, options);
+  const item = dataObj(user.data);
   const userId = item ? String(item.id ?? "").trim() : "";
-  if (!userId) {
+  if (!item || !userId) {
     throw new XError("user not found");
   }
   const limit = rowLimit(arguments_);
@@ -345,50 +317,26 @@ export async function postsTool(
   if (pageKey) {
     params.pagination_token = pageKey;
   }
-  const payload = await getJson(`/users/${userId}/tweets`, params, options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new XError("X returned a non-object");
-  }
-  const body = payload as Record<string, unknown>;
-  const users = usersById(body);
-  if (item && !(userId in users)) {
-    const includes =
-      body.includes && typeof body.includes === "object" && !Array.isArray(body.includes)
-        ? (body.includes as Record<string, unknown>)
-        : null;
-    if (!includes) {
-      body.includes = { users: [item] };
-    } else {
-      const existing = includes.users;
-      if (Array.isArray(existing)) {
-        existing.push(item);
-      } else {
-        includes.users = [item];
-      }
-    }
-  }
-  return formatPosts(body, { limit });
+  const payload = await getJson(
+    { path: `/users/${userId}/tweets`, params, schema: PostsResponse },
+    options.apiKey,
+    options,
+  );
+  const page = userId in usersById(payload) ? payload : withAuthor(payload, item);
+  return formatPosts(page, { limit });
 }
 
-export async function postTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function postTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const tweetId = postId(argStr(arguments_, "id"));
-  const payload = await getJson(`/tweets/${tweetId}`, tweetParams(), options.apiKey, options);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new XError("X returned a non-object");
-  }
-  return formatPost(payload as Record<string, unknown>);
+  const payload = await getJson(
+    { path: `/tweets/${tweetId}`, params: tweetParams(), schema: PostsResponse },
+    options.apiKey,
+    options,
+  );
+  return formatPost(payload);
 }
 
-const HANDLERS: Record<
-  string,
-  (
-    arguments_: Record<string, unknown>,
-    options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-  ) => Promise<string>
-> = {
+const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   user: userTool,
   posts: postsTool,
@@ -398,7 +346,7 @@ const HANDLERS: Record<
 export async function callTool(
   name: string,
   arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
+  options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];
   if (!handler) {

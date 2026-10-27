@@ -277,17 +277,6 @@
       "count": 1
     }
   },
-  "src/connectors/x/client.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 25
-    },
-    "complexity": {
-      "count": 3
-    },
-    "max-depth": {
-      "count": 1
-    }
-  },
   "src/conversation/projection.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
