@@ -7,7 +7,7 @@ import {
   githubRepositoryRecorder,
   type RepositoryToken,
 } from "../github/tokens.js";
-import { getMcpConnection, saveMcpConnection } from "../db/mcp.js";
+import { getMcpConnection, saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { markDisconnected } from "../mcp/index.js";
 import type { FetchFn } from "../net/http.js";
@@ -104,7 +104,7 @@ export class RepositoryTokens {
   }
 
   /** The connection a repository uses, refused unless it is connected. */
-  private async connectedLogin(connectionId: string): Promise<Record<string, unknown>> {
+  private async connectedLogin(connectionId: string): Promise<McpConnectionRow> {
     const connection = await this.db.getMcpConnection(connectionId);
     if (connection === null || connection.status !== "connected") {
       const account = String(connection?.account_hint ?? "");
@@ -115,7 +115,7 @@ export class RepositoryTokens {
 
   /** The login's token for its repositories here. GitHub refusing the installation marks the login disconnected. */
   private async mintCodingToken(
-    connection: Record<string, unknown>,
+    connection: McpConnectionRow,
     rows: Array<Record<string, unknown>>,
   ): Promise<RepositoryToken> {
     try {

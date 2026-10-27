@@ -3,6 +3,7 @@ import { getMcpServer, getMcpServerBySlug } from "../connectors/servers.js";
 import { type McpDatabase, mcpDatabase, McpError } from "../mcp/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
@@ -13,7 +14,7 @@ const MAX_RAW = 4_000;
 export type BuilderMcpClient = {
   call(
     db: McpDatabase,
-    connection: Record<string, unknown>,
+    connection: McpConnectionRow,
     server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
@@ -75,7 +76,7 @@ export async function findReusableOrgConnection(
   db: ConnectedDatabase,
   orgId: string,
   server: LoadedConnector,
-): Promise<Record<string, unknown> | null> {
+): Promise<McpConnectionRow | null> {
   const connections = await db.listMcpConnections({ orgId });
   return (
     connections.find(
@@ -312,7 +313,7 @@ export async function searchConnectedWorkspace(args: {
       server: slug,
       display_name: displayName,
       connected: true,
-      scope: String(connection.owner_scope),
+      scope: connection.owner_scope,
       query,
       hits: [],
       databases: [],
@@ -320,7 +321,7 @@ export async function searchConnectedWorkspace(args: {
       error: "connected workspace search is unavailable",
     };
   }
-  const tools = await args.db.listMcpTools(String(connection.id));
+  const tools = await args.db.listMcpTools(connection.id);
   const remoteName = pickSearchRemote(tools);
   try {
     const raw = await args.mcp.call(args.db, connection, server, remoteName, query ? { query } : {});
@@ -330,7 +331,7 @@ export async function searchConnectedWorkspace(args: {
       server: slug,
       display_name: displayName,
       connected: true,
-      scope: String(connection.owner_scope),
+      scope: connection.owner_scope,
       query,
       hits: parsed.hits,
       databases,
@@ -343,7 +344,7 @@ export async function searchConnectedWorkspace(args: {
       server: slug,
       display_name: displayName,
       connected: true,
-      scope: String(connection.owner_scope),
+      scope: connection.owner_scope,
       query,
       hits: [],
       databases: [],

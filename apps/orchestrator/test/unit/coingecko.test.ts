@@ -23,6 +23,7 @@ import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("coingecko")!.manifest.tools!;
@@ -225,7 +226,7 @@ test("sync CoinGecko writes the curated catalog", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "cg-test" }, KEY);
   const db = new MemoryDb();
-  const connection = { id: "conn_cg", status: "connected", ciphertext, nonce };
+  const connection = connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce });
   const server = serverRow("coingecko", { id: "mcp_coingecko", auth: "token" });
   const first = await pool.syncTools(db as never, connection, server, { force: true });
   const second = await pool.syncTools(db as never, connection, server);
@@ -245,7 +246,7 @@ test("sync CoinGecko rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, { id: "conn_cg", status: "connected", ciphertext, nonce }, serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }), serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -265,7 +266,7 @@ test("call CoinGecko dispatches", async () => {
   const [ciphertext, nonce] = encryptPayload({ token: "cg-test" }, KEY);
   const stored = await pool.call(
     new MemoryDb() as never,
-    { id: "conn_cg", status: "connected", ciphertext, nonce },
+    connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }),
     serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }),
     "search",
     { query: "bitcoin" },

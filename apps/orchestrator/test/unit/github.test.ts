@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
 import { RepositoryTokens } from "../../src/coding/git.js";
@@ -35,6 +36,7 @@ import {
   manifestAction,
 } from "../../src/github/manifest.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const PEM = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -361,9 +363,9 @@ test("a repository needs a valid name and an https URL; a GitHub connection need
   assert.throws(() => validateRepositoryInput({ name: "shop", url: "https://github.com/a/b", default_branch: "a..b" }), /default_branch/);
 });
 
-function connection(id: string, status: string, installationId: number): Record<string, unknown> {
+function connection(id: string, status: McpConnectionRow["status"], installationId: number): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload({ installation_id: installationId, account: "acme" }, MASTER);
-  return { id, status, account_hint: "acme", ciphertext, nonce };
+  return connectionRow({ id, status, account_hint: "acme", ciphertext, nonce });
 }
 
 test("repository tokens: one per connection, limited to its repositories, refreshed near expiry", async () => {
@@ -585,12 +587,12 @@ test("a GitHub login stores the repositories its coding agents clone", () => {
     () => validateGithubRepositories([{ name: "shop", url: "https://github.com/acme/shop", github_id: "shop" }]),
     /github_id must be a positive integer/,
   );
-  const github = {
+  const github = connectionRow({
     id: "conn_front",
     status: "connected",
     account_hint: "acme",
     settings: { repositories: selected },
-  };
+  });
   const cloned = codingRepositories(
     [
       { name: "shop", url: "https://github.com/acme/shop", default_branch: "main", connection_id: "conn_front" },

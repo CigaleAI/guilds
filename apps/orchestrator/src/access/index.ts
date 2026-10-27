@@ -4,6 +4,7 @@ import { oauthSetupState } from "../oauth/index.js";
 import { connectorFacts } from "../connectors/view.js";
 import { awaitingSettings, connectionSettings } from "../connectors/login.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 
 export const NOTE_TOOLS = [
   "note_find",
@@ -130,7 +131,7 @@ export function validateBinding(args: {
   guildId?: string | null;
   orgId?: string | null;
   server?: LoadedConnector | null;
-  connection?: Record<string, unknown> | null;
+  connection?: McpConnectionRow | null;
   connectionId?: string | null;
 }): Overlay {
   const [catalogKind, catalogId] = validateCatalog(args.catalogKind, args.catalogId);
@@ -353,7 +354,7 @@ export function mcpToolView(
 export function mcpView(
   item: Resolved,
   server: LoadedConnector,
-  connection: Record<string, unknown> | null,
+  connection: McpConnectionRow | null,
   options: { tools?: Array<Record<string, unknown>> | null } = {},
 ): Record<string, unknown> {
   const overlay =
@@ -397,7 +398,7 @@ export function accessPayload(args: {
   agentId?: string | null | undefined;
   viewScope: string;
   servers?: LoadedConnector[] | null | undefined;
-  connections?: Array<Record<string, unknown>> | null | undefined;
+  connections?: McpConnectionRow[] | null | undefined;
   listedTools?: Record<string, unknown[]> | null | undefined;
 }): Record<string, unknown> {
   const options = {
@@ -407,9 +408,9 @@ export function accessPayload(args: {
     viewScope: args.viewScope,
   };
   const tools = resolvedTools(args.rows, options).map(toolView);
-  const byConnection = new Map<string, Record<string, unknown>>();
+  const byConnection = new Map<string, McpConnectionRow>();
   for (const connection of args.connections ?? []) {
-    byConnection.set(String(connection.id), connection);
+    byConnection.set(connection.id, connection);
   }
   const mcp = resolvedMcp(args.rows, args.servers ?? [], options).map(([item, server]) => {
     const connection =

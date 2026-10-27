@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 import { test } from "node:test";
 import {
   ACCESS_NATIVE_TOOLS,
@@ -14,7 +15,7 @@ import {
 } from "../../src/access/index.js";
 import { visibleAt } from "../../src/credentials/visibility.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
-import { serverRow } from "../helpers/servers.js";
+import { serverRow, connectionRow } from "../helpers/servers.js";
 import type { LoadedConnector } from "../../src/connectors/load.js";
 
 const fixture = loadJsonFixture<{
@@ -54,20 +55,20 @@ function connection(
   connId: string,
   options: {
     serverId?: string;
-    ownerScope?: string;
+    ownerScope?: McpConnectionRow["owner_scope"];
     ownerId?: string | null;
-    status?: string;
+    status?: McpConnectionRow["status"];
     accountHint?: string;
   } = {},
-): Record<string, unknown> {
-  return {
+): McpConnectionRow {
+  return connectionRow({
     id: connId,
     mcp_server_id: options.serverId ?? "mcp_notion",
     owner_scope: options.ownerScope ?? "guild",
     owner_id: options.ownerId === undefined ? "pd" : options.ownerId,
     account_hint: options.accountHint ?? "",
     status: options.status ?? "pending",
-  };
+  });
 }
 
 test("native tool order matches the R0 fixture", () => {

@@ -27,6 +27,7 @@ import { mockFetch } from "../helpers/http.js";
 import { QUOTES, WITH_QUOTES } from "../helpers/quotes.js";
 import { endpointManifest } from "../helpers/registry.js";
 import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -279,7 +280,7 @@ test("a REST adapter's upstream 401 reaches the pool as an McpError", async () =
   const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; } };
   await assert.rejects(
     () =>
-      pool.syncTools(db as never, { id: "conn_cg", status: "connected", ciphertext, nonce }, serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
+      pool.syncTools(db as never, connectionRow({ id: "conn_cg", status: "connected", ciphertext, nonce }), serverRow("coingecko", { id: "mcp_coingecko", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -339,8 +340,8 @@ test("a listed tool carries the endpoint's annotations", async () => {
         ];
       },
     }) as never;
-  const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; } };
-  const listed = await pool.syncTools(db as never, { id: "conn_n", status: "connected" }, serverRow("notion", { id: "mcp_notion", auth: "token" }));
+  const db = { async listMcpTools() { return []; }, async replaceMcpTools() { return; }, async insertBindingIfAbsent() {} };
+  const listed = await pool.syncTools(db as never, connectionRow({ id: "conn_n", status: "connected" }), serverRow("notion", { id: "mcp_notion", auth: "token" }));
   assert.deepEqual(listed.map((tool) => tool.namespaced_name), ["notion_search", "notion_delete_page"]);
   assert.deepEqual(
     seen.map((tool) => [tool.read_only_hint, tool.destructive_hint]),
@@ -699,7 +700,7 @@ test("a sync keeps each listed tool's annotations", async () => {
   };
   await pool.syncTools(
     db as never,
-    { id: "conn_acme", status: "connected", owner_scope: "org", owner_id: "org_1" },
+    connectionRow({ id: "conn_acme", status: "connected", owner_scope: "org", owner_id: "org_1" }),
     serverRow("acme", { id: "mcp_acme", tool_prefix: "acme", auth: "token" }),
   );
   assert.deepEqual(

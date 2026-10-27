@@ -20,6 +20,7 @@ import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("x")!.manifest.tools!;
@@ -202,7 +203,7 @@ test("sync X writes the curated catalog", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const db = new MemoryDb();
-  const connection = { id: "conn_x", status: "connected", ciphertext, nonce };
+  const connection = connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce });
   const server = serverRow("x", { id: "mcp_x", auth: "token" });
   const first = await pool.syncTools(db as never, connection, server, { force: true });
   const second = await pool.syncTools(db as never, connection, server);
@@ -222,7 +223,7 @@ test("sync X rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, { id: "conn_x", status: "connected", ciphertext, nonce }, serverRow("x", { id: "mcp_x", auth: "token" }), { force: true }),
+    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce }), serverRow("x", { id: "mcp_x", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -242,7 +243,7 @@ test("call X dispatches", async () => {
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
     new MemoryDb() as never,
-    { id: "conn_x", status: "connected", ciphertext, nonce },
+    connectionRow({ id: "conn_x", status: "connected", ciphertext, nonce }),
     serverRow("x", { id: "mcp_x", auth: "token" }),
     "search",
     { query: "from:x" },

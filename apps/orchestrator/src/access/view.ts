@@ -4,10 +4,11 @@ import { manifestTools } from "../connectors/load.js";
 import { isPlainRecord } from "../db/json.js";
 import { listedFromRows, type McpDatabase, type McpPool } from "../mcp/index.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 
 function visibleServers(
   servers: LoadedConnector[],
-  connections: Array<Record<string, unknown>>,
+  connections: McpConnectionRow[],
 ): LoadedConnector[] {
   const connected = new Set(connections.map((row) => String(row.mcp_server_id)));
   return servers.filter((server) => server.enabled || connected.has(server.id));
@@ -21,25 +22,25 @@ function visibleServers(
 async function listConnectionTools(
   db: McpDatabase,
   mcp: McpPool | { syncTools?: McpPool["syncTools"] } | null | undefined,
-  connections: Array<Record<string, unknown>>,
+  connections: McpConnectionRow[],
   servers: LoadedConnector[],
 ): Promise<Record<string, unknown[]>> {
   const serversById = new Map(servers.map((server) => [server.id, server]));
   const rawListed: Record<string, unknown[]> = {};
   for (const connection of connections) {
-    const server = serversById.get(String(connection.mcp_server_id));
+    const server = serversById.get(connection.mcp_server_id);
     if (server === undefined) {
       continue;
     }
     if (connection.status === "connected" && mcp?.syncTools) {
       try {
-        rawListed[String(connection.id)] = await mcp.syncTools(db, connection, server);
+        rawListed[connection.id] = await mcp.syncTools(db, connection, server);
         continue;
       } catch {
         /* use stored rows */
       }
     }
-    rawListed[String(connection.id)] = listedFromRows(await db.listMcpTools(String(connection.id)));
+    rawListed[connection.id] = listedFromRows(await db.listMcpTools(connection.id));
   }
   return rawListed;
 }

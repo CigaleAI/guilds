@@ -15,7 +15,8 @@ import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
-import { serverRow } from "../helpers/servers.js";
+import { serverRow, connectionRow } from "../helpers/servers.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 
 const fixture = loadJsonFixture<{ results: string; empty: string }>("adapters/tavily.json");
 
@@ -37,9 +38,13 @@ function webSearch(apiKey: string) {
   return { keys: storeKeys({ "web-search": { api_key: apiKey } }) };
 }
 
-function login(scope: "platform" | "org", payload: Record<string, unknown>, status = "connected") {
+function login(
+  scope: "platform" | "org",
+  payload: Record<string, unknown>,
+  status: McpConnectionRow["status"] = "connected",
+): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload(payload, KEY);
-  return {
+  return connectionRow({
     id: `conn_${scope}`,
     mcp_server_id: SERVER.id,
     owner_scope: scope,
@@ -47,7 +52,7 @@ function login(scope: "platform" | "org", payload: Record<string, unknown>, stat
     status,
     ciphertext,
     nonce,
-  };
+  });
 }
 
 class MeterDb {

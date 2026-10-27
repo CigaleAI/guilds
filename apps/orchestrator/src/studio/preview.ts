@@ -12,6 +12,7 @@ import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 
 /** The db/ functions a preview of an agent's run state reads, on `db`. */
 export function previewDatabase(db: Queryable) {
@@ -82,18 +83,18 @@ function serverSummary(server: LoadedConnector): ProjectedConnection["server"] {
 
 export async function projectConnection(
   deps: PreviewDeps,
-  connection: Record<string, unknown>,
+  connection: McpConnectionRow,
   server: LoadedConnector,
 ): Promise<ProjectedConnection> {
   const slug = server.slug;
-  const listed = listedFromRows(await deps.db.listMcpTools(String(connection.id)));
+  const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
   return {
-    id: String(connection.id),
+    id: connection.id,
     server: serverSummary(server),
-    owner_scope: String(connection.owner_scope),
+    owner_scope: connection.owner_scope,
     owner_id: connection.owner_id === null || connection.owner_id === undefined ? null : String(connection.owner_id),
     account_hint: String(connection.account_hint ?? ""),
-    status: String(connection.status),
+    status: connection.status,
     tools: listed.map((tool) => ({
       name: tool.namespaced_name,
       remote_name: tool.remote_name,
@@ -118,16 +119,16 @@ export async function projectGuildConnections(
     servers.set(server.id, server);
   }
   const members = await deps.db.listAgents(guildId);
-  const seen = new Map<string, Record<string, unknown>>();
+  const seen = new Map<string, McpConnectionRow>();
   const scopes: Array<{ agentId: string | null }> = [{ agentId: null }, ...members.map((row) => ({ agentId: String(row.id) }))];
   for (const scope of scopes) {
     for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId: scope.agentId })) {
-      seen.set(String(connection.id), connection);
+      seen.set(connection.id, connection);
     }
   }
   const projected: ProjectedConnection[] = [];
   for (const connection of seen.values()) {
-    const server = servers.get(String(connection.mcp_server_id));
+    const server = servers.get(connection.mcp_server_id);
     if (!server) {
       continue;
     }
@@ -157,9 +158,9 @@ export async function projectAgentAccess(
     name: row.name ?? "",
     description: row.description ?? "",
   }));
-  const connections = new Map<string, Record<string, unknown>>();
+  const connections = new Map<string, McpConnectionRow>();
   for (const connection of await deps.db.listMcpConnections(scope)) {
-    connections.set(String(connection.id), connection);
+    connections.set(connection.id, connection);
   }
   const projected: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }> = [];
   for (const [item, server] of resolvedMcp(rows, await deps.db.listMcpServers(scope.orgId), scope)) {
@@ -203,10 +204,10 @@ export async function projectOfferedToolSchemas(
   );
   const schemas = [...schemasFor(nativeNames)];
   const servers = await deps.db.listMcpServers(orgId);
-  const connections = new Map<string, Record<string, unknown>>();
+  const connections = new Map<string, McpConnectionRow>();
   let latest: string | null = null;
   for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId })) {
-    connections.set(String(connection.id), connection);
+    connections.set(connection.id, connection);
     const stamp = String(connection.updated_at ?? connection.created_at ?? "");
     if (stamp && (!latest || stamp > latest)) {
       latest = stamp;
@@ -220,7 +221,7 @@ export async function projectOfferedToolSchemas(
     if (!connection) {
       continue;
     }
-    const listed = listedFromRows(await deps.db.listMcpTools(String(connection.id)));
+    const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
     for (const tool of listed) {
       const resolved = resolveMcpTool(rows, tool.namespaced_name, {
         serverEnabled: true,

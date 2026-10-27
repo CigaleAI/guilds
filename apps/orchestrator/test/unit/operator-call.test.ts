@@ -8,7 +8,8 @@ import {
   callOwnedConnectionTool,
 } from "../../src/mcp/operator-call.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
-import { serverRow } from "../helpers/servers.js";
+import { serverRow, connectionRow } from "../helpers/servers.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 
 const masterKey = Buffer.from(HEX_MASTER_KEY, "hex");
 
@@ -29,20 +30,14 @@ function listed(
   };
 }
 
-function connection(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "conn_1",
-    status: "connected",
-    ciphertext: Buffer.alloc(0),
-    nonce: Buffer.alloc(0),
-    ...overrides,
-  };
+function connection(overrides: Partial<McpConnectionRow> = {}): McpConnectionRow {
+  return connectionRow({ id: "conn_1", ...overrides });
 }
 
 function call(args: {
   tool?: string;
   arguments?: Record<string, unknown>;
-  connection?: Record<string, unknown>;
+  connection?: McpConnectionRow;
   tools?: Array<ReturnType<typeof listed>>;
   mcp?: (remoteName: string, arguments_: Record<string, unknown>) => Promise<string>;
 }) {

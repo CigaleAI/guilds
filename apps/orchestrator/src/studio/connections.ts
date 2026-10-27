@@ -13,7 +13,7 @@ import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioError, StudioUnprocessableError } from "./errors.js";
-import { getMcpConnection, listMcpTools } from "../db/mcp.js";
+import { getMcpConnection, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import type { LoadedConnector } from "../connectors/load.js";
@@ -64,7 +64,7 @@ export function loginStatus(record: LoginRecord): StudioLoginStatus {
 export type StudioMcpClient = {
   call(
     db: McpDatabase,
-    connection: Record<string, unknown>,
+    connection: McpConnectionRow,
     server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
@@ -72,7 +72,7 @@ export type StudioMcpClient = {
 };
 
 export type ReachableConnection = {
-  connection: Record<string, unknown>;
+  connection: McpConnectionRow;
   server: LoadedConnector;
 };
 
@@ -88,7 +88,7 @@ export async function reachableConnection(
   if (!connection) {
     return null;
   }
-  const scope = String(connection.owner_scope);
+  const scope = connection.owner_scope;
   const ownerId = connection.owner_id === null || connection.owner_id === undefined ? null : String(connection.owner_id);
   let reachable = false;
   if (scope === "platform") {
@@ -104,7 +104,7 @@ export async function reachableConnection(
   if (!reachable) {
     return null;
   }
-  const server = await getMcpServer(db, String(connection.mcp_server_id));
+  const server = await getMcpServer(db, connection.mcp_server_id);
   if (!server) {
     return null;
   }
@@ -118,15 +118,15 @@ export function grantedConnectionIds(session: StudioSessionRow): string[] {
 
 export function connectionSummary(reach: ReachableConnection): Record<string, unknown> {
   return {
-    id: String(reach.connection.id),
+    id: reach.connection.id,
     server: {
       id: String(reach.server.id),
       slug: String(reach.server.slug),
       display_name: String(reach.server.display_name || reach.server.slug),
     },
-    owner_scope: String(reach.connection.owner_scope),
+    owner_scope: reach.connection.owner_scope,
     account_hint: String(reach.connection.account_hint ?? ""),
-    status: String(reach.connection.status),
+    status: reach.connection.status,
   };
 }
 
@@ -141,11 +141,11 @@ export async function callConnectionTool(args: {
 }): Promise<{ remote_name: string; name: string; content: string; truncated: boolean }> {
   const { connection, server } = args.reach;
   if (connection.status !== "connected") {
-    throw new StudioUnprocessableError(`connection is ${String(connection.status)}`);
+    throw new StudioUnprocessableError(`connection is ${connection.status}`);
   }
   const slug = server.slug;
   const wanted = args.tool.trim();
-  const listed = listedFromRows(await listMcpTools(args.db, String(connection.id))).find(
+  const listed = listedFromRows(await listMcpTools(args.db, connection.id)).find(
     (tool) => tool.namespaced_name === wanted || tool.remote_name === wanted,
   );
   if (!listed) {
@@ -157,8 +157,8 @@ export async function callConnectionTool(args: {
   let redactions: Record<string, string>;
   try {
     redactions = tokenRedactions(
-      decryptPayload(connection.ciphertext as Buffer, connection.nonce as Buffer),
-      String(connection.id),
+      decryptPayload(connection.ciphertext, connection.nonce),
+      connection.id,
     );
   } catch {
     redactions = {};

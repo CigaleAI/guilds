@@ -73,7 +73,7 @@ export type ConnectPool = {
   validate(server: LoadedConnector, credentials: Credentials, settings?: Record<string, unknown>): Promise<string>;
   syncTools(
     db: ConnectDatabase,
-    connection: Record<string, unknown>,
+    connection: McpConnectionRow,
     server: LoadedConnector,
     options?: { force?: boolean; validate?: boolean },
   ): Promise<ListedTool[]>;

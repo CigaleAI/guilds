@@ -25,6 +25,7 @@ import { syncCodeConnectors } from "../../src/registry/code.js";
 import { updateConnector } from "../../src/db/connectors.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
+import { connectionRow } from "../helpers/servers.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const dbName = uniqueDbName("agent_platform_registry");
@@ -241,7 +242,7 @@ test("code connectors install from a verified, signed index and swap in without 
 
       const server = (await getMcpServerBySlug(db, "echo", null))!;
       const [ciphertext, nonce] = encryptPayload({}, Buffer.from(HEX_MASTER_KEY, "hex"));
-      const connection = { id: "conn_echo", mcp_server_id: server.id, owner_scope: "org", owner_id: "org_home", status: "connected", ciphertext, nonce };
+      const connection = connectionRow({ id: "conn_echo", mcp_server_id: server.id, owner_scope: "org", owner_id: "org_home", status: "connected", ciphertext, nonce });
       // The connection is not stored, so its tools are neither read nor written.
       const tools = { listMcpTools: async () => [], replaceMcpTools: async () => {} } as unknown as McpDatabase;
       assert.equal(await pool.call(tools, connection, server, "say", { text: "hi" }), "echo: hi");

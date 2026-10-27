@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { test } from "node:test";
 import { agentRuntime, snapshotEnvValues } from "../../src/access/runtime.js";
@@ -16,7 +17,7 @@ import {
 import { proxyFetch } from "../../src/net/http.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
-import { serverRow } from "../helpers/servers.js";
+import { serverRow, connectionRow } from "../helpers/servers.js";
 import type { LoadedConnector } from "../../src/connectors/load.js";
 
 const GMAIL_TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
@@ -122,18 +123,9 @@ class MemoryDb {
   }
 }
 
-function connectionOf(token: string, extra: Record<string, unknown> = {}) {
+function connectionOf(token: string, extra: Partial<McpConnectionRow> = {}): McpConnectionRow {
   const [ciphertext, nonce] = encryptPayload({ token, access_token: token }, KEY);
-  return {
-    id: "conn_1",
-    mcp_server_id: "mcp_fixture",
-    status: "connected",
-    owner_scope: "org",
-    owner_id: "org_1",
-    ciphertext,
-    nonce,
-    ...extra,
-  };
+  return connectionRow({ id: "conn_1", mcp_server_id: "mcp_fixture", ciphertext, nonce, ...extra });
 }
 
 async function startFixture(): Promise<Fixture> {

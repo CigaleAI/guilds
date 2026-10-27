@@ -2,6 +2,7 @@ import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
 import { agentHome } from "../lib/agent-file.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 
 export const REPOSITORY_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 /** The branch a repository without a GitHub connection is recorded with when none is given. */
@@ -133,7 +134,7 @@ export function validateGithubRepositories(value: unknown): GithubRepositorySele
 
 /** Repositories pinned on a GitHub connection, or none. */
 export function githubRepositoriesOf(
-  connection: Record<string, unknown> | null | undefined,
+  connection: McpConnectionRow | null | undefined,
 ): GithubRepositorySelection[] {
   if (!connection) {
     return [];
@@ -152,7 +153,7 @@ export function githubRepositoriesOf(
  */
 export function codingRepositories(
   guildRepos: Array<Record<string, unknown>>,
-  github: Record<string, unknown> | null | undefined,
+  github: McpConnectionRow | null | undefined,
 ): Array<Record<string, unknown>> {
   const selected = githubRepositoriesOf(github).map((item) => ({
     name: item.name,

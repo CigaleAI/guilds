@@ -352,11 +352,6 @@
       "count": 1
     }
   },
-  "src/github/tokens.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    }
-  },
   "src/groupchat/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1
@@ -508,7 +503,7 @@
   },
   "src/mcp/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 20
+      "count": 16
     },
     "@typescript-eslint/max-params": {
       "count": 4
@@ -552,7 +547,7 @@
   },
   "src/oauth/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 16
+      "count": 14
     },
     "complexity": {
       "count": 3
@@ -744,7 +739,7 @@
   },
   "src/studio/connections.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 6
+      "count": 4
     },
     "complexity": {
       "count": 1

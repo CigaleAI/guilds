@@ -1,6 +1,6 @@
 import { githubIdOf, githubRepositoriesOf } from "../coding/repositories.js";
 import { decryptPayload } from "../credentials/crypto.js";
-import { recordGithubRepository } from "../db/mcp.js";
+import { recordGithubRepository, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { FetchFn } from "../net/http.js";
 import {
@@ -26,8 +26,8 @@ export class RepositoryAccessError extends Error {
   }
 }
 
-export function installationIdOf(connection: Record<string, unknown>, masterKey?: Buffer): number {
-  const payload = decryptPayload(connection.ciphertext as Buffer, connection.nonce as Buffer, masterKey);
+export function installationIdOf(connection: McpConnectionRow, masterKey?: Buffer): number {
+  const payload = decryptPayload(connection.ciphertext, connection.nonce, masterKey);
   const id = Number(payload.installation_id);
   if (!Number.isInteger(id) || id <= 0) {
     throw new RepositoryAccessError("the GitHub connection has no installation");
@@ -36,8 +36,8 @@ export function installationIdOf(connection: Record<string, unknown>, masterKey?
 }
 
 /** The name a GitHub login's errors give it: its account, or its id when it has none. */
-export function loginAccount(connection: Record<string, unknown>): string {
-  return String(connection.account_hint ?? "") || String(connection.id);
+export function loginAccount(connection: McpConnectionRow): string {
+  return String(connection.account_hint ?? "") || connection.id;
 }
 
 /** Where minting stores a repository's GitHub id and current URL, on `db`. */
@@ -51,7 +51,7 @@ export type MintOptions = { app?: GithubAppConfig; fetch?: FetchFn; masterKey?: 
 
 /** A GitHub login, the repositories of it a token reaches, and the permissions it holds; none holds every one the installation grants. */
 export type RepositoryTokenRequest = {
-  connection: Record<string, unknown>;
+  connection: McpConnectionRow;
   repositories: Array<Record<string, unknown>>;
   permissions?: TokenPermissions;
 };
@@ -204,7 +204,7 @@ export async function mintRepositoryToken(
  */
 export async function mintLoginToken(
   db: GithubRepositoryRecorder,
-  connection: Record<string, unknown>,
+  connection: McpConnectionRow,
   options: MintOptions = {},
 ): Promise<RepositoryToken> {
   const repositories = githubRepositoriesOf(connection);

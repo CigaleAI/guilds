@@ -4,6 +4,7 @@ import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
 import { listedFromRows, McpDisconnectedError, McpError, type McpDatabase } from "./index.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import type { McpConnectionRow } from "../db/mcp.js";
 
 export const OPERATOR_TOOL_RESULT_MAX_BYTES = 64 * 1024;
 
@@ -20,7 +21,7 @@ export class OperatorCallError extends Error {
 export type OperatorCallMcp = {
   call(
     db: McpDatabase,
-    connection: Record<string, unknown>,
+    connection: McpConnectionRow,
     server: LoadedConnector,
     remoteName: string,
     arguments_: Record<string, unknown>,
@@ -31,7 +32,7 @@ export type OperatorCallMcp = {
 export async function callOwnedConnectionTool(args: {
   db: McpDatabase;
   mcp: OperatorCallMcp;
-  connection: Record<string, unknown>;
+  connection: McpConnectionRow;
   server: LoadedConnector;
   tool: string;
   arguments: Record<string, unknown>;
@@ -39,13 +40,13 @@ export async function callOwnedConnectionTool(args: {
 }): Promise<{ remote_name: string; name: string; content: string; truncated: boolean }> {
   const { connection, server } = args;
   if (connection.status !== "connected") {
-    throw new OperatorCallError(409, `connection is ${String(connection.status)}`);
+    throw new OperatorCallError(409, `connection is ${connection.status}`);
   }
   const wanted = args.tool.trim();
   if (!wanted) {
     throw new OperatorCallError(422, "tool is required");
   }
-  const listed = listedFromRows(await args.db.listMcpTools(String(connection.id))).find(
+  const listed = listedFromRows(await args.db.listMcpTools(connection.id)).find(
     (tool) => tool.namespaced_name === wanted || tool.remote_name === wanted,
   );
   if (!listed) {
@@ -55,7 +56,7 @@ export async function callOwnedConnectionTool(args: {
   try {
     redactions = tokenRedactions(
       decryptPayload(asBuffer(connection.ciphertext), asBuffer(connection.nonce), args.masterKey),
-      String(connection.id),
+      connection.id,
     );
   } catch {
     redactions = {};

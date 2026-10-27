@@ -11,9 +11,9 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { serverManifest, type LoadedConnector } from "../connectors/load.js";
-import { saveMcpConnection } from "../db/mcp.js";
+import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { mcpConnections, type Manifest } from "../db/schema/index.js";
+import type { Manifest } from "../db/schema/index.js";
 import { connectorIntegration } from "../instance/connectors.js";
 
 /** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */
@@ -647,7 +647,7 @@ export async function ensureClient(
 
 export async function refreshConnection(
   db: OauthDatabase,
-  connection: Record<string, unknown>,
+  connection: McpConnectionRow,
   server: LoadedConnector,
   options: {
     client?: FetchFn | undefined;
@@ -656,9 +656,9 @@ export async function refreshConnection(
     decrypt: (ciphertext: Buffer, nonce: Buffer) => Record<string, unknown>;
     encrypt?: typeof encryptPayload;
   },
-): Promise<Record<string, unknown>> {
+): Promise<McpConnectionRow> {
   const now = options.now ?? new Date();
-  const payload = options.decrypt(connection.ciphertext as Buffer, connection.nonce as Buffer);
+  const payload = options.decrypt(connection.ciphertext, connection.nonce);
   const refresh = payload.refresh_token;
   if (typeof refresh !== "string" || !refresh) {
     throw new OAuthReauthError("connection has no refresh token");
@@ -678,13 +678,13 @@ export async function refreshConnection(
   const stored = tokenPayload(tokens, { now, existing: payload });
   const [ciphertext, nonce] = (options.encrypt ?? encryptPayload)(stored);
   const row = await db.saveMcpConnection(
-    String(connection.id),
+    connection.id,
     {
       ciphertext,
       nonce,
-      status: mcpConnections.status.enumValues.find((status) => status === connection.status) ?? "connected",
-      accountHint: String(connection.account_hint || accountHint(stored)),
-      oauthState: typeof connection.oauth_state === "string" ? connection.oauth_state : null,
+      status: connection.status,
+      accountHint: connection.account_hint || accountHint(stored),
+      oauthState: connection.oauth_state,
     },
     now,
   );
