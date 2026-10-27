@@ -306,7 +306,10 @@ tests and stories excepted: `complexity` at 11, `max-depth` at 3,
 and an error from `@typescript-eslint/max-params` above 5. It
 refuses every type assertion except `as const`. The orchestrator
 also refuses an import of `fastify` outside `http/`, the roots, the
-extension points and the observability hooks. Errors that predate
+extension points and the observability hooks; a value import of
+`db/` from `http/`; an import from `db/` of anything outside `db/`
+and `lib/`; and an import from `lib/` of anything outside `lib/`.
+Errors that predate
 the rules are recorded in the package's `eslint-suppressions.json`
 (ESLint bulk suppressions). Suppressions cover errors only, so a
 suppressed function with 6 or more parameters still shows the

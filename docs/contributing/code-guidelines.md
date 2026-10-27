@@ -220,9 +220,17 @@ A domain module imports the `db/` modules it reads and writes
 through, and takes a `Queryable` as its connection. Where a unit
 test fakes the database, the module takes a dependencies object of
 the `db/` functions it calls instead, each bound to the connection
-with `bindQuery`. Nothing else stands between a domain module and
-`db/`: no facade, no class that forwards every query. Only `http/`
-is kept out of `db/`.
+with `bindQuery`; writes that commit together run in a transaction
+bound beside them with `bindTransaction`. Nothing else stands
+between a domain module and `db/`: no facade, no class that forwards
+every query. Only `http/` is kept out of `db/`.
+
+`db/` imports nothing outside `db/` and `lib/`, and `lib/` nothing
+outside `lib/`. `db/` holds the queries and the types and defaults
+of what it stores. The validation, the decisions, and the change
+records a write needs belong to the domain module that calls it,
+which opens the transaction they share. ESLint fails the file that
+imports across either line.
 
 A domain module imports nothing from the HTTP framework. Only
 `http/`, the app and composition roots, the extension points and
