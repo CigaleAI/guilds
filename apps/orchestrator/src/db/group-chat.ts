@@ -1,57 +1,37 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { AgentMessageLimitReached, GroupChatCleared, RowMissing } from "./errors.js";
 import { guildVisibleTo } from "./guilds.js";
 import { jsonObj } from "./json.js";
+import { tableColumns } from "./columns.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { agents, groupMessages, guilds } from "./schema/index.js";
 
+type Guild = InferSelectModel<typeof guilds>;
+
+export type GroupMessageRow = InferSelectModel<typeof groupMessages>;
+
+/** A guild's chat counters, under the names the group chat reads them by. */
 export type GroupChatStateRow = {
-  guild_id: string;
-  chat_seq: number;
-  agent_message_count: number;
-  agent_message_limit: number;
-  errors: unknown[];
+  guild_id: Guild["id"];
+  chat_seq: Guild["group_chat_seq"];
+  agent_message_count: Guild["group_agent_message_count"];
+  agent_message_limit: Guild["group_agent_message_limit"];
+  errors: Guild["group_chat_errors"];
   pending_agent_count: number;
 };
 
-export type GroupMessageRow = {
-  id: number;
-  guild_id: string;
-  seq: number;
-  author_type: string;
-  author_name: string;
-  author_agent_id: string | null;
-  author_user_id: string | null;
-  source_run_id: string | null;
-  content: string;
-  tagged_names: string[];
-  tagged_agent_ids: string[];
-  tagged_user_ids: string[];
-  created_at: string;
-};
+export type ActivityGroupMessageRow = Omit<
+  GroupMessageRow,
+  "guild_id" | "tagged_agent_ids" | "tagged_user_ids"
+>;
 
-export type ActivityGroupMessageRow = {
-  id: number;
-  seq: number;
-  author_type: string;
-  author_name: string;
-  author_agent_id: string | null;
-  author_user_id: string | null;
-  source_run_id: string | null;
-  content: string;
-  tagged_names: string[];
-  created_at: string;
-};
+export type PendingGroupAgentRow = Pick<
+  InferSelectModel<typeof agents>,
+  "id" | "guild_id" | "name" | "created_at" | "group_chat_delivered_through"
+>;
 
-export type PendingGroupAgentRow = {
-  id: string;
-  guild_id: string;
-  name: string;
-  created_at: string;
-  group_chat_delivered_through: number;
-};
-
-export type UnreadGroupChatRow = {
-  guild_id: string;
+export type UnreadGroupChatRow = Pick<GroupMessageRow, "guild_id"> & {
   count: number;
 };
 
@@ -76,11 +56,7 @@ export type NewAgentGroupMessage = {
   taggedUserIds: string[];
 };
 
-const GROUP_MESSAGE_COLUMNS = `
-  id, guild_id, seq, author_type, author_name,
-  author_agent_id, author_user_id, source_run_id, content, tagged_names,
-  tagged_agent_ids, tagged_user_ids, created_at
-`;
+const GROUP_MESSAGE_COLUMNS = tableColumns(groupMessages);
 
 export async function getGroupChatState(
   pool: Queryable,

@@ -1,55 +1,48 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { guildTextChange } from "../guilds/changes.js";
 import { DEFAULT_AGENT_MESSAGE_LIMIT, DEFAULT_GUILD_AGENTS } from "../guilds/validation.js";
+import { pickColumns } from "./columns.js";
 import { recordChangeIfAny, type ChangeActor } from "./config-changes.js";
 import { GuildNameTaken, LastGuildAdmin, RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { guildOperators, guildRepositories, guilds, mcpConnections, orgs, users } from "./schema/index.js";
 import { deleteGuildUsage } from "./usage.js";
 
-export type GuildOperatorRow = {
-  user_id: string;
-  name: string;
-  role: "admin" | "operator";
-};
+type Guild = InferSelectModel<typeof guilds>;
+type McpConnection = InferSelectModel<typeof mcpConnections>;
 
-export type GuildRow = {
-  id: string;
-  name: string;
-  about: string;
-  description: string;
-  max_agents: number;
-  git_author_email: string | null;
-  org_id: string;
-  group_agent_message_limit: number;
-  visibility: string;
-  routines_enabled: boolean;
-  org_slug: string;
-  created_at: string;
-  updated_at: string;
+export type GuildOperatorRow = Pick<InferSelectModel<typeof guildOperators>, "user_id" | "role"> &
+  Pick<InferSelectModel<typeof users>, "name">;
+
+const GUILD_KEYS = [
+  "id",
+  "name",
+  "about",
+  "description",
+  "max_agents",
+  "git_author_email",
+  "org_id",
+  "group_agent_message_limit",
+  "visibility",
+  "routines_enabled",
+  "created_at",
+  "updated_at",
+] as const;
+
+export type GuildRow = Pick<Guild, (typeof GUILD_KEYS)[number]> & {
+  org_slug: InferSelectModel<typeof orgs>["slug"];
   operators: GuildOperatorRow[];
 };
 
-export type SoleAdminGuildRow = {
-  id: string;
-  name: string;
-  org_id: string;
-};
+export type SoleAdminGuildRow = Pick<Guild, "id" | "name" | "org_id">;
 
-export type GuildRepositoryRow = {
-  id: string;
-  guild_id: string;
-  name: string;
-  url: string;
-  default_branch: string;
-  connection_id: string | null;
-  github_id: number | null;
-  created_at: string;
-  updated_at: string;
-};
+export type GuildRepositoryRow = InferSelectModel<typeof guildRepositories>;
 
+/** A repository with the status and account of the login it is reached through, when it has one. */
 export type GuildRepositoryListItemRow = GuildRepositoryRow & {
-  connection_status: string | null;
-  connection_account: string | null;
+  connection_status: McpConnection["status"] | null;
+  connection_account: McpConnection["account_hint"] | null;
 };
 
 export type GuildPatch = {
@@ -84,10 +77,7 @@ export type NewGuildRepository = {
   githubId: number | null;
 };
 
-type GuildTextRow = {
-  about: string;
-  description: string;
-};
+type GuildTextRow = Pick<Guild, "about" | "description">;
 
 // Operators of guild `p`, oldest first: [{ user_id, name, role }].
 export function guildOperatorsColumn(alias: string): string {
@@ -107,8 +97,7 @@ export function guildVisibleTo(userRef: string): string {
 }
 
 const GUILD_COLUMNS = `
-  p.id, p.name, p.about, p.description, p.max_agents, p.git_author_email, p.org_id, p.group_agent_message_limit,
-  p.visibility, p.routines_enabled, o.slug AS org_slug, p.created_at, p.updated_at,
+  ${pickColumns(guilds, GUILD_KEYS, "p")}, o.slug AS org_slug,
   ${guildOperatorsColumn("operators")}`;
 
 /** Writes the fields `options` sets and returns the guild's text after, or null when no guild has `guildId`. */

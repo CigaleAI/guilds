@@ -12,6 +12,7 @@ import {
 import { serverManifest } from "../connectors/load.js";
 import type { Manifest } from "../connectors/manifest.js";
 import type { McpConnectionLogin } from "../db/mcp.js";
+import { mcpConnections } from "../db/schema/index.js";
 import { connectorIntegration } from "../instance/connectors.js";
 
 /** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */
@@ -689,7 +690,7 @@ export async function refreshConnection(
     {
       ciphertext,
       nonce,
-      status: String(connection.status || "connected"),
+      status: mcpConnections.status.enumValues.find((status) => status === connection.status) ?? "connected",
       accountHint: String(connection.account_hint || accountHint(stored)),
       oauthState: typeof connection.oauth_state === "string" ? connection.oauth_state : null,
     },

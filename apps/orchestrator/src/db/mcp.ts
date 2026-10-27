@@ -1,61 +1,50 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { ownerRefs } from "../credentials/validate.js";
 import { newId } from "../lib/ids.js";
 import { upsertMcpBinding, type McpConnectionBinding } from "./bindings.js";
+import { pickColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { isPlainRecord } from "./json.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { mcpConnections, mcpTools } from "./schema/index.js";
 
-export type McpConnectionRow = {
-  id: string;
-  mcp_server_id: string;
-  owner_scope: string;
-  owner_id: string | null;
-  account_hint: string;
-  status: string;
-  ciphertext: Buffer;
-  nonce: Buffer;
-  oauth_state: string | null;
-  settings: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-  rotated_at: string;
-};
+/** A connection with the guild, agent and organisation its owner resolves to. */
+export type ScopedMcpConnectionRow = InferSelectModel<typeof mcpConnections>;
 
-export type ScopedMcpConnectionRow = McpConnectionRow & {
-  guild_id: string | null;
-  agent_id: string | null;
-  org_id: string | null;
-};
+const MCP_CONNECTION_KEYS = [
+  "id",
+  "mcp_server_id",
+  "owner_scope",
+  "owner_id",
+  "account_hint",
+  "status",
+  "ciphertext",
+  "nonce",
+  "oauth_state",
+  "settings",
+  "created_at",
+  "updated_at",
+  "rotated_at",
+] as const;
 
-export type DeletedMcpConnectionRow = {
-  id: string;
-};
+export type McpConnectionRow = Pick<ScopedMcpConnectionRow, (typeof MCP_CONNECTION_KEYS)[number]>;
 
-export type McpToolRow = {
-  id: string;
-  connection_id: string;
-  mcp_server_id: string;
-  remote_name: string;
-  namespaced_name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-  listed_at: string;
-  read_only_hint: boolean | null;
-  destructive_hint: boolean | null;
-};
+export type DeletedMcpConnectionRow = Pick<McpConnectionRow, "id">;
+
+export type McpToolRow = InferSelectModel<typeof mcpTools>;
 
 export type NewMcpConnection = {
   connectionId: string;
   bindingId: string;
   serverId: string;
-  ownerScope: string;
+  ownerScope: McpConnectionRow["owner_scope"];
   ownerId: string | null;
   ciphertext: Buffer;
   nonce: Buffer;
   oauthState?: string | null | undefined;
   bind?: boolean | undefined;
-  status?: string | undefined;
+  status?: McpConnectionRow["status"] | undefined;
   accountHint?: string | undefined;
   /** The login's settings; a login that replaces one keeps its settings without it. */
   settings?: Record<string, unknown> | undefined;
@@ -65,7 +54,7 @@ export type NewMcpConnection = {
 export type McpConnectionLogin = {
   ciphertext: Buffer;
   nonce: Buffer;
-  status: string;
+  status: McpConnectionRow["status"];
   accountHint: string;
   oauthState: string | null;
 };
@@ -88,10 +77,7 @@ export type ConnectionGuildRepository = {
   githubId: number | null;
 };
 
-const MCP_CONNECTION_COLUMNS = `
-  id, mcp_server_id, owner_scope, owner_id, account_hint, status,
-  ciphertext, nonce, oauth_state, settings, created_at, updated_at, rotated_at
-`;
+const MCP_CONNECTION_COLUMNS = pickColumns(mcpConnections, MCP_CONNECTION_KEYS);
 
 export async function listMcpConnections(
   pool: Queryable,

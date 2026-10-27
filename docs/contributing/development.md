@@ -250,6 +250,16 @@ New schema lands as the next numbered SQL file in
 `drizzle/meta/_journal.json` with a stamp later than the
 migration before it.
 
+The mirror is what `db/` derives its row types from. Each schema
+key is its column's name in the database, since raw queries return
+rows under those names. A JSON column declares its shape with
+`.$type<T>()`, and a text column limited by a `CHECK ... IN` list
+declares the list with `{ enum: [...] }`.
+`test/integration/schema-mirror.test.ts` migrates a fresh database
+and fails when a table, a column, its type, or its nullability
+differs from the mirror, or when a key differs from its column's
+name.
+
 Boot applies committed migrations before the HTTP listener is
 ready. Production never uses `drizzle-kit push`.
 

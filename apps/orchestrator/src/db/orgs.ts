@@ -1,7 +1,9 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { LastOrgOwner, RowMissing } from "./errors.js";
 import { insertDefaultMachine } from "./machines.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { orgMembers, orgModelProviders, orgs, users } from "./schema/index.js";
 
 /** What an edition does with a new organisation, inside the transaction that creates it. */
 export type OrgCreatedHook = (
@@ -10,57 +12,26 @@ export type OrgCreatedHook = (
   now: Date,
 ) => Promise<void>;
 
-export type OrgRow = {
-  id: string;
-  name: string;
-  slug: string;
-  created_at: string;
-  updated_at: string;
-};
+type OrgMember = InferSelectModel<typeof orgMembers>;
 
-export type OrgMembershipRow = OrgRow & {
-  role: string;
-};
+export type OrgRow = Omit<InferSelectModel<typeof orgs>, "default_model">;
 
-export type OrgMemberRecordRow = {
-  org_id: string;
-  user_id: string;
-  role: string;
-  created_at: string;
-};
+export type OrgMembershipRow = OrgRow & Pick<OrgMember, "role">;
 
-export type OrgMemberRow = {
-  user_id: string;
-  role: string;
-  created_at: string;
-  name: string;
-  image: string | null;
-  email: string | null;
-  color: string | null;
-};
+export type OrgMemberRecordRow = OrgMember;
 
-export type DeletedOrgMemberRow = {
-  org_id: string;
-  user_id: string;
-};
+export type OrgMemberRow = Pick<OrgMember, "user_id" | "role" | "created_at"> &
+  Pick<InferSelectModel<typeof users>, "name" | "image" | "email" | "color">;
 
-export type OrgModelProviderSummaryRow = {
-  id: string;
-  org_id: string;
-  provider: string;
-  key_hint: string | null;
-  models: string[];
-  created_at: string;
-  updated_at: string;
-};
+export type DeletedOrgMemberRow = Pick<OrgMember, "org_id" | "user_id">;
+
+export type OrgModelProviderRow = InferSelectModel<typeof orgModelProviders>;
+
+/** A model provider without its encrypted key. */
+export type OrgModelProviderSummaryRow = Omit<OrgModelProviderRow, "ciphertext" | "nonce">;
 
 export type OrgModelProviderListItemRow = OrgModelProviderSummaryRow & {
   own_key: boolean;
-};
-
-export type OrgModelProviderRow = OrgModelProviderSummaryRow & {
-  ciphertext: Buffer | null;
-  nonce: Buffer | null;
 };
 
 export type DeletedOrgModelProviderRow = Pick<

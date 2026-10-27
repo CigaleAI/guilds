@@ -1,25 +1,17 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { newId } from "../lib/ids.js";
 import { SEED_USERS } from "../users/index.js";
+import { tableColumns } from "./columns.js";
 import { GuildNameTaken, LastOrgOwner, RowMissing } from "./errors.js";
 import { insertDefaultMachine } from "./machines.js";
 import { lockOwners, type OrgCreatedHook } from "./orgs.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { users } from "./schema/index.js";
 
-export type UserRow = {
-  id: string;
-  name: string;
-  email: string | null;
-  image: string | null;
-  timezone: string | null;
-  color: string | null;
-  created_at: string;
-  updated_at: string;
-};
+export type UserRow = InferSelectModel<typeof users>;
 
-export type DeletedUserRow = {
-  id: string;
-};
+export type DeletedUserRow = Pick<UserRow, "id">;
 
 export type UserProfilePatch = {
   name?: string | undefined;
@@ -34,7 +26,7 @@ export type NewUser = {
   email?: string | null | undefined;
 };
 
-const USER_COLUMNS = "id, name, email, image, timezone, color, created_at, updated_at";
+const USER_COLUMNS = tableColumns(users);
 
 /** Agents and operators share a guild's tags, so a user may not take an agent's name in a guild they operate. */
 async function refuseAgentNameInOperatedGuilds(

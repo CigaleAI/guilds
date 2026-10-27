@@ -1,17 +1,10 @@
+import type { InferSelectModel } from "drizzle-orm";
+import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
+import { attachments } from "./schema/index.js";
 
-export type AttachmentRow = {
-  id: string;
-  org_id: string;
-  uploaded_by: string;
-  filename: string;
-  mime: string;
-  bytes: number;
-  sha256: string;
-  kind: string;
-  created_at: string;
-};
+export type AttachmentRow = InferSelectModel<typeof attachments>;
 
 export type NewAttachment = {
   id: string;
@@ -24,8 +17,7 @@ export type NewAttachment = {
   kind: string;
 };
 
-const ATTACHMENT_COLUMNS =
-  "id, org_id, uploaded_by, filename, mime, bytes, sha256, kind, created_at";
+const ATTACHMENT_COLUMNS = tableColumns(attachments);
 
 export async function insertAttachment(
   pool: Queryable,

@@ -1,28 +1,15 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { loadConnector, type LoadedConnector, type Overrides } from "../connectors/load.js";
 import type { Manifest } from "../connectors/manifest.js";
+import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { isPlainRecord, jsonObj } from "./json.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { connectors } from "./schema/index.js";
 
 /** A `connectors` row as stored: the manifest a folder, the registry, or the Admin form wrote. */
-export type ConnectorRow = {
-  id: string;
-  slug: string;
-  tool_prefix: string;
-  owner_org_id: string | null;
-  manifest: Manifest;
-  source: string;
-  version: string;
-  verified: boolean;
-  experimental: boolean;
-  publisher: string;
-  enabled: boolean;
-  oauth_client: unknown;
-  overrides: Overrides;
-  installed_at: string;
-  updated_at: string;
-};
+export type ConnectorRow = InferSelectModel<typeof connectors>;
 
 export type NewConnector = {
   id: string;
@@ -49,10 +36,7 @@ export type ConnectorPatch = {
   publisher?: string;
 };
 
-const CONNECTOR_COLUMNS = `
-  id, slug, tool_prefix, owner_org_id, manifest, source, version, verified, experimental, publisher, enabled,
-  oauth_client, overrides, installed_at, updated_at
-`;
+const CONNECTOR_COLUMNS = tableColumns(connectors);
 
 /**
  * The connectors an organisation sees, loaded with their overrides, by slug: the platform's,

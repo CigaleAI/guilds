@@ -1,46 +1,43 @@
+import type { InferSelectModel } from "drizzle-orm";
 import { type Queryable, stamp } from "./pg.js";
+import { fileChanges, messages, runs } from "./schema/index.js";
 
-export type GuildActivityRunRow = {
-  id: string;
-  agent_id: string;
-  kind: string;
-  status: string;
-  errors: unknown[];
-  metadata: Record<string, unknown>;
-  schedule_id: string | null;
-  group_chat_through_seq: number | null;
-  created_at: string;
-  updated_at: string;
-  started_by_user_id: string | null;
+type Run = InferSelectModel<typeof runs>;
+type Message = InferSelectModel<typeof messages>;
+
+export type GuildActivityRunRow = Pick<
+  Run,
+  | "id"
+  | "agent_id"
+  | "kind"
+  | "status"
+  | "errors"
+  | "metadata"
+  | "schedule_id"
+  | "group_chat_through_seq"
+  | "created_at"
+  | "updated_at"
+  | "started_by_user_id"
+> & {
   wake_seq: number | null;
   previous_through_seq: number | null;
 };
 
-export type RunActivityStatsRow = {
-  run_id: string;
+export type RunActivityStatsRow = Pick<Message, "run_id"> & {
   last_seq: number | null;
   first_at: string | null;
   last_at: string | null;
   cost_usd: string;
 };
 
-export type RunGroupDeliveryRow = {
-  run_id: string;
-  metadata: Record<string, unknown>;
-};
+export type RunGroupDeliveryRow = Pick<Message, "run_id" | "metadata">;
 
-export type RunGroupPostRow = {
-  run_id: string;
-  seq: number;
-  created_at: string;
+export type RunGroupPostRow = Pick<Message, "run_id" | "seq" | "created_at"> & {
   content: string | null;
   call_id: string | null;
 };
 
-export type RunActivityStepRow = {
-  run_id: string;
-  seq: number;
-  created_at: string;
+export type RunActivityStepRow = Pick<Message, "run_id" | "seq" | "created_at"> & {
   role: string | null;
   tool_calls: unknown;
   text: string | null;
@@ -49,8 +46,7 @@ export type RunActivityStepRow = {
   duration_ms: string | null;
 };
 
-export type RunOpeningRow = {
-  run_id: string;
+export type RunOpeningRow = Pick<Message, "run_id"> & {
   text: string | null;
 };
 
@@ -63,26 +59,18 @@ export type GuildToolCallStatRow = {
   last_at: string | null;
 };
 
-export type GuildToolCallRow = {
-  id: number;
-  run_id: string;
-  seq: number;
-  created_at: string;
-  agent_id: string;
-  call_id: string | null;
-  error: string | null;
-  duration_ms: string | null;
-  arguments: string | null;
-};
+export type GuildToolCallRow = Pick<Message, "id" | "run_id" | "seq" | "created_at"> &
+  Pick<Run, "agent_id"> & {
+    call_id: string | null;
+    error: string | null;
+    duration_ms: string | null;
+    arguments: string | null;
+  };
 
-export type RunFileChangeRow = {
-  run_id: string | null;
-  display_path: string;
-  operation: string;
-  tool_name: string | null;
-  tool_call_id: string | null;
-  created_at: string;
-};
+export type RunFileChangeRow = Pick<
+  InferSelectModel<typeof fileChanges>,
+  "run_id" | "display_path" | "operation" | "tool_name" | "tool_call_id" | "created_at"
+>;
 
 export type GuildToolCallPage = {
   since: Date;

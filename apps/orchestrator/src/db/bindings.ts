@@ -1,9 +1,12 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { bindingChange } from "../access/changes.js";
 import { ownerRefs } from "../credentials/validate.js";
+import { pickColumns } from "./columns.js";
 import { recordChangeIfAny, type ChangeActor } from "./config-changes.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { bindings } from "./schema/index.js";
 
 export type BindingKey = {
   catalogKind: string;
@@ -12,22 +15,21 @@ export type BindingKey = {
   scopeId: string | null;
 };
 
-export type BindingRow = {
-  id: string;
-  catalog_kind: string;
-  catalog_id: string;
-  scope: string;
-  scope_id: string | null;
-  enabled: boolean;
-  connection_id: string | null;
-  created_at: string;
-  updated_at: string;
-};
+const BINDING_KEYS = [
+  "id",
+  "catalog_kind",
+  "catalog_id",
+  "scope",
+  "scope_id",
+  "enabled",
+  "connection_id",
+  "created_at",
+  "updated_at",
+] as const;
 
-export type DeletedBindingRow = {
-  id: string;
-  enabled: boolean;
-};
+export type BindingRow = Pick<InferSelectModel<typeof bindings>, (typeof BINDING_KEYS)[number]>;
+
+export type DeletedBindingRow = Pick<BindingRow, "id" | "enabled">;
 
 export type NewBinding = BindingKey & {
   bindingId: string;
@@ -55,10 +57,7 @@ export type McpConnectionBinding = {
   connectionId: string;
 };
 
-const BINDING_COLUMNS = `
-  id, catalog_kind, catalog_id, scope, scope_id, enabled,
-  connection_id, created_at, updated_at
-`;
+const BINDING_COLUMNS = pickColumns(bindings, BINDING_KEYS);
 
 export async function listBindingsCovering(
   pool: Queryable,

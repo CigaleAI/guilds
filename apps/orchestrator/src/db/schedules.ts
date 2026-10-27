@@ -1,39 +1,35 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { routineChange } from "../schedules/changes.js";
 import type { ScheduleTiming } from "../schedules/timing.js";
-import type { PlannedWake, WakeWindow } from "../schedules/window.js";
+import type { PlannedWake } from "../schedules/window.js";
+import { tableColumns } from "./columns.js";
 import { recordChangeIfAny, type ChangeActor } from "./config-changes.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { agents, guilds, schedules } from "./schema/index.js";
+
+type Schedule = InferSelectModel<typeof schedules>;
+type Agent = InferSelectModel<typeof agents>;
 
 /** A routine's timing columns: a cron expression or a wake window, never both. */
 export type ScheduleTimingColumns =
-  { cron: string; wake_window: null } | { cron: null; wake_window: WakeWindow };
+  | { cron: NonNullable<Schedule["cron"]>; wake_window: null }
+  | { cron: null; wake_window: NonNullable<Schedule["wake_window"]> };
 
-export type ScheduleDefinition = ScheduleTimingColumns & {
-  description: string;
-  instruction: string;
-  paused: boolean;
-};
+export type ScheduleDefinition = ScheduleTimingColumns &
+  Pick<Schedule, "description" | "instruction" | "paused">;
 
-export type ScheduleRow = ScheduleDefinition & {
-  id: string;
-  agent_id: string;
-  window_fires: number;
-  next_run_at: string;
-  last_run_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
+export type ScheduleRow = Omit<Schedule, keyof ScheduleDefinition> & ScheduleDefinition;
 
 export type AgentScheduleRow = ScheduleRow & {
-  guild_routines_enabled: boolean;
+  guild_routines_enabled: InferSelectModel<typeof guilds>["routines_enabled"];
 };
 
 export type GuildScheduleRow = AgentScheduleRow & {
-  agent_name: string;
-  avatar_shape: string | null;
-  avatar_color: string | null;
+  agent_name: Agent["name"];
+  avatar_shape: Agent["avatar_shape"] | null;
+  avatar_color: Agent["avatar_color"] | null;
 };
 
 export type NewSchedule = {
@@ -65,26 +61,7 @@ export type ScheduleUpdate = ScheduleFields & {
   wake: PlannedWake | null;
 };
 
-function scheduleColumns(alias: string): string {
-  return [
-    "id",
-    "agent_id",
-    "cron",
-    "wake_window",
-    "window_fires",
-    "description",
-    "instruction",
-    "paused",
-    "next_run_at",
-    "last_run_at",
-    "created_at",
-    "updated_at",
-  ]
-    .map((column) => (alias ? `${alias}.${column}` : column))
-    .join(", ");
-}
-
-const SCHEDULE_COLUMNS = scheduleColumns("");
+const SCHEDULE_COLUMNS = tableColumns(schedules);
 
 /**
  * Runs `write` on one routine in a transaction, with the routine locked, and
@@ -148,7 +125,7 @@ export async function insertSchedule(
 
 export async function listSchedules(pool: Queryable, agentId: string): Promise<AgentScheduleRow[]> {
   const result = await pool.query<AgentScheduleRow>(
-    `SELECT ${scheduleColumns("s")},
+    `SELECT ${tableColumns(schedules, "s")},
             g.routines_enabled AS guild_routines_enabled
      FROM schedules s
      JOIN agents a ON a.id = s.agent_id
@@ -165,7 +142,7 @@ export async function listSchedulesForGuild(
   guildId: string,
 ): Promise<GuildScheduleRow[]> {
   const result = await pool.query<GuildScheduleRow>(
-    `SELECT ${scheduleColumns("s")},
+    `SELECT ${tableColumns(schedules, "s")},
             a.name AS agent_name, a.avatar_shape, a.avatar_color,
             g.routines_enabled AS guild_routines_enabled
      FROM schedules s
@@ -293,7 +270,7 @@ export async function setScheduleNextRun(
 
 export async function listDueSchedules(pool: Queryable, now: Date): Promise<ScheduleRow[]> {
   const result = await pool.query<ScheduleRow>(
-    `SELECT ${scheduleColumns("s")}
+    `SELECT ${tableColumns(schedules, "s")}
      FROM schedules s
      JOIN agents a ON a.id = s.agent_id
      JOIN guilds g ON g.id = a.guild_id

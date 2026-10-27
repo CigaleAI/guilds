@@ -1,4 +1,5 @@
 import { decryptPayload, encryptPayload } from "../credentials/crypto.js";
+import type { OwnerScope } from "../credentials/validate.js";
 import type {
   McpConnectionLogin,
   McpConnectionRow,
@@ -26,7 +27,7 @@ export type ConnectOutcome = "installed" | "current" | "kept";
 
 export type ConnectInput = {
   server: Record<string, unknown>;
-  ownerScope: string;
+  ownerScope: OwnerScope;
   ownerId: string | null;
   /** The form's values, by the manifest's field names. */
   credentials: Record<string, unknown>;

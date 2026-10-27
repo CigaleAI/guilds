@@ -1,29 +1,12 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { GLOBAL_SCOPE, GLOBAL_SCOPE_ID, usageDelta, utcMonth } from "../usage.js";
 import { type Queryable, stamp } from "./pg.js";
+import { orgMonthlyUsage, usageCounters } from "./schema/index.js";
 
-export type UsageCounterRow = {
-  scope: string;
-  scope_id: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cost_usd: string;
-  calls: number;
-  updated_at: string;
-};
+export type UsageCounterRow = InferSelectModel<typeof usageCounters>;
 
-export type OrgMonthlyUsageRow = {
-  org_id: string;
-  month: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cost_usd: string;
-  calls: number;
-  studio_builder_runs: number;
-  updated_at: string;
-};
+export type OrgMonthlyUsageRow = InferSelectModel<typeof orgMonthlyUsage>;
 
 export async function listUsageCounters(pool: Queryable): Promise<UsageCounterRow[]> {
   const result = await pool.query<UsageCounterRow>(

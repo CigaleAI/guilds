@@ -1,45 +1,45 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
+import { pickColumns } from "./columns.js";
 import { RowMissing, SecretNameTaken } from "./errors.js";
 import { isUniqueViolation, type Queryable, stamp, withTransaction } from "./pg.js";
+import { agents, guilds, secretGrants, secrets, users } from "./schema/index.js";
 
-export type SecretGrantRow = {
-  guild_id: string | null;
-  agent_id: string | null;
-  name: string | null;
-  in_guild_id: string | null;
+type Secret = InferSelectModel<typeof secrets>;
+type Agent = InferSelectModel<typeof agents>;
+type Guild = InferSelectModel<typeof guilds>;
+
+/** A grant with its target's name and the guild it sits in; both are null once the target is deleted. */
+export type SecretGrantRow = Pick<InferSelectModel<typeof secretGrants>, "guild_id" | "agent_id"> & {
+  name: Guild["name"] | null;
+  in_guild_id: Guild["id"] | null;
 };
 
-export type SecretRow = {
-  id: string;
-  org_id: string;
-  name: string;
-  description: string;
-  org_wide: boolean;
-  created_by_user_id: string | null;
-  created_by_user_name: string | null;
-  created_by_agent_id: string | null;
-  created_by_agent_name: string | null;
-  created_by_agent_guild_id: string | null;
-  created_at: string;
-  updated_at: string;
-  rotated_at: string;
+const SECRET_KEYS = [
+  "id",
+  "org_id",
+  "name",
+  "description",
+  "org_wide",
+  "created_by_user_id",
+  "created_by_agent_id",
+  "created_at",
+  "updated_at",
+  "rotated_at",
+] as const;
+
+export type SecretRow = Pick<Secret, (typeof SECRET_KEYS)[number]> & {
+  created_by_user_name: InferSelectModel<typeof users>["name"] | null;
+  created_by_agent_name: Agent["name"] | null;
+  created_by_agent_guild_id: Agent["guild_id"] | null;
   grants: SecretGrantRow[];
 };
 
-export type SecretCipherRow = SecretRow & {
-  ciphertext: Buffer;
-  nonce: Buffer;
-};
+export type SecretCipherRow = SecretRow & Pick<Secret, "ciphertext" | "nonce">;
 
-export type AgentSecretRow = {
-  id: string;
-  name: string;
-  description: string;
-};
+export type AgentSecretRow = Pick<Secret, "id" | "name" | "description">;
 
-export type DeletedSecretRow = {
-  id: string;
-};
+export type DeletedSecretRow = Pick<Secret, "id">;
 
 export type SecretAccessGrant = {
   org_wide: boolean;
@@ -61,10 +61,9 @@ export type NewSecret = {
 
 // A secret's metadata with its grants, each grant naming its target and the guild it sits in.
 const SECRET_COLUMNS = `
-  s.id, s.org_id, s.name, s.description, s.org_wide,
-  s.created_by_user_id, cu.name AS created_by_user_name,
-  s.created_by_agent_id, ca.name AS created_by_agent_name, ca.guild_id AS created_by_agent_guild_id,
-  s.created_at, s.updated_at, s.rotated_at,
+  ${pickColumns(secrets, SECRET_KEYS, "s")},
+  cu.name AS created_by_user_name,
+  ca.name AS created_by_agent_name, ca.guild_id AS created_by_agent_guild_id,
   (SELECT COALESCE(
             jsonb_agg(jsonb_build_object(
                         'guild_id', g.guild_id,

@@ -15,9 +15,9 @@ import { insertConnector } from "../../src/db/connectors.js";
 import { RowMissing } from "../../src/db/errors.js";
 import { postAgentGroupMessage, postUserGroupMessage } from "../../src/db/group-chat.js";
 import { insertGuild, insertGuildRepository } from "../../src/db/guilds.js";
-import { insertIssue, setIssueStatus } from "../../src/db/issues.js";
+import { insertIssue, type NewIssue, setIssueStatus } from "../../src/db/issues.js";
 import { insertMachine, updateMachine } from "../../src/db/machines.js";
-import { connectMcp, replaceMcpTools } from "../../src/db/mcp.js";
+import { connectMcp, type NewMcpConnection, replaceMcpTools } from "../../src/db/mcp.js";
 import { insertOrg, upsertOrgModelProvider } from "../../src/db/orgs.js";
 import { createRun, insertMessage } from "../../src/db/runs.js";
 import { insertSchedule } from "../../src/db/schedules.js";
@@ -57,7 +57,7 @@ const AGENT_CONFIG = {
   browser: false,
 };
 
-function newIssue(issueId: string) {
+function newIssue(issueId: string): NewIssue {
   return {
     issueId,
     guildId: GUILD,
@@ -73,7 +73,7 @@ function newIssue(issueId: string) {
   };
 }
 
-function newConnection(connectionId: string, ownerId: string) {
+function newConnection(connectionId: string, ownerId: string): NewMcpConnection {
   return {
     connectionId,
     bindingId: `bind_${connectionId}`,

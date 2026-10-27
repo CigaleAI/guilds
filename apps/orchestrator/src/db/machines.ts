@@ -1,3 +1,4 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { maxWorkspaceMibOf } from "../agents/validation.js";
 import { newId } from "../lib/ids.js";
@@ -21,20 +22,24 @@ import {
   type MachineWithAgents,
 } from "../machines/index.js";
 import type { HeldCap } from "../policy/index.js";
+import { pickColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { isUniqueViolation, type Queryable, stamp, withTransaction } from "./pg.js";
+import { machines } from "./schema/index.js";
 
-type MachineQueryRow = {
-  id: string;
-  org_id: string;
-  name: string;
-  box: string;
-  cpu: string | null;
-  memory_mib: number | null;
-  max_workspace_mib: number | null;
-  workspace_mib: number | null;
-  harnesses: string[] | null;
-};
+const MACHINE_KEYS = [
+  "id",
+  "org_id",
+  "name",
+  "box",
+  "cpu",
+  "memory_mib",
+  "max_workspace_mib",
+  "workspace_mib",
+  "harnesses",
+] as const;
+
+type MachineQueryRow = Pick<InferSelectModel<typeof machines>, (typeof MACHINE_KEYS)[number]>;
 
 type MachineAgentQueryRow = Omit<MachineAgent, "max_workspace_mib"> & {
   max_workspace_mib: unknown;
@@ -49,11 +54,10 @@ export type MoveAgentResult = {
   to: { machineId: string; slot: number };
 };
 
-const MACHINE_COLUMNS =
-  "id, org_id, name, box, cpu, memory_mib, max_workspace_mib, workspace_mib, harnesses, created_at, updated_at";
+const MACHINE_COLUMNS = pickColumns(machines, MACHINE_KEYS);
 
 const MACHINES_WITH_AGENTS = `
-  SELECT m.id, m.org_id, m.name, m.box, m.cpu, m.memory_mib, m.max_workspace_mib, m.workspace_mib, m.harnesses,
+  SELECT ${pickColumns(machines, MACHINE_KEYS, "m")},
          (SELECT COALESCE(
                    jsonb_agg(jsonb_build_object(
                                'id', a.id, 'name', a.name, 'guild_id', a.guild_id, 'guild_name', g.name,

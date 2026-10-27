@@ -1,7 +1,9 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { messageCostUsd } from "../usage.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { messages, runs } from "./schema/index.js";
 import { incrementUsage } from "./usage.js";
 
 /** What a run listing filters on; every field left out matches every run. */
@@ -15,42 +17,31 @@ export type RunHeaderFilter = {
   offset?: number | undefined;
 };
 
-export type RunBaseRow = {
-  id: string;
-  agent_id: string;
-  status: string;
-  errors: unknown[];
-  created_at: string;
-  updated_at: string;
-  system_prompt_hash: string | null;
-  task_prompt_hash: string | null;
-  memory_prompt_hash: string | null;
-  metadata: Record<string, unknown>;
-  kind: string;
-  group_chat_through_seq: number | null;
-};
+type Run = InferSelectModel<typeof runs>;
 
-export type ActiveRunRow = RunBaseRow & {
-  config_snapshot: Record<string, unknown>;
-};
+export type RunBaseRow = Pick<
+  Run,
+  | "id"
+  | "agent_id"
+  | "status"
+  | "errors"
+  | "created_at"
+  | "updated_at"
+  | "system_prompt_hash"
+  | "task_prompt_hash"
+  | "memory_prompt_hash"
+  | "metadata"
+  | "kind"
+  | "group_chat_through_seq"
+>;
 
-export type RunRow = ActiveRunRow & {
-  schedule_id: string | null;
-};
+export type ActiveRunRow = RunBaseRow & Pick<Run, "config_snapshot">;
 
-export type RunHeaderRow = RunBaseRow & {
-  schedule_id: string | null;
-};
+export type RunRow = ActiveRunRow & Pick<Run, "schedule_id">;
 
-export type MessageRow = {
-  id: number;
-  run_id: string;
-  seq: number;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown>;
-  created_at: string;
-  cost_usd: string | null;
-};
+export type RunHeaderRow = RunBaseRow & Pick<Run, "schedule_id">;
+
+export type MessageRow = InferSelectModel<typeof messages>;
 
 export type NewDirectRun = {
   runId: string;
@@ -124,7 +115,7 @@ export type NewMessage = {
 };
 
 type RoutineRunStatsQueryRow = RunHeaderRow & {
-  schedule_id: string;
+  schedule_id: NonNullable<Run["schedule_id"]>;
   run_count: number;
 };
 

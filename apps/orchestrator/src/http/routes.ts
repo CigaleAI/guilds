@@ -26,6 +26,7 @@ import {
 import {
   CredentialError,
   secretPayload,
+  type OwnerScope,
   validateOwner,
   validateSecretDescription,
   validateSecretName,
@@ -3669,7 +3670,7 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
       throw missing;
     }
     const body = bodyOf(request);
-    let ownerScope: string;
+    let ownerScope: OwnerScope;
     let ownerId: string | null;
     try {
       [ownerScope, ownerId] = validateOwner(String(body.owner_scope ?? ""), body.owner_id as string | null);

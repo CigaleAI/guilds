@@ -1,3 +1,4 @@
+import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import {
   FALLBACK_TASK,
@@ -15,55 +16,51 @@ import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
 import { freeSlot, placementMachine } from "./machines.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
+import { agents, guilds, machines, orgs, taskRevisions } from "./schema/index.js";
 
-export type AgentSummaryRow = {
-  id: string;
-  guild_id: string;
-  name: string;
-  avatar_shape: string;
-  avatar_color: string;
-};
+type Agent = InferSelectModel<typeof agents>;
+type Machine = InferSelectModel<typeof machines>;
+type Guild = InferSelectModel<typeof guilds>;
 
-export type GuildAgentRow = AgentSummaryRow & {
-  focus: string;
-  wake_triggers: string;
-  config: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-  task: string;
-  task_version: number;
-  task_hash: string;
-  task_updated_at: string;
-  machine_id: string;
-  machine_slot: number;
-  machine_name: string;
-  machine_box: string;
-};
+export type AgentSummaryRow = Pick<Agent, "id" | "guild_id" | "name" | "avatar_shape" | "avatar_color">;
 
-export type AgentRow = GuildAgentRow & {
-  workspace_mib: number | null;
-  harness_logins: Record<string, unknown>;
-  machine_cpu: string | null;
-  machine_memory_mib: number | null;
-  machine_max_workspace_mib: number;
-  machine_workspace_mib: number | null;
-  machine_harnesses: string[] | null;
-  guild_name: string;
-  guild_about: string;
-  guild_description: string;
-  org_id: string;
-  org_slug: string;
-  guild_operators: GuildOperatorRow[];
-};
+export type GuildAgentRow = AgentSummaryRow &
+  Pick<
+    Agent,
+    | "focus"
+    | "wake_triggers"
+    | "config"
+    | "created_at"
+    | "updated_at"
+    | "task"
+    | "task_version"
+    | "task_hash"
+    | "task_updated_at"
+    | "machine_id"
+    | "machine_slot"
+  > & {
+    machine_name: Machine["name"];
+    machine_box: Machine["box"];
+  };
 
-export type AgentConfigRow = {
-  id: string;
-  guild_id: string;
-  name: string;
-  config: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-};
+export type AgentRow = GuildAgentRow &
+  Pick<Agent, "workspace_mib" | "harness_logins" | "org_id"> & {
+    machine_cpu: Machine["cpu"];
+    machine_memory_mib: Machine["memory_mib"];
+    machine_max_workspace_mib: Machine["max_workspace_mib"];
+    machine_workspace_mib: Machine["workspace_mib"];
+    machine_harnesses: Machine["harnesses"];
+    guild_name: Guild["name"];
+    guild_about: Guild["about"];
+    guild_description: Guild["description"];
+    org_slug: InferSelectModel<typeof orgs>["slug"];
+    guild_operators: GuildOperatorRow[];
+  };
+
+export type AgentConfigRow = Pick<
+  Agent,
+  "id" | "guild_id" | "name" | "config" | "created_at" | "updated_at"
+>;
 
 export type AgentConfigPatch = {
   name?: string | null | undefined;
@@ -73,11 +70,11 @@ export type AgentConfigPatch = {
   wakeTriggers?: string | null | undefined;
 };
 
-export type AgentTaskRevisionRow = {
-  version: number;
+export type AgentTaskRevisionRow = Pick<
+  InferSelectModel<typeof taskRevisions>,
+  "version" | "replaced_at" | "replaced_by_name"
+> & {
   content: string;
-  replaced_at: string;
-  replaced_by_name: string;
 };
 
 export type AgentScriptRow = {

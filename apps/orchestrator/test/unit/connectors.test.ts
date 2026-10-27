@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { decryptPayload, encryptPayload } from "../../src/credentials/crypto.js";
-import { connect, ConnectError, type ConnectRepo } from "../../src/connectors/connect.js";
-import type { McpConnectionRow, NewMcpConnection } from "../../src/db/mcp.js";
+import { connect, ConnectError, type ConnectInput, type ConnectRepo } from "../../src/connectors/connect.js";
+import type { ConnectorRow } from "../../src/db/connectors.js";
+import type { McpConnectionLogin, McpConnectionRow, NewMcpConnection } from "../../src/db/mcp.js";
 import { lookupProperties, settingsComplete, validateSettings } from "../../src/connectors/settings.js";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -142,7 +143,7 @@ test("an endpoint's headers are custom headers, each named once and apart from t
 
 test("a connector row loads with its overrides applied over the manifest", () => {
   const notion = CONNECTORS.bySlug("notion")!;
-  const row = {
+  const row: ConnectorRow = {
     id: "mcp_notion",
     slug: "notion",
     tool_prefix: "notion",
@@ -462,7 +463,7 @@ class ConnectRepoStub implements ConnectRepo {
     }
   }
 
-  async saveMcpConnection(connectionId: string, options: { status: string }) {
+  async saveMcpConnection(connectionId: string, options: Pick<McpConnectionLogin, "status">) {
     for (const row of this.rows.values()) {
       if (row.id === connectionId) row.status = options.status;
     }
@@ -514,7 +515,7 @@ test("connect refuses, keeps, or replaces an owner's login as asked", async () =
   const repo = new ConnectRepoStub();
   const pool = new McpPool();
   pool.connectors = CONNECTORS.withAdapter("x", { validate: async () => "" });
-  const owner = { server: X_SERVER, ownerScope: "org", ownerId: "org_1" };
+  const owner = { server: X_SERVER, ownerScope: "org", ownerId: "org_1" } satisfies Partial<ConnectInput>;
   const first = await connect(repo, pool, { ...owner, credentials: { token: "one" }, accountHint: "plan" }, new Date(), { masterKey: KEY });
   assert.equal(first.outcome, "installed");
   await assert.rejects(

@@ -244,8 +244,16 @@ for what arrives from the operator or the model.
 
 Inside the domain the types are trusted. `any` does not appear.
 
-A repository returns typed rows. A function in `db/` declares a
-row type per table (`AgentRow`, `ScheduleRow`) and returns it; it
+A repository returns typed rows. Row types are derived from the
+Drizzle schema in `db/schema/`, never written out by hand: a table's
+row is `InferSelectModel<typeof table>`, a projection is a `Pick` or
+`Omit` of it, and a joined column takes the type of the column it
+reads (`Agent["name"] | null` for a left join). `db/` declares a
+field's type itself only for a value a query computes, such as a
+count or a JSON aggregate. A column list in SQL is built from the
+same keys (`tableColumns`, `pickColumns` in `db/columns.ts`), so the
+query and its type cannot drift apart. A write's input takes each
+column's type from the row (`IssueRow["status"]`). A repository
 does not return `Record<string, unknown>`. A domain that receives
 a row reads its fields by name without `String(row.x)` guards,
 because the type is the contract.

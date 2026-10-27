@@ -375,11 +375,6 @@
       "count": 1
     }
   },
-  "src/credentials/validate.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/db/config-changes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3

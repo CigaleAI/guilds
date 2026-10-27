@@ -1,4 +1,5 @@
 export const OWNER_SCOPES = ["platform", "org", "guild", "agent"] as const;
+export type OwnerScope = (typeof OWNER_SCOPES)[number];
 export const MCP_AUTH = ["none", "token", "oauth"] as const;
 export const SECRET_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const SECRET_DESCRIPTION_MAX = 400;
@@ -26,11 +27,15 @@ export function ownerRefs(
   return [null, null, ownerId ?? null];
 }
 
+export function isOwnerScope(value: string): value is OwnerScope {
+  return OWNER_SCOPES.some((scope) => scope === value);
+}
+
 export function validateOwner(
   ownerScope: string,
   ownerId: string | null | undefined,
-): [string, string | null] {
-  if (!(OWNER_SCOPES as readonly string[]).includes(ownerScope)) {
+): [OwnerScope, string | null] {
+  if (!isOwnerScope(ownerScope)) {
     throw new CredentialError("owner_scope must be platform, org, guild, or agent");
   }
   if (ownerScope === "platform") {
