@@ -5,7 +5,7 @@ import {
   listFileChanges,
 } from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { requireVisibleAgent, requireVisibleRun } from "../agents/access.js";
+import { requireVisibleAgent } from "../agents/access.js";
 import {
   maxWorkspaceMibOf,
 } from "../agents/validation.js";
@@ -30,8 +30,6 @@ import {
   attachmentPayload,
   inlineDisposition,
 } from "../attachments/index.js";
-import type { AttachmentRef } from "../attachments/index.js";
-import { jsonObj } from "../db/json.js";
 import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { awaitingSettings, markDisconnected, mcpDatabase } from "../mcp/index.js";
@@ -74,7 +72,6 @@ import {
   validateCatalog,
   validateScope,
 } from "../access/index.js";
-import { RunRequestError, type GenerationLoop } from "../generation/index.js";
 import {
   canSeeGuild,
 } from "../guilds/validation.js";
@@ -87,7 +84,6 @@ import { usageForOrg } from "./usage-view.js";
 import { registerStudioRoutes } from "./studio-routes.js";
 import { registerFileRoutes } from "./file-routes.js";
 import { publishGroup } from "./publish.js";
-import { messageItem } from "../db/views.js";
 import { memoryHistory } from "../memory/history.js";
 import { SecretNameTaken } from "../db/errors.js";
 import {
@@ -104,7 +100,6 @@ import {
 } from "../secrets/access.js";
 import type { AppDeps } from "./deps.js";
 import { loadAccessView } from "../access/view.js";
-import { proxyHttp, startSandboxWsProxy } from "./sandbox-proxy.js";
 import { HttpError, missingBodyFields, notesReadHttp, notesWriteHttp } from "./errors.js";
 import {
   addRecord,
@@ -136,6 +131,8 @@ import { registerGuildRoutes } from "./guild-routes.js";
 import { registerIssueRoutes } from "./issue-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerOrgRoutes } from "./org-routes.js";
+import { registerRunRoutes } from "./run-routes.js";
+import { registerSandboxRoutes } from "./sandbox-routes.js";
 import { registerScheduleRoutes } from "./schedule-routes.js";
 import { registerScriptRoutes } from "./script-routes.js";
 import { registerUserRoutes } from "./user-routes.js";
@@ -166,8 +163,7 @@ import { cookieSecure, requestCookies } from "./cookies.js";
 import { currentOrg, currentUser, identityDatabase } from "./identity.js";
 import { isInstanceAdmin } from "./instance-admin.js";
 import { agentConfigObject } from "../agents/view.js";
-import { pipeSse } from "./sse.js";
-import { bodyOf, param, queryOf } from "./request.js";
+import { bodyOf, filePathParam, param, queryOf } from "./request.js";
 import {
   getMembership,
 } from "../db/orgs.js";
@@ -176,7 +172,6 @@ import {
   listGuildsForUser,
 } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
-import { listMessages } from "../db/runs.js";
 import { getUsage } from "../db/usage.js";
 import {
   bindMcpConnection,
@@ -210,8 +205,6 @@ import {
   upsertPlatformBinding,
 } from "../db/bindings.js";
 
-type Params = Record<string, string>;
-
 /** Answers a connector's failure as HTTP: a rejected credential or a bad setting is a 422, anything else upstream a 502. */
 function failure(error: unknown, server: Record<string, unknown>): never {
   try {
@@ -229,57 +222,11 @@ function serverVisible(server: Record<string, unknown>, orgId: string | null): b
   return !server.owner_org_id || server.owner_org_id === orgId;
 }
 
-function attachmentIdsOf(body: Record<string, unknown>): string[] {
-  const raw = body.attachment_ids;
-  if (raw === undefined || raw === null) {
-    return [];
-  }
-  if (!Array.isArray(raw)) {
-    throw new HttpError(422, "attachment_ids must be an array");
-  }
-  const ids: string[] = [];
-  for (const item of raw) {
-    if (typeof item !== "string" || !item.trim()) {
-      throw new HttpError(422, "attachment_ids must be attachment ids");
-    }
-    ids.push(item.trim());
-  }
-  return ids;
-}
-
 function attachmentsOf(deps: AppDeps) {
   if (!deps.attachments) {
     throw new HttpError(503, "attachments are not configured");
   }
   return deps.attachments;
-}
-
-function agentModelOf(row: Record<string, unknown>): string {
-  const config = jsonObj(row.config);
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    return "";
-  }
-  const model = (config as Record<string, unknown>).model;
-  return typeof model === "string" ? model : "";
-}
-
-async function resolveChatAttachments(
-  deps: AppDeps,
-  orgId: string,
-  model: string,
-  ids: string[],
-): Promise<AttachmentRef[]> {
-  if (!ids.length) {
-    return [];
-  }
-  try {
-    return await attachmentsOf(deps).resolveForMessage({ orgId, model, ids });
-  } catch (error) {
-    if (error instanceof AttachmentError) {
-      throw new HttpError(error.status, error.message);
-    }
-    throw error;
-  }
 }
 
 function expectedVersionOf(body: Record<string, unknown>): number | undefined {
@@ -294,45 +241,11 @@ function expectedVersionOf(body: Record<string, unknown>): number | undefined {
   return n;
 }
 
-/** How often operator input on a proxied sandbox view restarts its idle timer. */
-const SANDBOX_TOUCH_INTERVAL_MS = 30_000;
-
-function filePathParam(request: FastifyRequest): string {
-  const raw = (request.raw.url ?? request.url).split("?")[0] ?? "";
-  let pathname = raw;
-  try {
-    pathname = decodeURIComponent(raw);
-  } catch {
-    /* keep the undecoded path */
-  }
-  if (pathname.split("/").includes("..")) {
-    throw new HttpError(404, "Not Found");
-  }
-  const params = request.params as Params;
-  const fromParams = params["*"] ?? params.file_path;
-  if (typeof fromParams === "string" && fromParams) {
-    return fromParams;
-  }
-  const marker = "/notes/";
-  const index = pathname.lastIndexOf(marker);
-  if (index >= 0) {
-    return pathname.slice(index + marker.length);
-  }
-  return "";
-}
-
 async function send(reply: FastifyReply, status: number, payload?: unknown): Promise<FastifyReply> {
   if (status === 204) {
     return reply.code(204).send();
   }
   return reply.code(status).send(payload);
-}
-
-function generationOf(deps: AppDeps): GenerationLoop {
-  if (!deps.generation) {
-    throw new HttpError(503, "generation is unavailable");
-  }
-  return deps.generation;
 }
 
 async function scopeGuild(
@@ -392,6 +305,8 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   await registerScriptRoutes(app, deps);
   await registerIssueRoutes(app, deps);
   await registerAgentRoutes(app, deps);
+  await registerRunRoutes(app, deps);
+  await registerSandboxRoutes(app, deps);
 
   /**
    * What this box is: how it identifies a request and which integrations it has, never a key.
@@ -1157,253 +1072,6 @@ export async function registerDomainRoutes(app: FastifyInstance, deps: AppDeps):
   });
 
   /** Where a sandbox daemon answers for this agent: its base URL and the headers the proxy adds. */
-  type SandboxTarget = (agentId: string) => Promise<[string, Record<string, string>]>;
-
-  async function proxySandbox(
-    request: FastifyRequest,
-    reply: FastifyReply,
-    target: SandboxTarget,
-    pathPart: string,
-  ): Promise<void> {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    try {
-      const [base, headers] = await target(param(request, "agent_id"));
-      await proxyHttp(request, reply, base, headers, pathPart);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-  }
-
-  function proxySandboxWs(
-    socket: import("ws").WebSocket,
-    request: FastifyRequest,
-    target: SandboxTarget,
-  ): void {
-    const agentId = param(request, "agent_id");
-    let touchedAt = 0;
-    startSandboxWsProxy(
-      socket,
-      request,
-      async () => {
-        const user = await currentUser(identityDb, request, deps);
-        await requireVisibleAgent(db, agentId, String(user.id));
-        const [base, extraHeaders] = await target(agentId);
-        return { base, extraHeaders, pathPart: filePathParam(request) };
-      },
-      (error) => {
-        if (error instanceof HttpError) {
-          return 1008;
-        }
-        if (error instanceof RunRequestError) {
-          return 1013;
-        }
-        return 1008;
-      },
-      () => {
-        const now = Date.now();
-        if (now - touchedAt < SANDBOX_TOUCH_INTERVAL_MS) {
-          return;
-        }
-        touchedAt = now;
-        generationOf(deps).touch_sandbox(agentId);
-      },
-    );
-  }
-
-  /** Proxies `prefix` and `prefix/*`, HTTP and WebSocket, to the daemon `target` resolves. */
-  function registerSandboxProxy(prefix: string, target: SandboxTarget): void {
-    const methods = ["HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const;
-    for (const url of [prefix, `${prefix}/*`]) {
-      const pathOf = url === prefix ? () => "" : filePathParam;
-      app.route({
-        method: "GET",
-        url,
-        exposeHeadRoute: false,
-        handler: async (request, reply) => {
-          await proxySandbox(request, reply, target, pathOf(request));
-        },
-        wsHandler: (socket, request) => {
-          proxySandboxWs(socket, request, target);
-        },
-      });
-      app.route({
-        method: [...methods],
-        url,
-        handler: async (request, reply) => {
-          await proxySandbox(request, reply, target, pathOf(request));
-        },
-      });
-    }
-  }
-
-  app.get("/api/agents/:agent_id/browser", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    try {
-      await generationOf(deps).ensure_browser(param(request, "agent_id"));
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-    return { status: "ready" };
-  });
-
-  registerSandboxProxy("/api/agents/:agent_id/browser/vnc", (agentId) =>
-    generationOf(deps).browser_proxy_target(agentId),
-  );
-
-  app.post("/api/agents/:agent_id/cli", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    try {
-      await generationOf(deps).ensure_cli(param(request, "agent_id"));
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-    return { status: "ready" };
-  });
-
-  registerSandboxProxy("/api/agents/:agent_id/cli/tty", (agentId) =>
-    generationOf(deps).cli_proxy_target(agentId),
-  );
-
-  app.get("/api/agents/:agent_id/runs", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    return generationOf(deps).list_run_payloads(param(request, "agent_id"));
-  });
-
-  app.post("/api/agents/:agent_id/runs", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const agent = await requireVisibleAgent(db, param(request, "agent_id"), String(user.id));
-    const body = bodyOf(request);
-    const ids = attachmentIdsOf(body);
-    const raw = body.message;
-    const message = raw === undefined || raw === null ? (ids.length ? "" : null) : String(raw);
-    if (message !== null && !message.trim() && !ids.length) {
-      throw new HttpError(422, "message must not be empty");
-    }
-    const attachments = await resolveChatAttachments(
-      deps,
-      String(agent.org_id),
-      agentModelOf(agent),
-      ids,
-    );
-    try {
-      const run = await generationOf(deps).create_run(param(request, "agent_id"), message, {
-        attachments,
-        startedByUserId: String(user.id),
-      });
-      await send(reply, message !== null ? 202 : 201, run);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/runs/:run_id", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    const row = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
-    return generationOf(deps).run_payload(row);
-  });
-
-  app.get("/api/runs/:run_id/messages", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
-    return (await listMessages(db, param(request, "run_id"))).map((row) => messageItem(row));
-  });
-
-  app.post("/api/runs/:run_id/resume", async (request) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
-    try {
-      return await generationOf(deps).resume_run(param(request, "run_id"));
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-  });
-
-  app.post("/api/runs/:run_id/messages", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    const run = await requireVisibleRun(db, param(request, "run_id"), String(user.id));
-    const agent = await getAgent(db, String(run.agent_id));
-    if (agent === null) {
-      throw new HttpError(404, "run not found");
-    }
-    const body = bodyOf(request);
-    const ids = attachmentIdsOf(body);
-    if (!ids.length) {
-      const missing = missingBodyFields(request.body, ["content"]);
-      if (missing) {
-        throw missing;
-      }
-    }
-    const content = body.content === undefined || body.content === null ? "" : String(body.content);
-    if (!content.trim() && !ids.length) {
-      throw new HttpError(422, "content must not be empty");
-    }
-    const attachments = await resolveChatAttachments(
-      deps,
-      String(agent.org_id),
-      agentModelOf(agent),
-      ids,
-    );
-    try {
-      const run = await generationOf(deps).add_message(param(request, "run_id"), content, attachments);
-      await send(reply, 202, run);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-  });
-
-  app.post("/api/runs/:run_id/cancel", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
-    try {
-      const run = await generationOf(deps).cancel(param(request, "run_id"));
-      if (run === null) {
-        await send(reply, 204);
-        return;
-      }
-      await send(reply, 202, run);
-    } catch (error) {
-      if (error instanceof RunRequestError) {
-        throw new HttpError(error.status, error.detail);
-      }
-      throw error;
-    }
-  });
-
-  app.get("/api/runs/:run_id/stream", async (request, reply) => {
-    const user = await currentUser(identityDb, request, deps);
-    await requireVisibleRun(db, param(request, "run_id"), String(user.id));
-    const loop = generationOf(deps);
-    const runId = param(request, "run_id");
-    await pipeSse(
-      request,
-      reply,
-      () => loop.subscribe(runId),
-      (queue) => loop.unsubscribe(runId, queue),
-    );
-  });
-
   app.get("/api/usage", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);

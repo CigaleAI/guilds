@@ -1,4 +1,5 @@
 import { ArtifactError } from "../artifacts/errors.js";
+import { AttachmentError } from "../attachments/index.js";
 import { AgentError } from "../agents/errors.js";
 import { AgentValidationError } from "../agents/validation.js";
 import { RunRequestError } from "../generation/index.js";
@@ -107,6 +108,7 @@ const REFUSALS = [
   ScheduleError,
   ScriptError,
   IssueError,
+  AttachmentError,
 ] as const;
 
 /** Domain errors for a value a validator refused, each a 422. */

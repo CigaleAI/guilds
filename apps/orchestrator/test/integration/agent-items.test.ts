@@ -5,6 +5,7 @@ import { connect } from "../../src/db/client.js";
 import { insertAgent } from "../../src/db/agents.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertIssue } from "../../src/db/issues.js";
+import { insertRun } from "../../src/db/runs.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -166,6 +167,56 @@ test(
       });
       assert.equal(resolved.statusCode, 200, resolved.body);
       assert.equal(resolved.json().status, "resolved");
+
+      const runs = `${agent}/runs`;
+      const start = (payload: object) =>
+        app.inject({ method: "POST", url: runs, headers: JSON_OWNER, payload });
+      assert.equal((await start({ message: "  " })).statusCode, 422, "an empty message");
+      assert.equal(
+        (await start({ attachment_ids: "att_1" })).statusCode,
+        422,
+        "ids that are not a list",
+      );
+      assert.equal((await start({ attachment_ids: [" "] })).statusCode, 422, "a blank id");
+      const images = await start({ attachment_ids: ["att_1"] });
+      assert.equal(images.statusCode, 503, "a box without an image store takes no images");
+      assert.match(String(images.json().detail), /attachments/);
+      const queued = await start({ message: "hello" });
+      assert.equal(queued.statusCode, 503, "a box without a generation loop opens no run");
+      assert.match(String(queued.json().detail), /generation/);
+
+      await insertRun(
+        db,
+        {
+          runId: "run_items",
+          agentId: "a_items",
+          kind: "direct",
+          configSnapshot: {},
+          systemContent: "",
+          taskContent: "",
+          opening: [],
+          systemPromptHash: "",
+          taskPromptHash: "",
+          memoryPromptHash: "",
+        },
+        new Date(),
+      );
+      const say = (payload: object) =>
+        app.inject({
+          method: "POST",
+          url: "/api/runs/run_items/messages",
+          headers: JSON_OWNER,
+          payload,
+        });
+      assert.equal((await say({})).statusCode, 422, "a message needs content or images");
+      assert.equal((await say({ content: " " })).statusCode, 422, "blank content");
+      assert.equal((await say({ content: "more" })).statusCode, 503);
+      const messages = await app.inject({
+        method: "GET",
+        url: "/api/runs/run_items/messages",
+        headers: OWNER,
+      });
+      assert.equal(messages.statusCode, 200, messages.body);
     } finally {
       await app.close();
       await database.close();
