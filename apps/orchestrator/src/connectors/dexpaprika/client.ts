@@ -1,3 +1,6 @@
+import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
+import { decode } from "../../lib/decode.js";
 import { proxyFetch, withQuery, type FetchFn } from "../../net/http.js";
 import {
   LIST_DEFAULT,
@@ -8,6 +11,18 @@ import {
   joinParts,
   rowLimit,
 } from "../format.js";
+import {
+  ErrorBody,
+  OhlcvResponse,
+  PoolRow,
+  PoolsResponse,
+  PricesResponse,
+  SearchResponse,
+  SwapsResponse,
+  TokenResponse,
+  UsageResponse,
+  type PageInfo,
+} from "./responses.js";
 
 export const API_BASE = "https://api.dexpaprika.com";
 export const PRO_BASE = "https://api-pro.dexpaprika.com";
@@ -35,27 +50,9 @@ export class DexPaprikaError extends Error {
   }
 }
 
-function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-}
-
-function asRows(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is Record<string, unknown> => Boolean(asObject(item)));
-}
-
-function field(row: Record<string, unknown>, ...keys: string[]): unknown {
-  for (const key of keys) {
-    if (row[key] !== undefined && row[key] !== null && row[key] !== "") {
-      return row[key];
-    }
-  }
-  return undefined;
+/** The first of `values` that is set: not undefined, null, or empty text. */
+function present(...values: unknown[]): unknown {
+  return values.find((value) => value !== undefined && value !== null && value !== "");
 }
 
 function pct(value: unknown): string {
@@ -72,9 +69,8 @@ function pct(value: unknown): string {
   return `+${number}%`;
 }
 
-function pair(row: Record<string, unknown>): string {
-  const tokens = asRows(row.tokens);
-  const symbols = tokens
+function pair(row: PoolRow): string {
+  const symbols = (row.tokens ?? [])
     .map((token) => String(token.symbol ?? "").trim())
     .filter(Boolean);
   if (symbols.length >= 2) {
@@ -92,86 +88,62 @@ function section(title: string, rows: string[], limit: number): string {
   return `${title}\n${body}`;
 }
 
-function pageNote(payload: Record<string, unknown>): string {
+function pageNote(payload: PageInfo): string {
   const cursor =
     (typeof payload.next_cursor === "string" && payload.next_cursor.trim())
-    || (asObject(payload.page_info)?.next_cursor);
+    || payload.page_info?.next_cursor;
   if (typeof cursor === "string" && cursor.trim()) {
     return `page=${cursor.trim()}`;
   }
   return "";
 }
 
-function poolRows(payload: unknown): Array<Record<string, unknown>> {
-  const object = asObject(payload);
-  if (object) {
-    const nested = object.results ?? object.pools;
-    if (Array.isArray(nested)) {
-      return asRows(nested);
-    }
+/** The pools of a page, and its cursor. */
+function poolPage(payload: PoolsResponse): { rows: PoolRow[]; page: PageInfo } {
+  if (Array.isArray(payload)) {
+    return { rows: payload, page: {} };
   }
-  return asRows(payload);
+  return { rows: payload.results ?? payload.pools ?? [], page: payload };
 }
 
-export function formatSearch(payload: Record<string, unknown>, limit = LIST_DEFAULT): string {
+function searchPoolRow(row: PoolRow): string {
+  return joinParts(
+    row.chain,
+    row.id,
+    row.dex_name ?? row.dex_id,
+    pair(row),
+    `vol=${fmtNum(present(row.volume_usd_24h, row.volume_usd))}`,
+  );
+}
+
+export function formatSearch(payload: SearchResponse, limit = LIST_DEFAULT): string {
   const blocks: string[] = [];
-  const tokens = asRows(payload.tokens);
+  const tokens = payload.tokens ?? [];
   if (tokens.length) {
-    blocks.push(
-      section(
-        "tokens",
-        tokens.map((row) =>
-          joinParts(row.chain, row.id, row.symbol, row.name, `p=${fmtNum(row.price_usd)}`),
-        ),
-        limit,
-      ),
-    );
+    const rows = tokens.map((row) => joinParts(row.chain, row.id, row.symbol, row.name, `p=${fmtNum(row.price_usd)}`));
+    blocks.push(section("tokens", rows, limit));
   }
-  const pools = asRows(payload.pools);
+  const pools = payload.pools ?? [];
   if (pools.length) {
-    blocks.push(
-      section(
-        "pools",
-        pools.map((row) =>
-          joinParts(
-            row.chain,
-            row.id,
-            row.dex_name ?? row.dex_id,
-            pair(row),
-            `vol=${fmtNum(field(row, "volume_usd_24h", "volume_usd"))}`,
-          ),
-        ),
-        limit,
-      ),
-    );
+    blocks.push(section("pools", pools.map(searchPoolRow), limit));
   }
-  const dexes = asRows(payload.dexes);
+  const dexes = payload.dexes ?? [];
   if (dexes.length) {
-    blocks.push(
-      section(
-        "dexes",
-        dexes.map((row) =>
-          joinParts(
-            row.chain,
-            row.dex_id ?? row.id,
-            row.dex_name,
-            `vol=${fmtNum(row.volume_usd_24h)}`,
-          ),
-        ),
-        limit,
-      ),
+    const rows = dexes.map((row) =>
+      joinParts(row.chain, row.dex_id ?? row.id, row.dex_name, `vol=${fmtNum(row.volume_usd_24h)}`),
     );
+    blocks.push(section("dexes", rows, limit));
   }
   const shown = blocks.filter(Boolean);
   return shown.length ? shown.join("\n\n") : "no results";
 }
 
-export function formatToken(payload: Record<string, unknown>): string {
+export function formatToken(payload: TokenResponse): string {
   if (!Object.keys(payload).length) {
     return "no results";
   }
-  const summary = asObject(payload.summary) ?? {};
-  const day = asObject(summary["24h"]) ?? {};
+  const summary = payload.summary ?? {};
+  const day = summary["24h"] ?? {};
   const head = joinParts(payload.chain ?? summary.chain, payload.id, payload.symbol, payload.name);
   const stats = joinParts(
     `p=${fmtNum(summary.price_usd)}`,
@@ -184,14 +156,14 @@ export function formatToken(payload: Record<string, unknown>): string {
   return [head, stats].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatPrices(payload: unknown): string {
-  const rows = asRows(payload).map((row) =>
+export function formatPrices(payload: PricesResponse): string {
+  const rows = payload.map((row) =>
     joinParts(row.chain, row.id, `p=${fmtNum(row.price_usd)}`),
   );
   return rows.length ? rows.join("\n") : "no results";
 }
 
-export function formatPool(payload: Record<string, unknown>): string {
+export function formatPool(payload: PoolRow): string {
   if (!Object.keys(payload).length) {
     return "no results";
   }
@@ -202,57 +174,53 @@ export function formatPool(payload: Record<string, unknown>): string {
     pair(payload),
   );
   const stats = joinParts(
-    `p=${fmtNum(field(payload, "price_usd"))}`,
-    `liq=${fmtNum(field(payload, "liquidity_usd"))}`,
-    `vol_24h=${fmtNum(field(payload, "volume_usd_24h", "volume_usd"))}`,
-    `chg_24h=${pct(field(payload, "last_price_change_usd_24h", "price_change_percentage_24h"))}`,
-    `tx_24h=${fmtNum(field(payload, "txns_24h", "transactions"))}`,
+    `p=${fmtNum(present(payload.price_usd))}`,
+    `liq=${fmtNum(present(payload.liquidity_usd))}`,
+    `vol_24h=${fmtNum(present(payload.volume_usd_24h, payload.volume_usd))}`,
+    `chg_24h=${pct(present(payload.last_price_change_usd_24h, payload.price_change_percentage_24h))}`,
+    `tx_24h=${fmtNum(present(payload.txns_24h, payload.transactions))}`,
   );
   return [head, stats].filter(Boolean).join("\n") || "no results";
 }
 
-export function formatPools(payload: unknown, limit = LIST_DEFAULT): string {
-  const object = asObject(payload) ?? {};
-  const rows = poolRows(payload).map((row) =>
+export function formatPools(payload: PoolsResponse, limit = LIST_DEFAULT): string {
+  const { rows: pools, page } = poolPage(payload);
+  const rows = pools.map((row) =>
     joinParts(
       row.chain,
       row.id,
       row.dex_name ?? row.dex_id,
       pair(row),
-      `p=${fmtNum(field(row, "price_usd"))}`,
-      `liq=${fmtNum(field(row, "liquidity_usd"))}`,
-      `vol=${fmtNum(field(row, "volume_usd_24h", "volume_usd"))}`,
+      `p=${fmtNum(present(row.price_usd))}`,
+      `liq=${fmtNum(present(row.liquidity_usd))}`,
+      `vol=${fmtNum(present(row.volume_usd_24h, row.volume_usd))}`,
     ),
   );
   const body = clipRows(rows, limit);
   if (body === "no results") {
     return body;
   }
-  return [body, pageNote(object)].filter(Boolean).join("\n");
+  return [body, pageNote(page)].filter(Boolean).join("\n");
 }
 
-export function formatOhlcv(payload: unknown, title: string): string {
-  const points = asRows(payload);
-  const rows: string[] = [];
-  for (const point of downsample(points, CHART_POINTS)) {
-    rows.push(
-      joinParts(
-        point.time_open ?? point.time_close,
-        fmtNum(point.open),
-        fmtNum(point.high),
-        fmtNum(point.low),
-        fmtNum(point.close),
-        fmtNum(point.volume),
-      ),
-    );
-  }
+export function formatOhlcv(payload: OhlcvResponse, title: string): string {
+  const rows = downsample(payload, CHART_POINTS).map((point) =>
+    joinParts(
+      point.time_open ?? point.time_close,
+      fmtNum(point.open),
+      fmtNum(point.high),
+      fmtNum(point.low),
+      fmtNum(point.close),
+      fmtNum(point.volume),
+    ),
+  );
   const header = `${title} ohlc n=${rows.length}`;
   return rows.length ? [header, "t  o  h  l  c  v", ...rows].join("\n") : `${header}\nno results`;
 }
 
-export function formatSwaps(payload: unknown, limit = LIST_DEFAULT): string {
-  const object = asObject(payload) ?? {};
-  const items = asRows(object.transactions ?? payload);
+export function formatSwaps(payload: SwapsResponse, limit = LIST_DEFAULT): string {
+  const items = Array.isArray(payload) ? payload : (payload.transactions ?? []);
+  const page = Array.isArray(payload) ? {} : payload;
   const rows = items.map((row) =>
     joinParts(
       row.created_at,
@@ -268,7 +236,7 @@ export function formatSwaps(payload: unknown, limit = LIST_DEFAULT): string {
   if (body === "no results") {
     return body;
   }
-  return [body, pageNote(object)].filter(Boolean).join("\n");
+  return [body, pageNote(page)].filter(Boolean).join("\n");
 }
 
 async function errorDetail(response: Response): Promise<string> {
@@ -280,9 +248,8 @@ async function errorDetail(response: Response): Promise<string> {
     const stripped = text.trim();
     return stripped || `DexPaprika HTTP ${response.status}`;
   }
-  const object = asObject(payload);
-  if (object) {
-    const detail = object.message ?? object.error;
+  if (Value.Check(ErrorBody, payload)) {
+    const detail = payload.message ?? payload.error;
     if (typeof detail === "string" && detail.trim()) {
       return detail.trim();
     }
@@ -294,32 +261,42 @@ function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: apiKey, Accept: "application/json" };
 }
 
-async function getJson(
-  path: string,
-  params: Record<string, string>,
+type DexPaprikaOptions = { client?: FetchFn; proxyUrl?: string };
+
+type ToolOptions = DexPaprikaOptions & { apiKey: string };
+
+function unexpected(problem: string): DexPaprikaError {
+  return new DexPaprikaError(`DexPaprika returned an unexpected response at ${problem}`);
+}
+
+/** The response at `path` with `params`, as `schema` describes it; the pro host when the free one refuses. */
+async function getJson<T extends TSchema>(
+  request: { path: string; params: Record<string, string>; schema: T },
   apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<unknown> {
+  options: DexPaprikaOptions = {},
+): Promise<Static<T>> {
   const key = apiKey.trim();
   if (!key) {
     throw new DexPaprikaError("DexPaprika API key is missing", 401);
   }
   const fetchFn = options.client ?? proxyFetch(options.proxyUrl ?? "");
   const headers = authHeaders(key);
-  const request = async (base: string) =>
-    fetchFn(withQuery(`${base}${path}`, params), { method: "GET", headers });
-  let response = await request(API_BASE);
+  const send = async (base: string) =>
+    fetchFn(withQuery(`${base}${request.path}`, request.params), { method: "GET", headers });
+  let response = await send(API_BASE);
   if (response.status === 403) {
-    response = await request(PRO_BASE);
+    response = await send(PRO_BASE);
   }
   if (response.status >= 400) {
     throw new DexPaprikaError(await errorDetail(response), response.status);
   }
+  let payload: unknown;
   try {
-    return JSON.parse(await response.text());
+    payload = JSON.parse(await response.text());
   } catch {
     throw new DexPaprikaError("DexPaprika returned a non-JSON body");
   }
+  return decode(request.schema, payload, unexpected);
 }
 
 function requireNetwork(arguments_: Record<string, unknown>): string {
@@ -338,52 +315,39 @@ function requireAddress(arguments_: Record<string, unknown>, key = "address"): s
   return address;
 }
 
-export async function ping(
-  apiKey: string,
-  options: { client?: FetchFn; proxyUrl?: string } = {},
-): Promise<void> {
-  const payload = await getJson("/usage", {}, apiKey, options);
-  const object = asObject(payload);
-  const plan = typeof object?.plan === "string" ? object.plan.trim().toLowerCase() : "";
+const USAGE = Type.Unknown();
+
+export async function ping(apiKey: string, options: DexPaprikaOptions = {}): Promise<void> {
+  const payload = await getJson({ path: "/usage", params: {}, schema: USAGE }, apiKey, options);
+  const plan = Value.Check(UsageResponse, payload) && typeof payload.plan === "string"
+    ? payload.plan.trim().toLowerCase()
+    : "";
   if (!plan || plan === "keyless") {
     throw new DexPaprikaError("api key was rejected", 401);
   }
 }
 
-export async function searchTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function searchTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const query = argStr(arguments_, "query");
   if (!query) {
     throw new DexPaprikaError("query is required");
   }
-  const payload = await getJson("/search", { query }, options.apiKey, options);
-  const object = asObject(payload);
-  if (!object) {
-    throw new DexPaprikaError("DexPaprika returned a non-object");
-  }
-  return formatSearch(object, rowLimit(arguments_));
+  const payload = await getJson({ path: "/search", params: { query }, schema: SearchResponse }, options.apiKey, options);
+  return formatSearch(payload, rowLimit(arguments_));
 }
 
-export async function tokenTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function tokenTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
-  const payload = await getJson(`/networks/${network}/tokens/${address}`, {}, options.apiKey, options);
-  const object = asObject(payload);
-  if (!object) {
-    throw new DexPaprikaError("DexPaprika returned a non-object");
-  }
-  return formatToken(object);
+  const payload = await getJson(
+    { path: `/networks/${network}/tokens/${address}`, params: {}, schema: TokenResponse },
+    options.apiKey,
+    options,
+  );
+  return formatToken(payload);
 }
 
-export async function pricesTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function pricesTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const tokens = [
     ...new Set(
@@ -399,117 +363,90 @@ export async function pricesTool(
   if (tokens.length > PRICES_MAX) {
     throw new DexPaprikaError(`tokens must list at most ${PRICES_MAX} addresses`);
   }
-  return formatPrices(
-    await getJson(`/networks/${network}/multi/prices`, { tokens: tokens.join(",") }, options.apiKey, options),
+  const payload = await getJson(
+    { path: `/networks/${network}/multi/prices`, params: { tokens: tokens.join(",") }, schema: PricesResponse },
+    options.apiKey,
+    options,
   );
+  return formatPrices(payload);
 }
 
-export async function poolTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function poolTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
-  const payload = await getJson(`/networks/${network}/pools/${address}`, {}, options.apiKey, options);
-  const object = asObject(payload);
-  if (!object) {
-    throw new DexPaprikaError("DexPaprika returned a non-object");
-  }
-  return formatPool(object);
+  const payload = await getJson(
+    { path: `/networks/${network}/pools/${address}`, params: {}, schema: PoolRow },
+    options.apiKey,
+    options,
+  );
+  return formatPool(payload);
 }
 
-export async function poolsTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+/** The arguments that, when given, become a query parameter of their own name. */
+function optionalParams(arguments_: Record<string, unknown>, names: Record<string, string>): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const [argument, param] of Object.entries(names)) {
+    const value = argStr(arguments_, argument);
+    if (value) {
+      params[param] = value;
+    }
+  }
+  return params;
+}
+
+export async function poolsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const limit = rowLimit(arguments_);
-  const params: Record<string, string> = { limit: String(limit) };
-  const token = argStr(arguments_, "token");
-  if (token) {
-    params.token_address = token;
-  }
-  const dex = argStr(arguments_, "dex");
-  if (dex) {
-    params.dex_name = dex;
-  }
-  const createdAfter = argStr(arguments_, "created_after");
-  if (createdAfter) {
-    params.created_after = createdAfter;
-  }
-  const orderBy = argStr(arguments_, "order_by");
-  if (orderBy) {
-    params.order_by = orderBy;
-  }
-  const sort = argStr(arguments_, "sort");
-  if (sort) {
-    params.sort = sort;
-  }
-  const cursor = argStr(arguments_, "cursor");
-  if (cursor) {
-    params.cursor = cursor;
-  }
-  return formatPools(
-    await getJson(`/networks/${network}/pools/search`, params, options.apiKey, options),
-    limit,
+  const params = {
+    limit: String(limit),
+    ...optionalParams(arguments_, {
+      token: "token_address",
+      dex: "dex_name",
+      created_after: "created_after",
+      order_by: "order_by",
+      sort: "sort",
+      cursor: "cursor",
+    }),
+  };
+  const payload = await getJson(
+    { path: `/networks/${network}/pools/search`, params, schema: PoolsResponse },
+    options.apiKey,
+    options,
   );
+  return formatPools(payload, limit);
 }
 
-export async function ohlcvTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function ohlcvTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
   const start = argStr(arguments_, "start", "-24h") || "-24h";
   const interval = argStr(arguments_, "interval", "1h") || "1h";
-  if (!(OHLCV_INTERVALS as readonly string[]).includes(interval)) {
+  if (!OHLCV_INTERVALS.some((entry) => entry === interval)) {
     throw new DexPaprikaError(`interval must be ${OHLCV_INTERVALS.join(", ")}`);
   }
-  const params: Record<string, string> = { start, interval, limit: "1000" };
-  const end = argStr(arguments_, "end");
-  if (end) {
-    params.end = end;
-  }
-  return formatOhlcv(
-    await getJson(`/networks/${network}/pools/${address}/ohlcv`, params, options.apiKey, options),
-    `${network}:${address} ${interval} ${start}`,
+  const params = { start, interval, limit: "1000", ...optionalParams(arguments_, { end: "end" }) };
+  const payload = await getJson(
+    { path: `/networks/${network}/pools/${address}/ohlcv`, params, schema: OhlcvResponse },
+    options.apiKey,
+    options,
   );
+  return formatOhlcv(payload, `${network}:${address} ${interval} ${start}`);
 }
 
-export async function swapsTool(
-  arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-): Promise<string> {
+export async function swapsTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
   const network = requireNetwork(arguments_);
   const address = requireAddress(arguments_);
   const limit = rowLimit(arguments_);
-  const params: Record<string, string> = { limit: String(limit) };
-  const from = argStr(arguments_, "from");
-  if (from) {
-    params.from = from;
-  }
-  const to = argStr(arguments_, "to");
-  if (to) {
-    params.to = to;
-  }
-  const cursor = argStr(arguments_, "cursor");
-  if (cursor) {
-    params.cursor = cursor;
-  }
-  return formatSwaps(
-    await getJson(`/networks/${network}/pools/${address}/transactions`, params, options.apiKey, options),
-    limit,
+  const params = { limit: String(limit), ...optionalParams(arguments_, { from: "from", to: "to", cursor: "cursor" }) };
+  const payload = await getJson(
+    { path: `/networks/${network}/pools/${address}/transactions`, params, schema: SwapsResponse },
+    options.apiKey,
+    options,
   );
+  return formatSwaps(payload, limit);
 }
 
-const HANDLERS: Record<
-  string,
-  (
-    arguments_: Record<string, unknown>,
-    options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
-  ) => Promise<string>
-> = {
+const HANDLERS: Record<string, (arguments_: Record<string, unknown>, options: ToolOptions) => Promise<string>> = {
   search: searchTool,
   token: tokenTool,
   prices: pricesTool,
@@ -522,7 +459,7 @@ const HANDLERS: Record<
 export async function callTool(
   name: string,
   arguments_: Record<string, unknown>,
-  options: { apiKey: string; client?: FetchFn; proxyUrl?: string },
+  options: ToolOptions,
 ): Promise<string> {
   const handler = HANDLERS[name];
   if (!handler) {

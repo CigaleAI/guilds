@@ -37,31 +37,29 @@ class MemoryDb {
 }
 
 test("formatSearch drops descriptions and caps rows", () => {
-  const stored = formatSearch(
-    {
-      tokens: [{
-        id: "So11111111111111111111111111111111111111112",
-        name: "Wrapped SOL",
-        symbol: "SOL",
-        chain: "solana",
-        price_usd: 103.8,
-        description: "long html",
-        website: "https://solana.com",
-      }],
-      pools: [{
-        id: "pool-1",
-        dex_name: "Raydium",
-        chain: "solana",
-        volume_usd_24h: 1_200_000,
-        tokens: [
-          { symbol: "SOL", id: "So11111111111111111111111111111111111111112" },
-          { symbol: "USDC", id: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
-        ],
-      }],
-      dexes: [{ dex_id: "raydium", dex_name: "Raydium", chain: "solana", volume_usd_24h: 9e9 }],
-    },
-    15,
-  );
+  const payload = {
+    tokens: [{
+      id: "So11111111111111111111111111111111111111112",
+      name: "Wrapped SOL",
+      symbol: "SOL",
+      chain: "solana",
+      price_usd: 103.8,
+      description: "long html",
+      website: "https://solana.com",
+    }],
+    pools: [{
+      id: "pool-1",
+      dex_name: "Raydium",
+      chain: "solana",
+      volume_usd_24h: 1_200_000,
+      tokens: [
+        { symbol: "SOL", id: "So11111111111111111111111111111111111111112" },
+        { symbol: "USDC", id: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+      ],
+    }],
+    dexes: [{ dex_id: "raydium", dex_name: "Raydium", chain: "solana", volume_usd_24h: 9e9 }],
+  };
+  const stored = formatSearch(payload, 15);
   assert.equal(
     stored,
     "tokens\nsolana  So11111111111111111111111111111111111111112  SOL  Wrapped SOL  p=103.8\n\n"
@@ -88,7 +86,7 @@ test("formatSearch caps rows", () => {
 });
 
 test("formatToken keeps lean market", () => {
-  const stored = formatToken({
+  const payload = {
     id: "So11111111111111111111111111111111111111112",
     name: "Wrapped SOL",
     symbol: "SOL",
@@ -102,7 +100,8 @@ test("formatToken keeps lean market", () => {
       pools: 12897,
       "24h": { volume_usd: 5.1e9, last_price_usd_change: 0.67 },
     },
-  });
+  };
+  const stored = formatToken(payload);
   assert.equal(
     stored,
     "solana  So11111111111111111111111111111111111111112  SOL  Wrapped SOL\n"
