@@ -93,6 +93,12 @@ export async function requireOrgManager(
   return membership;
 }
 
+/** Whether the user manages the organisation, as an owner or admin. */
+export async function isOrgManager(db: Queryable, orgId: string, userId: string): Promise<boolean> {
+  const membership = await getMembership(db, orgId, userId);
+  return membership !== null && canManageSettings(membership.role);
+}
+
 /** Whether the user owns the seed organisation: core's rule for who administers the instance. */
 export async function ownsSeedOrg(db: Queryable, userId: string): Promise<boolean> {
   return (await getMembership(db, SEED_ORG_ID, userId))?.role === "owner";

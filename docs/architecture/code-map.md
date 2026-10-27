@@ -87,7 +87,7 @@ A repository that extends core holds this one as a submodule
 | `issues/` | Guild issues from `report_issue` |
 | `notifications/` | The inbox view and its per-user stream |
 | `usage/` | Usage counter keys, deltas, and tree (`index.ts`), and the organisation, guild, and agent listings (`view.ts`) |
-| `studio/` | Prompt Studio: sessions, tools, drafts, edit, table, and routine requests, focus pins, and the activity ledger ([Prompt Studio](../concepts/prompt-studio.md)) |
+| `studio/` | Prompt Studio: sessions, tools, drafts, edit, table, and routine requests, focus pins, the activity ledger, and the runs and routines the inspector reads (`inspector.ts`) ([Prompt Studio](../concepts/prompt-studio.md)) |
 | `builder/` | The guild builder: sessions, tools, widgets, and workspace search ([Guild builder](../concepts/guild-builder.md)) |
 | `recipes/` | The `guilds.recipe` schema, capture, rewrite, validation, and apply ([Recipes](../concepts/recipes.md)) |
 | `conversation/` | The shared coach runner and tool-result projection |

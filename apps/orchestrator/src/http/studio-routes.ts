@@ -1,14 +1,11 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { loadOperatorActor, ArtifactError, collectTaskEmbeds } from "../artifacts/index.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { canManageSettings } from "../organisations/index.js";
-import { jsonObj } from "../db/json.js";
-import { iso } from "../db/views.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
-import { frameSse, SSE_HEADERS } from "./sse.js";
+import { pipeSse } from "./sse.js";
 import { activityWindow, loadGuildActivity } from "../studio/activity.js";
 import { loadGuildTools, loadToolCalls } from "../studio/tool-usage.js";
 import { loadGuildReferences } from "../studio/references.js";
@@ -17,11 +14,9 @@ import { LimitError } from "../policy/index.js";
 import { StudioError } from "../studio/errors.js";
 import { viewDraft } from "../studio/drafts.js";
 import type { StudioService } from "../studio/index.js";
-import { bodyOf, param } from "./request.js";
-import { getMembership } from "../db/orgs.js";
-import { getRun, listMessages, listRunHeaders, routineRunStats } from "../db/runs.js";
-import { getAgent } from "../db/agents.js";
-import { listSchedules } from "../db/schedules.js";
+import { bodyOf, param, queryOf } from "./request.js";
+import { isOrgManager } from "../organisations/service.js";
+import { listAgentRoutines, listAgentRunHeaders, readGuildRun, type InspectorServices } from "../studio/inspector.js";
 
 
 function studioOf(deps: AppDeps): StudioService {
@@ -47,6 +42,7 @@ function mapStudioError(error: unknown): never {
 export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const identityDb = identityDatabase(db);
+  const inspector: InspectorServices = { db, schedules: deps.schedules, generation: deps.generation ?? null };
 
   app.get("/api/studio/sessions", async (request) => {
     const user = await currentUser(identityDb, request, deps);
@@ -268,7 +264,13 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const studio = studioOf(deps);
     try {
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
-      await pipeStudioSse(request, reply, studio, String(session.id));
+      const sessionId = String(session.id);
+      await pipeSse(
+        request,
+        reply,
+        () => studio.subscribe(sessionId),
+        (queue) => studio.unsubscribe(sessionId, queue),
+      );
     } catch (error) {
       mapStudioError(error);
     }
@@ -289,8 +291,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/studio/orphan-drafts", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    const membership = await getMembership(db, String(org.id), String(user.id));
-    if (!membership || !canManageSettings(String(membership.role))) {
+    if (!(await isOrgManager(db, String(org.id), String(user.id)))) {
       throw new HttpError(403, "forbidden");
     }
     return (await studioOf(deps).orphanDrafts(String(org.id))).map(viewDraft);
@@ -359,18 +360,13 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const agent = await studio.requireGuildAgent(session, param(request, "agent_id"));
-      const query = request.query as { task_prompt_hash?: string; schedule_id?: string; kind?: string; limit?: string };
-      const hash = String(query.task_prompt_hash ?? "");
-      const scheduleId = String(query.schedule_id ?? "");
-      const kind = String(query.kind ?? "");
-      const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
-      const runs = await listRunHeaders(db, String(agent.id), {
-        taskPromptHash: hash,
-        scheduleId,
-        kind,
-        limit,
+      const query = queryOf(request);
+      return await listAgentRunHeaders(inspector, String(agent.id), {
+        taskPromptHash: query.task_prompt_hash ?? "",
+        scheduleId: query.schedule_id ?? "",
+        kind: query.kind ?? "",
+        limit: query.limit,
       });
-      return runs.map((row) => studioRunHeader(deps, row));
     } catch (error) {
       mapStudioError(error);
     }
@@ -499,24 +495,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       const studio = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
-      const run = await getRun(db, param(request, "run_id"));
-      if (!run) throw new HttpError(404, "run not found");
-      const agent = await getAgent(db, String(run.agent_id));
-      if (!agent || String(agent.guild_id) !== String(session.source_guild_id)) {
-        throw new HttpError(404, "run not found");
-      }
-      const messages = await listMessages(db, String(run.id));
-      return {
-        run: {
-          id: run.id,
-          agent_id: run.agent_id,
-          kind: run.kind,
-          status: run.status,
-          task_prompt_hash: run.task_prompt_hash,
-          metadata: jsonObj(run.metadata),
-        },
-        messages,
-      };
+      return await readGuildRun(inspector, String(session.source_guild_id), param(request, "run_id"));
     } catch (error) {
       mapStudioError(error);
     }
@@ -530,18 +509,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
       studio.assertLive(session);
       const agent = await studio.requireGuildAgent(session, param(request, "agent_id"));
-      const rows = await listSchedules(db, String(agent.id));
-      const byRoutine = await routineRunStats(db, rows.map((row) => String(row.id)));
-      const items = [];
-      for (const row of rows) {
-        const stats = byRoutine.get(String(row.id));
-        items.push({
-          ...(await deps.schedules.view(row)),
-          run_count: stats?.count ?? 0,
-          latest_run: stats?.latest ? studioRunHeader(deps, stats.latest) : null,
-        });
-      }
-      return items;
+      return await listAgentRoutines(inspector, String(agent.id));
     } catch (error) {
       mapStudioError(error);
     }
@@ -558,30 +526,6 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       mapStudioError(error);
     }
   });
-}
-
-// The run facts the inspector lists without loading a transcript.
-function studioRunHeader(deps: AppDeps, row: Record<string, unknown>): Record<string, unknown> {
-  const metadata = (jsonObj(row.metadata) as Record<string, unknown> | null) ?? {};
-  const errors = jsonObj(row.errors);
-  const errorList = Array.isArray(errors) ? (errors as Array<Record<string, unknown>>) : [];
-  const last = errorList[errorList.length - 1];
-  return {
-    id: row.id,
-    kind: row.kind,
-    status: row.status,
-    generating: deps.generation ? deps.generation.generating(String(row.id)) : false,
-    task_prompt_hash: row.task_prompt_hash,
-    system_prompt_hash: row.system_prompt_hash,
-    memory_prompt_hash: row.memory_prompt_hash,
-    schedule_id: row.schedule_id ?? null,
-    instruction_hash: typeof metadata.instruction_hash === "string" ? metadata.instruction_hash : null,
-    group_chat_through_seq: row.group_chat_through_seq ?? null,
-    created_at: iso(row.created_at),
-    updated_at: iso(row.updated_at),
-    error_count: errorList.length,
-    last_error: last ? { operation: last.operation ?? null, message: last.message ?? null } : null,
-  };
 }
 
 async function loadDraft(
@@ -613,38 +557,11 @@ async function loadDraftContext(
     return { session, draft, user, orphan: false };
   }
   if (!session.created_by_user_id) {
-    const membership = await getMembership(deps.db, String(org.id), String(user.id));
-    if (membership && canManageSettings(String(membership.role))) {
+    if (await isOrgManager(deps.db, String(org.id), String(user.id))) {
       return { session, draft, user, orphan: true };
     }
   }
   throw new HttpError(404, "draft not found");
-}
-
-async function pipeStudioSse(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  studio: StudioService,
-  sessionId: string,
-): Promise<void> {
-  const queue = studio.subscribe(sessionId);
-  reply.hijack();
-  reply.raw.writeHead(200, SSE_HEADERS);
-  reply.raw.write(": connected\n\n");
-  const abort = new AbortController();
-  const onClose = () => abort.abort();
-  request.raw.on("close", onClose);
-  try {
-    while (!abort.signal.aborted) {
-      const [event, data] = await queue.get(abort.signal);
-      reply.raw.write(frameSse(event, data));
-    }
-  } catch {
-    /* disconnected */
-  } finally {
-    request.raw.off("close", onClose);
-    studio.unsubscribe(sessionId, queue);
-  }
 }
 
 export { collectTaskEmbeds };

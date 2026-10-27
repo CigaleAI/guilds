@@ -9,6 +9,8 @@ import { insertMember } from "../../src/db/orgs.js";
 import { insertRun } from "../../src/db/runs.js";
 import { insertUser } from "../../src/db/users.js";
 import { NotesStore } from "../../src/notes/store.js";
+import { StudioError } from "../../src/studio/errors.js";
+import { readGuildRun } from "../../src/studio/inspector.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
@@ -288,6 +290,29 @@ test(
         payload: { name: "spare" },
       });
       assert.equal(byMember.statusCode, 403, "a member does not manage machines");
+      const orphans = await app.inject({
+        method: "GET",
+        url: "/api/studio/orphan-drafts",
+        headers: MEMBER,
+      });
+      assert.equal(orphans.statusCode, 403, "only an owner or admin sees drafts nobody holds");
+      const inspector = { db, schedules: new Schedules(scheduleDatabase(db)), generation: null };
+      const read = await readGuildRun(inspector, "guild_items", "run_items");
+      assert.deepEqual(
+        [read.run, read.messages].map((part) => typeof part),
+        ["object", "object"],
+      );
+      const strangers: Array<[string, string]> = [
+        ["guild_elsewhere", "run_items"],
+        ["guild_items", "run_missing"],
+      ];
+      for (const [guildId, runId] of strangers) {
+        await assert.rejects(readGuildRun(inspector, guildId, runId), (error: unknown) => {
+          assert.ok(error instanceof StudioError);
+          assert.equal(error.status, 404);
+          return true;
+        });
+      }
       const unknownMachine = await app.inject({
         method: "PATCH",
         url: `${machines}/mach_missing`,

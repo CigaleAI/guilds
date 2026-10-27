@@ -466,10 +466,7 @@
   },
   "src/http/studio-routes.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 10
-    },
-    "@typescript-eslint/no-restricted-imports": {
-      "count": 6
+      "count": 7
     }
   },
   "src/instance/integrations.ts": {
