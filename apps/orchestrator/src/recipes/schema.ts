@@ -1,3 +1,4 @@
+import type { Manifest, WakeWindow } from "../db/schema/index.js";
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { WAKE_TRIGGERS_MAX } from "../agents/validation.js";
@@ -6,9 +7,8 @@ import { parseColumns, type CollectionColumn } from "../artifacts/columns.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";
 import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode, type AccessMode } from "../artifacts/types.js";
-import type { WakeWindow } from "../schedules/window.js";
 import { RecipeError } from "./errors.js";
-import { loadManifest, ManifestError, recipeManifestProblem, type Manifest } from "../connectors/manifest.js";
+import { loadManifest, ManifestError, recipeManifestProblem } from "../connectors/manifest.js";
 
 /** A connection's carried manifest: a valid, endpoint-only connector under the connection's slug. */
 function connectionManifest(raw: unknown, server: string, path: string): Manifest {

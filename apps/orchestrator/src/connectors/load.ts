@@ -1,25 +1,10 @@
 import type { ConnectorRow } from "../db/connectors.js";
 import { jsonObj } from "../db/json.js";
+import type { Manifest, ManifestTool, Overrides } from "../db/schema/index.js";
 import { namespacedName } from "../mcp/names.js";
 import { nameMutates } from "../mcp/verbs.js";
 import { installedConnectors } from "./index.js";
-import { matchesPattern, type Manifest, type ManifestTool } from "./manifest.js";
-
-/** An admin's edit to one tool, by name: its copy, its schema, and whether it starts On. */
-export type ToolOverride = {
-  description?: string;
-  input_schema?: Record<string, unknown>;
-  default?: boolean;
-};
-
-/** An admin's edits to a connector the box did not write: copy fields and tools, applied on read. */
-export type Overrides = {
-  display_name?: string;
-  description?: string;
-  limitations?: string;
-  setup_hint?: string;
-  tools?: Record<string, ToolOverride>;
-};
+import { matchesPattern } from "./manifest.js";
 
 /** The copy fields an override may replace. */
 export const OVERRIDE_FIELDS = ["display_name", "description", "limitations", "setup_hint"] as const;

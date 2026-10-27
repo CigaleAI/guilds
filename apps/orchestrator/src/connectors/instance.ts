@@ -1,4 +1,5 @@
 import { encryptPayload } from "../credentials/crypto.js";
+import type { Manifest } from "../db/schema/index.js";
 import { connectorIntegration, platformConnectors } from "../instance/connectors.js";
 import {
   connectorIntegrationId,
@@ -10,7 +11,7 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { newId } from "../lib/ids.js";
-import { authFields, type Manifest } from "./manifest.js";
+import { authFields } from "./manifest.js";
 import type { Credentials } from "./types.js";
 import { connectMcp, getMcpConnectionForOwner, saveMcpConnection } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";

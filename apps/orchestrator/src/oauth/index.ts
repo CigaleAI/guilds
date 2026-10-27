@@ -10,11 +10,10 @@ import {
   type IntegrationSources,
 } from "../instance/integrations.js";
 import { serverManifest } from "../connectors/load.js";
-import type { Manifest } from "../connectors/manifest.js";
 import { updateMcpServerConfig } from "../db/connectors.js";
 import { saveMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { mcpConnections } from "../db/schema/index.js";
+import { mcpConnections, type Manifest } from "../db/schema/index.js";
 import { connectorIntegration } from "../instance/connectors.js";
 
 /** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */

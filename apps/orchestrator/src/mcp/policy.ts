@@ -1,7 +1,7 @@
 import { installedConnectors } from "../connectors/index.js";
 import { manifestDefaultOff } from "../connectors/load.js";
+import type { Manifest } from "../db/schema/index.js";
 import { nameMutates } from "./verbs.js";
-import type { Manifest } from "../connectors/manifest.js";
 
 export const RESERVED_MCP_SLUGS = new Set([
   "admin",

@@ -1,17 +1,21 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
 import { routineChange } from "../schedules/changes.js";
-import type { ScheduleTiming } from "../schedules/timing.js";
-import type { PlannedWake } from "../schedules/window.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { tableColumns } from "./columns.js";
 import { recordChangeIfAny } from "./config-changes.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { agents, guilds, schedules } from "./schema/index.js";
+import { agents, guilds, schedules, type WakeWindow } from "./schema/index.js";
 
 type Schedule = InferSelectModel<typeof schedules>;
 type Agent = InferSelectModel<typeof agents>;
+
+/** When a routine wakes: a UTC cron expression, or a daily random window. */
+export type ScheduleTiming = { cron: string; window: null } | { cron: null; window: WakeWindow };
+
+/** A planned wake-up plus how many wake-ups already fired in its window. */
+export type PlannedWake = { at: Date; windowFires: number };
 
 /** A routine's timing columns: a cron expression or a wake window, never both. */
 export type ScheduleTimingColumns =

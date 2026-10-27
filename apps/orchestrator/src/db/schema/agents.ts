@@ -16,9 +16,20 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { WakeWindow } from "../../schedules/window.js";
 import { timestamptz } from "./columns.js";
 import { guilds, machines, orgs, users } from "./organisations.js";
+
+/**
+ * A random wake window: every day, between `start` and `end` local time in
+ * `timezone`, the routine wakes at random instants, aiming for `max_wakes`
+ * wake-ups. `end` earlier than `start` spans midnight.
+ */
+export type WakeWindow = {
+  timezone: string;
+  start: string;
+  end: string;
+  max_wakes: number;
+};
 
 export const agents = pgTable(
   "agents",

@@ -1,7 +1,7 @@
-import type { AgentScheduleRow, ScheduleDefinition, ScheduleRow } from "../db/schedules.js";
+import type { AgentScheduleRow, ScheduleDefinition, ScheduleRow, ScheduleTiming } from "../db/schedules.js";
 import { iso, isoOrNull } from "../db/views.js";
 import { promptHash } from "../prompts/index.js";
-import { describeTiming, rowTiming, type ScheduleTiming } from "./timing.js";
+import { describeTiming, rowTiming } from "./timing.js";
 
 /** A routine as the API and the tools show it. */
 export type ScheduleItem = ScheduleTiming & {

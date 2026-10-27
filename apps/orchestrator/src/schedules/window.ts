@@ -1,21 +1,8 @@
 import { Cron } from "croner";
 import { isPlainRecord } from "../db/json.js";
+import type { PlannedWake } from "../db/schedules.js";
+import type { WakeWindow } from "../db/schema/index.js";
 import { MIN_GAP_MS, ScheduleError } from "./cron.js";
-
-/**
- * A random wake window: every day, between `start` and `end` local time in
- * `timezone`, the routine wakes at random instants, aiming for `max_wakes`
- * wake-ups. `end` earlier than `start` spans midnight.
- */
-export type WakeWindow = {
-  timezone: string;
-  start: string;
-  end: string;
-  max_wakes: number;
-};
-
-/** A planned wake-up plus how many wake-ups already fired in its window. */
-export type PlannedWake = { at: Date; windowFires: number };
 
 /** Each gap is drawn uniformly within ±JITTER of the current mean gap. */
 export const JITTER = 0.5;

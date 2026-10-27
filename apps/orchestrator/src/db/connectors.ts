@@ -1,11 +1,10 @@
 import type { InferSelectModel } from "drizzle-orm";
-import { loadConnector, type LoadedConnector, type Overrides } from "../connectors/load.js";
-import type { Manifest } from "../connectors/manifest.js";
+import { loadConnector, type LoadedConnector } from "../connectors/load.js";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { isPlainRecord, jsonObj } from "./json.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { connectors } from "./schema/index.js";
+import { connectors, type Manifest, type Overrides } from "./schema/index.js";
 
 /** A `connectors` row as stored: the manifest a folder, the registry, or the Admin form wrote. */
 export type ConnectorRow = InferSelectModel<typeof connectors>;

@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
-import type { ScheduleDefinition } from "../db/schedules.js";
+import type { ScheduleDefinition, ScheduleTiming } from "../db/schedules.js";
 import { ScheduleError } from "../schedules/cron.js";
 import { timingText } from "../schedules/item.js";
 import { changedFields, scheduleChanges, type ScheduleChanges } from "../schedules/service.js";
-import type { ScheduleTiming } from "../schedules/timing.js";
 import { argString } from "../toolbox/schema.js";
 import type { EditAction } from "./actions.js";
 import type { EditScope } from "./edits.js";

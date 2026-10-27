@@ -8,6 +8,7 @@ import {
 import { replaceMcpTools, saveMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { jsonObj } from "../db/json.js";
+import type { Manifest } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { assertPublicHost, EndpointError, type HostLookup } from "../net/endpoints.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
@@ -34,7 +35,7 @@ import {
   type RemoteInfo,
   type RemoteSession,
 } from "../connectors/types.js";
-import { authFields, type Manifest } from "../connectors/manifest.js";
+import { authFields } from "../connectors/manifest.js";
 import { redact } from "../secrets/index.js";
 import type { OrgPolicy } from "../policy/index.js";
 import { utcMonth } from "../usage/index.js";

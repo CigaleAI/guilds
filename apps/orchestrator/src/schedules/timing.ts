@@ -1,17 +1,7 @@
-import type { ScheduleRow, ScheduleTimingColumns } from "../db/schedules.js";
+import type { PlannedWake, ScheduleRow, ScheduleTiming, ScheduleTimingColumns } from "../db/schedules.js";
 import { nextRunAt, ScheduleError, validateCron } from "./cron.js";
 import { describeCron } from "./describe.js";
-import {
-  describeWindow,
-  planWindowAfterFire,
-  planWindowWake,
-  validateWindow,
-  type PlannedWake,
-  type WakeWindow,
-} from "./window.js";
-
-/** When a routine wakes: a UTC cron expression, or a daily random window. */
-export type ScheduleTiming = { cron: string; window: null } | { cron: null; window: WakeWindow };
+import { describeWindow, planWindowAfterFire, planWindowWake, validateWindow } from "./window.js";
 
 export function validateTiming(input: { cron?: unknown; window?: unknown }): ScheduleTiming {
   const hasCron = input.cron !== undefined && input.cron !== null;

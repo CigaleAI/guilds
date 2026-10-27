@@ -1,4 +1,4 @@
-/** Secrets, connectors, connections and their tools and calls, bindings, a guild's repositories, and the model and integration keys. */
+/** Secrets, connectors and their manifests, connections and their tools and calls, bindings, a guild's repositories, and the model and integration keys. */
 import {
   bigint,
   boolean,
@@ -13,12 +13,138 @@ import {
   unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { Type, type Static } from "@sinclair/typebox";
 import { sql } from "drizzle-orm";
-import type { Overrides } from "../../connectors/load.js";
-import type { Manifest } from "../../connectors/manifest.js";
 import { agents } from "./agents.js";
 import { bytea, timestamptz } from "./columns.js";
 import { guilds, orgs, users } from "./organisations.js";
+
+/** A connector slug: also the folder name, the server id after `mcp_`, and a folder connector's tool prefix. */
+export const SLUG_PATTERN = "^[a-z][a-z0-9_]{0,62}$";
+
+const JsonObject = Type.Record(Type.String(), Type.Unknown());
+
+/** A header an endpoint's session sends beside its credential: a custom `X-` header, letters, digits, and dashes. */
+const HEADER_NAME_PATTERN = "^[Xx]-[A-Za-z0-9-]+$";
+
+const ManifestTool = Type.Object(
+  {
+    name: Type.String({ minLength: 1 }),
+    description: Type.String(),
+    input_schema: JsonObject,
+    mutating: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+const AuthField = Type.Object(
+  {
+    name: Type.String({ pattern: "^[a-z][a-z0-9_]*$" }),
+    label: Type.String({ minLength: 1 }),
+    secret: Type.Optional(Type.Boolean()),
+    optional: Type.Optional(Type.Boolean()),
+    multiline: Type.Optional(Type.Boolean()),
+    placeholder: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+const Auth = Type.Object(
+  {
+    kind: Type.Union([Type.Literal("token"), Type.Literal("oauth"), Type.Literal("none")]),
+    fields: Type.Optional(Type.Array(AuthField, { minItems: 1 })),
+    header: Type.Optional(Type.Object({ name: Type.String({ minLength: 1 }), prefix: Type.String() }, { additionalProperties: false })),
+    oauth: Type.Optional(
+      Type.Object(
+        {
+          strategy: Type.Union([Type.Literal("dynamic"), Type.Literal("configured"), Type.Literal("github_app")]),
+          provider: Type.Optional(Type.String({ minLength: 1 })),
+          scopes: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    instance: Type.Optional(
+      Type.Union([
+        Type.Object(
+          { integration: Type.String({ minLength: 1 }), field: Type.String({ pattern: "^[a-z][a-z0-9_]*$" }) },
+          { additionalProperties: false },
+        ),
+        Type.Object({ own: Type.Literal(true) }, { additionalProperties: false }),
+      ]),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+export const ManifestSchema = Type.Object(
+  {
+    slug: Type.String({ pattern: SLUG_PATTERN }),
+    display_name: Type.String({ minLength: 1 }),
+    endpoint: Type.Optional(
+      Type.Object(
+        {
+          url: Type.String({ minLength: 1 }),
+          headers: Type.Optional(
+            Type.Record(Type.String({ pattern: HEADER_NAME_PATTERN }), Type.String(), { additionalProperties: false }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    auth: Auth,
+    requires: Type.Optional(Type.Object({ integration: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
+    description: Type.String(),
+    limitations: Type.Optional(Type.String()),
+    setup_hint: Type.Optional(Type.String()),
+    tools: Type.Optional(Type.Array(ManifestTool)),
+    policy: Type.Optional(
+      Type.Object(
+        {
+          default_off: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+          exclude: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    settings_schema: Type.Optional(JsonObject),
+    state: Type.Optional(
+      Type.Object({ key: Type.String({ pattern: "^[a-z][a-z0-9_]*$" }), intro: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+    ),
+    builder: Type.Optional(
+      Type.Object(
+        {
+          searchable: Type.Optional(Type.Boolean()),
+          role: Type.Optional(Type.String({ minLength: 1 })),
+          guidance: Type.Optional(Type.String({ minLength: 1 })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    prompt: Type.Optional(Type.Object({ guidance: Type.String({ minLength: 1 }) }, { additionalProperties: false })),
+  },
+  { additionalProperties: false },
+);
+
+export type Manifest = Static<typeof ManifestSchema>;
+export type ManifestTool = Static<typeof ManifestTool>;
+export type AuthField = Static<typeof AuthField>;
+
+/** An admin's edit to one tool, by name: its copy, its schema, and whether it starts On. */
+export type ToolOverride = {
+  description?: string;
+  input_schema?: Record<string, unknown>;
+  default?: boolean;
+};
+
+/** An admin's edits to a connector the box did not write: copy fields and tools, applied on read. */
+export type Overrides = {
+  display_name?: string;
+  description?: string;
+  limitations?: string;
+  setup_hint?: string;
+  tools?: Record<string, ToolOverride>;
+};
 
 export const secrets = pgTable(
   "secrets",

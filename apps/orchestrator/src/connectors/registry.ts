@@ -1,4 +1,5 @@
-import { loadManifest, serverIdOf, type Manifest } from "./manifest.js";
+import type { Manifest } from "../db/schema/index.js";
+import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
 
 /** Where an installed connector came from: shipped with core, pulled from a registry, or added on this box. */

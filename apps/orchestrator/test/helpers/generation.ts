@@ -18,11 +18,10 @@ import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbo
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
 import { TEST_CREDENTIALS } from "./models.js";
-import type { PlannedWake } from "../../src/schedules/window.js";
 import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agents.js";
 import type { ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
-import type { ScheduleRow } from "../../src/db/schedules.js";
+import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
 
 export const AGENT_CONFIG = {
   model: "openrouter/openai/gpt-5.6-luna",

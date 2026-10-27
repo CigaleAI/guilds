@@ -1,15 +1,9 @@
 import { installedConnectors } from "../connectors/index.js";
-import {
-  manifestTools,
-  OVERRIDE_FIELDS,
-  overridesOf,
-  toolStartsOff,
-  type Overrides,
-  type ToolOverride,
-} from "../connectors/load.js";
-import { loadManifest, ManifestError, SLUG_PATTERN, SLUG_RE, type Manifest } from "../connectors/manifest.js";
+import { manifestTools, OVERRIDE_FIELDS, overridesOf, toolStartsOff } from "../connectors/load.js";
+import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
 import { connectorFacts } from "../connectors/view.js";
 import { jsonObj } from "../db/json.js";
+import { SLUG_PATTERN, type Manifest, type Overrides, type ToolOverride } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp/policy.js";
 import { namespacedName } from "../mcp/names.js";

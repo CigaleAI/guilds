@@ -1,7 +1,6 @@
 // What starting a connector login and completing its sign-in share: the encrypted pending
 // payload, the binding to its owner, and ending a sign-in that did not finish.
 import type { LoadedConnector } from "../connectors/load.js";
-import type { Manifest } from "../connectors/manifest.js";
 import type { RemoteInfo } from "../connectors/types.js";
 import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { updateConnector } from "../db/connectors.js";
@@ -13,6 +12,7 @@ import {
   type McpConnectionRow,
 } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
+import type { Manifest } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { DESCRIPTION_MAX } from "../mcp/catalog.js";
 import { markDisconnected, mcpDatabase, type McpPool } from "../mcp/index.js";

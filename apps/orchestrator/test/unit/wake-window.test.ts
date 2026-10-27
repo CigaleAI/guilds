@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { WakeWindow } from "../../src/db/schema/index.js";
 import { MIN_GAP_MS, ScheduleError } from "../../src/schedules/cron.js";
 import { planAfterFire, planWake, validateTiming } from "../../src/schedules/timing.js";
 import {
@@ -8,7 +9,6 @@ import {
   planWindowWake,
   validateWindow,
   windowEndAt,
-  type WakeWindow,
 } from "../../src/schedules/window.js";
 
 const PARIS: WakeWindow = { timezone: "Europe/Paris", start: "08:00", end: "20:00", max_wakes: 20 };

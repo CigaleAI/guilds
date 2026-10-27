@@ -1,6 +1,7 @@
 import { installedConnectors } from "../connectors/index.js";
 import { serverManifest } from "../connectors/load.js";
-import { authFields, type AuthField, type Manifest } from "../connectors/manifest.js";
+import { authFields } from "../connectors/manifest.js";
+import type { AuthField, Manifest } from "../db/schema/index.js";
 import {
   connectorIntegrationId,
   setConnectorIntegrations,

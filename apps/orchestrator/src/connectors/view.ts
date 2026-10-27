@@ -1,7 +1,8 @@
+import type { AuthField, Manifest } from "../db/schema/index.js";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { installedConnectors } from "./index.js";
-import { authFields, type AuthField, type Manifest } from "./manifest.js";
+import { authFields } from "./manifest.js";
 import type { ConnectorEntry, ConnectorSource } from "./registry.js";
 
 /** What the API says about a server beside its row: how to sign in, where it came from, and its mark. */
