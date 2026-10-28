@@ -1,5 +1,6 @@
 import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
+import { githubIdOf, githubRepositoriesOf } from "../github/repositories.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { GithubRepositorySelection } from "../db/schema/index.js";
@@ -84,12 +85,6 @@ export function repositoryItem(row: Record<string, unknown>): Record<string, unk
   };
 }
 
-/** GitHub's id for a repository row or selection entry, or null when none is recorded. */
-export function githubIdOf(row: Record<string, unknown>): number | null {
-  const id = Number(row.github_id);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
-
 /** The repositories stored on a GitHub login. */
 export function validateGithubRepositories(value: unknown): GithubRepositorySelection[] {
   if (!Array.isArray(value)) {
@@ -122,13 +117,6 @@ export function validateGithubRepositories(value: unknown): GithubRepositorySele
     });
   }
   return selected;
-}
-
-/** Repositories pinned on a GitHub connection, or none. */
-export function githubRepositoriesOf(
-  connection: McpConnectionRow | null | undefined,
-): GithubRepositorySelection[] {
-  return connection?.settings.repositories ?? [];
 }
 
 /**

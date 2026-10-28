@@ -27,6 +27,7 @@ import {
   requireGithubApp,
   type GithubRepository,
 } from "../github/index.js";
+import { githubRepositoriesOf } from "../github/repositories.js";
 import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import { newId } from "../lib/ids.js";
@@ -36,7 +37,6 @@ import { seesConnection } from "../mcp/visibility.js";
 import {
   DEFAULT_BRANCH,
   githubLoginItem,
-  githubRepositoriesOf,
   repositoryItem,
   RepositoryValidationError,
   validateGithubRepositories,

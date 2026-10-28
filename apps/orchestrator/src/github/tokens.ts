@@ -1,4 +1,3 @@
-import { githubIdOf, githubRepositoriesOf } from "../coding/repositories.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { recordGithubRepository, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -15,6 +14,7 @@ import {
   type TokenPermissions,
   type TokenRepository,
 } from "./index.js";
+import { githubIdOf, githubRepositoriesOf } from "./repositories.js";
 
 /** A token closer than this to expiry is replaced before it is used again. */
 export const TOKEN_REFRESH_MS = 10 * 60 * 1000;
