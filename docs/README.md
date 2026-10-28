@@ -79,7 +79,8 @@ These pages are also published at
 ## Concepts
 
 How the product works, for the operator. Start with
-[How it fits together](concepts/how-it-fits.md).
+[How it fits together](concepts/how-it-fits.md). The
+[glossary](GLOSSARY.md) defines the words used throughout.
 
 **People**
 
