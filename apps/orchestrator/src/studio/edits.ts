@@ -23,7 +23,6 @@ import type { UserRow } from "../db/users.js";
 import {
   artifactAt,
   deleteByDisplayPath,
-  getByDisplayPath,
   parseActorPath,
   type PlannedNote,
   planNote,
@@ -370,8 +369,8 @@ function names(rows: Array<Record<string, unknown>>): string {
 /** A note at a display path, or null when none is live there. */
 async function liveNoteAt(scope: EditScope, displayPath: string): Promise<{ version: number } | null> {
   try {
-    const loaded = await getByDisplayPath(scope.artifacts, editActor(scope), displayPath);
-    return loaded.row && !loaded.tombstone ? { version: Number(loaded.row.version) } : null;
+    const view = await artifactAt(scope.artifacts, editActor(scope), displayPath);
+    return view.kind === "row" && !view.deleted ? { version: Number(view.row.version) } : null;
   } catch (error) {
     if (error instanceof ArtifactError && error.status === 404) return null;
     artifactFailure(error);
