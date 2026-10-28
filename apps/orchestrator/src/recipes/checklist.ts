@@ -19,8 +19,9 @@ import { mcpDatabase } from "../mcp/index.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
+import { parseRecipe } from "./parse.js";
 import { prepareRecipeForApply, roleBrowses } from "./prepare.js";
-import { parseRecipe, type RecipeConnection, type RecipeDocument, type RecipeRole } from "./schema.js";
+import type { RecipeConnection, RecipeDocument, RecipeRole } from "./schema.js";
 
 // An apply's checklist: the steps its skeleton leaves open, the server's checks of the steps it
 // verifies, and the operator's confirmations and skips of the rest.

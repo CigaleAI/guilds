@@ -3,7 +3,8 @@ import { ManifestError, boxWiringProblem, endpointOnlyProblem, loadManifest } fr
 import type { Manifest } from "../db/schema/index.js";
 import { integrationValue, REGISTRY } from "../instance/integrations.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
-import { parseRecipe, type RecipeDocument } from "../recipes/schema.js";
+import { parseRecipe } from "../recipes/parse.js";
+import type { RecipeDocument } from "../recipes/schema.js";
 import type { KeyObject } from "node:crypto";
 import {
   assertSigned,

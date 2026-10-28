@@ -23,19 +23,14 @@ import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../p
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
+import { applyAccessEdits, operatorAccessCuts, parseAccessEdits } from "../recipes/access-edits.js";
 import { emptyRecipe } from "../recipes/minimal.js";
 import { addRecipeDraft, linkRecipeToBuilder, markRecipeReady, writeRecipe } from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
 import { validationContext, type ApplyChoices, type RecipeApply } from "../recipes/apply.js";
+import { parseRecipe } from "../recipes/parse.js";
+import { applyReview, unreviewedFields, type ReviewAction } from "../recipes/review.js";
 import { createSkeleton } from "../recipes/skeleton.js";
-import {
-  applyAccessEdits,
-  applyReview,
-  operatorAccessCuts,
-  parseAccessEdits,
-  parseRecipe,
-  unreviewedFields,
-} from "../recipes/schema.js";
 import { blockingErrors, validateRecipe } from "../recipes/validate.js";
 import {
   BUILDER_DEFAULT_TEMPERATURE,
@@ -395,12 +390,11 @@ export class BuilderService {
   async reviewField(
     session: BuilderSessionRow,
     path: string,
-    action: "confirm" | "edit",
-    value?: string,
+    review: ReviewAction,
   ): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = parseRecipe(row.body);
-    applyReview(recipe, path, action, value);
+    applyReview(recipe, path, review);
     return writeRecipe(this.deps.db, row, { body: recipe }, new Date());
   }
 

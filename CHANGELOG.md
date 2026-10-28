@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** A recipe's `design.specialization[].reason` and
+`design.handoffs[].kind` are checked against the values the Builder
+is told to use. A recipe with another value is refused, naming the
+allowed ones, where it was read as written.
+
 **No impact.** The built-in connectors (CoinGecko, X, TwitterAPI.io,
 Alchemy, DexPaprika, Google Drive, Gmail, Qonto, Tavily) check each
 provider response against the shape they read. A response that does

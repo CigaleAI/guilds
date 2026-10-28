@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { blockingApplySteps, browserLoginAgentIds, checklistFromPlan, deferLaunchSteps, skipApplyChecklistStep } from "../../src/recipes/checklist.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
 import { configFromRecipeRole, prepareRecipeForApply } from "../../src/recipes/prepare.js";
 import { TEST_MODEL } from "../helpers/models.js";
 import {
@@ -9,7 +10,6 @@ import {
   DEFAULT_TEMPERATURE,
 } from "../../src/agents/validation.js";
 import { operatorAuthor, linkedInNotionRecipe, huskLeadMatcherRecipe } from "../helpers/recipe-docs.js";
-import { parseRecipe } from "../../src/recipes/schema.js";
 import { validateRecipe } from "../../src/recipes/validate.js";
 import type { ApplyPlan, PlannedConnection } from "../../src/db/schema/index.js";
 

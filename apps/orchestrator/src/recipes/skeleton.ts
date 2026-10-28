@@ -22,10 +22,11 @@ import { agentsOfRoles, raiseRecipeAccess } from "./access.js";
 import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
 import { RecipeConflictError, RecipeError } from "./errors.js";
+import { parseRecipe } from "./parse.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap, type ApplyPreview, type CollectionPlan } from "./plan.js";
 import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
-import { parseRecipe, type RecipeDocument, type RecipeNote, type RecipeRole } from "./schema.js";
+import type { RecipeDocument, RecipeNote, RecipeRole } from "./schema.js";
 
 // The skeleton of an apply: the guild, its agents with their tasks, scripts, paused routines and
 // native tools, the recipe's notes and collections with their access, and the reused connections'

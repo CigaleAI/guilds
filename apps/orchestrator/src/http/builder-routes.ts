@@ -9,6 +9,7 @@ import { currentOrg, currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
 import { frameSse, SSE_HEADERS } from "./sse.js";
 import { bodyOf, param } from "./request.js";
+import { parseReviewAction } from "../recipes/review.js";
 
 
 function builderOf(deps: AppDeps): BuilderService {
@@ -140,12 +141,7 @@ export async function registerBuilderSessionRoutes(app: FastifyInstance, deps: A
     try {
       const builder = builderOf(deps);
       const session = await builder.getOwnedSession(param(request, "session_id"), user, org);
-      return await builder.reviewField(
-        session,
-        String(body.path ?? ""),
-        body.action === "edit" ? "edit" : "confirm",
-        typeof body.value === "string" ? body.value : undefined,
-      );
+      return await builder.reviewField(session, String(body.path ?? ""), parseReviewAction(body));
     } catch (error) {
       mapError(error);
     }

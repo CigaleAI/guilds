@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readBuilderSystemTemplate, readBuilderWriteExample } from "../../src/conversation/templates.js";
-import { parseRecipe } from "../../src/recipes/schema.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
 import { applyBlockingErrors, blockingErrors, validateRecipe } from "../../src/recipes/validate.js";
 import { crmQueueColumns, linkedInNotionRecipe } from "../helpers/recipe-docs.js";
 

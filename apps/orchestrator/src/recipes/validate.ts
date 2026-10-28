@@ -9,8 +9,9 @@ import { validateScriptName, validateScriptDescription, validateScriptSource, va
 import { NATIVE_TOOLS } from "../seed/catalog.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { isDisplayPath } from "../artifacts/paths.js";
+import { operatorAccessCuts } from "./access-edits.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
-import { operatorAccessCuts, type RecipeDocument } from "./schema.js";
+import type { RecipeDocument } from "./schema.js";
 
 export type FindingSeverity = "error" | "warning" | "info";
 

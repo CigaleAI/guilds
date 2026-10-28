@@ -493,20 +493,6 @@
       "count": 8
     }
   },
-  "src/recipes/schema.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 20
-    },
-    "complexity": {
-      "count": 7
-    },
-    "max-depth": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    }
-  },
   "src/recipes/validate.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 1

@@ -1,13 +1,7 @@
-export {
-  parseRecipe,
-  unreviewedFields,
-  hasForbiddenSecrets,
-  resetReview,
-  applyAccessEdit,
-  applyAccessEdits,
-  operatorAccessCuts,
-  formatAccessCutsMessage,
-} from "./schema.js";
+export { hasForbiddenSecrets, resetReview } from "./schema.js";
+export { parseRecipe } from "./parse.js";
+export { unreviewedFields } from "./review.js";
+export { applyAccessEdit, applyAccessEdits, formatAccessCutsMessage, operatorAccessCuts } from "./access-edits.js";
 export { RecipeError, RecipeConflictError } from "./errors.js";
 export { captureGuild, portableRoleConfig, recipeScope } from "./capture.js";
 export { recipeApply, validationContext, type ApplyChoices, type ApplyDeps, type RecipeApply } from "./apply.js";

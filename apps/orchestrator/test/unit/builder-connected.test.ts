@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseRecipe } from "../../src/recipes/schema.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
 import { linkedInNotionRecipe } from "../helpers/recipe-docs.js";
 import {
   hitFromUnknown,

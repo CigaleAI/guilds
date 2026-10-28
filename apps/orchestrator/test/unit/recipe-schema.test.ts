@@ -1,20 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyRecipe } from "../../src/recipes/minimal.js";
 import {
   applyAccessEdit,
   applyAccessEdits,
-  applyReview,
-  builderAuthor,
   formatAccessCutsMessage,
-  hasForbiddenSecrets,
   operatorAccessCuts,
-  operatorAuthor,
-  parseRecipe,
-  resetReview,
-  stampBuilderWrite,
-  unreviewedFields,
-} from "../../src/recipes/schema.js";
+} from "../../src/recipes/access-edits.js";
+import { emptyRecipe } from "../../src/recipes/minimal.js";
+import { parseRecipe } from "../../src/recipes/parse.js";
+import { applyReview, stampBuilderWrite, unreviewedFields } from "../../src/recipes/review.js";
+import { builderAuthor, hasForbiddenSecrets, operatorAuthor, resetReview } from "../../src/recipes/schema.js";
 import { applyBlockingErrors, blockingErrors, validateRecipe } from "../../src/recipes/validate.js";
 import {
   cryptoThreeRoleRecipe,
@@ -409,9 +404,9 @@ test("applyReview covers schedules, notes, and external cards", () => {
     setup: "Open the board.",
     author: builderAuthor(),
   });
-  applyReview(recipe, "roles.watcher.schedules.watch-feed", "confirm");
-  applyReview(recipe, "notes.playbook", "confirm");
-  applyReview(recipe, "external[0]", "edit", "Open the live board.");
+  applyReview(recipe, "roles.watcher.schedules.watch-feed", { action: "confirm" });
+  applyReview(recipe, "notes.playbook", { action: "confirm" });
+  applyReview(recipe, "external[0]", { action: "edit", value: "Open the live board." });
   assert.equal(recipe.roles[0]?.schedules[0]?.author.reviewed, true);
   assert.equal(recipe.notes[0]?.author.reviewed, true);
   assert.equal(recipe.external[0]?.author.by, "operator");

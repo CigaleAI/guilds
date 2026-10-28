@@ -1,3 +1,4 @@
+import { applyAccessEdits, operatorAccessCuts, parseAccessEdits } from "../recipes/access-edits.js";
 import {
   addRecipeDraft,
   deleteOrgRecipe,
@@ -11,17 +12,9 @@ import { requireVisibleGuild } from "../guilds/access.js";
 import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { captureArtifacts, captureDatabase, captureGuild } from "../recipes/capture.js";
-import {
-  applyAccessEdits,
-  applyReview,
-  hasForbiddenSecrets,
-  operatorAccessCuts,
-  parseAccessEdits,
-  parseRecipe,
-  resetReview,
-  unreviewedFields,
-  type RecipeDocument,
-} from "../recipes/schema.js";
+import { parseRecipe } from "../recipes/parse.js";
+import { applyReview, parseReviewAction, unreviewedFields } from "../recipes/review.js";
+import { hasForbiddenSecrets, resetReview, type RecipeDocument } from "../recipes/schema.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import { blockingErrors, validateRecipe } from "../recipes/validate.js";
 import { PolicyError } from "../policy/index.js";
@@ -267,7 +260,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
       const recipe = parseRecipe(row.body);
-      applyReview(recipe, String(body.path ?? ""), body.action === "edit" ? "edit" : "confirm", typeof body.value === "string" ? body.value : undefined);
+      applyReview(recipe, String(body.path ?? ""), parseReviewAction(body));
       return await writeRecipe(db, row, { body: recipe }, new Date());
     } catch (error) {
       mapError(error);
