@@ -2,7 +2,7 @@ import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
-import { grantAccess, listAccess } from "../../src/artifacts/access-lists.js";
+import { grantAccess, listAccess, raiseAccess } from "../../src/artifacts/access-lists.js";
 import { createCollection, getCollection } from "../../src/artifacts/collections.js";
 import { embedGraph, unreachableMarker } from "../../src/artifacts/embeds.js";
 import { listRevisions, memoryTimeline, writeMemory } from "../../src/artifacts/memory.js";
@@ -19,7 +19,6 @@ import {
   guildTable,
   guildTables,
   listRecordsWithHint,
-  raiseAccess,
 } from "../../src/artifacts/service.js";
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
 import {

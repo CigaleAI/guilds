@@ -1,5 +1,5 @@
 import type { AccessMode } from "../db/schema/index.js";
-import { effectiveAccess } from "../artifacts/service.js";
+import { effectiveAccess } from "../artifacts/access-lists.js";
 import type { AccessEntry } from "../artifacts/types.js";
 import type { RecipeCollection, RecipeNote } from "./schema.js";
 

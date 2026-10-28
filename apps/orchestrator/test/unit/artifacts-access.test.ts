@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { accessRaises, effectiveAccess } from "../../src/artifacts/service.js";
+import { accessRaises, effectiveAccess } from "../../src/artifacts/access-lists.js";
 import type { AccessEntry } from "../../src/artifacts/types.js";
 
 function row(type: AccessEntry["type"], id: string, mode: AccessEntry["mode"]): AccessEntry {

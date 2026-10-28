@@ -7,7 +7,7 @@ import { createCollection, deleteCollection } from "../artifacts/collections.js"
 import { ArtifactError } from "../artifacts/errors.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
-import { raiseAccess } from "../artifacts/service.js";
+import { raiseAccess } from "../artifacts/access-lists.js";
 import { writeNote } from "../artifacts/notes.js";
 import { deleteAgent } from "../db/agents.js";
 import { deleteGuild } from "../db/guilds.js";

@@ -5,7 +5,6 @@ import { columnCatalog, describeColumn, type ColumnChange } from "../artifacts/c
 import { listRecords } from "../artifacts/records.js";
 import {
   applyCollectionStep,
-  effectiveAccess,
   guildTable,
   guildTables,
   planCollection,
@@ -14,6 +13,7 @@ import {
   type CollectionLookup,
   type CollectionStep,
 } from "../artifacts/service.js";
+import { effectiveAccess } from "../artifacts/access-lists.js";
 import type { AccessEntry, AgentAccessMode, ArtifactActor } from "../artifacts/types.js";
 import type { AccessMode, CollectionColumn } from "../db/schema/index.js";
 import { argString } from "../toolbox/schema.js";
