@@ -34,7 +34,8 @@ import { agentConfig } from "../helpers/generation.js";
 import { grantAccess } from "../../src/artifacts/access-lists.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 import { createCollection } from "../../src/artifacts/collections.js";
-import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -367,11 +368,19 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       systemActor("org_home", { guildId: "guild_capture", agentId: "a_capture" }),
       now,
     );
-    await writeAgentTask(db, operatorContext("org_home", "user_operator", "operator", {
-        guildId: "guild_capture",
-        agentId: "a_capture",
-      }), "a_capture", "Ping @scout and keep @user.");
-    const captureActor = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_capture" });
+    await writeAgentTask(db, operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_capture",
+      agentId: "a_capture",
+    }), "a_capture", "Ping @scout and keep @user.");
+    const captureActor = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_capture",
+    });
     await createCollection(artifacts, captureActor, {
       name: "capture-shared",
       purpose: "One record per lead the organisation shares.",

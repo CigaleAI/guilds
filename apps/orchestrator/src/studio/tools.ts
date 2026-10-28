@@ -56,7 +56,8 @@ import { bindQuery, type Queryable } from "../db/pg.js";
 import { getStudioSession, type StudioSessionRow } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
 import { artifactAt, findNotes, parseActorPath } from "../artifacts/notes.js";
-import { hashArtifactContent, operatorContext, type ArtifactStore } from "../artifacts/store.js";
+import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
+import { operatorActor } from "../artifacts/actors.js";
 
 export type StudioToolContext = {
   session: StudioSessionRow;
@@ -600,7 +601,10 @@ export const studioListTaskRevisions: StudioTool = {
 };
 
 async function memoryTimelineFor(ctx: StudioToolContext, agent: Pick<AgentRow, "id">): Promise<MemoryTimelineEntry[]> {
-  const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+  const actor = operatorActor({
+    orgId: ctx.orgId,
+    actorId: String(ctx.user.id),
+    actorName: String(ctx.user.name ?? "operator"),
     guildId: ctx.sourceGuildId,
     agentId: agent.id,
   });
@@ -707,7 +711,10 @@ export const studioFindArtifacts: StudioTool = {
   ),
   async handler(ctx, args) {
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_ARTIFACT_LIST_MAX);
-    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorActor({
+      orgId: ctx.orgId,
+      actorId: String(ctx.user.id),
+      actorName: String(ctx.user.name ?? "operator"),
       guildId: ctx.sourceGuildId,
     });
     const findArgs: {
@@ -752,7 +759,10 @@ export const studioGetArtifact: StudioTool = {
   ),
   async handler(ctx, args) {
     const displayPath = argString(args, "display_path");
-    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorActor({
+      orgId: ctx.orgId,
+      actorId: String(ctx.user.id),
+      actorName: String(ctx.user.name ?? "operator"),
       guildId: ctx.sourceGuildId,
     });
     const parsed = parseActorPath(actor, displayPath);
@@ -801,7 +811,10 @@ export const studioListFileChanges: StudioTool = {
   ),
   async handler(ctx, args) {
     const displayPath = argString(args, "display_path");
-    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+    const actor = operatorActor({
+      orgId: ctx.orgId,
+      actorId: String(ctx.user.id),
+      actorName: String(ctx.user.name ?? "operator"),
       guildId: ctx.sourceGuildId,
     });
     if (!(await studioReachesParsed(ctx, parseActorPath(actor, displayPath)))) {

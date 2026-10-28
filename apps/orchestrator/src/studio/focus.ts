@@ -19,7 +19,8 @@ import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { operatorContext, type ArtifactStore } from "../artifacts/store.js";
+import { type ArtifactStore } from "../artifacts/store.js";
+import { operatorActor } from "../artifacts/actors.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -230,15 +231,13 @@ async function resolveMemoryVersion(
   input: Record<string, unknown>,
 ): Promise<{ focus: StudioFocus; content: string }> {
   const agent = await guildAgent(deps, trimmedText(input.agent_id));
-  const actor = operatorContext(
-    deps.orgId,
-    String(deps.user.id),
-    String(deps.user.name ?? "operator"),
-    {
-      guildId: deps.sourceGuildId,
-      agentId: agent.id,
-    },
-  );
+  const actor = operatorActor({
+    orgId: deps.orgId,
+    actorId: String(deps.user.id),
+    actorName: String(deps.user.name ?? "operator"),
+    guildId: deps.sourceGuildId,
+    agentId: agent.id,
+  });
   const { entries } = await memoryTimeline(deps.artifacts, actor, agent.id);
   const entry = findEntry(entries, input);
   if (!entry) {
@@ -351,7 +350,10 @@ async function loadFileForFocus(
   version: number | null;
   content: string;
 }> {
-  const actor = operatorContext(deps.orgId, String(deps.user.id), String(deps.user.name ?? "operator"), {
+  const actor = operatorActor({
+    orgId: deps.orgId,
+    actorId: String(deps.user.id),
+    actorName: String(deps.user.name ?? "operator"),
     guildId: deps.sourceGuildId,
   });
   try {

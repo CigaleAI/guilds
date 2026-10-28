@@ -91,7 +91,7 @@ import type { UserRow } from "../db/users.js";
 import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { StudioSourceGuild } from "../db/schema/index.js";
-import { operatorContext } from "../artifacts/store.js";
+import { operatorActor } from "../artifacts/actors.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -655,12 +655,13 @@ export class StudioService {
   ): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = operatorContext(
-      session.org_id,
-      user.id,
-      user.name,
-      { guildId: session.source_guild_id, agentId },
-    );
+    const actor = operatorActor({
+      orgId: session.org_id,
+      actorId: user.id,
+      actorName: user.name,
+      guildId: session.source_guild_id,
+      agentId,
+    });
     return memoryHistory(this.deps, actor, { id: agent.id, name: agent.name });
   }
 

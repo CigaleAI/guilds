@@ -1,6 +1,7 @@
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { hashArtifactContent, operatorContext, type ArtifactStore } from "../artifacts/store.js";
+import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
+import { operatorActor } from "../artifacts/actors.js";
 import {
   agentTask,
   expandTaskText,
@@ -236,12 +237,13 @@ export class StudioDrafts implements StudioDraftService {
         const again = await this.runPreflight(agent, String(draft.proposed_content), args);
         Object.assign(preflight, again);
       }
-      const actor = operatorContext(
-        session.org_id,
-        String(user.id ?? "orphan"),
-        user.name,
-        { guildId: String(draft.source_guild_id), agentId: String(draft.target_agent_id) },
-      );
+      const actor = operatorActor({
+        orgId: session.org_id,
+        actorId: String(user.id ?? "orphan"),
+        actorName: user.name,
+        guildId: String(draft.source_guild_id),
+        agentId: String(draft.target_agent_id),
+      });
       const live = await getAgentTask(client ?? args.db, session.org_id, String(draft.target_agent_id));
       if (!live) {
         throw new StudioUnprocessableError("task.md not found");

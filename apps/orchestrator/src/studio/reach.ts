@@ -1,7 +1,8 @@
 import { parseDisplayPath, type ParsedDisplayPath } from "../artifacts/paths.js";
 import { listAgents } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { operatorContext, type ArtifactStore } from "../artifacts/store.js";
+import { type ArtifactStore } from "../artifacts/store.js";
+import { operatorActor } from "../artifacts/actors.js";
 import { describeCollection } from "../artifacts/collections.js";
 
 // What a Studio session reaches outside its own transcript: the source
@@ -29,7 +30,12 @@ export async function studioReachesParsed(scope: StudioReachScope, parsed: Parse
   if (parsed.kind === "collection" || parsed.kind === "record") {
     const table = await describeCollection(
       scope.artifacts,
-      operatorContext(scope.orgId, "studio", "studio", { guildId: scope.sourceGuildId }),
+      operatorActor({
+        orgId: scope.orgId,
+        actorId: "studio",
+        actorName: "studio",
+        guildId: scope.sourceGuildId,
+      }),
       parsed.collectionName,
     );
     return Boolean(table) && studioReachesTable(scope.sourceGuildId, table?.guild_id);

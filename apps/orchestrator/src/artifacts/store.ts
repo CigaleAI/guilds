@@ -6,7 +6,6 @@ import type { RecordRow } from "../db/collections.js";
 import type { CollectionColumn, RecordBody, AccessMode } from "../db/schema/index.js";
 import type { Queryable } from "../db/pg.js";
 import { reachedMode } from "./access.js";
-import { operatorActor } from "./actors.js";
 import { ArtifactError } from "./errors.js";
 import { displayPathFor } from "./paths.js";
 import {
@@ -15,7 +14,6 @@ import {
   type ArtifactActor,
   type ArtifactKind,
   type ArtifactLevel,
-  type HiddenGuilds,
 } from "./types.js";
 
 /** What notes, Memory, collections, records, and access lists are read and written through. */
@@ -94,23 +92,6 @@ export type ReachedTable = Pick<CollectionView, "id" | "name" | "purpose" | "dis
 
 /** The owner an artifact at a level sits under for an actor. */
 export type ArtifactOwnerRef = { orgId: string; ownerId: string; guildId: string | null; agentId: string | null };
-
-/** An operator acting in the organisation, in a guild or on an agent when one is named. */
-export function operatorContext(
-  orgId: string,
-  actorId: string,
-  actorName: string,
-  extra: { guildId?: string | null; agentId?: string | null; hidden?: HiddenGuilds } = {},
-): ArtifactActor {
-  return operatorActor({
-    orgId,
-    actorId,
-    actorName,
-    guildId: extra.guildId ?? null,
-    agentId: extra.agentId ?? null,
-    ...(extra.hidden ? { hidden: extra.hidden } : {}),
-  });
-}
 
 /** The owner a level names for the actor: itself, its own guild, or the organisation. */
 export function ownerFor(actor: ArtifactActor, level: ArtifactLevel): ArtifactOwnerRef {

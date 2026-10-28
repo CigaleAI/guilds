@@ -70,7 +70,7 @@ import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { getByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
-import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { createCollection, describeCollection, updateCollection } from "../../src/artifacts/collections.js";
 import { grantAccess, listAccess, reachOf } from "../../src/artifacts/access-lists.js";
 import { addRecord, listRecords } from "../../src/artifacts/records.js";
@@ -697,13 +697,21 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     systemActor("org_home", { guildId: "guild_ev", agentId: "a_ev" }),
     now,
   );
-  const operator = operatorContext("org_home", "user_operator", "operator", {
+  const operator = operatorActor({
+    orgId: "org_home",
+    actorId: "user_operator",
+    actorName: "operator",
     guildId: "guild_ev",
     agentId: "a_ev",
   });
   const { row: shared } = await writeNote(
     artifacts,
-    operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ev" }),
+    operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_ev",
+    }),
     { level: "guild", key: "house-rules.md", content: "Always cite the source.\n", title: "House rules" },
   );
   const sharedPath = `${ownerPrefix("org_home", "guild", "guild_ev")}${shared.key}`;
@@ -1057,11 +1065,22 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     systemActor("org_home", { guildId: "guild_ed", agentId: "a_ed" }),
     now,
   );
-  const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed", agentId: "a_ed" });
+  const operator = operatorActor({
+    orgId: "org_home",
+    actorId: "user_operator",
+    actorName: "operator",
+    guildId: "guild_ed",
+    agentId: "a_ed",
+  });
   await writeMemory(artifacts, operator, "a_ed", { content: "- be brief\n- digest in notes\n- nothing yet", detail: "seed" });
   const { row: note } = await writeNote(
     artifacts,
-    operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed" }),
+    operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_ed",
+    }),
     { level: "guild", key: "house-rules.md", content: "Always cite.\n", title: "House rules" },
   );
   const notePath = `${ownerPrefix("org_home", "guild", "guild_ed")}${note.key}`;
@@ -1189,7 +1208,12 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const noteSeq = await commit("studio_edit_note", noteArgs, noteEdit);
     await writeNote(
       artifacts,
-      operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed" }),
+      operatorActor({
+        orgId: "org_home",
+        actorId: "user_operator",
+        actorName: "operator",
+        guildId: "guild_ed",
+      }),
       { level: "guild", key: "house-rules.md", content: "Always cite, twice.\n", title: "House rules" },
     );
     const staleView = await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${noteSeq}`, headers: AUTH });
@@ -1266,7 +1290,11 @@ test("studio proposes tables to create, change, and delete that the operator app
       now,
     );
   }
-  const operator = operatorContext("org_home", "user_operator", "operator");
+  const operator = operatorActor({
+    orgId: "org_home",
+    actorId: "user_operator",
+    actorName: "operator",
+  });
   const column = (name: string, type: string, extra: Record<string, unknown> = {}) => ({ name, type, description: `The ${name}.`, ...extra });
   const shared = await createCollection(artifacts, operator, { name: "shared", purpose: "Shared facts.", columns: [column("fact", "text")] });
   await grantAccess(artifacts, operator, { kind: "collection", id: shared.id }, { type: "guild", id: "guild_nb", mode: "read" });
@@ -1569,7 +1597,12 @@ test("studio proposes notes to create and delete and narrows an agent's access",
 
   const now = new Date();
   await insertGuild(db, { guildId: "guild_nw", name: "narrow-guild", orgId: "org_home" }, now);
-  const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_nw" });
+  const operator = operatorActor({
+    orgId: "org_home",
+    actorId: "user_operator",
+    actorName: "operator",
+    guildId: "guild_nw",
+  });
   const { row: roles } = await writeNote(artifacts, operator, {
     level: "guild",
     key: "roles.md",

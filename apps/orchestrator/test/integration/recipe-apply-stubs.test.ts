@@ -30,7 +30,8 @@ import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { getByDisplayPath } from "../../src/artifacts/notes.js";
-import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",
@@ -504,7 +505,10 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
     assert.ok(mixedWriterTask?.content_text.includes(`Then note_get ${rulesPath}.`));
     const mixedWriterSchedules = await listSchedules(db, String(mixedWriter.id));
     assert.ok(mixedWriterSchedules.some((row) => String(row.instruction).includes(`Read ${mapPath} first.`)));
-    const noteReader = operatorContext("org_home", "user_operator", "operator", {
+    const noteReader = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
       guildId: mixedApply.guild_id,
       agentId: String(mixedWriter.id),
     });

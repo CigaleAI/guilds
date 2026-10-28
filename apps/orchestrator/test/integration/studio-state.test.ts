@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
-import { agentActor } from "../../src/artifacts/actors.js";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { ownerPrefix } from "../../src/artifacts/paths.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
@@ -21,7 +21,7 @@ import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 import { addRecord, removeRecord } from "../../src/artifacts/records.js";
 import { createCollection } from "../../src/artifacts/collections.js";
-import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { embedSource, snapshotTaskCollections } from "../../src/artifacts/embeds.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
@@ -100,7 +100,12 @@ test("studio's State lists the guild's items with who changed and read each one"
         now,
       );
     }
-    const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_st" });
+    const operator = operatorActor({
+      orgId: "org_home",
+      actorId: "user_operator",
+      actorName: "operator",
+      guildId: "guild_st",
+    });
     const asRun = (agentId: string, name: string, guildId: string, runId: string) => ({
       ...agentActor({ orgId: "org_home", guildId, agentId, agentName: name, runId }),
       toolCall: { id: `call_${runId}`, name: "note_write" },
@@ -135,7 +140,12 @@ test("studio's State lists the guild's items with who changed and read each one"
     await writeNote(artifacts, operator, { level: "guild", key: "idle.md", content: "Nobody reads this.\n" });
     const { row: farNote } = await writeNote(
       artifacts,
-      operatorContext("org_home", "user_operator", "operator", { guildId: "guild_far" }),
+      operatorActor({
+        orgId: "org_home",
+        actorId: "user_operator",
+        actorName: "operator",
+        guildId: "guild_far",
+      }),
       { level: "guild", key: "far.md", content: "Elsewhere.\n" },
     );
     const leads = await createCollection(artifacts, operator, {
