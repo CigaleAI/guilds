@@ -1,5 +1,4 @@
-import { parseDisplayPath } from "../artifacts/paths.js";
-import { agentTask, artifactAt } from "../artifacts/service.js";
+import { agentTask, artifactAt, parseActorPath } from "../artifacts/service.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { buildMemoryTimeline, memoryDiffText, type MemoryTimelineEntry } from "../memory/timeline.js";
@@ -758,19 +757,16 @@ export const studioGetArtifact: StudioTool = {
   ),
   async handler(ctx, args) {
     const displayPath = argString(args, "display_path");
-    const parsed = parseDisplayPath(displayPath);
-    if (parsed.orgId !== ctx.orgId) {
-      throw new StudioUnprocessableError("artifact is not in this organisation");
-    }
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+      guildId: ctx.sourceGuildId,
+    });
+    const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind === "collection") {
       throw new StudioUnprocessableError(`${parsed.collectionName} is a table; read it with studio_get_collection`);
     }
     if (!(await studioReachesParsed(ctx, parsed))) {
       throw new StudioUnprocessableError("artifact is not in the source guild or the organisation's shared files");
     }
-    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
-      guildId: ctx.sourceGuildId,
-    });
     const view = await artifactAt(ctx.artifacts, actor, displayPath);
     if (view.kind !== "row") {
       throw new StudioUnprocessableError("artifact not found");
@@ -810,11 +806,10 @@ export const studioListFileChanges: StudioTool = {
   ),
   async handler(ctx, args) {
     const displayPath = argString(args, "display_path");
-    const parsed = parseDisplayPath(displayPath);
-    if (parsed.orgId !== ctx.orgId) {
-      throw new StudioUnprocessableError("path is not in this organisation");
-    }
-    if (!(await studioReachesParsed(ctx, parsed))) {
+    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
+      guildId: ctx.sourceGuildId,
+    });
+    if (!(await studioReachesParsed(ctx, parseActorPath(actor, displayPath)))) {
       throw new StudioUnprocessableError("path is not in the source guild or the organisation's shared files");
     }
     const limit = clampLimit(args.limit, STUDIO_DEFAULT_LIMIT, STUDIO_REVISION_LIST_MAX);

@@ -38,6 +38,7 @@ import { applySecretAliases } from "../../src/access/runtime.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
 import { noteRowAt } from "../helpers/artifacts.js";
+import { agentActor } from "../../src/artifacts/actors.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STUB = path.join(HERE, "../helpers/harness/stub-cli");
@@ -273,7 +274,7 @@ describe("code_task with the Claude Code driver", () => {
     };
     const { ctx } = context(new HostCodeSandbox(), {
       artifacts: fakeStore as unknown as ToolContext["artifacts"],
-      artifact_actor: {} as ToolContext["artifact_actor"],
+      artifact_actor: agentActor({ orgId: "org_1", guildId: "guild_1", agentId: "a_1", agentName: "researcher" }),
     });
     const brief = await buildBrief(ctx, "Tidy greet.py.", Object.keys(notes));
     assert.ok(brief.startsWith(BRIEF_PREAMBLE));

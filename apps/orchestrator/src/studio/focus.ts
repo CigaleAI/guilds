@@ -1,6 +1,5 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { parseDisplayPath } from "../artifacts/paths.js";
-import { artifactAt } from "../artifacts/service.js";
+import { artifactAt, parseActorPath } from "../artifacts/service.js";
 import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
@@ -363,10 +362,7 @@ async function loadFileForFocus(
     guildId: deps.sourceGuildId,
   });
   try {
-    const parsed = parseDisplayPath(displayPath);
-    if (parsed.orgId !== deps.orgId) {
-      throw new StudioUnprocessableError("focus file is not in this organisation");
-    }
+    const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind === "collection") {
       throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
     }

@@ -18,6 +18,14 @@ record bodies, studio drafts, recipe bodies and apply previews. A row
 read back is used as stored: a field the type requires and the row
 lacks fails where it is read, where some readers filled it in before.
 
+**No impact.** A file path in another organisation is refused with
+`artifact is not in this organisation` before any other check of the
+path, by `studio_list_file_changes`, a Studio focus pin, and an agent's
+`note_get`, `note_delete` and `code_task` notes. Before, Studio said
+`path is not in this organisation` or `focus file is not in this
+organisation`, and an agent got `artifact not found` or the tool's hint
+about records and collections.
+
 **No impact.** The Studio inspector, `studio_get_agent_context` and a
 Task draft's preflight show an embed warning, or keep the stored Task
 hash as the prior effective hash, only when the store refuses the

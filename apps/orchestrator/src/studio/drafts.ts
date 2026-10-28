@@ -1,5 +1,4 @@
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
-import { getMemoryRow, storedMemoryText } from "../artifacts/memory.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { agentTask, expandTaskText } from "../artifacts/service.js";
 import { hashArtifactContent, operatorContext, type ArtifactStore } from "../artifacts/store.js";
@@ -312,12 +311,6 @@ export class StudioDrafts implements StudioDraftService {
     proposed: string,
     args: { preview: StudioToolContext["preview"]; notesSystemPath: string },
   ): Promise<Record<string, unknown>> {
-    const actor = operatorContext(
-      agent.org_id,
-      "studio-preflight",
-      "studio",
-      { guildId: agent.guild_id, agentId: agent.id },
-    );
     let expanded: string;
     try {
       expanded = await expandTaskText(this.artifacts, agent, proposed);
@@ -327,12 +320,12 @@ export class StudioDrafts implements StudioDraftService {
       }
       throw error;
     }
+    const live = await agentTask(this.artifacts, agent);
     const standing = hydrateStanding({
       systemPath: args.notesSystemPath,
       agentName: agent.name,
       agentId: agent.id,
     });
-    const memory = await getMemoryRow(this.artifacts, actor, agent.id);
     const preview = await previewCurrentState(args.preview, agent);
     const tools = await projectOfferedToolSchemas(args.preview, agent);
     const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
@@ -341,7 +334,7 @@ export class StudioDrafts implements StudioDraftService {
       standing,
       expanded,
       preview.state,
-      storedMemoryText(memory),
+      live.memoryText,
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
@@ -350,7 +343,6 @@ export class StudioDrafts implements StudioDraftService {
     if (tokens > maxInput) {
       throw new StudioUnprocessableError("composed prompt exceeds the target agent's max_input_tokens");
     }
-    const live = await agentTask(this.artifacts, agent);
     const priorEffective = live.text && live.expanded.ok ? promptHash(live.expanded.text) : live.hash;
     return {
       config_hash: tools.config_hash,

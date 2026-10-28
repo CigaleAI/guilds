@@ -1,5 +1,5 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { parseDisplayPath } from "../artifacts/paths.js";
+import { parseActorPath } from "../artifacts/service.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
@@ -75,18 +75,6 @@ function findArgs(args: Record<string, unknown>): {
   return find;
 }
 
-/**
- * A display path an agent may name: a note, its Task or Memory, a record. The memory archive is
- * the operator's, so a revision path is unknown to an agent.
- */
-function agentPath(path: string): ReturnType<typeof parseDisplayPath> {
-  const parsed = parseDisplayPath(path);
-  if (parsed.kind === "revision") {
-    throw new ArtifactError("unknown artifact path", 404);
-  }
-  return parsed;
-}
-
 /** A row `note_get` may show: a script or a file is read with its own family's tool. */
 function assertReadableNote(row: { kind: string } | undefined): void {
   if (row?.kind === "script") {
@@ -127,7 +115,7 @@ function renderGet(
  * way `note_get` and the record tools read it. A record is its JSON view.
  */
 export async function readArtifactText(ctx: ToolContext, path: string): Promise<{ path: string; text: string }> {
-  const parsed = agentPath(path);
+  const parsed = parseActorPath(actor(ctx), path);
   if (parsed.kind === "collection") {
     throw new ArtifactError(`${path} is a collection; name one of its records`, 422);
   }
@@ -183,7 +171,7 @@ export const noteGet: Tool = {
   ),
   async handler(ctx, args) {
     const path = argString(args, "path");
-    const parsed = agentPath(path);
+    const parsed = parseActorPath(actor(ctx), path);
     if (parsed.kind === "collection" || parsed.kind === "record") {
       throw new ArtifactError(RECORD_TOOLS_HINT, 422);
     }
@@ -254,7 +242,7 @@ export const noteDelete: Tool = {
   ),
   async handler(ctx, args) {
     const path = argString(args, "path");
-    const parsed = agentPath(path);
+    const parsed = parseActorPath(actor(ctx), path);
     if (parsed.kind === "collection") {
       throw new ArtifactError("collections are managed by the operator", 422);
     }

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { ArtifactError } from "../artifacts/errors.js";
 import { assertNoteKeyFree, normalizeNoteKey, ownerPrefix, parseDisplayPath } from "../artifacts/paths.js";
-import { artifactAt } from "../artifacts/service.js";
+import { artifactAt, parseActorPath } from "../artifacts/service.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { changeGuild } from "../guilds/changes.js";
@@ -123,10 +123,7 @@ export async function loadMemoryBase(scope: EditScope, agent: Pick<AgentRow, "id
 export async function loadNoteBase(scope: EditScope, displayPath: string): Promise<EditBase> {
   const actor = editActor(scope);
   try {
-    const parsed = parseDisplayPath(displayPath);
-    if (parsed.orgId !== scope.orgId) {
-      throw new StudioUnprocessableError("artifact is not in this organisation");
-    }
+    const parsed = parseActorPath(actor, displayPath);
     if (parsed.kind !== "artifact") {
       throw new StudioUnprocessableError("only notes can be edited here; records and memory revisions are not notes");
     }
