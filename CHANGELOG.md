@@ -8,6 +8,32 @@ commands for each effect are in
 
 ## Unreleased
 
+**Rebuild.** Migrations 0015 and 0016 drop `studio_sessions.coach_snapshot`
+and `studio_sessions.coach_agent_id`, which held nothing, and the
+defaults of `studio_sessions.source_guild_snapshot` and
+`recipe_applies.preview`, which every insert sets. Every JSON column
+has the type its writers store: runs, sessions and messages, connector
+OAuth clients, login settings, tool input schemas, collection columns,
+record bodies, studio drafts, recipe bodies and apply previews. A row
+read back is used as stored: a field the type requires and the row
+lacks fails where it is read, where some readers filled it in before.
+
+**No impact.** A tool result keeps the metadata fields the app reads
+(`exit_code`, `cwd`, `path`, `range`, `content_hash`, `lines`,
+`log_path`, `timed_out`, `background_id`, `state`, `matches`,
+`files`); other keys a sandbox helper reports are not stored. Tool
+call arguments are read only as the JSON string both providers send.
+
+**No impact.** A stored recipe opens as stored: reading it no longer
+re-applies the recipe checks, which run on every write, import and
+registry install.
+
+**No impact.** A remote connector tool whose input schema has a
+malformed `type`, `properties` or `required` is offered with
+`{"type": "object"}`; an operator-edited input schema with one of
+those malformed is refused with a 422 naming the field. A member that
+does not exist is a 404.
+
 **No impact.** Capturing a guild as a recipe keeps each agent note
 with the role of the agent that owns it, so applying the recipe gives
 the note to that role's agent. Before, every captured agent note went
