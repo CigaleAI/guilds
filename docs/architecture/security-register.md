@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Open |
 | [SEC-49](#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read) | A run's diff and a code task's log were served unredacted when the agent's secrets could not be read | Fixed 2026-10-27 |
 | [SEC-48](#sec-48--a-run-that-listed-a-logins-tools-for-the-first-time-was-offered-the-ones-that-start-off) | A run that listed a login's tools for the first time was offered the ones that start Off | Fixed 2026-10-26 |
 | [SEC-47](#sec-47--github-content-an-agent-reads-through-its-tools-can-steer-its-writes-to-the-logins-repositories) | GitHub content an agent reads through its tools can steer its writes to the login's repositories | Open |
@@ -58,6 +59,41 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-50 — An operator's read of a Memory revision path is not limited to its organisation
+
+**Status:** open.
+
+**Found:** 2026-10-28, giving `artifacts/` one function for what a
+display path holds.
+
+**Where:** `readRevision` in `apps/orchestrator/src/artifacts/notes.ts`
+(lines 308-316), which `getByDisplayPath` calls for a
+`history-archive` path (line 280).
+
+**Exposure:** `readRevision` lets an operator actor through when
+`reachesOwner` says it reaches the agent. That check only looks at the
+actor's hidden guilds, not at its organisation. It then reads the
+revision with the organisation id the path names. An operator actor of
+one organisation that is handed another organisation's revision path,
+with that agent's id and the revision's stamp, gets that agent's
+archived Memory text.
+
+**Control in place:** no caller passes such a path through today.
+`artifactAt` in `apps/orchestrator/src/artifacts/service.ts` refuses a
+path outside the actor's organisation before it reads, and the Studio
+reads through it. `readEmbeddableNotes` and `lastSavedRow` in
+`apps/orchestrator/src/artifacts/host-files.ts` drop a revision and keep
+only a live row. An agent actor never reaches `readRevision`'s read:
+the archive is the operator's.
+
+**Fix:** not yet. Fixing it takes refusing, in `readRevision` or
+`getByDisplayPath`, a revision path whose organisation is not the
+actor's.
+
+**Residual risk:** until then, a new caller that hands an operator
+actor's `getByDisplayPath` a path it did not check would return
+another organisation's Memory revisions.
 
 ## SEC-49 — A run's diff and a code task's log were served unredacted when the agent's secrets could not be read
 
