@@ -1,10 +1,9 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { AgentMessageLimitReached, GroupChatCleared, RowMissing } from "./errors.js";
 import { guildVisibleTo } from "./guilds.js";
-import { jsonObj } from "./json.js";
 import { tableColumns } from "./columns.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { agents, groupMessages, guilds } from "./schema/index.js";
+import { agents, groupMessages, guilds, type GroupChatFailure } from "./schema/index.js";
 
 type Guild = InferSelectModel<typeof guilds>;
 
@@ -263,18 +262,17 @@ export async function markGroupChatSeen(
 export async function appendGroupChatError(
   pool: Queryable,
   guildId: string,
-  entry: Record<string, unknown>,
+  entry: GroupChatFailure,
   now: Date,
-): Promise<unknown[]> {
-  const result = await pool.query<{ group_chat_errors: unknown }>(
+): Promise<GroupChatFailure[]> {
+  const result = await pool.query<Pick<Guild, "group_chat_errors">>(
     `UPDATE guilds
      SET group_chat_errors = group_chat_errors || $2::jsonb, updated_at = $3
      WHERE id = $1
      RETURNING group_chat_errors`,
     [guildId, JSON.stringify([entry]), stamp(now)],
   );
-  const loaded = jsonObj(result.rows[0]?.group_chat_errors);
-  return Array.isArray(loaded) ? loaded : [];
+  return result.rows[0]?.group_chat_errors ?? [];
 }
 
 export async function postUserGroupMessage(

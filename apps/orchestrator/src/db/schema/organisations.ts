@@ -84,6 +84,15 @@ export const orgMembers = pgTable(
 export const DEFAULT_GUILD_AGENTS = 15;
 export const DEFAULT_AGENT_MESSAGE_LIMIT = 200;
 
+/** A group chat delivery that failed, as the guild's chat state lists it. */
+export type GroupChatFailure = {
+  at: string;
+  agent_id: string;
+  operation: string;
+  error_type: string;
+  message: string;
+};
+
 export const guilds = pgTable(
   "guilds",
   {
@@ -94,7 +103,7 @@ export const guilds = pgTable(
     group_chat_seq: bigint("group_chat_seq", { mode: "number" }).notNull().default(0),
     group_agent_message_count: integer("group_agent_message_count").notNull().default(0),
     group_agent_message_limit: integer("group_agent_message_limit").notNull().default(DEFAULT_AGENT_MESSAGE_LIMIT),
-    group_chat_errors: jsonb("group_chat_errors").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    group_chat_errors: jsonb("group_chat_errors").$type<GroupChatFailure[]>().notNull().default(sql`'[]'::jsonb`),
     group_chat_cleared_at: timestamptz("group_chat_cleared_at"),
     about: text("about").notNull().default(""),
     org_id: text("org_id").notNull(),

@@ -19,7 +19,7 @@ import { advanceGroupCursor,
   listPendingGroupAgents,
   postAgentGroupMessage,
   postUserGroupMessage,
-  updateGroupAgentMessageLimit, type GroupMessageRow } from "../db/group-chat.js";
+  updateGroupAgentMessageLimit, type GroupChatStateRow, type GroupMessageRow, type PendingGroupAgentRow } from "../db/group-chat.js";
 import { getGuild, listGuilds } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
 import { getRun } from "../db/runs.js";
@@ -341,25 +341,27 @@ type DispatchHandle = {
   done(): boolean;
 };
 
+/** A pending agent as the dispatcher reads it: who it is, and how far it has seen the chat. */
+type PendingAgent = Pick<PendingGroupAgentRow, "id" | "name" | "group_chat_delivered_through">;
+
 /**
  * Pending agents as the dispatcher sees them: an agent in a group run has seen the chat through
  * that run's snapshot, so it is pending only for what came after.
  */
-export function withActiveCursors(
-  pending: Array<Record<string, unknown>>,
+export function withActiveCursors<T extends PendingAgent>(
+  pending: T[],
   active: ReadonlyMap<string, ActiveDelivery>,
   snapshot: number,
-): Array<Record<string, unknown>> {
+): T[] {
   return pending
     .map((agent) => {
-      const delivery = active.get(String(agent.id));
-      const cursor = Number(agent.group_chat_delivered_through);
+      const delivery = active.get(agent.id);
       if (delivery === undefined) {
         return agent;
       }
-      return { ...agent, group_chat_delivered_through: Math.max(cursor, delivery.throughSeq) };
+      return { ...agent, group_chat_delivered_through: Math.max(agent.group_chat_delivered_through, delivery.throughSeq) };
     })
-    .filter((agent) => Number(agent.group_chat_delivered_through) < snapshot);
+    .filter((agent) => agent.group_chat_delivered_through < snapshot);
 }
 
 /**
@@ -367,16 +369,16 @@ export function withActiveCursors(
  * other group runs. An agent picked without a tag runs alone: it starts only when no other group
  * run is under way or starting.
  */
-export function deliveriesToStart(args: {
-  actionable: Array<Record<string, unknown>>;
+export function deliveriesToStart<T extends Pick<PendingAgent, "id" | "name">>(args: {
+  actionable: T[];
   tagged: ReadonlySet<string>;
   active: ReadonlyMap<string, ActiveDelivery>;
   isBusy: (agentId: string) => boolean;
-}): { start: Array<Record<string, unknown>>; waitsForRelease: boolean } {
-  const waiting = args.actionable.filter((agent) => !args.active.has(String(agent.id)));
-  const idle = waiting.filter((agent) => !args.isBusy(String(agent.id)));
-  const start = idle.filter((agent) => args.tagged.has(String(agent.name)));
-  const untagged = idle.find((agent) => !args.tagged.has(String(agent.name)));
+}): { start: T[]; waitsForRelease: boolean } {
+  const waiting = args.actionable.filter((agent) => !args.active.has(agent.id));
+  const idle = waiting.filter((agent) => !args.isBusy(agent.id));
+  const start = idle.filter((agent) => args.tagged.has(agent.name));
+  const untagged = idle.find((agent) => !args.tagged.has(agent.name));
   if (untagged && args.active.size + start.length === 0) {
     start.push(untagged);
   }
@@ -739,7 +741,7 @@ export class GroupChat {
 
   async _recipients(
     guildId: string,
-    pending: Array<Record<string, unknown>>,
+    pending: PendingAgent[],
     snapshot: number,
   ): Promise<RecipientPick> {
     if (
@@ -761,8 +763,8 @@ export class GroupChat {
     const tagged = new Set<string>();
     const fanout = new Set<string>();
     for (const agent of pending) {
-      const name = String(agent.name);
-      const deliveredThrough = Number(agent.group_chat_delivered_through);
+      const name = agent.name;
+      const deliveredThrough = agent.group_chat_delivered_through;
       if (taggedRecipientNamesAfter(rows, members, deliveredThrough).has(name)) {
         tagged.add(name);
       }
@@ -857,19 +859,19 @@ export class GroupChat {
   /** Moves agents no unseen message picks past the snapshot, and says which picked ones start. */
   async _plan(
     guildId: string,
-    pending: Array<Record<string, unknown>>,
+    pending: PendingAgent[],
     snapshot: number,
     runner: GroupRunner,
   ): Promise<{
-    start: Array<Record<string, unknown>>;
+    start: PendingAgent[];
     waitsForRelease: boolean;
     pick: RecipientPick;
   }> {
     const pick = await this._recipients(guildId, pending, snapshot);
-    const actionable = pending.filter((agent) => pick.decision.names.has(String(agent.name)));
+    const actionable = pending.filter((agent) => pick.decision.names.has(agent.name));
     for (const agent of pending) {
-      if (!pick.decision.names.has(String(agent.name))) {
-        await this.db.advanceGroupCursor(String(agent.id), snapshot);
+      if (!pick.decision.names.has(agent.name)) {
+        await this.db.advanceGroupCursor(agent.id, snapshot);
       }
     }
     const plan = deliveriesToStart({
@@ -883,13 +885,13 @@ export class GroupChat {
 
   _start_delivery(
     guildId: string,
-    agent: Record<string, unknown>,
+    agent: PendingAgent,
     through: { snapshot: number; pick: RecipientPick | null },
   ): void {
     const active = this._active_for(guildId);
     const delivery: ActiveDelivery = {
-      id: String(agent.id),
-      name: String(agent.name),
+      id: agent.id,
+      name: agent.name,
       throughSeq: through.snapshot,
     };
     active.set(delivery.id, delivery);
@@ -897,7 +899,7 @@ export class GroupChat {
     delivery.task = this._deliver(guildId, {
       agentId: delivery.id,
       throughSeq: through.snapshot,
-      deliveredThrough: Number(agent.group_chat_delivered_through),
+      deliveredThrough: agent.group_chat_delivered_through,
       recipients,
     }).finally(() => {
       active.delete(delivery.id);
@@ -975,22 +977,21 @@ export class GroupChat {
     await this.publish(guildId, "group.delivery.failed", entry);
   }
 
-  _state_view(row: Record<string, unknown>): Record<string, unknown> {
-    const errors = jsonObj(row.errors);
-    const count = Number(row.agent_message_count);
-    const limit = Number(row.agent_message_limit);
-    const guildId = String(row.guild_id);
+  _state_view(row: GroupChatStateRow): Record<string, unknown> {
+    const count = row.agent_message_count;
+    const limit = row.agent_message_limit;
+    const guildId = row.guild_id;
     const active = [...(this._active.get(guildId)?.values() ?? [])];
     return {
       guild_id: guildId,
-      chat_seq: Number(row.chat_seq),
+      chat_seq: row.chat_seq,
       agent_message_count: count,
       agent_message_limit: limit,
       dispatching: this.is_dispatching(guildId),
-      pending_agent_count: Number(row.pending_agent_count),
+      pending_agent_count: row.pending_agent_count,
       active_agents: active.map((delivery) => ({ id: delivery.id, name: delivery.name })),
       limit_reached: count >= limit,
-      errors: Array.isArray(errors) ? errors : [],
+      errors: row.errors,
       last_recipient_decision:
         this._recipientCache && this._recipientCache.guildId === guildId
           ? {
