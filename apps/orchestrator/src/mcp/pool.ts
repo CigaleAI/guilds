@@ -243,7 +243,7 @@ export class McpPool {
   private remoteForCredentials(server: LoadedConnector, resolved: ConnectorCode, credentials: Credentials): RemoteSession {
     const session = new McpSession(
       serverUrl(server),
-      headersFor(credentialToken(credentials, resolved.manifest), serverManifest(server)),
+      headersFor(credentialToken(credentials, serverManifest(server)), serverManifest(server)),
       this.endpointFetch,
     );
     return {

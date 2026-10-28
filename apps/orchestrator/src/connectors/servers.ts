@@ -418,12 +418,6 @@ export function settingsOutcome(server: LoadedConnector, values: ConnectionSetti
   return { kind: holdsRequiredSettings(server, values) ? "complete" : "awaiting", values };
 }
 
-/** The credential fields a token login of this server takes: its installed connector's, else one `token` field. */
-export function tokenFields(server: LoadedConnector): AuthField[] {
-  const manifest = installedConnectors().forServer(server)?.manifest;
-  return manifest ? authFields(manifest) : [{ name: "token", label: "API key", optional: false }];
-}
-
 /**
  * The code that serves a server: the manifest and the adapter of the connector this box runs for
  * it, and whether the box calls the server's endpoint.

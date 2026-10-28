@@ -205,3 +205,36 @@ test("connect stores a login that lacks required settings as pending, and one wi
     (error: unknown) => error instanceof ConnectError && error.status === 422,
   );
 });
+
+test("connect signs a code-less registry connector in with the credential fields its manifest declares", async () => {
+  process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
+  const repo = new ConnectRepoStub();
+  const pool = new McpPool(repo);
+  const sent: Array<Record<string, string>> = [];
+  pool.endpointFetch = async (_url, init = {}) => {
+    sent.push(init.headers as Record<string, string>);
+    const body = JSON.parse(String(init.body)) as { id?: number; method: string };
+    const result = body.method === "tools/list" ? { tools: [] } : { serverInfo: { name: "acme" } };
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const base = serverRow("acme");
+  const server = serverRow("acme", {
+    source: "registry",
+    config: { url: "https://mcp.acme.example.com/mcp" },
+    manifest: {
+      ...base.manifest,
+      endpoint: { url: "https://mcp.acme.example.com/mcp" },
+      auth: { kind: "token", fields: [{ name: "api_key", label: "Acme key" }] },
+    },
+  });
+  await assert.rejects(
+    () => connect(repo, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { token: "k" } }, new Date(), { masterKey: KEY }),
+    (error: unknown) => error instanceof ConnectError && error.status === 422 && /acme key/.test(error.message),
+  );
+  const result = await connect(repo, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { api_key: " k " } }, new Date(), { masterKey: KEY });
+  assert.deepEqual(decryptPayload(result.connection.ciphertext, result.connection.nonce, KEY), { api_key: "k" });
+  assert.equal(sent[0]?.Authorization, "Bearer k");
+});

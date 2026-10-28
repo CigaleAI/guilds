@@ -52,6 +52,11 @@ not match fails the tool call with the field at fault, such as
 malformed item was skipped before. Output for well-formed responses
 is unchanged.
 
+**No impact.** A registry connector installed without code signs in
+with the credential fields its manifest declares, the ones its Connect
+form shows, and its endpoint receives the first of them. Before, such
+a connector took a `token` field whatever its manifest declared.
+
 **Rebuild.** Migration 0014 gives every stored agent config each
 setting it predates, with the value the app already read for it, so
 a config holds every key. Applying a recipe refuses a role whose

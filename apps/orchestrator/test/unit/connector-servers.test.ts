@@ -19,7 +19,6 @@ import {
   serverTools,
   settingsOutcome,
   stateHooks,
-  tokenFields,
 } from "../../src/connectors/servers.js";
 import { SettingsError } from "../../src/connectors/settings.js";
 import type { ConnectorRow } from "../../src/db/connectors.js";
@@ -236,13 +235,6 @@ test("settings_outcome_awaits_settings_when_none_are_given_and_the_schema_requir
   assert.deepEqual(settingsOutcome(serverRow("quotes"), {}), { kind: "awaiting", values: {} });
 });
 
-test("token_fields_are_the_running_connectors_else_one_token_field", () => {
-  assert.deepEqual(tokenFields(serverRow("qonto")).map((field) => field.name), ["login", "secret_key"]);
-  const declared = serverRow("acme", {
-    manifest: { ...serverRow("acme").manifest, auth: { kind: "token", fields: [{ name: "api_key", label: "Key" }] } },
-  });
-  assert.deepEqual(tokenFields(declared), [{ name: "token", label: "API key", optional: false }]);
-});
 
 test("overridden_copy_fields_names_the_copy_fields_an_override_replaces", () => {
   assert.deepEqual(overriddenCopyFields(serverRow("notion", { overrides: { description: "Ours.", tools: {} } })), ["description"]);

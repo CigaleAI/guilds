@@ -76,14 +76,14 @@ export function loginSecrets(connection: McpConnectionRow, manifest: Manifest): 
 }
 
 /** What an endpoint session sends: an OAuth access token, else the login's `token`, else its first credential field. */
-export function credentialToken(credentials: Credentials, manifest: Manifest | null): string {
+export function credentialToken(credentials: Credentials, manifest: Manifest): string {
   if (credentials.access_token) {
     return credentials.access_token;
   }
   if (credentials.token) {
     return credentials.token;
   }
-  const first = manifest ? authFields(manifest)[0]?.name : undefined;
+  const first = authFields(manifest)[0]?.name;
   const value = first ? credentials[first] : undefined;
   return typeof value === "string" ? value : "";
 }

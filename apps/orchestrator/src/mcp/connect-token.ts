@@ -7,7 +7,8 @@ import { newId } from "../lib/ids.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
 import type { McpPool } from "./pool.js";
 import { retireLogin, type LoginFailure } from "./service.js";
-import { settingsOutcome, tokenFields, type LoadedConnector, type SettingsOutcome } from "../connectors/servers.js";
+import { authFields } from "../connectors/manifest.js";
+import { serverManifest, settingsOutcome, type LoadedConnector, type SettingsOutcome } from "../connectors/servers.js";
 import { SettingsError } from "../connectors/settings.js";
 import type { Credentials } from "../connectors/types.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
@@ -74,7 +75,7 @@ export type ConnectDatabase = ReturnType<typeof connectDatabase>;
 /** The form's values for a token login, by field: every declared field trimmed, the required ones present. */
 export function tokenCredentials(server: LoadedConnector, values: Record<string, unknown>): Credentials {
   const credentials: Record<string, string> = {};
-  for (const field of tokenFields(server)) {
+  for (const field of authFields(serverManifest(server))) {
     const raw = values[field.name];
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value && !field.optional) {
