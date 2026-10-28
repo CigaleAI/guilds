@@ -9,6 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
+| [SEC-51](#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate) | A recipe capture copies the notes of private guilds its operator does not operate | Open |
 | [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Open |
 | [SEC-49](#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read) | A run's diff and a code task's log were served unredacted when the agent's secrets could not be read | Fixed 2026-10-27 |
 | [SEC-48](#sec-48--a-run-that-listed-a-logins-tools-for-the-first-time-was-offered-the-ones-that-start-off) | A run that listed a login's tools for the first time was offered the ones that start Off | Fixed 2026-10-26 |
@@ -59,6 +60,45 @@ risk is kept by design), or **Fixed** with its date.
 | [SEC-3](#sec-3--check-then-open-race-on-agent-workspace-paths) | Check-then-open race on agent workspace paths | Open |
 | [SEC-2](#sec-2--any-organisation-member-could-write-organisation-wide-secrets) | Any organisation member could write organisation-wide secrets | Fixed 2026-09-30 |
 | [SEC-1](#sec-1--links-planted-in-an-agent-workspace-redirect-orchestrator-file-access) | Links planted in an agent workspace redirect orchestrator file access | Fixed 2026-09-30 |
+
+## SEC-51 — A recipe capture copies the notes of private guilds its operator does not operate
+
+**Status:** open.
+
+**Found:** 2026-10-28, giving `artifacts/` one function for the notes a
+capture names with their access lists.
+
+**Where:** `captureGuild` in `apps/orchestrator/src/recipes/capture.ts`,
+which builds its operator actor without hidden guilds (line 563) and
+reads the notes it includes through `notesNamed` (line 445);
+`notesNamed` in `apps/orchestrator/src/artifacts/service.ts` (line 292);
+`POST /api/guilds/:guild_id/recipes` in
+`apps/orchestrator/src/http/recipe-routes.ts`, which passes the
+request's `include_notes` through as they are (line 189).
+
+**Exposure:** a capture acts as an operator actor that carries no
+hidden guilds, so it reads every live note of the organisation, the
+guild and agent notes of private guilds included. It keeps each note
+whose display path or file name is one of `include_notes` or one of the
+roles' Task embeds, and copies its text into the recipe draft the
+route returns and stores. A user who can see one guild and names a
+private guild's note in `include_notes`, by its display path or only by
+its file name, gets that note's text in the draft. A file name also
+takes every other note of that name in the organisation.
+
+**Control in place:** the route captures only a guild the user can see
+(`requireVisibleGuild`). A Task cannot embed a private guild's note
+(SEC-42), so the embeds alone do not reach one. Tables are captured
+only when they are the guild's own or the organisation's.
+
+**Fix:** not yet. Fixing it takes building the capture's actor with
+the private guilds the user does not operate (`loadOperatorActor` in
+`apps/orchestrator/src/artifacts/actors.ts`), so `notesNamed` leaves
+their notes out.
+
+**Residual risk:** until then, any organisation member who can see one
+guild reads the notes of every private guild of the organisation
+through a capture.
 
 ## SEC-50 — An operator's read of a Memory revision path is not limited to its organisation
 
