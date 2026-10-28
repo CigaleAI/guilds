@@ -117,7 +117,9 @@ is the store's dependencies, `{ db, templatesRoot }`, built with
 `artifactStore(db, templatesRoot)`; what were its methods are
 functions that take it first, one module per sub-domain:
 `artifacts/notes.js`, `memory.js`, `collections.js`, `records.js`,
-and `access-lists.js` (`writeNote(store, actor, …)`).
+and `access-lists.js` (`writeNote(store, actor, …)`). The export
+`recipes/schema.js` is `recipes/parse.js`, which exports
+`parseRecipe`.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

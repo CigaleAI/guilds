@@ -50,7 +50,7 @@
     "./observability/runtime.js": "./src/observability/runtime.ts",
     "./organisations/index.js": "./src/organisations/index.ts",
     "./policy/index.js": "./src/policy/index.ts",
-    "./recipes/schema.js": "./src/recipes/schema.ts",
+    "./recipes/parse.js": "./src/recipes/parse.ts",
     "./registry/client.js": "./src/registry/client.ts",
     "./registry/index.js": "./src/registry/index.ts",
     "./registry/tar.js": "./src/registry/tar.ts",
