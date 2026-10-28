@@ -2,9 +2,9 @@ import { iso } from "../db/views.js";
 import { guildOperators } from "../guilds/validation.js";
 import { issueItem } from "../issues/index.js";
 import { EventQueue } from "../lib/event.js";
-import { getAgent } from "../db/agents.js";
+import { getAgent, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildViewerIds } from "../db/guilds.js";
-import { listInboxIssues, listInboxMentions, markInboxMentionsRead } from "../db/issues.js";
+import { listInboxIssues, listInboxMentions, markInboxMentionsRead, type InboxMentionRow } from "../db/issues.js";
 import { listUnreadGroupChats } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
@@ -43,29 +43,34 @@ type Event = [string, Record<string, unknown>];
 type Queue = EventQueue<Event>;
 
 /** An agent as the inbox names it: its id, name and look, with the look's defaults filled in. */
-function agentBrief(agent: Record<string, unknown>): Record<string, unknown> {
+function agentBrief(agent: AgentLook): Record<string, unknown> {
   return {
-    id: String(agent.id),
-    name: String(agent.name ?? ""),
-    avatar_shape: String(agent.avatar_shape || "teardrop"),
-    avatar_color: String(agent.avatar_color || "#7c5cff"),
+    id: agent.id,
+    name: agent.name,
+    avatar_shape: agent.avatar_shape || "teardrop",
+    avatar_color: agent.avatar_color || "#7c5cff",
   };
 }
 
-export function mentionItem(row: Record<string, unknown>): Record<string, unknown> {
-  const agentId = row.author_agent_id ? String(row.author_agent_id) : null;
+/** An agent's id, name and look, as its row or a message's join holds them; a look the join misses is null. */
+type AgentLook = Pick<AgentRow, "id" | "name"> & {
+  avatar_shape: AgentRow["avatar_shape"] | null;
+  avatar_color: AgentRow["avatar_color"] | null;
+};
+
+export function mentionItem(row: InboxMentionRow): Record<string, unknown> {
   return {
     id: row.id,
     guild_id: row.guild_id,
     guild_name: row.guild_name,
-    seq: Number(row.seq),
+    seq: row.seq,
     author_type: row.author_type,
     author_name: row.author_name,
     content: row.content,
     created_at: iso(row.created_at),
-    agent: agentId
+    agent: row.author_agent_id
       ? agentBrief({
-          id: agentId,
+          id: row.author_agent_id,
           name: row.author_name,
           avatar_shape: row.avatar_shape,
           avatar_color: row.avatar_color,
@@ -84,7 +89,7 @@ export function unreadItem(row: Record<string, unknown>): Record<string, unknown
  */
 export function messageNotice(
   message: Record<string, unknown>,
-  agent: Record<string, unknown> | null,
+  agent: AgentLook | null,
 ): Record<string, unknown> {
   return {
     guild_id: String(message.guild_id),

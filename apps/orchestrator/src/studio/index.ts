@@ -35,7 +35,15 @@ import { StudioConflictError, StudioError, StudioUnprocessableError } from "./er
 import { StudioDrafts, viewDraft } from "./drafts.js";
 import { StudioRunner } from "./runner.js";
 import { withLockedSession } from "./session-lock.js";
-import { composeGenerationContext, composeStudioSystemMessage, hydrateStudioMember, readStudioSystemTemplate, studioSystemHash } from "./system.js";
+import {
+  composeGenerationContext,
+  composeStudioSystemMessage,
+  hydrateStudioMember,
+  readStudioSystemTemplate,
+  studioSystemHash,
+  type RosterAgent,
+  type StudioMemberHydration,
+} from "./system.js";
 import { studioToolSchemas } from "./tools.js";
 import {
   previewCurrentState,
@@ -117,6 +125,25 @@ function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "de
   const objective = guild.description.trim();
   return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
 }
+
+/** An agent as the Studio inventory lists it: its roster header's fields, its avatar, excerpt, and latest run. */
+export type StudioInventoryItem = Omit<RosterAgent, "latest_run"> & {
+  avatar_shape: string;
+  avatar_color: string;
+  scripting: boolean;
+  task_excerpt: StudioMemberHydration["task_excerpt"];
+  task_excerpt_truncated: StudioMemberHydration["task_excerpt_truncated"];
+  task_updated_at: string;
+  paused_count: number;
+  latest_run: {
+    id: string;
+    kind: StudioInventoryRow["latest_run_kind"];
+    status: StudioInventoryRow["latest_run_status"];
+    at: StudioInventoryRow["latest_run_at"];
+    task_prompt_hash: StudioInventoryRow["latest_task_hash"];
+  } | null;
+  draft_status: StudioInventoryRow["draft_status"];
+};
 
 export class StudioService {
   drafts: StudioDrafts;
@@ -499,14 +526,13 @@ export class StudioService {
     return rows.map((row) => this.inventoryItem(row));
   }
 
-  inventoryItem(row: Record<string, unknown>): Record<string, unknown> {
-    const content = String(row.task_content ?? "");
+  inventoryItem(row: StudioInventoryRow): StudioInventoryItem {
+    const content = row.task_content;
     const member = hydrateStudioMember(row);
     const warnings: string[] = [];
     if (!content.trim()) warnings.push("empty_task");
-    const errors = Array.isArray(row.latest_run_errors) ? row.latest_run_errors : [];
-    if (errors.length) warnings.push("generation_errors");
-    if (row.draft_id && Number(row.draft_base_version) !== Number(row.task_version)) {
+    if (row.latest_run_errors?.length) warnings.push("generation_errors");
+    if (row.draft_id && row.draft_base_version !== row.task_version) {
       warnings.push("stale_draft");
     }
     return {
@@ -515,15 +541,15 @@ export class StudioService {
       focus: row.focus,
       avatar_shape: row.avatar_shape,
       avatar_color: row.avatar_color,
-      scripting: (jsonObj(row.config) as Record<string, unknown> | null)?.scripting !== false,
+      scripting: row.config.scripting,
       task_version: row.task_version,
       task_hash: row.task_hash,
       task_excerpt: member.task_excerpt,
       task_excerpt_truncated: member.task_excerpt_truncated,
       has_embeds: collectTaskEmbeds(content).length > 0,
       task_updated_at: row.task_updated_at,
-      routine_count: Number(row.routine_count ?? 0),
-      paused_count: Number(row.paused_count ?? 0),
+      routine_count: row.routine_count,
+      paused_count: row.paused_count,
       latest_run: row.latest_run_id
         ? {
             id: row.latest_run_id,
@@ -533,8 +559,8 @@ export class StudioService {
             task_prompt_hash: row.latest_task_hash,
           }
         : null,
-      draft_id: row.draft_id ?? null,
-      draft_status: row.draft_status ?? null,
+      draft_id: row.draft_id,
+      draft_status: row.draft_status,
       warnings,
     };
   }

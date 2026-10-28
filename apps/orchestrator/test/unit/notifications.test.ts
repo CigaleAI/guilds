@@ -93,7 +93,7 @@ test("a message notice carries the start of the message and the author agent's l
   assert.deepEqual(messageNotice(message, scout), notice);
   const long = messageNotice({ ...message, content: "x".repeat(NOTICE_PREVIEW_LENGTH + 50) }, scout);
   assert.equal(String(long.preview).length, NOTICE_PREVIEW_LENGTH);
-  const bare = messageNotice(message, { id: "agent_scout" });
+  const bare = messageNotice(message, { id: "agent_scout", name: "", avatar_shape: null, avatar_color: null });
   assert.deepEqual(bare.agent, { id: "agent_scout", name: "", avatar_shape: "teardrop", avatar_color: "#7c5cff" });
 });
 
