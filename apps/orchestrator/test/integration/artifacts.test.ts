@@ -2,7 +2,7 @@ import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { writeAgentTask } from "../../src/agents/task.js";
-import { artifactStore, type ArtifactStore, artifactView } from "../../src/artifacts/store.js";
+import { artifactStore, type ArtifactStore, artifactView, rowDisplayPath } from "../../src/artifacts/store.js";
 import {
   agentActor,
   inlineTaskEmbeds,
@@ -118,8 +118,8 @@ describe("artifact store", { concurrency: 1 }, () => {
     });
     const orgPath = String(artifactView(orgNote).display_path);
     const embeddable = await listEmbeddableNotes(store, operator);
-    const preview = embeddable.find((item) => item.display_path === orgPath);
-    assert.equal(preview?.content, "org schema\n");
+    const preview = embeddable.find((item) => rowDisplayPath(item) === orgPath);
+    assert.equal(preview?.content_text, "org schema\n");
     assert.equal(preview?.kind, "note");
 
     await writeNote(store, alpha, {

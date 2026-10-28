@@ -13,8 +13,8 @@ import { recordFileChange } from "../db/file-changes.js";
 import { type Queryable, stamp, withTransaction } from "../db/pg.js";
 import { EMPTY_MEMORY } from "../memory/index.js";
 import { ArtifactError } from "./errors.js";
-import { displayPathFor, HISTORY_ARCHIVE_SEGMENT, MEMORY_KEY, revisionDisplayPath } from "./paths.js";
-import { assertBytes, hashArtifactContent, reachesOwner, rowAsDisplay, type ArtifactStore } from "./store.js";
+import { HISTORY_ARCHIVE_SEGMENT, MEMORY_KEY, revisionDisplayPath } from "./paths.js";
+import { assertBytes, hashArtifactContent, reachesOwner, type ArtifactStore, rowDisplayPath } from "./store.js";
 import { MEMORY_REVISIONS_MAX, type ArtifactActor } from "./types.js";
 
 /** A previous Memory version as the operator reads it, with the file name the archive gives it. */
@@ -62,7 +62,7 @@ async function createMemory(store: ArtifactStore, actor: ArtifactActor, owner: M
       await recordFileChange(client, actor, {
         orgId: row.org_id,
         artifactId: row.id,
-        displayPath: displayPathFor(rowAsDisplay(row)),
+        displayPath: rowDisplayPath(row),
         operation: "create",
         version: row.version,
         createdAt: now,
@@ -119,7 +119,7 @@ export async function writeMemory(
     await recordFileChange(client, actor, {
       orgId: row.org_id,
       artifactId: row.id,
-      displayPath: displayPathFor(rowAsDisplay(row)),
+      displayPath: rowDisplayPath(row),
       operation: "update",
       version: row.version,
     });

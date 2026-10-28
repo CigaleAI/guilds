@@ -7,17 +7,8 @@ import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
 import { createsWritable, defaultGrants } from "./access.js";
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "../db/file-changes.js";
-import { displayPathFor, FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
-import {
-  artifactMode,
-  assertLiveCount,
-  assertRead,
-  assertWrite,
-  ownerFor,
-  rowAsDisplay,
-  type ArtifactRow,
-  type ArtifactStore,
-} from "./store.js";
+import { FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
+import { artifactMode, assertLiveCount, assertRead, assertWrite, ownerFor, type ArtifactRow, type ArtifactStore, rowDisplayPath } from "./store.js";
 import {
   FILE_DESCRIPTION_MAX,
   FILE_MAX_BYTES,
@@ -227,7 +218,7 @@ export class ArtifactFiles {
       await recordFileChange(client, actor, {
         orgId: row.org_id,
         artifactId: row.id,
-        displayPath: displayPathFor(rowAsDisplay(row)),
+        displayPath: rowDisplayPath(row),
         operation: "delete",
         version,
         createdAt: now,
@@ -239,7 +230,7 @@ export class ArtifactFiles {
   view(row: ArtifactRow): FileView {
     return {
       id: row.id,
-      display_path: displayPathFor(rowAsDisplay(row)),
+      display_path: rowDisplayPath(row),
       name: row.key,
       description: row.title ?? "",
       mime: row.mime ?? "application/octet-stream",
@@ -301,7 +292,7 @@ export class ArtifactFiles {
         await recordFileChange(client, actor, {
           orgId: row.org_id,
           artifactId: row.id,
-          displayPath: displayPathFor(rowAsDisplay(row)),
+          displayPath: rowDisplayPath(row),
           operation: "create",
           version: row.version,
         });
@@ -354,7 +345,7 @@ export class ArtifactFiles {
         await recordFileChange(client, actor, {
           orgId: written.org_id,
           artifactId: written.id,
-          displayPath: displayPathFor(rowAsDisplay(written)),
+          displayPath: rowDisplayPath(written),
           operation: "update",
           version: written.version,
         });

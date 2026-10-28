@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Capturing a guild as a recipe keeps each agent note
+with the role of the agent that owns it, so applying the recipe gives
+the note to that role's agent. Before, every captured agent note went
+to the recipe's first agent.
+
 **No impact.** A recipe's `design.specialization[].reason` and
 `design.handoffs[].kind` are checked against the values the Builder
 is told to use. A recipe with another value is refused, naming the

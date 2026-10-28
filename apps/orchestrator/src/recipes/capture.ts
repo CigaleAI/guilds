@@ -6,6 +6,7 @@ import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
 import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
+import { rowDisplayPath, type ArtifactRow } from "../artifacts/store.js";
 import { loadAccessView } from "../access/view.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
@@ -203,18 +204,6 @@ const AgentAccess = Type.Object({
 });
 
 type AgentAccess = (typeof AgentAccess)["static"];
-
-/** A note as the store lists it for embedding, with the fields a seed note is captured from. */
-const NoteView = Type.Object({
-  display_path: Type.String(),
-  key: Type.String(),
-  kind: Type.String(),
-  level: Type.Union([Type.Literal("org"), Type.Literal("guild"), Type.Literal("agent")]),
-  content: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  owner_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-});
-
-type NoteView = (typeof NoteView)["static"];
 
 function uncapturable(problem: string): RecipeError {
   return new RecipeError(`the guild cannot be captured: unexpected view at ${problem}`);
@@ -441,17 +430,17 @@ async function captureRepositories(capture: Capture): Promise<void> {
 }
 
 /** The seed note a live note becomes, with the role of the agent that owns an agent note. */
-function seedNote(capture: Capture, note: NoteView): RecipeNote {
+function seedNote(capture: Capture, note: ArtifactRow): RecipeNote {
   const seed: RecipeNote = {
     id: newId("nte").slice(0, 16),
     level: note.level,
     key: note.key,
-    body: note.content ?? "",
+    body: note.content_text ?? "",
     kind: "seed",
     author: operatorAuthor(),
     writers: [],
   };
-  const owner = note.level === "agent" ? capture.agents.find((agent) => agent.id === (note.owner_id ?? "")) : undefined;
+  const owner = note.level === "agent" ? capture.agents.find((agent) => agent.id === note.owner_id) : undefined;
   if (owner) {
     seed.role = owner.name;
   }
@@ -466,16 +455,16 @@ async function captureNotes(capture: Capture, includeNotes: string[]): Promise<M
   const { deps, actor } = capture;
   const include = new Set([...includeNotes, ...capture.recipe.roles.flatMap((role) => role.task.embeds)]);
   const hrefToNoteId = new Map<string, string>();
-  for (const listed of await deps.artifacts.listEmbeddableNotes(actor)) {
-    const note = decode(NoteView, listed, uncapturable);
-    const wanted = include.has(note.display_path) || include.has(note.key);
+  for (const note of await deps.artifacts.listEmbeddableNotes(actor)) {
+    const displayPath = rowDisplayPath(note);
+    const wanted = include.has(displayPath) || include.has(note.key);
     if (!wanted || note.key === "memory.md" || note.kind !== "note") {
       continue;
     }
     const seed = seedNote(capture, note);
-    const entries = await noteAccessEntries(deps.artifacts, actor, note.display_path);
+    const entries = await noteAccessEntries(deps.artifacts, actor, displayPath);
     Object.assign(seed, capturedNoteAccess(entries, seed, capture.captured));
-    hrefToNoteId.set(note.display_path, recipeNotePath(seed));
+    hrefToNoteId.set(displayPath, recipeNotePath(seed));
     capture.recipe.notes.push(seed);
   }
   return hrefToNoteId;

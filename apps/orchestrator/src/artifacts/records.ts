@@ -20,9 +20,8 @@ import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js"
 import { readableCollectionById, requireReadable, requireWritable } from "./collections.js";
 import { identityFor, recordProblems, recordRejected, uniqueColumn, validateAdd, validatePatch } from "./columns.js";
 import { ArtifactError } from "./errors.js";
-import { displayPathFor } from "./paths.js";
 import { parseLimit, parseOffset, parseOrder, parseRecordId, parseSince, parseWhere, searchBlobFor } from "./search.js";
-import { assertBytes, bodyOf, hashArtifactContent, recordView, rowAsDisplay, type ArtifactStore, type CollectionDescription, type RecordView } from "./store.js";
+import { assertBytes, bodyOf, hashArtifactContent, recordView, type ArtifactStore, type CollectionDescription, type RecordView, rowDisplayPath } from "./store.js";
 import { FIND_DEFAULT, FIND_MAX, LIVE_RECORDS_MAX, type ArtifactActor } from "./types.js";
 
 function uniqueConflictMessage(columns: CollectionColumn[]): string {
@@ -76,7 +75,7 @@ async function writeRecordBody(
   await recordFileChange(client, actor, {
     orgId: written.org_id,
     artifactId: written.id,
-    displayPath: displayPathFor(rowAsDisplay(written)),
+    displayPath: rowDisplayPath(written),
     operation: "update",
     version: written.version,
   });
@@ -122,7 +121,7 @@ async function insertNewRecord(
   await recordFileChange(client, actor, {
     orgId: written.org_id,
     artifactId: written.id,
-    displayPath: displayPathFor(rowAsDisplay(written)),
+    displayPath: rowDisplayPath(written),
     operation: "create",
     version: written.version,
   });
@@ -217,7 +216,7 @@ export async function removeRecord(
     await recordFileChange(client, actor, {
       orgId: current.org_id,
       artifactId: current.id,
-      displayPath: displayPathFor(rowAsDisplay(current)),
+      displayPath: rowDisplayPath(current),
       operation: "delete",
       version,
       createdAt: now,

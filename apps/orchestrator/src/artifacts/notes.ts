@@ -27,7 +27,6 @@ import { writeGrants } from "./grants.js";
 import { listRevisions } from "./memory.js";
 import {
   assertNoteKeyFree,
-  displayPathFor,
   isDisplayPath,
   normalizeNoteKey,
   parseDisplayPath,
@@ -37,7 +36,7 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { parseRecordId } from "./search.js";
-import { artifactMode, artifactView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, ownerFor, reachesOwner, rowAsDisplay, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact } from "./store.js";
+import { artifactMode, artifactView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, ownerFor, reachesOwner, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
 import { FIND_DEFAULT, FIND_MAX, SEARCH_TEXT_MAX, type ArtifactActor, type ArtifactLevel } from "./types.js";
 
 /** A parsed display path that names a note, file, Memory, or script by where it sits. */
@@ -158,7 +157,7 @@ async function upsertNote(store: ArtifactStore, actor: ArtifactActor, note: Note
       await recordFileChange(client, actor, {
         orgId: row.org_id,
         artifactId: row.id,
-        displayPath: displayPathFor(rowAsDisplay(row)),
+        displayPath: rowDisplayPath(row),
         operation: "update",
         version: row.version,
       });
@@ -194,7 +193,7 @@ async function upsertNote(store: ArtifactStore, actor: ArtifactActor, note: Note
     await recordFileChange(client, actor, {
       orgId: row.org_id,
       artifactId: row.id,
-      displayPath: displayPathFor(rowAsDisplay(row)),
+      displayPath: rowDisplayPath(row),
       operation: "create",
       version: row.version,
     });
@@ -250,7 +249,7 @@ async function deleteNoteAt(store: ArtifactStore, actor: ArtifactActor, parsed: 
   if (row.kind === "file") {
     throw new ArtifactError("use file_delete for files", 422);
   }
-  const displayPath = displayPathFor(rowAsDisplay(row));
+  const displayPath = rowDisplayPath(row);
   await assertNotEmbedded(store, actor.orgId, displayPath);
   await withTransaction(store.db, async (client) => {
     const now = new Date();
@@ -380,7 +379,7 @@ export async function listStateArtifacts(
   owners: { guildId: string; agentIds: string[] },
 ): Promise<StateArtifact[]> {
   return (await listGuildArtifacts(store.db, actor, owners)).map((row) => ({
-    display_path: displayPathFor(rowAsDisplay(row)),
+    display_path: rowDisplayPath(row),
     kind: stateKind(row.kind),
     level: row.level,
     owner_id: row.owner_id,
@@ -399,6 +398,6 @@ function stateKind(kind: ArtifactRow["kind"]): StateArtifact["kind"] {
   return kind === "object" ? "note" : kind;
 }
 
-export async function listEmbeddableNotes(store: ArtifactStore, actor: ArtifactActor): Promise<Array<Record<string, unknown>>> {
-  return (await listReadableNotes(store.db, actor)).map(artifactView);
+export async function listEmbeddableNotes(store: ArtifactStore, actor: ArtifactActor): Promise<ArtifactRow[]> {
+  return listReadableNotes(store.db, actor);
 }

@@ -201,6 +201,11 @@ export async function assertWrite(store: ArtifactStore, actor: ArtifactActor, ro
   }
 }
 
+/** The display path of an artifact row. */
+export function rowDisplayPath(row: ArtifactRow): string {
+  return displayPathFor(rowAsDisplay(row));
+}
+
 /** What `displayPathFor` needs of a row. */
 export function rowAsDisplay(row: ArtifactRow): {
   orgId: string;
@@ -238,7 +243,7 @@ export function artifactView(row: ArtifactRow): Record<string, unknown> {
     return recordViewWithPath(row);
   }
   return {
-    display_path: displayPathFor(rowAsDisplay(row)),
+    display_path: rowDisplayPath(row),
     kind: row.kind,
     level: row.level,
     key: row.key,
@@ -272,7 +277,7 @@ export function recordViewWithPath(row: ArtifactRow): RecordView {
   return {
     id: Number(row.key),
     collection: row.collection_name,
-    display_path: displayPathFor(rowAsDisplay(row)),
+    display_path: rowDisplayPath(row),
     ...bodyOf(row),
     created_at: formatOperationalTimestamp(row.created_at),
     updated_at: formatOperationalTimestamp(row.updated_at),
@@ -286,7 +291,7 @@ export function hostNoteView(row: ArtifactRow): Record<string, unknown> {
   return {
     id: row.id,
     path: row.key,
-    display_path: displayPathFor(rowAsDisplay(row)),
+    display_path: rowDisplayPath(row),
     kind: row.kind,
     title: row.title,
     version: row.version,

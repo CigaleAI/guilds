@@ -16,8 +16,7 @@ import {
 import { accessibleCollections, assertOperator, collectionView, loadCollectionById } from "./collections.js";
 import { ArtifactError } from "./errors.js";
 import { removeGrants, writeGrants } from "./grants.js";
-import { displayPathFor } from "./paths.js";
-import { reachesOwner, rowAsDisplay, type ArtifactStore, type ReachedNote, type ReachedTable } from "./store.js";
+import { reachesOwner, type ArtifactStore, type ReachedNote, type ReachedTable, rowDisplayPath } from "./store.js";
 import type { AccessSubject, AccessTarget, AgentAccessMode, ArtifactActor } from "./types.js";
 
 /** An item whose access list is being changed, as its change-log entries name it. */
@@ -77,7 +76,7 @@ async function requireTarget(store: ArtifactStore, actor: ArtifactActor, target:
     orgId: row.org_id,
     guildId: row.guild_id,
     ownerAgentId: row.level === "agent" ? row.owner_id : null,
-    label: `the ${target.kind} ${displayPathFor(rowAsDisplay(row))}`,
+    label: `the ${target.kind} ${rowDisplayPath(row)}`,
   };
 }
 
@@ -210,7 +209,7 @@ export async function reachOf(
 async function reachedNotes(store: ArtifactStore, actor: ArtifactActor, reacher: ArtifactActor): Promise<ReachedNote[]> {
   return (await listReachedNotes(store.db, actor, reacher)).map((row) => ({
     id: row.id,
-    display_path: displayPathFor(rowAsDisplay(row)),
+    display_path: rowDisplayPath(row),
     title: row.title ?? row.key,
     level: row.level,
     owner_id: row.owner_id,

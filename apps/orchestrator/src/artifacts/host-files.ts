@@ -308,7 +308,7 @@ export async function readEmbeddableNotes(
   displayPath: string,
 ): Promise<unknown> {
   if (!displayPath) {
-    return listEmbeddableNotes(store, actor);
+    return (await listEmbeddableNotes(store, actor)).map(artifactView);
   }
   const loaded = await getByDisplayPath(store, actor, displayPath);
   const row = !loaded.tombstone && !loaded.revision ? loaded.row : null;

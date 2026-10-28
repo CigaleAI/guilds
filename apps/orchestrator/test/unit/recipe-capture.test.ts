@@ -9,6 +9,9 @@ import { captureGuild,
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
 import { userRow } from "../helpers/users.js";
+import { rowDisplayPath, type ArtifactRow } from "../../src/artifacts/store.js";
+import type { ArtifactLevel } from "../../src/artifacts/index.js";
+import { artifactRow, noteRowAt } from "../helpers/artifacts.js";
 
 const GUILD = {
   id: "guild_live",
@@ -59,7 +62,7 @@ const DEFAULT_ACCESS: Record<string, AccessRow[]> = {
 function captureDeps(options: {
   agents?: Array<Record<string, unknown>>;
   task?: string;
-  notes?: Array<Record<string, unknown>>;
+  notes?: ArtifactRow[];
   collections?: Array<Record<string, unknown>>;
   bindings?: Array<Record<string, unknown>>;
   access?: Record<string, AccessRow[]>;
@@ -104,7 +107,7 @@ function captureDeps(options: {
       listAgents: async () => agents,
       getAgentTask: async (_orgId: string, agentId: string) =>
         agentId === "a_scout"
-          ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[guild/playbook.md]]" }
+          ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[org/org_1/guilds/guild_live/playbook.md]]" }
           : { content_text: "Draft the reply." },
       listSchedules: async (agentId: string) =>
         agentId === "a_scout"
@@ -134,7 +137,7 @@ function captureDeps(options: {
     } as never,
     artifacts: {
       getByDisplayPath: async (_actor: unknown, displayPath: string) => {
-        const note = (options.notes ?? []).find((item) => item.display_path === displayPath);
+        const note = (options.notes ?? []).find((item) => rowDisplayPath(item) === displayPath);
         return note ? { row: { id: note.id } } : {};
       },
       listCollections: async () =>
@@ -147,21 +150,8 @@ function captureDeps(options: {
         (options.access ?? DEFAULT_ACCESS)[target.id] ?? [],
       listEmbeddableNotes: async () =>
         options.notes ?? [
-          {
-            display_path: "guild/playbook.md",
-            key: "playbook.md",
-            kind: "note",
-            level: "guild",
-            content: "Hand off to @writer.",
-          },
-          {
-            display_path: "agent/a_scout/memory.md",
-            key: "memory.md",
-            kind: "note",
-            level: "agent",
-            owner_id: "a_scout",
-            content: "lived memory",
-          },
+          noteRowAt("org/org_1/guilds/guild_live/playbook.md", "Hand off to @writer."),
+          noteRowAt("org/org_1/agents/a_scout/memory.md", "lived memory"),
         ],
     } as unknown as CaptureArtifacts,
     scripts: {
@@ -283,15 +273,8 @@ test("captureGuild carries what each note's access list gives the guild and its 
     guild_id: "guild_other",
     guild_name: "other",
   };
-  const note = (id: string, level: string, key: string, ownerId = "") => ({
-    id,
-    display_path: `${level}/${key}`,
-    key,
-    kind: "note",
-    level,
-    owner_id: ownerId,
-    content: "Body.",
-  });
+  const note = (id: string, level: ArtifactLevel, key: string, ownerId = "org_1") =>
+    artifactRow({ id, level, key, owner_id: ownerId, content_text: "Body." });
   const recipe = await captureGuild(
     captureDeps({
       notes: [
@@ -324,6 +307,9 @@ test("captureGuild carries what each note's access list gives the guild and its 
     // an agent note nobody else reaches carries no guild mode
     "own.md": [null, []],
   });
+  // an agent note is the role of the agent that owns it
+  const roles = Object.fromEntries(recipe.notes.map((item) => [item.key, item.role ?? null]));
+  assert.deepEqual(roles, { "glossary.md": null, "open.md": null, "rules.md": null, "map.md": "scout", "own.md": "writer" });
 });
 
 test("captureGuild lists the guild's repositories by name, without their URLs", async () => {
