@@ -24,7 +24,7 @@ import {
   pendingOauth,
   pendingReplaces,
   tokenPayload,
-} from "./index.js";
+} from "../oauth/index.js";
 
 import {
   abandonAttempt,

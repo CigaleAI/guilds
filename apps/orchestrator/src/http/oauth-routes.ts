@@ -4,14 +4,14 @@ import {
   oauthCallbackHtml,
   oauthCallbackUrl,
 } from "../oauth/index.js";
-import { completeOAuthCallback, type CallbackPage } from "../oauth/connect-callback.js";
-import type { ConnectFlowServices } from "../oauth/connect-flow.js";
-import { startConnection } from "../oauth/connect-start.js";
+import { completeOAuthCallback, type CallbackPage } from "../mcp/connect-callback.js";
+import type { ConnectFlowServices } from "../mcp/connect-flow.js";
+import { startConnection } from "../mcp/connect-start.js";
 import {
   chooseGithubInstallation,
   listGithubInstallations,
   loadGithubPickerSession,
-} from "../oauth/github-install.js";
+} from "../mcp/github-install.js";
 import {
   clearGithubOauthStateCookie,
   GITHUB_OAUTH_STATE_COOKIE,

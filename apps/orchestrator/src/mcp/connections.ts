@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { requireVisibleAgent } from "../agents/access.js";
-import { connectFailure, tokenCredentials } from "../connectors/connect.js";
+import { connectFailure, tokenCredentials } from "./connect-token.js";
 import { installedConnectors } from "../connectors/index.js";
 import { getMcpServer, listMcpServers } from "../connectors/servers.js";
 import { settingsComplete, validateSettings } from "../connectors/settings.js";

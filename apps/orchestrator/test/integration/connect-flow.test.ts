@@ -6,14 +6,14 @@ import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { connectMcp, getMcpConnection, saveMcpConnection } from "../../src/db/mcp.js";
 import { ConnectionError } from "../../src/mcp/visibility.js";
-import { completeOAuthCallback, type OAuthCallback } from "../../src/oauth/connect-callback.js";
-import type { ConnectFlowServices } from "../../src/oauth/connect-flow.js";
-import { startConnection } from "../../src/oauth/connect-start.js";
+import { completeOAuthCallback, type OAuthCallback } from "../../src/mcp/connect-callback.js";
+import type { ConnectFlowServices } from "../../src/mcp/connect-flow.js";
+import { startConnection } from "../../src/mcp/connect-start.js";
 import {
   chooseGithubInstallation,
   listGithubInstallations,
   loadGithubPickerSession,
-} from "../../src/oauth/github-install.js";
+} from "../../src/mcp/github-install.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";

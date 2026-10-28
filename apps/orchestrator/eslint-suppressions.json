@@ -146,11 +146,6 @@
       "count": 1
     }
   },
-  "src/connectors/connect.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/connectors/format.ts": {
     "complexity": {
       "count": 1
@@ -360,6 +355,11 @@
     },
     "complexity": {
       "count": 2
+    }
+  },
+  "src/mcp/connect-token.ts": {
+    "complexity": {
+      "count": 1
     }
   },
   "src/mcp/pool.ts": {

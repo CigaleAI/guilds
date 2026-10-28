@@ -1,7 +1,7 @@
 import { ArtifactError } from "../artifacts/errors.js";
 import { AttachmentError } from "../attachments/index.js";
 import { RepositoryValidationError } from "../coding/repositories.js";
-import { ConnectError } from "../connectors/connect.js";
+import { ConnectError } from "../mcp/connect-token.js";
 import { SettingsError } from "../connectors/settings.js";
 import { CredentialError } from "../credentials/validate.js";
 import { AgentError } from "../agents/errors.js";

@@ -112,7 +112,7 @@ guild, or an agent.
 ### Token logins
 
 Every token connector connects through one operation, `connect`
-(`src/connectors/connect.ts`):
+(`src/mcp/connect-token.ts`):
 
 1. It reads the inputs `auth.fields` names. A missing required one is
    a 422 naming it.

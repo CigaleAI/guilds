@@ -4,17 +4,17 @@ import type {
   McpConnectionRow,
 } from "../db/mcp.js";
 import { newId } from "../lib/ids.js";
-import { McpDisconnectedError, McpError } from "../mcp/errors.js";
-import type { McpPool } from "../mcp/pool.js";
-import { retireLogin, type LoginFailure } from "../mcp/service.js";
-import { authFields } from "./manifest.js";
-import type { ConnectorRegistry } from "./registry.js";
-import { installedConnectors } from "./index.js";
-import { settingsComplete, SettingsError, validateSettings } from "./settings.js";
-import type { Credentials } from "./types.js";
+import { McpDisconnectedError, McpError } from "./errors.js";
+import type { McpPool } from "./pool.js";
+import { retireLogin, type LoginFailure } from "./service.js";
+import { authFields } from "../connectors/manifest.js";
+import type { ConnectorRegistry } from "../connectors/registry.js";
+import { installedConnectors } from "../connectors/index.js";
+import { settingsComplete, SettingsError, validateSettings } from "../connectors/settings.js";
+import type { Credentials } from "../connectors/types.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { LoadedConnector } from "./load.js";
+import type { LoadedConnector } from "../connectors/load.js";
 
 /**
  * What to do when the owner already has a connected login on the server. `refuse`: a 409.

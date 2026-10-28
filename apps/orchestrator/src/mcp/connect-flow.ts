@@ -9,10 +9,10 @@ import { bindMcpConnection, getMcpConnectionByOauthState, type McpConnectionRow 
 import type { Queryable } from "../db/pg.js";
 import type { Manifest } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
-import { DESCRIPTION_MAX } from "../mcp/catalog.js";
-import type { McpPool } from "../mcp/pool.js";
-import { retireLogin } from "../mcp/service.js";
-import { pendingReplaces } from "./index.js";
+import { DESCRIPTION_MAX } from "./catalog.js";
+import type { McpPool } from "./pool.js";
+import { retireLogin } from "./service.js";
+import { pendingReplaces } from "../oauth/index.js";
 
 /** What connector logins are made through, built once from the app's services. */
 export type ConnectFlowServices = {

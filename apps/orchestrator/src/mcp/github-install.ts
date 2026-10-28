@@ -15,8 +15,8 @@ import {
   resolveGithubInstallation,
   type GithubInstallation,
 } from "../github/index.js";
-import { ConnectionError } from "../mcp/visibility.js";
-import { newState, OAuthError, pendingReplaces } from "./index.js";
+import { ConnectionError } from "./visibility.js";
+import { newState, OAuthError, pendingReplaces } from "../oauth/index.js";
 
 import {
   bindToOwner,
