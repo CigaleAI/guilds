@@ -179,8 +179,8 @@ export class ConversationRunner {
       generation: args.generation,
     });
     const config = args.session.config_snapshot;
-    const model = String(config.model ?? "");
-    const temperature = Number(config.temperature ?? 0.2);
+    const model = config.model;
+    const temperature = config.temperature;
     const maxTokens = args.maxTokens;
     const maxSteps = args.maxSteps;
     const maxToolCalls = args.maxToolCalls;

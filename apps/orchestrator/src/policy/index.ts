@@ -15,6 +15,7 @@ import {
   countOrgGuilds,
 } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import type { CoachRunLimits } from "../db/schema/index.js";
 import { countMachineAgents } from "../db/machines.js";
 import { claimMonthlyStudioBuilderRun } from "../db/usage.js";
 
@@ -22,13 +23,6 @@ import { claimMonthlyStudioBuilderRun } from "../db/usage.js";
 // whether it may work at all. Core checks them here; an extension says what they are.
 
 export type CoachKind = "studio" | "builder";
-
-/** Output tokens, tool calls, and input tokens of one Studio or Builder generation. */
-export type CoachRunLimits = {
-  max_tokens: number;
-  max_tool_calls: number;
-  max_input_tokens: number;
-};
 
 export const COACH_RUN_LIMITS: Record<CoachKind, CoachRunLimits> = {
   studio: {

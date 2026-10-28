@@ -7,10 +7,6 @@ import {
   type ConversationTool,
 } from "../conversation/runner.js";
 import {
-  STUDIO_MAX_INPUT_TOKENS,
-  STUDIO_MAX_STEPS,
-  STUDIO_MAX_TOKENS,
-  STUDIO_MAX_TOOL_CALLS,
   STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
   STUDIO_PROJECTION_POLICY_VERSION,
   STUDIO_TOOL_RESULT_STUB_HINT,
@@ -107,10 +103,10 @@ export class StudioRunner {
           generation: args.generation,
           nextMessageSeq: upcoming,
         }) as StudioToolContext,
-      maxTokens: Number(config.max_tokens ?? STUDIO_MAX_TOKENS),
-      maxSteps: Number(config.max_steps ?? STUDIO_MAX_STEPS),
-      maxToolCalls: Number(config.max_tool_calls ?? STUDIO_MAX_TOOL_CALLS),
-      maxInput: Number(config.max_input_tokens ?? STUDIO_MAX_INPUT_TOKENS),
+      maxTokens: config.max_tokens,
+      maxSteps: config.max_steps,
+      maxToolCalls: config.max_tool_calls,
+      maxInput: config.max_input_tokens,
       minUnstubbed: STUDIO_MIN_UNSTUBBED_TOOL_RESULTS,
     });
   }

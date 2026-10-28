@@ -2,7 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { patchAssignments } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
-import type { builderMessages } from "./schema/index.js";
+import type { builderMessages, SessionError } from "./schema/index.js";
 import { usageDelta } from "./usage.js";
 
 /** Whose conversation it is: a Studio session's or a Builder session's, each with tables of its own. */
@@ -29,7 +29,7 @@ export type ConversationSessionPatch = {
   generation_number?: number;
   generation_token?: string | null;
   generation_started_at?: Date | null;
-  errors?: unknown[];
+  errors?: SessionError[];
   archived_at?: Date | null;
 };
 
@@ -158,8 +158,8 @@ export async function updateConversationSession(
 export async function conversationSessionErrors(
   pool: Queryable,
   session: ConversationSessionKey,
-): Promise<unknown[] | null> {
-  const result = await pool.query<{ errors: unknown[] }>(
+): Promise<SessionError[] | null> {
+  const result = await pool.query<{ errors: SessionError[] }>(
     `SELECT errors FROM ${session.kind}_sessions WHERE id = $1`,
     [session.sessionId],
   );

@@ -249,7 +249,7 @@ export class BuilderService {
       mcp: this.deps.mcp ?? null,
       recipeId: String(session.recipe_id),
       connection: this.deps.db,
-      coachModel: String(session.config_snapshot.model ?? ""),
+      coachModel: session.config_snapshot.model,
       validationContext: () => validationContext(this.deps.apply, session.org_id),
     };
   }

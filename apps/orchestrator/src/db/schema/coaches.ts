@@ -50,6 +50,28 @@ export type EvidenceWarning =
   | { reason: "missing_tool_message"; tool_message_seq: number }
   | { reason: "coordinates_not_in_tool_result"; kind: EvidenceRefKind; tool_message_seq: number };
 
+/** Output tokens, tool calls, and input tokens of one Studio or Builder generation. */
+export type CoachRunLimits = {
+  max_tokens: number;
+  max_tool_calls: number;
+  max_input_tokens: number;
+};
+
+/**
+ * `config_snapshot` of a Studio or Builder session: the model it runs, its limits, the hash of
+ * the system prompt it opened with, and the tools it offers (each an OpenAI function schema).
+ */
+export type CoachSessionConfig = CoachRunLimits & {
+  model: string;
+  temperature: number;
+  max_steps: number;
+  system_prompt_hash: string;
+  tool_schemas: Array<Record<string, unknown>>;
+};
+
+/** An entry of a Studio or Builder session's `errors`: why a generation failed. */
+export type SessionError = { at: string; detail: string };
+
 export const studioSessions = pgTable(
   "studio_sessions",
   {
@@ -60,7 +82,7 @@ export const studioSessions = pgTable(
     mode: text("mode", { enum: ["optimize", "create"] }).notNull(),
     source_guild_id: text("source_guild_id"),
     source_guild_snapshot: jsonb("source_guild_snapshot").$type<StudioSourceGuild>().notNull(),
-    config_snapshot: jsonb("config_snapshot").$type<Record<string, unknown>>().notNull(),
+    config_snapshot: jsonb("config_snapshot").$type<CoachSessionConfig>().notNull(),
     selected_target_agent_id: text("selected_target_agent_id"),
     parent_session_id: text("parent_session_id"),
     status: text("status", { enum: ["active", "blocked", "archived"] }).notNull(),
@@ -69,7 +91,7 @@ export const studioSessions = pgTable(
     generation_number: integer("generation_number").notNull().default(0),
     generation_token: text("generation_token"),
     generation_started_at: timestamptz("generation_started_at"),
-    errors: jsonb("errors").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    errors: jsonb("errors").$type<SessionError[]>().notNull().default(sql`'[]'::jsonb`),
     granted_connection_ids: jsonb("granted_connection_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
@@ -276,14 +298,14 @@ export const builderSessions = pgTable(
     created_by_user_id: text("created_by_user_id"),
     created_by_name: text("created_by_name").notNull(),
     recipe_id: text("recipe_id").notNull(),
-    config_snapshot: jsonb("config_snapshot").$type<Record<string, unknown>>().notNull(),
+    config_snapshot: jsonb("config_snapshot").$type<CoachSessionConfig>().notNull(),
     status: text("status", { enum: ["active", "blocked", "archived"] }).notNull(),
     blocked_reason: text("blocked_reason"),
     generation_state: text("generation_state", { enum: ["idle", "generating", "cancelling"] }).notNull(),
     generation_number: integer("generation_number").notNull().default(0),
     generation_token: text("generation_token"),
     generation_started_at: timestamptz("generation_started_at"),
-    errors: jsonb("errors").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    errors: jsonb("errors").$type<SessionError[]>().notNull().default(sql`'[]'::jsonb`),
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
     archived_at: timestamptz("archived_at"),
