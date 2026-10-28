@@ -45,11 +45,12 @@ import type {
 } from "./apply.js";
 import { validationContext } from "./apply.js";
 import { RecipeError } from "./errors.js";
+import type { RecipeFinding, ValidationContext } from "./findings.js";
 import { parseRecipe } from "./parse.js";
 import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
 import { unreviewedFields } from "./review.js";
 import type { RecipeCollection, RecipeDocument, RecipeRole } from "./schema.js";
-import { applyBlockingErrors, validateRecipe, type RecipeFinding, type ValidationContext } from "./validate.js";
+import { applyBlockingErrors, validateRecipe } from "./validate.js";
 
 // The preview of an apply: what it creates from the recipe, what it reuses of the organisation,
 // and what blocks it, with the choices the operator makes on it.

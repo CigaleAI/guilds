@@ -1,5 +1,6 @@
 import { assignGuildLooks } from "../avatars/looks.js";
 import { operatorAccessCuts } from "../recipes/access-edits.js";
+import type { ValidationContext } from "../recipes/findings.js";
 import { parseRecipe } from "../recipes/parse.js";
 import { stampBuilderWrite } from "../recipes/review.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
@@ -21,7 +22,7 @@ import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { Queryable } from "../db/pg.js";
 import { getRecipe } from "../db/recipes.js";
 import { writeRecipe } from "../recipes/library.js";
-import { validateRecipe, type ValidationContext } from "../recipes/validate.js";
+import { validateRecipe } from "../recipes/validate.js";
 
 export type BuilderCapabilityContext = {
   orgId: string;
