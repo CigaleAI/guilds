@@ -12,17 +12,13 @@ import {
   parseSecret,
 } from "./parse-sections.js";
 import {
-  RECIPE_BODY_MAX_BYTES,
   RECIPE_FORMAT,
-  RECIPE_LIST_MAX,
-  RECIPE_NOTES_MAX,
-  RECIPE_ROLES_MAX,
-  RECIPE_VERSION,
   RecipeSchema,
   type RecipeCollection,
   type RecipeDocument,
   type RecipeRole,
-} from "./schema.js";
+} from "../db/schema/index.js";
+import { RECIPE_BODY_MAX_BYTES, RECIPE_LIST_MAX, RECIPE_NOTES_MAX, RECIPE_ROLES_MAX, RECIPE_VERSION } from "./schema.js";
 
 // A recipe document as the box reads it: checked against the schema, each section parsed with
 // its defaults, and every cap and uniqueness rule applied. An error names the field at fault.

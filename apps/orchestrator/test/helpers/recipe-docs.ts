@@ -1,12 +1,7 @@
-import type { CollectionColumn } from "../../src/db/schema/index.js";
+import type { CollectionColumn, RecipeDocument, RecipeRole } from "../../src/db/schema/index.js";
 import { TEST_MODEL } from "./models.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
-import {
-  builderAuthor,
-  operatorAuthor,
-  type RecipeDocument,
-  type RecipeRole,
-} from "../../src/recipes/schema.js";
+import { builderAuthor, operatorAuthor } from "../../src/recipes/schema.js";
 
 const CONFIG = {
   model: TEST_MODEL,

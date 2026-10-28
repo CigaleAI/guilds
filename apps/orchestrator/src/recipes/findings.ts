@@ -1,6 +1,10 @@
 import { roleBrowses } from "./prepare.js";
-import type { FindingSeverity, RecipeFinding } from "../db/schema/index.js";
-import type { RecipeDocument, RecipeRole } from "./schema.js";
+import type {
+  FindingSeverity,
+  RecipeFinding,
+  RecipeDocument,
+  RecipeRole,
+} from "../db/schema/index.js";
 
 // What validating a recipe reports, and the context it validates against.
 

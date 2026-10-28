@@ -1,6 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import { getMcpServerBySlug } from "../connectors/servers.js";
-import { HARNESSES, type AgentConfig } from "../db/schema/index.js";
+import {
+  HARNESSES,
+  type AgentConfig,
+  type RecipeConnection,
+  type RecipeDocument,
+  type RecipeNote,
+  type RecipeRole,
+  type RecipeSecret,
+} from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
@@ -17,15 +25,7 @@ import { describeWindow } from "../schedules/window.js";
 import { HARNESS_INFO, harnessSecretSource } from "../coding/harnesses.js";
 import { emptyRecipe } from "./minimal.js";
 import { parseRecipe } from "./parse.js";
-import {
-  operatorAuthor,
-  RECIPE_HINT_MAX,
-  type RecipeConnection,
-  type RecipeDocument,
-  type RecipeNote,
-  type RecipeRole,
-  type RecipeSecret,
-} from "./schema.js";
+import { operatorAuthor, RECIPE_HINT_MAX } from "./schema.js";
 import { recipeNotePath, rewriteGuildTextToRecipeRefs } from "./rewrite.js";
 import { RecipeError } from "./errors.js";
 import { capturedNoteAccess, capturedTableAccess, type CapturedGuild } from "./access.js";

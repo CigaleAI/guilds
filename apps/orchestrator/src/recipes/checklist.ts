@@ -9,7 +9,15 @@ import { listMcpTools } from "../db/mcp.js";
 import { getMembership } from "../db/orgs.js";
 import { getRecipe } from "../db/recipes.js";
 import { setApplyChecklist, type RecipeApplyRow } from "../db/recipe-applies.js";
-import type { ApplyPlan, ApplyStep, ApplyWarning, PlannedAgent } from "../db/schema/index.js";
+import type {
+  ApplyPlan,
+  ApplyStep,
+  ApplyWarning,
+  PlannedAgent,
+  RecipeConnection,
+  RecipeDocument,
+  RecipeRole,
+} from "../db/schema/index.js";
 import { getSecretByName, listAgentSecrets, setSecretAccess } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
@@ -19,7 +27,6 @@ import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
 import { prepareRecipeForApply, roleBrowses } from "./prepare.js";
-import type { RecipeConnection, RecipeDocument, RecipeRole } from "./schema.js";
 
 // An apply's checklist: the steps its skeleton leaves open, the server's checks of the steps it
 // verifies, and the operator's confirmations and skips of the rest.

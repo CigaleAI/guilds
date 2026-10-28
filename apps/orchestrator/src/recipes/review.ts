@@ -1,6 +1,7 @@
 import { RecipeError } from "./errors.js";
 import { roleBrowses } from "./prepare.js";
-import { builderAuthor, markReviewed, operatorAuthor, type FieldAuthor, type RecipeDocument, type RecipeRole } from "./schema.js";
+import type { FieldAuthor, RecipeDocument, RecipeRole } from "../db/schema/index.js";
+import { builderAuthor, markReviewed, operatorAuthor } from "./schema.js";
 
 // Who wrote each reviewable field of a recipe, and the operator's review of it: a Builder write
 // keeps a reviewed field reviewed only while its content stays the same.

@@ -3,7 +3,7 @@ import { utcClock } from "../lib/clock.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { readBuilderSystemTemplate, readBuilderWriteExample } from "../conversation/templates.js";
 import { operatorAccessCuts } from "../recipes/access-edits.js";
-import type { RecipeDocument } from "../recipes/schema.js";
+import type { RecipeDocument } from "../db/schema/index.js";
 
 function accessCutsBlock(recipe: RecipeDocument): string[] {
   const cuts = operatorAccessCuts(recipe);

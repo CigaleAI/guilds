@@ -1,7 +1,6 @@
-import type { AccessMode } from "../db/schema/index.js";
+import type { AccessMode, RecipeCollection, RecipeNote } from "../db/schema/index.js";
 import { effectiveAccess } from "../artifacts/access-lists.js";
 import type { AccessEntry } from "../artifacts/types.js";
-import type { RecipeCollection, RecipeNote } from "./schema.js";
 
 /** The captured guild and its member agents, by agent id, with the role each one becomes. */
 export type CapturedGuild = { guildId: string; members: Map<string, string> };

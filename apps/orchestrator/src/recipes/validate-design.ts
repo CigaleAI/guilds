@@ -1,8 +1,6 @@
-import type { CollectionColumn } from "../db/schema/index.js";
+import type { CollectionColumn, RecipeDocument, RecipeFinding } from "../db/schema/index.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
-import type { RecipeDocument } from "./schema.js";
-import type { RecipeFinding } from "../db/schema/index.js";
 import { browserRoles, finding, type RecipeRule, type ValidationContext } from "./findings.js";
 
 // The design checks of a recipe: that its routines dedupe, its roles hand work off through a

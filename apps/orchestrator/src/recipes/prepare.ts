@@ -1,9 +1,15 @@
-import type { Effort, Harness } from "../db/schema/index.js";
+import type {
+  Effort,
+  Harness,
+  RecipeDocument,
+  RecipeRole,
+  RecipeSchedule,
+} from "../db/schema/index.js";
 import { isValidSecretAliases } from "../agents/config.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
-import { builderAuthor, type RecipeDocument, type RecipeRole, type RecipeSchedule } from "./schema.js";
+import { builderAuthor } from "./schema.js";
 
 // A recipe as apply creates it: each role's config settled, its task filled from its focus and
 // the guild's objective when it has none, and its routines read from the design when it lists none.

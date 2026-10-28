@@ -15,7 +15,7 @@ import {
   setRecipeStatus,
   writeRecipeBody,
 } from "../db/recipes.js";
-import type { RecipeFinding } from "../db/schema/index.js";
+import type { RecipeFinding, RecipeDocument } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import type { RegistryClient } from "../registry/client.js";
 import { pickEntry, RegistryError } from "../registry/index.js";
@@ -27,7 +27,7 @@ import { captureArtifacts, captureDatabase, captureGuild, type CapturedGuildRow 
 import { RecipeConflictError, RecipeError } from "./errors.js";
 import { parseRecipe } from "./parse.js";
 import { applyReview, stampBuilderWrite, unreviewedFields, type ReviewAction } from "./review.js";
-import { hasForbiddenSecrets, resetReview, type RecipeDocument } from "./schema.js";
+import { hasForbiddenSecrets, resetReview } from "./schema.js";
 import { blockingErrors, validateRecipe } from "./validate.js";
 
 // An organisation's recipe library: the recipes it holds, how one enters it (an import, a registry

@@ -1,4 +1,10 @@
-import { HARNESSES, EFFORTS } from "../db/schema/index.js";
+import {
+  HARNESSES,
+  EFFORTS,
+  type RecipeFinding,
+  type RecipeDocument,
+  type RecipeRole,
+} from "../db/schema/index.js";
 import { parseModelId, providerLabel } from "../llm/providers.js";
 import { CONFIG_KEYS, isValidSecretAliases } from "../agents/config.js";
 import { credentialFix, HARNESS_INFO, harnessModelOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
@@ -10,9 +16,7 @@ import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { isDisplayPath } from "../artifacts/paths.js";
 import { operatorAccessCuts } from "./access-edits.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
-import type { RecipeFinding } from "../db/schema/index.js";
 import { browserRoles, finding, type RecipeRule, type ValidationContext } from "./findings.js";
-import type { RecipeDocument, RecipeRole } from "./schema.js";
 import { validateDesign } from "./validate-design.js";
 
 /** A check of one role of the recipe. */

@@ -14,7 +14,7 @@ import {
 } from "./widgets.js";
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import type { CapabilityService } from "../capabilities/index.js";
-import type { RecipeDocument } from "../recipes/schema.js";
+import type { RecipeDocument } from "../db/schema/index.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { Queryable } from "../db/pg.js";
 import { getRecipe } from "../db/recipes.js";

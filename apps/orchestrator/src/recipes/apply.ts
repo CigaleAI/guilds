@@ -11,8 +11,7 @@ import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { ValidationContext } from "./findings.js";
-import type { NameDecision } from "../db/schema/index.js";
-import type { RecipeDocument } from "./schema.js";
+import type { NameDecision, RecipeDocument } from "../db/schema/index.js";
 
 // What applying a recipe needs, and what the operator chooses on its preview. The apply itself
 // is planned in plan.ts, created in skeleton.ts, walked through in checklist.ts, and closed in

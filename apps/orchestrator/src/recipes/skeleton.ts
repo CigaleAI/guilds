@@ -14,7 +14,16 @@ import { deleteGuild } from "../db/guilds.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import { insertRecipeApply, type RecipeApplyRow } from "../db/recipe-applies.js";
 import type { RecipeRow } from "../db/recipes.js";
-import type { ApplyPlan, PlannedCollection, PlannedConnection } from "../db/schema/index.js";
+import type {
+  ApplyPlan,
+  PlannedCollection,
+  PlannedConnection,
+  ApplyPreview,
+  CollectionPlan,
+  RecipeDocument,
+  RecipeNote,
+  RecipeRole,
+} from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 import { GuildAgentLimitError } from "../guilds/errors.js";
 import { addGuild, assertGuildAgentRoom } from "../guilds/service.js";
@@ -26,10 +35,8 @@ import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
 import { RecipeConflictError, RecipeError } from "./errors.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap } from "./plan.js";
-import type { ApplyPreview, CollectionPlan } from "../db/schema/index.js";
 import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
-import type { RecipeDocument, RecipeNote, RecipeRole } from "./schema.js";
 
 // The skeleton of an apply: the guild, its agents with their tasks, scripts, paused routines and
 // native tools, the recipe's notes and collections with their access, and the reused connections'

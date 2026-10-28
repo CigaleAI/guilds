@@ -1,16 +1,8 @@
 import { operatorActor } from "../artifacts/actors.js";
 import { listCollections } from "../artifacts/collections.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import type { CollectionColumn } from "../db/schema/index.js";
-import { harnessesOn, harnessOffMessage, harnessOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
-import { listServers } from "../connectors/servers.js";
-import { agentNameTaken, listAgents } from "../db/agents.js";
-import { getGuild } from "../db/guilds.js";
-import { listMachines } from "../db/machines.js";
-import { listMcpConnections } from "../db/mcp.js";
-import type { OrgMembershipRow } from "../db/orgs.js";
-import type { RecipeRow } from "../db/recipes.js";
 import type {
+  CollectionColumn,
   ApplyInventory,
   ApplyPreview,
   CollectionPlan,
@@ -25,7 +17,17 @@ import type {
   RecipeFinding,
   RoleHarness,
   RoleModel,
+  RecipeDocument,
+  RecipeRole,
 } from "../db/schema/index.js";
+import { harnessesOn, harnessOffMessage, harnessOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
+import { listServers } from "../connectors/servers.js";
+import { agentNameTaken, listAgents } from "../db/agents.js";
+import { getGuild } from "../db/guilds.js";
+import { listMachines } from "../db/machines.js";
+import { listMcpConnections } from "../db/mcp.js";
+import type { OrgMembershipRow } from "../db/orgs.js";
+import type { RecipeRow } from "../db/recipes.js";
 import { listSecrets } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
@@ -61,7 +63,6 @@ import { RecipeError } from "./errors.js";
 import type { ValidationContext } from "./findings.js";
 import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
 import { unreviewedFields } from "./review.js";
-import type { RecipeDocument, RecipeRole } from "./schema.js";
 import { applyBlockingErrors, validateRecipe } from "./validate.js";
 
 // The preview of an apply: what it creates from the recipe, what it reuses of the organisation,
