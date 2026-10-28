@@ -482,17 +482,6 @@
       "count": 1
     }
   },
-  "src/recipes/capture.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 8
-    },
-    "complexity": {
-      "count": 1
-    },
-    "max-depth": {
-      "count": 8
-    }
-  },
   "src/registry/code.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
