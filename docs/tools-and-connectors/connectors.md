@@ -20,6 +20,11 @@ Every connector the box ships is a folder under
 - `connector.json`, the manifest: everything that is not code
 - `adapter.ts` when the connector has code, and the client code it
   needs
+- `responses.ts` beside a client that calls a provider's API: a
+  TypeBox schema for each response the client reads. The client
+  decodes each response against its schema once, with
+  `lib/decode.ts`, and formats the decoded value; a response that
+  does not match fails the call with the field at fault
 - an optional `logo.svg` (24×24, `currentColor`)
 
 `src/connectors/index.ts` lists core's folders. An extension adds its
