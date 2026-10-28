@@ -6,19 +6,21 @@ import { grantAccess, listAccess } from "../../src/artifacts/access-lists.js";
 import { createCollection, getCollection } from "../../src/artifacts/collections.js";
 import { embedGraph, unreachableMarker } from "../../src/artifacts/embeds.js";
 import { listRevisions, writeMemory } from "../../src/artifacts/memory.js";
-import { deleteByDisplayPath } from "../../src/artifacts/notes.js";
+import {
+  artifactAt,
+  deleteByDisplayPath,
+  notesNamed,
+  writeNote,
+  writeNoteAt,
+} from "../../src/artifacts/notes.js";
 import { addRecord } from "../../src/artifacts/records.js";
 import {
   applyCollectionStep,
-  artifactAt,
   guildTable,
   guildTables,
   listRecordsWithHint,
   memoryTimeline,
-  notesNamed,
   raiseAccess,
-  writeNote,
-  writeNoteAt,
 } from "../../src/artifacts/service.js";
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
 import {

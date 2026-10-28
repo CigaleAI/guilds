@@ -1,5 +1,6 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { artifactAt, memoryTimeline, parseActorPath } from "../artifacts/service.js";
+import { memoryTimeline } from "../artifacts/service.js";
+import { artifactAt, parseActorPath } from "../artifacts/notes.js";
 import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";

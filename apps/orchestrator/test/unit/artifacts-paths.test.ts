@@ -11,7 +11,7 @@ import {
 } from "../../src/artifacts/paths.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
-import { parseActorPath } from "../../src/artifacts/service.js";
+import { parseActorPath } from "../../src/artifacts/notes.js";
 
 test("display paths put notes under their owner and records under the organisation", () => {
   assert.equal(

@@ -69,8 +69,7 @@ import { getConversationMessage, insertConversationMessage, listConversationMess
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { getByDisplayPath } from "../../src/artifacts/notes.js";
-import { writeNote } from "../../src/artifacts/service.js";
+import { getByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
 import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
 import { createCollection, describeCollection, updateCollection } from "../../src/artifacts/collections.js";
 import { grantAccess, listAccess, reachOf } from "../../src/artifacts/access-lists.js";

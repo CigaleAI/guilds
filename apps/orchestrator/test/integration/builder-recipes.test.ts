@@ -32,7 +32,7 @@ import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { agentConfig } from "../helpers/generation.js";
 import { grantAccess } from "../../src/artifacts/access-lists.js";
-import { writeNote } from "../../src/artifacts/service.js";
+import { writeNote } from "../../src/artifacts/notes.js";
 import { createCollection } from "../../src/artifacts/collections.js";
 import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
 

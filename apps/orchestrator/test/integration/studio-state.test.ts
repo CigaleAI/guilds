@@ -18,7 +18,7 @@ import { insertGuild } from "../../src/db/guilds.js";
 import { createScheduleRun, type RunMessage } from "../../src/db/runs.js";
 import type { RunTaskSource } from "../../src/db/schema/index.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { writeNote } from "../../src/artifacts/service.js";
+import { writeNote } from "../../src/artifacts/notes.js";
 import { addRecord, removeRecord } from "../../src/artifacts/records.js";
 import { createCollection } from "../../src/artifacts/collections.js";
 import { operatorContext, artifactStore } from "../../src/artifacts/store.js";

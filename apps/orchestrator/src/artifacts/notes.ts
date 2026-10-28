@@ -25,8 +25,12 @@ import { deleteCollection, describeCollection, loadCollectionByName, requireRead
 import { ArtifactError } from "./errors.js";
 import { writeGrants } from "./grants.js";
 import { listRevisions } from "./memory.js";
+import { listAccess } from "./access-lists.js";
 import {
+  assertNoteKeyFree,
+  displayPathFor,
   isDisplayPath,
+  normalizeNoteKey,
   parseDisplayPath,
   revisionDisplayPath,
   TASK_KEY,
@@ -34,8 +38,15 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { parseRecordId } from "./search.js";
-import { artifactMode, artifactView, assertRead, assertWrite, hashArtifactContent, hostNoteView, reachesOwner, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
-import { FIND_DEFAULT, FIND_MAX, type ArtifactActor, type ArtifactLevel } from "./types.js";
+import { artifactMode, artifactView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, isRecordRow, ownerFor, reachesOwner, recordViewWithPath, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
+import {
+  FIND_DEFAULT,
+  FIND_MAX,
+  SEARCH_TEXT_MAX,
+  type AccessEntry,
+  type ArtifactActor,
+  type ArtifactLevel,
+} from "./types.js";
 
 /** A parsed display path that names a note, file, Memory, or script by where it sits. */
 export type ArtifactPath = Extract<ParsedDisplayPath, { kind: "artifact" }>;
@@ -347,4 +358,151 @@ function stateKind(kind: ArtifactRow["kind"]): StateArtifact["kind"] {
 
 export async function listEmbeddableNotes(store: ArtifactStore, actor: ArtifactActor): Promise<ArtifactRow[]> {
   return listReadableNotes(store.db, actor);
+}
+
+/**
+ * What a display path holds for an actor: a row, live or deleted, with its display path and its
+ * text as a reader reads it, or an archived Memory revision. A record's text is its JSON view,
+ * indented; anything else's is the text it holds, empty when it holds none.
+ */
+export type ArtifactView =
+  | { kind: "row"; row: ArtifactRow; href: string; text: string; deleted: boolean }
+  | { kind: "revision"; content: string; displayPath: string };
+
+/**
+ * A display path the actor may name, parsed. ArtifactError when it is malformed, when it lies
+ * outside the actor's organisation, or when it names the Memory archive to an agent: the archive
+ * is the operator's, so its paths are unknown to an agent.
+ */
+export function parseActorPath(actor: ArtifactActor, href: string): ParsedDisplayPath {
+  const parsed = parseDisplayPath(href);
+  if (parsed.kind === "revision" && !actor.operator) {
+    throw new ArtifactError("unknown artifact path", 404);
+  }
+  if (parsed.orgId !== actor.orgId) {
+    throw new ArtifactError("artifact is not in this organisation", 404);
+  }
+  return parsed;
+}
+
+/**
+ * What a display path holds for the actor. ArtifactError when `parseActorPath` refuses the path,
+ * when it names a collection, and when it holds nothing the actor reads.
+ */
+export async function artifactAt(store: ArtifactStore, actor: ArtifactActor, href: string): Promise<ArtifactView> {
+  parseActorPath(actor, href);
+  const read = await getByDisplayPath(store, actor, href);
+  if (read.revision) {
+    return { kind: "revision", content: read.revision.content, displayPath: read.revision.display_path };
+  }
+  if (!read.row) {
+    throw new ArtifactError("artifact not found", 404);
+  }
+  const row = read.row;
+  return {
+    kind: "row",
+    row,
+    href: rowDisplayPath(row),
+    text: isRecordRow(row) ? JSON.stringify(recordViewWithPath(row), null, 2) : (row.content_text ?? ""),
+    deleted: read.tombstone === true,
+  };
+}
+
+/** A note as a write sets it: its file name at a level, its title and text, and the version it replaces when the writer read one. */
+export type NoteDraft = {
+  level: ArtifactLevel;
+  key: string;
+  title?: string;
+  content: string;
+  expectedVersion?: number;
+};
+
+/** A note as written: its display path and its row. */
+export type NoteWrite = { href: string; row: ArtifactRow };
+
+/** Where a draft lands before it is written: its display path, its file name as written, and the hash of its title and text. */
+export type PlannedNote = { href: string; key: string; hash: string };
+
+/**
+ * Where a draft lands under `owner`, the owner its level names, before anything writes it.
+ * ArtifactError when its key is not a note file name or is reserved at its level.
+ */
+export function planNote(owner: Pick<ArtifactOwnerRef, "orgId" | "ownerId">, note: NoteDraft): PlannedNote {
+  const key = normalizeNoteKey(note.key);
+  assertNoteKeyFree(note.level, key);
+  return {
+    href: displayPathFor({ orgId: owner.orgId, level: note.level, ownerId: owner.ownerId, kind: "note", path: "", key }),
+    key,
+    hash: hashArtifactContent(JSON.stringify([note.title ?? null, hashArtifactContent(note.content)])),
+  };
+}
+
+/**
+ * Writes a note directly under the owner its level names for the actor. An existing note is
+ * written with write access to it, and is otherwise refused as not writable; a new one only where
+ * its starting access lets the writer write it.
+ */
+export async function writeNote(store: ArtifactStore, actor: ArtifactActor, note: NoteDraft): Promise<NoteWrite> {
+  const key = normalizeNoteKey(note.key);
+  assertNoteKeyFree(note.level, key);
+  assertBytes(note.content);
+  const owner = ownerFor(actor, note.level);
+  await assertLiveCount(store, owner.orgId, note.level, owner.ownerId);
+  const searchText = [note.title ?? "", key].filter(Boolean).join(" ").slice(0, SEARCH_TEXT_MAX);
+  const row = await upsertNote(store, actor, {
+    level: note.level,
+    owner,
+    path: "",
+    key,
+    title: note.title ?? null,
+    contentText: note.content,
+    searchText,
+    ...(note.expectedVersion !== undefined ? { expectedVersion: note.expectedVersion } : {}),
+  });
+  return { href: rowDisplayPath(row), row };
+}
+
+/**
+ * Rewrites the live note a display path names, with write access to it. ArtifactError when the
+ * path names no live note of the actor's organisation that the actor reads.
+ */
+export async function writeNoteAt(store: ArtifactStore, actor: ArtifactActor, href: string, content: string): Promise<NoteWrite> {
+  const parsed = parseDisplayPath(href);
+  if (parsed.kind !== "artifact" || parsed.orgId !== actor.orgId) {
+    throw new ArtifactError("artifact not found", 404);
+  }
+  const live = await loadParsed(store, parsed);
+  if (!live || live.kind !== "note") {
+    throw new ArtifactError("artifact not found", 404);
+  }
+  await assertRead(store, actor, live);
+  assertBytes(content);
+  const row = await upsertNote(store, actor, {
+    level: live.level,
+    owner: { orgId: live.org_id, ownerId: live.owner_id, guildId: live.guild_id, agentId: live.agent_id },
+    path: live.path,
+    key: live.key,
+    title: live.title,
+    contentText: content,
+    searchText: live.search_text,
+  });
+  return { href: rowDisplayPath(row), row };
+}
+
+/** A live note the actor reads, with its display path and its access list. */
+export type NoteAccess = { href: string; row: ArtifactRow; access: AccessEntry[] };
+
+/**
+ * The live notes the actor reads whose display path or file name is one of `names`, in level and
+ * file name order, each with its access list. Access lists are the operator's to read.
+ */
+export async function notesNamed(store: ArtifactStore, actor: ArtifactActor, names: ReadonlySet<string>): Promise<NoteAccess[]> {
+  const notes: NoteAccess[] = [];
+  for (const row of await listEmbeddableNotes(store, actor)) {
+    const href = rowDisplayPath(row);
+    if (names.has(href) || names.has(row.key)) {
+      notes.push({ href, row, access: await listAccess(store, actor, { kind: "note", id: row.id }) });
+    }
+  }
+  return notes;
 }

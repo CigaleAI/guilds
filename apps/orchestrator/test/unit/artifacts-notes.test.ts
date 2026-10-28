@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
-import { planNote } from "../../src/artifacts/service.js";
+import { planNote } from "../../src/artifacts/notes.js";
 
 const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 

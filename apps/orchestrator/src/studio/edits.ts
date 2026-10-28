@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { ArtifactError } from "../artifacts/errors.js";
 import { parseDisplayPath } from "../artifacts/paths.js";
-import { artifactAt, parseActorPath, planNote, writeNote, type PlannedNote } from "../artifacts/service.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { updateGuildText } from "../guilds/service.js";
@@ -21,7 +20,15 @@ import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage, type ConversationMessageRow } from "../db/conversations.js";
 import type { ConversationMessageMetadata, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { deleteByDisplayPath, getByDisplayPath } from "../artifacts/notes.js";
+import {
+  artifactAt,
+  deleteByDisplayPath,
+  getByDisplayPath,
+  parseActorPath,
+  type PlannedNote,
+  planNote,
+  writeNote,
+} from "../artifacts/notes.js";
 import { getMemoryRow, writeMemory } from "../artifacts/memory.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until

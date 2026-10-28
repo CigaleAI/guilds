@@ -26,7 +26,7 @@ import {
   insertMessage,
 } from "../../src/db/runs.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { writeNote } from "../../src/artifacts/service.js";
+import { writeNote } from "../../src/artifacts/notes.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 

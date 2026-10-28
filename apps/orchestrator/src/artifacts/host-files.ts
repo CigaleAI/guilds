@@ -7,8 +7,14 @@ import { taskDisplayPath, writeAgentTask } from "./task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { canReadDisplayPath, deleteByDisplayPath, getByDisplayPath, listEmbeddableNotes, listOwnerNotes } from "./notes.js";
-import { writeNote } from "./service.js";
+import {
+  canReadDisplayPath,
+  deleteByDisplayPath,
+  getByDisplayPath,
+  listEmbeddableNotes,
+  listOwnerNotes,
+  writeNote,
+} from "./notes.js";
 import { artifactView, type ArtifactStore } from "./store.js";
 import { ensureAgentRows, writeMemory } from "./memory.js";
 

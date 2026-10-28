@@ -24,8 +24,16 @@ import { insertOrg } from "../../src/db/orgs.js";
 import { getAgentTask, listAgentTaskRevisions } from "../../src/db/agents.js";
 import { insertRun } from "../../src/db/runs.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { canReadDisplayPath, deleteByDisplayPath, findNotes, getByDisplayPath, listEmbeddableNotes, listOwnerNotes } from "../../src/artifacts/notes.js";
-import { writeNote, writeNoteAt } from "../../src/artifacts/service.js";
+import {
+  canReadDisplayPath,
+  deleteByDisplayPath,
+  findNotes,
+  getByDisplayPath,
+  listEmbeddableNotes,
+  listOwnerNotes,
+  writeNote,
+  writeNoteAt,
+} from "../../src/artifacts/notes.js";
 import { getMemoryRow, listRevisions, writeMemory } from "../../src/artifacts/memory.js";
 import { accessList, grantAccess, listAccess, reachOf, replaceAccess } from "../../src/artifacts/access-lists.js";
 import { clearRecords, collectionCatalog, collectionFacts, createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../../src/artifacts/collections.js";

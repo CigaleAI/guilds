@@ -1,11 +1,19 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { artifactAt, listRecordsWithHint, parseActorPath, writeNote, writeNoteAt, type ArtifactView } from "../artifacts/service.js";
+import { listRecordsWithHint } from "../artifacts/service.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolContext } from "./types.js";
 import { addRecord, removeRecord, searchRecords, updateRecord } from "../artifacts/records.js";
-import { deleteByDisplayPath, findNotes } from "../artifacts/notes.js";
+import {
+  artifactAt,
+  type ArtifactView,
+  deleteByDisplayPath,
+  findNotes,
+  parseActorPath,
+  writeNote,
+  writeNoteAt,
+} from "../artifacts/notes.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { writeMemory } from "../artifacts/memory.js";
 import { bindQuery } from "../db/pg.js";
