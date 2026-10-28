@@ -1,14 +1,4 @@
 import {
-  BUILDER_MAX_INPUT_TOKENS,
-  BUILDER_MAX_TOKENS,
-  BUILDER_MAX_TOOL_CALLS,
-} from "../builder/constants.js";
-import {
-  STUDIO_MAX_INPUT_TOKENS,
-  STUDIO_MAX_TOKENS,
-  STUDIO_MAX_TOOL_CALLS,
-} from "../studio/constants.js";
-import {
   countOrgAgents,
   countOrgBrowserAgents,
   countOrgCodingAgents,
@@ -25,16 +15,8 @@ import { claimMonthlyStudioBuilderRun } from "../db/usage.js";
 export type CoachKind = "studio" | "builder";
 
 export const COACH_RUN_LIMITS: Record<CoachKind, CoachRunLimits> = {
-  studio: {
-    max_tokens: STUDIO_MAX_TOKENS,
-    max_tool_calls: STUDIO_MAX_TOOL_CALLS,
-    max_input_tokens: STUDIO_MAX_INPUT_TOKENS,
-  },
-  builder: {
-    max_tokens: BUILDER_MAX_TOKENS,
-    max_tool_calls: BUILDER_MAX_TOOL_CALLS,
-    max_input_tokens: BUILDER_MAX_INPUT_TOKENS,
-  },
+  studio: { max_tokens: 8192, max_tool_calls: 40, max_input_tokens: 100_000 },
+  builder: { max_tokens: 25000, max_tool_calls: 40, max_input_tokens: 200_000 },
 };
 
 /** An organisation's caps; null leaves that one uncapped. */
