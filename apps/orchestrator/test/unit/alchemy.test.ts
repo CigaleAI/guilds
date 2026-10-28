@@ -23,6 +23,9 @@ import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("alchemy")!.manifest.tools!;
@@ -254,14 +257,14 @@ test("sync Alchemy writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
   const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+  runConnectors(CONNECTORS.withAdapter("alchemy", {
     async validate(creds) {
       const apiKey = creds.token;
       pinged += 1;
       assert.equal(apiKey, "alc-test");
       return "";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
   const connection = connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce });
   const server = serverRow("alchemy", { id: "mcp_alchemy", auth: "token" });
@@ -276,11 +279,11 @@ test("sync Alchemy writes the curated catalog", async () => {
 test("sync Alchemy rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const pool = new McpPool(new MemoryMcpDatabase());
-  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+  runConnectors(CONNECTORS.withAdapter("alchemy", {
     async validate() {
       throw new ConnectorError("invalid key", 401);
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
     () => pool.syncTools(connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }), serverRow("alchemy", { id: "mcp_alchemy", auth: "token" }), { force: true }),
@@ -292,14 +295,14 @@ test("call Alchemy dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
   const pool = new McpPool(new MemoryMcpDatabase());
-  pool.connectors = CONNECTORS.withAdapter("alchemy", {
+  runConnectors(CONNECTORS.withAdapter("alchemy", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.api_key = creds.token;
       return "0xd8da  ethereum  total=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
   const stored = await pool.call(
     connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }),

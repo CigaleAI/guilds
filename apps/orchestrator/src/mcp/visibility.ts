@@ -6,7 +6,7 @@ import { getMembership } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { canSeeGuild } from "../guilds/validation.js";
-import type { LoadedConnector } from "../connectors/load.js";
+import type { LoadedConnector } from "../connectors/servers.js";
 
 /** A request about a connector login refused, with the HTTP status it answers with. */
 export class ConnectionError extends Error {

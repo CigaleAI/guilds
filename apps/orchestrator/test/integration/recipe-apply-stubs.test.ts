@@ -25,7 +25,7 @@ import {
 } from "../helpers/postgres.js";
 import { fixtureDeskRecipe, fixtureHuskDeskRecipe, inboxQueueColumns } from "../helpers/recipe-docs.js";
 import { insertConnector } from "../../src/db/connectors.js";
-import { loadConnector } from "../../src/connectors/load.js";
+import { loadConnector } from "../../src/connectors/servers.js";
 import { getAgentTask, listAgentTaskRevisions, listAgents } from "../../src/db/agents.js";
 import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";

@@ -7,14 +7,11 @@ import { newId } from "../lib/ids.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
 import type { McpPool } from "./pool.js";
 import { retireLogin, type LoginFailure } from "./service.js";
-import { authFields } from "../connectors/manifest.js";
-import type { ConnectorRegistry } from "../connectors/registry.js";
-import { installedConnectors } from "../connectors/index.js";
-import { settingsComplete, SettingsError, validateSettings } from "../connectors/settings.js";
+import { settingsOutcome, tokenFields, type LoadedConnector, type SettingsOutcome } from "../connectors/servers.js";
+import { SettingsError } from "../connectors/settings.js";
 import type { Credentials } from "../connectors/types.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { LoadedConnector } from "../connectors/load.js";
 
 /**
  * What to do when the owner already has a connected login on the server. `refuse`: a 409.
@@ -75,15 +72,9 @@ export function connectDatabase(db: Queryable) {
 export type ConnectDatabase = ReturnType<typeof connectDatabase>;
 
 /** The form's values for a token login, by field: every declared field trimmed, the required ones present. */
-export function tokenCredentials(
-  server: LoadedConnector,
-  values: Record<string, unknown>,
-  connectors: ConnectorRegistry = installedConnectors(),
-): Credentials {
-  const manifest = connectors.forServer(server)?.manifest;
-  const fields = manifest ? authFields(manifest) : [{ name: "token", label: "API key", optional: false }];
+export function tokenCredentials(server: LoadedConnector, values: Record<string, unknown>): Credentials {
   const credentials: Record<string, string> = {};
-  for (const field of fields) {
+  for (const field of tokenFields(server)) {
     const raw = values[field.name];
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value && !field.optional) {
@@ -134,26 +125,23 @@ export async function connect(
   pool: ConnectPool | null,
   input: ConnectInput,
   now: Date = new Date(),
-  options: { masterKey?: Buffer | undefined; connectors?: ConnectorRegistry } = {},
+  options: { masterKey?: Buffer | undefined } = {},
 ): Promise<ConnectResult> {
   const { server } = input;
   if (server.auth !== "token") {
     throw new ConnectError(422, "connector does not take a key");
   }
-  const credentials = tokenCredentials(server, input.credentials, options.connectors);
-  const schema = (options.connectors ?? installedConnectors()).forServer(server)?.manifest.settings_schema;
-  const settings = input.settings ?? {};
-  if (schema && Object.keys(settings).length) {
-    try {
-      validateSettings(schema, settings);
-    } catch (error) {
-      if (error instanceof SettingsError) {
-        throw new ConnectError(422, error.message);
-      }
-      throw error;
+  const credentials = tokenCredentials(server, input.credentials);
+  let settings: SettingsOutcome;
+  try {
+    settings = settingsOutcome(server, input.settings ?? {});
+  } catch (error) {
+    if (error instanceof SettingsError) {
+      throw new ConnectError(422, error.message);
     }
+    throw error;
   }
-  const complete = settingsComplete(schema, settings);
+  const complete = settings.kind === "complete";
   const onExisting = input.onExisting ?? "refuse";
   const existing = await db.getMcpConnectionForOwner(server.id, input.ownerScope, input.ownerId);
   if (existing !== null && existing.status === "connected") {
@@ -172,7 +160,7 @@ export async function connect(
   }
   let hint = "";
   try {
-    hint = pool ? await pool.validate(server, credentials, settings) : "";
+    hint = pool ? await pool.validate(server, credentials, settings.values) : "";
   } catch (error) {
     connectFailure(error, server);
   }
@@ -188,7 +176,7 @@ export async function connect(
       nonce,
       status: complete ? "connected" : "pending",
       accountHint: input.accountHint ?? hint,
-      settings,
+      settings: settings.values,
     },
     now,
   );

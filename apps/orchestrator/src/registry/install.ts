@@ -1,6 +1,5 @@
 import { rmSync } from "node:fs";
-import { loadConnector, type LoadedConnector } from "../connectors/load.js";
-import { getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
+import { getMcpServerBySlug, listServers, loadConnector, type LoadedConnector } from "../connectors/servers.js";
 import { connectorIntegrationId } from "../instance/integrations.js";
 import { serverIdOf } from "../connectors/manifest.js";
 import { assertSlugFree, CatalogError } from "../mcp/catalog.js";
@@ -166,7 +165,7 @@ export async function updateConnectors(
   const index = await client.index();
   const rows = options.slug
     ? [await registryRow(db, options.slug)]
-    : (await listMcpServers(db)).filter((row) => !row.owner_org_id && row.source === "registry");
+    : await listServers(db, { owner: "platform", source: "registry" });
   const moved: Array<{ slug: string; from: string; to: string; code: boolean }> = [];
   for (const row of rows) {
     const slug = String(row.slug);
@@ -210,7 +209,7 @@ export async function removeConnector(db: Queryable, slug: string, connectorsRoo
 
 /** The box's platform connectors, each with the newest version the index offers when one is given. */
 export async function listConnectors(db: Queryable, index: RegistryIndex | null): Promise<InstalledConnector[]> {
-  const rows = (await listMcpServers(db)).filter((row) => !row.owner_org_id);
+  const rows = await listServers(db, { owner: "platform" });
   return rows
     .map((row) => {
       const slug = String(row.slug);

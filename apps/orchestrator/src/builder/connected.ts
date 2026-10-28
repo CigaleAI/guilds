@@ -1,11 +1,10 @@
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
-import { getMcpServer, getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
+import { getMcpServer, getMcpServerBySlug, listServers, type LoadedConnector } from "../connectors/servers.js";
 import { McpError } from "../mcp/errors.js";
 import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool } from "../mcp/service.js";
 import { listMcpConnections, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { LoadedConnector } from "../connectors/load.js";
 
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
@@ -21,7 +20,7 @@ export function connectedDatabase(db: Queryable) {
   return {
     getMcpServer: bindQuery(db, getMcpServer),
     getMcpServerBySlug: bindQuery(db, getMcpServerBySlug),
-    listMcpServers: bindQuery(db, listMcpServers),
+    listServers: bindQuery(db, listServers),
     listMcpConnections: bindQuery(db, listMcpConnections),
     listMcpTools: bindQuery(db, listMcpTools),
   };

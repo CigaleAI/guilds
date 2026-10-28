@@ -30,6 +30,9 @@ import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
@@ -420,14 +423,14 @@ test("sync Gmail writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
   const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("gmail", {
+  runConnectors(CONNECTORS.withAdapter("gmail", {
     async validate(creds) {
       const accessToken = creds.access_token;
       pinged += 1;
       assert.equal(accessToken, TOKEN);
       return "ada@example.com";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ access_token: TOKEN }, KEY);
   const connection = connectionRow({ id: "conn_gmail", status: "connected", ciphertext, nonce });
   const server = serverRow("gmail", { id: "mcp_gmail", auth: "oauth", config: { url: "https://gmail.googleapis.com/gmail/v1" } });
@@ -449,14 +452,14 @@ test("call Gmail dispatches with the stored access token", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
   const pool = new McpPool(new MemoryMcpDatabase());
-  pool.connectors = CONNECTORS.withAdapter("gmail", {
+  runConnectors(CONNECTORS.withAdapter("gmail", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.token = creds.access_token;
       return "from:ada  n=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ access_token: TOKEN }, KEY);
   const stored = await pool.call(
     connectionRow({ id: "conn_gmail", status: "connected", ciphertext, nonce }),

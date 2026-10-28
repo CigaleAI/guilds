@@ -1,4 +1,3 @@
-import { listMcpServers } from "../connectors/servers.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -10,7 +9,7 @@ import { McpDisconnectedError } from "../mcp/errors.js";
 import type { ConnectorLogin, McpPool } from "../mcp/pool.js";
 import { connectionTools, resolveConnectionTool, type ConnectionTool } from "../mcp/service.js";
 import { MissingSecretError } from "../secrets/index.js";
-import { serverManifest, type LoadedConnector } from "../connectors/load.js";
+import { listServers, type LoadedConnector } from "../connectors/servers.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
 import type { AgentPlaceRow } from "../db/agents.js";
 import type { RunMcpConnection, RunMcpTool, SecretRef } from "../db/schema/index.js";
@@ -34,7 +33,7 @@ export function accessDatabase(db: Queryable) {
     listBindingsCovering: bindQuery(db, listBindingsCovering),
     listAgentSecrets: bindQuery(db, listAgentSecrets),
     getSecret: bindQuery(db, getSecret),
-    listMcpServers: bindQuery(db, listMcpServers),
+    listServers: bindQuery(db, listServers),
     listMcpConnections: bindQuery(db, listMcpConnections),
     connectionTools: bindQuery(db, connectionTools),
   };
@@ -101,7 +100,7 @@ type ToolSync = Pick<McpPool, "syncTools">;
 type Listing = ConnectorLogin & { listed: ConnectionTool[] };
 
 /** What an agent's logins are read through: its bindings, the servers it sees, and the logins covering it. */
-type LoginReads = Pick<AccessDatabase, "listBindingsCovering" | "listMcpServers" | "listMcpConnections">;
+type LoginReads = Pick<AccessDatabase, "listBindingsCovering" | "listServers" | "listMcpConnections">;
 
 /**
  * The connected logins behind the MCP servers the agent has on, each with its server. A server
@@ -112,7 +111,7 @@ export async function agentLogins(db: LoginReads, agent: AgentPlaceRow): Promise
   const rows = await db.listBindingsCovering(scope);
   const connections = await loginsById(db, scope);
   const logins: ConnectorLogin[] = [];
-  for (const [item, server] of resolvedMcp(rows, await db.listMcpServers(scope.orgId), scope)) {
+  for (const [item, server] of resolvedMcp(rows, await db.listServers({ owner: { visibleTo: scope.orgId } }), scope)) {
     const connection = item.enabled && item.connection_id !== null ? connections.get(item.connection_id) : undefined;
     if (connection?.status === "connected") {
       logins.push({ connection, server });
@@ -159,7 +158,7 @@ function connectedLogin(
 ): McpConnectionRow | null {
   const connection = item.enabled && item.connection_id !== null ? connections.get(item.connection_id) : undefined;
   if (connection?.status === "disconnected") {
-    if (connection.owner_scope === "platform" && serverManifest(server)?.auth.instance) {
+    if (connection.owner_scope === "platform" && server.manifest.auth.instance) {
       return null;
     }
     throw new McpDisconnectedError(`${server.slug} is disconnected`);
@@ -225,7 +224,7 @@ export async function agentRuntime(
   const rows = await db.listBindingsCovering(scope);
   const tools = enabledToolNames(resolvedTools(rows, scope));
   const metas = await agentSecrets(db, agent);
-  const servers = await db.listMcpServers(scope.orgId);
+  const servers = await db.listServers({ owner: { visibleTo: scope.orgId } });
   const connections = await loginsById(db, scope);
   const listings: Listing[] = [];
   for (const [item, server] of resolvedMcp(rows, servers, scope)) {

@@ -1,7 +1,7 @@
 import type { Manifest } from "../db/schema/index.js";
 import { loadManifest, serverIdOf } from "./manifest.js";
 import type { Adapter } from "./types.js";
-import type { LoadedConnector } from "./load.js";
+import type { LoadedConnector } from "./servers.js";
 
 /** Where an installed connector came from: shipped with core, pulled from a registry, or added on this box. */
 export type ConnectorSource = "core" | "registry" | "local";

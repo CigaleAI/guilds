@@ -1,8 +1,7 @@
-import type { LoadedConnector } from "../connectors/load.js";
-import { getMcpServer, listMcpServers } from "../connectors/servers.js";
+import { getMcpServer, listServers, type LoadedConnector } from "../connectors/servers.js";
 import { countOrgConnectors, deleteConnector } from "../db/connectors.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
-import { refreshConnectorIntegrations } from "../instance/connectors.js";
+import { refreshConnectorIntegrations } from "../connectors/instance.js";
 import { LimitError, type OrgPolicy } from "../policy/index.js";
 import { CatalogError, createConnector, patchConnector } from "./catalog.js";
 
@@ -17,7 +16,7 @@ function nameConflict(error: unknown): unknown {
 
 /** The connectors the platform offers every organisation. */
 export async function listPlatformServers(db: Queryable): Promise<LoadedConnector[]> {
-  return (await listMcpServers(db)).filter((server) => !server.owner_org_id);
+  return listServers(db, { owner: "platform" });
 }
 
 /** A connector the platform offers; an organisation's own, or none, is a 404. */
@@ -65,7 +64,7 @@ export async function reloadServer(db: Queryable, row: LoadedConnector): Promise
 
 /** The organisation's own connectors. */
 export async function listOrgOwnServers(db: Queryable, orgId: string): Promise<LoadedConnector[]> {
-  return (await listMcpServers(db, orgId)).filter((server) => server.owner_org_id === orgId);
+  return listServers(db, { owner: { orgId } });
 }
 
 /** One of the organisation's own connectors; the platform's, another organisation's, or none is a 404. */

@@ -977,7 +977,7 @@ integrations shipped.
 to every registry install with or without code
 (`endpointOnlyProblem` there, `codeManifestProblem` in
 `src/registry/client.ts`), and `refreshConnectorIntegrations`
-(`src/instance/connectors.ts`).
+(`src/connectors/instance.ts`).
 
 **Exposure:** a registry connector's manifest now asks the instance
 admin for a credential: a platform key for its platform login, or
@@ -1197,7 +1197,7 @@ are not resolved this way.
 
 **Status:** open, accepted, by design since 2026-10-09; mitigated.
 
-**Where:** `toolStartsOff` (`src/connectors/load.ts`), applied when
+**Where:** `toolStartsOff` (`src/connectors/servers.ts`), applied when
 a login's tools are listed (`McpPool.syncTools`).
 
 **Exposure:** a tool a remote server lists, and its connector's
@@ -1208,7 +1208,7 @@ operator turned it on. A server can name a writing tool so it
 reads as a read (`lookup_orders` that also cancels one) and an
 agent with that server on can call it on its first run.
 
-**Mitigation:** the writing-verb list (`src/mcp/verbs.ts`) and
+**Mitigation:** the writing-verb list (`src/connectors/naming.ts`) and
 `destructiveHint` keep a tool Off; `readOnlyHint` never turns one
 On. A connector's manifest names default-off tools with
 `policy.default_off` and marks its own tools `mutating`, and the

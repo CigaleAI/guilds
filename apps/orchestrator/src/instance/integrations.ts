@@ -2,8 +2,6 @@
 // box, the fields it takes, where their values come from, and what it switches on. A module that
 // needs an instance key asks here, so one list says what the box can be given and what it has.
 
-import { installedConnectors } from "../connectors/index.js";
-import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { Manifest } from "../db/schema/index.js";
 
 /** Where an integration's values come from: the encrypted `instance_keys` store, or the process environment. */
@@ -273,12 +271,15 @@ export function integrationValues<const I extends Integration>(
   ) as Record<FieldName<I>, string>;
 }
 
+/** The parts of a connector's manifest that name its integration: its slug, what it requires, and how it signs in. */
+export type ConnectorRequirements = Pick<Manifest, "slug" | "requires" | "auth">;
+
 /**
  * The integration a connector's manifest requires, takes its platform key from, or declares of
  * its own (a key, or an OAuth client with no provider), when it names one.
  */
 export function integrationForConnector(
-  manifest: Pick<Manifest, "slug" | "requires" | "auth">,
+  manifest: ConnectorRequirements,
   integrations: readonly Integration[] = installedIntegrations(),
 ): Integration | null {
   const instance = manifest.auth.instance;
@@ -295,21 +296,20 @@ export function integrationForConnector(
 
 /**
  * What the box has, for the operator: each integration's state and which fields are set, never
- * a value. Its connectors are the installed ones whose manifest requires it or takes its key.
+ * a value. Its connectors are those of `connectors` whose manifest requires it or takes its key.
  * `audit` adds when and by whom a store row was written, for the instance admin.
  */
 export function integrationStatuses(
   integrations: readonly Integration[],
+  connectors: readonly ConnectorRequirements[],
   sources?: IntegrationSources,
-  connectors: ConnectorRegistry = installedConnectors(),
   options: { audit?: boolean } = {},
 ): IntegrationStatus[] {
   const { keys } = sourcesOf(sources);
   const connectorsOf = (id: string) =>
     connectors
-      .entries()
-      .filter((entry) => integrationForConnector(entry.manifest, integrations)?.id === id)
-      .map((entry) => entry.manifest.slug);
+      .filter((manifest) => integrationForConnector(manifest, integrations)?.id === id)
+      .map((manifest) => manifest.slug);
   return integrations.map((integration) => {
     const row = integration.source === "store" && options.audit ? (keys[integration.id] ?? null) : null;
     return {

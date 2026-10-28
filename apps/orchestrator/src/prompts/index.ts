@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { renderMemorySection } from "../memory/index.js";
 import { STATE_PREFIX } from "../state/index.js";
-import { installedConnectors } from "../connectors/index.js";
+import { installedManifests } from "../connectors/servers.js";
 import { agentHome } from "../lib/agent-file.js";
 
 export class PromptError extends Error {
@@ -217,9 +217,9 @@ export function composeAgentSystemPrompt(
 /** The `prompt.guidance` of each connector whose tools the run offers, in catalog order. */
 export function connectorGuidance(offeredSlugs: Iterable<string>): string[] {
   const offered = new Set(offeredSlugs);
-  return installedConnectors()
-    .entries()
-    .flatMap((entry) => (offered.has(entry.manifest.slug) && entry.manifest.prompt ? [entry.manifest.prompt.guidance] : []));
+  return installedManifests().flatMap((manifest) =>
+    offered.has(manifest.slug) && manifest.prompt ? [manifest.prompt.guidance] : [],
+  );
 }
 
 export function composeSystemPrompt(
@@ -234,8 +234,8 @@ export function composeSystemPrompt(
   const introBase = caps ? stateIntroForCapabilities(caps) : STATE_INTRO;
   const intro = [
     introBase,
-    ...installedConnectors().entries().map((entry) =>
-      entry.manifest.state && entry.manifest.state.key in state ? entry.manifest.state.intro : null,
+    ...installedManifests().map((manifest) =>
+      manifest.state && manifest.state.key in state ? manifest.state.intro : null,
     ),
     "repositories" in state ? REPOSITORIES_INTRO : null,
   ]

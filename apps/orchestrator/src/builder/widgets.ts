@@ -1,5 +1,5 @@
 import { isSystemOfRecord, storageHint } from "../connectors/builder.js";
-import { connectorFacts } from "../connectors/view.js";
+import { connectorFacts, type LoadedConnector } from "../connectors/servers.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { oauthSetupState } from "../oauth/index.js";
 import {
@@ -7,7 +7,6 @@ import {
   resolvePublishedServer,
   type ConnectedDatabase,
 } from "./connected.js";
-import type { LoadedConnector } from "../connectors/load.js";
 
 export const CONNECT_WIDGET = "connect";
 export const QUESTION_WIDGET = "question";
@@ -78,9 +77,7 @@ export async function buildAnyConnectWidget(args: {
   reason: string;
 }): Promise<Record<string, unknown>> {
   void args.capabilities;
-  const published = (await args.db.listMcpServers(args.orgId)).filter(
-    (row) => row.enabled !== false,
-  );
+  const published = await args.db.listServers({ owner: { visibleTo: args.orgId }, enabled: true });
   const connections = await args.db.listMcpConnections({ orgId: args.orgId });
   const connectedIds = new Set(
     connections

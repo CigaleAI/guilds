@@ -1,5 +1,5 @@
 import type { ArtifactStore } from "../artifacts/index.js";
-import { listMcpServers } from "../connectors/servers.js";
+import { listServers } from "../connectors/servers.js";
 import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
@@ -131,7 +131,7 @@ export async function validationContext(
   const agents = await countOrgAgents(apply.db, orgId);
   const browsers = await countOrgBrowserAgents(apply.db, orgId);
   const coders = await countOrgCodingAgents(apply.db, orgId);
-  const servers = (await listMcpServers(apply.db, orgId)).filter((row) => row.enabled !== false).map((row) => row.slug);
+  const servers = (await listServers(apply.db, { owner: { visibleTo: orgId }, enabled: true })).map((row) => row.slug);
   return {
     publishedServers: new Set(servers),
     ...(recipe ? { registryConnectors: await registryOffers(apply, recipe, servers) } : {}),

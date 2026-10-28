@@ -20,6 +20,9 @@ import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 /** A temporary host directory named after agent a_1, as its home sits on its machine. */
 async function agentWorkspace(prefix: string): Promise<string> {
@@ -281,7 +284,7 @@ test("sync Qonto writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
   const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("qonto", {
+  runConnectors(CONNECTORS.withAdapter("qonto", {
     async validate(stored) {
       const creds = { login: stored.login, secretKey: stored.secret_key };
       pinged += 1;
@@ -289,7 +292,7 @@ test("sync Qonto writes the curated catalog", async () => {
       assert.equal(creds.secretKey, "org-secret");
       return "Elektro";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
   const connection = connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce });
   const server = serverRow("qonto", { id: "mcp_qonto", auth: "token" });
@@ -305,7 +308,7 @@ test("call Qonto dispatches with stored login and secret", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
   const pool = new McpPool(new MemoryMcpDatabase());
-  pool.connectors = CONNECTORS.withAdapter("qonto", {
+  runConnectors(CONNECTORS.withAdapter("qonto", {
     async call(name, arguments_, creds, ctx) {
       seen.name = name;
       seen.arguments = arguments_;
@@ -314,7 +317,7 @@ test("call Qonto dispatches with stored login and secret", async () => {
       seen.workspace = ctx.workspace_dir;
       return "count=0  total=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
   const stored = await pool.call(
     connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce }),

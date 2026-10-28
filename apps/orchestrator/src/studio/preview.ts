@@ -11,7 +11,7 @@ import { memoryOf } from "../agents/validation.js";
 import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
-import type { LoadedConnector } from "../connectors/load.js";
+import type { LoadedConnector } from "../connectors/servers.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import { listCollections } from "../artifacts/collections.js";
 
@@ -112,7 +112,7 @@ export async function projectGuildConnections(
   guildId: string,
 ): Promise<ProjectedConnection[]> {
   const servers = new Map<string, LoadedConnector>();
-  for (const server of await deps.db.listMcpServers(orgId)) {
+  for (const server of await deps.db.listServers({ owner: { visibleTo: orgId } })) {
     servers.set(server.id, server);
   }
   const members = await deps.db.listAgents(guildId);
@@ -160,7 +160,7 @@ export async function projectAgentAccess(
     connections.set(connection.id, connection);
   }
   const projected: Array<ProjectedConnection & { server_enabled: boolean; offered_tools: string[] }> = [];
-  for (const [item, server] of resolvedMcp(rows, await deps.db.listMcpServers(scope.orgId), scope)) {
+  for (const [item, server] of resolvedMcp(rows, await deps.db.listServers({ owner: { visibleTo: scope.orgId } }), scope)) {
     if (item.connection_id === null) {
       continue;
     }
@@ -200,7 +200,7 @@ export async function projectOfferedToolSchemas(
     (name) => memoryOf(agent.config as Record<string, unknown> | undefined) || name !== "memory_write",
   );
   const schemas = [...schemasFor(nativeNames)];
-  const servers = await deps.db.listMcpServers(orgId);
+  const servers = await deps.db.listServers({ owner: { visibleTo: orgId } });
   const connections = new Map<string, McpConnectionRow>();
   let latest: string | null = null;
   for (const connection of await deps.db.listMcpConnections({ orgId, guildId, agentId })) {

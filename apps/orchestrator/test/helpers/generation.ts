@@ -413,7 +413,7 @@ export class FakeDB {
     return [this.agent];
   }
 
-  async listMcpServers() {
+  async listServers() {
     return [];
   }
 
@@ -619,7 +619,7 @@ export class RecordingDB {
     return this.secrets.find((item) => item.id === secretId) ?? null;
   }
 
-  async listMcpServers() {
+  async listServers() {
     return [];
   }
 

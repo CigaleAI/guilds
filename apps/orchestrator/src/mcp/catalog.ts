@@ -1,14 +1,20 @@
-import { installedConnectors } from "../connectors/index.js";
-import { loadConnector, manifestTools, OVERRIDE_FIELDS, overridesOf, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
 import { loadManifest, ManifestError, SLUG_RE } from "../connectors/manifest.js";
-import { getMcpServerBySlug } from "../connectors/servers.js";
-import { connectorFacts } from "../connectors/view.js";
+import {
+  connectorFacts,
+  editableTools,
+  editCopyOverrides,
+  getMcpServerBySlug,
+  installedConnectorBySlug,
+  loadConnector,
+  overriddenCopyFields,
+  type CopyField,
+  type LoadedConnector,
+} from "../connectors/servers.js";
 import { isPlainRecord, jsonObj } from "../db/json.js";
 import { SLUG_PATTERN, ToolInputSchema, type Manifest, type Overrides, type ToolOverride } from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { generateToolPrefix, isReservedSlug, isReservedToolPrefix } from "../mcp/policy.js";
-import { namespacedName } from "../mcp/names.js";
 import { assertPublicHttpsUrl, EndpointError } from "../net/endpoints.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { insertConnector, listConnectorSlugOwners, listTakenToolPrefixes, updateConnector } from "../db/connectors.js";
@@ -34,37 +40,9 @@ function editsFields(server: LoadedConnector): boolean {
   return server.source === "local";
 }
 
-function catalogToolItems(server: LoadedConnector): Array<Record<string, unknown>> {
-  const overrides = overridesOf(server.overrides).tools ?? {};
-  const prefix = String(server.tool_prefix || server.slug);
-  const items = manifestTools(server).map((tool) => ({
-    ...tool,
-    default_override: typeof overrides[tool.remote_name]?.default === "boolean" ? overrides[tool.remote_name]!.default : null,
-    overridden: tool.remote_name in overrides,
-  }));
-  const named = new Set(items.map((tool) => tool.remote_name));
-  for (const [name, edit] of Object.entries(overrides)) {
-    if (named.has(name)) {
-      continue;
-    }
-    items.push({
-      remote_name: name,
-      namespaced_name: namespacedName(prefix, name),
-      description: edit.description ?? "",
-      input_schema: edit.input_schema ?? { type: "object" },
-      mutating: false,
-      default_enabled: !toolStartsOff(server, name),
-      default_override: typeof edit.default === "boolean" ? edit.default : null,
-      overridden: true,
-    });
-  }
-  return items;
-}
-
 /** A connector as the Admin tab shows it: the effective copy, what overrides it, and its tools. */
 export function catalogServerItem(server: LoadedConnector): Record<string, unknown> {
   const upstream = server.upstream;
-  const overrides = overridesOf(server.overrides);
   const config = jsonObj(server.config) as { url?: unknown } | null;
   return {
     id: server.id,
@@ -87,9 +65,9 @@ export function catalogServerItem(server: LoadedConnector): Record<string, unkno
       limitations: upstream.limitations ?? null,
       setup_hint: upstream.setup_hint ?? null,
     },
-    overridden: OVERRIDE_FIELDS.filter((field) => typeof overrides[field] === "string"),
+    overridden: overriddenCopyFields(server),
     ...connectorFacts(server),
-    tools: catalogToolItems(server),
+    tools: editableTools(server),
   };
 }
 
@@ -155,6 +133,14 @@ export function validateOptionalText(raw: unknown, field: string): string | null
   }
   return raw;
 }
+
+/** How the Admin form's value for each copy field an override replaces is checked. */
+const COPY_CHECKS: Readonly<Record<CopyField, (value: unknown) => string>> = {
+  display_name: (value) => String(value).trim(),
+  description: validateCatalogDescription,
+  limitations: (value) => validateOptionalText(value, "limitations") ?? "",
+  setup_hint: (value) => validateOptionalText(value, "setup_hint") ?? "",
+};
 
 export function validateEndpointUrl(raw: unknown): string {
   if (typeof raw !== "string") {
@@ -229,9 +215,9 @@ export async function assertSlugFree(
   ownerOrgId: string | null,
   serverId?: string,
 ): Promise<void> {
-  const installed = installedConnectors().bySlug(slug);
+  const installed = installedConnectorBySlug(slug);
   if (installed && installed.id !== serverId) {
-    throw new CatalogError(`slug ${slug} is the platform's ${installed.manifest.display_name} connector`, 409);
+    throw new CatalogError(`slug ${slug} is the platform's ${installed.display_name} connector`, 409);
   }
   const holders = [...new Set(await listConnectorSlugOwners(db, slug))];
   const existing = await getMcpServerBySlug(db, slug, ownerOrgId);
@@ -350,22 +336,7 @@ export async function patchConnector(
         throw new CatalogError(`${field} comes from the connector's manifest`);
       }
     }
-    const overrides: Overrides = { ...overridesOf(server.overrides) };
-    for (const field of OVERRIDE_FIELDS) {
-      if (body[field] === undefined) {
-        continue;
-      }
-      if (body[field] === null) {
-        delete overrides[field];
-      } else if (field === "description") {
-        overrides[field] = validateCatalogDescription(body[field]);
-      } else if (field === "display_name") {
-        overrides[field] = String(body[field]).trim();
-      } else {
-        overrides[field] = validateOptionalText(body[field], field) ?? "";
-      }
-    }
-    patch.overrides = overrides;
+    patch.overrides = editCopyOverrides(server.overrides, body, COPY_CHECKS);
   }
   const updated = await updateConnector(db, server.id, patch, now);
   if (!updated) {
@@ -386,7 +357,7 @@ export async function patchConnectorTool(
   if (!toolName || toolName.length > 128) {
     throw new CatalogError("tool name is invalid");
   }
-  const overrides: Overrides = { ...overridesOf(server.overrides) };
+  const overrides: Overrides = { ...server.overrides };
   const tools = { ...(overrides.tools ?? {}) };
   const edit: ToolOverride = { ...(tools[toolName] ?? {}) };
   if (body.description !== undefined) {

@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { installedConnectors, removeInstalledConnector, replaceInstalledConnector } from "../connectors/index.js";
 import { loadManifest, serverIdOf } from "../connectors/manifest.js";
 import { ConnectorRegistry, type ConnectorEntry } from "../connectors/registry.js";
-import { listMcpServers } from "../connectors/servers.js";
+import { listServers } from "../connectors/servers.js";
 import type { Adapter } from "../connectors/types.js";
 import { CONNECTOR_CODE, integrationValue, integrationValues } from "../instance/integrations.js";
 import { writeLog } from "../observability/log.js";
@@ -124,7 +124,7 @@ export async function syncCodeConnectors(db: Queryable, env: NodeJS.ProcessEnv =
   const result: CodeSync = { loaded: [], removed: [], failed: [] };
   const root = connectorsRoot(env);
   const on = codeTierRoot(env) !== null;
-  const rows = (await listMcpServers(db)).filter((row) => !row.owner_org_id && row.source === "registry");
+  const rows = await listServers(db, { owner: "platform", source: "registry" });
   const wanted = new Set<string>();
   for (const row of root === null ? [] : rows) {
     const slug = String(row.slug);

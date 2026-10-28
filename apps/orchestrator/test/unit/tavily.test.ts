@@ -199,7 +199,7 @@ test("a disconnected platform login is left out of a run, not an error", async (
     async listAgentSecrets() {
       return [];
     },
-    async listMcpServers() {
+    async listServers() {
       return [SERVER];
     },
     async listMcpConnections() {

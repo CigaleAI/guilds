@@ -4,9 +4,8 @@ import path from "node:path";
 import { DEFAULT_MAX_WORKSPACE_MIB } from "../src/agents/validation.js";
 import { repoRoot } from "../src/lib/paths.js";
 import { installedConnectors } from "../src/connectors/index.js";
-import { loadConnector, manifestTools, type LoadedConnector } from "../src/connectors/load.js";
 import type { ConnectorEntry } from "../src/connectors/registry.js";
-import { connectorFacts } from "../src/connectors/view.js";
+import { connectorFacts, loadConnector, serverTools, type LoadedConnector } from "../src/connectors/servers.js";
 import { serverItem } from "../src/credentials/items.js";
 import { oauthSetupState } from "../src/oauth/index.js";
 import { REGISTRY } from "../src/toolbox/index.js";
@@ -86,7 +85,7 @@ function withMcpFields(row: Record<string, unknown>): Record<string, unknown> {
   delete next.pinned_prices;
   delete next.github_repositories;
   if (!row.connection_id) {
-    next.tools = manifestTools(server)
+    next.tools = serverTools(server)
       .map((tool) => ({
         name: tool.namespaced_name,
         remote_name: tool.remote_name,

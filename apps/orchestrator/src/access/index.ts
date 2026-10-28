@@ -1,9 +1,8 @@
 import { NATIVE_TOOLS } from "../seed/catalog.js";
 import { visibleAt } from "../credentials/visibility.js";
 import { oauthSetupState } from "../oauth/index.js";
-import { connectorFacts } from "../connectors/view.js";
+import { connectorFacts, type LoadedConnector } from "../connectors/servers.js";
 import { awaitingSettings } from "../connectors/login.js";
-import type { LoadedConnector } from "../connectors/load.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { ToolInputSchema } from "../db/schema/index.js";
 

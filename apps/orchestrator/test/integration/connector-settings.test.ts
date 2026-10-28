@@ -14,6 +14,9 @@ import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home", "content-type": "application/json" };
 const dbName = uniqueDbName("agent_platform_connector_settings");
@@ -32,7 +35,7 @@ test("a login waits for its settings, looks them up, and connects once they are 
   const db = database.pool;
   const mcp = new McpPool(mcpDatabase(db));
   const validated: unknown[] = [];
-  mcp.connectors = installedConnectors().withAdapter("quotes", {
+  runConnectors(installedConnectors().withAdapter("quotes", {
     async validate(creds, ctx) {
       if (creds.token !== "qk") {
         throw new ConnectorError("invalid key", 401);
@@ -46,7 +49,7 @@ test("a login waits for its settings, looks them up, and connects once they are 
       assert.equal(creds.token, "qk");
       return [{ value: { id: query, name: query }, label: query }];
     },
-  });
+  }));
   const app = await buildApp(database, {
     db,
     notes,
@@ -104,6 +107,15 @@ test("a login waits for its settings, looks them up, and connects once they are 
       payload: { settings: { symbols: [] } },
     });
     assert.equal(invalid.statusCode, 422);
+
+    const notAnObject = await app.inject({
+      method: "PUT",
+      url: `/api/mcp/connections/${id}/settings`,
+      headers: AUTH,
+      payload: { settings: "symbols" },
+    });
+    assert.equal(notAnObject.statusCode, 422);
+    assert.match(notAnObject.body, /settings must be object/);
 
     const saved = await app.inject({
       method: "PUT",

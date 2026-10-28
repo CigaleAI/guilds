@@ -1,10 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { requireVisibleAgent } from "../agents/access.js";
 import { connectFailure, tokenCredentials } from "./connect-token.js";
-import { installedConnectors } from "../connectors/index.js";
-import { getMcpServer, listMcpServers } from "../connectors/servers.js";
-import { settingsComplete, validateSettings } from "../connectors/settings.js";
-import { logoPath } from "../connectors/view.js";
+import {
+  getMcpServer,
+  listServers,
+  logoPath,
+  serverSettings,
+  type LoadedConnector,
+} from "../connectors/servers.js";
+import { validateSettings } from "../connectors/settings.js";
 import { bindingItem, connectionMetadata, serverItem } from "../credentials/items.js";
 import { listBindingsForConnection } from "../db/bindings.js";
 import { isPlainRecord } from "../db/json.js";
@@ -21,7 +25,6 @@ import type { McpPool } from "./pool.js";
 import { awaitingSettings } from "../connectors/login.js";
 import { callOwnedConnectionTool } from "./operator-call.js";
 import { ConnectionError, seesConnection, serverVisible } from "./visibility.js";
-import type { LoadedConnector } from "../connectors/load.js";
 
 /** What an operator's connector logins are read, used and changed through, built once from the app's services. */
 export type ConnectionServices = {
@@ -77,12 +80,12 @@ function assertNotPlatform(connection: McpConnectionRow): void {
 }
 
 export async function listOrgServers(db: Queryable, orgId: string): Promise<{ servers: Item[] }> {
-  return { servers: (await listMcpServers(db, orgId)).map((row) => serverItem(row)) };
+  return { servers: (await listServers(db, { owner: { visibleTo: orgId } })).map((row) => serverItem(row)) };
 }
 
 /** An installed connector's logo, as SVG. */
 export async function readConnectorLogo(serverId: string): Promise<Buffer> {
-  const file = logoPath(installedConnectors().byId(serverId));
+  const file = logoPath(serverId);
   if (file === null) {
     throw new ConnectionError(404, "logo not found");
   }
@@ -202,7 +205,7 @@ export async function saveConnectionSettings(
 ): Promise<Item> {
   assertNotPlatform(connection);
   const server = await requireServer(services.db, connection.mcp_server_id);
-  const schema = installedConnectors().forServer(server)?.manifest.settings_schema;
+  const schema = serverSettings(server);
   if (!schema) {
     throw new ConnectionError(422, "this connector has no settings");
   }
@@ -210,6 +213,8 @@ export async function saveConnectionSettings(
     throw new ConnectionError(409, "sign in before saving settings");
   }
   const mcp = poolOf(services, "settings are unavailable");
+  // The check refuses settings that lack a property the schema requires, so a login waiting
+  // for its settings connects with any it accepts.
   const valid = validateSettings(schema, settings ?? null);
   let accountHint = "";
   try {
@@ -217,9 +222,8 @@ export async function saveConnectionSettings(
   } catch (error) {
     connectFailure(error, server);
   }
-  const connect = awaitingSettings(connection) && settingsComplete(schema, valid);
   const row = await updateMcpConnectionSettings(services.db, connection.id, valid, new Date(), {
-    connect,
+    connect: awaitingSettings(connection),
     accountHint,
   });
   if (row === null) {

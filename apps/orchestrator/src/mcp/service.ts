@@ -1,9 +1,8 @@
-import { isReadOnlyRemote } from "./policy.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
 import { mcpSchema } from "./tools.js";
 import { markDisconnected, mcpDatabase } from "./database.js";
 import type { McpPool, RemoteCall } from "./pool.js";
-import type { LoadedConnector } from "../connectors/load.js";
+import { isReadOnlyRemote, type LoadedConnector } from "../connectors/servers.js";
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import type { ToolInputSchema } from "../db/schema/index.js";
@@ -52,10 +51,7 @@ export function resolveConnectionTool(server: LoadedConnector, tool: ListedConne
     remote_name: tool.remote_name,
     description: tool.description,
     input_schema: tool.input_schema,
-    read_only: isReadOnlyRemote(server.slug, tool.remote_name, {
-      readOnlyHint: tool.read_only_hint,
-      verified: server.verified,
-    }),
+    read_only: isReadOnlyRemote(server, tool.remote_name, tool.read_only_hint),
     schema: mcpSchema(tool),
   };
 }

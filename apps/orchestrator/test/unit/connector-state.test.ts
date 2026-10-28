@@ -53,7 +53,7 @@ function quotesLogins(options: { serverOff?: boolean; status?: McpConnectionRow[
   };
   return {
     listBindingsCovering: async () => [binding],
-    listMcpServers: async () => [serverRow("quotes", { id: "mcp_quotes" })],
+    listServers: async () => [serverRow("quotes", { id: "mcp_quotes" })],
     listMcpConnections: async () => [login],
   };
 }

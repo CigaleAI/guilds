@@ -1,8 +1,5 @@
 // The provider's callback that completes a sign-in, or ends it when the operator cancelled.
-import { installedConnectors } from "../connectors/index.js";
-import type { LoadedConnector } from "../connectors/load.js";
-import { getMcpServer } from "../connectors/servers.js";
-import { settingsComplete } from "../connectors/settings.js";
+import { getMcpServer, holdsRequiredSettings, type LoadedConnector } from "../connectors/servers.js";
 import {
   getMcpConnectionByOauthState,
   getPendingGithubConnectionForUser,
@@ -294,8 +291,7 @@ async function completeBrowserCallback(
       redirectUri,
     });
     const stored = tokenPayload(tokens, { now: new Date() });
-    const schema = installedConnectors().forServer(server)?.manifest.settings_schema;
-    if (!settingsComplete(schema, row.settings)) {
+    if (!holdsRequiredSettings(server, row.settings)) {
       await awaitSettings(services, row, stored);
       return {
         status: 200,

@@ -6,8 +6,7 @@ import { codeTierRoot, connectorsRoot, syncCodeConnectors, type CodeSync } from 
 import { installConnector, removeConnector, updateConnectors } from "../registry/install.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
-import { syncInstanceLogins } from "../connectors/instance.js";
-import { refreshConnectorIntegrations } from "../instance/connectors.js";
+import { refreshConnectorIntegrations, syncInstanceLogins } from "../connectors/instance.js";
 import { requireInstanceAdmin } from "./instance-admin.js";
 import { bodyOf, param } from "./request.js";
 import { listPlatformServers, reloadServer } from "../mcp/servers.js";

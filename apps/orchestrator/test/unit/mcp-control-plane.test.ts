@@ -14,8 +14,11 @@ import { proxyFetch } from "../../src/net/http.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
-import type { LoadedConnector } from "../../src/connectors/load.js";
+import type { LoadedConnector } from "../../src/connectors/servers.js";
 import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const GMAIL_TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
 
@@ -63,7 +66,7 @@ class MemoryDb extends MemoryMcpDatabase {
     return this.secrets.find((row) => row.id === secretId) ?? null;
   }
 
-  async listMcpServers() {
+  async listServers() {
     return this.servers;
   }
 
@@ -281,7 +284,7 @@ test("gmail send stays Off and the sandbox env has no Gmail token", async () => 
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const db = new MemoryDb();
   const pool = new McpPool(db);
-  pool.connectors = CONNECTORS.withAdapter("gmail", { validate: async () => "ada@example.com" });
+  runConnectors(CONNECTORS.withAdapter("gmail", { validate: async () => "ada@example.com" }));
   const token = "ya29.gmail-secret";
   const connection = connectionOf(token, { id: "conn_gmail", mcp_server_id: "mcp_gmail" });
   db.servers = [serverRow("gmail", { display_name: "Gmail" })];

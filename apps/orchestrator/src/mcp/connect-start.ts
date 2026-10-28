@@ -1,8 +1,7 @@
 // Starting an operator's connector login: a token login connects at once; an OAuth or GitHub
 // App login is stored pending and leaves for the provider's consent page.
 import { connect, connectDatabase } from "./connect-token.js";
-import type { LoadedConnector } from "../connectors/load.js";
-import { getMcpServer } from "../connectors/servers.js";
+import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
 import { connectionMetadata, type ConnectionView } from "../credentials/items.js";
 import { validateOwner, type OwnerScope } from "../credentials/validate.js";
 import { isPlainRecord } from "../db/json.js";

@@ -2,8 +2,7 @@ import { isoOrNull } from "../db/views.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 import type { ConnectionSettings } from "../db/schema/index.js";
 import { awaitingSettings } from "../connectors/login.js";
-import type { LoadedConnector } from "../connectors/load.js";
-import { connectorFacts } from "../connectors/view.js";
+import { connectorFacts, type LoadedConnector } from "../connectors/servers.js";
 
 export function serverItem(row: LoadedConnector): Record<string, unknown> {
   return {

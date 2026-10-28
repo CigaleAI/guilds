@@ -8,7 +8,6 @@ import {
   type Resolved,
 } from "../access/index.js";
 import { resolveMcpTool } from "../access/runtime.js";
-import { listMcpServers } from "../connectors/servers.js";
 import { newId } from "../lib/ids.js";
 import { connectionTools } from "../mcp/service.js";
 import type { EditScope } from "./edits.js";
@@ -17,7 +16,7 @@ import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
 import { getBinding, listBindingsCovering } from "../db/bindings.js";
 import { listMcpConnections } from "../db/mcp.js";
-import type { LoadedConnector } from "../connectors/load.js";
+import { listServers, type LoadedConnector } from "../connectors/servers.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
 // tools, and the connections and connection tools it is offered. A change is an agent-level overlay; the guild's and the
@@ -87,7 +86,7 @@ async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot
   }
   const resolveScope = { orgId: scope.orgId, guildId: scope.sourceGuildId, agentId };
   const rows = await listBindingsCovering(scope.db, resolveScope);
-  const servers = await listMcpServers(scope.db, scope.orgId);
+  const servers = await listServers(scope.db, { owner: { visibleTo: scope.orgId } });
   const serverById = new Map(servers.map((server) => [server.id, server]));
   const connections = new Map<string, AgentConnection>();
   for (const connection of await listMcpConnections(scope.db, resolveScope)) {

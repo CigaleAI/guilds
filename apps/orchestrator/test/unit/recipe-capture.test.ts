@@ -12,6 +12,7 @@ import { userRow } from "../helpers/users.js";
 import { rowDisplayPath, type ArtifactRow } from "../../src/artifacts/store.js";
 import type { ArtifactLevel } from "../../src/artifacts/index.js";
 import { artifactRow, noteRowAt } from "../helpers/artifacts.js";
+import { serverRow } from "../helpers/servers.js";
 
 const GUILD = {
   id: "guild_live",
@@ -131,7 +132,7 @@ function captureDeps(options: {
         ),
       listMcpConnections: async () => options.connections ?? [],
       listGuildRepositories: async () => options.repositories ?? [],
-      listMcpServers: async () => options.servers ?? [],
+      listServers: async () => options.servers ?? [],
       connectionTools: async () => options.tools ?? [],
       listMcpCatalogTools: async () => options.tools ?? [],
     } as never,
@@ -338,16 +339,14 @@ test("captureGuild records a single-role specialization and org connector scope"
         },
       ],
       servers: [
-        {
+        serverRow("notion", {
           id: "mcp_notion",
-          slug: "notion",
           display_name: "Notion",
-          publication_state: "published",
           auth: "oauth",
           config: {},
           description: "Workspace",
           setup_hint: "Connect Notion at organisation scope.",
-        },
+        }),
       ],
       connections: [
         {
@@ -506,15 +505,13 @@ test("captureGuild records an enabled GitHub login as a connection like any othe
     captureDeps({
       agents: [{ id: "a_triage", name: "triage", focus: "Triage issues", config: { model: TEST_MODEL, browser: false } }],
       servers: [
-        {
+        serverRow("github", {
           id: "mcp_github",
-          slug: "github",
           display_name: "GitHub",
-          publication_state: "published",
           auth: "oauth",
           description: "Issues and pull requests",
           setup_hint: "Pick this login's repositories on the GitHub card.",
-        },
+        }),
       ],
       connections: [
         { id: "conn_gh", mcp_server_id: "mcp_github", status: "connected", owner_scope: "org", account_hint: "acme" },

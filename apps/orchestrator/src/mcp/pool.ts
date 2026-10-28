@@ -1,11 +1,16 @@
-import { installedConnectors } from "../connectors/index.js";
 import { instanceCredentials } from "../connectors/instance.js";
-import { manifestExcludes, overriddenTool, serverManifest, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
-import type { ConnectorRegistry } from "../connectors/registry.js";
+import {
+  connectorCode,
+  effectiveTool,
+  serverManifest,
+  stateHooks,
+  type ConnectorCode,
+  type LoadedConnector,
+  type ListedServerTool,
+} from "../connectors/servers.js";
 import {
   ConnectorError,
   isConnectorError,
-  type Adapter,
   type ConnectorContext,
   type ConnectorTool,
   type Credentials,
@@ -15,7 +20,6 @@ import {
 } from "../connectors/types.js";
 import { jsonObj } from "../db/json.js";
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
-import type { Manifest } from "../db/schema/index.js";
 import { utcMonth } from "../db/usage.js";
 import { TOKEN_REFRESH_MS } from "../github/tokens.js";
 import { newId } from "../lib/ids.js";
@@ -25,7 +29,6 @@ import type { OrgPolicy } from "../policy/index.js";
 import { redact } from "../secrets/index.js";
 import { omitEmptyOptionalStrings } from "../toolbox/schema.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
-import { namespacedName } from "./names.js";
 import { ListedTool, listedFromRows, remoteConnectorTool } from "./tools.js";
 import { CALL_TOOL_TIMEOUT_MS, McpSession, publicOnly } from "./session.js";
 import type { McpDatabase } from "./database.js";
@@ -88,13 +91,6 @@ export type RemoteCall = { tool: string; arguments: Record<string, unknown>; cal
 /** A pooled session and when the credential it sends expires. */
 type PooledSession = { session: McpSession; expiresAt: number | null };
 
-/** A server's connector: its manifest and adapter, or the plain MCP client for a server created by hand. */
-type Resolved = {
-  manifest: Manifest | null;
-  adapter: Adapter;
-  endpoint: boolean;
-};
-
 function translateConnectorError(error: unknown): unknown {
   return isConnectorError(error) ? new McpError(error.message, error.status) : error;
 }
@@ -120,14 +116,11 @@ async function withTimeout<T>(work: Promise<T>, ms: number, message: string): Pr
 }
 
 /** Studio's stand-in for `McpPool.state`: each key the connectors of an agent's logins fill, without calling them. */
-export function previewConnectorState(
-  logins: ConnectorLogin[],
-  connectors: ConnectorRegistry = installedConnectors(),
-): Record<string, unknown> {
+export function previewConnectorState(logins: ConnectorLogin[]): Record<string, unknown> {
   const state: Record<string, unknown> = {};
-  for (const entry of connectors.entries()) {
-    if (entry.manifest.state && logins.some((login) => login.server.id === entry.id)) {
-      state[entry.manifest.state.key] = { unavailable: "fetched live at run start" };
+  for (const hook of stateHooks()) {
+    if (logins.some((login) => login.server.id === hook.serverId)) {
+      state[hook.key] = { unavailable: "fetched live at run start" };
     }
   }
   return state;
@@ -139,8 +132,6 @@ export class McpPool {
   private toolsTtlMs: number;
   proxyUrl: string;
   fetchFn: FetchFn;
-  /** The connectors this pool dispatches to; the box's installed ones unless set. */
-  connectors: ConnectorRegistry | null = null;
   /** How an endpoint's session reaches it: through the proxy, refusing private addresses. */
   endpointFetch: FetchFn;
   /** The organisation policy that caps calls on platform logins; none caps nothing. */
@@ -163,15 +154,11 @@ export class McpPool {
       if (current && (current.expiresAt === null || current.expiresAt - Date.now() > TOKEN_REFRESH_MS)) {
         return current.session;
       }
-      const auth = await resolveSessionAuth(this, this.registry, connection, server);
+      const auth = await resolveSessionAuth(this, connection, server);
       const opened = new McpSession(serverUrl(server), auth.headers, this.endpointFetch);
       this.sessions.set(connectionId, { session: opened, expiresAt: auth.expiresAt });
       return opened;
     };
-  }
-
-  private get registry(): ConnectorRegistry {
-    return this.connectors ?? installedConnectors();
   }
 
   drop(connectionId: string): void {
@@ -186,14 +173,6 @@ export class McpPool {
   /** Forgets when every login last listed its tools, so each lists again on its next use. */
   forgetListings(): void {
     this.syncedAt.clear();
-  }
-
-  private resolve(server: LoadedConnector): Resolved {
-    const entry = this.registry.forServer(server);
-    if (entry === null) {
-      return { manifest: null, adapter: {}, endpoint: true };
-    }
-    return { manifest: entry.manifest, adapter: entry.adapter, endpoint: Boolean(entry.manifest.endpoint) };
   }
 
   private catalogFresh(
@@ -213,24 +192,8 @@ export class McpPool {
     return false;
   }
 
-  private async persistTools(
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    listed: ListedTool[],
-    now: Date,
-  ): Promise<void> {
-    await this.database.replaceMcpTools(connection.id, listed, now);
-    await this.writeDefaultOff(connection, server, listed, now);
-    this.syncedAt.set(connection.id, now.getTime());
-  }
-
   /** Writes an Off overlay at the login's owner for each listed tool that starts Off, unless one is there. */
-  private async writeDefaultOff(
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    listed: ListedTool[],
-    now: Date,
-  ): Promise<void> {
+  private async writeDefaultOff(connection: McpConnectionRow, offered: ListedServerTool[], now: Date): Promise<void> {
     const ownerScope = connection.owner_scope;
     if (typeof ownerScope !== "string" || !ownerScope) {
       return;
@@ -239,18 +202,13 @@ export class McpPool {
     if (ownerScope !== "platform" && typeof ownerId !== "string") {
       return;
     }
-    const off = new Map<string, ListedTool>();
-    for (const tool of listed) {
-      if (toolStartsOff(server, tool.remote_name, { destructiveHint: tool.destructive_hint })) {
-        off.set(tool.namespaced_name, tool);
-      }
-    }
-    for (const tool of off.values()) {
+    const off = new Set(offered.filter((tool) => !tool.default_enabled).map((tool) => tool.namespaced_name));
+    for (const namespacedName of off) {
       await this.database.insertBindingIfAbsent(
         {
           bindingId: newId("bind"),
           catalogKind: "mcp_tool",
-          catalogId: tool.namespaced_name,
+          catalogId: namespacedName,
           scope: ownerScope,
           scopeId: ownerScope === "platform" ? null : (ownerId as string),
           enabled: false,
@@ -282,10 +240,10 @@ export class McpPool {
   }
 
   /** An unpooled session for credentials that are not saved yet. */
-  private remoteForCredentials(server: LoadedConnector, resolved: Resolved, credentials: Credentials): RemoteSession {
+  private remoteForCredentials(server: LoadedConnector, resolved: ConnectorCode, credentials: Credentials): RemoteSession {
     const session = new McpSession(
       serverUrl(server),
-      headersFor(credentialToken(credentials, resolved.manifest), resolved.manifest ?? serverManifest(server)),
+      headersFor(credentialToken(credentials, resolved.manifest), serverManifest(server)),
       this.endpointFetch,
     );
     return {
@@ -297,7 +255,7 @@ export class McpPool {
 
   private context(
     remote: RemoteSession,
-    resolved: Resolved,
+    resolved: ConnectorCode,
     connectionId: string,
     settings: Record<string, unknown>,
     workspaceDir?: string,
@@ -318,7 +276,7 @@ export class McpPool {
   private async onLogin<T>(
     login: Login,
     server: LoadedConnector,
-    resolved: Resolved,
+    resolved: ConnectorCode,
     work: (credentials: Credentials, ctx: ConnectorContext) => Promise<T>,
     workspaceDir?: string,
     settings?: Record<string, unknown>,
@@ -331,9 +289,9 @@ export class McpPool {
         settings ?? login.connection.settings,
         workspaceDir,
       );
-      const manifest = resolved.manifest ?? serverManifest(server);
-      const instance = login.connection.owner_scope === "platform" && manifest?.auth.instance;
-      return work(instance && manifest ? instanceCredentials(manifest) : connectionCredentials(login.connection), ctx);
+      const manifest = serverManifest(server);
+      const instance = login.connection.owner_scope === "platform" && manifest.auth.instance;
+      return work(instance ? instanceCredentials(manifest) : connectionCredentials(login.connection), ctx);
     };
     try {
       if (isOauth(server)) {
@@ -358,9 +316,9 @@ export class McpPool {
     server: LoadedConnector,
     credentials: Credentials,
     settings: Record<string, unknown>,
-    work: (resolved: Resolved, ctx: ConnectorContext) => Promise<T>,
+    work: (resolved: ConnectorCode, ctx: ConnectorContext) => Promise<T>,
   ): Promise<T> {
-    const resolved = this.resolve(server);
+    const resolved = connectorCode(server);
     const remote = resolved.endpoint ? this.remoteForCredentials(server, resolved, credentials) : NO_REMOTE;
     try {
       return await work(resolved, this.context(remote, resolved, "", settings));
@@ -369,7 +327,7 @@ export class McpPool {
     }
   }
 
-  private async validateWith(resolved: Resolved, credentials: Credentials, ctx: ConnectorContext): Promise<string> {
+  private async validateWith(resolved: ConnectorCode, credentials: Credentials, ctx: ConnectorContext): Promise<string> {
     if (resolved.adapter.validate) {
       return resolved.adapter.validate(credentials, ctx);
     }
@@ -379,7 +337,7 @@ export class McpPool {
     return "";
   }
 
-  private async listWith(resolved: Resolved, credentials: Credentials, ctx: ConnectorContext): Promise<ConnectorTool[]> {
+  private async listWith(resolved: ConnectorCode, credentials: Credentials, ctx: ConnectorContext): Promise<ConnectorTool[]> {
     if (resolved.adapter.list) {
       return resolved.adapter.list(credentials, ctx);
     }
@@ -422,7 +380,7 @@ export class McpPool {
     server: LoadedConnector,
     settings: Record<string, unknown>,
   ): Promise<string> {
-    const resolved = this.resolve(server);
+    const resolved = connectorCode(server);
     return this.onLogin(
       { connection },
       server,
@@ -435,7 +393,7 @@ export class McpPool {
 
   /** What a saved login's endpoint says about itself: its name and instructions. */
   async describeEndpoint(connection: McpConnectionRow, server: LoadedConnector): Promise<RemoteInfo> {
-    const resolved = this.resolve(server);
+    const resolved = connectorCode(server);
     return this.onLogin({ connection }, server, resolved, (_credentials, ctx) => ctx.remote.initialize());
   }
 
@@ -446,7 +404,7 @@ export class McpPool {
     property: string,
     query: string,
   ): Promise<LookupOption[]> {
-    const resolved = this.resolve(server);
+    const resolved = connectorCode(server);
     return this.onLogin({ connection }, server, resolved, (credentials, ctx) => {
       if (!resolved.adapter.lookup) {
         throw new ConnectorError(`${server.slug} has no lookup`, 404);
@@ -467,32 +425,32 @@ export class McpPool {
     if (connection.status !== "connected" || (!force && this.catalogFresh(connection.id, now, stored))) {
       return listedFromRows(stored);
     }
-    const resolved = this.resolve(server);
+    const resolved = connectorCode(server);
     const login: Login = { connection };
-    const prefix = String(server.tool_prefix || server.slug);
     const tools = await this.onLogin(login, server, resolved, async (credentials, ctx) => {
       if (validate && resolved.adapter.validate) {
         await resolved.adapter.validate(credentials, ctx);
       }
       return this.listWith(resolved, credentials, ctx);
     });
-    const manifest = resolved.manifest ?? serverManifest(server);
-    const listed = tools.filter((tool) => !manifestExcludes(manifest, tool.name)).map((tool) => {
-      const edited = overriddenTool(server, {
-        remote_name: tool.name,
-        description: tool.description,
-        input_schema: tool.input_schema,
-      });
-      return new ListedTool(
-        tool.name,
-        namespacedName(prefix, tool.name),
-        edited.description,
-        edited.input_schema,
-        tool.read_only_hint ?? null,
-        tool.destructive_hint ?? null,
-      );
+    const offered = tools.flatMap((tool) => {
+      const effective = effectiveTool(server, tool);
+      return effective === null ? [] : [effective];
     });
-    await this.persistTools(login.connection, server, listed, now);
+    const listed = offered.map(
+      (tool) =>
+        new ListedTool(
+          tool.remote_name,
+          tool.namespaced_name,
+          tool.description,
+          tool.input_schema,
+          tool.read_only_hint,
+          tool.destructive_hint,
+        ),
+    );
+    await this.database.replaceMcpTools(login.connection.id, listed, now);
+    await this.writeDefaultOff(login.connection, offered, now);
+    this.syncedAt.set(login.connection.id, now.getTime());
     return listed;
   }
 
@@ -566,7 +524,7 @@ export class McpPool {
     if (connection.status !== "connected") {
       throw new McpDisconnectedError("connection is not connected");
     }
-    const resolved = this.resolve(server);
+    const resolved = connectorCode(server);
     return this.onLogin(
       { connection },
       server,
@@ -585,22 +543,21 @@ export class McpPool {
    * times out, or returns too much yields `{ unavailable }` under its key.
    */
   async state(logins: ConnectorLogin[]): Promise<Record<string, unknown>> {
-    const entries = this.registry.entries().filter((entry) => entry.manifest.state && entry.adapter.state);
-    if (!entries.length) {
+    const hooks = stateHooks();
+    if (!hooks.length) {
       return {};
     }
     const values = await Promise.all(
-      entries.map(async (entry): Promise<[string, unknown] | null> => {
-        const key = entry.manifest.state!.key;
-        const login = logins.find((item) => item.server.id === entry.id);
+      hooks.map(async ({ serverId, manifest, key, read }): Promise<[string, unknown] | null> => {
+        const login = logins.find((item) => item.server.id === serverId);
         if (!login) {
           return null;
         }
         const { connection, server } = login;
-        const secrets = loginSecrets(connection, entry.manifest);
+        const secrets = loginSecrets(connection, manifest);
         try {
           const value = await withTimeout(
-            this.onLogin({ connection }, server, this.resolve(server), (creds, ctx) => entry.adapter.state!(creds, ctx)),
+            this.onLogin({ connection }, server, connectorCode(server), (creds, ctx) => read(creds, ctx)),
             STATE_TIMEOUT_MS,
             `timed out after ${STATE_TIMEOUT_MS} ms`,
           );
@@ -614,7 +571,7 @@ export class McpPool {
           return [key, JSON.parse(text)];
         } catch (error) {
           const reason = error instanceof Error && error.message ? error.message : "state hook failed";
-          writeLog("warn", `connector state ${entry.manifest.slug}: ${reason}`, {
+          writeLog("warn", `connector state ${manifest.slug}: ${reason}`, {
             source: "backend",
             operation: "mcp.state",
           });

@@ -9,7 +9,9 @@ import {
   MANIFEST_CALLBACK_PATH,
   manifestAction,
 } from "../github/manifest.js";
-import { applyKeyChange, assertKeyChangeConfirmed } from "../instance/changes.js";
+import { applyKeyChange } from "../connectors/instance.js";
+import { installedManifests } from "../connectors/servers.js";
+import { assertKeyChangeConfirmed } from "../instance/changes.js";
 import {
   GITHUB_APP,
   installedIntegrations,
@@ -89,7 +91,7 @@ export async function registerAdminInstanceRoutes(app: FastifyInstance, deps: Ap
   }
 
   function statusOf(id: string): IntegrationStatus {
-    const status = integrationStatuses(integrations(), undefined, undefined, { audit: true }).find((item) => item.id === id);
+    const status = integrationStatuses(integrations(), installedManifests(), undefined, { audit: true }).find((item) => item.id === id);
     if (!status) {
       throw new HttpError(404, "Not Found");
     }

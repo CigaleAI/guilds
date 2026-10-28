@@ -10,13 +10,16 @@ import { ListedTool, mcpSchema } from "../../src/mcp/tools.js";
 import { CALL_TOOL_TIMEOUT_MS, McpSession, rpcPayload } from "../../src/mcp/session.js";
 import { authHeaders } from "../../src/mcp/login-auth.js";
 import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
-import { isReadOnlyRemote } from "../../src/mcp/policy.js";
+import { isReadOnlyRemote } from "../../src/connectors/servers.js";
 import { TOKEN_REFRESH_MS } from "../../src/github/tokens.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { HEX_MASTER_KEY, storeKeys } from "../helpers/env.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
 import type { GithubRepositorySelection, Manifest } from "../../src/db/schema/index.js";
 import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -185,38 +188,38 @@ test("mcpSchema drops format on nullable required properties", () => {
 });
 
 test("isReadOnlyRemote classifies tools Studio may proxy", () => {
-  assert.equal(isReadOnlyRemote("notion", "notion-search"), true);
-  assert.equal(isReadOnlyRemote("notion", "notion-fetch"), true);
-  assert.equal(isReadOnlyRemote("notion", "notion-get-users"), true);
-  assert.equal(isReadOnlyRemote("notion", "notion-create-pages"), false);
-  assert.equal(isReadOnlyRemote("notion", "notion-update-page"), false);
-  assert.equal(isReadOnlyRemote("notion", "notion-move-pages"), false);
-  assert.equal(isReadOnlyRemote("gmail", "search_messages"), true);
-  assert.equal(isReadOnlyRemote("gmail", "send_message"), false);
-  assert.equal(isReadOnlyRemote("drive", "search_files"), true);
-  assert.equal(isReadOnlyRemote("drive", "read_file_content"), true);
-  assert.equal(isReadOnlyRemote("drive", "create_file"), false);
-  assert.equal(isReadOnlyRemote("drive", "copy_file"), false);
-  assert.equal(isReadOnlyRemote("gmail", "createDraft"), false);
-  assert.equal(isReadOnlyRemote("gmail", "trash_message"), false);
-  assert.equal(isReadOnlyRemote("x", "post"), true);
-  assert.equal(isReadOnlyRemote("twitterapiio", "replies"), true);
-  assert.equal(isReadOnlyRemote("coingecko", "search"), true);
-  assert.equal(isReadOnlyRemote("wallet", "get_balance"), true);
-  assert.equal(isReadOnlyRemote("wallet", "send"), false);
-  assert.equal(isReadOnlyRemote("wallet", "swap"), false);
-  assert.equal(isReadOnlyRemote("wallet", "uniswap_swap"), false);
-  assert.equal(isReadOnlyRemote("opensea", "search_collections"), true);
-  assert.equal(isReadOnlyRemote("opensea", "manage_wallets"), false);
-  assert.equal(isReadOnlyRemote("etherscan", "get_transaction"), true);
-  assert.equal(isReadOnlyRemote("qonto", "list_bank_accounts"), true);
-  assert.equal(isReadOnlyRemote("qonto", "list_missing_invoices"), true);
-  assert.equal(isReadOnlyRemote("qonto", "get_transaction"), true);
-  assert.equal(isReadOnlyRemote("qonto", "upload_invoice"), false);
-  assert.equal(isReadOnlyRemote("github", "push_files"), false);
-  assert.equal(isReadOnlyRemote("github", "merge_pull_request"), false);
-  assert.equal(isReadOnlyRemote("github", "actions_run_trigger"), false);
-  assert.equal(isReadOnlyRemote("github", "pull_request_read"), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-search", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-fetch", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-get-users", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-create-pages", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-update-page", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("notion"), "notion-move-pages", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "search_messages", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "send_message", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "search_files", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "read_file_content", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "create_file", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("drive"), "copy_file", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "createDraft", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("gmail"), "trash_message", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("x"), "post", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("twitterapiio"), "replies", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("coingecko"), "search", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "get_balance", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "send", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "swap", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("wallet"), "uniswap_swap", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("opensea"), "search_collections", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("opensea"), "manage_wallets", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("etherscan"), "get_transaction", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "list_bank_accounts", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "list_missing_invoices", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "get_transaction", null), true);
+  assert.equal(isReadOnlyRemote(serverRow("qonto"), "upload_invoice", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "push_files", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "merge_pull_request", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "actions_run_trigger", null), false);
+  assert.equal(isReadOnlyRemote(serverRow("github"), "pull_request_read", null), true);
 });
 
 type Reply = { status: number; body: string; type?: string };
@@ -534,7 +537,7 @@ function githubPool(options: {
   const fakes: GithubFakes = { minted: [], called: [], sent: [] };
   const db = new MemoryMcpDatabase();
   const pool = new McpPool(db);
-  pool.connectors = CONNECTORS;
+  runConnectors(CONNECTORS);
   pool.fetchFn = async (url, init = {}) => {
     assert.equal(url, "https://api.github.com/app/installations/77/access_tokens");
     if (options.mint) {

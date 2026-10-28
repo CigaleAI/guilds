@@ -1,4 +1,4 @@
-import { getMcpServer } from "../connectors/servers.js";
+import { getMcpServer, type LoadedConnector } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { jsonObj } from "../db/json.js";
 import { McpError } from "../mcp/errors.js";
@@ -12,7 +12,6 @@ import { StudioError, StudioUnprocessableError } from "./errors.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import type { LoadedConnector } from "../connectors/load.js";
 import type { ConversationMessageRow } from "../db/conversations.js";
 import type { ConversationMessageMetadata, MessagePayload, ToolMessage } from "../db/schema/index.js";
 import type { StudioSessionRow } from "../db/studio.js";

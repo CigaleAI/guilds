@@ -1,6 +1,6 @@
 // What starting a connector login and completing its sign-in share: the encrypted pending
 // payload, the binding to its owner, and ending a sign-in that did not finish.
-import type { LoadedConnector } from "../connectors/load.js";
+import type { LoadedConnector } from "../connectors/servers.js";
 import type { RemoteInfo } from "../connectors/types.js";
 import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { updateConnector } from "../db/connectors.js";

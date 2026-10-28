@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { installedManifests } from "../connectors/servers.js";
 import { installedIntegrations, integrationStatuses } from "../instance/integrations.js";
 import type { AppDeps } from "./deps.js";
 import { currentUser } from "./identity.js";
@@ -20,7 +21,7 @@ export async function registerInstanceRoutes(app: FastifyInstance, deps: AppDeps
       auth_mode: deps.config?.authMode ?? "compat-cookie",
       integrations: integrationStatuses(
         deps.integrations ?? installedIntegrations(),
-        undefined,
+        installedManifests(),
         undefined,
         {
           audit,

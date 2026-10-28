@@ -156,11 +156,6 @@
       "count": 2
     }
   },
-  "src/connectors/load.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
-    }
-  },
   "src/connectors/manifest.ts": {
     "complexity": {
       "count": 1

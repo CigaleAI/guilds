@@ -76,7 +76,7 @@ server cannot use a configured client.
 
 The list of these integrations is rebuilt from the platform connector
 rows (`refreshConnectorIntegrations`,
-`apps/orchestrator/src/instance/connectors.ts`):
+`apps/orchestrator/src/connectors/instance.ts`):
 
 - at boot
 - after a registry install, update, removal, or reload

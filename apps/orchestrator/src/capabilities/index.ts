@@ -1,9 +1,13 @@
-import { listMcpServers } from "../connectors/servers.js";
 import { coreModelCredentials, modelProviderStore } from "../llm/credentials.js";
 import { modelsDatabase, ModelsService } from "../llm/models.js";
 import { isSearchable } from "../connectors/builder.js";
-import { manifestTools, overriddenTool, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
-import { connectorFacts } from "../connectors/view.js";
+import {
+  connectorFacts,
+  listedTool,
+  listServers,
+  serverTools,
+  type LoadedConnector,
+} from "../connectors/servers.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { OPEN_POLICY, remaining, type OrgPolicy } from "../policy/index.js";
 import { usageFields } from "../usage/index.js";
@@ -118,7 +122,7 @@ export class CapabilityService {
   private async servers(ctx: CapabilityOrgContext): Promise<
     Array<{ server: LoadedConnector; mine: Array<Record<string, unknown>> }>
   > {
-    const servers = (await listMcpServers(this.db, ctx.orgId)).filter((row) => row.enabled !== false);
+    const servers = await listServers(this.db, { owner: { visibleTo: ctx.orgId }, enabled: true });
     const connections = await listMcpConnections(this.db, { orgId: ctx.orgId });
     return servers.map((server) => ({
       server,
@@ -129,9 +133,9 @@ export class CapabilityService {
     }));
   }
 
-  /** A server's manifest tools, then the tools the organisation's connected logins list that the manifest does not name. */
+  /** The tools a server offers before any login lists them, then the ones the organisation's connected logins list beside them. */
   private async tools(server: LoadedConnector, mine: Array<Record<string, unknown>>): Promise<CapabilityTool[]> {
-    const tools: CapabilityTool[] = manifestTools(server).map((tool) => ({
+    const tools: CapabilityTool[] = serverTools(server).map((tool) => ({
       remote_name: tool.remote_name,
       namespaced_name: tool.namespaced_name,
       description: tool.description,
@@ -141,23 +145,16 @@ export class CapabilityService {
     const named = new Set(tools.map((tool) => tool.namespaced_name));
     for (const connection of mine.filter((row) => row.status === "connected")) {
       for (const row of await listMcpTools(this.db, String(connection.id))) {
-        const listed = overriddenTool(server, {
-          remote_name: String(row.remote_name),
-          description: String(row.description ?? ""),
-          input_schema: {},
-        });
-        const namespaced = String(row.namespaced_name);
-        if (named.has(namespaced)) {
+        const listed = listedTool(server, row);
+        if (named.has(listed.namespaced_name)) {
           continue;
         }
-        named.add(namespaced);
+        named.add(listed.namespaced_name);
         tools.push({
           remote_name: listed.remote_name,
-          namespaced_name: namespaced,
+          namespaced_name: listed.namespaced_name,
           description: listed.description,
-          default_enabled: !toolStartsOff(server, listed.remote_name, {
-            destructiveHint: typeof row.destructive_hint === "boolean" ? row.destructive_hint : null,
-          }),
+          default_enabled: listed.default_enabled,
           source: "listed",
         });
       }

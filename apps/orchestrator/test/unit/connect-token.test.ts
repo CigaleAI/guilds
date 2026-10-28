@@ -12,6 +12,9 @@ import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 import { WITH_QUOTES } from "../helpers/quotes.js";
 import { serverRow } from "../helpers/servers.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 
@@ -57,7 +60,7 @@ test("connect stores a two-field login under the manifest's names with the valid
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const repo = new ConnectRepoStub();
   const pool = new McpPool(repo);
-  pool.connectors = CONNECTORS.withAdapter("qonto", { validate: async () => "Elektro" });
+  runConnectors(CONNECTORS.withAdapter("qonto", { validate: async () => "Elektro" }));
   const { connection, outcome } = await connect(
     repo as never,
     pool,
@@ -85,7 +88,7 @@ test("connect refuses, keeps, or replaces an owner's login as asked", async () =
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const repo = new ConnectRepoStub();
   const pool = new McpPool(repo);
-  pool.connectors = CONNECTORS.withAdapter("x", { validate: async () => "" });
+  runConnectors(CONNECTORS.withAdapter("x", { validate: async () => "" }));
   const owner = { server: X_SERVER, ownerScope: "org", ownerId: "org_1" } satisfies Partial<ConnectInput>;
   const first = await connect(repo as never, pool, { ...owner, credentials: { token: "one" }, accountHint: "plan" }, new Date(), { masterKey: KEY });
   assert.equal(first.outcome, "installed");
@@ -125,11 +128,11 @@ test("connect answers a rejected key with a 422 and stores nothing", async () =>
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const repo = new ConnectRepoStub();
   const pool = new McpPool(repo);
-  pool.connectors = CONNECTORS.withAdapter("x", {
+  runConnectors(CONNECTORS.withAdapter("x", {
     validate: async () => {
       throw new ConnectorError("Unauthorized", 401);
     },
-  });
+  }));
   await assert.rejects(
     () => connect(repo as never, pool, { server: X_SERVER, ownerScope: "org", ownerId: "org_1", credentials: { token: "bad" } }),
     (error: unknown) => error instanceof ConnectError && error.status === 422 && error.message === "api key was rejected",
@@ -148,16 +151,16 @@ test("connect retires a login its server refuses on the first listing: a new one
     },
   });
   const owner = { server: X_SERVER, ownerScope: "org", ownerId: "org_1" } satisfies Partial<ConnectInput>;
-  pool.connectors = refusing;
+  runConnectors(refusing);
   await assert.rejects(
     () => connect(repo, pool, { ...owner, credentials: { token: "one" } }, new Date(), { masterKey: KEY }),
     (error: unknown) => error instanceof ConnectError && error.status === 422 && error.message === "api key was rejected",
   );
   const created = repo.rows.get(`${X_SERVER.id}:org:org_1`)!;
   assert.deepEqual(repo.retired, [[created.id, "never_connected"]]);
-  pool.connectors = CONNECTORS.withAdapter("x", { validate: async () => "", list: async () => [] });
+  runConnectors(CONNECTORS.withAdapter("x", { validate: async () => "", list: async () => [] }));
   await connect(repo, pool, { ...owner, credentials: { token: "two" }, onExisting: "replace" }, new Date(), { masterKey: KEY });
-  pool.connectors = refusing;
+  runConnectors(refusing);
   await assert.rejects(
     () => connect(repo, pool, { ...owner, credentials: { token: "three" }, onExisting: "replace" }, new Date(), { masterKey: KEY }),
     ConnectError,
@@ -171,14 +174,14 @@ test("connect stores a login that lacks required settings as pending, and one wi
   const repo = new ConnectRepoStub();
   const pool = new McpPool(repo);
   const seen: Array<Record<string, unknown>> = [];
-  pool.connectors = WITH_QUOTES.withAdapter("quotes", {
+  runConnectors(WITH_QUOTES.withAdapter("quotes", {
     async validate(_creds, ctx) {
       seen.push({ ...ctx.settings });
       return "1 symbol";
     },
-  });
+  }));
   const server = serverRow("quotes", { id: "mcp_quotes", auth: "token", display_name: "Quotes" });
-  const waiting = await connect(repo as never, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { token: "qk" } }, new Date(), { connectors: WITH_QUOTES });
+  const waiting = await connect(repo as never, pool, { server, ownerScope: "org", ownerId: "org_1", credentials: { token: "qk" } }, new Date());
   assert.equal(waiting.connection.status, "pending");
   assert.deepEqual(repo.tools, []);
   const ready = await connect(repo as never, pool, {
@@ -187,7 +190,7 @@ test("connect stores a login that lacks required settings as pending, and one wi
     ownerId: "org_2",
     credentials: { token: "qk" },
     settings: { symbols: [{ id: "bitcoin" }] },
-  }, new Date(), { connectors: WITH_QUOTES });
+  }, new Date());
   assert.equal(ready.connection.status, "connected");
   assert.deepEqual(seen, [{}, { symbols: [{ id: "bitcoin" }] }]);
   await assert.rejects(
@@ -198,7 +201,7 @@ test("connect stores a login that lacks required settings as pending, and one wi
         ownerId: "org_3",
         credentials: { token: "qk" },
         settings: { symbols: "bitcoin" },
-      }, new Date(), { connectors: WITH_QUOTES }),
+      }, new Date()),
     (error: unknown) => error instanceof ConnectError && error.status === 422,
   );
 });

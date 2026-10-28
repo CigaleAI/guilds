@@ -30,6 +30,9 @@ import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { restoreConnectorsAfterEach, runConnectors } from "../helpers/installed.js";
+
+restoreConnectorsAfterEach();
 
 const fixture = loadJsonFixture<{
   search: string;
@@ -209,14 +212,14 @@ test("sync TwitterAPI.io writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
   const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
-  pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
+  runConnectors(CONNECTORS.withAdapter("twitterapiio", {
     async validate(creds) {
       const apiKey = creds.token;
       pinged += 1;
       assert.equal(apiKey, "tok-test");
       return "";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const connection = connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce });
   const server = serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" });
@@ -232,11 +235,11 @@ test("sync TwitterAPI.io writes the curated catalog", async () => {
 test("sync TwitterAPI.io rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const pool = new McpPool(new MemoryMcpDatabase());
-  pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
+  runConnectors(CONNECTORS.withAdapter("twitterapiio", {
     async validate() {
       throw new ConnectorError("Unauthorized", 401);
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
     () =>
@@ -253,14 +256,14 @@ test("call TwitterAPI.io dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
   const pool = new McpPool(new MemoryMcpDatabase());
-  pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
+  runConnectors(CONNECTORS.withAdapter("twitterapiio", {
     async call(name, arguments_, creds) {
       seen.name = name;
       seen.arguments = arguments_;
       seen.api_key = creds.token;
       return "from:x  n=0";
     },
-  });
+  }));
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
     connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce }),

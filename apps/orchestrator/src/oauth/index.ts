@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { saveOauthClient } from "../connectors/servers.js";
 import { proxyFetch, type FetchFn } from "../net/http.js";
 import { encryptPayload } from "../credentials/crypto.js";
 import { githubAppConfig } from "../github/index.js";
@@ -11,11 +10,11 @@ import {
   type Integration,
   type IntegrationSources,
 } from "../instance/integrations.js";
-import { serverManifest, type LoadedConnector } from "../connectors/load.js";
+import { saveOauthClient, type LoadedConnector } from "../connectors/servers.js";
 import { saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { Manifest, OAuthClient, OAuthClientCredentials } from "../db/schema/index.js";
-import { connectorIntegration } from "../instance/connectors.js";
+import { connectorIntegration } from "../connectors/instance.js";
 
 /** An instance integration that holds an OAuth client: its fields, and how its provider authorizes. */
 type OAuthProvider = {
@@ -46,7 +45,7 @@ const OAUTH_PROVIDERS: Readonly<Record<string, OAuthProvider>> = {
 
 /** The effective manifest's OAuth block for a server, or null for a non-OAuth one. */
 function manifestOauth(server: LoadedConnector): NonNullable<Manifest["auth"]["oauth"]> | null {
-  return serverManifest(server)?.auth.oauth ?? null;
+  return server.manifest.auth.oauth ?? null;
 }
 
 /**
@@ -54,9 +53,9 @@ function manifestOauth(server: LoadedConnector): NonNullable<Manifest["auth"]["o
  * names, or, for a configured client with no provider, the connector's own.
  */
 function providerOf(server: LoadedConnector): OAuthProvider | null {
-  const manifest = serverManifest(server);
-  const oauth = manifest?.auth.oauth;
-  if (!manifest || !oauth) {
+  const manifest = server.manifest;
+  const oauth = manifest.auth.oauth;
+  if (!oauth) {
     return null;
   }
   if (oauth.provider) {

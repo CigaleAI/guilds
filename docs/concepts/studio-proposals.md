@@ -336,7 +336,7 @@ answer. Discarding stores `discarded_by_user_id`; publishing stores
 `studio_call_connection_tool(connection_id, tool, arguments)` proxies
 one call through the orchestrator's MCP pool on a granted, connected
 login. The tool must be listed on that connection and pass
-`isReadOnlyRemote` (`apps/orchestrator/src/mcp/policy.ts`):
+`isReadOnlyRemote` (`apps/orchestrator/src/connectors/servers.ts`):
 
 - default-off tools are refused
 - a tool the connector's manifest lists is readable unless it is
@@ -387,7 +387,7 @@ resolution is in its metadata.
 | `apps/orchestrator/src/studio/tables.ts` | Collection requests and collection evidence |
 | `apps/orchestrator/src/studio/routines.ts` | Routine requests |
 | `apps/orchestrator/src/studio/connections.ts` | Connection grants and the read-only proxy |
-| `apps/orchestrator/src/mcp/policy.ts` | `isReadOnlyRemote` |
+| `apps/orchestrator/src/connectors/servers.ts` | `isReadOnlyRemote` |
 | `apps/web/src/features/studio/pendingModel.ts` | The turn's requests: where each lands and what was answered |
 | `apps/web/src/features/studio/approvals.ts` | Deciding requests from anywhere and the reply that continues the coach |
 | `apps/web/src/features/studio/ProposalCards.tsx`, `ApprovalTray.tsx`, `chatModel.ts` | The cards and the header tray |

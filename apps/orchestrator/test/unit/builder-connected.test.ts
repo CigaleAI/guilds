@@ -13,15 +13,7 @@ import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 import { connectionRow, serverRow } from "../helpers/servers.js";
 
 function notionServer() {
-  return {
-    id: "mcp_notion",
-    slug: "notion",
-    display_name: "Notion",
-    publication_state: "published",
-    auth: "oauth",
-    config: {},
-    setup_hint: "Connect Notion",
-  };
+  return serverRow("notion", { id: "mcp_notion", display_name: "Notion", auth: "oauth", config: {}, setup_hint: "Connect Notion" });
 }
 
 function repoStub(options: {
@@ -44,7 +36,7 @@ function repoStub(options: {
     async listMcpTools() {
       return options.tools ?? [{ remote_name: "search" }];
     },
-    async listMcpServers() {
+    async listServers() {
       return options.servers ?? (server ? [server] : []);
     },
   };

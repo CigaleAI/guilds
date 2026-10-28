@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CONNECTORS } from "../../src/connectors/index.js";
+import { installedManifests } from "../../src/connectors/servers.js";
 import {
   CORE_INTEGRATIONS,
   ERROR_REPORTING,
@@ -92,7 +93,7 @@ test("statuses name each integration, its source and its fields with labels, nev
       "github-app": { ...GITHUB_VALUES, private_key: "" },
     }),
   };
-  const statuses = integrationStatuses(CORE_INTEGRATIONS, sources);
+  const statuses = integrationStatuses(CORE_INTEGRATIONS, installedManifests(), sources);
   assert.deepEqual(
     statuses.map((item) => [item.id, item.source, item.state]),
     [
@@ -138,7 +139,7 @@ test("audit adds when and by whom a store row was written; the environment has n
     env: { SENTRY_DSN: "dsn" },
     keys: storeKeys({ "web-search": { api_key: "k" } }, "2026-10-09T08:00:00.000Z"),
   };
-  const audited = integrationStatuses(CORE_INTEGRATIONS, sources, undefined, { audit: true });
+  const audited = integrationStatuses(CORE_INTEGRATIONS, installedManifests(), sources, { audit: true });
   const web = audited.find((item) => item.id === "web-search")!;
   assert.equal(web.updated_at, "2026-10-09T08:00:00.000Z");
   assert.equal(web.set_by, "operator");
@@ -149,7 +150,7 @@ test("audit adds when and by whom a store row was written; the environment has n
   assert.equal(errors.state, "on");
   assert.equal(errors.updated_at, null);
   assert.equal(errors.set_by, null);
-  const plain = integrationStatuses(CORE_INTEGRATIONS, sources).find((item) => item.id === "web-search")!;
+  const plain = integrationStatuses(CORE_INTEGRATIONS, installedManifests(), sources).find((item) => item.id === "web-search")!;
   assert.equal(plain.updated_at, null);
   assert.equal(plain.set_by, null);
 });
@@ -174,7 +175,7 @@ test("no two integrations share an id, and no integration two field names", () =
 
 test("statuses say which tools and connectors each integration switches on, and none serves a model", () => {
   const provides = Object.fromEntries(
-    integrationStatuses(CORE_INTEGRATIONS, { keys: {} }).map((item) => [item.id, item.provides]),
+    integrationStatuses(CORE_INTEGRATIONS, installedManifests(), { keys: {} }).map((item) => [item.id, item.provides]),
   );
   assert.equal("openrouter" in provides, false);
   assert.equal("deepinfra" in provides, false);

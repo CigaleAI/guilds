@@ -1,5 +1,5 @@
 import { SCOPES } from "../../src/access/index.js";
-import type { LoadedConnector } from "../../src/connectors/load.js";
+import type { LoadedConnector } from "../../src/connectors/servers.js";
 import type { BindingRow, NewBinding } from "../../src/db/bindings.js";
 import type {
   DeletedMcpConnectionRow,

@@ -16,7 +16,7 @@ import {
 import { visibleAt } from "../../src/credentials/visibility.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 import { serverRow, connectionRow } from "../helpers/servers.js";
-import type { LoadedConnector } from "../../src/connectors/load.js";
+import type { LoadedConnector } from "../../src/connectors/servers.js";
 
 const fixture = loadJsonFixture<{
   inherited: Record<string, unknown>;

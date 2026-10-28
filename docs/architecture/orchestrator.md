@@ -172,7 +172,7 @@ sequenceDiagram
 3. construct `NotesStore` and check that `system.md` exists in
    `TEMPLATES_ROOT`
 4. load the registry connectors' code (`registry/code.ts`), derive
-   the connector-declared integrations (`instance/connectors.ts`),
+   the connector-declared integrations (`connectors/instance.ts`),
    load the instance keys into their snapshot (`instance/keys.ts`),
    and sync the platform logins (`connectors/instance.ts`)
 5. build the artifact store (`artifactStore`), `Scripts`, `Schedules`, the model

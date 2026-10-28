@@ -48,7 +48,7 @@ as a JSON document beside the box's state for it.
 
 At boot, every installed folder replaces its row's manifest and
 source, with or without a version bump. The switch, the OAuth client,
-and the overrides are kept. One loader (`connectors/load.ts`) applies
+and the overrides are kept. One loader (`connectors/servers.ts`) applies
 `overrides` to the manifest for every reader. A server added by hand
 is a `local` row with no folder, and its row is its source of truth.
 
@@ -245,7 +245,7 @@ resolves it. The first rule that applies wins:
 3. Off when a `policy.default_off` pattern matches it.
 4. For a listed tool the manifest does not name: Off when its listing
    marks it `destructiveHint`, or its name carries a writing verb
-   (`src/mcp/verbs.ts`: create, update, delete, send, merge, push,
+   (`src/connectors/naming.ts`: create, update, delete, send, merge, push,
    and the like).
 5. On.
 

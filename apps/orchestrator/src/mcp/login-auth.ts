@@ -1,9 +1,7 @@
-import { installedConnectors } from "../connectors/index.js";
 import { instanceCredentials } from "../connectors/instance.js";
-import { serverManifest, type LoadedConnector } from "../connectors/load.js";
+import { serverManifest, type LoadedConnector } from "../connectors/servers.js";
 import { awaitingSettings } from "../connectors/login.js";
 import { authFields } from "../connectors/manifest.js";
-import type { ConnectorRegistry } from "../connectors/registry.js";
 import type { Credentials } from "../connectors/types.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import type { McpConnectionRow } from "../db/mcp.js";
@@ -62,16 +60,16 @@ export function connectionCredentials(connection: McpConnectionRow): Credentials
  * field its manifest does not mark `secret: false`, and the instance key serving a platform login.
  * The rest of its payload, such as the account a login names, is not secret.
  */
-export function loginSecrets(connection: McpConnectionRow, manifest: Manifest | null): Record<string, string> {
+export function loginSecrets(connection: McpConnectionRow, manifest: Manifest): Record<string, string> {
   const credentials = connectionCredentials(connection);
-  const fields = [...TOKEN_FIELDS, ...(manifest ? authFields(manifest) : []).filter((field) => field.secret !== false).map((field) => field.name)];
+  const fields = [...TOKEN_FIELDS, ...authFields(manifest).filter((field) => field.secret !== false).map((field) => field.name)];
   const secrets: Record<string, string> = {};
   for (const name of fields) {
     if (credentials[name]) {
       secrets[name] = credentials[name]!;
     }
   }
-  if (connection.owner_scope === "platform" && manifest?.auth.instance) {
+  if (connection.owner_scope === "platform" && manifest.auth.instance) {
     Object.assign(secrets, instanceCredentials(manifest));
   }
   return secrets;
@@ -91,23 +89,19 @@ export function credentialToken(credentials: Credentials, manifest: Manifest | n
 }
 
 /** What an endpoint session sends: the manifest's endpoint headers, and the token in its auth header. */
-export function headersFor(token: string, manifest: Manifest | null): Record<string, string> {
-  const fixed = { ...manifest?.endpoint?.headers };
+export function headersFor(token: string, manifest: Manifest): Record<string, string> {
+  const fixed = { ...manifest.endpoint?.headers };
   if (!token) {
     return fixed;
   }
-  const header = manifest?.auth.header ?? { name: "Authorization", prefix: "Bearer " };
+  const header = manifest.auth.header ?? { name: "Authorization", prefix: "Bearer " };
   return { ...fixed, [header.name]: `${header.prefix}${token}` };
 }
 
-export function authHeaders(
-  connection: McpConnectionRow,
-  server: LoadedConnector,
-  connectors: ConnectorRegistry = installedConnectors(),
-): Record<string, string> {
-  const manifest = connectors.forServer(server)?.manifest ?? serverManifest(server);
+export function authHeaders(connection: McpConnectionRow, server: LoadedConnector): Record<string, string> {
+  const manifest = serverManifest(server);
   const credentials =
-    connection.owner_scope === "platform" && manifest?.auth.instance
+    connection.owner_scope === "platform" && manifest.auth.instance
       ? instanceCredentials(manifest)
       : connectionCredentials(connection);
   return headersFor(credentialToken(credentials, manifest), manifest);
@@ -119,16 +113,14 @@ export function authHeaders(
  */
 export async function resolveSessionAuth(
   pool: SessionPool,
-  connectors: ConnectorRegistry,
   connection: McpConnectionRow,
   server: LoadedConnector,
 ): Promise<SessionAuth> {
   if (!isGithubApp(server)) {
-    return { headers: authHeaders(connection, server, connectors), expiresAt: null };
+    return { headers: authHeaders(connection, server), expiresAt: null };
   }
   const minted = await mintGithubAppToken(pool, connection);
-  const manifest = connectors.forServer(server)?.manifest ?? serverManifest(server);
-  return { headers: headersFor(minted.token, manifest), expiresAt: Date.parse(minted.expiresAt) };
+  return { headers: headersFor(minted.token, serverManifest(server)), expiresAt: Date.parse(minted.expiresAt) };
 }
 
 /** A GitHub App login's installation token (`mintLoginToken`). GitHub refusing the installation disconnects the login. */

@@ -1,13 +1,11 @@
 import { accessPayload, mcpToolView, resolvedMcp } from "./index.js";
 import { resolveMcpTool } from "./runtime.js";
-import { listMcpServers } from "../connectors/servers.js";
-import { manifestTools } from "../connectors/load.js";
+import { listServers, serverTools, type LoadedConnector } from "../connectors/servers.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { McpPool } from "../mcp/pool.js";
 import { connectionTools, currentTools, type ConnectionTool } from "../mcp/service.js";
-import type { LoadedConnector } from "../connectors/load.js";
 
 /** The pool a view lists its connections' tools through. */
 type ToolListing = Pick<McpPool, "syncTools" | "database">;
@@ -16,7 +14,7 @@ type ToolListing = Pick<McpPool, "syncTools" | "database">;
 export function accessViewDatabase(db: Queryable) {
   return {
     listBindingsCovering: bindQuery(db, listBindingsCovering),
-    listMcpServers: bindQuery(db, listMcpServers),
+    listServers: bindQuery(db, listServers),
     listMcpConnections: bindQuery(db, listMcpConnections),
     connectionTools: bindQuery(db, connectionTools),
   };
@@ -72,7 +70,7 @@ export async function loadAccessView(
     agentId: options.agentId ?? null,
   };
   const connections = await db.listMcpConnections(scope);
-  const servers = visibleServers(await db.listMcpServers(scope.orgId), connections);
+  const servers = visibleServers(await db.listServers({ owner: { visibleTo: scope.orgId } }), connections);
   const rawListed = await listConnectionTools(db, options.mcp ?? null, connections, servers);
   // Read after the syncs: a sync writes an Off binding for each tool it lists for the first time.
   const rows = await db.listBindingsCovering(scope);
@@ -97,7 +95,7 @@ export async function loadAccessView(
       });
       continue;
     }
-    listedTools[key] = manifestTools(server).map((tool) => {
+    listedTools[key] = serverTools(server).map((tool) => {
       const namespaced = tool.namespaced_name;
       const resolved = resolveMcpTool(rows, namespaced, {
         serverEnabled: item.enabled,

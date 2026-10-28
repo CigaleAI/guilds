@@ -239,7 +239,7 @@ does; an optional field tunes it and never switches it off.
   It is decrypted into a process snapshot at boot and again after
   every write, and a reader resolves a field from that snapshot at
   call time, so a change takes effect without a restart. A write's
-  effects (`instance/changes.ts`) sync the platform logins, and a
+  effects (`connectors/instance.ts`) sync the platform logins, and a
   GitHub App replaced by one with another App ID, or removed,
   disconnects every GitHub login installed with it, after the admin
   confirms with the count. No route returns a value.
@@ -260,7 +260,7 @@ does; an optional field tunes it and never switches it off.
   `connector:<slug>`: a platform key (`auth.instance: { "own": true }`
   on a token connector; its fields are the login fields) or an OAuth
   client (`configured` with no provider; `client_id` and
-  `client_secret`). `instance/connectors.ts` derives these from the
+  `client_secret`). `connectors/instance.ts` derives these from the
   platform connector rows at boot and after a connector is
   installed, updated, removed, reloaded, created, or patched, and
   `installedIntegrations()` lists core's, an extension's, then these.

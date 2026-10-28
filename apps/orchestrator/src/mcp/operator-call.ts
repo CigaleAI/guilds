@@ -5,7 +5,7 @@ import { capBytes } from "../toolbox/output.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
 import { OPERATOR_CALLER, type McpPool } from "./pool.js";
 import { resolveConnectionTool } from "./service.js";
-import type { LoadedConnector } from "../connectors/load.js";
+import type { LoadedConnector } from "../connectors/servers.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 
 export const OPERATOR_TOOL_RESULT_MAX_BYTES = 64 * 1024;
