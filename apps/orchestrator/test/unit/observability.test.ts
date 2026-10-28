@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import Fastify from "fastify";
+import { registerErrorHandler } from "../../src/http/error-handler.js";
 import { HttpError } from "../../src/http/errors.js";
 import { registerClientErrorRoute } from "../../src/observability/client-errors.js";
 import {
@@ -59,6 +60,7 @@ async function testApp() {
     ...fastifyRequestIdOptions(),
   });
   registerHttpObservability(app);
+  registerErrorHandler(app);
   registerClientErrorRoute(app);
   app.get("/boom", async () => {
     throw new Error("kaboom");

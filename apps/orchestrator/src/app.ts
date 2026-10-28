@@ -18,6 +18,7 @@ import {
   type ServerExtension,
 } from "./extension.js";
 import type { AppDeps } from "./http/deps.js";
+import { registerErrorHandler } from "./http/error-handler.js";
 import { registerRequestOrigin } from "./http/origin.js";
 import { registerDomainRoutes } from "./http/routes.js";
 import { sandboxSubprotocol } from "./http/sandbox-proxy.js";
@@ -46,7 +47,7 @@ export async function buildApp(
   extensions: ServerExtension[] = [],
 ): Promise<FastifyInstance> {
   const app = Fastify({
-    // The process logs through registerHttpObservability. Fastify's own logger stays off.
+    // The process logs through registerErrorHandler. Fastify's own logger stays off.
     logger: false,
     // Close sockets still held open, so shutdown finishes while a stream or a pane is connected.
     forceCloseConnections: true,
@@ -56,6 +57,7 @@ export async function buildApp(
     ...fastifyRequestIdOptions(),
   }).withTypeProvider<TypeBoxTypeProvider>();
   registerHttpObservability(app);
+  registerErrorHandler(app);
   // File and image uploads are raw bytes. This parser accepts those types and keeps the body
   // as a buffer.
   app.addContentTypeParser(
