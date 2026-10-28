@@ -222,6 +222,9 @@ export async function appliedRecipe(apply: RecipeApply, recipeId: string): Promi
 /** Where overlays are bound: the apply's recipe and guild, and the agents its roles became. */
 export type OverlayTarget = Pick<RecipeApplyRow, "recipe_id" | "org_id"> & { guild_id: string; names: PlannedAgent[] };
 
+/** The server whose overlays are bound, and the connection they are bound on. */
+export type OverlayConnection = { server: string; connectionId: string };
+
 /** Whether every role is enabled on the connection with the same tools, so one guild binding covers them. */
 function bindsAtGuild(connection: RecipeConnection, recipe: RecipeDocument): boolean {
   const specs = recipe.roles.map((role) => connection.roles[role.role]);
@@ -271,7 +274,7 @@ async function bindOverlay(apply: RecipeApply, binding: OverlayBinding, known: S
 export async function writeOverlays(
   apply: RecipeApply,
   target: OverlayTarget,
-  connection: { server: string; connectionId: string },
+  connection: OverlayConnection,
   actor: ChangeActor,
 ): Promise<void> {
   const recipe = await appliedRecipe(apply, target.recipe_id);
@@ -294,6 +297,16 @@ export async function writeOverlays(
     const agentId = target.names.find((row) => row.role === item.role)?.agent_id;
     if (agentId) await bindOverlay(apply, { ...base, scope: "agent", scopeId: agentId, spec: item.spec }, known, actor);
   }
+}
+
+/** Binds the overlays of the apply's recipe for a connection the operator picked on its checklist, in the guild the apply fills. */
+export function writeApplyOverlays(
+  apply: RecipeApply,
+  row: RecipeApplyRow,
+  connection: OverlayConnection,
+  actor: ChangeActor,
+): Promise<void> {
+  return writeOverlays(apply, { ...row, guild_id: applyGuild(row), names: row.plan.names }, connection, actor);
 }
 
 type StepCheck = { ok: true } | { ok: false; reason: string };

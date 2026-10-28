@@ -17,6 +17,12 @@ export async function getApply(apply: RecipeApply, applyId: string): Promise<Rec
   return getRecipeApply(apply.db, applyId);
 }
 
+/** The apply when it belongs to the organisation, otherwise null. */
+export async function orgApply(apply: RecipeApply, orgId: string, applyId: string): Promise<RecipeApplyRow | null> {
+  const row = await getRecipeApply(apply.db, applyId);
+  return row && row.org_id === orgId ? row : null;
+}
+
 /** The open checklist, and agents whose recipe login was deferred until after activate. */
 export async function guildApplyState(
   apply: RecipeApply,
