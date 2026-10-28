@@ -20,6 +20,7 @@ import { listConfigChanges } from "../../src/db/config-changes.js";
 import { buildMemoryTimeline } from "../../src/artifacts/memory-timeline.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
+import { insertOrg } from "../../src/db/orgs.js";
 import { getAgentTask, listAgentTaskRevisions } from "../../src/db/agents.js";
 import { insertRun } from "../../src/db/runs.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
@@ -1177,6 +1178,33 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.equal(archived.revision?.content, "first\n");
     const found = await findNotes(store, alpha, { query: "first" });
     assert.deepEqual(found.notes, []);
+  });
+
+  test("an operator reads a Memory revision of its own organisation and is refused another organisation's", async () => {
+    const now = new Date();
+    await insertOrg(db, { orgId: "org_rev_other", name: "other", slug: "rev-other", userId: "user_operator" }, now);
+    await insertGuild(db, { guildId: "guild_rev_other", name: "elsewhere", orgId: "org_rev_other", about: "" }, now);
+    await addAgent(
+      { db, notes: new NotesStore(tempDir("guilds-art-rev-other-notes-"), templatesRoot()), artifacts: store },
+      { agent: { agentId: "a_rev_other", guildId: "guild_rev_other", name: "keeper", config: CONFIG }, task: "", placement: {} },
+      systemActor("org_rev_other", { guildId: "guild_rev_other", agentId: "a_rev_other" }),
+      now,
+    );
+    const keeper = agentActor({ orgId: "org_rev_other", guildId: "guild_rev_other", agentId: "a_rev_other", agentName: "keeper" });
+    await writeMemory(store, keeper, "a_rev_other", { content: "kept elsewhere\n", detail: "run r_1" });
+    await writeMemory(store, keeper, "a_rev_other", { content: "kept later\n", detail: "run r_2" });
+    const ownOperator = operatorActor({ orgId: "org_rev_other", actorId: "user_operator", actorName: "operator" });
+    const [revision] = await listRevisions(store, ownOperator, "a_rev_other");
+    const revisionPath = String(revision?.display_path);
+
+    const homeOperator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
+    await assert.rejects(() => getByDisplayPath(store, homeOperator, revisionPath), {
+      name: "ArtifactError",
+      message: "artifact is not in this organisation",
+      status: 404,
+    });
+    const read = await getByDisplayPath(store, ownOperator, revisionPath);
+    assert.equal(read.revision?.content, "kept elsewhere\n");
   });
 
   test("memory timeline keeps write order when two writes share a millisecond", async () => {

@@ -245,12 +245,18 @@ export async function getByDisplayPath(
   return { row: { ...found, access } };
 }
 
-/** An archived Memory revision the operator reaches, by the archive file name its display path ends with. */
+/**
+ * An archived Memory revision the operator reaches, by the archive file name its display path ends
+ * with. ArtifactError when the path lies outside the actor's organisation.
+ */
 async function readRevision(
   store: ArtifactStore,
   actor: ArtifactActor,
   parsed: Extract<ParsedDisplayPath, { kind: "revision" }>,
 ): Promise<{ content: string; display_path: string }> {
+  if (parsed.orgId !== actor.orgId) {
+    throw new ArtifactError("artifact is not in this organisation", 404);
+  }
   if (!actor.operator || !reachesOwner(actor, "agent", parsed.agentId)) {
     throw new ArtifactError("artifact not found", 404);
   }

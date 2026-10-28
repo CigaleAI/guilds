@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Reading a Memory revision by its display path refuses
+a path in another organisation with `artifact is not in this
+organisation`. Before, an operator handed another organisation's
+revision path, by a caller that did not check it, read that agent's
+archived Memory
+([SEC-50](docs/architecture/security-register.md#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation)).
+
 **No impact.** Capturing a guild as a recipe leaves out a note of a
 private guild the user does not operate, whether `include_notes` names
 it by display path or by file name. Before, any member who could see

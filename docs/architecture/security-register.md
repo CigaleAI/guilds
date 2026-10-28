@@ -10,7 +10,7 @@ risk is kept by design), or **Fixed** with its date.
 | Id | Issue | Status |
 |---|---|---|
 | [SEC-51](#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate) | A recipe capture copies the notes of private guilds its operator does not operate | Fixed 2026-10-28 |
-| [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Open |
+| [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Fixed 2026-10-28 |
 | [SEC-49](#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read) | A run's diff and a code task's log were served unredacted when the agent's secrets could not be read | Fixed 2026-10-27 |
 | [SEC-48](#sec-48--a-run-that-listed-a-logins-tools-for-the-first-time-was-offered-the-ones-that-start-off) | A run that listed a login's tools for the first time was offered the ones that start Off | Fixed 2026-10-26 |
 | [SEC-47](#sec-47--github-content-an-agent-reads-through-its-tools-can-steer-its-writes-to-the-logins-repositories) | GitHub content an agent reads through its tools can steer its writes to the login's repositories | Open |
@@ -102,7 +102,7 @@ only for a user who operates that guild.
 
 ## SEC-50 — An operator's read of a Memory revision path is not limited to its organisation
 
-**Status:** open.
+**Status:** fixed 2026-10-28.
 
 **Found:** 2026-10-28, giving `artifacts/` one function for what a
 display path holds.
@@ -127,13 +127,13 @@ reads through it. `readEmbeddableNotes` and `lastSavedRow` in
 only a live row. An agent actor never reaches `readRevision`'s read:
 the archive is the operator's.
 
-**Fix:** not yet. Fixing it takes refusing, in `readRevision` or
-`getByDisplayPath`, a revision path whose organisation is not the
-actor's.
+**Fix:** `readRevision` in `apps/orchestrator/src/artifacts/notes.ts`
+refuses a revision path whose organisation is not the actor's with 404
+(`artifact is not in this organisation`) before any other check, so
+`getByDisplayPath` reads a revision only in the actor's organisation,
+whatever its caller checked.
 
-**Residual risk:** until then, a new caller that hands an operator
-actor's `getByDisplayPath` a path it did not check would return
-another organisation's Memory revisions.
+**Residual risk:** none known.
 
 ## SEC-49 — A run's diff and a code task's log were served unredacted when the agent's secrets could not be read
 
