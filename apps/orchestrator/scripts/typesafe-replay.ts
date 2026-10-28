@@ -7,6 +7,7 @@
 //                                                   hypothetical user post
 //   add --json for the raw report, --min 0.7 to try another confidence gate.
 import { decodeMasterKey, loadToolConfig } from "../src/config/index.js";
+import { startErrorReporting } from "../src/error-reporting.js";
 import { connect } from "../src/seed/connect.js";
 import { InstanceKeys } from "../src/instance/keys.js";
 import { createTypeSafeClient } from "../src/typesafe/client.js";
@@ -73,6 +74,7 @@ function parseArgs(argv: string[]): {
   return out;
 }
 
+startErrorReporting();
 const args = parseArgs(process.argv.slice(2));
 const config = loadToolConfig();
 const database = await connect(config.databaseUrl);

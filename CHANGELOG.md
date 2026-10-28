@@ -178,6 +178,10 @@ validators. `memoryOf`, `scriptingOf`, `maxScriptsOf`,
 gone: an agent row's `config` holds every setting, read by name.
 `DEFAULT_AVATAR_SHAPE` and `DEFAULT_AVATAR_COLOR` are in
 `avatars/clay.ts`, which the package does not export.
+The export `observability/instrument.js` is `instrument.js`. Loading
+`observability/log.js` no longer starts Sentry: a process that does
+not load `instrument.js` calls `startErrorReporting`, exported from
+`error-reporting.js`, first.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

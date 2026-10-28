@@ -132,7 +132,7 @@ Docker does not SIGKILL during `SHUTDOWN_TIMEOUT`.
 
 From `apps/orchestrator`, `pnpm start` (or
 `pnpm --filter @guildsrun/orchestrator start` from the repo root)
-runs `node --import tsx --import ./src/observability/instrument.ts src/server.ts`.
+runs `node --import tsx --import ./src/instrument.ts src/server.ts`.
 Local Compose uses `make up` or `make dev`.
 
 `server.ts` is core's process entry. It loads `AppConfig` and calls

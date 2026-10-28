@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { loadToolConfig } from "../config/index.js";
+import { startErrorReporting } from "../error-reporting.js";
 import { connect } from "../seed/connect.js";
 import { registryClient, type RegistryClient } from "../registry/client.js";
 import { codeTierRoot, connectorsRoot } from "../registry/code.js";
@@ -91,6 +92,7 @@ export async function connectorCommand(
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  startErrorReporting();
   const config = loadToolConfig();
   const database = await connect(config.databaseUrl);
   try {

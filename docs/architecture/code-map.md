@@ -41,6 +41,8 @@ A repository that extends core holds this one as a submodule
 | Path | What it is |
 | --- | --- |
 | `src/server.ts` | Core's process entry: loads config and runs the server with no extension |
+| `src/instrument.ts` | Loaded with `--import` before the server: starts Sentry and its event-loop, profiling, and Fastify integrations |
+| `src/error-reporting.ts` | `startErrorReporting`: starts Sentry from the `error-reporting` integration; the server and each command-line tool call it first |
 | `src/run.ts` | `runServer`: builds the server, listens, shuts down on a signal or a fatal error |
 | `src/compose.ts` | `createServer`, the composition root ([Startup](orchestrator.md#startup-and-shutdown)) |
 | `src/extension.ts` | `ServerExtension`, what an extension adds ([Extension points](extension-points.md)) |

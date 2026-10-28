@@ -1,12 +1,12 @@
 import * as Sentry from "@sentry/node";
 import { eventLoopBlockIntegration } from "@sentry/node-native";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
-import { EVENT_LOOP_STALL_MS } from "./runtime.js";
-import { initSentry } from "./sentry.js";
+import { startErrorReporting } from "./error-reporting.js";
+import { EVENT_LOOP_STALL_MS } from "./observability/runtime.js";
 
 const EVENT_LOOP_STALLS_PER_HOUR = 10;
 
-initSentry();
+startErrorReporting();
 
 if (Sentry.getClient()) {
   try {

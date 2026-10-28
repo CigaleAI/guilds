@@ -6,6 +6,7 @@ import { repoRoot } from "../src/lib/paths.js";
 import { installedConnectors } from "../src/connectors/index.js";
 import type { ConnectorEntry } from "../src/connectors/registry.js";
 import { connectorFacts, loadConnector, serverTools, type LoadedConnector } from "../src/connectors/servers.js";
+import { startErrorReporting } from "../src/error-reporting.js";
 import { serverItem } from "../src/mcp/view.js";
 import { oauthSetupState } from "../src/oauth/index.js";
 import { REGISTRY } from "../src/toolbox/index.js";
@@ -552,5 +553,6 @@ function walk(value: unknown): unknown {
   return next;
 }
 
+startErrorReporting();
 const parsed = JSON.parse(readFileSync(routesPath, "utf8")) as unknown;
 writeFileSync(routesPath, `${JSON.stringify(walk(parsed), null, 2)}\n`);
