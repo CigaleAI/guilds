@@ -1,4 +1,5 @@
-import { jsonObj } from "../db/json.js";
+import { isPlainRecord } from "../db/json.js";
+import type { ConnectionSettings } from "../db/schema/index.js";
 
 /**
  * A login's settings: the document a connector's `settings_schema` describes, stored beside the
@@ -87,19 +88,20 @@ function check(schema: Schema, value: unknown, path: string): void {
 }
 
 /** Checks a settings document against a manifest's `settings_schema`; throws `SettingsError` naming the first problem. */
-export function validateSettings(schema: Record<string, unknown>, value: unknown): Record<string, unknown> {
+export function validateSettings(schema: Record<string, unknown>, value: unknown): ConnectionSettings {
+  if (!isPlainRecord(value)) {
+    throw new SettingsError("settings must be object");
+  }
   check(schema, value, "settings");
-  return value as Record<string, unknown>;
+  return value;
 }
 
 /** Whether the schema's required properties are all present in the stored settings. */
-export function settingsComplete(schema: Record<string, unknown> | undefined, settings: unknown): boolean {
+export function settingsComplete(schema: Record<string, unknown> | undefined, settings: ConnectionSettings): boolean {
   if (!schema) {
     return true;
   }
-  const stored = jsonObj(settings);
-  const record = stored && typeof stored === "object" && !Array.isArray(stored) ? (stored as Record<string, unknown>) : {};
-  return (Array.isArray(schema.required) ? schema.required : []).every((name) => record[String(name)] !== undefined);
+  return (Array.isArray(schema.required) ? schema.required : []).every((name) => settings[String(name)] !== undefined);
 }
 
 /** The properties a search box fills, by name. */

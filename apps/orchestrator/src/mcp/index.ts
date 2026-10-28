@@ -39,10 +39,10 @@ import type { OrgPolicy } from "../policy/index.js";
 
 import { namespacedName } from "./names.js";
 import { manifestExcludes, overriddenTool, serverManifest, toolStartsOff, type LoadedConnector } from "../connectors/load.js";
-import { awaitingSettings, connectionSettings } from "../connectors/login.js";
+import { awaitingSettings } from "../connectors/login.js";
 import { instanceCredentials } from "../connectors/instance.js";
 
-export { awaitingSettings, connectionSettings } from "../connectors/login.js";
+export { awaitingSettings } from "../connectors/login.js";
 import { writeLog } from "../observability/log.js";
 import { llmToolParameters, omitEmptyOptionalStrings } from "../toolbox/schema.js";
 import type { AgentPlaceRow } from "../db/agents.js";
@@ -979,7 +979,7 @@ export class McpPool {
         this.remoteFor(db, login, server),
         resolved,
         login.connection.id,
-        settings ?? connectionSettings(login.connection),
+        settings ?? login.connection.settings,
         workspaceDir,
       );
       const manifest = resolved.manifest ?? serverManifest(server);

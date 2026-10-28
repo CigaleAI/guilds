@@ -16,6 +16,7 @@ import {
 } from "../db/mcp.js";
 import { getMembership } from "../db/orgs.js";
 import { isUniqueViolation, type Queryable } from "../db/pg.js";
+import type { GithubRepositorySelection } from "../db/schema/index.js";
 import {
   GITHUB_SERVER_ID,
   GITHUB_SLUG,
@@ -39,7 +40,6 @@ import {
   RepositoryValidationError,
   validateGithubRepositories,
   validateRepositoryInput,
-  type GithubRepositorySelection,
 } from "./repositories.js";
 
 /** What a guild's repositories and the GitHub logins they use are managed through, built once from the app's services. */

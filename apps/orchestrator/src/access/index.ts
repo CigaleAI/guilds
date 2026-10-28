@@ -2,7 +2,7 @@ import { NATIVE_TOOLS } from "../seed/catalog.js";
 import { visibleAt } from "../credentials/visibility.js";
 import { oauthSetupState } from "../oauth/index.js";
 import { connectorFacts } from "../connectors/view.js";
-import { awaitingSettings, connectionSettings } from "../connectors/login.js";
+import { awaitingSettings } from "../connectors/login.js";
 import type { LoadedConnector } from "../connectors/load.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 
@@ -385,7 +385,7 @@ export function mcpView(
     overlay,
     tools: options.tools ?? [],
     ...connectorFacts(server),
-    settings: connection === null ? {} : connectionSettings(connection),
+    settings: connection === null ? {} : connection.settings,
     needs_settings: connection !== null && awaitingSettings(connection),
   };
   return view;

@@ -3,9 +3,8 @@ import { newId } from "../lib/ids.js";
 import { upsertMcpBinding, type McpConnectionBinding } from "./bindings.js";
 import { pickColumns, ownerRefs } from "./columns.js";
 import { RowMissing } from "./errors.js";
-import { isPlainRecord } from "./json.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { mcpConnections, mcpTools } from "./schema/index.js";
+import { mcpConnections, mcpTools, type ConnectionSettings, type GithubRepositorySelection } from "./schema/index.js";
 
 /** A connection with the guild, agent and organisation its owner resolves to. */
 export type ScopedMcpConnectionRow = InferSelectModel<typeof mcpConnections>;
@@ -45,7 +44,7 @@ export type NewMcpConnection = {
   status?: McpConnectionRow["status"] | undefined;
   accountHint?: string | undefined;
   /** The login's settings; a login that replaces one keeps its settings without it. */
-  settings?: Record<string, unknown> | undefined;
+  settings?: ConnectionSettings | undefined;
 };
 
 /** A login's stored credentials and where its sign-in stands. */
@@ -347,7 +346,7 @@ export async function saveMcpConnection(
 export async function updateMcpConnectionSettings(
   pool: Queryable,
   connectionId: string,
-  settings: Record<string, unknown>,
+  settings: ConnectionSettings,
   now: Date,
   options: { connect?: boolean; accountHint?: string } = {},
 ): Promise<McpConnectionRow | null> {
@@ -374,7 +373,7 @@ export async function updateMcpConnectionSettings(
 export async function updateMcpConnectionGithubRepositories(
   pool: Queryable,
   connectionId: string,
-  repositories: unknown,
+  repositories: GithubRepositorySelection[],
   now: Date,
 ): Promise<McpConnectionRow | null> {
   const result = await pool.query<McpConnectionRow>(
@@ -437,21 +436,16 @@ export async function recordGithubRepository(
        WHERE connection_id = $1 AND name = $2`,
       [connectionId, name, repository.githubId, repository.url, stamp(now)],
     );
-    const current = await client.query<{ repositories: unknown }>(
+    const current = await client.query<{ repositories: GithubRepositorySelection[] | null }>(
       "SELECT settings->'repositories' AS repositories FROM mcp_connections WHERE id = $1 FOR UPDATE",
       [connectionId],
     );
-    const selected = current.rows[0]?.repositories;
-    if (
-      !Array.isArray(selected) ||
-      !selected.some((item) => isPlainRecord(item) && item.name === name)
-    ) {
+    const selected = current.rows[0]?.repositories ?? [];
+    if (!selected.some((item) => item.name === name)) {
       return;
     }
     const next = selected.map((item) =>
-      isPlainRecord(item) && item.name === name
-        ? { ...item, github_id: repository.githubId, url: repository.url }
-        : item,
+      item.name === name ? { ...item, github_id: repository.githubId, url: repository.url } : item,
     );
     await client.query(
       "UPDATE mcp_connections SET settings = jsonb_set(settings, '{repositories}', $2::jsonb) WHERE id = $1",

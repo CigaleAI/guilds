@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
+import type { GithubRepositorySelection } from "../../src/db/schema/index.js";
 import { createVerify, generateKeyPairSync } from "node:crypto";
 import { test } from "node:test";
 import { RepositoryTokens } from "../../src/coding/git.js";
@@ -556,10 +557,10 @@ test("a login token reaches the repositories the login picked with every permiss
     bodies.push(JSON.parse(String(init.body)));
     return json(201, { token: "ghs_login", expires_at: "2026-09-30T13:00:00Z", repositories: [{ id: 101, full_name: "acme/shop" }] });
   });
-  const login = (repositories: unknown[]) => ({ ...connection("conn_a", "connected", 11), settings: { repositories } });
+  const login = (repositories: GithubRepositorySelection[]) => ({ ...connection("conn_a", "connected", 11), settings: { repositories } });
   const minted = await mintLoginToken(
     {} as never,
-    login([{ name: "shop", url: "https://github.com/acme/shop", github_id: 101 }]),
+    login([{ name: "shop", url: "https://github.com/acme/shop", default_branch: "main", github_id: 101 }]),
     { app: APP, fetch: fake.fetch, masterKey: MASTER },
   );
   assert.equal(minted.token, "ghs_login");

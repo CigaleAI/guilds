@@ -1,8 +1,8 @@
-import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { parseGithubUrl } from "../github/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { McpConnectionRow } from "../db/mcp.js";
+import type { GithubRepositorySelection } from "../db/schema/index.js";
 
 export const REPOSITORY_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 /** The branch a repository without a GitHub connection is recorded with when none is given. */
@@ -84,14 +84,6 @@ export function repositoryItem(row: Record<string, unknown>): Record<string, unk
   };
 }
 
-export type GithubRepositorySelection = {
-  name: string;
-  url: string;
-  default_branch: string;
-  /** GitHub's id for the repository, which a rename of it or its owner keeps. */
-  github_id?: number;
-};
-
 /** GitHub's id for a repository row or selection entry, or null when none is recorded. */
 export function githubIdOf(row: Record<string, unknown>): number | null {
   const id = Number(row.github_id);
@@ -136,15 +128,7 @@ export function validateGithubRepositories(value: unknown): GithubRepositorySele
 export function githubRepositoriesOf(
   connection: McpConnectionRow | null | undefined,
 ): GithubRepositorySelection[] {
-  if (!connection) {
-    return [];
-  }
-  try {
-    const settings = jsonObj(connection.settings) as { repositories?: unknown } | null;
-    return validateGithubRepositories(settings?.repositories ?? []);
-  } catch {
-    return [];
-  }
+  return connection?.settings.repositories ?? [];
 }
 
 /**

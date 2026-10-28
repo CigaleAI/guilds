@@ -3,7 +3,7 @@
 import { connect, connectDatabase } from "../connectors/connect.js";
 import type { LoadedConnector } from "../connectors/load.js";
 import { getMcpServer } from "../connectors/servers.js";
-import { connectionMetadata } from "../credentials/items.js";
+import { connectionMetadata, type ConnectionView } from "../credentials/items.js";
 import { validateOwner, type OwnerScope } from "../credentials/validate.js";
 import { isPlainRecord } from "../db/json.js";
 import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
@@ -45,8 +45,11 @@ export type ConnectionStart = {
 /** Who a login belongs to: the platform, an organisation, a guild, or an agent. */
 export type ConnectionOwner = { ownerScope: OwnerScope; ownerId: string | null };
 
+/** A login as the page shows it once started: with a sign-in, the consent page it goes to and that page's host. */
+type StartedLogin = ConnectionView & { authorization_url?: string; authorization_host?: string };
+
 /** A started login: what the page shows, and the state a GitHub App sign-in keeps in a cookie. */
-export type StartedConnection = { connection: Record<string, unknown>; githubState: string | null };
+export type StartedConnection = { connection: StartedLogin; githubState: string | null };
 
 /** The connector a login is asked for, which the owner's organisation sees and which is switched on. */
 async function requireConnectable(
@@ -201,7 +204,7 @@ export async function startConnection(
     },
     new Date(),
   );
-  const connection: Payload = connectionMetadata(row);
+  const connection: StartedLogin = connectionMetadata(row);
   if (signIn.authorize !== undefined) {
     connection.authorization_url = signIn.authorize;
     // Where the consent step sends the operator, shown before they go.

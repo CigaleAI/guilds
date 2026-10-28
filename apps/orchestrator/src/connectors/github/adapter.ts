@@ -1,3 +1,4 @@
+import type { ConnectionSettings } from "../../db/schema/index.js";
 import type { Adapter } from "../types.js";
 
 // GitHub runs through GitHub's hosted endpoint. The State hook names the repositories the login
@@ -6,11 +7,10 @@ const REPOSITORY_URL = /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/
 
 type PickedRepository = { owner: string; repo: string; default_branch: string };
 
-function picked(settings: Readonly<Record<string, unknown>>): PickedRepository[] {
-  const listed = Array.isArray(settings.repositories) ? (settings.repositories as Array<Record<string, unknown>>) : [];
-  return listed.flatMap((item) => {
-    const match = REPOSITORY_URL.exec(String(item.url ?? ""));
-    return match ? [{ owner: match[1]!, repo: match[2]!, default_branch: String(item.default_branch ?? "") }] : [];
+function picked(settings: Readonly<ConnectionSettings>): PickedRepository[] {
+  return (settings.repositories ?? []).flatMap((item) => {
+    const match = REPOSITORY_URL.exec(item.url);
+    return match ? [{ owner: match[1]!, repo: match[2]!, default_branch: item.default_branch }] : [];
   });
 }
 

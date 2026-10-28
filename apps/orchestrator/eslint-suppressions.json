@@ -138,7 +138,7 @@
   },
   "src/coding/repositories.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
+      "count": 3
     },
     "complexity": {
       "count": 2
@@ -164,11 +164,6 @@
       "count": 1
     }
   },
-  "src/connectors/github/adapter.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/connectors/instance.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 2
@@ -179,11 +174,6 @@
       "count": 3
     }
   },
-  "src/connectors/login.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/connectors/manifest.ts": {
     "complexity": {
       "count": 1
@@ -191,7 +181,7 @@
   },
   "src/connectors/settings.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
+      "count": 2
     },
     "complexity": {
       "count": 1

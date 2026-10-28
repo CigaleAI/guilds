@@ -146,6 +146,21 @@ export type Overrides = {
   tools?: Record<string, ToolOverride>;
 };
 
+/** A repository a GitHub login picked for its coding agents to clone. */
+export type GithubRepositorySelection = {
+  name: string;
+  url: string;
+  default_branch: string;
+  /** GitHub's id for the repository, which a rename of it or its owner keeps. */
+  github_id?: number;
+};
+
+/**
+ * A login's settings: the values its connector's `settings_schema` describes, by property. A
+ * GitHub login's also list the repositories it picked.
+ */
+export type ConnectionSettings = { repositories?: GithubRepositorySelection[]; [property: string]: unknown };
+
 /** An OAuth client's credentials: its id, and the secret a confidential client holds. */
 export type OAuthClientCredentials = { client_id: string; client_secret: string | null };
 
@@ -281,7 +296,7 @@ export const mcpConnections = pgTable(
     status: text("status", { enum: ["pending", "connected", "disconnected"] }).notNull().default("pending"),
     oauth_state: text("oauth_state"),
     org_id: text("org_id"),
-    settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    settings: jsonb("settings").$type<ConnectionSettings>().notNull().default(sql`'{}'::jsonb`),
   },
   (table) => [
     check(

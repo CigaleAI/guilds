@@ -363,7 +363,7 @@ function stateDb(connection: Record<string, unknown>) {
     ],
     listAgentSecrets: async () => [],
     listMcpServers: async () => [{ id: "mcp_quotes", slug: "quotes", auth: "token" }],
-    listMcpConnections: async () => [{ id: "conn_pins", status: "connected", ...connection }],
+    listMcpConnections: async () => [{ id: "conn_pins", status: "connected", settings: {}, ...connection }],
     listMcpTools: async () => [],
   };
 }

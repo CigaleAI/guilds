@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { agentMcpConnection } from "../../src/access/runtime.js";
 import { installConnectors } from "../../src/connectors/index.js";
-import { connectionSettings } from "../../src/mcp/index.js";
 import { STATE_INTRO, composeSystemPrompt } from "../../src/prompts/index.js";
 import { collectRunState } from "../../src/state/index.js";
 import { QUOTES } from "../helpers/quotes.js";
@@ -54,7 +53,7 @@ test("agentMcpConnection reads a login's settings, and leaves out a server that 
   const agent = { id: "agent_1", guild_id: "guild_1", org_id: "org_1" };
   const found = await agentMcpConnection(pinnedDb() as never, agent, "quotes");
   assert.equal(found?.id, "conn_quotes");
-  assert.deepEqual(connectionSettings(found!).symbols, PINNED);
+  assert.deepEqual(found?.settings.symbols, PINNED);
   assert.equal(await agentMcpConnection(pinnedDb({ serverOff: true }) as never, agent, "quotes"), null);
   assert.equal(await agentMcpConnection(pinnedDb({ status: "disconnected" }) as never, agent, "quotes"), null);
 });
