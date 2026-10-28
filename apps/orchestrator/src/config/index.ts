@@ -1,7 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { parseHarnessesOff } from "../coding/harnesses.js";
-import type { Harness } from "../db/schema/index.js";
+import { HARNESSES, type Harness } from "../db/schema/index.js";
 import { normalizeEmail } from "../lib/email.js";
 import { orchestratorRoot } from "../lib/paths.js";
 
@@ -115,6 +114,22 @@ function decodeHexBytes(raw: string): Buffer | null {
     return null;
   }
   return Buffer.from(hex, "hex");
+}
+
+/**
+ * The harnesses a `HARNESSES_OFF` value names, separated by commas or spaces; throws on a name
+ * that is not a harness, so a typo fails boot.
+ */
+export function parseHarnessesOff(value: string | undefined): Harness[] {
+  const names = (value ?? "").split(/[\s,]+/).filter(Boolean);
+  const harnesses = names.map((name) => {
+    const harness = HARNESSES.find((known) => known === name);
+    if (harness === undefined) {
+      throw new Error(`HARNESSES_OFF names an unknown harness ${name}: use ${HARNESSES.join(", ")}`);
+    }
+    return harness;
+  });
+  return [...new Set(harnesses)];
 }
 
 /**

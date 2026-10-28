@@ -72,20 +72,6 @@ export function harnessOffMessage(harness: Harness): string {
   return `${HARNESS_INFO[harness].label} is turned off on this box: pick another harness in the agent's Settings`;
 }
 
-/**
- * The harnesses a `HARNESSES_OFF` value names, separated by commas or spaces; throws on a name
- * that is not a harness, so a typo fails boot.
- */
-export function parseHarnessesOff(value: string | undefined): Harness[] {
-  const names = (value ?? "").split(/[\s,]+/).filter(Boolean);
-  for (const name of names) {
-    if (!isHarness(name)) {
-      throw new Error(`HARNESSES_OFF names an unknown harness ${name}: use ${HARNESSES.join(", ")}`);
-    }
-  }
-  return [...new Set(names as Harness[])];
-}
-
 /** The agent's harness from its config; null when none is set. */
 export function harnessOf(config: Record<string, unknown> | null | undefined): Harness | null {
   return isHarness(config?.harness) ? config.harness : null;
