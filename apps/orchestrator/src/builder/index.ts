@@ -23,22 +23,23 @@ import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../p
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
-import { applyAccessEdits, parseAccessEdits } from "../recipes/access-edits.js";
+import { parseAccessEdits } from "../recipes/access-edits.js";
 import { emptyRecipe } from "../recipes/minimal.js";
 import {
   addRecipeDraft,
+  editRecipeAccess,
   linkRecipeToBuilder,
-  markRecipeReady,
+  publishRecipe,
+  reviewRecipe,
   validateLibraryRecipe,
   writeRecipe,
+  writeRecipeDocument,
   type RecipeValidation,
 } from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
-import { validationContext, type ApplyChoices, type RecipeApply } from "../recipes/apply.js";
-import { parseRecipe } from "../recipes/parse.js";
-import { applyReview, type ReviewAction } from "../recipes/review.js";
+import type { ApplyChoices, RecipeApply } from "../recipes/apply.js";
+import type { ReviewAction } from "../recipes/review.js";
 import { createSkeleton } from "../recipes/skeleton.js";
-import { blockingErrors, validateRecipe } from "../recipes/validate.js";
 import {
   BUILDER_DEFAULT_TEMPERATURE,
   BUILDER_MAX_STEPS,
@@ -387,13 +388,7 @@ export class BuilderService {
     expectedVersion: number,
     body: unknown,
   ): Promise<Record<string, unknown>> {
-    const parsed = parseRecipe(body);
-    return writeRecipe(
-      this.deps.db,
-      { id: String(session.recipe_id), body_version: expectedVersion },
-      { body: parsed, name: parsed.meta.name, description: parsed.meta.description },
-      new Date(),
-    );
+    return writeRecipeDocument(this.deps.db, { id: String(session.recipe_id), body_version: expectedVersion }, body);
   }
 
   async reviewField(
@@ -401,10 +396,7 @@ export class BuilderService {
     path: string,
     review: ReviewAction,
   ): Promise<Record<string, unknown>> {
-    const row = await this.recipeFor(session);
-    const recipe = row.body;
-    applyReview(recipe, path, review);
-    return writeRecipe(this.deps.db, row, { body: recipe }, new Date());
+    return reviewRecipe(this.deps.db, await this.recipeFor(session), path, review);
   }
 
   async editAccess(
@@ -412,16 +404,14 @@ export class BuilderService {
     input: unknown,
   ): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
-    const recipe = row.body;
-    const cuts = applyAccessEdits(recipe, parseAccessEdits(input));
-    const written = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
-    return { ...written, access_cuts: cuts };
+    return editRecipeAccess(this.deps.db, row, parseAccessEdits(input));
   }
 
   async validate(session: BuilderSessionRow): Promise<RecipeValidation> {
     return validateLibraryRecipe(this.deps.apply, await this.recipeFor(session));
   }
 
+  /** Gives each role a look of the guild's when it has none, then publishes the recipe. */
   async publish(session: BuilderSessionRow): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
     const recipe = row.body;
@@ -429,13 +419,7 @@ export class BuilderService {
     if (assignGuildLooks(recipe.roles)) {
       current = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
     }
-    const ctx = await validationContext(this.deps.apply, session.org_id);
-    ctx.groupLimit = recipe.guild.group_agent_message_limit;
-    const errors = blockingErrors(validateRecipe(recipe, ctx));
-    if (errors.length) {
-      throw new BuilderError(422, errors.map((item) => item.message).join("; "));
-    }
-    return markRecipeReady(this.deps.db, current, new Date());
+    return publishRecipe(this.deps.apply, current);
   }
 
   async deploy(
