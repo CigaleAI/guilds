@@ -15,6 +15,7 @@
     "./config/index.js": "./src/config/index.ts",
     "./connectors/coingecko/client.js": "./src/connectors/coingecko/client.ts",
     "./connectors/connect.js": "./src/connectors/connect.ts",
+    "./connectors/load.js": "./src/connectors/load.ts",
     "./connectors/manifest.js": "./src/connectors/manifest.ts",
     "./connectors/registry.js": "./src/connectors/registry.ts",
     "./connectors/servers.js": "./src/connectors/servers.ts",
