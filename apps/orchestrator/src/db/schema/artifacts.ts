@@ -51,6 +51,10 @@ export const artifactCollections = pgTable(
   ],
 );
 
+/** The mode an org or guild row of an access list gives every agent in it. */
+export const ACCESS_MODES = ["read", "write"] as const;
+export type AccessMode = (typeof ACCESS_MODES)[number];
+
 export const artifactAccess = pgTable(
   "artifact_access",
   {

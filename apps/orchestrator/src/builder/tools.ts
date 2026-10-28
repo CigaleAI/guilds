@@ -458,7 +458,7 @@ export const builderWriteRecipe = {
           body_version: currentVersion,
         };
       }
-      const previous = parseRecipe(row.body);
+      const previous = row.body;
       const next = parseRecipe(args.recipe);
       recommendCoachModel(next, ctx.coachModel ?? "");
       const rejected = builderWriteRejection(previous, next);
@@ -517,7 +517,7 @@ export const builderValidateRecipe = {
     if (!row) {
       return { error: "recipe not found" };
     }
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     const findings = validateRecipe(recipe, await ctx.validationContext());
     return { findings, access_cuts: operatorAccessCuts(recipe), body_version: row.body_version };
   },

@@ -14,7 +14,7 @@ export type NewRecipe = {
   description: string;
   visibility: RecipeRow["visibility"];
   status: RecipeRow["status"];
-  body: unknown;
+  body: RecipeRow["body"];
   sourceKind: RecipeRow["source_kind"];
   sourceGuildId: string | null;
   sourceBuilderSessionId: string | null;
@@ -22,7 +22,7 @@ export type NewRecipe = {
 
 /** A recipe's new body and the fields that change with it; a field left out keeps its value. */
 export type RecipeEdit = {
-  body: unknown;
+  body: RecipeRow["body"];
   name?: string | undefined;
   description?: string | undefined;
   status?: RecipeRow["status"] | undefined;

@@ -1141,7 +1141,7 @@ its own, never one of the box's; a recipe's server still holds none.
 
 **Where:** `endpointOnlyProblem` (`src/connectors/manifest.ts`),
 applied by the registry client (`src/registry/client.ts`), the
-recipe parser (`connections[].manifest`, `src/recipes/schema.ts`),
+recipe parser (`connections[].manifest`, `src/recipes/parse-sections.ts`),
 and hosted's registry build.
 
 **Exposure:** a manifest names how its login authenticates. One that

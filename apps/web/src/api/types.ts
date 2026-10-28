@@ -1689,10 +1689,10 @@ export type StudioReferences = {
  * point at `apps/orchestrator/src`.
  */
 
-/** Who last wrote a recipe field and whether an operator has confirmed it (recipes/schema.ts). */
+/** Who last wrote a recipe field and whether an operator has confirmed it (db/schema/recipe-document.ts). */
 export type FieldAuthor = { by: "operator" | "builder"; reviewed: boolean };
 
-/** A recipe's title, description, creation time, and where it came from (recipes/schema.ts). */
+/** A recipe's title, description, creation time, and where it came from (db/schema/recipe-document.ts). */
 export type RecipeMeta = {
   name: string;
   description: string;
@@ -1700,7 +1700,7 @@ export type RecipeMeta = {
   source: { kind: "guild" | "builder" | "file"; guild_id?: string; session_id?: string };
 };
 
-/** The guild a recipe creates: its suggested slug, about text, objective, and group message cap (recipes/schema.ts). */
+/** The guild a recipe creates: its suggested slug, about text, objective, and group message cap (db/schema/recipe-document.ts). */
 export type RecipeGuild = {
   name_suggestion: string;
   about: string;
@@ -1708,7 +1708,7 @@ export type RecipeGuild = {
   group_agent_message_limit: number;
 };
 
-/** A script a role ships with, and who wrote it (recipes/schema.ts). */
+/** A script a role ships with, and who wrote it (db/schema/recipe-document.ts). */
 export type RecipeScript = {
   name: string;
   description: string;
@@ -1718,7 +1718,7 @@ export type RecipeScript = {
   author: FieldAuthor;
 };
 
-/** A routine of a role; exactly one of `cron` (UTC) or `window` is set (recipes/schema.ts). */
+/** A routine of a role; exactly one of `cron` (UTC) or `window` is set (db/schema/recipe-document.ts). */
 export type RecipeSchedule = {
   key: string;
   cron?: string;
@@ -1728,7 +1728,7 @@ export type RecipeSchedule = {
   author: FieldAuthor;
 };
 
-/** One agent of the recipe, keyed by its `role` handle (recipes/schema.ts). */
+/** One agent of the recipe, keyed by its `role` handle (db/schema/recipe-document.ts). */
 export type RecipeRole = {
   role: string;
   name_suggestion: string;
@@ -1743,13 +1743,13 @@ export type RecipeRole = {
   browser: { required: boolean; instructions: string; author: FieldAuthor };
 };
 
-/** A git repository a recipe needs, by name and purpose; apply asks the operator to add it (recipes/schema.ts). */
+/** A git repository a recipe needs, by name and purpose; apply asks the operator to add it (db/schema/recipe-document.ts). */
 export type RecipeRepository = { name: string; purpose: string };
 
 /**
  * A typed table: owned by the applied guild (`scope: "guild"`) or held by the organisation, where
  * `guild` is the applied guild's row on its access list and `writers` lists the roles whose agents
- * get a write row (recipes/schema.ts).
+ * get a write row (db/schema/recipe-document.ts).
  */
 export type RecipeCollection = {
   name: string;
@@ -1763,7 +1763,7 @@ export type RecipeCollection = {
 /**
  * A seed note apply writes at the organisation, guild, or one role's agent. `guild` is the applied
  * guild's mode on its access list (absent on an agent note the guild does not reach) and `writers`
- * lists the roles whose agents get a write row (recipes/schema.ts).
+ * lists the roles whose agents get a write row (db/schema/recipe-document.ts).
  */
 export type RecipeNote = {
   id: string;
@@ -1778,7 +1778,7 @@ export type RecipeNote = {
   writers: string[];
 };
 
-/** A resource inside a connector that the recipe's agents use (recipes/schema.ts). */
+/** A resource inside a connector that the recipe's agents use (db/schema/recipe-document.ts). */
 export type RecipeConnectionResource = {
   kind: "database" | "page" | "other";
   id: string;
@@ -1787,10 +1787,10 @@ export type RecipeConnectionResource = {
   use?: string;
 };
 
-/** A per-role overlay on a connector: whether the role uses it and which tools are on or off (recipes/schema.ts). */
+/** A per-role overlay on a connector: whether the role uses it and which tools are on or off (db/schema/recipe-document.ts). */
 export type RecipeConnectionRole = { enabled: boolean; tools: Record<string, boolean> };
 
-/** A connector the guild needs; an empty `roles` map means every role uses it (recipes/schema.ts). */
+/** A connector the guild needs; an empty `roles` map means every role uses it (db/schema/recipe-document.ts). */
 export type RecipeConnection = {
   server: string;
   auth: "oauth" | "token" | "none";
@@ -1803,7 +1803,7 @@ export type RecipeConnection = {
   roles: Record<string, RecipeConnectionRole>;
 };
 
-/** A secret the guild needs (recipes/schema.ts). */
+/** A secret the guild needs (db/schema/recipe-document.ts). */
 export type RecipeSecret = {
   name: string;
   description: string;
@@ -1812,7 +1812,7 @@ export type RecipeSecret = {
   roles: string[];
 };
 
-/** A setup step outside the platform the operator performs (recipes/schema.ts). */
+/** A setup step outside the platform the operator performs (db/schema/recipe-document.ts). */
 export type RecipeExternal = {
   kind: string;
   title: string;
@@ -1820,10 +1820,10 @@ export type RecipeExternal = {
   author: FieldAuthor;
 };
 
-/** Who proposed a design entry and whether it is accepted (recipes/schema.ts). */
+/** Who proposed a design entry and whether it is accepted (db/schema/recipe-document.ts). */
 export type DesignDecision = { proposed_by: "operator" | "builder"; accepted: boolean };
 
-/** How the design reaches an outside system (recipes/schema.ts). */
+/** How the design reaches an outside system (db/schema/recipe-document.ts). */
 export type DesignSystem = DesignDecision & {
   name: string;
   resolution: "catalog" | "native" | "browser" | "script" | "composition" | "decision" | "refused";
@@ -1831,14 +1831,14 @@ export type DesignSystem = DesignDecision & {
   reason: string;
 };
 
-/** Why a role is split out from the others (recipes/schema.ts). */
+/** Why a role is split out from the others (db/schema/recipe-document.ts). */
 export type DesignSpecialization = DesignDecision & {
   role: string;
   reason: "narrower_tools" | "narrower_access" | "narrower_context" | "volume" | "other";
   detail: string;
 };
 
-/** A routine the design calls for, with its cadence as written (recipes/schema.ts). */
+/** A routine the design calls for, with its cadence as written (db/schema/recipe-document.ts). */
 export type DesignRoutine = DesignDecision & {
   key: string;
   role: string;
@@ -1847,7 +1847,7 @@ export type DesignRoutine = DesignDecision & {
   dedupe_key?: string;
 };
 
-/** Work passing from one role to another, through a collection queue or a tagged message (recipes/schema.ts). */
+/** Work passing from one role to another, through a collection queue or a tagged message (db/schema/recipe-document.ts). */
 export type DesignHandoff = DesignDecision & {
   from: string;
   to: string;
@@ -1856,7 +1856,7 @@ export type DesignHandoff = DesignDecision & {
   budget?: number;
 };
 
-/** A role that works a site through its browser (recipes/schema.ts). */
+/** A role that works a site through its browser (db/schema/recipe-document.ts). */
 export type DesignBrowser = DesignDecision & {
   role: string;
   site: string;
@@ -1864,7 +1864,7 @@ export type DesignBrowser = DesignDecision & {
   login_failure_policy: string;
 };
 
-/** The builder's design notes behind the recipe (recipes/schema.ts). */
+/** The builder's design notes behind the recipe (db/schema/recipe-document.ts). */
 export type RecipeDesign = {
   systems: DesignSystem[];
   specialization: DesignSpecialization[];
@@ -1873,7 +1873,7 @@ export type RecipeDesign = {
   browser: DesignBrowser[];
 };
 
-/** A parsed recipe document, every list present (recipes/schema.ts, filled by parseRecipe). */
+/** A parsed recipe document, every list present (db/schema/recipe-document.ts, filled by parseRecipe). */
 export type RecipeDocument = {
   format: "guilds.recipe";
   version: number;
@@ -1921,7 +1921,7 @@ export type RecipeFinding = {
   message: string;
 };
 
-/** A tool or connector the operator removed from the recipe (recipes/schema.ts). */
+/** A tool or connector the operator removed from the recipe (db/schema/recipe-document.ts). */
 export type AccessCut = {
   kind: "tool" | "connector";
   server: string;
@@ -1929,7 +1929,7 @@ export type AccessCut = {
   tool?: string;
 };
 
-/** One access change the operator sends: a tool switched for a role, or a connector removed (recipes/schema.ts). */
+/** One access change the operator sends: a tool switched for a role, or a connector removed (db/schema/recipe-document.ts). */
 export type AccessEdit =
   | { action: "set_tool"; server: string; role: string; tool: string; enabled: boolean }
   | { action: "remove_connection"; server: string };

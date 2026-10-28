@@ -22,7 +22,6 @@ import { agentsOfRoles, raiseRecipeAccess } from "./access.js";
 import type { ApplyChoices, RecipeApply } from "./apply.js";
 import { checklistFromPlan, grantReusedSecrets, writeOverlays } from "./checklist.js";
 import { RecipeConflictError, RecipeError } from "./errors.js";
-import { parseRecipe } from "./parse.js";
 import { plannedAgents, previewApply, roleHarnessMap, roleModelMap, type ApplyPreview, type CollectionPlan } from "./plan.js";
 import { clippedInstruction, prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole, withTrailingNewline } from "./prepare.js";
 import { recipeNotePath, rewriteRecipePathsToDisplayPaths, rewriteRolesToNames } from "./rewrite.js";
@@ -402,7 +401,7 @@ export async function createSkeleton(
   const { org, user, recipeRow } = source;
   const preview = await previewApply(apply, source, choices);
   const machineId = assertApplicable(preview, recipeRow);
-  const recipe = prepareRecipeForApply(parseRecipe(recipeRow.body), {
+  const recipe = prepareRecipeForApply(recipeRow.body, {
     models: roleModelMap(preview.models),
     harnesses: roleHarnessMap(preview.harnesses),
   });

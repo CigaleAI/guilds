@@ -276,12 +276,14 @@ export class BuilderService {
       const now = new Date();
       await claimCoachRun(this.policy, coachRunClaims(client), locked.org_id, now);
       const recipe = await getRecipe(client, String(locked.recipe_id));
-      const parsed = parseRecipe(recipe?.body);
-      const expectedBodyVersion = Number(recipe?.body_version ?? 1);
+      if (!recipe) {
+        throw new BuilderError(404, "recipe not found");
+      }
+      const expectedBodyVersion = recipe.body_version;
       const config = locked.config_snapshot;
       const system = composeBuilderSystemMessage({
         config,
-        recipe: parsed,
+        recipe: recipe.body,
         expectedBodyVersion,
         guidelinesPath: this.deps.guidelinesPath,
       });
@@ -320,7 +322,7 @@ export class BuilderService {
         session: updated ?? locked,
         generation,
         system,
-        recipe: parsed,
+        recipe: recipe.body,
         expectedBodyVersion,
         userMessage,
       };
@@ -393,7 +395,7 @@ export class BuilderService {
     review: ReviewAction,
   ): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     applyReview(recipe, path, review);
     return writeRecipe(this.deps.db, row, { body: recipe }, new Date());
   }
@@ -403,7 +405,7 @@ export class BuilderService {
     input: unknown,
   ): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     const cuts = applyAccessEdits(recipe, parseAccessEdits(input));
     const written = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());
     return { ...written, access_cuts: cuts };
@@ -411,7 +413,7 @@ export class BuilderService {
 
   async validate(session: BuilderSessionRow): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     const ctx = await validationContext(this.deps.apply, session.org_id);
     ctx.groupLimit = recipe.guild.group_agent_message_limit;
     const findings = validateRecipe(recipe, ctx);
@@ -427,7 +429,7 @@ export class BuilderService {
 
   async publish(session: BuilderSessionRow): Promise<Record<string, unknown>> {
     const row = await this.recipeFor(session);
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     let current = row;
     if (assignGuildLooks(recipe.roles)) {
       current = await writeRecipe(this.deps.db, row, { body: recipe }, new Date());

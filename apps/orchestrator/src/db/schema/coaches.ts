@@ -18,6 +18,7 @@ import { agents } from "./agents.js";
 import { artifacts } from "./artifacts.js";
 import { timestamptz } from "./columns.js";
 import { guilds, orgs, users } from "./organisations.js";
+import type { RecipeDocument } from "./recipe-document.js";
 
 /** The source guild of a Studio session as the coach is shown it; `objective` when the guild has a description. */
 export type StudioSourceGuild = { id: string; name: string; about: string; objective?: string };
@@ -235,7 +236,7 @@ export const recipes = pgTable(
     description: text("description").notNull().default(""),
     visibility: text("visibility", { enum: ["private", "org"] }).notNull().default("private"),
     status: text("status", { enum: ["draft", "ready"] }).notNull().default("draft"),
-    body: jsonb("body").notNull(),
+    body: jsonb("body").$type<RecipeDocument>().notNull(),
     body_version: integer("body_version").notNull().default(1),
     source_kind: text("source_kind", { enum: ["guild", "builder", "file"] }).notNull(),
     source_guild_id: text("source_guild_id"),

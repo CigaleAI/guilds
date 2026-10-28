@@ -19,7 +19,6 @@ import { mcpDatabase } from "../mcp/index.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
-import { parseRecipe } from "./parse.js";
 import { prepareRecipeForApply, roleBrowses } from "./prepare.js";
 import type { RecipeConnection, RecipeDocument, RecipeRole } from "./schema.js";
 
@@ -214,7 +213,11 @@ export function applyGuild(apply: Pick<RecipeApplyRow, "id" | "guild_id">): stri
 
 /** The recipe of an apply, settled as apply created it. */
 export async function appliedRecipe(apply: RecipeApply, recipeId: string): Promise<RecipeDocument> {
-  return prepareRecipeForApply(parseRecipe((await getRecipe(apply.db, recipeId))?.body));
+  const row = await getRecipe(apply.db, recipeId);
+  if (!row) {
+    throw new RecipeError("recipe not found", 404);
+  }
+  return prepareRecipeForApply(row.body);
 }
 
 /** Where overlays are bound: the apply's recipe and guild, and the agents its roles became. */

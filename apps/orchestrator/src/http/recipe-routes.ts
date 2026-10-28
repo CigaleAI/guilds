@@ -222,7 +222,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const parsed = parseRecipe(body.recipe ?? row.body);
+      const parsed = body.recipe === undefined || body.recipe === null ? row.body : parseRecipe(body.recipe);
       return await writeRecipe(
         db,
         { id: row.id, body_version: Number(body.expected_body_version ?? row.body_version) },
@@ -244,7 +244,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
+      const recipe = row.body;
       const cuts = applyAccessEdits(recipe, parseAccessEdits(body));
       const written = await writeRecipe(db, row, { body: recipe }, new Date());
       return { ...written, access_cuts: cuts };
@@ -259,7 +259,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const body = bodyOf(request);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
+      const recipe = row.body;
       applyReview(recipe, String(body.path ?? ""), parseReviewAction(body));
       return await writeRecipe(db, row, { body: recipe }, new Date());
     } catch (error) {
@@ -281,7 +281,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
+      const recipe = row.body;
       const ctx = await validationContext(applyOf(deps), org.id, recipe);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const findings = validateRecipe(recipe, ctx);
@@ -303,7 +303,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const row = await ownedRecipe(deps, param(request, "recipe_id"), org);
-      const recipe = parseRecipe(row.body);
+      const recipe = row.body;
       const ctx = await validationContext(applyOf(deps), org.id);
       ctx.groupLimit = recipe.guild.group_agent_message_limit;
       const errors = blockingErrors(validateRecipe(recipe, ctx));
@@ -323,7 +323,7 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
     if (row.status === "draft") {
       throw new HttpError(409, "export refused while draft");
     }
-    const recipe = parseRecipe(row.body);
+    const recipe = row.body;
     if (hasForbiddenSecrets(recipe)) {
       throw new HttpError(422, "recipe must not contain secrets");
     }

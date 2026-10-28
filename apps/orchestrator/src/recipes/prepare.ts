@@ -126,8 +126,9 @@ export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}):
 /** The model and harness chosen per role, by role. */
 export type RoleChoices = { models?: Map<string, string>; harnesses?: Map<string, Harness> };
 
-/** `recipe` as apply creates it, settled in place: each role's config, task and routines. */
-export function prepareRecipeForApply(recipe: RecipeDocument, choices: RoleChoices = {}): RecipeDocument {
+/** A copy of `document` as apply creates it: each role's config, task and routines settled. */
+export function prepareRecipeForApply(document: RecipeDocument, choices: RoleChoices = {}): RecipeDocument {
+  const recipe = structuredClone(document);
   for (const role of recipe.roles) {
     role.config = configFromRecipeRole(role, {
       model: choices.models?.get(role.role),

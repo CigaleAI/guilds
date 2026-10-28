@@ -1,4 +1,7 @@
+import { ACCESS_MODES, type AccessMode } from "../db/schema/index.js";
 import type { ChangeActor } from "../lib/change-actor.js";
+
+export { ACCESS_MODES, type AccessMode };
 
 export const ARTIFACT_LEVELS = ["agent", "guild", "org"] as const;
 export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];
@@ -26,8 +29,6 @@ export type ArtifactActor = ChangeActor & {
  * it a mode; an agent row replaces that for one agent and may lower it,
  * `none` meaning no access at all.
  */
-export const ACCESS_MODES = ["read", "write"] as const;
-export type AccessMode = (typeof ACCESS_MODES)[number];
 export const AGENT_ACCESS_MODES = ["none", "read", "write"] as const;
 export type AgentAccessMode = (typeof AGENT_ACCESS_MODES)[number];
 export const ACCESS_SUBJECTS = ["org", "guild", "agent"] as const;

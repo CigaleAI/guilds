@@ -46,7 +46,6 @@ import type {
 import { validationContext } from "./apply.js";
 import { RecipeError } from "./errors.js";
 import type { RecipeFinding, ValidationContext } from "./findings.js";
-import { parseRecipe } from "./parse.js";
 import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
 import { unreviewedFields } from "./review.js";
 import type { RecipeCollection, RecipeDocument, RecipeRole } from "./schema.js";
@@ -607,7 +606,7 @@ async function preparedRecipe(
   source: PreviewSource,
   choices: ApplyChoices,
 ): Promise<{ recipe: RecipeDocument; unreviewed: string[]; ctx: ValidationContext; findings: RecipeFinding[]; models: RoleModel[]; harnesses: RoleHarness[] }> {
-  const recipe = parseRecipe(source.recipeRow.body);
+  const recipe = source.recipeRow.body;
   const unreviewed = unreviewedFields(recipe);
   const ctx = await validationContext(apply, source.org.id, recipe);
   ctx.groupLimit = recipe.guild.group_agent_message_limit;
@@ -617,8 +616,8 @@ async function preparedRecipe(
     defaultModel: await apply.models.defaultModel(source.org.id),
   });
   const harnesses = resolveHarnesses(recipe, choices.harnesses ?? []);
-  prepareRecipeForApply(recipe, { models: roleModelMap(models), harnesses: roleHarnessMap(harnesses) });
-  return { recipe, unreviewed, ctx, findings, models, harnesses };
+  const prepared = prepareRecipeForApply(recipe, { models: roleModelMap(models), harnesses: roleHarnessMap(harnesses) });
+  return { recipe: prepared, unreviewed, ctx, findings, models, harnesses };
 }
 
 /** What applying the recipe with `choices` does, and what blocks it. */
