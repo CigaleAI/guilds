@@ -111,8 +111,9 @@ which `currentUser` and `currentOrg` take, is exported from
 `createPool` takes the handler for a connection that fails while
 idle as its second argument, `reportPoolError` from
 `observability/runtime.js` for the default report. `getMcpServer`,
-`getMcpServerBySlug`, `listMcpServers`, and `updateMcpServerConfig`
-are exported from `connectors/servers.js`; the functions of
+`getMcpServerBySlug`, `listServers`, and `updateMcpServerConfig`
+are exported from `connectors/servers.js`, with `listServers(db,
+scope)` in place of `listMcpServers` and the caller's filter; the functions of
 `db/connectors.js` return the stored row, `ConnectorRow`, and are
 `getConnector`, `getConnectorBySlug`, `listOrgConnectors`, and
 `setConnectorOauthClient`. An `IdentityProvider`'s `currentUser`
@@ -124,7 +125,16 @@ functions that take it first, one module per sub-domain:
 `artifacts/notes.js`, `memory.js`, `collections.js`, `records.js`,
 and `access-lists.js` (`writeNote(store, actor, …)`). The export
 `recipes/schema.js` is `recipes/parse.js`, which exports
-`parseRecipe`, and `credentials/items.js` is `mcp/view.js`.
+`parseRecipe`, and `credentials/items.js` is `mcp/view.js`. The export
+`mcp/index.js` is four: `mcp/pool.js` (`McpPool`, built with its
+`McpDatabase` from `mcpDatabase(db)`; its methods take no connection),
+`mcp/service.js` (`connectionTools`, `currentTools`, `callTool`,
+`retireLogin`), `mcp/errors.js`, and `mcp/database.js`. The connect
+flows are under `mcp/`: `connectors/connect.js` is `mcp/connect-token.js`.
+`agentMcpConnection` (`access/runtime.js`) is `agentLogins`, which
+answers every connected login of the agent, and `McpPool.state` and
+`previewConnectorState` take those logins. `GenerationLoopServices.mcp`
+is required.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are
