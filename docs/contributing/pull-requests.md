@@ -11,26 +11,27 @@ and what its reviewer checks. The code itself is held to the
 
 One pull request does one thing: one feature, one fix, one
 refactor, one rename. A reader can state what it does in one
-sentence, and that sentence is its title.
+sentence, and that sentence is its title. A pull request has no
+line limit; its commits do.
 
-A pull request stays under **400 lines that change meaning**.
-Lines that only move (a file split, a rename, a move between
-modules), generated files, fixtures, lockfiles, and migrations do
-not count. A change that needs more is split into pull requests
-that land one after the other, each leaving `main` working:
+A commit is the unit a reviewer reads. Each commit does one step
+of the pull request, reads as one sentence in `git log`, passes
+the check on its own, and stays under **400 lines that change
+meaning**. Lines that only move (a file split, a rename, a move
+between modules), generated files, fixtures, lockfiles, and
+migrations do not count. A step that needs more is split into
+commits that land one after the other:
 
-- A rename or a move lands alone, before the change that needs it.
-- A migration lands with the code that reads the new schema, and
-  nothing else.
-- A new feature lands as its store, then its tools or routes, then
-  its views, when each step is useful or at least harmless on its
+- A rename or a move is its own commit, before the change that
+  needs it.
+- A migration is a commit with the code that reads the new schema,
+  and nothing else.
+- A new feature is its store, then its tools or routes, then its
+  views, when each commit is useful or at least harmless on its
   own.
 
-A structural refactor that `main` cannot hold half-done is the one
-exception: it is one pull request, and its commits are the units
-the rules above apply to. Each commit does one item or one slice,
-reads as one sentence in `git log`, and passes the check on its
-own.
+A pull request is not rebased or squashed before review; its
+commits are what the reviewer reads.
 
 ## Content
 
@@ -75,8 +76,9 @@ The reviewer reads the diff, not the description, and checks:
 
 1. **Reason**: the description says why the pull request exists,
    and the diff is the smallest change that answers it.
-2. **Scope**: the diff does what the title says and nothing else.
-   An unrelated fix found on the way is its own pull request.
+2. **Scope**: the diff does what the title says and nothing else,
+   and each commit is one step of it, read on its own. An
+   unrelated fix found on the way is its own pull request.
 3. **Tests**: each touched service has an end-to-end test of the
    changed behaviour, each new branch is exercised, and the tests
    assert behaviour, not implementation. A refactor's named suites
