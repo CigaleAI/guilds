@@ -10,7 +10,7 @@ import {
   providerForModel,
   reasoningEffortForModel,
   type ModelEvent,
-} from "./client.js";
+} from "./completion.js";
 import type { ProviderDef } from "./providers.js";
 
 // A provider on Anthropic's Messages API. The run speaks OpenAI-style messages; a request is

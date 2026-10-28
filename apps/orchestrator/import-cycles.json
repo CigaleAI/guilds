@@ -1,5 +1,5 @@
 {
-  "filesInCycles": ["llm/anthropic.ts", "llm/client.ts"],
+  "filesInCycles": [],
   "domainsInCycles": [
     "access",
     "agents",

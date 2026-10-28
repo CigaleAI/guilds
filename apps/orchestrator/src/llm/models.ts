@@ -2,7 +2,8 @@ import { encryptPayload } from "../credentials/crypto.js";
 import { newId } from "../lib/ids.js";
 import { PolicyError } from "../policy/index.js";
 import { modelCatalog, type ModelCatalog } from "./catalog.js";
-import { LLMError, listProviderModels } from "./client.js";
+import { listProviderModels } from "./client.js";
+import { LLMError } from "./completion.js";
 import {
   decryptProviderRow,
   keyHint,

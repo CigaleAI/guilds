@@ -302,10 +302,15 @@
       "count": 15
     },
     "complexity": {
-      "count": 6
+      "count": 5
     },
     "max-depth": {
       "count": 2
+    }
+  },
+  "src/llm/completion.ts": {
+    "complexity": {
+      "count": 1
     }
   },
   "src/llm/models-dev.ts": {

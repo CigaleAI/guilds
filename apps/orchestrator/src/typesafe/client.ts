@@ -1,7 +1,7 @@
 import { GROUP_ROUTING, integrationValue, type IntegrationSources } from "../instance/integrations.js";
 import { httpRequest, readJson, type FetchFn } from "../net/http.js";
 import type { TypeSafeUsage } from "../db/schema/index.js";
-import { redactApiKey } from "../llm/client.js";
+import { redactApiKey } from "../llm/completion.js";
 
 export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 export const TYPESAFE_MODEL = "jev-latest";

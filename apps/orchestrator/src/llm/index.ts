@@ -64,18 +64,20 @@ export type { ModelsDatabase, ModelsServiceDeps, OrgModelsPayload, ProviderItem,
 export {
   LLMError,
   MODEL_USER_AGENT,
-  applyPromptCacheControl,
-  applyReasoningDetailDelta,
   assistantMetadata,
   assistantPayload,
-  completionRequestBody,
   completionTimeoutMs,
-  listProviderModels,
   providerForModel,
   reasoningEffortForModel,
   redactApiKey,
+} from "./completion.js";
+export type { Completion, ModelEvent } from "./completion.js";
+export {
+  applyPromptCacheControl,
+  applyReasoningDetailDelta,
+  completionRequestBody,
+  listProviderModels,
   streamCompletion,
 } from "./client.js";
-export type { Completion, ModelEvent } from "./client.js";
 export type { ReasoningDetail } from "../db/schema/index.js";
 export { listMessagesModels, messagesFromHistory, messagesRequestBody, streamMessages } from "./anthropic.js";
