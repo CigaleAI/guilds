@@ -1,6 +1,6 @@
 import { syncInstanceLogins } from "../connectors/instance.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
 import { GITHUB_APP, type Integration } from "./integrations.js";
 import { InstanceKeyError } from "./keys.js";
 import { countServerConnections, disconnectServerConnections } from "../db/mcp.js";

@@ -5,7 +5,7 @@ import { manifestTools } from "../connectors/load.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
 import { connectionTools, currentTools, type ConnectionTool } from "../mcp/service.js";
 import type { LoadedConnector } from "../connectors/load.js";
 

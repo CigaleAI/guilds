@@ -4,7 +4,8 @@ import type {
   McpConnectionRow,
 } from "../db/mcp.js";
 import { newId } from "../lib/ids.js";
-import { McpDisconnectedError, McpError, type McpPool } from "../mcp/index.js";
+import { McpDisconnectedError, McpError } from "../mcp/errors.js";
+import type { McpPool } from "../mcp/pool.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { authFields } from "./manifest.js";
 import type { ConnectorRegistry } from "./registry.js";

@@ -6,14 +6,9 @@ import { agentRuntime, snapshotEnvValues } from "../../src/access/runtime.js";
 import { loadAccessView } from "../../src/access/view.js";
 import { encryptPayload, environmentFingerprint } from "../../src/credentials/crypto.js";
 import { decodeMasterKey } from "../../src/config/index.js";
-import {
-  CALL_TOOL_TIMEOUT_MS,
-  McpError,
-  McpPool,
-  McpSession,
-  OPERATOR_CALLER,
-  publicOnly,
-} from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { CALL_TOOL_TIMEOUT_MS, McpSession, publicOnly } from "../../src/mcp/session.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { resolveConnectionTool } from "../../src/mcp/service.js";
 import { proxyFetch } from "../../src/net/http.js";
 import { CONNECTORS } from "../../src/connectors/index.js";

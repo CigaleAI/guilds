@@ -1,7 +1,8 @@
 import { getMcpServer } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { jsonObj } from "../db/json.js";
-import { McpError, OPERATOR_CALLER, type McpPool } from "../mcp/index.js";
+import { McpError } from "../mcp/errors.js";
+import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool, connectionTools } from "../mcp/service.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";

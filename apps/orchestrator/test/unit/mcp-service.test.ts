@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ListedTool, mcpSchema, McpDisconnectedError, McpError, OPERATOR_CALLER, type RemoteCall } from "../../src/mcp/index.js";
+import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
+import { ListedTool, mcpSchema } from "../../src/mcp/tools.js";
+import { OPERATOR_CALLER, type RemoteCall } from "../../src/mcp/pool.js";
 import { callTool, currentTools, resolveConnectionTool } from "../../src/mcp/service.js";
 import { MemoryMcpDatabase, storedTool } from "../helpers/mcp-database.js";
 import { connectionRow, serverRow } from "../helpers/servers.js";

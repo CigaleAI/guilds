@@ -10,7 +10,7 @@ import type { Queryable } from "../db/pg.js";
 import type { Manifest } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { DESCRIPTION_MAX } from "../mcp/catalog.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
 import { retireLogin } from "../mcp/service.js";
 import { pendingReplaces } from "./index.js";
 

@@ -5,7 +5,7 @@ import type { NotesStore } from "../notes/store.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import type { AppConfig } from "../config/index.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { GenerationSandboxes } from "../generation/machines.js";
 import type { StudioService } from "../studio/index.js";

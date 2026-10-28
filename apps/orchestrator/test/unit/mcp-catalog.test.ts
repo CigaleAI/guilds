@@ -9,7 +9,8 @@ import {
 } from "../../src/mcp/policy.js";
 import { namespacedName } from "../../src/mcp/names.js";
 import { oauthSetupState, oauthStrategy, startsBrowserOauth } from "../../src/oauth/index.js";
-import { LIST_TOOLS_MAX, McpError, McpSession } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { LIST_TOOLS_MAX, McpSession } from "../../src/mcp/session.js";
 import { storeKeys } from "../helpers/env.js";
 import { serverRow } from "../helpers/servers.js";
 

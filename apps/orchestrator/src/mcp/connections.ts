@@ -17,7 +17,8 @@ import {
 } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { awaitingSettings, type McpPool } from "./index.js";
+import type { McpPool } from "./pool.js";
+import { awaitingSettings } from "../connectors/login.js";
 import { callOwnedConnectionTool } from "./operator-call.js";
 import { ConnectionError, seesConnection, serverVisible } from "./visibility.js";
 import type { LoadedConnector } from "../connectors/load.js";

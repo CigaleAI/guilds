@@ -11,7 +11,7 @@ import {
   saveConnectionSettings,
   type ConnectionServices,
 } from "../../src/mcp/connections.js";
-import type { McpPool } from "../../src/mcp/index.js";
+import type { McpPool } from "../../src/mcp/pool.js";
 import { ConnectionError } from "../../src/mcp/visibility.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";

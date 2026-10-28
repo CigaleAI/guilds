@@ -30,7 +30,7 @@ import {
 import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import { newId } from "../lib/ids.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
 import { retireLogin } from "../mcp/service.js";
 import { seesConnection } from "../mcp/visibility.js";
 import {

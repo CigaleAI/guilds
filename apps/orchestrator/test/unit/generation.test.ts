@@ -51,7 +51,7 @@ import { noteRowAt } from "../helpers/artifacts.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 import { connectionRow, serverRow } from "../helpers/servers.js";
 import type { McpConnectionRow } from "../../src/db/mcp.js";
-import { McpPool, type RemoteCall } from "../../src/mcp/index.js";
+import { McpPool, type RemoteCall } from "../../src/mcp/pool.js";
 
 const HOME = "/home/a_1";
 

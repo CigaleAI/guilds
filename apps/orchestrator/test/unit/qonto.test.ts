@@ -12,7 +12,8 @@ import {
   ping,
   readInvoiceFile,
 } from "../../src/connectors/qonto/client.js";
-import { ListedTool, McpPool } from "../../src/mcp/index.js";
+import { ListedTool } from "../../src/mcp/tools.js";
+import { McpPool } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";

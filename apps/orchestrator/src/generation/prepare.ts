@@ -9,7 +9,8 @@ import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { guildOperators } from "../guilds/validation.js";
-import { McpDisconnectedError, type McpPool } from "../mcp/index.js";
+import { McpDisconnectedError } from "../mcp/errors.js";
+import type { McpPool } from "../mcp/pool.js";
 import { readMemory } from "../memory/index.js";
 import { NotesError, type NotesStore } from "../notes/store.js";
 import {

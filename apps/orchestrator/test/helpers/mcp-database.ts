@@ -9,7 +9,7 @@ import type {
   NewMcpTool,
 } from "../../src/db/mcp.js";
 import type { OAuthClient } from "../../src/db/schema/index.js";
-import type { McpDatabase } from "../../src/mcp/index.js";
+import type { McpDatabase } from "../../src/mcp/database.js";
 
 const STAMP = "2026-10-12T09:00:00.000Z";
 

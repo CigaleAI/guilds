@@ -1,6 +1,7 @@
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
 import { getMcpServer, getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
-import { McpError, OPERATOR_CALLER, type McpPool } from "../mcp/index.js";
+import { McpError } from "../mcp/errors.js";
+import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool } from "../mcp/service.js";
 import { listMcpConnections, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";

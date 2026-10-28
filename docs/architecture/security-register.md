@@ -118,7 +118,7 @@ it wrote stands, so later runs are not.
 
 **Where:** `apps/orchestrator/src/connectors/github/connector.json`,
 `mintLoginToken` in `apps/orchestrator/src/github/tokens.ts`, and the
-pool's GitHub App session in `apps/orchestrator/src/mcp/index.ts`.
+pool's GitHub App session in `apps/orchestrator/src/mcp/login-auth.ts`.
 
 **Exposure:** any agent a GitHub login's connector is on for, coding
 or not, reads issues, pull requests, comments, files, and CI logs
@@ -1163,7 +1163,7 @@ SEC-17's exposure: the orchestrator calls the URL the manifest names.
 **Status:** open, accepted, by design since 2026-10-09; mitigated.
 
 **Where:** `POST /api/orgs/{id}/mcp/servers` (`src/http/org-connector-routes.ts`)
-and the MCP sessions the pool opens (`src/mcp/index.ts`).
+and the MCP sessions the pool opens (`src/mcp/pool.ts`, `src/mcp/session.ts`).
 
 **Exposure:** an owner or admin of any organisation adds a remote
 MCP server by URL. The orchestrator then sends requests to that

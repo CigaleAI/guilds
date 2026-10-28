@@ -17,7 +17,9 @@ import {
   simplePrices,
 } from "../../src/connectors/coingecko/client.js";
 import { agentToolConnection } from "../../src/access/runtime.js";
-import { ListedTool, McpError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
+import { McpError } from "../../src/mcp/errors.js";
+import { ListedTool } from "../../src/mcp/tools.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";

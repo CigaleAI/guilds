@@ -13,7 +13,7 @@ import {
 } from "../../src/generation/index.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
-import { McpPool } from "../../src/mcp/index.js";
+import { McpPool } from "../../src/mcp/pool.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { MemoryMcpDatabase } from "./mcp-database.js";
 import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbox/index.js";

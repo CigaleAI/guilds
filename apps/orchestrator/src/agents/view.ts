@@ -2,7 +2,7 @@ import { accessViewDatabase, loadAccessView } from "../access/view.js";
 import { accessDatabase, agentSecrets } from "../access/runtime.js";
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
 
 export function agentItem(row: GuildAgentRow, generating = false): Record<string, unknown> {
   return {

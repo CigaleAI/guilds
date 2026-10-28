@@ -10,7 +10,8 @@ import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { mcpDatabase, McpPool } from "../../src/mcp/index.js";
+import { mcpDatabase } from "../../src/mcp/database.js";
+import { McpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",

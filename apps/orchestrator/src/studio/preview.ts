@@ -4,7 +4,7 @@ import { accessDatabase, agentLogins, agentSecrets, resolveMcpTool } from "../ac
 import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { previewConnectorState } from "../mcp/index.js";
+import { previewConnectorState } from "../mcp/pool.js";
 import { collectRunState } from "../state/index.js";
 import { guildOperators } from "../guilds/validation.js";
 import { memoryOf } from "../agents/validation.js";

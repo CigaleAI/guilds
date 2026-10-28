@@ -13,7 +13,8 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { insertIssue } from "../../src/db/issues.js";
-import { mcpDatabase, McpPool } from "../../src/mcp/index.js";
+import { mcpDatabase } from "../../src/mcp/database.js";
+import { McpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",

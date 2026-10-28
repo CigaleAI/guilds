@@ -21,7 +21,8 @@ import {
   postUserGroupMessage,
 } from "../../src/db/group-chat.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { mcpDatabase, McpPool } from "../../src/mcp/index.js";
+import { mcpDatabase } from "../../src/mcp/database.js";
+import { McpPool } from "../../src/mcp/pool.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",

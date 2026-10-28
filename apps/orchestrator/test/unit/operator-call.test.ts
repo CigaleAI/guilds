@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { McpDisconnectedError, McpError } from "../../src/mcp/index.js";
+import { McpDisconnectedError, McpError } from "../../src/mcp/errors.js";
 import {
   OPERATOR_TOOL_RESULT_MAX_BYTES,
   OperatorCallError,

@@ -9,7 +9,8 @@ import {
 } from "../../src/observability/http.js";
 import { LOG_KEYS, logWriter } from "../../src/observability/log.js";
 import { sentryCapture } from "../../src/observability/sentry.js";
-import { McpDisconnectedError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
+import { McpDisconnectedError } from "../../src/mcp/errors.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
 import { MemoryMcpDatabase } from "../helpers/mcp-database.js";

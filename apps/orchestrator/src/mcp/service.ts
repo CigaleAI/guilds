@@ -1,13 +1,8 @@
 import { isReadOnlyRemote } from "./policy.js";
-import {
-  markDisconnected,
-  mcpDatabase,
-  mcpSchema,
-  McpDisconnectedError,
-  McpError,
-  type McpPool,
-  type RemoteCall,
-} from "./index.js";
+import { McpDisconnectedError, McpError } from "./errors.js";
+import { mcpSchema } from "./tools.js";
+import { markDisconnected, mcpDatabase } from "./database.js";
+import type { McpPool, RemoteCall } from "./pool.js";
 import type { LoadedConnector } from "../connectors/load.js";
 import type { McpConnectionRow, McpToolRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";

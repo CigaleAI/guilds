@@ -4,7 +4,7 @@ import { agentLogins } from "../../src/access/runtime.js";
 import { installConnectors } from "../../src/connectors/index.js";
 import type { BindingRow } from "../../src/db/bindings.js";
 import type { McpConnectionRow, ScopedMcpConnectionRow } from "../../src/db/mcp.js";
-import { previewConnectorState } from "../../src/mcp/index.js";
+import { previewConnectorState } from "../../src/mcp/pool.js";
 import { STATE_INTRO, composeSystemPrompt } from "../../src/prompts/index.js";
 import { collectRunState } from "../../src/state/index.js";
 import { QUOTES } from "../helpers/quotes.js";

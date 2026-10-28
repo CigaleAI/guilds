@@ -9,7 +9,7 @@ import {
 } from "../github/tokens.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/pool.js";
 import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";

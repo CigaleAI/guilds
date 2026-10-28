@@ -21,7 +21,9 @@ import {
   rfc2822Raw,
   stripTags,
 } from "../../src/connectors/gmail/client.js";
-import { ListedTool, McpDisconnectedError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
+import { McpDisconnectedError } from "../../src/mcp/errors.js";
+import { ListedTool } from "../../src/mcp/tools.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";

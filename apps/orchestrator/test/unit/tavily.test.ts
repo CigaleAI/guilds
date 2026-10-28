@@ -7,7 +7,7 @@ import { NATIVE_TOOLS } from "../../src/seed/catalog.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { instanceCredentials, instanceKey, instanceRedactions } from "../../src/connectors/instance.js";
 import { TavilyError, formatSearch, search } from "../../src/connectors/tavily/client.js";
-import { McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
+import { McpPool, OPERATOR_CALLER } from "../../src/mcp/pool.js";
 import { UNLIMITED, type OrgPolicy } from "../../src/policy/index.js";
 import { REGISTRY } from "../../src/toolbox/index.js";
 import { identityOutput, processOutput } from "../../src/toolbox/output.js";
