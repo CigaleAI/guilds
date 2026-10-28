@@ -365,7 +365,7 @@ export type LiveNote = { href: string; row: ArtifactRow };
 /**
  * The live notes of one guild's state the actor reads, with their text: each of its agents', then
  * its own, then the organisation's, each owner's in file name order. A note the store refuses to
- * read is left out.
+ * read, an `ArtifactError`, is left out; any other failure throws.
  */
 export async function readStateNotes(store: ArtifactStore, actor: ArtifactActor, owners: StateOwners): Promise<LiveNote[]> {
   const levels: Array<[ArtifactLevel, string]> = [
@@ -383,8 +383,11 @@ export async function readStateNotes(store: ArtifactStore, actor: ArtifactActor,
         const loaded = await getByDisplayPath(store, actor, href);
         const row = loaded.tombstone ? undefined : loaded.row;
         return row?.kind === "note" ? { href, row } : null;
-      } catch {
-        return null;
+      } catch (error) {
+        if (error instanceof ArtifactError) {
+          return null;
+        }
+        throw error;
       }
     }),
   );

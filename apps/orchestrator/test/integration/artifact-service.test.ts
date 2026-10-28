@@ -274,6 +274,28 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.ok(!hrefs.includes(shutPath));
   });
 
+  test("readStateNotes fails when reading a listed note fails for a reason other than the store refusing it", async () => {
+    // The agent's, the guild's and the organisation's listings run first; every read after them fails.
+    const listings = 3;
+    let queries = 0;
+    const failing = new Proxy(db, {
+      get(target, property) {
+        const value = Reflect.get(target, property);
+        if (property !== "query") {
+          return typeof value === "function" ? value.bind(target) : value;
+        }
+        return (...args: unknown[]) => {
+          queries += 1;
+          return queries > listings ? Promise.reject(new Error("connection lost")) : Reflect.apply(value, target, args);
+        };
+      },
+    });
+    await assert.rejects(
+      readStateNotes(artifactStore(failing, templatesRoot()), operator, { guildId: GUILD, agentIds: [AGENT] }),
+      /connection lost/,
+    );
+  });
+
   test("guildTables lists the guild's own tables and the organisation's with counts and access lists, not another guild's own", async () => {
     await createCollection(store, operator, { name: "own-desk", purpose: "Own", guildId: GUILD });
     await createCollection(store, operator, { name: "other-desk", purpose: "Other", guildId: OTHER_GUILD });

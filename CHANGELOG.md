@@ -8,6 +8,11 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The Studio References view leaves out a guild note
+only when the store refuses to read it, such as a note the operator
+cannot read or one deleted since it was listed. A failure to read the
+store fails the request, where it left the note out.
+
 **No impact.** The Builder's Validate and the coach's
 `builder_validate_recipe` find what the library's Validate finds. A
 connector the box lacks that the registry offers is named with the
