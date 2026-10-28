@@ -1,9 +1,8 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
-import { isPlainRecord, jsonObj } from "./json.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { connectors, type Manifest, type Overrides } from "./schema/index.js";
+import { connectors, type Manifest, type OAuthClient, type Overrides } from "./schema/index.js";
 
 /** A `connectors` row as stored: the manifest a folder, the registry, or the Admin form wrote. */
 export type ConnectorRow = InferSelectModel<typeof connectors>;
@@ -80,21 +79,19 @@ export async function getConnectorBySlug(
   return result.rows[0] ?? null;
 }
 
-/** Stores the OAuth client a server's `config.oauth_client` carries: the one registered with its authorization server. */
+/** Stores the OAuth client a connector registered with its authorization server. */
 export async function setConnectorOauthClient(
   pool: Queryable,
   serverId: string,
-  config: unknown,
+  client: OAuthClient,
   now: Date,
 ): Promise<ConnectorRow | null> {
-  const parsed = jsonObj(config);
-  const client = isPlainRecord(parsed) ? (parsed.oauth_client ?? null) : null;
   const result = await pool.query<ConnectorRow>(
     `UPDATE connectors
      SET oauth_client = $2::jsonb, updated_at = $3
      WHERE id = $1
      RETURNING ${CONNECTOR_COLUMNS}`,
-    [serverId, client === null ? null : JSON.stringify(client), stamp(now)],
+    [serverId, JSON.stringify(client), stamp(now)],
   );
   return result.rows[0] ?? null;
 }

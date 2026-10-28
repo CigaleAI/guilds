@@ -5,6 +5,7 @@ import {
   setConnectorOauthClient,
 } from "../db/connectors.js";
 import type { Queryable } from "../db/pg.js";
+import type { OAuthClient } from "../db/schema/index.js";
 import { loadConnector, type LoadedConnector } from "./load.js";
 
 /**
@@ -30,13 +31,13 @@ export async function getMcpServerBySlug(
   return row === null ? null : loadConnector(row);
 }
 
-/** Stores the OAuth client a server's `config.oauth_client` carries: the one registered with its authorization server. */
-export async function updateMcpServerConfig(
+/** Stores the OAuth client a connector registered with its authorization server. */
+export async function saveOauthClient(
   db: Queryable,
   serverId: string,
-  config: unknown,
+  client: OAuthClient,
   now: Date,
 ): Promise<LoadedConnector | null> {
-  const row = await setConnectorOauthClient(db, serverId, config, now);
+  const row = await setConnectorOauthClient(db, serverId, client, now);
   return row === null ? null : loadConnector(row);
 }

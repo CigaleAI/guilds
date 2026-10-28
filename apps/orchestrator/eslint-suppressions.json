@@ -439,10 +439,10 @@
   },
   "src/oauth/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 14
+      "count": 9
     },
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/observability/client-errors.ts": {

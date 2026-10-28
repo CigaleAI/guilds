@@ -133,7 +133,7 @@ async function browserSignIn(
     const [verifier, challenge] = pkcePair();
     const oauthState = newState();
     const authorize = authorizationUrl(discovery, {
-      clientId: String(client.client_id),
+      clientId: client.client_id,
       redirectUri,
       codeChallenge: challenge,
       state: oauthState,

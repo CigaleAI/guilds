@@ -1,6 +1,6 @@
 import type { ConnectorRow } from "../db/connectors.js";
 import { jsonObj } from "../db/json.js";
-import type { Manifest, ManifestTool, Overrides } from "../db/schema/index.js";
+import type { Manifest, ManifestTool, OAuthClient, Overrides } from "../db/schema/index.js";
 import { namespacedName } from "../mcp/names.js";
 import { nameMutates } from "../mcp/verbs.js";
 import { installedConnectors } from "./index.js";
@@ -52,7 +52,7 @@ export type LoadedConnector = {
   owner_org_id: string | null;
   display_name: string;
   transport: "http";
-  config: { url?: string; oauth_client?: unknown };
+  config: { url?: string; oauth_client?: OAuthClient };
   auth: Manifest["auth"]["kind"];
   oauth_strategy: OauthStrategy;
   description: string;

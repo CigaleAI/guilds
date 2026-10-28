@@ -344,6 +344,7 @@ test("captureGuild records a single-role specialization and org connector scope"
           display_name: "Notion",
           publication_state: "published",
           auth: "oauth",
+          config: {},
           description: "Workspace",
           setup_hint: "Connect Notion at organisation scope.",
         },

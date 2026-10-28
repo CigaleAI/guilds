@@ -1,4 +1,4 @@
-import { updateMcpServerConfig } from "../connectors/servers.js";
+import { saveOauthClient } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { insertBindingIfAbsent } from "../db/bindings.js";
 import { countConnectorCalls, recordConnectorCall } from "../db/connectors.js";
@@ -588,14 +588,14 @@ export function mcpDatabase(db: Queryable) {
     replaceMcpTools: bindQuery(db, replaceMcpTools),
     insertBindingIfAbsent: bindQuery(db, insertBindingIfAbsent),
     saveMcpConnection: bindQuery(db, saveMcpConnection),
-    updateMcpServerConfig: bindQuery(db, updateMcpServerConfig),
+    saveOauthClient: bindQuery(db, saveOauthClient),
   };
 }
 
 export type McpDatabase = ReturnType<typeof mcpDatabase>;
 
 /** What refreshing and disconnecting a login needs. */
-type LoginDb = Pick<McpDatabase, "saveMcpConnection" | "updateMcpServerConfig" | "recordGithubRepository">;
+type LoginDb = Pick<McpDatabase, "saveMcpConnection" | "saveOauthClient" | "recordGithubRepository">;
 
 /** What a login's session sends, and when that stops working; null when it does not expire while the session lives. */
 type SessionAuth = { headers: Record<string, string>; expiresAt: number | null };

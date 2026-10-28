@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { getMcpServer, updateMcpServerConfig } from "../../src/connectors/servers.js";
+import { getMcpServer, saveOauthClient } from "../../src/connectors/servers.js";
 import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
@@ -91,11 +91,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   });
   assert.equal(endpoint.statusCode, 422);
 
-  await updateMcpServerConfig(db,
-    String(notion.id),
-    { url: "https://mcp.notion.com/mcp", oauth_client: { client_id: "keep-me" } },
-    new Date(),
-  );
+  await saveOauthClient(db, String(notion.id), { client_id: "keep-me", client_secret: null, redirect_uris: [] }, new Date());
   await seedSystem(database.pool);
   const afterSeed = await getMcpServer(db, String(notion.id));
   assert.equal(afterSeed?.description, "Admin-authored Notion copy");
@@ -106,8 +102,7 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
     payload: { limitations: null },
   });
   assert.deepEqual(cleared.json().overridden, ["description"]);
-  const config = afterSeed?.config as { oauth_client?: { client_id?: string } };
-  assert.equal(config.oauth_client?.client_id, "keep-me");
+  assert.equal(afterSeed?.config.oauth_client?.client_id, "keep-me");
 
   const created = await app.inject({
     method: "POST",

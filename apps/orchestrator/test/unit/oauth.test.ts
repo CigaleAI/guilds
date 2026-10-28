@@ -246,6 +246,7 @@ test("stored client requires matching redirect", () => {
       url: "https://mcp.notion.com/mcp",
       oauth_client: {
         client_id: "cid",
+        client_secret: null,
         redirect_uris: ["http://127.0.0.1:8080/api/mcp/oauth/callback"],
       },
     } });
@@ -448,7 +449,7 @@ test("a connector with no endpoint discovers its provider's OAuth endpoints", as
 
 test("ensureClient gmail uses the Google connectors keys and restricts scopes", async () => {
   const db = {
-    async updateMcpServerConfig(): Promise<null> {
+    async saveOauthClient(): Promise<null> {
       throw new Error("gmail must not persist a catalog oauth client");
     },
     async saveMcpConnection(): Promise<null> {
@@ -482,7 +483,7 @@ test("ensureClient gmail uses the Google connectors keys and restricts scopes", 
 
 test("ensureClient drive uses the Google connectors keys and restricts scopes", async () => {
   const db = {
-    async updateMcpServerConfig(): Promise<null> {
+    async saveOauthClient(): Promise<null> {
       throw new Error("drive must not persist a catalog oauth client");
     },
     async saveMcpConnection(): Promise<null> {
@@ -516,7 +517,7 @@ test("ensureClient drive uses the Google connectors keys and restricts scopes", 
 
 test("ensureClient gmail without the Google connectors keys fails", async () => {
   const db = {
-    async updateMcpServerConfig(): Promise<null> {
+    async saveOauthClient(): Promise<null> {
       return null;
     },
     async saveMcpConnection(): Promise<null> {

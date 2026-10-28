@@ -290,8 +290,8 @@ async function completeBrowserCallback(
     const tokens = await exchangeCode(discovery, {
       code,
       codeVerifier: verifier,
-      clientId: String(client.client_id),
-      clientSecret: typeof client.client_secret === "string" ? client.client_secret : null,
+      clientId: client.client_id,
+      clientSecret: client.client_secret,
       redirectUri,
     });
     const stored = tokenPayload(tokens, { now: new Date() });

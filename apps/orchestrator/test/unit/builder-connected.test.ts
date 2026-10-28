@@ -17,6 +17,7 @@ function notionServer() {
     display_name: "Notion",
     publication_state: "published",
     auth: "oauth",
+    config: {},
     setup_hint: "Connect Notion",
   };
 }

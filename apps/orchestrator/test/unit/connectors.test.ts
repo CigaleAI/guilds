@@ -157,7 +157,7 @@ test("a connector row loads with its overrides applied over the manifest", () =>
     experimental: false,
     publisher: "guilds",
     enabled: false,
-    oauth_client: { client_id: "c1" },
+    oauth_client: { client_id: "c1", client_secret: null, redirect_uris: [] },
     overrides: { description: "Our wiki.", tools: { "notion-search": { default: true, description: "Search it." } } },
     installed_at: "2026-10-12T09:00:00.000Z",
     updated_at: "2026-10-12T09:00:00.000Z",
@@ -165,7 +165,7 @@ test("a connector row loads with its overrides applied over the manifest", () =>
   const server = loadConnector(row);
   assert.equal(server.description, "Our wiki.");
   assert.equal(server.enabled, false);
-  assert.deepEqual(server.config, { url: "https://mcp.notion.com/mcp", oauth_client: { client_id: "c1" } });
+  assert.deepEqual(server.config, { url: "https://mcp.notion.com/mcp", oauth_client: { client_id: "c1", client_secret: null, redirect_uris: [] } });
   assert.equal(server.oauth_strategy, "dynamic");
   assert.equal(server.upstream.description, notion.manifest.description);
   assert.equal(toolStartsOff(server, "notion-search"), false);

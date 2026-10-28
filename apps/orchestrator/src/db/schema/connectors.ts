@@ -146,6 +146,12 @@ export type Overrides = {
   tools?: Record<string, ToolOverride>;
 };
 
+/** An OAuth client's credentials: its id, and the secret a confidential client holds. */
+export type OAuthClientCredentials = { client_id: string; client_secret: string | null };
+
+/** The OAuth client a connector registered with its authorization server, with the redirects it registered. */
+export type OAuthClient = OAuthClientCredentials & { redirect_uris: string[] };
+
 export const secrets = pgTable(
   "secrets",
   {
@@ -235,7 +241,7 @@ export const connectors = pgTable(
     experimental: boolean("experimental").notNull().default(false),
     publisher: text("publisher").notNull().default(""),
     enabled: boolean("enabled").notNull().default(true),
-    oauth_client: jsonb("oauth_client"),
+    oauth_client: jsonb("oauth_client").$type<OAuthClient>(),
     overrides: jsonb("overrides").$type<Overrides>().notNull().default(sql`'{}'::jsonb`),
     installed_at: timestamptz("installed_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
