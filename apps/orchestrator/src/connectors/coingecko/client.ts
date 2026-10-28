@@ -437,12 +437,20 @@ export async function supplyTool(arguments_: Record<string, unknown>, options: T
   return formatSupply(payload);
 }
 
-export async function chartTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+/** What the chart tool is asked for: a coin by id or by contract, over `days`, in `vs`. */
+type ChartRequest = {
+  coinId: string;
+  platform: string;
+  address: string;
+  days: string;
+  kind: "price" | "ohlc";
+  vs: string;
+  series: string;
+};
+
+function chartRequest(arguments_: Record<string, unknown>): ChartRequest {
   const [coinId, platform, address] = idOrContract(arguments_, { required: false });
-  const days = argStr(arguments_, "days", "7") || "7";
   const kind = argStr(arguments_, "kind", "price") || "price";
-  const vs = argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT;
-  const series = argStr(arguments_, "series", "price") || "price";
   if (kind !== "price" && kind !== "ohlc") {
     throw new CoinGeckoError("kind must be price or ohlc");
   }
@@ -452,6 +460,19 @@ export async function chartTool(arguments_: Record<string, unknown>, options: To
   if (!coinId && !(platform && address)) {
     throw new CoinGeckoError("id, or platform and address, is required");
   }
+  return {
+    coinId,
+    platform,
+    address,
+    kind,
+    days: argStr(arguments_, "days", "7") || "7",
+    vs: argStr(arguments_, "vs", VS_DEFAULT) || VS_DEFAULT,
+    series: argStr(arguments_, "series", "price") || "price",
+  };
+}
+
+export async function chartTool(arguments_: Record<string, unknown>, options: ToolOptions): Promise<string> {
+  const { coinId, platform, address, days, kind, vs, series } = chartRequest(arguments_);
   const params = { vs_currency: vs, days };
   if (kind === "ohlc") {
     const payload = await getJson({ path: `/coins/${coinId}/ohlc`, params, schema: OhlcResponse }, options.apiKey, options);
