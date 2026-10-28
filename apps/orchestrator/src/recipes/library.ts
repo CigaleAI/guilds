@@ -123,7 +123,7 @@ export async function linkRecipeToBuilder(
 }
 
 /** Marks the recipe ready to apply; the recipe as it was when it is gone. */
-export async function markRecipeReady(db: Queryable, recipe: RecipeRow, now: Date): Promise<RecipeRow> {
+async function markRecipeReady(db: Queryable, recipe: RecipeRow, now: Date): Promise<RecipeRow> {
   return (await setRecipeStatus(db, recipe.id, "ready", now)) ?? recipe;
 }
 

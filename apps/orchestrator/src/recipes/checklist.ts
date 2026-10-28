@@ -203,7 +203,7 @@ export function deferLaunchSteps(checklist: ApplyStep[], now = new Date()): Appl
 }
 
 /** The guild an apply fills. */
-export function applyGuild(apply: Pick<RecipeApplyRow, "id" | "guild_id">): string {
+function applyGuild(apply: Pick<RecipeApplyRow, "id" | "guild_id">): string {
   if (!apply.guild_id) {
     throw new RecipeError(`apply ${apply.id} has no guild`);
   }
