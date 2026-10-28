@@ -5,6 +5,7 @@ import { connectorFacts } from "../connectors/view.js";
 import { awaitingSettings } from "../connectors/login.js";
 import type { LoadedConnector } from "../connectors/load.js";
 import type { McpConnectionRow } from "../db/mcp.js";
+import type { ToolInputSchema } from "../db/schema/index.js";
 
 export const NOTE_TOOLS = [
   "note_find",
@@ -320,31 +321,24 @@ export function toolView(item: Resolved): Record<string, unknown> {
   };
 }
 
-function inputSchemaOf(value: unknown): Record<string, unknown> {
-  let loaded = value;
-  if (typeof loaded === "string") {
-    try {
-      loaded = JSON.parse(loaded);
-    } catch {
-      return { type: "object" };
-    }
-  }
-  return loaded && typeof loaded === "object" && !Array.isArray(loaded)
-    ? (loaded as Record<string, unknown>)
-    : { type: "object" };
-}
+/** A tool as a listing or a manifest names it: what its view shows of it. */
+export type ListedToolFields = {
+  namespaced_name: string;
+  remote_name: string;
+  description: string;
+  input_schema: ToolInputSchema;
+};
 
 export function mcpToolView(
   item: Resolved,
-  listed: { namespaced_name?: unknown; remote_name?: unknown; description?: unknown } | Record<string, unknown>,
+  listed: ListedToolFields,
   options: { serverSource?: string | null } = {},
 ): Record<string, unknown> {
-  const record = listed as Record<string, unknown>;
   return {
-    name: record.namespaced_name ?? record.name,
-    remote_name: record.remote_name,
-    description: record.description ?? "",
-    input_schema: inputSchemaOf(record.input_schema),
+    name: listed.namespaced_name,
+    remote_name: listed.remote_name,
+    description: listed.description,
+    input_schema: listed.input_schema,
     enabled: item.enabled,
     source_scope: item.source_scope || options.serverSource || null,
     overlay: item.overlay === null ? null : { enabled: item.overlay.enabled },

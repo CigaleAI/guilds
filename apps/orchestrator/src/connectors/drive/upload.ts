@@ -1,6 +1,7 @@
 import path from "node:path";
 import { AgentFileError, readAgentFile } from "../../lib/agent-file.js";
 import { DRIVE_FOLDER_MIME, DriveFolderError, driveJson, type DriveClientOptions } from "./folder.js";
+import type { ToolInputSchema } from "../../db/schema/index.js";
 import { DriveFile } from "./responses.js";
 
 export const MAX_DRIVE_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -8,7 +9,7 @@ export const MAX_DRIVE_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const DRIVE_CREATE_FILE_DESCRIPTION =
   "Create a file or folder in the connected Drive folder. Pass file_path in your home (absolute, or relative to it) for file bytes; the orchestrator reads and encodes them. Do not pass base64. Small UTF-8 text may use textContent. To create a folder, set title and contentMimeType application/vnd.google-apps.folder.";
 
-export const DRIVE_CREATE_FILE_SCHEMA: Record<string, unknown> = {
+export const DRIVE_CREATE_FILE_SCHEMA: ToolInputSchema = {
   type: "object",
   properties: {
     title: { type: "string", description: "File or folder name." },

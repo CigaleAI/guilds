@@ -1,7 +1,7 @@
 {
   "src/access/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 10
+      "count": 8
     },
     "complexity": {
       "count": 2
@@ -377,7 +377,7 @@
   },
   "src/mcp/catalog.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 5
+      "count": 4
     },
     "complexity": {
       "count": 2
@@ -385,7 +385,7 @@
   },
   "src/mcp/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 16
+      "count": 14
     },
     "@typescript-eslint/max-params": {
       "count": 4

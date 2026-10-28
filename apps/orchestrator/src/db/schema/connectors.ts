@@ -24,6 +24,18 @@ export const SLUG_PATTERN = "^[a-z][a-z0-9_]{0,62}$";
 
 const JsonObject = Type.Record(Type.String(), Type.Unknown());
 
+/**
+ * A tool's input as a JSON Schema object: the keys the box reads, its `type`, `properties`
+ * and `required`, beside whatever else the schema holds.
+ */
+export const ToolInputSchema = Type.Object({
+  type: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
+  properties: Type.Optional(JsonObject),
+  required: Type.Optional(Type.Array(Type.String())),
+});
+
+export type ToolInputSchema = Static<typeof ToolInputSchema> & { [keyword: string]: unknown };
+
 /** A header an endpoint's session sends beside its credential: a custom `X-` header, letters, digits, and dashes. */
 const HEADER_NAME_PATTERN = "^[Xx]-[A-Za-z0-9-]+$";
 
@@ -31,7 +43,7 @@ const ManifestTool = Type.Object(
   {
     name: Type.String({ minLength: 1 }),
     description: Type.String(),
-    input_schema: JsonObject,
+    input_schema: ToolInputSchema,
     mutating: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
@@ -133,7 +145,7 @@ export type AuthField = Static<typeof AuthField>;
 /** An admin's edit to one tool, by name: its copy, its schema, and whether it starts On. */
 export type ToolOverride = {
   description?: string;
-  input_schema?: Record<string, unknown>;
+  input_schema?: ToolInputSchema;
   default?: boolean;
 };
 
@@ -349,7 +361,7 @@ export const mcpTools = pgTable(
     remote_name: text("remote_name").notNull(),
     namespaced_name: text("namespaced_name").notNull(),
     description: text("description").notNull().default(""),
-    input_schema: jsonb("input_schema").$type<Record<string, unknown>>().notNull(),
+    input_schema: jsonb("input_schema").$type<ToolInputSchema>().notNull(),
     listed_at: timestamptz("listed_at").notNull(),
     read_only_hint: boolean("read_only_hint"),
     destructive_hint: boolean("destructive_hint"),

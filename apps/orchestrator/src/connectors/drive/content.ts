@@ -9,12 +9,13 @@ import {
   driveJson,
   type DriveClientOptions,
 } from "./folder.js";
+import type { ToolInputSchema } from "../../db/schema/index.js";
 import { DriveFile, PermissionList } from "./responses.js";
 
 export const DRIVE_DOWNLOAD_FILE_DESCRIPTION =
   "Download a file from the connected Drive folder into the agent workspace. Pass an optional file_path in your home. The result is that path, not file bytes.";
 
-export const DRIVE_DOWNLOAD_FILE_SCHEMA: Record<string, unknown> = {
+export const DRIVE_DOWNLOAD_FILE_SCHEMA: ToolInputSchema = {
   type: "object",
   properties: {
     fileId: { type: "string", description: "Drive file id." },

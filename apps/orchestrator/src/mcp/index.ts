@@ -1,11 +1,12 @@
+import { Value } from "@sinclair/typebox/value";
 import { saveOauthClient } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { insertBindingIfAbsent } from "../db/bindings.js";
 import { countConnectorCalls, recordConnectorCall } from "../db/connectors.js";
-import { replaceMcpTools, saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
+import { replaceMcpTools, saveMcpConnection, type McpConnectionRow, type McpToolRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { jsonObj } from "../db/json.js";
-import type { Manifest } from "../db/schema/index.js";
+import { ToolInputSchema, type Manifest } from "../db/schema/index.js";
 import { utcMonth } from "../db/usage.js";
 import { newId } from "../lib/ids.js";
 import { assertPublicHost, EndpointError, type HostLookup } from "../net/endpoints.js";
@@ -94,7 +95,7 @@ export class ListedTool {
     public remote_name: string,
     public namespaced_name: string,
     public description: string,
-    public input_schema: Record<string, unknown>,
+    public input_schema: ToolInputSchema,
     /** The listing's `readOnlyHint`, null when it gave none. */
     public read_only_hint: boolean | null = null,
     /** The listing's `destructiveHint`, null when it gave none. */
@@ -102,29 +103,21 @@ export class ListedTool {
   ) {}
 }
 
-function hintOf(value: unknown): boolean | null {
-  return typeof value === "boolean" ? value : null;
-}
-
 export function mcpSchema(tool: ListedTool): Record<string, unknown> {
-  let parameters: unknown = tool.input_schema && Object.keys(tool.input_schema).length
-    ? tool.input_schema
-    : { type: "object" };
-  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) {
-    parameters = { type: "object" };
-  }
+  const parameters = Object.keys(tool.input_schema).length ? tool.input_schema : { type: "object" };
   return {
     type: "function",
     function: {
       name: tool.namespaced_name,
       description: tool.description,
-      parameters: llmToolParameters(parameters as Record<string, unknown>),
+      parameters: llmToolParameters(parameters),
     },
   };
 }
 
-function schemaObj(value: unknown): Record<string, unknown> {
-  let loaded = value;
+/** A remote tool's input schema, or an empty object schema when it sends none the box can read. */
+function remoteSchema(tool: Record<string, unknown>): ToolInputSchema {
+  let loaded = pythonOr(tool.inputSchema, tool.input_schema, { type: "object" });
   if (typeof loaded === "string") {
     try {
       loaded = JSON.parse(loaded);
@@ -132,14 +125,7 @@ function schemaObj(value: unknown): Record<string, unknown> {
       return { type: "object" };
     }
   }
-  return loaded && typeof loaded === "object" && !Array.isArray(loaded)
-    ? (loaded as Record<string, unknown>)
-    : { type: "object" };
-}
-
-function remoteSchema(tool: Record<string, unknown>): Record<string, unknown> {
-  const schema = pythonOr(tool.inputSchema, tool.input_schema, { type: "object" });
-  return schemaObj(schema);
+  return Value.Check(ToolInputSchema, loaded) ? loaded : { type: "object" };
 }
 
 function pythonOr(...values: unknown[]): unknown {
@@ -170,32 +156,24 @@ export function fromRemote(slug: string, tool: Record<string, unknown>): ListedT
   );
 }
 
-export function listedFromRows(rows: Array<Record<string, unknown>>): ListedTool[] {
+export function listedFromRows(rows: McpToolRow[]): ListedTool[] {
   return rows.map(
     (row) =>
       new ListedTool(
-        String(row.remote_name),
-        String(row.namespaced_name),
-        String(row.description || ""),
-        schemaObj(row.input_schema),
-        hintOf(row.read_only_hint),
-        hintOf(row.destructive_hint),
+        row.remote_name,
+        row.namespaced_name,
+        row.description,
+        row.input_schema,
+        row.read_only_hint,
+        row.destructive_hint,
       ),
   );
 }
 
-function latestListedAt(rows: Array<Record<string, unknown>>): number | null {
+function latestListedAt(rows: McpToolRow[]): number | null {
   let latest = 0;
   for (const row of rows) {
-    const value = row.listed_at;
-    let ms = Number.NaN;
-    if (value instanceof Date) {
-      ms = value.getTime();
-    } else if (typeof value === "number") {
-      ms = value;
-    } else if (typeof value === "string" && value) {
-      ms = Date.parse(value);
-    }
+    const ms = Date.parse(row.listed_at);
     if (Number.isFinite(ms) && ms > latest) {
       latest = ms;
     }
@@ -768,7 +746,7 @@ export class McpPool {
   private catalogFresh(
     connectionId: string,
     now: Date,
-    stored: Array<Record<string, unknown>> = [],
+    stored: McpToolRow[] = [],
   ): boolean {
     const synced = this.syncedAt.get(connectionId);
     if (synced !== undefined && now.getTime() - synced < this.toolsTtlMs) {
@@ -1140,7 +1118,7 @@ export class McpPool {
       const edited = overriddenTool(server, {
         remote_name: tool.name,
         description: tool.description,
-        input_schema: schemaObj(tool.input_schema),
+        input_schema: tool.input_schema,
       });
       return new ListedTool(
         tool.name,

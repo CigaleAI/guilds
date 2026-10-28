@@ -10,10 +10,11 @@ import {
   searchDriveFolders,
 } from "./folder.js";
 import { DRIVE_CREATE_FILE_DESCRIPTION, DRIVE_CREATE_FILE_SCHEMA, createDriveFile } from "./upload.js";
+import type { ToolInputSchema } from "../../db/schema/index.js";
 import { ConnectorError, requiredCredential, type Adapter, type ConnectorContext, type ConnectorTool } from "../types.js";
 
 /** Listed tools whose description and schema Drive replaces: they take a workspace path, not bytes. */
-const REWRITTEN: Record<string, { description: string; input_schema: Record<string, unknown> }> = {
+const REWRITTEN: Record<string, { description: string; input_schema: ToolInputSchema }> = {
   create_file: { description: DRIVE_CREATE_FILE_DESCRIPTION, input_schema: DRIVE_CREATE_FILE_SCHEMA },
   download_file_content: { description: DRIVE_DOWNLOAD_FILE_DESCRIPTION, input_schema: DRIVE_DOWNLOAD_FILE_SCHEMA },
 };

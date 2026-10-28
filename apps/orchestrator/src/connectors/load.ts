@@ -1,6 +1,6 @@
 import type { ConnectorRow } from "../db/connectors.js";
 import { jsonObj } from "../db/json.js";
-import type { Manifest, ManifestTool, OAuthClient, Overrides } from "../db/schema/index.js";
+import type { Manifest, ManifestTool, OAuthClient, Overrides, ToolInputSchema } from "../db/schema/index.js";
 import { namespacedName } from "../mcp/names.js";
 import { nameMutates } from "../mcp/verbs.js";
 import { installedConnectors } from "./index.js";
@@ -175,7 +175,7 @@ export function toolStartsOff(
 }
 
 /** A listed tool with the admin's edits to its copy and schema. */
-export function overriddenTool<T extends { remote_name: string; description: string; input_schema: Record<string, unknown> }>(
+export function overriddenTool<T extends { remote_name: string; description: string; input_schema: ToolInputSchema }>(
   server: LoadedConnector,
   tool: T,
 ): T {
@@ -194,7 +194,7 @@ export type CatalogTool = {
   remote_name: string;
   namespaced_name: string;
   description: string;
-  input_schema: Record<string, unknown>;
+  input_schema: ToolInputSchema;
   mutating: boolean;
   default_enabled: boolean;
 };

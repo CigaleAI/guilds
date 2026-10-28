@@ -4,7 +4,7 @@ import { upsertMcpBinding, type McpConnectionBinding } from "./bindings.js";
 import { pickColumns, ownerRefs } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { mcpConnections, mcpTools, type ConnectionSettings, type GithubRepositorySelection } from "./schema/index.js";
+import { mcpConnections, mcpTools, type ConnectionSettings, type GithubRepositorySelection, type ToolInputSchema } from "./schema/index.js";
 
 /** A connection with the guild, agent and organisation its owner resolves to. */
 export type ScopedMcpConnectionRow = InferSelectModel<typeof mcpConnections>;
@@ -60,7 +60,7 @@ export type NewMcpTool = {
   remote_name: string;
   namespaced_name: string;
   description: string;
-  input_schema: unknown;
+  input_schema: ToolInputSchema;
   read_only_hint?: boolean | null | undefined;
   destructive_hint?: boolean | null | undefined;
 };

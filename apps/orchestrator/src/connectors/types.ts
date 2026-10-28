@@ -1,4 +1,4 @@
-import type { ConnectionSettings } from "../db/schema/index.js";
+import type { ConnectionSettings, ToolInputSchema } from "../db/schema/index.js";
 import type { FetchFn } from "../net/http.js";
 
 /** A login's decrypted credentials, keyed by the manifest's field names. Values are trimmed strings. */
@@ -8,7 +8,7 @@ export type Credentials = Readonly<Record<string, string>>;
 export type ConnectorTool = {
   name: string;
   description: string;
-  input_schema: Record<string, unknown>;
+  input_schema: ToolInputSchema;
   mutating?: boolean;
   read_only_hint?: boolean | null;
   destructive_hint?: boolean | null;
