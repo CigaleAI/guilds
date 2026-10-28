@@ -18,7 +18,7 @@ import { bodyOf, param, queryOf } from "./request.js";
 import { isOrgManager } from "../organisations/service.js";
 import { listAgentRoutines, listAgentRunHeaders, readGuildRun, type InspectorServices } from "../studio/inspector.js";
 import type { UserRow } from "../db/users.js";
-import type { StudioSessionRow } from "../db/studio.js";
+import type { StudioDraftRow, StudioSessionRow } from "../db/studio.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 
 
@@ -319,7 +319,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       return await studioOf(deps).drafts.revise(
         loaded.session,
         user,
-        String(loaded.draft.id),
+        loaded.draft.id,
         String(body.proposed_content ?? ""),
         String(body.expected_head_id ?? loaded.draft.id),
       );
@@ -333,7 +333,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     const org = await currentOrg(identityDb, request, user);
     try {
       const loaded = await loadDraftContext(deps, user, org, param(request, "draft_id"));
-      return await studioOf(deps).publishDraft(loaded.session, loaded.user, String(loaded.draft.id), {
+      return await studioOf(deps).publishDraft(loaded.session, loaded.user, loaded.draft.id, {
         orphan: loaded.orphan,
       });
     } catch (error) {
@@ -349,7 +349,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
       if (loaded.orphan) {
         throw new HttpError(403, "orphan recovery cannot discard");
       }
-      return await studioOf(deps).drafts.discard(loaded.session, loaded.user, String(loaded.draft.id));
+      return await studioOf(deps).drafts.discard(loaded.session, loaded.user, loaded.draft.id);
     } catch (error) {
       mapStudioError(error);
     }
@@ -546,7 +546,7 @@ async function loadDraftContext(
   user: UserRow,
   org: OrgMembershipRow,
   draftId: string,
-): Promise<{ session: StudioSessionRow; draft: Record<string, unknown>; user: UserRow; orphan: boolean }> {
+): Promise<{ session: StudioSessionRow; draft: StudioDraftRow; user: UserRow; orphan: boolean }> {
   const studio: StudioService = studioOf(deps);
   const found = await studio.orgDraft(org.id, draftId);
   if (!found) {

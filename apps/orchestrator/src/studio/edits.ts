@@ -14,7 +14,7 @@ import { editActionOf } from "./actions.js";
 import { STUDIO_TABLE_TOOL, applyTable, isTableTool, reviewTable } from "./tables.js";
 import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type RoutineChange } from "./routines.js";
 import { getAgent, listAgents, type AgentRow } from "../db/agents.js";
-import { getGuild } from "../db/guilds.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage } from "../db/conversations.js";
 import type { UserRow } from "../db/users.js";
@@ -761,7 +761,7 @@ function assertBound(review: { baseHash: string; proposedHash: string }, edit: R
 export async function applyEdit(
   live: EditScope,
   record: EditRecord,
-): Promise<{ version: number | null; guild?: Record<string, unknown>; routine?: RoutineChange }> {
+): Promise<{ version: number | null; guild?: GuildRow; routine?: RoutineChange }> {
   const scope: EditScope = { ...live, origin: { sessionId: live.sessionId, seq: record.seq } };
   const edit = (record.widget.edit ?? {}) as Record<string, unknown>;
   if (isRoutineTool(record.toolName)) {

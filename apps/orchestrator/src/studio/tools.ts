@@ -1085,7 +1085,7 @@ export const studioCreateTaskDraft: StudioTool = {
       },
       rationale: { type: "string" },
       evidence_refs: { type: "array" },
-      risks: { type: "array" },
+      risks: { type: "array", items: { type: "string" } },
     },
     ["agent_id", "proposed_content", "rationale"],
   ),

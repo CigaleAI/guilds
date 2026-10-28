@@ -1184,8 +1184,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const liveGuild = await getGuild(db, "guild_ed");
     assert.equal(liveGuild?.description, "Coordinate the digest.");
     assert.equal(liveGuild?.about, "Old about");
-    const snapshot = (await getStudioSession(db, session.id))?.source_guild_snapshot as { objective?: string };
-    assert.equal(snapshot.objective, "Coordinate the digest.");
+    assert.equal((await getStudioSession(db, session.id))?.source_guild_snapshot.objective, "Coordinate the digest.");
     const [guildChange] = await listConfigChanges(db, "org_home", { kind: "guild_text", id: "guild_ed" });
     assert.equal(guildChange?.summary, "Changed the description");
     assert.deepEqual(guildChange?.actor, { type: "user", id: "user_operator", name: "operator" });

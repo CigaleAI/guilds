@@ -23,8 +23,10 @@ import { excerptBytes } from "./system.js";
 import { getAgent, getAgentTask, listAgents, type AgentRow } from "../db/agents.js";
 import { nextConversationSeq } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
-import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioSessionRow } from "../db/studio.js";
-import { listConversationMessages } from "../db/conversations.js";
+import { getStudioDraft, insertStudioDraft, listStudioDraftHeads, lockStudioDraft, updateStudioDraft, type StudioDraftRow, type StudioSessionRow } from "../db/studio.js";
+import { listConversationMessages, type ConversationMessageRow } from "../db/conversations.js";
+import { isPlainRecord } from "../db/json.js";
+import { EVIDENCE_REF_KINDS, type EvidenceRef, type EvidenceRefKind, type EvidenceWarning } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 import { getMemoryRow } from "../artifacts/memory.js";
 import { operatorContext } from "../artifacts/store.js";
@@ -34,18 +36,14 @@ export type StudioDraftService = {
   createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
 };
 
-const REF_KINDS = new Set([
-  "run_message",
-  "group_message",
-  "artifact",
-  "task_revision",
-  "memory_revision",
-  "routine",
-]);
-
 // A draft is decided like an edit: the tool returns this widget and the turn
 // pauses until the operator publishes or discards it.
 export const STUDIO_TASK_DRAFT_WIDGET = "studio_task_draft";
+
+/** The risks the coach lists for a draft: its text entries. */
+function risksOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
 
 function userIdOf(user: UserRow): string | null {
   return typeof user.id === "string" ? user.id : null;
@@ -120,7 +118,7 @@ export class StudioDrafts implements StudioDraftService {
           rationale,
           evidence_refs: refs,
           evidence_warnings: warnings,
-          risks: Array.isArray(args.risks) ? args.risks : [],
+          risks: risksOf(args.risks),
           status: "draft",
           draft_number: Number(previous?.draft_number ?? 0) + 1,
           supersedes_draft_id: previous ? previous.id : null,
@@ -382,14 +380,14 @@ export class StudioDrafts implements StudioDraftService {
   }
 }
 
-export function viewDraft(row: Record<string, unknown>): Record<string, unknown> {
-  const base = String(row.base_content ?? "");
-  const proposed = String(row.proposed_content ?? "");
+export function viewDraft(row: StudioDraftRow): Record<string, unknown> {
+  const base = row.base_content;
+  const proposed = row.proposed_content;
   const baseBytes = Buffer.byteLength(base, "utf8");
   const proposedBytes = Buffer.byteLength(proposed, "utf8");
   const deleted = Math.max(0, baseBytes - proposedBytes);
   const deletionRatio = baseBytes === 0 ? 0 : deleted / baseBytes;
-  const refs = Array.isArray(row.evidence_refs) ? row.evidence_refs : [];
+  const refs = row.evidence_refs;
   return {
     id: row.id,
     session_id: row.session_id,
@@ -418,52 +416,58 @@ export function viewDraft(row: Record<string, unknown>): Record<string, unknown>
   };
 }
 
+function isEvidenceRefKind(value: string): value is EvidenceRefKind {
+  return EVIDENCE_REF_KINDS.some((kind) => kind === value);
+}
+
+/** One cited reference checked against the tool result it names: the reference, or why it does not check out. */
+type CheckedRef = { ref: EvidenceRef } | { warning: EvidenceWarning };
+
+function resolveEvidenceRef(item: unknown, bySeq: Map<number, ConversationMessageRow>): CheckedRef {
+  if (!isPlainRecord(item)) {
+    return { warning: { reason: "invalid_reference" } };
+  }
+  const kind = String(item.kind ?? item.type ?? "");
+  if (!isEvidenceRefKind(kind)) {
+    return { warning: { reason: "unknown_kind", kind } };
+  }
+  const seq = Number(item.tool_message_seq);
+  const message = bySeq.get(seq);
+  if (!message) {
+    return { warning: { reason: "missing_tool_message", tool_message_seq: seq } };
+  }
+  const payload = JSON.stringify(message.payload);
+  if (!evidenceCoordinates(kind, item).every((value) => payload.includes(String(value)))) {
+    return { warning: { reason: "coordinates_not_in_tool_result", kind, tool_message_seq: seq } };
+  }
+  const excerpt = excerptBytes(payload, STUDIO_EVIDENCE_EXCERPT_BYTES).text;
+  const ref: EvidenceRef = {
+    ...Object.fromEntries(Object.entries(item).filter(([key]) => !["content_hash", "instruction_hash", "excerpt"].includes(key))),
+    kind,
+    tool_message_seq: seq,
+    content_hash: kind === "routine" ? instructionHash(String(item.instruction ?? excerpt)) : promptHash(excerpt),
+    excerpt: capBytes(excerpt, STUDIO_EVIDENCE_EXCERPT_BYTES)[0],
+  };
+  return { ref };
+}
+
 function resolveEvidenceRefs(
   raw: unknown,
-  messages: Array<Record<string, unknown>>,
-): { refs: Array<Record<string, unknown>>; warnings: Array<Record<string, unknown>> } {
-  const refs: Array<Record<string, unknown>> = [];
-  const warnings: Array<Record<string, unknown>> = [];
+  messages: ConversationMessageRow[],
+): { refs: EvidenceRef[]; warnings: EvidenceWarning[] } {
+  const refs: EvidenceRef[] = [];
+  const warnings: EvidenceWarning[] = [];
   if (!Array.isArray(raw)) {
     return { refs, warnings };
   }
-  const bySeq = new Map<number, Record<string, unknown>>();
-  for (const message of messages) {
-    bySeq.set(Number(message.seq), message);
-  }
+  const bySeq = new Map(messages.map((message) => [message.seq, message]));
   for (const item of raw.slice(0, STUDIO_EVIDENCE_REF_MAX)) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      warnings.push({ reason: "invalid_reference" });
-      continue;
+    const checked = resolveEvidenceRef(item, bySeq);
+    if ("ref" in checked) {
+      refs.push(checked.ref);
+    } else {
+      warnings.push(checked.warning);
     }
-    const candidate = item as Record<string, unknown>;
-    const kind = String(candidate.kind ?? candidate.type ?? "");
-    if (!REF_KINDS.has(kind)) {
-      warnings.push({ reason: "unknown_kind", kind });
-      continue;
-    }
-    const seq = Number(candidate.tool_message_seq);
-    const message = bySeq.get(seq);
-    if (!message) {
-      warnings.push({ reason: "missing_tool_message", tool_message_seq: seq });
-      continue;
-    }
-    const payload = JSON.stringify(message.payload ?? {});
-    const coordinates = evidenceCoordinates(kind, candidate);
-    if (!coordinates.every((value) => payload.includes(String(value)))) {
-      warnings.push({ reason: "coordinates_not_in_tool_result", kind, tool_message_seq: seq });
-      continue;
-    }
-    const excerpt = excerptBytes(payload, STUDIO_EVIDENCE_EXCERPT_BYTES).text;
-    refs.push({
-      kind,
-      tool_message_seq: seq,
-      ...Object.fromEntries(
-        Object.entries(candidate).filter(([key]) => !["content_hash", "instruction_hash", "excerpt"].includes(key)),
-      ),
-      content_hash: kind === "routine" ? instructionHash(String(candidate.instruction ?? excerpt)) : promptHash(excerpt),
-      excerpt: capBytes(excerpt, STUDIO_EVIDENCE_EXCERPT_BYTES)[0],
-    });
   }
   return { refs, warnings };
 }

@@ -586,10 +586,10 @@
   },
   "src/studio/drafts.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
+      "count": 1
     },
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/studio/edits.ts": {
@@ -613,10 +613,10 @@
   },
   "src/studio/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
+      "count": 3
     },
     "complexity": {
-      "count": 4
+      "count": 3
     },
     "max-lines": {
       "count": 1

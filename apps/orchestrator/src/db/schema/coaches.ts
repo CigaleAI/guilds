@@ -19,6 +19,35 @@ import { artifacts } from "./artifacts.js";
 import { timestamptz } from "./columns.js";
 import { guilds, orgs, users } from "./organisations.js";
 
+/** The source guild of a Studio session as the coach is shown it; `objective` when the guild has a description. */
+export type StudioSourceGuild = { id: string; name: string; about: string; objective?: string };
+
+/** The agent a Studio draft is for, as it was when the draft was made. */
+export type StudioDraftTarget = { id: string; name: string; focus: string };
+
+export const EVIDENCE_REF_KINDS = ["run_message", "group_message", "artifact", "task_revision", "memory_revision", "routine"] as const;
+export type EvidenceRefKind = (typeof EVIDENCE_REF_KINDS)[number];
+
+/**
+ * A reference the coach cites for a draft, checked against the tool result it names: the
+ * coordinates the coach gave beside `kind` and `tool_message_seq`, with the hash and an excerpt
+ * of what it cites.
+ */
+export type EvidenceRef = {
+  kind: EvidenceRefKind;
+  tool_message_seq: number;
+  content_hash: string;
+  excerpt: string;
+  [coordinate: string]: unknown;
+};
+
+/** A reference the coach cited that did not check out, and why. */
+export type EvidenceWarning =
+  | { reason: "invalid_reference" }
+  | { reason: "unknown_kind"; kind: string }
+  | { reason: "missing_tool_message"; tool_message_seq: number }
+  | { reason: "coordinates_not_in_tool_result"; kind: EvidenceRefKind; tool_message_seq: number };
+
 export const studioSessions = pgTable(
   "studio_sessions",
   {
@@ -28,9 +57,7 @@ export const studioSessions = pgTable(
     created_by_name: text("created_by_name").notNull(),
     mode: text("mode", { enum: ["optimize", "create"] }).notNull(),
     source_guild_id: text("source_guild_id"),
-    source_guild_snapshot: jsonb("source_guild_snapshot").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
-    coach_agent_id: text("coach_agent_id"),
-    coach_snapshot: jsonb("coach_snapshot"),
+    source_guild_snapshot: jsonb("source_guild_snapshot").$type<StudioSourceGuild>().notNull(),
     config_snapshot: jsonb("config_snapshot").$type<Record<string, unknown>>().notNull(),
     selected_target_agent_id: text("selected_target_agent_id"),
     parent_session_id: text("parent_session_id"),
@@ -71,11 +98,6 @@ export const studioSessions = pgTable(
       columns: [table.source_guild_id],
       foreignColumns: [guilds.id],
       name: "studio_sessions_source_guild_id_fkey",
-    }).onDelete("set null"),
-    foreignKey({
-      columns: [table.coach_agent_id],
-      foreignColumns: [agents.id],
-      name: "studio_sessions_coach_agent_id_fkey",
     }).onDelete("set null"),
     foreignKey({
       columns: [table.selected_target_agent_id],
@@ -127,7 +149,7 @@ export const studioDrafts = pgTable(
     source_guild_id: text("source_guild_id"),
     resource_kind: text("resource_kind").notNull(),
     target_agent_id: text("target_agent_id"),
-    target_snapshot: jsonb("target_snapshot").notNull(),
+    target_snapshot: jsonb("target_snapshot").$type<StudioDraftTarget>().notNull(),
     source_artifact_id: text("source_artifact_id"),
     source_display_path: text("source_display_path"),
     base_version: integer("base_version").notNull(),
@@ -135,9 +157,9 @@ export const studioDrafts = pgTable(
     base_content: text("base_content").notNull(),
     proposed_content: text("proposed_content").notNull(),
     rationale: text("rationale").notNull(),
-    evidence_refs: jsonb("evidence_refs").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
-    evidence_warnings: jsonb("evidence_warnings").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
-    risks: jsonb("risks").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    evidence_refs: jsonb("evidence_refs").$type<EvidenceRef[]>().notNull().default(sql`'[]'::jsonb`),
+    evidence_warnings: jsonb("evidence_warnings").$type<EvidenceWarning[]>().notNull().default(sql`'[]'::jsonb`),
+    risks: jsonb("risks").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     status: text("status", { enum: ["draft", "superseded", "published", "unchanged", "discarded", "conflicted"] }).notNull(),
     draft_number: integer("draft_number").notNull(),
     supersedes_draft_id: text("supersedes_draft_id"),

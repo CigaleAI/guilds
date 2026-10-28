@@ -55,7 +55,7 @@ import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocus } from "./foc
 import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
 import type { RoutineChange } from "./routines.js";
-import { getGuild } from "../db/guilds.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
 import { getAgent, getAgentTask } from "../db/agents.js";
 import { listRunHeaders } from "../db/runs.js";
 import type pg from "pg";
@@ -88,6 +88,7 @@ import {
 import type { UserRow } from "../db/users.js";
 import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
+import type { StudioSourceGuild } from "../db/schema/index.js";
 import { operatorContext } from "../artifacts/store.js";
 import { getMemoryRow, readStoredMemory } from "../artifacts/memory.js";
 import { embedSource } from "../artifacts/embeds.js";
@@ -110,6 +111,12 @@ export type StudioServiceDeps = {
 
 /** A session an operator can still work in: not archived or blocked, its source guild still there. */
 export type LiveStudioSession = StudioSessionRow & { source_guild_id: string };
+
+/** The guild as a session records it; its description is the coach's objective. */
+function sourceGuildSnapshot(guild: Pick<GuildRow, "id" | "name" | "about" | "description">): StudioSourceGuild {
+  const objective = guild.description.trim();
+  return { id: guild.id, name: guild.name, about: guild.about, ...(objective ? { objective } : {}) };
+}
 
 export class StudioService {
   drafts: StudioDrafts;
@@ -187,14 +194,8 @@ export class StudioService {
       max_steps: STUDIO_MAX_STEPS,
       ...limits,
     };
-    const objective = String(guild.description ?? "").trim();
-    const sourceGuild = {
-      id: String(guild.id),
-      name: String(guild.name),
-      about: String(guild.about ?? ""),
-      ...(objective ? { objective } : {}),
-    };
-    const members = (await studioInventory(this.deps.db, String(guild.id), null)).map((row) => hydrateStudioMember(row));
+    const sourceGuild = sourceGuildSnapshot(guild);
+    const members = (await studioInventory(this.deps.db, guild.id, null)).map((row) => hydrateStudioMember(row));
     const system = composeStudioSystemMessage({
       mode: "optimize",
       sourceGuild,
@@ -678,24 +679,12 @@ export class StudioService {
     session: StudioSessionRow,
     rows: Array<Record<string, unknown>>,
   ): { content: string; hash: string } {
-    const snapshot = (session.source_guild_snapshot ?? {}) as {
-      name?: string;
-      about?: string;
-      objective?: string;
-    };
     const config = session.config_snapshot;
     const members = rows.map((row) => hydrateStudioMember(row));
     return composeStudioSystemMessage({
       mode: String(session.mode ?? "optimize"),
       template: readStudioSystemTemplate({ guidelinesPath: this.deps.notesSystemPath }),
-      sourceGuild: session.source_guild_id
-        ? {
-            id: session.source_guild_id,
-            name: String(snapshot.name ?? ""),
-            about: String(snapshot.about ?? ""),
-            ...(snapshot.objective ? { objective: String(snapshot.objective) } : {}),
-          }
-        : null,
+      sourceGuild: session.source_guild_id ? { ...session.source_guild_snapshot, id: session.source_guild_id } : null,
       members,
       config: {
         model: config.model,
@@ -1000,19 +989,10 @@ export class StudioService {
       return { record, applied };
     });
     if (outcome.applied?.guild) {
-      const guild = outcome.applied.guild;
-      const description = String(guild.description ?? "").trim();
       await updateStudioSession(
         this.deps.db,
         session.id,
-        {
-          source_guild_snapshot: {
-            id: String(guild.id),
-            name: String(guild.name),
-            about: String(guild.about ?? ""),
-            ...(description ? { objective: description } : {}),
-          },
-        },
+        { source_guild_snapshot: sourceGuildSnapshot(outcome.applied.guild) },
         new Date(),
       );
     } else if (outcome.applied?.routine) {

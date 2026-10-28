@@ -25,12 +25,7 @@ export type NewStudioSession = Pick<
   | "config_snapshot"
   | "status"
 > &
-  Partial<
-    Pick<
-      StudioSessionRow,
-      "coach_agent_id" | "coach_snapshot" | "selected_target_agent_id" | "parent_session_id" | "blocked_reason"
-    >
-  >;
+  Partial<Pick<StudioSessionRow, "selected_target_agent_id" | "parent_session_id" | "blocked_reason">>;
 
 /** What may change on a Studio session: its generation's fields and the session's own. */
 export type StudioSessionPatch = ConversationSessionPatch &
@@ -131,12 +126,11 @@ export async function insertStudioSession(
   const result = await pool.query<StudioSessionRow>(
     `INSERT INTO studio_sessions (
        id, org_id, created_by_user_id, created_by_name, mode, source_guild_id,
-       source_guild_snapshot, coach_agent_id, coach_snapshot, config_snapshot,
-       selected_target_agent_id, parent_session_id, status, blocked_reason,
-       generation_state, generation_number, errors, created_at, updated_at
+       source_guild_snapshot, config_snapshot, selected_target_agent_id, parent_session_id,
+       status, blocked_reason, generation_state, generation_number, errors, created_at, updated_at
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14,
-       'idle', 0, '[]'::jsonb, $15, $15
+       $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12,
+       'idle', 0, '[]'::jsonb, $13, $13
      )
      RETURNING ${SESSION_COLUMNS}`,
     [
@@ -147,8 +141,6 @@ export async function insertStudioSession(
       session.mode,
       session.source_guild_id,
       JSON.stringify(session.source_guild_snapshot),
-      session.coach_agent_id ?? null,
-      session.coach_snapshot ? JSON.stringify(session.coach_snapshot) : null,
       JSON.stringify(session.config_snapshot),
       session.selected_target_agent_id ?? null,
       session.parent_session_id ?? null,
