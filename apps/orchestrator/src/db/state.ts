@@ -47,7 +47,10 @@ export type ConfigChangeEventRow = Pick<
 > & { run_agent_id: Run["agent_id"] | null };
 
 /** A run of the guild's agents, with the task source it was started from. */
-export type WindowRunRow = Pick<Run, "id" | "agent_id" | "created_at"> & { run_id: string; task_source: unknown };
+export type WindowRunRow = Pick<Run, "id" | "agent_id" | "created_at"> & {
+  run_id: string;
+  task_source: Run["metadata"]["task_source"] | null;
+};
 
 /** A read tool's call, with the arguments of the step that made it. */
 export type ReadCallRow = Pick<InferSelectModel<typeof messages>, "run_id" | "created_at"> & {

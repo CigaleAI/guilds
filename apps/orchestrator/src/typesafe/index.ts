@@ -21,7 +21,6 @@ export type {
   TypeSafeQuestion,
   TypeSafeResult,
   TypeSafeRetryOptions,
-  TypeSafeUsage,
 } from "./client.js";
 export {
   AGENT_TASK_PREVIEW_CHARS,

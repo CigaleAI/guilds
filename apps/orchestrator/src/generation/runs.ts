@@ -8,6 +8,7 @@ import {
   getRun,
   type RunRow,
 } from "../db/runs.js";
+import type { RunMetadata } from "../db/schema/index.js";
 import { listDueSchedules, markScheduleFired, type ScheduleRow } from "../db/schedules.js";
 import { iso, runItem } from "../db/views.js";
 import {
@@ -280,7 +281,7 @@ export class Runs {
     const runId = newId("r");
     const now = new Date();
     const opening = continuationMessage(previous.id, handoff);
-    const runMetadata: Record<string, unknown> = {
+    const runMetadata: RunMetadata = {
       ...(preparedRunMetadata(prepared) ?? {}),
       chain: { root_run_id: position.root_run_id, index: position.index + 1, previous_run_id: previous.id },
     };
@@ -304,7 +305,7 @@ export class Runs {
           ...base,
           configSnapshot: preparedSnapshot(prepared, "schedule"),
           projected: [opening],
-          runMetadata: { ...runMetadata, ...(typeof instruction === "string" ? { instruction_hash: instruction } : {}) },
+          runMetadata: { ...runMetadata, ...(instruction ? { instruction_hash: instruction } : {}) },
           scheduleId: previous.schedule_id,
         },
         now,

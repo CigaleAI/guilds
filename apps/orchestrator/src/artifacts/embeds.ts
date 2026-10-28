@@ -5,6 +5,7 @@ import { isDisplayPath, parseDisplayPath } from "./paths.js";
 import { EMBED_BUDGET, type ArtifactActor } from "./types.js";
 import type { AgentRow } from "../db/agents.js";
 import { bindQuery } from "../db/pg.js";
+import type { TaskEmbedSnapshot } from "../db/schema/index.js";
 import { describeCollection } from "./collections.js";
 import { getByDisplayPath, type DisplayPathRead } from "./notes.js";
 import type { ArtifactRow, ArtifactStore, CollectionDescription } from "./store.js";
@@ -227,13 +228,6 @@ export async function inspectEmbed(source: EmbedSource, actor: ArtifactActor, hr
   const note = await readEmbedNote(source, actor, href);
   return note.row ? { href, ok: true } : { href, ok: false, reason: note.reason };
 }
-
-export type TaskEmbedSnapshot = {
-  display_path: string;
-  version: number;
-  content_hash: string;
-  kind: string;
-};
 
 /** The notes a run inlines from a Task, directly or through other notes, as the actor reads them. */
 export async function snapshotTaskEmbeds(

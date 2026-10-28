@@ -1,4 +1,5 @@
 import { COLLECTIONS_SEGMENT } from "../artifacts/paths.js";
+import type { WindowRunRow } from "../db/state.js";
 import { iso } from "../db/views.js";
 
 // A guild's state as Studio's State list shows it: every note, table,
@@ -172,13 +173,12 @@ function itemAt(items: StateItem[], test: (item: StateItem) => boolean): string 
 }
 
 /** What one run read by being woken: its Task's embedded notes and tables, and its agent's Memory. */
-function runReads(run: Row, context: ReadContext): StateEvent[] {
-  const source = (run.task_source ?? {}) as { embeds?: Array<{ display_path?: unknown }>; collections?: unknown[] };
+function runReads(run: WindowRunRow, context: ReadContext): StateEvent[] {
   const embedded = [
-    ...(source.embeds ?? []).map((embed) => String(embed.display_path ?? "")),
-    ...(source.collections ?? []).map(String),
+    ...(run.task_source?.embeds ?? []).map((embed) => embed.display_path),
+    ...(run.task_source?.collections ?? []),
   ].filter((path) => context.items.some((item) => item.display_path === path));
-  const memory = itemAt(context.items, (item) => item.kind === "memory" && item.owner_id === String(run.agent_id));
+  const memory = itemAt(context.items, (item) => item.kind === "memory" && item.owner_id === run.agent_id);
   const reads = [...new Set(embedded)].map((path) => readEvent(path, run, "embed", context));
   return memory ? [...reads, readEvent(memory, run, "memory", context)] : reads;
 }
@@ -218,7 +218,7 @@ function callRead(call: Row, context: ReadContext): StateEvent | null {
 }
 
 /** Reads from run history: what each run inlined, its Memory, and the tool calls that named an item. */
-export function readEvents(runs: Row[], calls: Row[], context: ReadContext): StateEvent[] {
+export function readEvents(runs: WindowRunRow[], calls: Row[], context: ReadContext): StateEvent[] {
   const fromCalls = calls.flatMap((call) => {
     const read = callRead(call, context);
     return read ? [read] : [];

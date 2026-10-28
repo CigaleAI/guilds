@@ -19,7 +19,7 @@ import { createScheduleRun } from "../../src/db/runs.js";
 import { userRow } from "../helpers/users.js";
 import { writeBinding } from "../../src/access/bindings.js";
 import { userActor } from "../../src/lib/change-actor.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 
@@ -109,7 +109,7 @@ test("studio lists the guild's tools with who is offered each and how their call
         {
           runId: id,
           agentId,
-          configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+          configSnapshot: runSnapshot(CONFIG),
           systemContent: "system",
           taskContent: "task",
           projected: steps(calls),

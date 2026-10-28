@@ -6,6 +6,7 @@ import {
   storedTags,
 } from "../groupchat/history.js";
 import type { IntegrationSources } from "../instance/integrations.js";
+import type { HistoryRouting, RecipientRouting, TypeSafeUsage } from "../db/schema/index.js";
 import { writeLog } from "../observability/log.js";
 import {
   TypeSafeError,
@@ -16,7 +17,6 @@ import {
   type TypeSafeCriteriaValue,
   type TypeSafeEvaluateFn,
   type TypeSafeQuestion,
-  type TypeSafeUsage,
 } from "./client.js";
 
 export const NONE_RECIPIENT = "none";
@@ -108,8 +108,8 @@ function agentOption(member: Record<string, unknown>, taskChars: number): TypeSa
   return option;
 }
 
-export function serializeRecipientDecision(decision: RecipientDecision): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
+export function serializeRecipientDecision(decision: RecipientDecision): RecipientRouting {
+  const payload: RecipientRouting = {
     source: decision.source,
     names: [...decision.names].sort(),
   };
@@ -134,8 +134,8 @@ export function serializeRecipientDecision(decision: RecipientDecision): Record<
   return payload;
 }
 
-export function serializeHistoryDecision(decision: HistoryDecision): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
+export function serializeHistoryDecision(decision: HistoryDecision): HistoryRouting {
+  const payload: HistoryRouting = {
     source: decision.source,
     seqs: decision.rows.map((row) => Number(row.seq)),
   };

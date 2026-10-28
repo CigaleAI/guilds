@@ -10,7 +10,7 @@ import { orchestratorRoot } from "../lib/paths.js";
 import { agentDirectory, machineDirectory, machineSize, slotPorts, type MachineBox, type SlotPorts } from "../machines/index.js";
 import { SCRIPTS_DIR } from "../scripts/validation.js";
 import { materialiseScripts } from "../scripts/materialise.js";
-import type { RunScriptSnapshot } from "../scripts/snapshot.js";
+import type { RunScriptSnapshot } from "../db/schema/index.js";
 
 export const BROWSER_PROFILE = ".browser";
 export const BROWSER_START = "/usr/local/bin/agent-browser-start";

@@ -2,7 +2,6 @@ import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
 import type { ArtifactFiles } from "../artifacts/index.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
-import { isPlainRecord } from "../db/json.js";
 import { getOrgModelProvider } from "../db/orgs.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import {
@@ -60,7 +59,7 @@ const TERMINAL_CAP_OPERATIONS = new Set([
 
 /** Whether the run ended on its tool-call, input-token, or chain cap, which a resume cannot lift. */
 function runHitTerminalCap(run: RunRow): boolean {
-  return run.errors.some((entry) => isPlainRecord(entry) && TERMINAL_CAP_OPERATIONS.has(String(entry.operation ?? "")));
+  return run.errors.some((entry) => TERMINAL_CAP_OPERATIONS.has(entry.operation));
 }
 
 /** The db/ functions the loop's own run and delete operations read and write through, on `db`. */

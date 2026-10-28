@@ -1,7 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { messages, runs } from "./schema/index.js";
+import { messages, runs, type RunError, type RunMetadata, type RunScriptSnapshot, type SecretRef } from "./schema/index.js";
 import { incrementUsage, messageCostUsd } from "./usage.js";
 
 /** What a run listing filters on; every field left out matches every run. */
@@ -44,7 +44,7 @@ export type MessageRow = InferSelectModel<typeof messages>;
 export type NewDirectRun = {
   runId: string;
   agentId: string;
-  configSnapshot: Record<string, unknown>;
+  configSnapshot: Run["config_snapshot"];
   systemContent: string;
   taskContent: string;
   userContent: string | null;
@@ -52,7 +52,7 @@ export type NewDirectRun = {
   taskPromptHash: string;
   memoryPromptHash: string;
   extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]> | undefined;
-  runMetadata?: Record<string, unknown> | undefined;
+  runMetadata?: Run["metadata"] | undefined;
   userMetadata?: Record<string, unknown> | undefined;
   startedByUserId?: string | null | undefined;
 };
@@ -60,7 +60,7 @@ export type NewDirectRun = {
 export type NewGroupRun = {
   runId: string;
   agentId: string;
-  configSnapshot: Record<string, unknown>;
+  configSnapshot: Run["config_snapshot"];
   systemContent: string;
   taskContent: string;
   projected: Array<[Record<string, unknown>, Record<string, unknown>]>;
@@ -68,14 +68,14 @@ export type NewGroupRun = {
   systemPromptHash: string;
   taskPromptHash: string;
   memoryPromptHash: string;
-  runMetadata?: Record<string, unknown> | undefined;
+  runMetadata?: Run["metadata"] | undefined;
   wakeGroupMessageId?: number | null | undefined;
 };
 
 export type NewScheduleRun = {
   runId: string;
   agentId: string;
-  configSnapshot: Record<string, unknown>;
+  configSnapshot: Run["config_snapshot"];
   systemContent: string;
   taskContent: string;
   projected: Array<[Record<string, unknown>, Record<string, unknown>]>;
@@ -83,7 +83,7 @@ export type NewScheduleRun = {
   taskPromptHash: string;
   memoryPromptHash: string;
   scheduleId?: string | null | undefined;
-  runMetadata?: Record<string, unknown> | undefined;
+  runMetadata?: Run["metadata"] | undefined;
 };
 
 /** A run of any kind and the messages it opens with. */
@@ -91,7 +91,7 @@ export type NewRun = {
   runId: string;
   agentId: string;
   kind: string;
-  configSnapshot: Record<string, unknown>;
+  configSnapshot: Run["config_snapshot"];
   systemContent: string;
   taskContent: string;
   opening: Array<[Record<string, unknown>, Record<string, unknown>]>;
@@ -100,7 +100,7 @@ export type NewRun = {
   memoryPromptHash: string;
   groupChatThroughSeq?: number | null | undefined;
   scheduleId?: string | null | undefined;
-  runMetadata?: Record<string, unknown> | undefined;
+  runMetadata?: Run["metadata"] | undefined;
   wakeGroupMessageId?: number | null | undefined;
   startedByUserId?: string | null | undefined;
 };
@@ -120,7 +120,7 @@ type RoutineRunStatsQueryRow = RunHeaderRow & {
 // The columns a run header reads: no config snapshot, and only the metadata keys a header shows.
 const RUN_HEADER_COLUMNS = `id, agent_id, kind, status, errors, created_at, updated_at,
        system_prompt_hash, task_prompt_hash, memory_prompt_hash, group_chat_through_seq, schedule_id,
-       jsonb_build_object('instruction_hash', metadata->'instruction_hash', 'task_source', metadata->'task_source') AS metadata`;
+       jsonb_strip_nulls(jsonb_build_object('instruction_hash', metadata->'instruction_hash', 'task_source', metadata->'task_source')) AS metadata`;
 
 const RUN_HEADER_EQUALS: Array<[keyof RunHeaderFilter, string]> = [
   ["kind", "kind"],
@@ -432,10 +432,10 @@ export async function listPayloads(
 export async function appendRunError(
   pool: Queryable,
   runId: string,
-  entry: Record<string, unknown>,
+  entry: RunError,
   now: Date,
-): Promise<unknown[]> {
-  const result = await pool.query<{ errors: unknown[] }>(
+): Promise<RunError[]> {
+  const result = await pool.query<Pick<Run, "errors">>(
     `UPDATE runs
      SET errors = errors || $2::jsonb, updated_at = $3
      WHERE id = $1
@@ -448,12 +448,12 @@ export async function appendRunError(
 export async function mergeRunMetadata(
   pool: Queryable,
   runId: string,
-  extra: Record<string, unknown>,
+  extra: RunMetadata,
   now: Date,
 ): Promise<void> {
   await pool.query(
     `UPDATE runs
-     SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb, updated_at = $3
+     SET metadata = metadata || $2::jsonb, updated_at = $3
      WHERE id = $1`,
     [runId, JSON.stringify(extra), stamp(now)],
   );
@@ -501,7 +501,7 @@ export async function completeGroupDelivery(
 export async function updateRunSecrets(
   pool: Queryable,
   runId: string,
-  secrets: Array<Record<string, string>>,
+  secrets: SecretRef[],
   now: Date,
 ): Promise<void> {
   await pool.query(
@@ -516,7 +516,7 @@ export async function updateRunSecrets(
 export async function updateRunScripts(
   pool: Queryable,
   runId: string,
-  scripts: unknown[],
+  scripts: RunScriptSnapshot[],
   now: Date,
 ): Promise<void> {
   await pool.query(

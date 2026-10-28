@@ -21,11 +21,12 @@ import { REGISTRY } from "../../src/toolbox/index.js";
 import type { MachineSpec } from "../../src/sandbox/index.js";
 import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { tempDir } from "../helpers/env.js";
+import type { AgentConfig, RunConfigSnapshot } from "../../src/db/schema/index.js";
 import { AGENT_CONFIG, FakeDB, FakeSandboxes, liveSecret, makeLoop } from "../helpers/generation.js";
 
 const live = generationLive;
 /** A coding agent's config: coding on, with a harness. */
-const CODER = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
+const CODER: AgentConfig = { ...AGENT_CONFIG, coding: true, harness: "claude-code" };
 const originalStream = live.streamCompletion;
 /** What `guilds-harness check` answers for Claude Code installed and running on a granted token. */
 const HARNESS_READY = { installed: true, version: "9.9.9 (stub)", credential: "secret" };
@@ -289,11 +290,6 @@ test("coding offers code_task and the code tools; without it they are refused na
     { tools: [], secrets: [], mcp: [] }, "schedule",
   );
   assert.deepEqual(aliased.secret_aliases, { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" });
-  assert.deepEqual(
-    configSnapshot({ ...AGENT_CONFIG, secret_aliases: { SAME: "SAME" } }, { tools: [], secrets: [], mcp: [] }, "schedule").secret_aliases,
-    {},
-    "aliases that do not validate are left out",
-  );
   const names = (snapshot.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name);
   assert.ok(names.includes("shell"));
   assert.ok(names.includes("code_task"));
@@ -322,7 +318,7 @@ describe("coding runs in the generation loop", () => {
     live.streamCompletion = originalStream;
   });
 
-  function codingSnapshot(): Record<string, unknown> {
+  function codingSnapshot(): RunConfigSnapshot {
     return configSnapshot(CODER, { tools: [], secrets: [], mcp: [] }, "schedule");
   }
 

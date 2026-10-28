@@ -24,7 +24,7 @@ import { insertSecret } from "../../src/db/secrets.js";
 import { insertUser } from "../../src/db/users.js";
 import type { MachineInput } from "../../src/machines/index.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_row_missing");
 let database: Database;
@@ -148,7 +148,7 @@ before(async () => {
     {
       runId: RUN,
       agentId: AGENT,
-      configSnapshot: AGENT_CONFIG,
+      configSnapshot: runSnapshot(AGENT_CONFIG),
       systemContent: "system",
       taskContent: "task",
       userContent: null,

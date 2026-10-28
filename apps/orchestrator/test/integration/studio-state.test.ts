@@ -14,7 +14,8 @@ import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { createScheduleRun } from "../../src/db/runs.js";
-import { agentConfig } from "../helpers/generation.js";
+import type { RunTaskSource } from "../../src/db/schema/index.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 import { addRecord, removeRecord } from "../../src/artifacts/records.js";
 import { createCollection } from "../../src/artifacts/collections.js";
@@ -112,13 +113,13 @@ test("studio's State lists the guild's items with who changed and read each one"
       id: string,
       agentId: string,
       calls: Call[],
-      taskSource: Record<string, unknown> = {},
+      embedded: Pick<RunTaskSource, "embeds" | "collections"> = { embeds: [], collections: [] },
     ) =>
       createScheduleRun(db,
         {
           runId: id,
           agentId,
-          configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+          configSnapshot: runSnapshot(CONFIG),
           systemContent: "system",
           taskContent: "task",
           projected: steps(calls),
@@ -126,7 +127,9 @@ test("studio's State lists the guild's items with who changed and read each one"
           taskPromptHash: "t",
           memoryPromptHash: "m",
           scheduleId: null,
-          runMetadata: { task_source: taskSource },
+          runMetadata: {
+            task_source: { version: 1, hash: "h", display_path: "task.md", has_embeds: embedded.embeds.length > 0, ...embedded },
+          },
         },
         now,
       );

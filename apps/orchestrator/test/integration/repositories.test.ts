@@ -14,7 +14,7 @@ import { insertGuild } from "../../src/db/guilds.js";
 import { addAgent } from "../../src/agents/persist.js";
 import { createRun, insertMessage, nextSeq } from "../../src/db/runs.js";
 import { getUsage } from "../../src/db/usage.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const dbName = uniqueDbName("agent_platform_r2");
 let database: Database;
@@ -136,7 +136,7 @@ describe("repositories", { concurrency: 1 }, () => {
       {
         runId: "r_usage",
         agentId: "a_usage",
-        configSnapshot: {},
+        configSnapshot: runSnapshot(),
         systemContent: "sys",
         taskContent: "task",
         userContent: null,

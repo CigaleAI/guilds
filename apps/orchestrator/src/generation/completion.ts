@@ -1,4 +1,3 @@
-import { DEFAULT_MAX_INPUT_TOKENS, keepToolResultGenerationsOf } from "../agents/validation.js";
 import { attachmentImageCount, countRunInputTokens } from "../attachments/hydrate.js";
 import { IMAGE_INPUT_TOKENS, type AttachmentService } from "../attachments/index.js";
 import {
@@ -9,6 +8,7 @@ import {
 } from "../conversation/projection.js";
 import type { AgentRow } from "../db/agents.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
+import type { RunConfigSnapshot } from "../db/schema/index.js";
 import { listMessages, type MessageRow } from "../db/runs.js";
 import { modelCatalog } from "../llm/catalog.js";
 import {
@@ -25,7 +25,6 @@ import type { CancelEvent } from "../toolbox/index.js";
 import type { ActiveGenerations } from "./admission.js";
 import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
-import { positiveInt } from "./snapshot.js";
 
 export const CANCEL_GRACE_MS = 2_000;
 export const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -75,23 +74,23 @@ export type ModelHistory = {
 };
 
 /** The input tokens the run's history takes with the schemas it is offered. */
-export function historyTokens(snapshot: Record<string, unknown>, history: ModelHistory, schemas: unknown[]): number {
-  return countRunInputTokens(String(snapshot.model), history.rows, schemas.length ? schemas : null, countInputTokensImpl);
+export function historyTokens(snapshot: RunConfigSnapshot, history: ModelHistory, schemas: unknown[]): number {
+  return countRunInputTokens(snapshot.model, history.rows, schemas.length ? schemas : null, countInputTokensImpl);
 }
 
 /** A model call with the settings of the run's snapshot. */
 export function completionRequest(
-  snapshot: Record<string, unknown>,
+  snapshot: RunConfigSnapshot,
   messages: Array<Record<string, unknown>>,
   schemas: unknown[],
 ): CompletionRequest {
   return {
-    model: String(snapshot.model),
+    model: snapshot.model,
     messages,
-    temperature: Number(snapshot.temperature),
-    max_tokens: Number(snapshot.max_tokens),
+    temperature: snapshot.temperature,
+    max_tokens: snapshot.max_tokens,
     tools: schemas.length ? schemas : null,
-    ...(snapshot.thinking_level ? { thinking_level: String(snapshot.thinking_level) } : {}),
+    thinking_level: snapshot.thinking_level,
   };
 }
 
@@ -155,21 +154,21 @@ export class ModelCompletion {
   async modelHistory(
     turn: RunGeneration,
     agent: AgentRow | null,
-    snapshot: Record<string, unknown>,
+    snapshot: RunConfigSnapshot,
     schemas: unknown[],
   ): Promise<ModelHistory> {
     const listed = await this.services.db.listMessages(turn.runId);
     const projectedPayloads = projectToolResults({
       history: listed,
       currentGeneration: turn.generation,
-      keepGenerations: keepToolResultGenerationsOf(snapshot),
+      keepGenerations: snapshot.keep_tool_result_generations,
       hint: AGENT_TOOL_RESULT_STUB_HINT,
       minUnstubbed: MIN_UNSTUBBED_TOOL_RESULTS,
       minStubBytes: TOOL_RESULT_STUB_MIN_BYTES,
       budget: {
-        model: String(snapshot.model ?? ""),
+        model: snapshot.model,
         schemas,
-        maxInput: positiveInt(snapshot.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS),
+        maxInput: snapshot.max_input_tokens,
         countInputTokens: (model, messages, tools) =>
           countInputTokensImpl(model, messages, tools) + attachmentImageCount(listed) * IMAGE_INPUT_TOKENS,
       },

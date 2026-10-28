@@ -1,4 +1,3 @@
-import { DEFAULT_MAX_INPUT_TOKENS } from "../agents/validation.js";
 import { getAgent } from "../db/agents.js";
 import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -10,7 +9,6 @@ import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents } from "./events.js";
 import type { Generation } from "./generate.js";
 import type { Runs } from "./runs.js";
-import { positiveInt } from "./snapshot.js";
 import { executedToolCalls, toolCallNameAndId, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 
 /**
@@ -36,24 +34,12 @@ export type ChainPosition = { root_run_id: string; index: number; previous_run_i
 
 /** Where a run sits in its chain: a run without `metadata.chain` is the first of its own. */
 export function chainOf(run: Pick<RunRow, "id" | "metadata">): ChainPosition {
-  const chain = run.metadata.chain;
-  if (isPlainRecord(chain)) {
-    const index = Number(chain.index);
-    if (typeof chain.root_run_id === "string" && Number.isInteger(index) && index >= 1) {
-      return {
-        root_run_id: chain.root_run_id,
-        index,
-        previous_run_id: typeof chain.previous_run_id === "string" ? chain.previous_run_id : null,
-      };
-    }
-  }
-  return { root_run_id: run.id, index: 1, previous_run_id: null };
+  return run.metadata.chain ?? { root_run_id: run.id, index: 1, previous_run_id: null };
 }
 
 /** The run that continued this one, when it did. */
 export function continuedBy(run: Pick<RunRow, "metadata">): string | null {
-  const next = run.metadata.continued_by_run_id;
-  return typeof next === "string" && next ? next : null;
+  return run.metadata.continued_by_run_id ?? null;
 }
 
 /** The text of the agent's hand-off reply; empty when it wrote none. */
@@ -190,7 +176,7 @@ export class RunChains {
     const { db, events, completion } = this.services;
     const agent = await db.getAgent(gen.run.agent_id);
     const history = await completion.modelHistory(gen, agent, gen.snapshot, tools.schemas);
-    if (historyTokens(gen.snapshot, history, tools.schemas) > positiveInt(gen.snapshot.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS)) {
+    if (historyTokens(gen.snapshot, history, tools.schemas) > gen.snapshot.max_input_tokens) {
       await events.recordError(
         gen,
         "generation.max_input_tokens",

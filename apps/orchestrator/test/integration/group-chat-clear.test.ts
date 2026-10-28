@@ -20,7 +20,7 @@ import {
   postAgentGroupMessage,
   postUserGroupMessage,
 } from "../../src/db/group-chat.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -89,7 +89,7 @@ test(
         {
           runId: "r_before",
           agentId: "a_clear",
-          configSnapshot: {},
+          configSnapshot: runSnapshot(),
           systemContent: "sys",
           taskContent: "task",
           userContent: null,
@@ -163,7 +163,7 @@ test(
         {
           runId: "r_after",
           agentId: "a_clear",
-          configSnapshot: {},
+          configSnapshot: runSnapshot(),
           systemContent: "sys",
           taskContent: "task",
           userContent: null,

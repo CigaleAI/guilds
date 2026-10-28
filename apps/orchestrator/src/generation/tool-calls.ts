@@ -1,7 +1,7 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
 import { getMcpServer } from "../connectors/servers.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { isPlainRecord, recordOf } from "../db/json.js";
+import { isPlainRecord } from "../db/json.js";
 import { getMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
@@ -25,7 +25,6 @@ import { GenerationCancelled } from "./errors.js";
 import type { RunEvents, RunGeneration } from "./events.js";
 import type { AgentMachines } from "./machines.js";
 import type { ConnectorPool } from "./prepare.js";
-import { positiveInt } from "./snapshot.js";
 
 /** The tool calls of a run's history: which are pending, how many ran, and the record of an interrupted one. */
 
@@ -60,14 +59,14 @@ export function lostCodeTask(
   harness: Harness,
 ): LostCodeTask {
   const callId = callSegment(String(call.id ?? ""));
-  const remembered = recordOf(run.metadata.harness_task);
-  const known = remembered.call_id === callId ? remembered : {};
+  const remembered = run.metadata.harness_task;
+  const known = remembered?.call_id === callId ? remembered : null;
   const args = callArguments(call);
   return {
     harness,
-    repository: optionalText(known.repository) ?? optionalText(args.repo),
-    session_id: optionalText(known.session_id) ?? optionalText(args.session_id),
-    log_path: optionalText(known.log_path),
+    repository: known?.repository ?? optionalText(args.repo),
+    session_id: known?.session_id ?? optionalText(args.session_id),
+    log_path: known?.log_path ?? null,
     run_id: run.id,
     call_id: callId,
   };
@@ -147,9 +146,9 @@ export function pendingToolCalls(
 }
 
 export function toolCallNameAndId(call: Record<string, unknown>): { name: string; callId: string } {
-  const fn = recordOf(call.function);
+  const fn = call.function;
   return {
-    name: typeof fn.name === "string" ? fn.name : "",
+    name: isPlainRecord(fn) && typeof fn.name === "string" ? fn.name : "",
     callId: typeof call.id === "string" ? call.id : "",
   };
 }
@@ -259,7 +258,7 @@ export class ToolCalls {
     const rows = await db.listMessages(runId);
     const pending = pendingToolCalls(rows);
     const run = await db.getRun(runId);
-    const maxToolCalls = positiveInt(run?.config_snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS);
+    const maxToolCalls = run?.config_snapshot.max_tool_calls ?? DEFAULT_MAX_TOOL_CALLS;
     let executed = executedToolCalls(rows);
     for (const [call, callGeneration] of pending) {
       let record = interruptionRecord(call, generation ?? callGeneration);

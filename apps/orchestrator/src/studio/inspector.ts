@@ -1,7 +1,6 @@
 import { getAgent } from "../db/agents.js";
-import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
-import { getRun, listMessages, listRunHeaders, routineRunStats } from "../db/runs.js";
+import { getRun, listMessages, listRunHeaders, routineRunStats, type RunHeaderRow } from "../db/runs.js";
 import { listSchedules } from "../db/schedules.js";
 import { iso } from "../db/views.js";
 import type { GenerationLoop } from "../generation/index.js";
@@ -27,28 +26,23 @@ export type RunHeaderQuery = {
 type Item = Record<string, unknown>;
 
 /** The run facts the inspector lists without loading a transcript. */
-function runHeader(services: InspectorServices, row: Item): Item {
-  const stored = jsonObj(row.metadata);
-  const metadata = isPlainRecord(stored) ? stored : {};
-  const errors = jsonObj(row.errors);
-  const errorList = Array.isArray(errors) ? errors.filter(isPlainRecord) : [];
-  const last = errorList[errorList.length - 1];
+function runHeader(services: InspectorServices, row: RunHeaderRow): Item {
+  const last = row.errors.at(-1);
   return {
     id: row.id,
     kind: row.kind,
     status: row.status,
-    generating: services.generation ? services.generation.isGenerating(String(row.id)) : false,
+    generating: services.generation ? services.generation.isGenerating(row.id) : false,
     task_prompt_hash: row.task_prompt_hash,
     system_prompt_hash: row.system_prompt_hash,
     memory_prompt_hash: row.memory_prompt_hash,
-    schedule_id: row.schedule_id ?? null,
-    instruction_hash:
-      typeof metadata.instruction_hash === "string" ? metadata.instruction_hash : null,
-    group_chat_through_seq: row.group_chat_through_seq ?? null,
+    schedule_id: row.schedule_id,
+    instruction_hash: row.metadata.instruction_hash ?? null,
+    group_chat_through_seq: row.group_chat_through_seq,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
-    error_count: errorList.length,
-    last_error: last ? { operation: last.operation ?? null, message: last.message ?? null } : null,
+    error_count: row.errors.length,
+    last_error: last ? { operation: last.operation, message: last.message } : null,
   };
 }
 
@@ -88,7 +82,7 @@ export async function readGuildRun(
       kind: run.kind,
       status: run.status,
       task_prompt_hash: run.task_prompt_hash,
-      metadata: jsonObj(run.metadata),
+      metadata: run.metadata,
     },
     messages: await listMessages(services.db, run.id),
   };

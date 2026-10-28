@@ -1,10 +1,9 @@
 import { accessDatabase, agentSecrets } from "../access/runtime.js";
 import { secretAliasesOf } from "../agents/validation.js";
 import type { AgentRow } from "../db/agents.js";
-import { isPlainRecord, jsonObj } from "../db/json.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
-import { HARNESSES, type Harness, type HarnessLogins } from "../db/schema/index.js";
+import { HARNESSES, type Harness, type HarnessLogins, type RunRepositoryChange } from "../db/schema/index.js";
 import type { CodingRuns } from "../generation/coding.js";
 import { RunRequestError } from "../generation/errors.js";
 import { harnessEffortOf } from "./harness-models.js";
@@ -50,10 +49,8 @@ function taskLogHarness(metadata: Item | null): Harness | null {
 }
 
 /** The repositories a run changed, as its metadata lists them. */
-function changedRepositories(run: RunRow): Item[] {
-  const metadata = jsonObj(run.metadata);
-  const repos = isPlainRecord(metadata) && Array.isArray(metadata.repos) ? metadata.repos : [];
-  return repos.filter(isPlainRecord);
+function changedRepositories(run: RunRow): RunRepositoryChange[] {
+  return run.metadata.repos ?? [];
 }
 
 /** One harness of the agent: its secret, whether the agent is granted it, and the login its home holds. */
@@ -112,7 +109,7 @@ export async function checkAgentHarness(
   return codingOf(services).checkHarness(agent.id, harness);
 }
 
-export function listRunChanges(run: RunRow): { repositories: Item[] } {
+export function listRunChanges(run: RunRow): { repositories: RunRepositoryChange[] } {
   return { repositories: changedRepositories(run) };
 }
 

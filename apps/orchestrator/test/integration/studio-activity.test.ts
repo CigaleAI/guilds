@@ -23,7 +23,7 @@ import {
   createScheduleRun,
   insertMessage,
 } from "../../src/db/runs.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
@@ -44,7 +44,7 @@ const CONFIG = agentConfig({
 });
 
 const HASHES = { systemPromptHash: "s", taskPromptHash: "t", memoryPromptHash: "m" };
-const SNAPSHOT = { ...CONFIG, tools: [], mcp: [] };
+const SNAPSHOT = runSnapshot(CONFIG);
 
 const dbName = uniqueDbName("agent_platform_studio_activity");
 
@@ -132,7 +132,7 @@ test("studio activity lists each wake with what started it and what it produced"
       throughSeq: firstSeq,
       ...HASHES,
       runMetadata: {
-        typesafe: { recipients: { source: "typesafe", choice: "scout", confidence: 0.9 } },
+        typesafe: { recipients: { source: "typesafe", names: ["scout"], choice: "scout", confidence: 0.9 } },
       },
     },
     now,
@@ -196,7 +196,12 @@ test("studio activity lists each wake with what started it and what it produced"
     toolCall: { id: "call_note", name: "note_write" },
   };
   await writeNote(artifacts, deskActor, { level: "agent", key: "leads.md", content: "- one\n", title: "Leads" });
-  await appendRunError(db, "r_desk", { at: now.toISOString(), operation: "generation.max_tool_calls", message: "Tool call limit reached." }, now);
+  await appendRunError(
+    db,
+    "r_desk",
+    { at: now.toISOString(), generation: 1, operation: "generation.max_tool_calls", error_type: "RunLimitError", message: "Tool call limit reached." },
+    now,
+  );
 
   // A routine wake for desk that changes nothing.
   const routine = await schedules.create(TEST_ACTOR, "a_desk", { cron: "0 * * * *" }, "Hourly check", "Check the leads.");

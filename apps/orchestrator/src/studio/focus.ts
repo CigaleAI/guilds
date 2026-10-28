@@ -143,10 +143,9 @@ async function resolveRun(
   if (!run) {
     throw new StudioUnprocessableError("focus run not found");
   }
-  const agent = await guildAgent(deps, String(run.agent_id));
-  const errors = jsonObj(run.errors);
-  const errorList = Array.isArray(errors) ? (errors as Array<Record<string, unknown>>) : [];
-  const kind = String(run.kind ?? "direct");
+  const agent = await guildAgent(deps, run.agent_id);
+  const errorList = run.errors;
+  const kind = run.kind;
   const createdAt = isoOrNull(run.created_at);
   const focus = emptyFocus("run", agent);
   focus.run_id = runId;
@@ -158,19 +157,16 @@ async function resolveRun(
     kind,
     status: run.status,
     created_at: createdAt,
-    schedule_id: run.schedule_id ?? null,
+    schedule_id: run.schedule_id,
     error_count: errorList.length,
   };
   const lines: string[] = [
-    `${runKindLabel(kind)} ${runId} by ${agent.name} (${String(run.status)})${createdAt ? ` started ${createdAt}` : ""}.`,
+    `${runKindLabel(kind)} ${runId} by ${agent.name} (${run.status})${createdAt ? ` started ${createdAt}` : ""}.`,
   ];
   if (errorList.length) {
     lines.push(
       `Run errors: ${errorList
-        .map(
-          (entry) =>
-            `${String(entry.operation ?? "error")}${entry.message ? ` (${String(entry.message)})` : ""}`,
-        )
+        .map((entry) => `${entry.operation}${entry.message ? ` (${entry.message})` : ""}`)
         .join("; ")}.`,
     );
   }

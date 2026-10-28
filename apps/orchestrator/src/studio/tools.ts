@@ -50,7 +50,7 @@ import { listTables, readTable } from "./tables.js";
 import { studioReachesParsed, studioReachesPath } from "./reach.js";
 import { getAgent, getAgentTask, listAgentTaskRevisions, listAgents, type AgentRow } from "../db/agents.js";
 import { listSchedules, listSchedulesForGuild } from "../db/schedules.js";
-import { getRun, listMessages, listRunHeaders, routineRunStats } from "../db/runs.js";
+import { getRun, listMessages, listRunHeaders, routineRunStats, type RunHeaderRow } from "../db/runs.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -154,20 +154,18 @@ export async function resolveSourceGuildAgent(
 }
 
 // The run facts a listing carries: enough to pick a run without its transcript.
-function runHeader(row: Record<string, unknown>): Record<string, unknown> {
-  const metadata = (jsonObj(row.metadata) as Record<string, unknown> | null) ?? {};
-  const errors = jsonObj(row.errors);
+function runHeader(row: RunHeaderRow): Record<string, unknown> {
   return {
     id: row.id,
     kind: row.kind,
     status: row.status,
     task_prompt_hash: row.task_prompt_hash,
     system_prompt_hash: row.system_prompt_hash,
-    schedule_id: row.schedule_id ?? null,
-    instruction_hash: typeof metadata.instruction_hash === "string" ? metadata.instruction_hash : null,
+    schedule_id: row.schedule_id,
+    instruction_hash: row.metadata.instruction_hash ?? null,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
-    error_count: Array.isArray(errors) ? errors.length : 0,
+    error_count: row.errors.length,
   };
 }
 
@@ -468,8 +466,8 @@ export const studioListRuns: StudioTool = {
     return {
       runs: slice.map((row) => ({
         ...runHeader(row),
-        errors: jsonObj(row.errors) ?? [],
-        task_source: (jsonObj(row.metadata) as Record<string, unknown> | null)?.task_source ?? null,
+        errors: row.errors,
+        task_source: row.metadata.task_source ?? null,
       })),
       next_cursor: rows.length > limit ? String(offset + limit) : null,
     };
@@ -540,8 +538,8 @@ export const studioGetRun: StudioTool = {
         kind: run.kind,
         status: run.status,
         task_prompt_hash: run.task_prompt_hash,
-        schedule_id: run.schedule_id ?? null,
-        metadata: jsonObj(run.metadata),
+        schedule_id: run.schedule_id,
+        metadata: run.metadata,
       },
       ...(toolName ? { tool_name: toolName, matched: capped.length } : {}),
       messages: capped.map((row) => ({

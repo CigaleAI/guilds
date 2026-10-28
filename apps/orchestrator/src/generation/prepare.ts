@@ -3,7 +3,7 @@ import { accessDatabase, agentRuntime, type RuntimeAccess } from "../access/runt
 import { AgentValidationError, memoryOf, validateConfig } from "../agents/validation.js";
 import { ArtifactError, agentActor, collectTaskEmbeds, displayPathFor, inlineTaskEmbeds, operatorActor, snapshotTaskCollections, snapshotTaskEmbeds, taskEmbedActor } from "../artifacts/index.js";
 import { stateRepositories } from "../coding/repositories.js";
-import type { AgentConfig } from "../db/schema/index.js";
+import type { AgentConfig, RunTaskSource, TaskEmbedSnapshot } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
@@ -289,13 +289,13 @@ export class RunPreparation {
    * Where the run's task came from: its version and hash, its display path, and a snapshot of
    * the notes and collections it embeds as the agent may read them.
    */
-  private async taskSource(agent: AgentRow): Promise<Record<string, unknown> | null> {
+  private async taskSource(agent: AgentRow): Promise<RunTaskSource | null> {
     const { artifacts } = this.services;
     if (!artifacts || !agent.org_id) {
       return null;
     }
     const actor = taskEmbedActor(agent.org_id, agent);
-    let embeds: Array<Record<string, unknown>> = [];
+    let embeds: TaskEmbedSnapshot[] = [];
     let collections: string[] = [];
     try {
       embeds = await snapshotTaskEmbeds(artifacts, actor, agent.task);

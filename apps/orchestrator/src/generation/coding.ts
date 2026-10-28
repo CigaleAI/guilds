@@ -1,6 +1,6 @@
+import { Type } from "@sinclair/typebox";
 import { accessDatabase, agentSecrets, snapshotEnvValues } from "../access/runtime.js";
 import { agentGitIdentity, cloneFailures, repositoryTokenDatabase, RepositoryTokens } from "../coding/git.js";
-import { harnessOf } from "../coding/harnesses.js";
 import { codingRepositories } from "../coding/repositories.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { getGuild, listGuildRepositories } from "../db/guilds.js";
@@ -8,7 +8,8 @@ import { isPlainRecord } from "../db/json.js";
 import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
-import type { Harness } from "../db/schema/index.js";
+import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange } from "../db/schema/index.js";
+import { decode } from "../lib/decode.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import { RepositoryAccessError } from "../github/tokens.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
@@ -290,7 +291,7 @@ export class CodingRuns {
     call: Record<string, unknown>,
     record: [Record<string, unknown>, Record<string, unknown>],
   ): Promise<[Record<string, unknown>, Record<string, unknown>]> {
-    const harness = harnessOf(run.config_snapshot);
+    const harness = run.config_snapshot.harness;
     if (harness === null) {
       return record;
     }
@@ -339,11 +340,16 @@ export class CodingRuns {
     }
   }
 
-  /** Takes a checkpoint of every working tree; one that fails is logged, and lists no repositories. */
-  private async checkpoint(ctx: ToolContext, which: "start" | "end", agent: AgentRow): Promise<unknown[]> {
+  /**
+   * Takes a checkpoint of every working tree; the end one lists what each repository changed since
+   * the start. One that fails, or reports repositories in another shape, is logged and lists none.
+   */
+  private async checkpoint(ctx: ToolContext, which: "start" | "end", agent: AgentRow): Promise<RunRepositoryChange[]> {
     try {
       const result = await runCodeHelper(ctx, "checkpoint", { which }, { timeoutSeconds: 300 });
-      return Array.isArray(result.meta.repositories) ? result.meta.repositories : [];
+      return which === "end"
+        ? decode(Type.Array(RunRepositoryChangeSchema), result.meta.repositories, (problem) => new Error(`checkpoint ${problem}`))
+        : [];
     } catch (error) {
       writeLog("warn", errorMessage(error), {
         run_id: ctx.run_id,

@@ -1,6 +1,6 @@
 import { enabledToolNames, resolvedTools } from "../access/index.js";
 import { isPlainRecord } from "../db/json.js";
-import type { RunScriptSnapshot } from "../scripts/snapshot.js";
+import type { RunMcpConnection, RunScriptSnapshot } from "../db/schema/index.js";
 import { REGISTRY } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
 import { firstClassScriptSchemas } from "../toolbox/script.js";
@@ -10,10 +10,8 @@ import { firstClassScriptSchemas } from "../toolbox/script.js";
  * still grant, and the connection tools it dispatches to an MCP server.
  */
 
-export function toolSchemaName(tool: unknown): string {
-  if (!isPlainRecord(tool)) {
-    return "";
-  }
+/** The name a tool schema offers its tool under: its function's name, else its own. */
+export function toolSchemaName(tool: Record<string, unknown>): string {
   const fn = isPlainRecord(tool.function) ? tool.function : null;
   return (
     (fn && typeof fn.name === "string" ? fn.name : "") ||
@@ -21,11 +19,8 @@ export function toolSchemaName(tool: unknown): string {
   );
 }
 
-export function snapshotOfferedNames(tools: unknown): Set<string> {
+export function snapshotOfferedNames(tools: Array<Record<string, unknown>>): Set<string> {
   const names = new Set<string>();
-  if (!Array.isArray(tools)) {
-    return names;
-  }
   for (const tool of tools) {
     const name = toolSchemaName(tool);
     if (name) {
@@ -37,10 +32,10 @@ export function snapshotOfferedNames(tools: unknown): Set<string> {
 
 /** First-class script schemas follow `script_run`, not the frozen native/MCP list. */
 export function withFirstClassScriptTools(
-  tools: unknown[],
+  tools: Array<Record<string, unknown>>,
   runScripts: RunScriptSnapshot[],
   scriptRunOffered: boolean,
-): unknown[] {
+): Array<Record<string, unknown>> {
   const firstClass = new Set(
     runScripts.filter((row) => row.parameters !== null).map((row) => row.name),
   );
@@ -93,36 +88,14 @@ export function liveOfferedNames(
 // Maps a run snapshot's connection tools to `[connection_id, remote_name]`.
 // A name the native registry owns is never a connection tool, whatever the
 // snapshot lists: native dispatch wins.
-function indexConnectionTools(
-  index: Record<string, [string, string]>,
-  connectionId: string,
-  tools: unknown,
-): void {
-  if (!Array.isArray(tools)) {
-    return;
-  }
-  for (const tool of tools) {
-    if (!isPlainRecord(tool)) {
-      continue;
-    }
-    const name = tool.name;
-    const remote = tool.remote_name;
-    if (typeof name === "string" && typeof remote === "string" && !(name in REGISTRY)) {
-      index[name] = [connectionId, remote];
-    }
-  }
-}
-
-export function mcpIndex(mcp: unknown): Record<string, [string, string]> {
+export function mcpIndex(mcp: RunMcpConnection[]): Record<string, [string, string]> {
   const index: Record<string, [string, string]> = {};
-  if (!Array.isArray(mcp)) {
-    return index;
-  }
   for (const group of mcp) {
-    if (!isPlainRecord(group) || typeof group.connection_id !== "string") {
-      continue;
+    for (const tool of group.tools) {
+      if (!(tool.name in REGISTRY)) {
+        index[tool.name] = [group.connection_id, tool.remote_name];
+      }
     }
-    indexConnectionTools(index, group.connection_id, group.tools);
   }
   return index;
 }

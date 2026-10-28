@@ -1,6 +1,7 @@
 import { ScriptError } from "../scripts/validation.js";
 import type { AgentScript } from "../scripts/catalog.js";
-import { liveExtraRows, type RunScriptSnapshot } from "../scripts/snapshot.js";
+import type { RunScriptSnapshot } from "../db/schema/index.js";
+import { liveExtraRows } from "../scripts/snapshot.js";
 import {
   launcherCommand,
   SCRIPT_ARGS_ENV,

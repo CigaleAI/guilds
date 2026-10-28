@@ -14,7 +14,7 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { addAgent } from "../../src/agents/persist.js";
 import { createRun, insertMessage } from "../../src/db/runs.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 const JSON_AUTH = { ...AUTH, "content-type": "application/json" };
@@ -76,7 +76,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
       {
         runId: "r_diff",
         agentId: "a_diff",
-        configSnapshot: {},
+        configSnapshot: runSnapshot(),
         systemContent: "sys",
         taskContent: "task",
         userContent: null,

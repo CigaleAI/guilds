@@ -1,12 +1,11 @@
 import { accessDatabase, agentSecrets, applySecretAliases, snapshotEnvValues } from "../access/runtime.js";
-import { secretAliasesOf } from "../agents/validation.js";
 import { instanceRedactions } from "../connectors/instance.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { isPlainRecord } from "../db/json.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { listActiveRuns, listRuns, updateRunSecrets } from "../db/runs.js";
+import type { RunConfigSnapshot, SecretRef } from "../db/schema/index.js";
 import { listActiveRunAgentIdsForSecret } from "../db/secrets.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { agentSecretsDatabase, readSecretFile, removeSecretFile, storeAgentSecret } from "../secrets/agent.js";
@@ -34,17 +33,10 @@ async function connectionRedactions(db: ConnectionPayloads, connectionId: string
 /** The tokens of every connection the run's snapshot names, as redaction values. */
 export async function mcpRedactions(
   db: ConnectionPayloads,
-  snapshot: Record<string, unknown>,
+  snapshot: RunConfigSnapshot,
 ): Promise<Record<string, string>> {
   const values: Record<string, string> = {};
-  const mcp = snapshot.mcp;
-  if (!Array.isArray(mcp)) {
-    return values;
-  }
-  for (const group of mcp) {
-    if (!isPlainRecord(group) || typeof group.connection_id !== "string") {
-      continue;
-    }
+  for (const group of snapshot.mcp) {
     Object.assign(values, await connectionRedactions(db, group.connection_id));
   }
   return values;
@@ -71,7 +63,7 @@ export type RunSecretsDatabase = ReturnType<typeof runSecretsDatabase>;
  * and every value its output is redacted with.
  */
 export type GenerationSecrets = {
-  refs: Array<Record<string, string>>;
+  refs: SecretRef[];
   env: Record<string, string>;
   values: Record<string, string>;
 };
@@ -101,7 +93,7 @@ export class RunSecrets {
   }
 
   /** Writes the agent's current secret references into each of its active runs that holds others. */
-  async sync(agent: AgentRow): Promise<Array<Record<string, string>>> {
+  async sync(agent: AgentRow): Promise<SecretRef[]> {
     const refs = await agentSecrets(this.db, agent);
     const now = new Date();
     for (const run of await this.db.listRuns(agent.id)) {
@@ -115,10 +107,10 @@ export class RunSecrets {
   }
 
   /** The generation's secrets, synced into its snapshot first, with its aliases applied. */
-  async resolve(agent: AgentRow, snapshot: Record<string, unknown>): Promise<GenerationSecrets> {
+  async resolve(agent: AgentRow, snapshot: RunConfigSnapshot): Promise<GenerationSecrets> {
     const refs = await this.sync(agent);
     snapshot.secrets = refs;
-    const env = applySecretAliases(await snapshotEnvValues(this.db, refs), secretAliasesOf(snapshot));
+    const env = applySecretAliases(await snapshotEnvValues(this.db, refs), snapshot.secret_aliases);
     return { refs, env, values: { ...env, ...(await mcpRedactions(this.db, snapshot)), ...instanceRedactions() } };
   }
 

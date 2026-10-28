@@ -1,6 +1,7 @@
 import { formatColumnTimestamp } from "./codecs.js";
 import type { GroupMessageRow } from "./group-chat.js";
 import type { MessageRow, RunRow } from "./runs.js";
+import type { RunChain, RunConfigSnapshot, RunMetadata, RunRepositoryChange } from "./schema/index.js";
 
 export function iso(value: unknown): string {
   if (value instanceof Date) {
@@ -49,18 +50,21 @@ export type RunView = Pick<
   | "kind"
   | "group_chat_through_seq"
 > & {
-  config_snapshot: Record<string, unknown>;
+  config_snapshot: PublicRunConfigSnapshot;
   generating: boolean;
   created_at: string;
   updated_at: string;
   schedule_id?: string;
   instruction_hash?: string | null;
-  repos?: unknown[];
-  chain?: unknown;
+  repos?: RunRepositoryChange[];
+  chain?: RunChain;
   continued_by_run_id?: string;
 };
 
-function publicConfigSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
+/** A run's config snapshot as the API sends it: without the scripts it pins. */
+export type PublicRunConfigSnapshot = Omit<RunConfigSnapshot, "scripts">;
+
+function publicConfigSnapshot(snapshot: RunConfigSnapshot): PublicRunConfigSnapshot {
   const { scripts: _scripts, ...rest } = snapshot;
   return rest;
 }
@@ -87,29 +91,22 @@ export function runItem(row: RunRow, generating: boolean): RunView {
 
 // A coding run carries what it changed in each repository, and its place in a run chain.
 // Other runs omit the keys.
-function codingFields(metadata: Record<string, unknown>): Pick<RunView, "repos" | "chain" | "continued_by_run_id"> {
+function codingFields(metadata: RunMetadata): Pick<RunView, "repos" | "chain" | "continued_by_run_id"> {
   const { repos, chain, continued_by_run_id: continuedBy } = metadata;
   return {
-    ...(Array.isArray(repos) ? { repos } : {}),
-    ...(chain && typeof chain === "object" ? { chain } : {}),
-    ...(typeof continuedBy === "string" ? { continued_by_run_id: continuedBy } : {}),
+    ...(repos ? { repos } : {}),
+    ...(chain ? { chain } : {}),
+    ...(continuedBy ? { continued_by_run_id: continuedBy } : {}),
   };
 }
 
 // Schedule runs carry the routine that woke them and the hash of the
 // instruction it fired with. Other kinds omit both keys.
-function scheduleFields(
-  scheduleId: string | null,
-  metadata: Record<string, unknown>,
-): Pick<RunView, "schedule_id" | "instruction_hash"> {
+function scheduleFields(scheduleId: string | null, metadata: RunMetadata): Pick<RunView, "schedule_id" | "instruction_hash"> {
   if (!scheduleId) {
     return {};
   }
-  const hash = metadata.instruction_hash;
-  return {
-    schedule_id: scheduleId,
-    instruction_hash: typeof hash === "string" ? hash : null,
-  };
+  return { schedule_id: scheduleId, instruction_hash: metadata.instruction_hash ?? null };
 }
 
 /** A group chat message as the API and the live stream send it. */

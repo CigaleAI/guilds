@@ -23,6 +23,7 @@ import { advanceGroupCursor,
 import { getGuild, listGuilds } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
 import { getRun } from "../db/runs.js";
+import type { RecipientRouting } from "../db/schema/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
 export {
@@ -313,7 +314,7 @@ export type GroupDelivery = {
   agentId: string;
   throughSeq: number;
   deliveredThrough: number;
-  recipients: Record<string, unknown> | null;
+  recipients: RecipientRouting | null;
 };
 
 export type GroupRunner = {

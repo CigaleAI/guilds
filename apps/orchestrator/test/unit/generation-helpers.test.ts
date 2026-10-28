@@ -13,7 +13,7 @@ import { mcpRedactions } from "../../src/generation/run-secrets.js";
 import { workspaceMaxMib } from "../../src/generation/workspace.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
-import { AGENT_CONFIG } from "../helpers/generation.js";
+import { AGENT_CONFIG, runSnapshot } from "../helpers/generation.js";
 
 test("workspaceMaxMib uses a positive integer env value and otherwise the default", () => {
   assert.equal(workspaceMaxMib({ WORKSPACE_MAX_MIB: "512" }), 512);
@@ -95,41 +95,42 @@ test("interruptionRecord omits exit_code for non-shell tools", () => {
   assert.equal("exit_code" in metadata, false);
 });
 
-test("mcpIndex ignores native registry names and incomplete groups", () => {
+test("mcpIndex maps each connection tool to its connection and remote name, never a native tool", () => {
   const index = mcpIndex([
-    null,
-    { connection_id: 1, tools: [{ name: "remote", remote_name: "x" }] },
     {
       connection_id: "conn_1",
+      server_id: "srv_notion",
+      slug: "notion",
       tools: [
         { name: "note_find", remote_name: "search" },
         { name: "notion_search", remote_name: "search" },
-        { name: "broken" },
       ],
     },
   ]);
   assert.deepEqual(index, { notion_search: ["conn_1", "search"] });
 });
 
-test("configSnapshot skips invalid mcp tool entries", () => {
+test("configSnapshot offers each connection tool's schema and keeps the connection's tools by name", () => {
   const snapshot = configSnapshot(AGENT_CONFIG, {
     tools: [],
     secrets: [],
     mcp: [
-      { connection_id: "conn_1", tools: "nope" },
-      { connection_id: "conn_2", tools: [null, { name: "ok", remote_name: "r", schema: { type: "object" } }] },
+      {
+        connection_id: "conn_1",
+        server_id: "srv_notion",
+        slug: "notion",
+        tools: [{ name: "ok", remote_name: "r", schema: { type: "object" } }],
+      },
     ],
   }, "schedule");
-  const tools = snapshot.tools as Array<Record<string, unknown>>;
-  assert.equal(tools.some((tool) => tool.type === "object"), true);
-  const mcp = snapshot.mcp as Array<{ tools: unknown[] }>;
-  assert.deepEqual(mcp[0]?.tools, []);
-  assert.deepEqual(mcp[1]?.tools, [{ name: "ok", remote_name: "r" }]);
+  assert.equal(snapshot.tools.some((tool) => tool.type === "object"), true);
+  assert.deepEqual(snapshot.mcp[0]?.tools, [{ name: "ok", remote_name: "r" }]);
 });
 
 test("mcpRedactions skips missing connections and decrypt failures", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({ access_token: "tok-live" });
+  const connection = (id: string) => ({ connection_id: id, server_id: "srv", slug: "srv", tools: [] });
   const values = await mcpRedactions(
     {
       async getMcpConnection(connectionId: string) {
@@ -142,20 +143,10 @@ test("mcpRedactions skips missing connections and decrypt failures", async () =>
         return { ciphertext, nonce };
       },
     },
-    {
-      mcp: [
-        { connection_id: "missing" },
-        { connection_id: "broken" },
-        { connection_id: "live" },
-        { connection_id: 1 },
-      ],
-    },
+    { ...runSnapshot(), mcp: [connection("missing"), connection("broken"), connection("live")] },
   );
   assert.equal(values.mcp_live_access_token, "tok-live");
   assert.equal("mcp_missing_access_token" in values, false);
   assert.equal("mcp_broken_access_token" in values, false);
 });
 
-test("mcpRedactions returns empty when mcp is not a list", async () => {
-  assert.deepEqual(await mcpRedactions({ async getMcpConnection() { return null; } }, {}), {});
-});

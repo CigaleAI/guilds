@@ -65,7 +65,7 @@ import { getSchedule, listSchedules } from "../../src/db/schedules.js";
 import { getConversationMessage, insertConversationMessage, listConversationMessages, nextConversationSeq } from "../../src/db/conversations.js";
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
-import { agentConfig } from "../helpers/generation.js";
+import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { getByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
 import { operatorContext } from "../../src/artifacts/store.js";
 import { createCollection, describeCollection, updateCollection } from "../../src/artifacts/collections.js";
@@ -741,7 +741,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     {
       runId: "r_ev_wake",
       agentId: "a_ev",
-      configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+      configSnapshot: runSnapshot(CONFIG),
       systemContent: "system prompt",
       taskContent: "task prompt",
       projected: [
@@ -780,7 +780,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     {
       runId: "r_ev_direct",
       agentId: "a_ev",
-      configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+      configSnapshot: runSnapshot(CONFIG),
       systemContent: "system prompt",
       taskContent: "task prompt",
       userContent: "hello",
@@ -964,7 +964,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       {
         runId: "r_far",
         agentId: "a_far",
-        configSnapshot: { ...CONFIG, tools: [], mcp: [] },
+        configSnapshot: runSnapshot(CONFIG),
         systemContent: "system",
         taskContent: "task",
         userContent: "hi",
@@ -2113,7 +2113,7 @@ test("studio proposes routines to create, change, and delete that the operator a
       {
         runId: "r_wt",
         agentId: "a_wt",
-        configSnapshot: {},
+        configSnapshot: runSnapshot(),
         systemContent: "system prompt",
         taskContent: "task prompt",
         userContent: null,

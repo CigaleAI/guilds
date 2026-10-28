@@ -17,6 +17,7 @@ import {
 import { userActor } from "../../src/lib/change-actor.js";
 import { getSchedule } from "../../src/db/schedules.js";
 import { createRun } from "../../src/db/runs.js";
+import { runSnapshot } from "../helpers/generation.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -114,7 +115,7 @@ test("an operator and an agent can change a routine in place", { timeout: 60_000
       {
         runId: "r_edit",
         agentId,
-        configSnapshot: {},
+        configSnapshot: runSnapshot(),
         systemContent: "system prompt",
         taskContent: "task prompt",
         userContent: null,

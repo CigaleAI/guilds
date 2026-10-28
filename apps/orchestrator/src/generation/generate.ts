@@ -1,18 +1,7 @@
 import { accessDatabase } from "../access/runtime.js";
-import {
-  DEFAULT_MAX_INPUT_TOKENS,
-  DEFAULT_MAX_TOOL_CALLS,
-  maxScriptsOf,
-  secretAliasesOf,
-} from "../agents/validation.js";
+import { maxScriptsOf } from "../agents/validation.js";
 import { agentActor, type ArtifactFiles } from "../artifacts/index.js";
-import { harnessEffortOf } from "../coding/harness-models.js";
-import {
-  harnessModelOf,
-  harnessOf,
-  REPOSITORIES_MISSING,
-  REPOSITORIES_MISSING_MESSAGE,
-} from "../coding/harnesses.js";
+import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { isPlainRecord } from "../db/json.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -35,7 +24,7 @@ import { errorName, writeLog } from "../observability/log.js";
 import { agentSandbox, applyRunScripts, prepareWorkspace, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
-import { pinnedScripts, type RunScriptSnapshot } from "../scripts/snapshot.js";
+import type { RunConfigSnapshot, RunScriptSnapshot } from "../db/schema/index.js";
 import { harnessMissingError, shownProgressLines } from "../toolbox/harness.js";
 import { createToolContext, type ToolContext } from "../toolbox/index.js";
 import { dynamicScriptTools, liveExtraForAgent, SCRIPT_TOOLS } from "../toolbox/script.js";
@@ -49,7 +38,6 @@ import { agentSeat, type AgentMachines } from "./machines.js";
 import { liveOfferedNames, mcpIndex, snapshotOfferedNames, toolSchemaName, withFirstClassScriptTools } from "./offered-tools.js";
 import type { GenerationSecrets, RunSecrets } from "./run-secrets.js";
 import type { GenerationStarter } from "./runs.js";
-import { positiveInt } from "./snapshot.js";
 import { executedToolCalls, toolCallsOf, type GenerationTools, type ToolCalls } from "./tool-calls.js";
 import type { WorkspaceLimits } from "./workspace.js";
 import type { GenerationArtifacts } from "./prepare.js";
@@ -58,7 +46,7 @@ const TOOL_CALL_LIMIT_MESSAGE = "Tool call limit reached. Start a new run to con
 const SCHEDULE_WAKE_PREFIX = "Schedule wake-up: ";
 
 /** A generation under way: its run and agent as it started, and the snapshot it runs with. */
-export type Generation = RunGeneration & { run: RunRow; agent: AgentRow; snapshot: Record<string, unknown> };
+export type Generation = RunGeneration & { run: RunRow; agent: AgentRow; snapshot: RunConfigSnapshot };
 
 /** The containers a generation runs in: its machine's, and the agent's on it with the run's environment. */
 type RunSandboxes = { machine: SandboxHandle; agent: SandboxHandle };
@@ -76,8 +64,7 @@ class HandoffDue extends Error {
 
 /** Whether an operator resumed the run, which then stays open for their messages. */
 export function runWasResumed(run: Pick<RunRow, "metadata">): boolean {
-  const resumedAt = run.metadata.resumed_at;
-  return typeof resumedAt === "string" && resumedAt.length > 0;
+  return Boolean(run.metadata.resumed_at);
 }
 
 /**
@@ -90,11 +77,6 @@ function completesItself(run: RunRow): boolean {
     return false;
   }
   return run.kind === "schedule" || (run.kind === "group" && chainOf(run).index > 1);
-}
-
-/** The agent's live setting when it has one, else the run's. */
-function liveFlag(value: unknown, frozen: boolean): boolean {
-  return typeof value === "boolean" ? value : frozen;
 }
 
 /** The instruction the run's schedule wake-up message carries; empty when it carries none. */
@@ -338,10 +320,10 @@ export class RunGenerator {
   /** A coding run starts only with a harness picked and a repository in its guild. */
   private async isStartable(gen: Generation): Promise<boolean> {
     const { db, events } = this.services;
-    if (gen.snapshot.coding !== true) {
+    if (!gen.snapshot.coding) {
       return true;
     }
-    if (harnessOf(gen.snapshot) === null) {
+    if (gen.snapshot.harness === null) {
       const missing = harnessMissingError();
       await events.recordError(gen, missing.code, missing);
       return false;
@@ -385,7 +367,7 @@ export class RunGenerator {
   private async runSandboxes(gen: Generation, env: Record<string, string>): Promise<RunSandboxes | null> {
     const { scripts, machines, events } = this.services;
     try {
-      const pinned = pinnedScripts(gen.snapshot.scripts) ?? (await scripts.snapshot(gen.agent.id));
+      const pinned = gen.snapshot.scripts ?? (await scripts.snapshot(gen.agent.id));
       const live = await scripts.listForAgent(gen.agent.id);
       const machine = await machines.sandboxForGeneration(gen.agent);
       const seat = agentSeat(gen.agent);
@@ -420,10 +402,10 @@ export class RunGenerator {
     sandboxes: RunSandboxes,
     secrets: GenerationSecrets,
   ): Promise<GenerationTools> {
-    const frozen: unknown[] = Array.isArray(gen.snapshot.tools) ? gen.snapshot.tools : [];
+    const frozen = gen.snapshot.tools;
     const offer: ToolOffer = {
       names: await this.offeredNames(gen, frozen),
-      scripts: pinnedScripts(gen.snapshot.scripts) ?? [],
+      scripts: gen.snapshot.scripts ?? [],
       connections: mcpIndex(gen.snapshot.mcp),
     };
     return {
@@ -435,21 +417,21 @@ export class RunGenerator {
       ),
       secrets: secrets.values,
       connections: offer.connections,
-      maxToolCalls: positiveInt(gen.snapshot.max_tool_calls, DEFAULT_MAX_TOOL_CALLS),
+      maxToolCalls: gen.snapshot.max_tool_calls,
     };
   }
 
-  private async offeredNames(gen: Generation, frozen: unknown[]): Promise<Set<string>> {
-    const { agent, snapshot, run } = gen;
+  private async offeredNames(gen: Generation, frozen: RunConfigSnapshot["tools"]): Promise<Set<string>> {
+    const { agent, run } = gen;
     const scope = { orgId: agent.org_id || null, guildId: agent.guild_id, agentId: agent.id };
     const rows = await this.services.db.listBindingsCovering(scope);
     const live = agent.config;
     return liveOfferedNames(snapshotOfferedNames(frozen), rows, {
       ...scope,
-      browser: liveFlag(live.browser, Boolean(snapshot.browser)),
-      coding: liveFlag(live.coding, Boolean(snapshot.coding)),
-      scripting: liveFlag(live.scripting, snapshot.scripting !== false),
-      memory: liveFlag(live.memory, snapshot.memory !== false),
+      browser: live.browser,
+      coding: live.coding,
+      scripting: live.scripting,
+      memory: live.memory,
       schedules: run.kind !== "schedule",
       direct: run.kind === "direct",
     });
@@ -491,7 +473,7 @@ export class RunGenerator {
       schedules,
       scripts: SCRIPT_TOOLS.some((name) => offer.names.has(name)) ? scripts : null,
       run_kind: gen.run.kind,
-      secret_names: secrets.refs.map((ref) => String(ref.name)),
+      secret_names: secrets.refs.map((ref) => ref.name),
       secret_store: this.services.secrets.secretStore(agent),
       memory_replaced_by: await memoryReplacedBy(db, gen.run),
       run_scripts: offer.scripts,
@@ -502,10 +484,10 @@ export class RunGenerator {
       dynamic_tools: offer.names.has("script_run") ? dynamicScriptTools(offer.scripts) : {},
       connection_tool_names: Object.keys(offer.connections),
       offered_tools: offer.names,
-      harness: harnessOf(snapshot),
-      harness_model: harnessModelOf(snapshot),
-      harness_effort: harnessEffortOf(snapshot),
-      secret_aliases: secretAliasesOf(snapshot),
+      harness: snapshot.harness,
+      harness_model: snapshot.harness_model,
+      harness_effort: snapshot.harness_effort,
+      secret_aliases: snapshot.secret_aliases,
       // `secrets.values` holds the run's values and, once minted, its GitHub tokens.
       publish_progress: async (toolCallId, update) => {
         await events.publish(runId, "tool.progress", {
@@ -529,7 +511,7 @@ export class RunGenerator {
 
   /** Model steps until the model stops calling tools, or the step, tool-call, or input limit ends the run. */
   private async runSteps(gen: Generation, tools: GenerationTools): Promise<void> {
-    const maxSteps = Number(gen.snapshot.max_steps);
+    const maxSteps = gen.snapshot.max_steps;
     for (let step = 0; step < maxSteps; step += 1) {
       if (this.services.generations.isCancelled(gen.runId)) {
         throw new GenerationCancelled();
@@ -595,7 +577,7 @@ export class RunGenerator {
    */
   private async modelStep(gen: Generation, tools: GenerationTools): Promise<Array<Record<string, unknown>>> {
     const { db, completion, events, toolCalls } = this.services;
-    const maxInputTokens = positiveInt(gen.snapshot.max_input_tokens, DEFAULT_MAX_INPUT_TOKENS);
+    const maxInputTokens = gen.snapshot.max_input_tokens;
     const agent = await db.getAgent(gen.run.agent_id);
     const history = await completion.modelHistory(gen, agent, gen.snapshot, tools.schemas);
     const tokens = historyTokens(gen.snapshot, history, tools.schemas);

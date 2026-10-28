@@ -40,7 +40,6 @@ export {
   type EmbedStep,
   snapshotTaskCollections,
   type TaskEmbedInspection,
-  type TaskEmbedSnapshot,
 } from "./embeds.js";
 export { columnCatalog, describeColumn, parseColumnChange, parseColumns } from "./columns.js";
 export { COLUMN_TYPES, type CollectionColumn, type ColumnType } from "../db/collections.js";

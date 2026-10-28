@@ -15,6 +15,7 @@ import {
   text,
   unique,
 } from "drizzle-orm/pg-core";
+import { Type, type Static } from "@sinclair/typebox";
 import { sql } from "drizzle-orm";
 import { timestamptz } from "./columns.js";
 import { guilds, machines, orgs, users } from "./organisations.js";
@@ -74,6 +75,137 @@ export type AgentConfig = {
   scripting: boolean;
   memory: boolean;
   thinking_level: ThinkingLevel;
+};
+
+/** A secret a run reaches, as its snapshot names it: never its value. */
+export type SecretRef = { id: string; name: string; description: string };
+
+/** A tool of a connection a run reaches: its namespaced name and the server's own name for it. */
+export type RunMcpTool = { name: string; remote_name: string };
+
+/** A connection a run reaches, with the tools of it the run is offered. */
+export type RunMcpConnection = { connection_id: string; server_id: string; slug: string; tools: RunMcpTool[] };
+
+/** A script as a run pins it: the agent's script at the run's start, without its owner. */
+export type RunScriptSnapshot = {
+  id: string;
+  name: string;
+  description: string;
+  parameters: Record<string, unknown> | null;
+  source: string;
+  source_hash: string;
+};
+
+/**
+ * `runs.config_snapshot`: the agent's settings a run is created with, the tools it is offered
+ * (each an OpenAI function schema, passed to the model as is), the connections and secrets it
+ * reaches, and the scripts it pins.
+ */
+export type RunConfigSnapshot = Omit<AgentConfig, "max_scripts" | "max_workspace_mib"> & {
+  projection_policy_version: number;
+  database: boolean;
+  tools: Array<Record<string, unknown>>;
+  mcp: RunMcpConnection[];
+  secrets: SecretRef[];
+  scripts?: RunScriptSnapshot[];
+};
+
+/** An entry of `runs.errors`: a generation's failure, its message redacted. */
+export type RunError = {
+  at: string;
+  generation: number;
+  operation: string;
+  error_type: string;
+  message: string;
+};
+
+/** Where a run sits in a chain of hand-offs: the chain's first run, its index, and the run it continues. */
+export type RunChain = { root_run_id: string; index: number; previous_run_id: string };
+
+const NullableString = Type.Union([Type.String(), Type.Null()]);
+
+/** One repository's change over a coding run, as the end checkpoint reports it: its checkpoints and their diffstat. */
+export const RunRepositoryChangeSchema = Type.Object({
+  name: Type.String(),
+  branch: NullableString,
+  head_sha: NullableString,
+  start_sha: NullableString,
+  end_sha: Type.String(),
+  files_changed: Type.Integer(),
+  insertions: Type.Integer(),
+  deletions: Type.Integer(),
+});
+export type RunRepositoryChange = Static<typeof RunRepositoryChangeSchema>;
+
+/** The `code_task` call a run last started a harness turn for, to recover it when the call is lost. */
+export type RunHarnessTask = {
+  call_id: string;
+  harness: Harness;
+  repository: string;
+  session_id: string | null;
+  log_path: string;
+};
+
+/** A note a run's task inlines, as the run's agent read it when the run started. */
+export type TaskEmbedSnapshot = {
+  display_path: string;
+  version: number;
+  content_hash: string;
+  kind: string;
+};
+
+/** Where a run's task came from: its version, hash and path, and what it embeds as the agent may read it. */
+export type RunTaskSource = {
+  version: number;
+  hash: string;
+  display_path: string;
+  embeds: TaskEmbedSnapshot[];
+  collections: string[];
+  has_embeds: boolean;
+};
+
+/** The tokens a TypeSafe decision spent, as the service reports them. */
+export type TypeSafeUsage = { input_tokens?: number; output_tokens?: number };
+
+/** How a group run's recipients were chosen: by tags, by TypeSafe, or by the fallback. */
+export type RecipientRouting = {
+  source: "tags" | "typesafe" | "low_confidence" | "fallback";
+  names: string[];
+  reason?: string;
+  choice?: string;
+  confidence?: number;
+  probabilities?: Record<string, number>;
+  model?: string;
+  usage?: TypeSafeUsage;
+};
+
+/** Which group chat messages a run was given, by their seqs, and how they were chosen. */
+export type HistoryRouting = {
+  source: "limit" | "typesafe" | "fallback";
+  seqs: number[];
+  reason?: string;
+  keep?: Record<string, number>;
+  model?: string;
+  usage?: TypeSafeUsage;
+};
+
+/** The TypeSafe decisions a run was created from. */
+export type RunTypesafe = { history?: HistoryRouting; recipients?: RecipientRouting };
+
+/**
+ * `runs.metadata`: what the run's writers record about it. Each key is set by the part of the
+ * run that knows it, so every key is optional.
+ */
+export type RunMetadata = {
+  task_source?: RunTaskSource;
+  typesafe?: RunTypesafe;
+  instruction_hash?: string;
+  chain?: RunChain;
+  continued_by_run_id?: string;
+  repos?: RunRepositoryChange[];
+  host_id?: string;
+  harness_task?: RunHarnessTask;
+  resumed_at?: string;
 };
 
 export const agents = pgTable(
@@ -140,8 +272,8 @@ export const runs = pgTable(
     id: text("id").primaryKey(),
     agent_id: text("agent_id").notNull(),
     status: text("status", { enum: ["active", "completed"] }).notNull(),
-    config_snapshot: jsonb("config_snapshot").$type<Record<string, unknown>>().notNull(),
-    errors: jsonb("errors").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    config_snapshot: jsonb("config_snapshot").$type<RunConfigSnapshot>().notNull(),
+    errors: jsonb("errors").$type<RunError[]>().notNull().default(sql`'[]'::jsonb`),
     created_at: timestamptz("created_at").notNull(),
     updated_at: timestamptz("updated_at").notNull(),
     system_prompt_hash: text("system_prompt_hash"),
@@ -149,7 +281,7 @@ export const runs = pgTable(
     kind: text("kind", { enum: ["direct", "group", "schedule"] }).notNull().default("direct"),
     group_chat_through_seq: bigint("group_chat_through_seq", { mode: "number" }),
     memory_prompt_hash: text("memory_prompt_hash"),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    metadata: jsonb("metadata").$type<RunMetadata>().notNull().default(sql`'{}'::jsonb`),
     org_id: text("org_id").notNull(),
     schedule_id: text("schedule_id"),
     wake_group_message_id: bigint("wake_group_message_id", { mode: "number" }),

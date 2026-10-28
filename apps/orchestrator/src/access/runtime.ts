@@ -17,13 +17,19 @@ import { MissingSecretError } from "../secrets/index.js";
 import { serverManifest, type LoadedConnector } from "../connectors/load.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
 import type { AgentPlaceRow } from "../db/agents.js";
+import type { RunMcpConnection, RunMcpTool, SecretRef } from "../db/schema/index.js";
 
 export const PLATFORM_SEED_TOOLS = ACCESS_NATIVE_TOOLS;
 
+/** A connection an agent reaches, with each tool it is offered and that tool's schema for the model. */
+export type RuntimeMcpConnection = Omit<RunMcpConnection, "tools"> & {
+  tools: Array<RunMcpTool & { schema: Record<string, unknown> }>;
+};
+
 export type RuntimeAccess = {
   tools: string[];
-  secrets: Array<Record<string, string>>;
-  mcp: Array<Record<string, unknown>>;
+  secrets: SecretRef[];
+  mcp: RuntimeMcpConnection[];
 };
 
 /** The db/ functions an agent's runtime access is resolved through, on `db`. */
@@ -81,17 +87,13 @@ export function resolveMcpTool(
 }
 
 /** The agent's environment as the run snapshot carries it: id, name, and description of each secret. */
-export async function agentSecrets(db: AccessDatabase, agent: AgentPlaceRow): Promise<Array<Record<string, string>>> {
+export async function agentSecrets(db: AccessDatabase, agent: AgentPlaceRow): Promise<SecretRef[]> {
   const rows = await db.listAgentSecrets({
     orgId: agent.org_id,
     guildId: agent.guild_id,
     agentId: agent.id,
   });
-  return rows.map((row) => ({
-    id: String(row.id),
-    name: String(row.name),
-    description: String(row.description ?? ""),
-  }));
+  return rows.map((row) => ({ id: row.id, name: row.name, description: row.description }));
 }
 
 /**
@@ -207,7 +209,7 @@ async function loginTools(db: AccessDatabase, mcpPool: ToolSync, listing: Omit<L
 }
 
 /** The login's entry in the run's MCP access: its tools that resolve On, or null when none does. */
-function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, scope: RuntimeScope): Record<string, unknown> | null {
+function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, scope: RuntimeScope): RuntimeMcpConnection | null {
   const offered = listing.listed
     .filter((tool) => resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled)
     .map((tool) => ({ name: tool.namespaced_name, remote_name: tool.remote_name, schema: mcpSchema(tool) }));
@@ -250,7 +252,7 @@ export async function agentRuntime(
   const toolRows = listings.length ? await db.listBindingsCovering(scope) : rows;
   const mcp = listings
     .map((listing) => offeredLogin(toolRows, listing, scope))
-    .filter((entry): entry is Record<string, unknown> => entry !== null);
+    .filter((entry) => entry !== null);
   return { tools, secrets: metas, mcp };
 }
 
@@ -273,16 +275,11 @@ export function applySecretAliases(
 
 export async function snapshotEnvValues(
   db: AccessDatabase,
-  secretRefs: Array<Record<string, string>>,
+  secretRefs: SecretRef[],
 ): Promise<Record<string, string>> {
   const values: Record<string, string> = {};
-  for (const ref of secretRefs) {
-    const secretId = ref.id;
-    const name = ref.name;
-    if (typeof secretId !== "string" || typeof name !== "string") {
-      throw new MissingSecretError(typeof name === "string" ? name : "secret");
-    }
-    const secret = await db.getSecret(secretId);
+  for (const { id, name } of secretRefs) {
+    const secret = await db.getSecret(id);
     if (secret === null || secret === undefined) {
       throw new MissingSecretError(name);
     }

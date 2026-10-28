@@ -3,7 +3,8 @@ import { AsyncLock } from "../lib/lock.js";
 import { newId } from "../lib/ids.js";
 import { displayPathFor } from "../artifacts/paths.js";
 import type { ArtifactActor } from "../artifacts/types.js";
-import { snapshotAgentScripts, type RunScriptSnapshot } from "./snapshot.js";
+import type { RunScriptSnapshot } from "../db/schema/index.js";
+import { snapshotAgentScripts } from "./snapshot.js";
 import {
   ScriptError,
   assertAvailableScriptName,

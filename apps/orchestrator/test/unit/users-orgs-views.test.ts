@@ -31,6 +31,7 @@ import {
 } from "../../src/organisations/index.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import { groupMessageItem, iso, isoOrNull, messageItem, runItem } from "../../src/db/views.js";
+import { runSnapshot } from "../helpers/generation.js";
 
 test("validate user name", () => {
   assert.equal(validateUserName("operator"), "operator");
@@ -188,7 +189,7 @@ test("run and message views match R0 fixtures", () => {
         id: "r_1",
         agent_id: "a_1",
         status: "active",
-        config_snapshot: { model: "openrouter/openai/gpt-5.6-luna" },
+        config_snapshot: runSnapshot(),
         errors: [],
         system_prompt_hash: "abc",
         task_prompt_hash: "def",
@@ -202,7 +203,7 @@ test("run and message views match R0 fixtures", () => {
       },
       true,
     ),
-    fixture.run,
+    Object.assign({}, fixture.run, { config_snapshot: runSnapshot() }),
   );
   assert.deepEqual(
     groupMessageItem({

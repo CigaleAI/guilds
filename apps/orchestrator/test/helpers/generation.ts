@@ -22,7 +22,7 @@ import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agen
 import type { ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
-import type { AgentConfig } from "../../src/db/schema/index.js";
+import type { AgentConfig, RunConfigSnapshot } from "../../src/db/schema/index.js";
 import { validateConfig } from "../../src/agents/validation.js";
 
 export const AGENT_CONFIG: AgentConfig = {
@@ -46,6 +46,12 @@ export const AGENT_CONFIG: AgentConfig = {
   memory: true,
   thinking_level: "none",
 };
+
+/** The config snapshot a run of an agent with `config` starts with, offering no tools, connections or secrets. */
+export function runSnapshot(config: AgentConfig = AGENT_CONFIG): RunConfigSnapshot {
+  const { max_scripts: _maxScripts, max_workspace_mib: _maxWorkspaceMib, ...settings } = config;
+  return { ...settings, projection_policy_version: 1, database: false, tools: [], mcp: [], secrets: [] };
+}
 
 /** An agent config as a create with these settings stores it: every key, the defaults filling the rest. */
 export function agentConfig(overrides: Record<string, unknown> = {}): AgentConfig {
@@ -291,14 +297,15 @@ export class FakeDB {
   due_schedules: ScheduleRow[] = [];
   fired: Array<Record<string, unknown>> = [];
 
-  constructor(snapshot: Record<string, unknown>) {
+  /** A store holding one active run, `r_1`, whose snapshot is `runSnapshot()` with `snapshot` over it. */
+  constructor(snapshot: Partial<RunConfigSnapshot> = {}) {
     const now = new Date();
     this.run = {
       id: "r_1",
       agent_id: "a_1",
       status: "active",
       kind: "direct",
-      config_snapshot: snapshot,
+      config_snapshot: { ...runSnapshot(), ...snapshot },
       errors: [],
       created_at: now,
       updated_at: now,

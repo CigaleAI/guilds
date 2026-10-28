@@ -18,8 +18,8 @@ import {
   liveExtraRows,
   snapshotAgentScripts,
   toRunScriptSnapshot,
-  type RunScriptSnapshot,
 } from "../../src/scripts/snapshot.js";
+import type { RunScriptSnapshot } from "../../src/db/schema/index.js";
 import { type AgentScript, Scripts } from "../../src/scripts/catalog.js";
 import { NATIVE_TOOL_NAMES, ScriptError, scriptSourceHash } from "../../src/scripts/validation.js";
 import {

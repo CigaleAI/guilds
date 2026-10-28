@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
-import type { Harness, Effort } from "../db/schema/index.js";
+import type { Harness, Effort, RunHarnessTask } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
@@ -7,7 +7,7 @@ import type { NotesStore } from "../notes/store.js";
 import type { Issues } from "../issues/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
-import type { RunScriptSnapshot } from "../scripts/snapshot.js";
+import type { RunScriptSnapshot } from "../db/schema/index.js";
 import type { ToolArtifacts } from "./artifacts.js";
 
 export type GroupChat = {
@@ -178,7 +178,7 @@ export type ToolContext = {
     | ((toolCallId: string, update: { lines: string[]; session_id: string | null }) => Promise<void>)
     | null;
   /** Keeps the running harness call with its run, so a restart can stop it and name its session. */
-  remember_harness_task: ((task: Record<string, unknown>) => Promise<void>) | null;
+  remember_harness_task: ((task: RunHarnessTask) => Promise<void>) | null;
   /** Records that the harness found a login in the agent's home, and whose it is when known. */
   harness_login_seen: ((harness: Harness, account: string | null) => Promise<void>) | null;
   /** Records that the harness found no credential at all, so no login is left in the agent's home. */

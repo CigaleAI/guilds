@@ -605,7 +605,7 @@
   },
   "src/studio/focus.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 11
+      "count": 10
     },
     "complexity": {
       "count": 5
@@ -642,7 +642,7 @@
   },
   "src/studio/state-list.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
+      "count": 1
     }
   },
   "src/studio/system.ts": {
@@ -674,7 +674,7 @@
   },
   "src/studio/tools.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 8
+      "count": 6
     },
     "complexity": {
       "count": 2
