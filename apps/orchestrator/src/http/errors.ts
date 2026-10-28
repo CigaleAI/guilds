@@ -9,7 +9,7 @@ import { AgentValidationError } from "../agents/validation.js";
 import { BindingError } from "../access/index.js";
 import { RunRequestError } from "../generation/index.js";
 import { GroupChatError } from "../groupchat/index.js";
-import { GuildError } from "../guilds/errors.js";
+import { GuildAgentLimitError, GuildError } from "../guilds/errors.js";
 import { GuildValidationError } from "../guilds/validation.js";
 import { IssueError } from "../issues/index.js";
 import { ModelNotConnectedError } from "../llm/credentials.js";
@@ -121,6 +121,7 @@ const REFUSALS = [
   UserError,
   OrgError,
   GuildError,
+  GuildAgentLimitError,
   AgentError,
   ArtifactError,
   RunRequestError,

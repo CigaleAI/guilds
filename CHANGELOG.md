@@ -8,6 +8,9 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Creating an agent in a guild at its agent limit answers
+409 with `this guild is limited to N agents`, where it answered 500.
+
 **No impact.** Reading a Memory revision by its display path refuses
 a path in another organisation with `artifact is not in this
 organisation`. Before, an operator handed another organisation's

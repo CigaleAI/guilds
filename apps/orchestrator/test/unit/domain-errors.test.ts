@@ -4,6 +4,7 @@ import { HttpError, domainHttp } from "../../src/http/errors.js";
 import { numberOrNull } from "../../src/lib/numbers.js";
 import { ModelNotConnectedError } from "../../src/llm/credentials.js";
 import { MachineError } from "../../src/machines/index.js";
+import { GuildAgentLimitError } from "../../src/guilds/errors.js";
 import { LimitError, PolicyError } from "../../src/policy/index.js";
 
 test("a domain refusal answers with its own status and message", () => {
@@ -12,6 +13,7 @@ test("a domain refusal answers with its own status and message", () => {
     [new PolicyError(402, "organisation is suspended"), 402, "organisation is suspended"],
     [new LimitError("plan", "machines"), 409, "plan limit reached: machines"],
     [new ModelNotConnectedError("anthropic", "connect anthropic first"), 422, "connect anthropic first"],
+    [new GuildAgentLimitError(3), 409, "this guild is limited to 3 agents"],
   ];
   for (const [error, status, message] of cases) {
     const http = domainHttp(error);
