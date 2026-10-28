@@ -1,7 +1,12 @@
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { ensureAgentRows } from "../artifacts/memory.js";
-import { hashTaskContent, resolveTaskContent, taskDisplayPath } from "../artifacts/task.js";
+import {
+  brokenTaskEmbeds,
+  hashTaskContent,
+  resolveTaskContent,
+  taskDisplayPath,
+} from "../artifacts/task.js";
 import {
   deleteAgent as deleteAgentRow,
   getAgent,
@@ -45,7 +50,6 @@ import {
   validateWakeTriggers,
 } from "./validation.js";
 import { agentItem } from "./view.js";
-import { brokenTaskEmbeds } from "../artifacts/service.js";
 
 /** What agents are created, changed, moved and deleted through, built once from the app's services. */
 export type AgentServices = {

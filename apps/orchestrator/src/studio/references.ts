@@ -1,13 +1,17 @@
 import type { ArtifactActor, ArtifactLevel } from "../artifacts/types.js";
 import type { ArtifactRow } from "../db/artifacts.js";
 import type { ArtifactStore, CollectionView } from "../artifacts/store.js";
-import { taskDisplayPath } from "../artifacts/task.js";
+import { taskDisplayPath, taskEmbedRun, type TaskEmbedRun } from "../artifacts/task.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { listCollections } from "../artifacts/collections.js";
 import { getByDisplayPath, listOwnerNotes } from "../artifacts/notes.js";
-import { collectTaskEmbeds, withoutEmbeds } from "../artifacts/embeds.js";
-import { embedGraph, taskEmbedRun, type EmbedGraph, type TaskEmbedRun } from "../artifacts/service.js";
+import {
+  collectTaskEmbeds,
+  embedGraph,
+  type EmbedGraph,
+  withoutEmbeds,
+} from "../artifacts/embeds.js";
 
 export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
 

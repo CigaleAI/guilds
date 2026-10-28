@@ -1,6 +1,5 @@
-import type { AgentRow } from "../db/agents.js";
-import type { HashedArtifactRow, ArtifactRow } from "../db/artifacts.js";
-import type { AccessMode, CollectionColumn, RunTaskSource, TaskEmbedSnapshot } from "../db/schema/index.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import type { AccessMode, CollectionColumn } from "../db/schema/index.js";
 import { grantAccess, listAccess } from "./access-lists.js";
 import {
   collectionFacts,
@@ -17,24 +16,8 @@ import {
   type NewCollection,
 } from "./collections.js";
 import { describeColumn, parseColumnChange, parseColumns, type ColumnChange } from "./columns.js";
-import {
-  collectTaskEmbeds,
-  EMBED_DEPTH,
-  embedSource,
-  inlineTaskEmbeds,
-  inspectEmbed,
-  inspectTaskEmbeds,
-  noteReader,
-  reachEmbeds,
-  snapshotTaskCollections,
-  snapshotTaskEmbeds,
-  taskEmbedActor,
-  walkTaskEmbeds,
-  type EmbedReach,
-  type EmbedStep,
-} from "./embeds.js";
 import { ArtifactError } from "./errors.js";
-import { getMemoryRow, listRevisions, storedMemoryText } from "./memory.js";
+import { getMemoryRow, listRevisions } from "./memory.js";
 import { buildMemoryTimeline, type MemoryTimelineEntry } from "./memory-timeline.js";
 import { getByDisplayPath, listEmbeddableNotes, loadParsed, upsertNote } from "./notes.js";
 import {
@@ -61,9 +44,7 @@ import {
   type CollectionView,
   type RecordView,
 } from "./store.js";
-import { taskDisplayPath } from "./task.js";
 import {
-  EMBED_BUDGET,
   isAccessMode,
   SEARCH_TEXT_MAX,
   type AccessEntry,
@@ -75,27 +56,6 @@ import {
   type ArtifactLevel,
 } from "./types.js";
 
-/** A Task's text with its embeds inlined, or why the store refuses to inline them. */
-export type TaskExpansion = { ok: true; text: string } | { ok: false; error: string };
-
-/** An agent's Task as its next run reads it, and the Memory the run reads beside it. */
-export type AgentTaskView = {
-  /** The Task as the operator wrote it. */
-  text: string;
-  version: number;
-  /** The hash of `text`. */
-  hash: string;
-  displayPath: string;
-  /** Whether `text` embeds a note or a table. */
-  hasEmbeds: boolean;
-  /** `text` with its embeds inlined as the agent reads them. */
-  expanded: TaskExpansion;
-  /** The agent's Memory as stored; null when it has none. */
-  memory: HashedArtifactRow | null;
-  /** The Memory text a prompt reads. */
-  memoryText: string;
-};
-
 /**
  * What a display path holds for an actor: a row, live or deleted, with its display path and its
  * text as a reader reads it, or an archived Memory revision. A record's text is its JSON view,
@@ -104,63 +64,6 @@ export type AgentTaskView = {
 export type ArtifactView =
   | { kind: "row"; row: ArtifactRow; href: string; text: string; deleted: boolean }
   | { kind: "revision"; content: string; displayPath: string };
-
-/** `text` as the agent's run would read it as its Task: its embeds inlined as the agent reads them. ArtifactError past the embed budget. */
-export async function expandTaskText(store: ArtifactStore, agent: AgentRow, text: string): Promise<string> {
-  return inlineTaskEmbeds(embedSource(store), taskEmbedActor(agent.org_id, agent), text);
-}
-
-/** The agent's Task, inlined as its next run reads it, with the agent's Memory. */
-export async function agentTask(store: ArtifactStore, agent: AgentRow): Promise<AgentTaskView> {
-  let expanded: TaskExpansion;
-  try {
-    expanded = { ok: true, text: await expandTaskText(store, agent, agent.task) };
-  } catch (error) {
-    if (!(error instanceof ArtifactError)) {
-      throw error;
-    }
-    expanded = { ok: false, error: error.message };
-  }
-  const memory = await getMemoryRow(store, taskEmbedActor(agent.org_id, agent), agent.id);
-  return {
-    text: agent.task,
-    version: agent.task_version,
-    hash: agent.task_hash,
-    displayPath: taskDisplayPath(agent.org_id, agent.id),
-    hasEmbeds: collectTaskEmbeds(agent.task).length > 0,
-    expanded,
-    memory,
-    memoryText: storedMemoryText(memory),
-  };
-}
-
-/**
- * Where a run's Task comes from: its version, hash and display path, and the notes and
- * collections it embeds as the agent reads them. A walk the store refuses keeps what it
- * snapshotted before the refusal.
- */
-export async function taskSnapshot(store: ArtifactStore, agent: AgentRow): Promise<RunTaskSource> {
-  const source = embedSource(store);
-  const actor = taskEmbedActor(agent.org_id, agent);
-  let embeds: TaskEmbedSnapshot[] = [];
-  let collections: string[] = [];
-  try {
-    embeds = await snapshotTaskEmbeds(source, actor, agent.task);
-    collections = await snapshotTaskCollections(source, actor, agent.task);
-  } catch (error) {
-    if (!(error instanceof ArtifactError)) {
-      throw error;
-    }
-  }
-  return {
-    version: agent.task_version,
-    hash: agent.task_hash,
-    display_path: taskDisplayPath(agent.org_id, agent.id),
-    embeds,
-    collections,
-    has_embeds: collectTaskEmbeds(agent.task).length > 0,
-  };
-}
 
 /**
  * A display path the actor may name, parsed. ArtifactError when it is malformed, when it lies
@@ -298,48 +201,6 @@ export async function notesNamed(store: ArtifactStore, actor: ArtifactActor, nam
     }
   }
   return notes;
-}
-
-/** What texts embed as a reader reads them, with how many embed levels a run inlines and how many bytes of note text at most. */
-export type EmbedGraph = EmbedReach & { depth: number; budget: number };
-
-/**
- * What `roots` embed as the actor reads them, followed one level past what a run inlines. The
- * walk neither resolves nor follows the display paths in `known`.
- */
-export async function embedGraph(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  roots: string[],
-  known: ReadonlySet<string>,
-): Promise<EmbedGraph> {
-  const reach = await reachEmbeds(embedSource(store), actor, roots, known);
-  return { ...reach, depth: EMBED_DEPTH, budget: EMBED_BUDGET };
-}
-
-/** The embeds an agent's run meets in its Task, one level past what it inlines, and the inlined ones the agent cannot read. */
-export type TaskEmbedRun = { steps: EmbedStep[]; unreachable: Set<string> };
-
-/** How the agent's run walks the embeds of its Task, as the agent reads them. */
-export async function taskEmbedRun(
-  store: ArtifactStore,
-  agent: Pick<AgentRow, "org_id" | "id" | "guild_id" | "name" | "task">,
-): Promise<TaskEmbedRun> {
-  const source = embedSource(store);
-  const actor = taskEmbedActor(agent.org_id, agent);
-  const steps = await walkTaskEmbeds(agent.task, noteReader(source, actor), EMBED_DEPTH + 1);
-  const hrefs = [...new Set(steps.filter((step) => step.inlined).map((step) => step.href))];
-  const inspected = await Promise.all(hrefs.map((href) => inspectEmbed(source, actor, href)));
-  return { steps, unreachable: new Set(inspected.filter((item) => !item.ok).map((item) => item.href)) };
-}
-
-/** The embeds of the agent's Task, and of the notes its run inlines, that do not resolve as the agent reads them. */
-export async function brokenTaskEmbeds(
-  store: ArtifactStore,
-  agent: Pick<AgentRow, "org_id" | "id" | "guild_id" | "name" | "task">,
-): Promise<string[]> {
-  const inspected = await inspectTaskEmbeds(embedSource(store), taskEmbedActor(agent.org_id, agent), agent.task);
-  return inspected.filter((item) => !item.ok).map((item) => item.href);
 }
 
 /** Every version an agent's Memory has held, newest first, with its display path and the live version and hash. */

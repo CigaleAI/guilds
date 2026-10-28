@@ -33,7 +33,7 @@ import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
 import { collectionCatalog } from "../artifacts/collections.js";
-import { agentTask, taskSnapshot } from "../artifacts/service.js";
+import { agentTask, taskSnapshot } from "../artifacts/task.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { toolArtifacts } from "../toolbox/artifacts.js";
 

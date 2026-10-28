@@ -4,30 +4,31 @@ import { after, before, describe, test } from "node:test";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { grantAccess, listAccess } from "../../src/artifacts/access-lists.js";
 import { createCollection, getCollection } from "../../src/artifacts/collections.js";
-import { unreachableMarker } from "../../src/artifacts/embeds.js";
+import { embedGraph, unreachableMarker } from "../../src/artifacts/embeds.js";
 import { listRevisions, writeMemory } from "../../src/artifacts/memory.js";
 import { deleteByDisplayPath } from "../../src/artifacts/notes.js";
 import { addRecord } from "../../src/artifacts/records.js";
 import {
-  agentTask,
   applyCollectionStep,
   artifactAt,
-  brokenTaskEmbeds,
-  embedGraph,
-  expandTaskText,
   guildTable,
   guildTables,
   listRecordsWithHint,
   memoryTimeline,
   notesNamed,
   raiseAccess,
-  taskEmbedRun,
-  taskSnapshot,
   writeNote,
   writeNoteAt,
 } from "../../src/artifacts/service.js";
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
-import { writeAgentTask } from "../../src/artifacts/task.js";
+import {
+  agentTask,
+  brokenTaskEmbeds,
+  expandTaskText,
+  taskEmbedRun,
+  taskSnapshot,
+  writeAgentTask,
+} from "../../src/artifacts/task.js";
 import { EMBED_BUDGET } from "../../src/artifacts/types.js";
 import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";

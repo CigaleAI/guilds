@@ -291,6 +291,23 @@ function unreadTarget(target: EmbedTarget): EmbedTarget {
   return target.kind === "note" ? { ...target, text: null } : target;
 }
 
+/** What texts embed as a reader reads them, with how many embed levels a run inlines and how many bytes of note text at most. */
+export type EmbedGraph = EmbedReach & { depth: number; budget: number };
+
+/**
+ * What `roots` embed as the actor reads them, followed one level past what a run inlines. The
+ * walk neither resolves nor follows the display paths in `known`.
+ */
+export async function embedGraph(
+  store: ArtifactStore,
+  actor: ArtifactActor,
+  roots: string[],
+  known: ReadonlySet<string>,
+): Promise<EmbedGraph> {
+  const reach = await reachEmbeds(embedSource(store), actor, roots, known);
+  return { ...reach, depth: EMBED_DEPTH, budget: EMBED_BUDGET };
+}
+
 /** The notes a run inlines from a Task, directly or through other notes, as the actor reads them. */
 export async function snapshotTaskEmbeds(
   source: EmbedSource,

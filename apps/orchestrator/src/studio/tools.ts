@@ -1,4 +1,5 @@
-import { agentTask, artifactAt, memoryTimeline, parseActorPath } from "../artifacts/service.js";
+import { artifactAt, memoryTimeline, parseActorPath } from "../artifacts/service.js";
+import { agentTask } from "../artifacts/task.js";
 import { iso } from "../db/views.js";
 import { memoryDiffText, type MemoryTimelineEntry } from "../artifacts/memory-timeline.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";

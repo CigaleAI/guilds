@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EMBED_BUDGET } from "../../src/artifacts/types.js";
 import { EMBED_DEPTH, walkTaskEmbeds } from "../../src/artifacts/embeds.js";
-import type { TaskEmbedRun } from "../../src/artifacts/service.js";
+import type { TaskEmbedRun } from "../../src/artifacts/task.js";
 import {
   buildReferences,
   namedPaths,

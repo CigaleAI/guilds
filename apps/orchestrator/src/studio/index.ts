@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
-import { agentTask } from "../artifacts/service.js";
+import { agentTask } from "../artifacts/task.js";
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/operators.js";
 import {

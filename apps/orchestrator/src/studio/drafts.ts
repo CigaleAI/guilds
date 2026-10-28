@@ -1,8 +1,12 @@
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { agentTask, expandTaskText } from "../artifacts/service.js";
 import { hashArtifactContent, operatorContext, type ArtifactStore } from "../artifacts/store.js";
-import { taskDisplayPath, writeAgentTaskInTransaction } from "../artifacts/task.js";
+import {
+  agentTask,
+  expandTaskText,
+  taskDisplayPath,
+  writeAgentTaskInTransaction,
+} from "../artifacts/task.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj as _jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
