@@ -4,7 +4,7 @@ import { HARNESSES, type AgentConfig } from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
-import { guildTables } from "../artifacts/service.js";
+import { guildTables } from "../artifacts/guild-tables.js";
 import { notesNamed } from "../artifacts/notes.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";

@@ -466,3 +466,35 @@ export async function collectionFacts(store: ArtifactStore, actor: ArtifactActor
     columns: described.columns,
   };
 }
+
+/** A new collection checked before anything writes it: its name, purpose and columns as stored, and the display path it takes. */
+export type CheckedCollection = { name: string; purpose: string; columns: CollectionColumn[]; href: string };
+
+/**
+ * Checks a new collection's name, purpose and columns, in that order, before anything writes it.
+ * ArtifactError on the first that fails.
+ */
+export function planCollection(orgId: string, draft: Pick<NewCollection, "name" | "purpose" | "columns">): CheckedCollection {
+  const name = validateCollectionName(draft.name);
+  const purpose = validatePurpose(draft.purpose);
+  const columns = parseColumns(draft.columns ?? []);
+  return { name, purpose, columns, href: collectionDisplayPath(orgId, name) };
+}
+
+/** A change to a collection's definition checked before anything writes it: the name and purpose it leaves, and its column change when it replaces the columns. */
+export type CheckedCollectionChange = { name: string; purpose: string; columns: ColumnChange | null };
+
+/**
+ * Checks a change's name, purpose and columns, in that order, against the collection it changes,
+ * before anything writes it. A field the change leaves out keeps the collection's. ArtifactError on
+ * the first that fails.
+ */
+export function planCollectionChange(
+  current: Pick<CollectionView, "name" | "purpose" | "columns">,
+  changes: CollectionChanges,
+): CheckedCollectionChange {
+  const name = changes.name === undefined ? current.name : validateCollectionName(changes.name);
+  const purpose = changes.purpose === undefined ? current.purpose : validatePurpose(changes.purpose);
+  const columns = changes.columns === undefined ? null : parseColumnChange(current.columns, changes.columns);
+  return { name, purpose, columns };
+}

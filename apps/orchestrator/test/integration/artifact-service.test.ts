@@ -13,13 +13,8 @@ import {
   writeNote,
   writeNoteAt,
 } from "../../src/artifacts/notes.js";
-import { addRecord } from "../../src/artifacts/records.js";
-import {
-  applyCollectionStep,
-  guildTable,
-  guildTables,
-  listRecordsWithHint,
-} from "../../src/artifacts/service.js";
+import { addRecord, listRecordsWithHint } from "../../src/artifacts/records.js";
+import { applyCollectionStep, guildTable, guildTables } from "../../src/artifacts/guild-tables.js";
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
 import {
   agentTask,

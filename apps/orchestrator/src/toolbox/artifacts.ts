@@ -1,10 +1,15 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { listRecordsWithHint } from "../artifacts/service.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
 import type { Tool, ToolContext } from "./types.js";
-import { addRecord, removeRecord, searchRecords, updateRecord } from "../artifacts/records.js";
+import {
+  addRecord,
+  listRecordsWithHint,
+  removeRecord,
+  searchRecords,
+  updateRecord,
+} from "../artifacts/records.js";
 import {
   artifactAt,
   type ArtifactView,

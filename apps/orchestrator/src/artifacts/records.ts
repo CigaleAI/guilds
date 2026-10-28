@@ -18,8 +18,22 @@ import {
 import { recordFileChange } from "../db/file-changes.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { CollectionColumn, RecordBody } from "../db/schema/index.js";
-import { readableCollectionById, requireReadable, requireWritable } from "./collections.js";
-import { identityFor, recordProblems, recordRejected, uniqueColumn, validateAdd, validatePatch } from "./columns.js";
+import {
+  collectionFacts,
+  readableCollectionById,
+  requireReadable,
+  requireWritable,
+  type CollectionFacts,
+} from "./collections.js";
+import {
+  describeColumn,
+  identityFor,
+  recordProblems,
+  recordRejected,
+  uniqueColumn,
+  validateAdd,
+  validatePatch,
+} from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { parseLimit, parseOffset, parseOrder, parseRecordId, parseSince, parseWhere, searchBlobFor } from "./search.js";
 import { assertBytes, bodyOf, hashArtifactContent, recordView, type ArtifactStore, type CollectionDescription, type RecordView, rowDisplayPath } from "./store.js";
@@ -303,4 +317,55 @@ export async function exportRecords(
   }
   const rows = await listAllRecords(store.db, collection.id, LIVE_RECORDS_MAX);
   return { name: collection.name, records: rows.map(recordView) };
+}
+
+/**
+ * A listing of one collection's records: `where` a term per column, `since` a moment records
+ * changed at or after, `order`, and the page.
+ */
+export type RecordQuery = {
+  collection: string;
+  where?: Record<string, unknown> | undefined;
+  since?: string | undefined;
+  order?: unknown;
+  limit?: unknown;
+  offset?: unknown;
+};
+
+/** A page of records, how many match in all, and what a narrowed listing that finds nothing says about its collection. */
+export type RecordList = { total: number; records: RecordView[]; hint: string | null };
+
+/**
+ * Lists a collection's records as `listRecords` does. A listing narrowed by `where` or `since`
+ * that finds nothing carries the hint `recordListHint` writes from the collection's facts.
+ */
+export async function listRecordsWithHint(store: ArtifactStore, actor: ArtifactActor, query: RecordQuery): Promise<RecordList> {
+  const listed = await listRecords(store, actor, query);
+  const narrowed = Boolean(query.where || query.since);
+  const facts = listed.records.length === 0 && narrowed ? await collectionFacts(store, actor, query.collection) : null;
+  return { total: listed.total, records: listed.records, hint: facts ? recordListHint(query, facts) : null };
+}
+
+/**
+ * What a narrowed listing that finds nothing says: what was asked, what the collection holds, and
+ * its columns, so the next call narrows differently instead of asking for a larger limit.
+ */
+export function recordListHint(query: RecordQuery, facts: CollectionFacts): string {
+  const narrowing = [
+    query.since ? `changed at or after ${query.since}` : "",
+    query.where ? `where ${JSON.stringify(query.where)}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const holds =
+    facts.count === 0
+      ? `${query.collection} holds no records yet.`
+      : `${query.collection} holds ${facts.count} record${facts.count === 1 ? "" : "s"}; the newest changed at ${facts.newest_updated_at}.`;
+  const columns = facts.columns.length ? `Its columns: ${facts.columns.map(describeColumn).join("; ")}.` : "";
+  const advice = query.since
+    ? "An empty result is the answer; a larger limit will not change it. since is for picking up new work — " +
+      "to check whether something is already recorded, use where on the unique column or record_search."
+    : "An empty result is the answer; a larger limit will not change it. where matches by column type " +
+      "(text or an open array item by substring, a closed list exactly, null a missing value); record_search matches words in the values.";
+  return [`No records in ${query.collection} ${narrowing}.`, holds, columns, advice].filter(Boolean).join(" ");
 }

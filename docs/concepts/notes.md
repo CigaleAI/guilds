@@ -322,8 +322,6 @@ document is the content; its search text is the title and key.
 Deletion sets `deleted_at`.
 
 Code: `apps/orchestrator/src/artifacts/notes.ts`,
-`apps/orchestrator/src/artifacts/service.ts` (`writeNote`,
-`writeNoteAt`, `planNote`, `notesNamed`),
 `apps/orchestrator/src/artifacts/memory.ts`,
 `apps/orchestrator/src/db/artifacts.ts`,
 `apps/orchestrator/src/toolbox/artifacts.ts`.

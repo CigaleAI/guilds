@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseColumns } from "../../src/artifacts/columns.js";
-import { planCollection, planCollectionChange, recordListHint } from "../../src/artifacts/service.js";
+import { recordListHint } from "../../src/artifacts/records.js";
+import { planCollection, planCollectionChange } from "../../src/artifacts/collections.js";
 
 const COLUMNS = [
   { name: "project", type: "text", description: "project name", required: true },

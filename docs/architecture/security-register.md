@@ -71,7 +71,7 @@ capture names with their access lists.
 **Where:** `captureGuild` in `apps/orchestrator/src/recipes/capture.ts`,
 which builds its operator actor without hidden guilds (line 563) and
 reads the notes it includes through `notesNamed` (line 445);
-`notesNamed` in `apps/orchestrator/src/artifacts/service.ts` (line 292);
+`notesNamed` in `apps/orchestrator/src/artifacts/notes.ts` (line 292);
 `POST /api/guilds/:guild_id/recipes` in
 `apps/orchestrator/src/http/recipe-routes.ts`, which passes the
 request's `include_notes` through as they are (line 189).
@@ -120,7 +120,7 @@ with that agent's id and the revision's stamp, gets that agent's
 archived Memory text.
 
 **Control in place:** no caller passes such a path through today.
-`artifactAt` in `apps/orchestrator/src/artifacts/service.ts` refuses a
+`artifactAt` in `apps/orchestrator/src/artifacts/notes.ts` refuses a
 path outside the actor's organisation before it reads, and the Studio
 reads through it. `readEmbeddableNotes` and `lastSavedRow` in
 `apps/orchestrator/src/artifacts/host-files.ts` drop a revision and keep

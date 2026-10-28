@@ -4,15 +4,14 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { columnCatalog, describeColumn, type ColumnChange } from "../artifacts/columns.js";
 import { listRecords } from "../artifacts/records.js";
 import {
-  applyCollectionStep,
-  guildTable,
-  guildTables,
-  planCollection,
-  planCollectionChange,
   type AccessRowChange,
+  applyCollectionStep,
   type CollectionLookup,
   type CollectionStep,
-} from "../artifacts/service.js";
+  guildTable,
+  guildTables,
+} from "../artifacts/guild-tables.js";
+import { planCollection, planCollectionChange } from "../artifacts/collections.js";
 import { effectiveAccess } from "../artifacts/access-lists.js";
 import type { AccessEntry, AgentAccessMode, ArtifactActor } from "../artifacts/types.js";
 import type { AccessMode, CollectionColumn } from "../db/schema/index.js";
