@@ -10,7 +10,22 @@ import { listMachines } from "../db/machines.js";
 import { listMcpConnections } from "../db/mcp.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { RecipeRow } from "../db/recipes.js";
-import type { Harness, PlannedAgent, PlannedConnection, PlannedSecret } from "../db/schema/index.js";
+import type {
+  ApplyInventory,
+  ApplyPreview,
+  CollectionPlan,
+  Harness,
+  MachineChoice,
+  NameDecision,
+  PlannedAgent,
+  PlannedConnection,
+  PlannedInstall,
+  PlannedSecret,
+  PlatformSetup,
+  RecipeFinding,
+  RoleHarness,
+  RoleModel,
+} from "../db/schema/index.js";
 import { listSecrets } from "../db/secrets.js";
 import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
@@ -29,7 +44,6 @@ import {
   plannedLoad,
   sizeMeets,
   type AgentNeeds,
-  type MachineBox,
   type MachineSize,
   type MachineWithAgents,
 } from "../machines/index.js";
@@ -39,116 +53,19 @@ import type {
   ConnectionDecision,
   HarnessDecision,
   ModelDecision,
-  NameDecision,
   RecipeApply,
   SecretDecision,
 } from "./apply.js";
 import { validationContext } from "./apply.js";
 import { RecipeError } from "./errors.js";
-import type { RecipeFinding, ValidationContext } from "./findings.js";
+import type { ValidationContext } from "./findings.js";
 import { prepareRecipeForApply, roleBrowses, roleCodes, roleTaskText, schedulesForRole } from "./prepare.js";
 import { unreviewedFields } from "./review.js";
-import type { RecipeCollection, RecipeDocument, RecipeRole } from "./schema.js";
+import type { RecipeDocument, RecipeRole } from "./schema.js";
 import { applyBlockingErrors, validateRecipe } from "./validate.js";
 
 // The preview of an apply: what it creates from the recipe, what it reuses of the organisation,
 // and what blocks it, with the choices the operator makes on it.
-
-/** A role's model on the preview: what the recipe recommends, and what apply will create it with. */
-export type RoleModel = { role: string; recommended: string | null; model: string | null };
-
-/** A coding role's harness on the preview: what the recipe names, and what apply will create it with. */
-export type RoleHarness = { role: string; recommended: Harness | null; harness: Harness | null };
-
-/**
- * What apply will do with one recipe collection: create it, reuse the live
- * table of that name, or stop because that table's columns differ.
- */
-export type CollectionPlan = RecipeCollection & {
-  action: "create" | "reuse" | "conflict";
-  collection_id: string | null;
-  differences: string[];
-};
-
-/**
- * A machine the preview offers: its size, its agents' planned load, and whether it meets the
- * minimum of every role of the recipe.
- */
-export type MachineChoice = {
-  id: string;
-  name: string;
-  box: MachineBox;
-  cpu: number;
-  memory_mib: number;
-  planned_cpu: number;
-  planned_mib: number;
-  agents: number;
-  fits: boolean;
-};
-
-/** A connector the box lacks that apply installs: carried whole by the recipe, or offered by the registry. */
-export type PlannedInstall =
-  | { server: string; from: "recipe"; display_name: string; description: string; url: string; auth: string }
-  | { server: string; from: "registry"; version: string; verified: boolean };
-
-/** A connector the box has that a platform admin has not set up yet. */
-export type PlatformSetup = { server: string; integration: string | null; label: string };
-
-/** What the guild will hold once applied, as the preview lists it. */
-export type ApplyInventory = {
-  guild: { name: string; about: string; objective: string };
-  agents: Array<{
-    role: string;
-    name: string;
-    focus: string;
-    model: unknown;
-    browser: boolean;
-    coding: boolean;
-    task: string;
-    native_tools: string[];
-  }>;
-  collections: CollectionPlan[];
-  notes: Array<{ key: string; level: string; role: string | null; guild: string | null; writers: string[] }>;
-  scripts: Array<{ role: string; name: string; description: string }>;
-  routines: Array<{
-    role: string;
-    key: string;
-    cron: string | null;
-    window: unknown;
-    description: string;
-    instruction: string;
-  }>;
-  connections: PlannedConnection[];
-  secrets: PlannedSecret[];
-  repositories: RecipeDocument["repositories"];
-};
-
-export type ApplyPreview = {
-  recipe_id: string;
-  recipe_name: string;
-  guild_name: string;
-  guild_id: string | null;
-  names: NameDecision[];
-  models: RoleModel[];
-  harnesses: RoleHarness[];
-  machines: MachineChoice[];
-  machine_id: string | null;
-  minimum_cpu: number;
-  minimum_mib: number;
-  adds_cpu: number;
-  adds_mib: number;
-  collisions: string[];
-  connections: PlannedConnection[];
-  installs: PlannedInstall[];
-  setups: PlatformSetup[];
-  secrets: PlannedSecret[];
-  collections: CollectionPlan[];
-  findings: RecipeFinding[];
-  errors: RecipeFinding[];
-  unreviewed: string[];
-  remaining: { agents: number | null; browser_agents: number | null; coding_agents: number | null };
-  creates: ApplyInventory;
-};
 
 /** Who reads the organisation on a preview; a preview only reads. */
 function previewActor(org: OrgMembershipRow, user?: UserRow): ArtifactActor {
@@ -547,7 +464,7 @@ function inventoryFromRecipe(recipe: RecipeDocument, plan: InventoryPlan): Apply
       role: role.role,
       name: plan.names.get(role.role) ?? role.name_suggestion,
       focus: role.focus,
-      model: role.config.model ?? "",
+      model: typeof role.config.model === "string" ? role.config.model : "",
       browser: roleBrowses(role),
       coding: roleCodes(role),
       task: roleTaskText(role, recipe),

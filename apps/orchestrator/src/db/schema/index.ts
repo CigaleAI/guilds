@@ -6,3 +6,4 @@ export * from "./artifacts.js";
 export * from "./coaches.js";
 export * from "./changes.js";
 export * from "./recipe-document.js";
+export * from "./apply-preview.js";

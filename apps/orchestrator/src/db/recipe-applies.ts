@@ -2,7 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { tableColumns } from "./columns.js";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp } from "./pg.js";
-import { recipeApplies, type ApplyPlan, type ApplyStep, type ApplyWarning } from "./schema/index.js";
+import { recipeApplies, type ApplyPlan, type ApplyPreview, type ApplyStep, type ApplyWarning } from "./schema/index.js";
 
 export type RecipeApplyRow = InferSelectModel<typeof recipeApplies>;
 
@@ -15,7 +15,7 @@ export type NewRecipeApply = {
   guildId: string;
   createdGuild: boolean;
   recipeBodyVersion: number;
-  preview: Record<string, unknown>;
+  preview: ApplyPreview;
   plan: ApplyPlan;
   checklist: ApplyStep[];
   warnings: ApplyWarning[];

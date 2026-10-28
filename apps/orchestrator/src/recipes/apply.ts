@@ -11,6 +11,7 @@ import { pickEntry, type RegistryIndex } from "../registry/index.js";
 import type { Schedules } from "../schedules/service.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { ValidationContext } from "./findings.js";
+import type { NameDecision } from "../db/schema/index.js";
 import type { RecipeDocument } from "./schema.js";
 
 // What applying a recipe needs, and what the operator chooses on its preview. The apply itself
@@ -56,8 +57,6 @@ export function recipeApply(deps: ApplyDeps): RecipeApply {
       new ModelsService({ db: modelsDatabase(deps.db), credentials: coreModelCredentials(modelProviderStore(deps.db)) }),
   };
 }
-
-export type NameDecision = { role: string; name: string };
 
 export type ConnectionDecision = {
   server: string;

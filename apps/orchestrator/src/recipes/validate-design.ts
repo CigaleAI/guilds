@@ -2,7 +2,8 @@ import type { CollectionColumn } from "../db/collections.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
 import type { RecipeDocument } from "./schema.js";
-import { browserRoles, finding, type RecipeFinding, type RecipeRule, type ValidationContext } from "./findings.js";
+import type { RecipeFinding } from "../db/schema/index.js";
+import { browserRoles, finding, type RecipeRule, type ValidationContext } from "./findings.js";
 
 // The design checks of a recipe: that its routines dedupe, its roles hand work off through a
 // protocol, its browser roles have a login plan, its collections are read, written and typed,

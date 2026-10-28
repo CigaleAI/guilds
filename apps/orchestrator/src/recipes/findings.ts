@@ -1,16 +1,8 @@
 import { roleBrowses } from "./prepare.js";
+import type { FindingSeverity, RecipeFinding } from "../db/schema/index.js";
 import type { RecipeDocument, RecipeRole } from "./schema.js";
 
 // What validating a recipe reports, and the context it validates against.
-
-export type FindingSeverity = "error" | "warning" | "info";
-
-export type RecipeFinding = {
-  code: string;
-  severity: FindingSeverity;
-  path: string;
-  message: string;
-};
 
 export type ValidationContext = {
   publishedServers: Set<string>;

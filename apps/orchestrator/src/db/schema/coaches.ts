@@ -18,6 +18,7 @@ import { agents } from "./agents.js";
 import { artifacts } from "./artifacts.js";
 import { timestamptz } from "./columns.js";
 import { guilds, orgs, users } from "./organisations.js";
+import type { ApplyPreview } from "./apply-preview.js";
 import type { RecipeDocument } from "./recipe-document.js";
 
 /** The source guild of a Studio session as the coach is shown it; `objective` when the guild has a description. */
@@ -442,8 +443,8 @@ export const recipeApplies = pgTable(
     created_guild: boolean("created_guild").notNull().default(false),
     status: text("status", { enum: ["preview", "skeleton", "checklist", "ready", "aborted"] }).notNull(),
     recipe_body_version: integer("recipe_body_version").notNull(),
-    /** The preview the apply was made from, kept as the operator saw it; never read back. */
-    preview: jsonb("preview").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    /** The preview the apply was made from, as the operator saw it. */
+    preview: jsonb("preview").$type<ApplyPreview>().notNull(),
     plan: jsonb("plan").$type<ApplyPlan>().notNull().default(sql`'{}'::jsonb`),
     checklist: jsonb("checklist").$type<ApplyStep[]>().notNull().default(sql`'[]'::jsonb`),
     warnings: jsonb("warnings").$type<ApplyWarning[]>().notNull().default(sql`'[]'::jsonb`),
