@@ -5,8 +5,6 @@ import type { GuildOperatorRow } from "../db/guilds.js";
 import { utcClock } from "../lib/clock.js";
 import { environmentCatalog } from "../scripts/validation.js";
 
-export const STATE_PREFIX = "State: ";
-
 function memberEntry(member: unknown): Record<string, string> {
   if (typeof member === "string") {
     return { name: member };
@@ -132,8 +130,4 @@ export function collectRunState(
     }
   }
   return state;
-}
-
-export function attachState(system: string, state: Record<string, unknown>): string {
-  return `${system.replace(/\s+$/, "")}\n\n${STATE_PREFIX}${JSON.stringify(state, null, 2)}\n`;
 }

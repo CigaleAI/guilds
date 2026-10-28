@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { renderMemorySection } from "../memory/index.js";
-import { STATE_PREFIX } from "../state/index.js";
 import { installedManifests } from "../connectors/servers.js";
 import { agentHome } from "../lib/agent-file.js";
 
@@ -57,6 +56,9 @@ function memoryWriteOn(caps?: StandingCaps): boolean {
 export function taskIntroForCapabilities(caps?: StandingCaps): string {
   return memoryWriteOn(caps) ? TASK_INTRO : TASK_INTRO_NO_MEMORY;
 }
+
+/** What precedes the State snapshot's JSON in a prompt. */
+export const STATE_PREFIX = "State: ";
 
 export const STATE_INTRO =
   "A snapshot of the guild at the start of this run. Use it instead of an " +
@@ -251,6 +253,10 @@ export function composeSystemPrompt(
     parts.push(renderMemorySection(memory, memoryWriteOn(caps)).replace(/\s+$/, ""));
   }
   return `${parts.join("\n\n")}\n`;
+}
+
+export function attachState(system: string, state: Record<string, unknown>): string {
+  return `${system.replace(/\s+$/, "")}\n\n${STATE_PREFIX}${JSON.stringify(state, null, 2)}\n`;
 }
 
 function attachIdentity(system: string, agentName: string, agentId: string): string {

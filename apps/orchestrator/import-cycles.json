@@ -12,15 +12,11 @@
     "instance",
     "machines",
     "mcp",
-    "prompts",
     "sandbox",
-    "schedules",
     "scripts",
     "secrets",
-    "seed",
     "state",
     "toolbox",
-    "typesafe",
-    "users"
+    "typesafe"
   ]
 }

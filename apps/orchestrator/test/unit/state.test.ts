@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
-import { STATE_PREFIX, attachState, collectRunState } from "../../src/state/index.js";
+import { STATE_PREFIX, attachState } from "../../src/prompts/index.js";
+import { collectRunState } from "../../src/state/index.js";
 import { loadJsonFixture } from "../helpers/fixtures.js";
 
 const fixture = loadJsonFixture<{
