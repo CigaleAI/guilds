@@ -6,10 +6,10 @@ import { listOrgs, type OrgRow } from "../db/orgs.js";
 import { getUsage, listUsageCounters } from "../db/usage.js";
 import { maxWorkspaceMibOf } from "../agents/validation.js";
 import { canSeeGuild } from "../guilds/validation.js";
-import { usageCounterKey, usageFields, usageTree } from "./index.js";
+import { usageCounterKey, usageFields, usageTree, type UsageSource } from "./index.js";
 
 /** A coach whose conversations spend tokens, by organisation. */
-type CoachUsage = { usageByOrg(): Promise<Map<string, unknown>> };
+type CoachUsage = { usageByOrg(): Promise<Map<string, UsageSource>> };
 
 /** What usage is read through: the database, and the Studio and Builder coaches a box runs. */
 export type UsageServices = {
@@ -18,8 +18,8 @@ export type UsageServices = {
   builder?: CoachUsage | undefined;
 };
 
-async function counters(db: Queryable): Promise<Map<string, unknown>> {
-  const map = new Map<string, unknown>();
+async function counters(db: Queryable): Promise<Map<string, UsageSource>> {
+  const map = new Map<string, UsageSource>();
   for (const row of await listUsageCounters(db)) {
     map.set(usageCounterKey(String(row.scope), String(row.scope_id ?? "")), row);
   }

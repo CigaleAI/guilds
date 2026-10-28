@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { messageCostUsd, usageDelta, utcMonth } from "../../src/db/usage.js";
-import { usageCounterKey, usageFields, usageTree } from "../../src/usage/index.js";
+import { usageCounterKey, usageFields, usageTree, type UsageSource } from "../../src/usage/index.js";
 
 test("usage_delta_reads_assistant_metadata", () => {
   const delta = usageDelta({
@@ -80,7 +80,7 @@ test("usage_fields_formats_row", () => {
 });
 
 test("usage_tree_nests_resources_under_organisations", () => {
-  const counters = new Map<string, unknown>([
+  const counters = new Map<string, UsageSource>([
     [
       usageCounterKey("global", ""),
       {
@@ -164,7 +164,7 @@ test("usage_tree_nests_resources_under_organisations", () => {
 });
 
 test("usage_tree_exposes_studio_and_archived_residual", () => {
-  const counters = new Map<string, unknown>([
+  const counters = new Map<string, UsageSource>([
     [
       usageCounterKey("org", "org_manu"),
       {

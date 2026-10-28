@@ -8,8 +8,3 @@ export function jsonObj(value: unknown): unknown {
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
-
-/** The value when it is a plain object, else an empty one. */
-export function recordOf(value: unknown): Record<string, unknown> {
-  return isPlainRecord(value) ? value : {};
-}

@@ -760,11 +760,8 @@
     }
   },
   "src/usage/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/users/index.ts": {
