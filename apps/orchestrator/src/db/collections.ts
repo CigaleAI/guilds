@@ -4,25 +4,13 @@ import { newId } from "../lib/ids.js";
 import { agentModeSql, type ArtifactMode, type ArtifactReader } from "./artifact-access.js";
 import { ARTIFACT_RETURNING, ARTIFACT_SELECT, type ArtifactOrTombstoneRow, type ArtifactRow } from "./artifacts.js";
 import { type Queryable, stamp } from "./pg.js";
-import type { artifactCollections, artifacts, guilds } from "./schema/index.js";
+import type { artifactCollections, artifacts, CollectionColumn, ColumnType, guilds, RecordBody } from "./schema/index.js";
 
 type Collection = InferSelectModel<typeof artifactCollections>;
 type Artifact = InferSelectModel<typeof artifacts>;
 
-/** The value types a collection's columns declare. */
-export const COLUMN_TYPES = ["text", "number", "boolean", "datetime", "array"] as const;
-export type ColumnType = (typeof COLUMN_TYPES)[number];
-
-/** One declared column of a collection, as `artifact_collections.columns` stores it. */
-export type CollectionColumn = {
-  name: string;
-  type: ColumnType;
-  description: string;
-  required: boolean;
-  unique: boolean;
-  /** `text` or `array` only: the closed list of accepted values. */
-  values?: string[];
-};
+/** A record's row: an artifact of kind `object`, whose content is the record's body. */
+export type RecordRow = Omit<ArtifactRow, "content_json"> & { content_json: RecordBody };
 
 /** A collection as stored, with the name of the guild it belongs to. */
 export type CollectionQueryRow = Pick<
@@ -38,12 +26,12 @@ export type CollectionPatch = Pick<Collection, "id" | "guild_id" | "name" | "pur
 
 /** A new record of a collection, written by a reader from its guild. */
 export type NewRecord = Pick<Artifact, "org_id" | "origin_guild_id" | "collection_id" | "key" | "content_hash" | "search_blob" | "identity"> & {
-  body: Record<string, unknown>;
+  body: RecordBody;
 };
 
 /** A record's new body, the search text and identity it carries, and its hash. */
-export type RecordBody = Pick<Artifact, "id" | "content_hash" | "search_blob" | "identity"> & {
-  body: Record<string, unknown>;
+export type RecordUpdate = Pick<Artifact, "id" | "content_hash" | "search_blob" | "identity"> & {
+  body: RecordBody;
 };
 
 /** One `where` term of a record listing or search, over a column or the record id. */
@@ -182,8 +170,8 @@ export async function clearRecordIdentities(db: Queryable, collectionId: string)
 export async function listLiveRecordBodies(
   db: Queryable,
   collectionId: string,
-): Promise<Array<Pick<Artifact, "id" | "key" | "content_json">>> {
-  const result = await db.query<Pick<Artifact, "id" | "key" | "content_json">>(
+): Promise<Array<Pick<RecordRow, "id" | "key" | "content_json">>> {
+  const result = await db.query<Pick<RecordRow, "id" | "key" | "content_json">>(
     `SELECT id, key, content_json FROM artifacts
       WHERE collection_id = $1 AND kind = 'object' AND deleted_at IS NULL`,
     [collectionId],
@@ -294,8 +282,8 @@ export async function lockRecordByIdentity(
   db: Queryable,
   collectionId: string,
   identity: string,
-): Promise<ArtifactRow | null> {
-  const result = await db.query<ArtifactRow>(
+): Promise<RecordRow | null> {
+  const result = await db.query<RecordRow>(
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -328,8 +316,8 @@ export async function insertRecord(
   record: NewRecord,
   actor: ChangeActor,
   now: Date,
-): Promise<ArtifactRow> {
-  const result = await db.query<ArtifactRow>(
+): Promise<RecordRow> {
+  const result = await db.query<RecordRow>(
     `INSERT INTO artifacts (
        id, org_id, level, owner_id, guild_id, agent_id, origin_guild_id, kind,
        collection_id, path, key, title, content_text, content_json, search_text,
@@ -374,11 +362,11 @@ export async function setCollectionNextId(db: Queryable, collectionId: string, n
 
 export async function updateRecordBody(
   db: Queryable,
-  record: RecordBody,
+  record: RecordUpdate,
   actor: ChangeActor,
   now: Date,
-): Promise<ArtifactRow> {
-  const result = await db.query<ArtifactRow>(
+): Promise<RecordRow> {
+  const result = await db.query<RecordRow>(
     `UPDATE artifacts
         SET content_json = $2::jsonb, search_blob = $3, identity = $4, content_hash = $5, version = version + 1,
             updated_by_type = $6, updated_by_id = $7, updated_by_name = $8, updated_at = $9
@@ -404,8 +392,8 @@ export async function updateRecordBody(
 }
 
 /** A live record by its id in the collection; null when there is none. */
-export async function getLiveRecord(db: Queryable, collectionId: string, id: number): Promise<ArtifactRow | null> {
-  const result = await db.query<ArtifactRow>(
+export async function getLiveRecord(db: Queryable, collectionId: string, id: number): Promise<RecordRow | null> {
+  const result = await db.query<RecordRow>(
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -435,8 +423,8 @@ export async function getRecordOrTombstone(
 }
 
 /** A live record locked for the rest of the transaction `db` runs; null when there is none. */
-export async function lockLiveRecord(db: Queryable, collectionId: string, id: number): Promise<ArtifactRow | null> {
-  const result = await db.query<ArtifactRow>(
+export async function lockLiveRecord(db: Queryable, collectionId: string, id: number): Promise<RecordRow | null> {
+  const result = await db.query<RecordRow>(
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -522,7 +510,7 @@ export async function listRecords(
   db: Queryable,
   collection: { id: string; columns: CollectionColumn[] },
   listing: RecordListing,
-): Promise<{ total: number; rows: ArtifactRow[] }> {
+): Promise<{ total: number; rows: RecordRow[] }> {
   const values: unknown[] = [collection.id];
   let filter = `a.collection_id = $1 AND a.kind = 'object' AND a.deleted_at IS NULL`;
   for (const clause of listing.where) {
@@ -537,7 +525,7 @@ export async function listRecords(
   values.push(listing.limit);
   const limitIndex = values.length;
   values.push(listing.offset);
-  const result = await db.query<ArtifactRow>(
+  const result = await db.query<RecordRow>(
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id
@@ -561,7 +549,7 @@ export async function searchRecords(
   reader: ArtifactReader,
   collectionId: string | null,
   search: RecordSearch,
-): Promise<ArtifactRow[]> {
+): Promise<RecordRow[]> {
   const values: unknown[] = [];
   let scope: string;
   if (collectionId) {
@@ -584,13 +572,13 @@ export async function searchRecords(
   }
   values.push(search.limit);
   sql += ` ORDER BY (${scores.join(" + ")}) DESC, a.updated_at DESC LIMIT $${values.length}`;
-  const result = await db.query<ArtifactRow>(sql, values);
+  const result = await db.query<RecordRow>(sql, values);
   return result.rows;
 }
 
 /** Up to `limit` live records of a collection, in id order. */
-export async function listAllRecords(db: Queryable, collectionId: string, limit: number): Promise<ArtifactRow[]> {
-  const result = await db.query<ArtifactRow>(
+export async function listAllRecords(db: Queryable, collectionId: string, limit: number): Promise<RecordRow[]> {
+  const result = await db.query<RecordRow>(
     `SELECT ${ARTIFACT_SELECT}
        FROM artifacts a
        LEFT JOIN artifact_collections c ON c.id = a.collection_id

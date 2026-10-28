@@ -1,4 +1,4 @@
-import type { CollectionColumn } from "../db/collections.js";
+import type { CollectionColumn } from "../db/schema/index.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { collectRecipeNotePaths, recipeNotePath } from "./rewrite.js";
 import type { RecipeDocument } from "./schema.js";

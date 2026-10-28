@@ -21,13 +21,12 @@ import {
   softDeleteCollection,
   softDeleteRecords,
   updateCollection as writeCollection,
-  type CollectionColumn,
   type CollectionQueryRow,
 } from "../db/collections.js";
 import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { getGuild } from "../db/guilds.js";
-import { isPlainRecord } from "../db/json.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
+import type { CollectionColumn } from "../db/schema/index.js";
 import { defaultGrants, reachedMode } from "./access.js";
 import {
   collectionCleared,
@@ -35,7 +34,7 @@ import {
   collectionDeleted,
   type CollectionRef,
 } from "./collection-changes.js";
-import { columnCatalog, columnsOf, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn } from "./columns.js";
+import { columnCatalog, normalizeIdentity, parseColumnChange, parseColumns, uniqueColumn } from "./columns.js";
 import { ArtifactError } from "./errors.js";
 import { writeGrants } from "./grants.js";
 import { collectionDisplayPath } from "./paths.js";
@@ -49,8 +48,6 @@ import {
   type ArtifactActor,
 } from "./types.js";
 
-/** A collection as stored, its columns read back as declared columns. */
-export type CollectionRow = Omit<CollectionQueryRow, "columns"> & { columns: CollectionColumn[] };
 
 /** What a collection's update may change; a field left out keeps its value. */
 export type CollectionChanges = { name?: string; purpose?: string; columns?: unknown; guildId?: string | null };
@@ -81,27 +78,24 @@ export function assertOperator(actor: ArtifactActor): void {
   }
 }
 
-function collectionRow(row: CollectionQueryRow): CollectionRow {
-  return { ...row, columns: columnsOf(row.columns) };
-}
 
-function collectionRef(row: CollectionRow): CollectionRef {
+function collectionRef(row: CollectionQueryRow): CollectionRef {
   return { id: row.id, name: row.name, orgId: row.org_id, guildId: row.guild_id };
 }
 
 /** The collection row, or null when there is none or it is the own table of a guild the actor cannot see. */
-function visibleCollection(actor: ArtifactActor, row: CollectionQueryRow | null): CollectionRow | null {
+function visibleCollection(actor: ArtifactActor, row: CollectionQueryRow | null): CollectionQueryRow | null {
   if (!row || (row.guild_id && actor.hidden.guildIds.includes(row.guild_id))) {
     return null;
   }
-  return collectionRow(row);
+  return row;
 }
 
 export async function loadCollectionById(
   store: ArtifactStore,
   actor: ArtifactActor,
   collectionId: string,
-): Promise<CollectionRow | null> {
+): Promise<CollectionQueryRow | null> {
   return visibleCollection(actor, await getCollectionById(store.db, actor.orgId, collectionId));
 }
 
@@ -109,11 +103,11 @@ export async function loadCollectionByName(
   store: ArtifactStore,
   actor: ArtifactActor,
   name: string,
-): Promise<CollectionRow | null> {
+): Promise<CollectionQueryRow | null> {
   return visibleCollection(actor, await getCollectionByName(store.db, actor.orgId, name));
 }
 
-export function collectionView(row: CollectionRow, access: AccessMode, count?: number): CollectionView {
+export function collectionView(row: CollectionQueryRow, access: AccessMode, count?: number): CollectionView {
   return {
     id: row.id,
     name: row.name,
@@ -140,7 +134,7 @@ async function requireGuild(store: ArtifactStore, actor: ArtifactActor, guildId:
 }
 
 /** The actor's mode on a collection from its access list. The operator writes everything. */
-async function accessMode(store: ArtifactStore, actor: ArtifactActor, collection: CollectionRow): Promise<AccessMode | null> {
+async function accessMode(store: ArtifactStore, actor: ArtifactActor, collection: CollectionQueryRow): Promise<AccessMode | null> {
   if (actor.operator) {
     return "write";
   }
@@ -151,13 +145,13 @@ async function accessMode(store: ArtifactStore, actor: ArtifactActor, collection
 export async function accessibleCollections(
   store: ArtifactStore,
   actor: ArtifactActor,
-): Promise<Array<{ row: CollectionRow; mode: AccessMode }>> {
+): Promise<Array<{ row: CollectionQueryRow; mode: AccessMode }>> {
   if (actor.operator) {
     const rows = await listOrgCollections(store.db, actor.orgId, actor.hidden.guildIds);
-    return rows.map((row) => ({ row: collectionRow(row), mode: "write" }));
+    return rows.map((row) => ({ row, mode: "write" }));
   }
   const rows = await listReachedCollections(store.db, actor);
-  return rows.map(({ mode, ...row }) => ({ row: collectionRow(row), mode }));
+  return rows.map(({ mode, ...row }) => ({ row, mode }));
 }
 
 export async function createCollection(
@@ -175,8 +169,11 @@ export async function createCollection(
   }
   try {
     return await withTransaction(store.db, async (client) => {
-      const created = collectionRow(
-        await insertCollection(client, { org_id: actor.orgId, guild_id: guildId, name, purpose, columns }, actor, new Date()),
+      const created = await insertCollection(
+        client,
+        { org_id: actor.orgId, guild_id: guildId, name, purpose, columns },
+        actor,
+        new Date(),
       );
       const grants = guildId ? defaultGrants("guild", guildId) : defaultGrants("org", actor.orgId);
       await writeGrants(client, actor, { kind: "collection", id: created.id }, grants);
@@ -196,7 +193,7 @@ async function reindexIdentity(client: Queryable, collectionId: string, unique: 
   const duplicates = new Set<string>();
   const updates: Array<[string, string]> = [];
   for (const row of await listLiveRecordBodies(client, collectionId)) {
-    const value = isPlainRecord(row.content_json) ? row.content_json[unique.name] : undefined;
+    const value = row.content_json[unique.name];
     const identity = normalizeIdentity(unique, value);
     if (identity === null) {
       continue;
@@ -236,7 +233,7 @@ function uniqueChanged(
 /** Applies a column change to the live records: renamed keys move, removed keys go, identities follow the unique column. */
 async function applyColumnChange(
   client: Queryable,
-  current: CollectionRow,
+  current: CollectionQueryRow,
   change: NonNullable<ReturnType<typeof parseColumnChange>>,
 ): Promise<void> {
   for (const rename of change.renamed) {
@@ -308,7 +305,7 @@ export async function updateCollection(
 async function changedGuild(
   store: ArtifactStore,
   actor: ArtifactActor,
-  current: CollectionRow,
+  current: CollectionQueryRow,
   guildId: string | null | undefined,
 ): Promise<string | null> {
   if (guildId === undefined) {
@@ -402,7 +399,7 @@ export async function readableCollectionById(
   store: ArtifactStore,
   actor: ArtifactActor,
   collectionId: string,
-): Promise<CollectionRow | null> {
+): Promise<CollectionQueryRow | null> {
   const collection = await loadCollectionById(store, actor, collectionId);
   return collection && (await accessMode(store, actor, collection)) ? collection : null;
 }

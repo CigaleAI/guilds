@@ -3,7 +3,7 @@ import { ArtifactError } from "../artifacts/errors.js";
 import { normalizeNoteKey } from "../artifacts/paths.js";
 import { COLLECTION_NAME_RE, PURPOSE_MAX, isAccessMode, type AccessMode } from "../artifacts/types.js";
 import { loadManifest, ManifestError, recipeManifestProblem } from "../connectors/manifest.js";
-import type { CollectionColumn } from "../db/collections.js";
+import type { CollectionColumn } from "../db/schema/index.js";
 import type { ConnectionResource, Manifest } from "../db/schema/index.js";
 import { RecipeError } from "./errors.js";
 import {

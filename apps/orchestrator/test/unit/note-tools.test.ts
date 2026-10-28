@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { agentActor, type ArtifactActor } from "../../src/artifacts/index.js";
 import { parseColumns } from "../../src/artifacts/columns.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
-import type { CollectionColumn } from "../../src/db/collections.js";
+import type { CollectionColumn } from "../../src/db/schema/index.js";
 import { createToolContext, invokeTool } from "../../src/toolbox/index.js";
 import { noteRowAt } from "../helpers/artifacts.js";
 

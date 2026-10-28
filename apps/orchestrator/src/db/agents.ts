@@ -4,7 +4,7 @@ import { newId } from "../lib/ids.js";
 import { GuildNameTaken, RowMissing } from "./errors.js";
 import { guildOperatorsColumn, type GuildOperatorRow } from "./guilds.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { agents, guilds, machines, orgs, taskRevisions, type Harness } from "./schema/index.js";
+import { agents, guilds, machines, orgs, taskRevisions, type Harness, type ToolInputSchema } from "./schema/index.js";
 
 type Agent = InferSelectModel<typeof agents>;
 type Machine = InferSelectModel<typeof machines>;
@@ -95,7 +95,7 @@ export type AgentScriptRow = {
   agent_id: string;
   name: string;
   description: string;
-  parameters: Record<string, unknown> | null;
+  parameters: ToolInputSchema | null;
   source: string;
   source_hash: string;
   created_at: string;
@@ -126,7 +126,7 @@ export type NewAgentScript = {
   agentId: string;
   name: string;
   description: string;
-  parameters: Record<string, unknown> | null;
+  parameters: ToolInputSchema | null;
   source: string;
   sourceHash: string;
 };

@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { readAgentMode } from "../db/artifact-access.js";
 import { countLiveArtifacts, type ArtifactRow } from "../db/artifacts.js";
 import { formatOperationalTimestamp } from "../db/codecs.js";
-import type { CollectionColumn } from "../db/collections.js";
-import { isPlainRecord } from "../db/json.js";
+import type { RecordRow } from "../db/collections.js";
+import type { CollectionColumn, RecordBody } from "../db/schema/index.js";
 import type { Queryable } from "../db/pg.js";
 import { reachedMode } from "./access.js";
 import { operatorActor } from "./actors.js";
@@ -233,13 +233,18 @@ export function hashArtifactContent(text: string | null, json: unknown = null): 
 }
 
 /** A record's body: its declared columns, as stored. */
-export function bodyOf(row: ArtifactRow): Record<string, unknown> {
-  return isPlainRecord(row.content_json) ? { ...row.content_json } : {};
+export function bodyOf(row: RecordRow): RecordBody {
+  return { ...row.content_json };
+}
+
+/** Whether an artifact's row is a record's: of kind `object`, its content the record's body. */
+export function isRecordRow(row: ArtifactRow): row is RecordRow {
+  return row.kind === "object";
 }
 
 /** A note, Memory, script, or file as tools and the API return it; a record as `recordView` does. */
 export function artifactView(row: ArtifactRow): Record<string, unknown> {
-  if (row.kind === "object") {
+  if (isRecordRow(row)) {
     return recordViewWithPath(row);
   }
   return {
@@ -260,7 +265,7 @@ export function artifactView(row: ArtifactRow): Record<string, unknown> {
  * A record as tools and the API return it: the id, the declared columns,
  * then the system columns from the row.
  */
-export function recordView(row: ArtifactRow): RecordView {
+export function recordView(row: RecordRow): RecordView {
   return {
     id: Number(row.key),
     collection: row.collection_name,
@@ -273,7 +278,7 @@ export function recordView(row: ArtifactRow): RecordView {
 }
 
 /** A record as `recordView` returns it, with its display path after its collection. */
-export function recordViewWithPath(row: ArtifactRow): RecordView {
+export function recordViewWithPath(row: RecordRow): RecordView {
   return {
     id: Number(row.key),
     collection: row.collection_name,

@@ -1,4 +1,4 @@
-import type { CollectionColumn } from "../db/collections.js";
+import type { CollectionColumn } from "../db/schema/index.js";
 import { checkValue, columnNamed } from "./columns.js";
 import type { OrderClause, WhereClause } from "../db/collections.js";
 import { ArtifactError } from "./errors.js";

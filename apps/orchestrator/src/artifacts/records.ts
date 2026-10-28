@@ -1,4 +1,4 @@
-import { softDeleteArtifact, type ArtifactRow } from "../db/artifacts.js";
+import { softDeleteArtifact } from "../db/artifacts.js";
 import {
   countLiveRecords,
   getLiveRecord,
@@ -12,11 +12,12 @@ import {
   searchRecords as searchRecordRows,
   setCollectionNextId,
   updateRecordBody,
-  type CollectionColumn,
+  type RecordRow,
   type WhereClause,
 } from "../db/collections.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
+import type { CollectionColumn, RecordBody } from "../db/schema/index.js";
 import { readableCollectionById, requireReadable, requireWritable } from "./collections.js";
 import { identityFor, recordProblems, recordRejected, uniqueColumn, validateAdd, validatePatch } from "./columns.js";
 import { ArtifactError } from "./errors.js";
@@ -35,7 +36,7 @@ function problemColumn(problem: string): string {
 }
 
 /** A record's live row by id, locked; a 404 when there is none. */
-async function lockRecord(client: Queryable, collectionId: string, id: number): Promise<ArtifactRow> {
+async function lockRecord(client: Queryable, collectionId: string, id: number): Promise<RecordRow> {
   const row = await lockLiveRecord(client, collectionId, id);
   if (!row) {
     throw new ArtifactError(`record ${id} not found`, 404);
@@ -48,10 +49,10 @@ async function writeRecordBody(
   client: Queryable,
   actor: ArtifactActor,
   collection: CollectionDescription,
-  record: { current: ArtifactRow; body: Record<string, unknown>; identity: string | null },
-): Promise<ArtifactRow> {
+  record: { current: RecordRow; body: RecordBody; identity: string | null },
+): Promise<RecordRow> {
   const { current, body, identity } = record;
-  let row: ArtifactRow;
+  let row: RecordRow;
   try {
     row = await updateRecordBody(
       client,
@@ -87,13 +88,13 @@ async function insertNewRecord(
   client: Queryable,
   actor: ArtifactActor,
   collection: CollectionDescription,
-  record: { nextId: number; body: Record<string, unknown>; identity: string | null },
-): Promise<ArtifactRow> {
+  record: { nextId: number; body: RecordBody; identity: string | null },
+): Promise<RecordRow> {
   if ((await countLiveRecords(client, collection.id)) >= LIVE_RECORDS_MAX) {
     throw new ArtifactError("record limit reached", 422);
   }
   const key = String(record.nextId);
-  let row: ArtifactRow;
+  let row: RecordRow;
   try {
     row = await insertRecord(
       client,
@@ -181,7 +182,7 @@ export async function updateRecord(
   }
   return withTransaction(store.db, async (client) => {
     const current = await lockRecord(client, collection.id, id);
-    const merged: Record<string, unknown> = { ...bodyOf(current) };
+    const merged: RecordBody = { ...bodyOf(current) };
     for (const name of checked.clear) {
       delete merged[name];
     }

@@ -42,7 +42,7 @@ export {
   type TaskEmbedInspection,
 } from "./embeds.js";
 export { columnCatalog, describeColumn, parseColumnChange, parseColumns } from "./columns.js";
-export { COLUMN_TYPES, type CollectionColumn, type ColumnType } from "../db/collections.js";
+export { COLUMN_TYPES, type CollectionColumn, type ColumnType } from "../db/schema/index.js";
 export {
   ACCESS_MODES,
   ACCESS_SUBJECTS,

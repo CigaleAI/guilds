@@ -1,4 +1,4 @@
-import { COLUMN_TYPES, type CollectionColumn, type ColumnType } from "../db/collections.js";
+import { COLUMN_TYPES, type CollectionColumn, type ColumnType, type RecordBody, type RecordValue } from "../db/schema/index.js";
 import { ArtifactError } from "./errors.js";
 
 /**
@@ -138,15 +138,6 @@ function parseValues(raw: unknown): string[] | null {
   return values;
 }
 
-/** The declared columns as stored on the row, tolerant of a malformed value. */
-export function columnsOf(value: unknown): CollectionColumn[] {
-  try {
-    return parseColumns(value ?? []);
-  } catch {
-    return [];
-  }
-}
-
 export function columnNamed(columns: CollectionColumn[], name: string): CollectionColumn | null {
   return columns.find((column) => column.name === name) ?? null;
 }
@@ -173,7 +164,7 @@ function got(value: unknown): string {
 export function checkValue(
   column: CollectionColumn,
   value: unknown,
-): { ok: true; value: unknown } | { ok: false; problem: string } {
+): { ok: true; value: RecordValue } | { ok: false; problem: string } {
   const fail = (expected: string): { ok: false; problem: string } => ({
     ok: false,
     problem: `column "${column.name}": expected ${expected}; ${got(value)}`,
@@ -216,7 +207,7 @@ function checkArrayValue(
   column: CollectionColumn,
   value: unknown,
   fail: (expected: string) => { ok: false; problem: string },
-): { ok: true; value: unknown } | { ok: false; problem: string } {
+): { ok: true; value: RecordValue } | { ok: false; problem: string } {
   const expected = column.values ? `a list of ${column.values.join(", ")}` : "a list of text";
   if (!Array.isArray(value)) {
     return fail(expected);
@@ -273,9 +264,9 @@ function unknownColumn(columns: CollectionColumn[], name: string): string {
 export function validateAdd(
   columns: CollectionColumn[],
   body: Record<string, unknown>,
-): { body: Record<string, unknown>; problems: string[] } {
+): { body: RecordBody; problems: string[] } {
   const problems: string[] = [];
-  const stored: Record<string, unknown> = {};
+  const stored: RecordBody = {};
   for (const name of Object.keys(body)) {
     if (!columnNamed(columns, name)) {
       problems.push(unknownColumn(columns, name));
@@ -306,9 +297,9 @@ export function validateAdd(
 export function validatePatch(
   columns: CollectionColumn[],
   patch: Record<string, unknown>,
-): { set: Record<string, unknown>; clear: string[]; problems: string[] } {
+): { set: RecordBody; clear: string[]; problems: string[] } {
   const problems: string[] = [];
-  const set: Record<string, unknown> = {};
+  const set: RecordBody = {};
   const clear: string[] = [];
   for (const [name, value] of Object.entries(patch)) {
     const column = columnNamed(columns, name);

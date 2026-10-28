@@ -24,13 +24,14 @@ import {
 } from "../db/agents.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { bindQuery, type Queryable, withTransaction } from "../db/pg.js";
+import type { ToolInputSchema } from "../db/schema/index.js";
 
 /** An agent's script: its row without the timestamps. */
 export type AgentScript = Omit<AgentScriptRow, "created_at" | "updated_at">;
 
 /** A script as the agent's catalog lists it: the parameters only when the script declares them. */
 export type ScriptCatalogItem = Pick<AgentScript, "name" | "description"> & {
-  parameters?: Record<string, unknown>;
+  parameters?: ToolInputSchema;
 };
 
 /** A script as the API shows it. */

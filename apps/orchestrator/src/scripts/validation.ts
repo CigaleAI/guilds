@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isPlainRecord } from "../db/json.js";
+import type { ToolInputSchema } from "../db/schema/index.js";
 
 export const SCRIPTS_DIR = "scripts";
 export const SCRIPT_NAME = /^[a-z][a-z0-9_-]{0,62}$/;
@@ -109,7 +110,7 @@ export function scriptSourceHash(source: string): string {
 
 export function validateScriptParameters(
   value: unknown,
-): Record<string, unknown> | null {
+): ToolInputSchema | null {
   if (value === null || value === undefined) {
     return null;
   }

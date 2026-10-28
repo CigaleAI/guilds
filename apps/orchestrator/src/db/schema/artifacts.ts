@@ -13,7 +13,32 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { timestamptz, tsvector } from "./columns.js";
+import type { ToolInputSchema } from "./connectors.js";
 import { guilds, orgs, users } from "./organisations.js";
+
+/** The value types a collection's columns declare. */
+export const COLUMN_TYPES = ["text", "number", "boolean", "datetime", "array"] as const;
+export type ColumnType = (typeof COLUMN_TYPES)[number];
+
+/** One declared column of a collection, as `artifact_collections.columns` stores it. */
+export type CollectionColumn = {
+  name: string;
+  type: ColumnType;
+  description: string;
+  required: boolean;
+  unique: boolean;
+  /** `text` or `array` only: the closed list of accepted values. */
+  values?: string[];
+};
+
+/** A record's value in one column: text or a UTC datetime, a number, a boolean, or a list of text. */
+export type RecordValue = string | number | boolean | string[];
+
+/** A record's body: its value in each column it fills, by column name. */
+export type RecordBody = Record<string, RecordValue>;
+
+/** What an artifact's `content_json` holds: a record's body, or the parameters a script declares. */
+export type ArtifactContent = RecordBody | ToolInputSchema;
 
 export const artifactCollections = pgTable(
   "artifact_collections",
@@ -23,7 +48,7 @@ export const artifactCollections = pgTable(
     guild_id: text("guild_id"),
     name: text("name").notNull(),
     purpose: text("purpose").notNull(),
-    columns: json("columns").$type<unknown[]>().notNull().default(sql`'[]'::json`),
+    columns: json("columns").$type<CollectionColumn[]>().notNull().default(sql`'[]'::json`),
     next_id: integer("next_id").notNull().default(1),
     created_by_type: text("created_by_type").notNull(),
     created_by_id: text("created_by_id").notNull(),
@@ -105,7 +130,7 @@ export const artifacts = pgTable(
     key: text("key").notNull(),
     title: text("title"),
     content_text: text("content_text"),
-    content_json: jsonb("content_json"),
+    content_json: jsonb("content_json").$type<ArtifactContent>(),
     search_text: text("search_text"),
     search_blob: text("search_blob"),
     search_document: tsvector("search_document").generatedAlwaysAs(
@@ -117,7 +142,8 @@ export const artifacts = pgTable(
       END`,
     ),
     identity: text("identity"),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    /** Nothing writes it: every row holds an empty object. */
+    metadata: jsonb("metadata").$type<Record<string, never>>().notNull().default(sql`'{}'::jsonb`),
     mime: text("mime"),
     bytes: integer("bytes"),
     content_hash: text("content_hash").notNull(),

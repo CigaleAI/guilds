@@ -1,5 +1,5 @@
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import type { CollectionColumn } from "../collections.js";
+import type { CollectionColumn } from "./artifacts.js";
 import type { AccessMode } from "./artifacts.js";
 import type { WakeWindow } from "./agents.js";
 import type { ConnectionResource } from "./coaches.js";

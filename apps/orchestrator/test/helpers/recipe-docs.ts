@@ -1,4 +1,4 @@
-import type { CollectionColumn } from "../../src/db/collections.js";
+import type { CollectionColumn } from "../../src/db/schema/index.js";
 import { TEST_MODEL } from "./models.js";
 import { emptyRecipe } from "../../src/recipes/minimal.js";
 import {
