@@ -5,10 +5,9 @@ import { maxScriptsOf, validateConfig } from "../agents/validation.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { createCollection, deleteCollection } from "../artifacts/collections.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { ownerPrefix } from "../artifacts/paths.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { CollectionView } from "../artifacts/store.js";
-import { writeNote } from "../artifacts/notes.js";
+import { writeNote } from "../artifacts/service.js";
 import { deleteAgent } from "../db/agents.js";
 import { deleteGuild } from "../db/guilds.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
@@ -133,8 +132,8 @@ async function writeRecipeNote(skeleton: Skeleton, note: RecipeNote, actor: Arti
     content: note.body,
     title: note.key,
   });
-  rememberNoteHref(skeleton, note, `${ownerPrefix(written.org_id, note.level, written.owner_id)}${written.key}`);
-  return written.id;
+  rememberNoteHref(skeleton, note, written.href);
+  return written.row.id;
 }
 
 async function createGuild(skeleton: Skeleton, recipe: RecipeDocument): Promise<void> {

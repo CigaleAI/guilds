@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMemoryTimeline, lineChangeStats, memoryDiffText } from "../../src/memory/timeline.js";
+import { buildMemoryTimeline, lineChangeStats, memoryDiffText } from "../../src/artifacts/memory-timeline.js";
 
 const v0 = "- keep it short (operator)\n- notes live under research/\n- nothing yet";
 const v1 = "- keep it short (operator)\n- notes live under research/\n- draft the digest";

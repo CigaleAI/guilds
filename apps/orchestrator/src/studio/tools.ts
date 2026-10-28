@@ -1,7 +1,7 @@
-import { agentTask, artifactAt, parseActorPath } from "../artifacts/service.js";
+import { agentTask, artifactAt, memoryTimeline, parseActorPath } from "../artifacts/service.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
-import { buildMemoryTimeline, memoryDiffText, type MemoryTimelineEntry } from "../memory/timeline.js";
+import { memoryDiffText, type MemoryTimelineEntry } from "../artifacts/memory-timeline.js";
 import { memoryOf } from "../agents/validation.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
@@ -59,7 +59,6 @@ import { getStudioSession, type StudioSessionRow } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
 import { findNotes } from "../artifacts/notes.js";
 import { hashArtifactContent, operatorContext, type ArtifactStore } from "../artifacts/store.js";
-import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 export type StudioToolContext = {
   session: StudioSessionRow;
@@ -607,9 +606,7 @@ async function memoryTimelineFor(ctx: StudioToolContext, agent: Pick<AgentRow, "
     guildId: ctx.sourceGuildId,
     agentId: agent.id,
   });
-  const live = await getMemoryRow(ctx.artifacts, actor, agent.id);
-  const revisions = await listRevisions(ctx.artifacts, actor, agent.id);
-  return buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
+  return (await memoryTimeline(ctx.artifacts, actor, agent.id)).entries;
 }
 
 function timelineHeader(entry: MemoryTimelineEntry): Record<string, unknown> {

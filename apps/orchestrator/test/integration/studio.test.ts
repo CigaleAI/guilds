@@ -69,7 +69,8 @@ import { getConversationMessage, insertConversationMessage, listConversationMess
 import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { getByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
+import { getByDisplayPath } from "../../src/artifacts/notes.js";
+import { writeNote } from "../../src/artifacts/service.js";
 import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
 import { createCollection, describeCollection, updateCollection } from "../../src/artifacts/collections.js";
 import { grantAccess, listAccess, reachOf } from "../../src/artifacts/access-lists.js";
@@ -724,7 +725,7 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     guildId: "guild_ev",
     agentId: "a_ev",
   });
-  const shared = await writeNote(
+  const { row: shared } = await writeNote(
     artifacts,
     operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ev" }),
     { level: "guild", key: "house-rules.md", content: "Always cite the source.\n", title: "House rules" },
@@ -1093,7 +1094,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
   });
   const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed", agentId: "a_ed" });
   await writeMemory(artifacts, operator, "a_ed", { content: "- be brief\n- digest in notes\n- nothing yet", detail: "seed" });
-  const note = await writeNote(
+  const { row: note } = await writeNote(
     artifacts,
     operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed" }),
     { level: "guild", key: "house-rules.md", content: "Always cite.\n", title: "House rules" },
@@ -1610,7 +1611,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
   const now = new Date();
   await insertGuild(db, { guildId: "guild_nw", name: "narrow-guild", orgId: "org_home" }, now);
   const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_nw" });
-  const roles = await writeNote(artifacts, operator, {
+  const { row: roles } = await writeNote(artifacts, operator, {
     level: "guild",
     key: "roles.md",
     content: "The scout finds candidates.\nThe archivist files them.\n",

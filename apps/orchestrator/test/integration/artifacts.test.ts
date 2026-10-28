@@ -16,13 +16,14 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { tempDir } from "../helpers/env.js";
 import { compareColumnTimestamps } from "../../src/db/codecs.js";
 import { listConfigChanges } from "../../src/db/config-changes.js";
-import { buildMemoryTimeline } from "../../src/memory/timeline.js";
+import { buildMemoryTimeline } from "../../src/artifacts/memory-timeline.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
 import { getAgentTask, listAgentTaskRevisions } from "../../src/db/agents.js";
 import { insertRun } from "../../src/db/runs.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { canReadDisplayPath, deleteByDisplayPath, findNotes, getByDisplayPath, listEmbeddableNotes, listOwnerNotes, writeNote, writeNoteAt } from "../../src/artifacts/notes.js";
+import { canReadDisplayPath, deleteByDisplayPath, findNotes, getByDisplayPath, listEmbeddableNotes, listOwnerNotes, writeNoteAt } from "../../src/artifacts/notes.js";
+import { writeNote } from "../../src/artifacts/service.js";
 import { getMemoryRow, listRevisions, writeMemory } from "../../src/artifacts/memory.js";
 import { accessList, grantAccess, listAccess, reachOf, replaceAccess } from "../../src/artifacts/access-lists.js";
 import { clearRecords, collectionCatalog, collectionFacts, createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../../src/artifacts/collections.js";
@@ -106,7 +107,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       agentName: "beta",
     });
 
-    const orgNote = await writeNote(store, operator, {
+    const { row: orgNote } = await writeNote(store, operator, {
       level: "org",
       key: "schema.md",
       content: "org schema\n",
@@ -830,10 +831,10 @@ describe("artifact store", { concurrency: 1 }, () => {
       (await findNotes(store, actor, { query })).notes.map((note) => [note.display_path, note.access]);
 
     // default rows: a guild note is written by its guild, an org note read by the organisation, an agent note has none
-    const plan = await writeNote(store, north, { level: "guild", key: "plan.md", content: "north plan\n" });
+    const { row: plan } = await writeNote(store, north, { level: "guild", key: "plan.md", content: "north plan\n" });
     const planPath = String(artifactView(plan).display_path);
-    const own = await writeNote(store, north, { level: "agent", key: "mine.md", content: "north private\n" });
-    const handbook = await writeNote(store, operator, { level: "org", key: "handbook.md", content: "org handbook\n" });
+    const { row: own } = await writeNote(store, north, { level: "agent", key: "mine.md", content: "north private\n" });
+    const { row: handbook } = await writeNote(store, operator, { level: "org", key: "handbook.md", content: "org handbook\n" });
     const handbookPath = String(artifactView(handbook).display_path);
     assert.deepEqual(await rowsOf(plan.id), [["guild", "guild_north", "write"]]);
     assert.deepEqual(await rowsOf(own.id), []);
@@ -1153,7 +1154,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       guildId: "guild_flat",
       agentId: "a_flat",
     });
-    const row = await writeNote(store, alpha, { level: "agent", key: "exploration.md", content: "looked here\n" });
+    const { row: row } = await writeNote(store, alpha, { level: "agent", key: "exploration.md", content: "looked here\n" });
     assert.equal(row.path, "");
     assert.equal(artifactView(row).display_path, "org/org_home/agents/a_flat/exploration.md");
     await assert.rejects(

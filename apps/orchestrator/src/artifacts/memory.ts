@@ -11,11 +11,13 @@ import {
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { type Queryable, stamp, withTransaction } from "../db/pg.js";
-import { EMPTY_MEMORY } from "../memory/index.js";
 import { ArtifactError } from "./errors.js";
 import { HISTORY_ARCHIVE_SEGMENT, MEMORY_KEY, revisionDisplayPath } from "./paths.js";
 import { assertBytes, hashArtifactContent, reachesOwner, type ArtifactStore, rowDisplayPath } from "./store.js";
 import { MEMORY_REVISIONS_MAX, type ArtifactActor } from "./types.js";
+
+/** The text an agent's Memory holds before anything writes it. */
+export const EMPTY_MEMORY = "";
 
 /** A previous Memory version as the operator reads it, with the file name the archive gives it. */
 export type MemoryRevisionView = {

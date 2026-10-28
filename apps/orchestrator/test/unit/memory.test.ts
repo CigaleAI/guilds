@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { EMPTY_MEMORY } from "../../src/artifacts/memory.js";
 import {
-  EMPTY_MEMORY,
   MEMORY_ARCHIVE_KEEP,
   MEMORY_INTRO,
   MEMORY_INTRO_READONLY,

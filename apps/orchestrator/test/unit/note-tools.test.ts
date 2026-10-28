@@ -60,7 +60,7 @@ class FakeStore {
     };
     this.rows = this.rows.filter((item) => item.display_path !== display);
     this.rows.push(row);
-    return noteRowAt(display, args.content);
+    return { href: display, row: noteRowAt(display, args.content) };
   }
 
   async writeNoteAt(actor: ArtifactActor, path: string, content: string) {

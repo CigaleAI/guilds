@@ -935,7 +935,8 @@ describe("generation", { concurrency: 1 }, () => {
     ];
     const artifacts = {
       async writeNote(actor: { orgId: string; agentId: string | null }, args: { key: string; content: string }) {
-        return noteRowAt(`org/${actor.orgId}/agents/${actor.agentId}/${args.key}`, args.content);
+        const href = `org/${actor.orgId}/agents/${actor.agentId}/${args.key}`;
+        return { href, row: noteRowAt(href, args.content) };
       },
     };
     const loop = makeLoop(db, notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {

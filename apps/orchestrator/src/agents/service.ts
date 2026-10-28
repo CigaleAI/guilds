@@ -41,7 +41,7 @@ import {
   withCodingLimits,
 } from "./validation.js";
 import { agentItem } from "./view.js";
-import { embedSource, inspectTaskEmbeds, taskEmbedActor } from "../artifacts/embeds.js";
+import { brokenTaskEmbeds } from "../artifacts/service.js";
 
 /** What agents are created, changed, moved and deleted through, built once from the app's services. */
 export type AgentServices = {
@@ -132,13 +132,7 @@ export async function listBrokenTaskEmbeds(
   const store = services.artifacts;
   const items = [];
   for (const row of agents) {
-    const inspected = store
-      ? await inspectTaskEmbeds(embedSource(store), taskEmbedActor(guild.org_id, row), row.task ?? "")
-      : [];
-    items.push({
-      id: row.id,
-      broken_embeds: inspected.filter((item) => !item.ok).map((item) => item.href),
-    });
+    items.push({ id: row.id, broken_embeds: store ? await brokenTaskEmbeds(store, row) : [] });
   }
   return items;
 }

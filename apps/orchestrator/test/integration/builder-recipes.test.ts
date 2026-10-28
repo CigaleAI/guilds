@@ -31,7 +31,7 @@ import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { agentConfig } from "../helpers/generation.js";
 import { grantAccess } from "../../src/artifacts/access-lists.js";
-import { writeNote } from "../../src/artifacts/notes.js";
+import { writeNote } from "../../src/artifacts/service.js";
 import { createCollection } from "../../src/artifacts/collections.js";
 import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
 
@@ -383,7 +383,7 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
       purpose: "One record per lead the organisation shares.",
       columns: [{ name: "email", type: "text", description: "the lead's email", required: true, unique: true }],
     });
-    const glossary = await writeNote(artifacts, captureActor, {
+    const { row: glossary } = await writeNote(artifacts, captureActor, {
       level: "org",
       key: "capture-glossary.md",
       content: "Lead: a person worth a reply.\n",

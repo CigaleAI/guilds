@@ -230,6 +230,67 @@ export async function inspectEmbed(source: EmbedSource, actor: ArtifactActor, hr
   return note.row ? { href, ok: true } : { href, ok: false, reason: note.reason };
 }
 
+/** A note or table an embed walk reaches: a note with its text, null where the walk stops reading, or a table's description. */
+export type EmbedTarget =
+  | { kind: "note"; href: string; row: ArtifactRow; text: string | null }
+  | { kind: "collection"; href: string; collection: CollectionDescription };
+
+/** An embed that does not resolve for its reader, and why. */
+export type UnresolvedEmbed = { href: string; reason: string };
+
+/** What an embed walk reaches past the display paths its reader already holds. */
+export type EmbedReach = { targets: EmbedTarget[]; unresolved: UnresolvedEmbed[] };
+
+/**
+ * What `roots` embed as the actor reads them, round by round, one level past what a run inlines:
+ * each note and table in the order the walk first meets it, and each link that does not resolve.
+ * A note met at that last level is not read. The walk neither resolves nor follows `known`.
+ */
+export async function reachEmbeds(
+  source: EmbedSource,
+  actor: ArtifactActor,
+  roots: string[],
+  known: ReadonlySet<string>,
+): Promise<EmbedReach> {
+  const met = new Set(known);
+  const reach: EmbedReach = { targets: [], unresolved: [] };
+  let layer = roots;
+  for (let round = 0; round <= EMBED_DEPTH; round += 1) {
+    const hrefs = [...new Set(layer.flatMap((text) => collectTaskEmbeds(text)))].filter((href) => !met.has(href));
+    hrefs.forEach((href) => met.add(href));
+    const resolved = await Promise.all(hrefs.map((href) => resolveEmbedTarget(source, actor, href)));
+    const targets = resolved.flatMap((item) => (item.target ? [item.target] : []));
+    reach.targets.push(...(round < EMBED_DEPTH ? targets : targets.map(unreadTarget)));
+    reach.unresolved.push(...resolved.flatMap((item) => (item.unresolved ? [item.unresolved] : [])));
+    layer = targets.flatMap((target) => (target.kind === "note" ? [target.text ?? ""] : []));
+  }
+  return reach;
+}
+
+/** The note or table one embed names, as the actor reads it, or why it does not resolve. */
+async function resolveEmbedTarget(
+  source: EmbedSource,
+  actor: ArtifactActor,
+  href: string,
+): Promise<{ target: EmbedTarget; unresolved?: undefined } | { target?: undefined; unresolved: UnresolvedEmbed }> {
+  const collection = collectionEmbed(href);
+  if (collection) {
+    const described = collection.orgId === actor.orgId ? await source.describeCollection(actor, collection.name) : null;
+    return described
+      ? { target: { kind: "collection", href, collection: described } }
+      : { unresolved: { href, reason: NOT_REACHABLE } };
+  }
+  const note = await readEmbedNote(source, actor, href);
+  return note.row
+    ? { target: { kind: "note", href, row: note.row, text: note.row.content_text ?? "" } }
+    : { unresolved: { href, reason: note.reason } };
+}
+
+/** A target as the walk's last level holds it: a note's text is not read there. */
+function unreadTarget(target: EmbedTarget): EmbedTarget {
+  return target.kind === "note" ? { ...target, text: null } : target;
+}
+
 /** The notes a run inlines from a Task, directly or through other notes, as the actor reads them. */
 export async function snapshotTaskEmbeds(
   source: EmbedSource,

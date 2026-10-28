@@ -13,12 +13,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { EMPTY_MEMORY } from "../artifacts/memory.js";
 import { isRelativeTo, pythonQuote } from "../lib/contain.js";
 import { AsyncLock } from "../lib/lock.js";
 import {
   archiveFilename,
   archiveHeader,
-  EMPTY_MEMORY,
   isRelativeMemoryArchivePath,
   LEGACY_MEMORY_DIR,
   MEMORY_ARCHIVE_KEEP,

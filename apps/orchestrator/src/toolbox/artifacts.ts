@@ -1,5 +1,5 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { parseActorPath } from "../artifacts/service.js";
+import { parseActorPath, writeNote } from "../artifacts/service.js";
 import { isArtifactLevel, type ArtifactActor } from "../artifacts/types.js";
 import { argInteger, argRecord, argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
@@ -7,7 +7,7 @@ import type { Tool, ToolContext } from "./types.js";
 import { addRecord, listRecords, removeRecord, searchRecords, updateRecord } from "../artifacts/records.js";
 import { collectionFacts } from "../artifacts/collections.js";
 import { describeColumn } from "../artifacts/columns.js";
-import { deleteByDisplayPath, findNotes, getByDisplayPath, writeNote, writeNoteAt, type DisplayPathRead } from "../artifacts/notes.js";
+import { deleteByDisplayPath, findNotes, getByDisplayPath, writeNoteAt, type DisplayPathRead } from "../artifacts/notes.js";
 import { artifactView, type ArtifactStore } from "../artifacts/store.js";
 import { writeMemory } from "../artifacts/memory.js";
 import { bindQuery } from "../db/pg.js";
@@ -200,7 +200,7 @@ async function writeNoteArgs(ctx: ToolContext, args: Record<string, unknown>) {
   if (!isArtifactLevel(levelRaw)) {
     throw new ArtifactError("level must be agent, guild, or org", 422);
   }
-  return store(ctx).writeNote(actor(ctx), { level: levelRaw, key: argString(args, "key"), content });
+  return (await store(ctx).writeNote(actor(ctx), { level: levelRaw, key: argString(args, "key"), content })).row;
 }
 
 export const noteWrite: Tool = {

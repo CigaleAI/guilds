@@ -17,7 +17,7 @@ import { insertGuild } from "../../src/db/guilds.js";
 import { createScheduleRun, type RunMessage } from "../../src/db/runs.js";
 import type { RunTaskSource } from "../../src/db/schema/index.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
-import { writeNote } from "../../src/artifacts/notes.js";
+import { writeNote } from "../../src/artifacts/service.js";
 import { addRecord, removeRecord } from "../../src/artifacts/records.js";
 import { createCollection } from "../../src/artifacts/collections.js";
 import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
@@ -135,10 +135,10 @@ test("studio's State lists the guild's items with who changed and read each one"
         now,
       );
 
-    const rules = await writeNote(artifacts, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
+    const { row: rules } = await writeNote(artifacts, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
     const rulesPath = `${ownerPrefix("org_home", "guild", "guild_st")}${rules.key}`;
     await writeNote(artifacts, operator, { level: "guild", key: "idle.md", content: "Nobody reads this.\n" });
-    const farNote = await writeNote(
+    const { row: farNote } = await writeNote(
       artifacts,
       operatorContext("org_home", "user_operator", "operator", { guildId: "guild_far" }),
       { level: "guild", key: "far.md", content: "Elsewhere.\n" },
@@ -151,7 +151,7 @@ test("studio's State lists the guild's items with who changed and read each one"
     });
     await scripts.create(operator, "a_writer", "tally", "Counts", "print(1)", { type: "object", properties: {} });
     // A run records the tables its Task embeds, directly or through a note it inlines.
-    const viaNote = await writeNote(artifacts, operator, { level: "guild", key: "leads-note.md", content: `![[${leads.display_path}]]\n` });
+    const { row: viaNote } = await writeNote(artifacts, operator, { level: "guild", key: "leads-note.md", content: `![[${leads.display_path}]]\n` });
     assert.deepEqual(
       await snapshotTaskCollections(embedSource(artifacts), operator, `![[${ownerPrefix("org_home", "guild", "guild_st")}${viaNote.key}]]\n`),
       [leads.display_path],

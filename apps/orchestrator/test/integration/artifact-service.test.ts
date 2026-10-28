@@ -6,9 +6,19 @@ import { grantAccess } from "../../src/artifacts/access-lists.js";
 import { createCollection } from "../../src/artifacts/collections.js";
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { listRevisions, writeMemory } from "../../src/artifacts/memory.js";
-import { deleteByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
-import { agentTask, artifactAt, expandTaskText, taskSnapshot } from "../../src/artifacts/service.js";
-import { artifactStore, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
+import { deleteByDisplayPath } from "../../src/artifacts/notes.js";
+import {
+  agentTask,
+  artifactAt,
+  brokenTaskEmbeds,
+  embedGraph,
+  expandTaskText,
+  memoryTimeline,
+  taskEmbedRun,
+  taskSnapshot,
+  writeNote,
+} from "../../src/artifacts/service.js";
+import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { EMBED_BUDGET } from "../../src/artifacts/types.js";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
@@ -52,7 +62,7 @@ before(async () => {
     artifacts: store,
   });
   await writeNote(store, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
-  const shut = await writeNote(store, operator, { level: "org", key: "shut.md", content: "Not for agents.\n" });
+  const { row: shut } = await writeNote(store, operator, { level: "org", key: "shut.md", content: "Not for agents.\n" });
   await grantAccess(store, operator, { kind: "note", id: shut.id }, { type: "agent", id: AGENT, mode: "none" });
 });
 
@@ -132,7 +142,7 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.equal(live.kind === "row" && live.deleted, false);
     assert.equal(live.kind === "row" ? live.row.content_text : null, "Cite sources.\n");
 
-    const gone = await writeNote(store, operator, { level: "guild", key: "gone.md", content: "bye\n" });
+    const { row: gone } = await writeNote(store, operator, { level: "guild", key: "gone.md", content: "bye\n" });
     await deleteByDisplayPath(store, operator, rowDisplayPath(gone));
     const deleted = await artifactAt(store, operator, rowDisplayPath(gone));
     assert.equal(deleted.kind === "row" && deleted.deleted, true);
@@ -155,5 +165,62 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.ok(revision);
     await assert.rejects(artifactAt(store, agent, revision.display_path), { name: "ArtifactError", message: "unknown artifact path" });
     await assert.rejects(artifactAt(store, agent, shutPath), { name: "ArtifactError", message: "artifact not found" });
+  });
+
+  test("writeNote writes under the owner the level names for the actor and says where the note sits", async () => {
+    const written = await writeNote(store, agent, { level: "agent", key: " own.md ", content: "mine\n" });
+    assert.equal(written.href, `org/${ORG}/agents/${AGENT}/own.md`);
+    assert.equal(written.row.key, "own.md");
+    assert.equal(written.row.owner_id, AGENT);
+  });
+
+  test("taskEmbedRun walks the Task as the agent reads it and names the inlined embeds the agent cannot read", async () => {
+    const row = await agentWithTask(`Follow ![[${rulesPath}]] and ![[${shutPath}]]\n`);
+    const run = await taskEmbedRun(store, row);
+    assert.deepEqual(run.steps, [
+      { from: null, href: rulesPath, depth: 1, inlined: true },
+      { from: null, href: shutPath, depth: 1, inlined: true },
+    ]);
+    assert.deepEqual([...run.unreachable], [shutPath]);
+  });
+
+  test("brokenTaskEmbeds lists the embeds of the Task the agent cannot read", async () => {
+    const row = await agentWithTask(`Follow ![[${rulesPath}]], ![[${shutPath}]] and ![[org/${ORG}/missing.md]]\n`);
+    assert.deepEqual(await brokenTaskEmbeds(store, row), [shutPath, `org/${ORG}/missing.md`]);
+  });
+
+  test("embedGraph reaches what the texts embed as the reader reads them, past what it holds, with the depth and budget a run inlines", async () => {
+    const graph = await embedGraph(
+      store,
+      operator,
+      [`![[${rulesPath}]] ![[${shutPath}]] ![[org/${ORG}/missing.md]]`],
+      new Set([rulesPath]),
+    );
+    assert.deepEqual(
+      graph.targets.map((target) => [target.href, target.kind === "note" ? target.text : null]),
+      [[shutPath, "Not for agents.\n"]],
+    );
+    assert.deepEqual(graph.unresolved, [{ href: `org/${ORG}/missing.md`, reason: "not reachable" }]);
+    assert.equal(graph.depth, 2);
+    assert.equal(graph.budget, EMBED_BUDGET);
+  });
+
+  test("memoryTimeline lists the Memory's versions newest first with its path and live hash, the archive only to an operator", async () => {
+    await writeMemory(store, operator, AGENT, { content: "- newest\n", detail: "test" });
+    const revisions = await listRevisions(store, operator, AGENT);
+    const timeline = await memoryTimeline(store, operator, AGENT);
+    assert.equal(timeline.displayPath, `org/${ORG}/agents/${AGENT}/memory.md`);
+    const live = await artifactAt(store, operator, timeline.displayPath);
+    assert.ok(live.kind === "row");
+    assert.equal(timeline.live?.version, live.row.version);
+    assert.equal(timeline.live?.contentHash, hashArtifactContent("- newest\n"));
+    assert.equal(timeline.entries.length, revisions.length + 1);
+    assert.equal(timeline.entries[0]?.revision_id, null);
+    assert.equal(timeline.entries[0]?.content, "- newest\n");
+    const asAgent = await memoryTimeline(store, agent, AGENT);
+    assert.deepEqual(
+      asAgent.entries.map((entry) => entry.content),
+      ["- newest\n"],
+    );
   });
 });

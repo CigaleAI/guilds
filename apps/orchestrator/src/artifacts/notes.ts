@@ -26,9 +26,7 @@ import { ArtifactError } from "./errors.js";
 import { writeGrants } from "./grants.js";
 import { listRevisions } from "./memory.js";
 import {
-  assertNoteKeyFree,
   isDisplayPath,
-  normalizeNoteKey,
   parseDisplayPath,
   revisionDisplayPath,
   TASK_KEY,
@@ -36,8 +34,8 @@ import {
 } from "./paths.js";
 import { removeRecord } from "./records.js";
 import { parseRecordId } from "./search.js";
-import { artifactMode, artifactView, assertBytes, assertLiveCount, assertRead, assertWrite, hashArtifactContent, hostNoteView, ownerFor, reachesOwner, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
-import { FIND_DEFAULT, FIND_MAX, SEARCH_TEXT_MAX, type ArtifactActor, type ArtifactLevel } from "./types.js";
+import { artifactMode, artifactView, assertBytes, assertRead, assertWrite, hashArtifactContent, hostNoteView, reachesOwner, type ArtifactOwnerRef, type ArtifactStore, type StateArtifact, rowDisplayPath } from "./store.js";
+import { FIND_DEFAULT, FIND_MAX, type ArtifactActor, type ArtifactLevel } from "./types.js";
 
 /** A parsed display path that names a note, file, Memory, or script by where it sits. */
 export type ArtifactPath = Extract<ParsedDisplayPath, { kind: "artifact" }>;
@@ -50,7 +48,7 @@ export type DisplayPathRead = {
 };
 
 /** A note's text as a write sets it, at its owner, folder, and file name. */
-type NoteWrite = {
+export type NoteUpsert = {
   level: ArtifactLevel;
   owner: ArtifactOwnerRef;
   path: string;
@@ -76,35 +74,6 @@ export async function loadParsedOrTombstone(
   parsed: ArtifactPath,
 ): Promise<ArtifactOrTombstoneRow | null> {
   return getArtifactOrTombstoneAt(store.db, addressOf(parsed));
-}
-
-/**
- * Notes sit directly under their owner: `level` picks the owner, `key` names
- * the file. An existing note is written with write access to it, and is
- * otherwise refused as not writable; a new one only where its starting
- * access lets the writer write it.
- */
-export async function writeNote(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  args: { level: ArtifactLevel; key: string; content: string; title?: string; expectedVersion?: number },
-): Promise<ArtifactRow> {
-  const key = normalizeNoteKey(args.key);
-  assertNoteKeyFree(args.level, key);
-  assertBytes(args.content);
-  const owner = ownerFor(actor, args.level);
-  await assertLiveCount(store, owner.orgId, args.level, owner.ownerId);
-  const searchText = [args.title ?? "", key].filter(Boolean).join(" ").slice(0, SEARCH_TEXT_MAX);
-  return upsertNote(store, actor, {
-    level: args.level,
-    owner,
-    path: "",
-    key,
-    title: args.title ?? null,
-    contentText: args.content,
-    searchText,
-    ...(args.expectedVersion !== undefined ? { expectedVersion: args.expectedVersion } : {}),
-  });
 }
 
 /** Rewrites the live note a display path names, with write access to it. */
@@ -136,7 +105,7 @@ export async function writeNoteAt(
 }
 
 /** Writes a note: the live one at its address with write access to it, else a new one with its starting access list. */
-async function upsertNote(store: ArtifactStore, actor: ArtifactActor, note: NoteWrite): Promise<ArtifactRow> {
+export async function upsertNote(store: ArtifactStore, actor: ArtifactActor, note: NoteUpsert): Promise<ArtifactRow> {
   return withTransaction(store.db, async (client) => {
     const address = { org_id: note.owner.orgId, level: note.level, owner_id: note.owner.ownerId, path: note.path, key: note.key };
     const live = await getLiveNote(client, address);

@@ -1,13 +1,9 @@
 import { ArtifactError } from "../artifacts/errors.js";
-import { artifactAt, parseActorPath } from "../artifacts/service.js";
+import { artifactAt, memoryTimeline, parseActorPath } from "../artifacts/service.js";
 import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
-import {
-  buildMemoryTimeline,
-  memoryDiffText,
-  type MemoryTimelineEntry,
-} from "../memory/timeline.js";
+import { memoryDiffText, type MemoryTimelineEntry } from "../artifacts/memory-timeline.js";
 import { issueItem } from "../issues/index.js";
 import { scheduleItem } from "../schedules/item.js";
 import { capBytes } from "../toolbox/output.js";
@@ -24,7 +20,6 @@ import type { Queryable } from "../db/pg.js";
 import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 import { operatorContext, type ArtifactStore } from "../artifacts/store.js";
-import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
 // run (optionally one step of it), a memory version, a routine, a file, an
@@ -244,9 +239,7 @@ async function resolveMemoryVersion(
       agentId: agent.id,
     },
   );
-  const live = await getMemoryRow(deps.artifacts, actor, agent.id);
-  const revisions = await listRevisions(deps.artifacts, actor, agent.id);
-  const entries = buildMemoryTimeline({ live: { content: live?.content_text ?? "" }, revisions });
+  const { entries } = await memoryTimeline(deps.artifacts, actor, agent.id);
   const entry = findEntry(entries, input);
   if (!entry) {
     throw new StudioUnprocessableError("focus memory version not found");

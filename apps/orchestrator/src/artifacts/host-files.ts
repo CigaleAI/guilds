@@ -7,7 +7,8 @@ import { taskDisplayPath, writeAgentTask } from "./task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { canReadDisplayPath, deleteByDisplayPath, getByDisplayPath, listEmbeddableNotes, listOwnerNotes, writeNote } from "./notes.js";
+import { canReadDisplayPath, deleteByDisplayPath, getByDisplayPath, listEmbeddableNotes, listOwnerNotes } from "./notes.js";
+import { writeNote } from "./service.js";
 import { artifactView, type ArtifactStore } from "./store.js";
 import { ensureAgentRows, writeMemory } from "./memory.js";
 
@@ -262,12 +263,12 @@ export async function writeHostFile(
     const payload = { path: name, content, display_path: String(artifactView(row).display_path) };
     return withFileMeta(services, actor, owner, { payload, kind: "memory", version: row.version });
   }
-  const row = await writeNote(store, actor, { level: owner.level, key: name, content });
+  const { row, href } = await writeNote(store, actor, { level: owner.level, key: name, content });
   const payload = {
     id: row.id,
     path: name,
     content,
-    display_path: String(artifactView(row).display_path),
+    display_path: href,
   };
   return withFileMeta(services, actor, owner, { payload, kind: row.kind, version: row.version });
 }

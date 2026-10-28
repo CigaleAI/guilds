@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { ArtifactError } from "../artifacts/errors.js";
-import { assertNoteKeyFree, normalizeNoteKey, ownerPrefix, parseDisplayPath } from "../artifacts/paths.js";
-import { artifactAt, parseActorPath } from "../artifacts/service.js";
-import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
+import { parseDisplayPath } from "../artifacts/paths.js";
+import { artifactAt, parseActorPath, planNote, writeNote, type PlannedNote } from "../artifacts/service.js";
+import { hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { changeGuild } from "../guilds/changes.js";
 import type { Schedules } from "../schedules/service.js";
@@ -21,7 +21,7 @@ import type { Queryable } from "../db/pg.js";
 import { getConversationMessage, updateConversationMessage, type ConversationMessageRow } from "../db/conversations.js";
 import type { ConversationMessageMetadata, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { deleteByDisplayPath, getByDisplayPath, writeNote } from "../artifacts/notes.js";
+import { deleteByDisplayPath, getByDisplayPath } from "../artifacts/notes.js";
 import { getMemoryRow, writeMemory } from "../artifacts/memory.js";
 
 // An edit tool never writes. It returns this widget; the turn pauses until
@@ -146,7 +146,7 @@ export async function loadNoteBase(scope: EditScope, displayPath: string): Promi
     }
     return {
       kind: "note",
-      displayPath: `${ownerPrefix(row.org_id, row.level, row.owner_id)}${row.key}`,
+      displayPath: rowDisplayPath(row),
       level: row.level,
       ownerId: row.owner_id,
       title: row.title,
@@ -376,20 +376,20 @@ async function reviewNoteCreate(
   if (level !== "agent" && level !== "guild" && level !== "org") {
     throw new StudioUnprocessableError("level must be agent, guild, or org");
   }
-  let key: string;
+  const content = typeof args.content === "string" ? args.content : "";
+  const title = argString(args, "title").trim() || null;
+  // An agent note's owner is the agent the handle names; whether that agent is in the guild is checked below.
+  const ownerId = { agent: agentId ?? "", guild: scope.sourceGuildId, org: scope.orgId }[level];
+  let planned: PlannedNote;
   try {
-    key = normalizeNoteKey(argString(args, "key"));
-    assertNoteKeyFree(level, key);
+    planned = planNote({ orgId: scope.orgId, ownerId }, { level, key: argString(args, "key"), content, ...(title ? { title } : {}) });
   } catch (error) {
     artifactFailure(error);
   }
-  const content = typeof args.content === "string" ? args.content : "";
   if (!content.trim()) {
     throw new StudioUnprocessableError("content is required: the complete note body");
   }
   assertContent(content);
-  const title = argString(args, "title").trim() || null;
-  let ownerId: string;
   let reader: string;
   if (level === "agent") {
     const agents = await listAgents(scope.db, scope.sourceGuildId);
@@ -397,17 +397,14 @@ async function reviewNoteCreate(
     if (!agent) {
       throw new StudioUnprocessableError("an agent note needs agent_id: a live agent of the source guild");
     }
-    ownerId = agent.id;
     reader = `Only ${agent.name} reads it.`;
   } else if (level === "guild") {
     const guild = await getGuild(scope.db, scope.sourceGuildId);
-    ownerId = scope.sourceGuildId;
     reader = `Every agent of ${guild?.name ?? "the guild"} that reads guild notes reaches it.`;
   } else {
-    ownerId = scope.orgId;
     reader = "Every agent in the organisation that reads organisation notes reaches it.";
   }
-  const displayPath = `${ownerPrefix(scope.orgId, level, ownerId)}${key}`;
+  const { href: displayPath, key } = planned;
   const live = await liveNoteAt(scope, displayPath);
   if (live) {
     throw new StudioConflictError(`a note already exists at ${displayPath}; change it with studio_edit_note action edit`);
@@ -418,7 +415,7 @@ async function reviewNoteCreate(
     target: { display_path: displayPath, title, level, ...(level === "agent" ? { agent_id: ownerId } : {}) },
     baseVersion: null,
     baseHash: createHash("sha256").update(JSON.stringify(["absent", displayPath]), "utf8").digest("hex"),
-    proposedHash: createHash("sha256").update(JSON.stringify([title, hashArtifactContent(content)]), "utf8").digest("hex"),
+    proposedHash: planned.hash,
     live: "",
     proposed: content,
     effects: [
@@ -490,7 +487,7 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
   });
   try {
     if (plan.action === "create") {
-      const row = await writeNote(scope.artifacts, toolActor, {
+      const written = await writeNote(scope.artifacts, toolActor, {
         level: plan.level,
         key: plan.key,
         content: plan.content,
@@ -498,7 +495,7 @@ async function applyNote(scope: EditScope, plan: NotePlan): Promise<number | nul
         // No live note has version 0, so a note written meanwhile is a conflict, not overwritten.
         expectedVersion: 0,
       });
-      return row.version;
+      return written.row.version;
     }
     await deleteByDisplayPath(scope.artifacts, toolActor, plan.displayPath);
     return null;
@@ -816,14 +813,14 @@ export async function applyEdit(
       toolCall,
     };
     try {
-      const row = await writeNote(scope.artifacts, actor, {
+      const written = await writeNote(scope.artifacts, actor, {
         level: base.level,
         key: parsed.key,
         content: proposed as string,
         ...(base.title ? { title: base.title } : {}),
         expectedVersion: base.version,
       });
-      return { version: row.version };
+      return { version: written.row.version };
     } catch (error) {
       artifactFailure(error);
     }
