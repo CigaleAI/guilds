@@ -10,11 +10,17 @@ import {
   artifactAt,
   deleteByDisplayPath,
   notesNamed,
+  readStateNotes,
   writeNote,
   writeNoteAt,
 } from "../../src/artifacts/notes.js";
 import { addRecord, listRecordsWithHint } from "../../src/artifacts/records.js";
-import { applyCollectionStep, guildTable, guildTables } from "../../src/artifacts/guild-tables.js";
+import {
+  applyCollectionStep,
+  guildTable,
+  guildTables,
+  listGuildCollections,
+} from "../../src/artifacts/guild-tables.js";
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
 import {
   agentTask,
@@ -252,6 +258,22 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.deepEqual(await notesNamed(store, operator, new Set()), []);
   });
 
+  test("readStateNotes reads the guild's agents' notes, then its own, then the organisation's, with their text", async () => {
+    const { href: ownPath } = await writeNote(store, agent, { level: "agent", key: "own.md", content: "Mine.\n" });
+    const notes = await readStateNotes(store, operator, { guildId: GUILD, agentIds: [AGENT] });
+    const hrefs = notes.map((note) => note.href);
+    assert.ok(hrefs.indexOf(ownPath) < hrefs.indexOf(rulesPath));
+    assert.ok(hrefs.indexOf(rulesPath) < hrefs.indexOf(shutPath));
+    assert.equal(notes.find((note) => note.href === ownPath)?.row.content_text, "Mine.\n");
+    assert.equal(notes.find((note) => note.href === rulesPath)?.row.content_text, "Cite sources.\n");
+  });
+
+  test("readStateNotes leaves out a note the reader cannot read", async () => {
+    const hrefs = (await readStateNotes(store, agent, { guildId: GUILD, agentIds: [AGENT] })).map((note) => note.href);
+    assert.ok(hrefs.includes(rulesPath));
+    assert.ok(!hrefs.includes(shutPath));
+  });
+
   test("guildTables lists the guild's own tables and the organisation's with counts and access lists, not another guild's own", async () => {
     await createCollection(store, operator, { name: "own-desk", purpose: "Own", guildId: GUILD });
     await createCollection(store, operator, { name: "other-desk", purpose: "Other", guildId: OTHER_GUILD });
@@ -265,6 +287,16 @@ describe("artifact service", { concurrency: 1 }, () => {
     assert.deepEqual(viewed?.access.map((entry) => [entry.type, entry.mode]), [["org", "read"]]);
     const own = tables.find((table) => table.collection.name === "own-desk");
     assert.deepEqual(own?.access.map((entry) => [entry.type, entry.id, entry.mode]), [["guild", GUILD, "write"]]);
+  });
+
+  test("listGuildCollections lists the guild's own collections and the organisation's, not another guild's own", async () => {
+    const names = (await listGuildCollections(store, operator, GUILD)).map((collection) => collection.name);
+    assert.ok(names.includes("own-desk"));
+    assert.ok(names.includes("viewed"));
+    assert.ok(!names.includes("other-desk"));
+    const otherNames = (await listGuildCollections(store, operator, OTHER_GUILD)).map((collection) => collection.name);
+    assert.ok(otherNames.includes("other-desk"));
+    assert.ok(!otherNames.includes("own-desk"));
   });
 
   test("guildTable finds one of the guild's tables by name or id, and nothing for another guild's own or an unknown one", async () => {

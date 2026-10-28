@@ -4,8 +4,8 @@ import type { ArtifactStore, CollectionView } from "../artifacts/store.js";
 import { taskDisplayPath, taskEmbedRun, type TaskEmbedRun } from "../artifacts/task.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { listCollections } from "../artifacts/collections.js";
-import { getByDisplayPath, listOwnerNotes } from "../artifacts/notes.js";
+import { listGuildCollections } from "../artifacts/guild-tables.js";
+import { readStateNotes, type StateOwners } from "../artifacts/notes.js";
 import {
   collectTaskEmbeds,
   embedGraph,
@@ -366,40 +366,14 @@ function referenceTask(orgId: string, agent: Pick<AgentRow, "id" | "name" | "tas
 async function loadStateFiles(
   store: ArtifactStore,
   actor: ArtifactActor,
-  scope: { guildId: string; agentIds: string[] },
+  scope: StateOwners,
 ): Promise<ReferenceFile[]> {
-  const owners: Array<[ArtifactLevel, string]> = [
-    ...scope.agentIds.map((id): [ArtifactLevel, string] => ["agent", id]),
-    ["guild", scope.guildId],
-    ["org", actor.orgId],
-  ];
-  const listed = await Promise.all(
-    owners.map(([level, ownerId]) => listOwnerNotes(store, actor, level, ownerId)),
-  );
-  const notes = await Promise.all(
-    listed.flat().map((item) => loadNoteFile(store, actor, String(item.display_path))),
-  );
-  const tables = (await listCollections(store, actor)).filter(
-    (table) => table.guild === null || table.guild.id === scope.guildId,
-  );
+  const notes = await readStateNotes(store, actor, scope);
+  const tables = await listGuildCollections(store, actor, scope.guildId);
   return [
-    ...notes.flatMap((note) => (note ? [{ ...note, in_state: true }] : [])),
+    ...notes.map((note) => ({ ...noteFile(note.href, note.row), in_state: true })),
     ...tables.map((table) => tableFile(table, true)),
   ];
-}
-
-async function loadNoteFile(
-  store: ArtifactStore,
-  actor: ArtifactActor,
-  displayPath: string,
-): Promise<ReferenceFile | null> {
-  try {
-    const loaded = await getByDisplayPath(store, actor, displayPath);
-    const row = loaded.tombstone ? undefined : loaded.row;
-    return row?.kind === "note" ? noteFile(displayPath, row) : null;
-  } catch {
-    return null;
-  }
 }
 
 function noteFile(displayPath: string, row: ArtifactRow): ReferenceFile {

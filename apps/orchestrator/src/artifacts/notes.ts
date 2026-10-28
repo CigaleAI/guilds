@@ -327,6 +327,9 @@ export async function listOwnerNotes(
   return rows.map(hostNoteView);
 }
 
+/** The owners of one guild's state: the guild and its agents. */
+export type StateOwners = { guildId: string; agentIds: string[] };
+
 /**
  * The notes, Memory, scripts, and files of one guild's state the actor can read: its own,
  * its agents', and the organisation's.
@@ -334,7 +337,7 @@ export async function listOwnerNotes(
 export async function listStateArtifacts(
   store: ArtifactStore,
   actor: ArtifactActor,
-  owners: { guildId: string; agentIds: string[] },
+  owners: StateOwners,
 ): Promise<StateArtifact[]> {
   return (await listGuildArtifacts(store.db, actor, owners)).map((row) => ({
     display_path: rowDisplayPath(row),
@@ -354,6 +357,38 @@ export async function listStateArtifacts(
 /** The kind a state listing shows: its query reads notes, Memory, scripts, and files alone. */
 function stateKind(kind: ArtifactRow["kind"]): StateArtifact["kind"] {
   return kind === "object" ? "note" : kind;
+}
+
+/** A live note with its display path. */
+export type LiveNote = { href: string; row: ArtifactRow };
+
+/**
+ * The live notes of one guild's state the actor reads, with their text: each of its agents', then
+ * its own, then the organisation's, each owner's in file name order. A note the store refuses to
+ * read is left out.
+ */
+export async function readStateNotes(store: ArtifactStore, actor: ArtifactActor, owners: StateOwners): Promise<LiveNote[]> {
+  const levels: Array<[ArtifactLevel, string]> = [
+    ...owners.agentIds.map((id): [ArtifactLevel, string] => ["agent", id]),
+    ["guild", owners.guildId],
+    ["org", actor.orgId],
+  ];
+  const listed = await Promise.all(
+    levels.map(([level, ownerId]) => listOwnerArtifacts(store.db, actor, { level, owner_id: ownerId, kind: "note" })),
+  );
+  const notes = await Promise.all(
+    listed.flat().map(async (listedRow): Promise<LiveNote | null> => {
+      const href = rowDisplayPath(listedRow);
+      try {
+        const loaded = await getByDisplayPath(store, actor, href);
+        const row = loaded.tombstone ? undefined : loaded.row;
+        return row?.kind === "note" ? { href, row } : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return notes.flatMap((note) => (note ? [note] : []));
 }
 
 export async function listEmbeddableNotes(store: ArtifactStore, actor: ArtifactActor): Promise<ArtifactRow[]> {

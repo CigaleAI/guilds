@@ -6,6 +6,7 @@ import {
   deleteCollection,
   describeCollection,
   getCollection,
+  listCollections,
   listCollectionsWithCounts,
   updateCollection,
   type CollectionChanges,
@@ -24,6 +25,11 @@ export type CollectionLookup = { id: string } | { name: string };
 /** Whether a collection is one a guild's agents are given in the guild's own right: the guild's own, or the organisation's. */
 function isGuildOrOrgTable(collection: CollectionView, guildId: string): boolean {
   return !collection.guild || collection.guild.id === guildId;
+}
+
+/** The guild's own collections and the organisation's, of those `listCollections` gives the actor. */
+export async function listGuildCollections(store: ArtifactStore, actor: ArtifactActor, guildId: string): Promise<CollectionView[]> {
+  return (await listCollections(store, actor)).filter((collection) => isGuildOrOrgTable(collection, guildId));
 }
 
 /**
