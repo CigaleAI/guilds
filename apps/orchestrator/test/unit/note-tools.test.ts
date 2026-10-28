@@ -168,7 +168,7 @@ async function invoke(
 ) {
   const [payload, metadata] = await invokeTool(
     toolCtx,
-    { id: "call_1", function: { name, arguments: arguments_ } },
+    { id: "call_1", type: "function", function: { name, arguments: JSON.stringify(arguments_) } },
     {},
     32_768,
   );

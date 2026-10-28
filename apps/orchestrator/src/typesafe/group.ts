@@ -5,6 +5,7 @@ import {
   recentGroupRows,
   storedTags,
 } from "../groupchat/history.js";
+import type { GroupMessageRow } from "../db/group-chat.js";
 import type { IntegrationSources } from "../instance/integrations.js";
 import type { HistoryRouting, RecipientRouting, TypeSafeUsage } from "../db/schema/index.js";
 import { writeLog } from "../observability/log.js";
@@ -47,7 +48,7 @@ export type RecipientDecision = {
 export type HistoryDecision = {
   source: "limit" | "typesafe" | "fallback";
   reason?: string;
-  rows: Array<Record<string, unknown>>;
+  rows: GroupMessageRow[];
   keep?: Record<string, number>;
   model?: string;
   usage?: TypeSafeUsage;
@@ -63,7 +64,7 @@ export type GroupRouter = {
     ruleNames?: Set<string>;
   }): Promise<RecipientDecision>;
   history(args: {
-    rows: Array<Record<string, unknown>>;
+    rows: GroupMessageRow[];
     agentName: string;
     agentFocus?: string;
   }): Promise<HistoryDecision>;
@@ -220,14 +221,14 @@ export async function classifyGroupRecipients(args: {
 }
 
 export async function selectGroupHistory(args: {
-  rows: Array<Record<string, unknown>>;
+  rows: GroupMessageRow[];
   agentName: string;
   agentFocus?: string;
   evaluate: TypeSafeEvaluateFn;
   limit?: number;
   candidateLimit?: number;
 }): Promise<{
-  rows: Array<Record<string, unknown>>;
+  rows: GroupMessageRow[];
   keep: Record<string, number>;
   model?: string;
   usage?: TypeSafeUsage;

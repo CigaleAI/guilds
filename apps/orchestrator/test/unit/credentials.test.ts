@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { completionMetadata } from "../helpers/generation.js";
 import { test } from "node:test";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import type { OrgModelProviderRow } from "../../src/db/orgs.js";
@@ -79,11 +80,11 @@ test("a model is connected when its provider's credentials resolve", async () =>
 });
 
 test("usage is read from a completion's metadata and the callback's failure is swallowed", async () => {
-  const usage = modelUsageOf("r_1", "openai/gpt-5", {
-    usage: { input_tokens: 10, output_tokens: 4, cache_read_tokens: 2 },
-    cost_usd: 0.5,
-    cost_source: "provider",
-  });
+  const usage = modelUsageOf(
+    "r_1",
+    "openai/gpt-5",
+    completionMetadata({ usage: { input_tokens: 10, output_tokens: 4, cache_read_tokens: 2 }, cost_usd: 0.5, cost_source: "provider" }),
+  );
   assert.deepEqual(usage, {
     run_id: "r_1",
     model: "openai/gpt-5",
@@ -91,7 +92,7 @@ test("usage is read from a completion's metadata and the callback's failure is s
     cost_usd: 0.5,
     cost_source: "provider",
   });
-  assert.equal(modelUsageOf("r_1", "m", {}).cost_source, "unavailable");
+  assert.equal(modelUsageOf("r_1", "m", completionMetadata({ cost_source: "unavailable" })).cost_source, "unavailable");
   const heard: string[] = [];
   await reportModelUsage(
     {

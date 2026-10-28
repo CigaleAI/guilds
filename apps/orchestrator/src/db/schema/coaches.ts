@@ -17,6 +17,7 @@ import { sql } from "drizzle-orm";
 import { agents } from "./agents.js";
 import { artifacts } from "./artifacts.js";
 import { timestamptz } from "./columns.js";
+import type { ConversationMessageMetadata, MessagePayload } from "./messages.js";
 import { guilds, orgs, users } from "./organisations.js";
 import type { ApplyPreview } from "./apply-preview.js";
 import type { RecipeDocument } from "./recipe-document.js";
@@ -148,8 +149,8 @@ export const studioMessages = pgTable(
     session_id: text("session_id").notNull(),
     seq: integer("seq").notNull(),
     generation: integer("generation").notNull(),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    payload: jsonb("payload").$type<MessagePayload>().notNull(),
+    metadata: jsonb("metadata").$type<ConversationMessageMetadata>().notNull().default(sql`'{}'::jsonb`),
     cost_usd: numeric("cost_usd"),
     created_at: timestamptz("created_at").notNull(),
   },
@@ -350,8 +351,8 @@ export const builderMessages = pgTable(
     session_id: text("session_id").notNull(),
     seq: integer("seq").notNull(),
     generation: integer("generation").notNull(),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    payload: jsonb("payload").$type<MessagePayload>().notNull(),
+    metadata: jsonb("metadata").$type<ConversationMessageMetadata>().notNull().default(sql`'{}'::jsonb`),
     cost_usd: numeric("cost_usd"),
     created_at: timestamptz("created_at").notNull(),
   },

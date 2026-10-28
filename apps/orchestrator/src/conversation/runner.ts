@@ -1,5 +1,6 @@
 import {
   type ConversationKind,
+  type ConversationMessageRow,
   type ConversationSessionKey,
   conversationSessionErrors,
   insertConversationMessage,
@@ -8,6 +9,7 @@ import {
   updateConversationSession,
 } from "../db/conversations.js";
 import type { Queryable } from "../db/pg.js";
+import type { MessagePayload, ToolCall, ToolMessage } from "../db/schema/index.js";
 import { incrementOrgUsage } from "../db/usage.js";
 import { EventQueue } from "../lib/event.js";
 import {
@@ -34,6 +36,7 @@ import { ConversationConflictError, ConversationError } from "./errors.js";
 import {
   projectToolResults,
   TOOL_RESULT_STUB_MIN_BYTES,
+  type ProjectedRow,
   type ProjectionBudget,
 } from "./projection.js";
 import { writeLog } from "../observability/log.js";
@@ -298,13 +301,11 @@ export class ConversationRunner {
         );
         await incrementOrgUsage(this.deps.db, orgId, metadata, now);
         await this.publish(sessionId, "message.committed", { message: row });
-        const calls = Array.isArray((completion.payload as { tool_calls?: unknown }).tool_calls)
-          ? (completion.payload as { tool_calls: Array<Record<string, unknown>> }).tool_calls
-          : [];
+        const calls = completion.payload.tool_calls ?? [];
         if (!calls.length) {
           break;
         }
-        const finishReason = completion.metadata?.finish_reason;
+        const finishReason = completion.metadata.finish_reason;
         let awaitOperator = false;
         for (const call of calls) {
           toolCalls += 1;
@@ -312,11 +313,8 @@ export class ConversationRunner {
             await this.commitToolError(sessionId, args.generation, call, "tool call limit reached");
             continue;
           }
-          const fn = (call.function && typeof call.function === "object" ? call.function : {}) as Record<
-            string,
-            unknown
-          >;
-          const name = String(fn.name ?? "");
+          const fn = call.function;
+          const name = fn.name;
           const tool = tools.get(name);
           const upcoming = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
           let result: Record<string, unknown>;
@@ -346,7 +344,7 @@ export class ConversationRunner {
             { role: "tool", tool_call_id: call.id, content: JSON.stringify(envelope) },
           ];
           const nextTokens = generationLive.countInputTokens(model, candidateMessages, schemas);
-          const payload =
+          const payload: ToolMessage =
             nextTokens > maxInput
               ? {
                   role: "tool",
@@ -486,7 +484,7 @@ export class ConversationRunner {
   private async commitToolError(
     sessionId: string,
     generation: number,
-    call: Record<string, unknown>,
+    call: ToolCall,
     detail: string,
   ): Promise<void> {
     const seq = await nextConversationSeq(this.deps.db, this.deps.kind, sessionId);
@@ -536,7 +534,7 @@ export class ConversationRunner {
 }
 
 export function projectConversationHistory(args: {
-  history: Array<Record<string, unknown>>;
+  history: ProjectedRow[];
   generationContext: string;
   currentGeneration: number;
   stubHint: string;
@@ -544,7 +542,7 @@ export function projectConversationHistory(args: {
   minUnstubbed?: number;
   budget?: ConversationProjectionBudget;
   systemContent?: string;
-}): Array<Record<string, unknown>> {
+}): MessagePayload[] {
   const messages = projectToolResults({
     history: args.history,
     currentGeneration: args.currentGeneration,
@@ -556,11 +554,9 @@ export function projectConversationHistory(args: {
     ...(args.minUnstubbed !== undefined ? { minUnstubbed: args.minUnstubbed } : {}),
     ...(args.budget ? { budget: args.budget } : {}),
   });
-  if (messages[0]?.role === "system") {
-    messages[0] = { ...messages[0] };
-    if (args.systemContent) {
-      messages[0].content = args.systemContent;
-    }
+  const [first] = messages;
+  if (first?.role === "system") {
+    messages[0] = args.systemContent ? { ...first, content: args.systemContent } : first;
     messages.splice(1, 0, { role: "user", content: args.generationContext });
   }
   return messages;
@@ -621,16 +617,13 @@ export function recoverPartialToolArgs(raw: string): Record<string, unknown> {
   return out;
 }
 
-function unresolvedCalls(messages: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  const pending = new Map<string, Record<string, unknown>>();
-  for (const row of messages) {
-    const payload = row.payload as Record<string, unknown>;
-    if (payload.role === "assistant" && Array.isArray(payload.tool_calls)) {
-      for (const call of payload.tool_calls as Array<Record<string, unknown>>) {
-        if (typeof call.id === "string") pending.set(call.id, call);
-      }
+function unresolvedCalls(messages: ConversationMessageRow[]): ToolCall[] {
+  const pending = new Map<string, ToolCall>();
+  for (const { payload } of messages) {
+    if (payload.role === "assistant") {
+      for (const call of payload.tool_calls ?? []) pending.set(call.id, call);
     }
-    if (payload.role === "tool" && typeof payload.tool_call_id === "string") {
+    if (payload.role === "tool") {
       pending.delete(payload.tool_call_id);
     }
   }

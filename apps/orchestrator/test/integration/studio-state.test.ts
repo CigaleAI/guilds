@@ -13,7 +13,7 @@ import { templatesRoot } from "../helpers/fixtures.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertGuild } from "../../src/db/guilds.js";
-import { createScheduleRun } from "../../src/db/runs.js";
+import { createScheduleRun, type RunMessage } from "../../src/db/runs.js";
 import type { RunTaskSource } from "../../src/db/schema/index.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { writeNote } from "../../src/artifacts/notes.js";
@@ -42,7 +42,7 @@ after(async () => {
 
 type Call = { id: string; name: string; args: Record<string, unknown> };
 
-function steps(calls: Call[]): Array<[Record<string, unknown>, Record<string, unknown>]> {
+function steps(calls: Call[]): RunMessage[] {
   return [
     [{ role: "user", content: "Schedule wake-up: {}" }, { generation: 1, source: "schedule" }],
     [
@@ -57,7 +57,7 @@ function steps(calls: Call[]): Array<[Record<string, unknown>, Record<string, un
       },
       { generation: 1 },
     ],
-    ...calls.map((call): [Record<string, unknown>, Record<string, unknown>] => [
+    ...calls.map((call): RunMessage => [
       { role: "tool", tool_call_id: call.id, content: "ok" },
       { generation: 1, tool_name: call.name, tool_call_id: call.id, duration_ms: 5, error: null },
     ]),

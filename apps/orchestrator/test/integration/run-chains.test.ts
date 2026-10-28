@@ -10,6 +10,7 @@ import { generationDatabase, GenerationLoop, LOOP_TIMINGS, RunRequestError } fro
 import { generationLive } from "../../src/generation/completion.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
+import type { AssistantMessage } from "../../src/db/schema/index.js";
 import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
@@ -18,7 +19,7 @@ import { answerOps, HostCodeSandbox } from "../helpers/code-sandbox.js";
 import { HEX_MASTER_KEY, tempDir } from "../helpers/env.js";
 import { connectModelProvider } from "../helpers/models.js";
 import { templatesRoot } from "../helpers/fixtures.js";
-import { FakeSandboxes } from "../helpers/generation.js";
+import { completionMetadata, FakeSandboxes } from "../helpers/generation.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { codeDefaultMachine } from "../helpers/machines.js";
 import { getRun, listMessages, listRuns, mergeRunMetadata } from "../../src/db/runs.js";
@@ -37,22 +38,14 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-function completion(payload: Record<string, unknown>): Completion {
+function completion(payload: AssistantMessage): Completion {
   return {
     payload,
-    metadata: {
-      usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
-      latency_ms: 1,
-      finish_reason: "tool_calls" in payload ? "tool_calls" : "stop",
-      model: "test",
-      response_id: "c",
-      provider_request_id: null,
-      cost_usd: 0,
-    },
+    metadata: completionMetadata({ finish_reason: payload.tool_calls ? "tool_calls" : "stop", response_id: "c" }),
   };
 }
 
-type Reply = (messages: Array<Record<string, unknown>>) => Record<string, unknown>;
+type Reply = (messages: Array<Record<string, unknown>>) => AssistantMessage;
 
 function script(reply: Reply) {
   return (async function* stream(options: { messages: Array<Record<string, unknown>> }) {
@@ -61,9 +54,9 @@ function script(reply: Reply) {
 }
 
 const lastContent = (messages: Array<Record<string, unknown>>) => String(messages.at(-1)?.content ?? "");
-const shellCall = (id: string) => ({
+const shellCall = (id: string): AssistantMessage => ({
   role: "assistant",
-  content: null,
+  content: "",
   tool_calls: [{ id, type: "function", function: { name: "shell", arguments: '{"command":"echo step"}' } }],
 });
 

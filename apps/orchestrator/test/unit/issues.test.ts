@@ -119,6 +119,7 @@ test("report_issue_tool_writes_an_open_row", async () => {
     ctx,
     {
       id: "call_1",
+      type: "function",
       function: {
         name: "report_issue",
         arguments: JSON.stringify({
@@ -157,6 +158,7 @@ test("report_issue_rejects_unknown_kind", async () => {
     ctx,
     {
       id: "call_1",
+      type: "function",
       function: {
         name: "report_issue",
         arguments: JSON.stringify({

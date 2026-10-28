@@ -63,14 +63,6 @@
       "count": 5
     }
   },
-  "src/attachments/hydrate.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/attachments/sniff.ts": {
     "complexity": {
       "count": 1
@@ -192,20 +184,15 @@
       "count": 1
     }
   },
-  "src/conversation/projection.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    }
-  },
   "src/conversation/runner.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 10
+      "count": 5
     },
     "complexity": {
       "count": 1
     },
     "max-depth": {
-      "count": 7
+      "count": 6
     }
   },
   "src/conversation/templates.ts": {
@@ -235,9 +222,6 @@
     }
   },
   "src/groupchat/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 1
     },
@@ -347,11 +331,6 @@
     },
     "max-depth": {
       "count": 2
-    }
-  },
-  "src/llm/credentials.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
     }
   },
   "src/llm/models-dev.ts": {
@@ -559,16 +538,13 @@
     }
   },
   "src/studio/activity.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
     "complexity": {
       "count": 2
     }
   },
   "src/studio/connections.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
+      "count": 2
     },
     "complexity": {
       "count": 1
@@ -584,7 +560,7 @@
   },
   "src/studio/edits.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 24
+      "count": 17
     },
     "complexity": {
       "count": 6
@@ -595,7 +571,7 @@
   },
   "src/studio/focus.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 10
+      "count": 2
     },
     "complexity": {
       "count": 5
@@ -603,7 +579,7 @@
   },
   "src/studio/index.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 2
+      "count": 1
     },
     "complexity": {
       "count": 2
@@ -661,7 +637,7 @@
   },
   "src/studio/tools.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 6
+      "count": 2
     },
     "complexity": {
       "count": 2
@@ -678,9 +654,6 @@
   "src/toolbox/code.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 3
-    },
-    "complexity": {
-      "count": 1
     }
   },
   "src/toolbox/harness.ts": {
@@ -692,9 +665,6 @@
     }
   },
   "src/toolbox/index.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 4
-    },
     "complexity": {
       "count": 1
     }

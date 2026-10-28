@@ -123,7 +123,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function", function: { name: "script_run" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -133,8 +133,8 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.scripts.create(scriptOperator, "a_1", "one", "first", "print(1)");
     await loop.scripts.create(scriptOperator, "a_1", "two", "second", "print(2)");
     const calls = [
-      { id: "call_1", function: { name: "script_run", arguments: '{"name":"one"}' } },
-      { id: "call_2", function: { name: "script_run", arguments: '{"name":"two"}' } },
+      { id: "call_1", type: "function" as const, function: { name: "script_run", arguments: '{"name":"one"}' } },
+      { id: "call_2", type: "function" as const, function: { name: "script_run", arguments: '{"name":"two"}' } },
     ];
     live.streamCompletion = fakeStream(db, calls);
     await loop.generator.generate("r_1", 1);
@@ -182,7 +182,7 @@ describe("generation", { concurrency: 1 }, () => {
       max_steps: 30,
       max_tool_calls: 1,
       max_input_tokens: 100000,
-      tools: [{ type: "function", function: { name: "script_run" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -191,6 +191,7 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.scripts.create(scriptOperator, "a_1", "one", "first", "print(1)");
     const call = {
       id: "call_1",
+      type: "function" as const,
       function: { name: "script_run", arguments: '{"name":"one"}' },
     };
     live.streamCompletion = async function* keepCalling(options: {
@@ -200,7 +201,7 @@ describe("generation", { concurrency: 1 }, () => {
       yield [
         "done" as const,
         {
-          payload: { role: "assistant", content: null, tool_calls: [call] },
+          payload: { role: "assistant" as const, content: "", tool_calls: [call] },
           metadata: {
             usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
             latency_ms: 1,
@@ -209,6 +210,7 @@ describe("generation", { concurrency: 1 }, () => {
             response_id: "c1",
             provider_request_id: null,
             cost_usd: 0.0,
+            cost_source: "catalog" as const,
           },
         },
       ];
@@ -275,9 +277,9 @@ describe("generation", { concurrency: 1 }, () => {
         id: 3,
         seq: 2,
         payload: {
-          role: "assistant",
-          content: null,
-          tool_calls: [{ id: "c1", type: "function", function: { name: "file_read", arguments: "{}" } }],
+          role: "assistant" as const,
+          content: "",
+          tool_calls: [{ id: "c1", type: "function" as const, function: { name: "file_read", arguments: "{}" } }],
         },
         metadata: { generation: 1 },
         created_at: new Date(),
@@ -424,7 +426,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function", function: { name: "notion_search" } }],
+      tools: [{ type: "function" as const, function: { name: "notion_search", arguments: "{}" } }],
       mcp: [
         {
           connection_id: "conn_u",
@@ -453,7 +455,7 @@ describe("generation", { concurrency: 1 }, () => {
     };
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes(), { mcp: pool });
     live.streamCompletion = fakeStream(db, [
-      { id: "call_1", function: { name: "notion_search", arguments: '{"query":"notes"}' } },
+      { id: "call_1", type: "function" as const, function: { name: "notion_search", arguments: '{"query":"notes"}' } },
     ]);
     await loop.generator.generate("r_1", 1);
     assert.deepEqual(calls, [["conn_u", "search", { query: "notes" }]]);
@@ -483,7 +485,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function", function: { name: "notion_search" } }],
+      tools: [{ type: "function" as const, function: { name: "notion_search", arguments: "{}" } }],
       mcp: [
         {
           connection_id: "conn_u",
@@ -511,7 +513,7 @@ describe("generation", { concurrency: 1 }, () => {
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { mcp: pool });
     live.streamCompletion = fakeStream(db, [
-      { id: "call_1", function: { name: "notion_search", arguments: "{}" } },
+      { id: "call_1", type: "function" as const, function: { name: "notion_search", arguments: "{}" } },
     ]);
     await loop.generator.generate("r_1", 1);
     assert.equal(sandboxes.created.length, 1);
@@ -923,6 +925,7 @@ describe("generation", { concurrency: 1 }, () => {
     const calls = [
       {
         id: "call_1",
+        type: "function" as const,
         function: {
           name: "note_write",
           arguments: '{"level":"agent","key":"slice5.md","content":"from-chat\\n"}',
@@ -1131,7 +1134,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function", function: { name: "note_find" } }],
+      tools: [{ type: "function" as const, function: { name: "note_find", arguments: "{}" } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1139,6 +1142,7 @@ describe("generation", { concurrency: 1 }, () => {
     live.streamCompletion = fakeStream(db, [
       {
         id: "call_1",
+        type: "function" as const,
         function: {
           name: "script_create",
           arguments: '{"name":"scratch","description":"why","source":"print(1)"}',
@@ -1163,8 +1167,8 @@ describe("generation", { concurrency: 1 }, () => {
       max_steps: 30,
       browser: true,
       tools: [
-        { type: "function", function: { name: "browser_navigate" } },
-        { type: "function", function: { name: "note_find" } },
+        { type: "function" as const, function: { name: "browser_navigate", arguments: "{}" } },
+        { type: "function" as const, function: { name: "note_find", arguments: "{}" } },
       ],
       secrets: [],
     };
@@ -1173,7 +1177,7 @@ describe("generation", { concurrency: 1 }, () => {
     db.bindings = platformBindings();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes());
     live.streamCompletion = fakeStream(db, [
-      { id: "call_1", function: { name: "browser_navigate", arguments: '{"url":"https://example.com"}' } },
+      { id: "call_1", type: "function" as const, function: { name: "browser_navigate", arguments: '{"url":"https://example.com"}' } },
     ]);
     await loop.generator.generate("r_1", 1);
     const tools = db.messages
@@ -1376,16 +1380,17 @@ describe("generation", { concurrency: 1 }, () => {
     const rows = [
       {
         payload: {
-          role: "assistant",
+          role: "assistant" as const,
+          content: "",
           tool_calls: [
-            { id: "call_1", function: { name: "bash" } },
-            { id: "call_2", function: { name: "note_list" } },
+            { id: "call_1", type: "function" as const, function: { name: "bash", arguments: "{}" } },
+            { id: "call_2", type: "function" as const, function: { name: "note_list", arguments: "{}" } },
           ],
         },
         metadata: { generation: 3 },
       },
       {
-        payload: { role: "tool", tool_call_id: "call_1", content: "ok" },
+        payload: { role: "tool" as const, tool_call_id: "call_1", content: "ok" },
         metadata: { generation: 3 },
       },
     ];
@@ -1473,9 +1478,9 @@ describe("generation", { concurrency: 1 }, () => {
     db.messages.push({
       seq: 3,
       payload: {
-        role: "assistant",
-        content: null,
-        tool_calls: [{ id: "call_1", function: { name: "bash", arguments: "{}" } }],
+        role: "assistant" as const,
+        content: "",
+        tool_calls: [{ id: "call_1", type: "function" as const, function: { name: "bash", arguments: "{}" } }],
       },
       metadata: { generation: 1 },
       created_at: new Date(),
@@ -1531,9 +1536,9 @@ describe("generation", { concurrency: 1 }, () => {
     db.messages.push({
       seq: 3,
       payload: {
-        role: "assistant",
-        content: null,
-        tool_calls: [{ id: "call_task", function: { name: "code_task", arguments: JSON.stringify({ brief: "x" }) } }],
+        role: "assistant" as const,
+        content: "",
+        tool_calls: [{ id: "call_task", type: "function" as const, function: { name: "code_task", arguments: JSON.stringify({ brief: "x" }) } }],
       },
       metadata: { generation: 1 },
       created_at: new Date(),
@@ -1608,7 +1613,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function", function: { name: "script_run" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1639,8 +1644,8 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.scripts.create(scriptOperator, "a_1", "slow", "sleeps", "import time; time.sleep(30)");
     await loop.scripts.create(scriptOperator, "a_1", "two", "second", "print(2)");
     live.streamCompletion = fakeStream(db, [
-      { id: "call_1", function: { name: "script_run", arguments: '{"name":"slow"}' } },
-      { id: "call_2", function: { name: "script_run", arguments: '{"name":"two"}' } },
+      { id: "call_1", type: "function" as const, function: { name: "script_run", arguments: '{"name":"slow"}' } },
+      { id: "call_2", type: "function" as const, function: { name: "script_run", arguments: '{"name":"two"}' } },
     ]);
     await loop.beginGeneration("r_1", "a_1");
     loop.generateInBackground("r_1", 1);
@@ -1666,7 +1671,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function", function: { name: "script_run" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
       secrets: [],
     };
     const db = new FakeDB(snapshot);
@@ -1690,8 +1695,8 @@ describe("generation", { concurrency: 1 }, () => {
     await loop.scripts.create(scriptOperator, "a_1", "slow", "sleeps", "import time; time.sleep(30)");
     await loop.scripts.create(scriptOperator, "a_1", "two", "second", "print(2)");
     live.streamCompletion = fakeStream(db, [
-      { id: "call_1", function: { name: "script_run", arguments: '{"name":"slow"}' } },
-      { id: "call_2", function: { name: "script_run", arguments: '{"name":"two"}' } },
+      { id: "call_1", type: "function" as const, function: { name: "script_run", arguments: '{"name":"slow"}' } },
+      { id: "call_2", type: "function" as const, function: { name: "script_run", arguments: '{"name":"two"}' } },
     ]);
     await loop.beginGeneration("r_1", "a_1");
     loop.generateInBackground("r_1", 1);
@@ -1875,7 +1880,7 @@ describe("generation", { concurrency: 1 }, () => {
       temperature: 0,
       max_tokens: 32,
       max_steps: 30,
-      tools: [{ type: "function", function: { name: "script_run" } }],
+      tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }],
       scripts: [
         {
           id: "script_1",
@@ -1913,13 +1918,13 @@ describe("generation", { concurrency: 1 }, () => {
       const payload =
         db.llm_histories.length === 1
           ? {
-              role: "assistant",
-              content: null,
+              role: "assistant" as const,
+              content: "",
               tool_calls: [
-                { id: "call_1", function: { name: "priced", arguments: '{"symbol":"ETH"}' } },
+                { id: "call_1", type: "function" as const, function: { name: "priced", arguments: '{"symbol":"ETH"}' } },
               ],
             }
-          : { role: "assistant", content: "done" };
+          : { role: "assistant" as const, content: "done" };
       yield [
         "done" as const,
         {
@@ -1932,6 +1937,7 @@ describe("generation", { concurrency: 1 }, () => {
             response_id: "c1",
             provider_request_id: null,
             cost_usd: 0.0,
+            cost_source: "catalog" as const,
           },
         },
       ];
@@ -2104,14 +2110,14 @@ describe("generation", { concurrency: 1 }, () => {
       tools: [],
       secrets: [],
     };
-    const db = new FakeDB({ ...snapshot, tools: [{ type: "function", function: { name: "script_run" } }] });
+    const db = new FakeDB({ ...snapshot, tools: [{ type: "function" as const, function: { name: "script_run", arguments: "{}" } }] });
     db.agent.org_id = "org_1";
     db.secrets = [liveSecret()];
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes);
     await loop.scripts.create(scriptOperator, "a_1", "sign", "signs", "print(1)");
     live.streamCompletion = fakeStream(db, [
-      { id: "call_1", function: { name: "script_run", arguments: '{"name":"sign"}' } },
+      { id: "call_1", type: "function" as const, function: { name: "script_run", arguments: '{"name":"sign"}' } },
     ]);
     await loop.generator.generate("r_1", 1);
     const commands = sandboxes.commands as FakeCommands;
@@ -2184,7 +2190,7 @@ describe("generation", { concurrency: 1 }, () => {
     let calls = 0;
     live.streamCompletion = async function* replies() {
       calls += 1;
-      yield ["done", { payload: { role: "assistant", content: "checked" }, metadata: {} }];
+      yield ["done", completionReply("checked")];
     };
     await loop.runs.deliverScheduleRun(scheduleRow({ instruction: "check inbox" }));
     await waitTask(loop, String(db.run?.id));
@@ -2243,7 +2249,7 @@ describe("generation", { concurrency: 1 }, () => {
     let calls = 0;
     live.streamCompletion = async function* replies() {
       calls += 1;
-      yield ["done", { payload: { role: "assistant", content: "checked" }, metadata: {} }];
+      yield ["done", completionReply("checked")];
     };
     await loop.runs.deliverScheduleRun(scheduleRow({ instruction: "check inbox" }));
     await waitTask(loop, String(db.run?.id));

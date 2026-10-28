@@ -1,14 +1,13 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
 import { getMcpServer } from "../connectors/servers.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { isPlainRecord } from "../db/json.js";
 import { getMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
-import type { Harness } from "../db/schema/index.js";
+import type { AssistantMessage, Harness, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import { McpDisconnectedError, McpError, mcpDatabase } from "../mcp/index.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
-import { callSegment, repeatedReadStep, repeatedReadText } from "../toolbox/code.js";
+import { callSegment, repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
 import {
   identityOutput,
   invokeTool,
@@ -44,7 +43,7 @@ function optionalText(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
-function callArguments(call: Record<string, unknown>): Record<string, unknown> {
+function callArguments(call: ToolCall): Record<string, unknown> {
   try {
     return parseArguments(call);
   } catch {
@@ -55,10 +54,10 @@ function callArguments(call: Record<string, unknown>): Record<string, unknown> {
 /** A lost `code_task` call, from what its run remembered about it and from the call's own arguments. */
 export function lostCodeTask(
   run: Pick<RunRow, "id" | "metadata">,
-  call: Record<string, unknown>,
+  call: ToolCall,
   harness: Harness,
 ): LostCodeTask {
-  const callId = callSegment(String(call.id ?? ""));
+  const callId = callSegment(call.id);
   const remembered = run.metadata.harness_task;
   const known = remembered?.call_id === callId ? remembered : null;
   const args = callArguments(call);
@@ -72,9 +71,8 @@ export function lostCodeTask(
   };
 }
 
-export function toolCallsOf(payload: Record<string, unknown>): Array<Record<string, unknown>> {
-  const calls = payload.tool_calls;
-  return Array.isArray(calls) ? calls.filter(isPlainRecord) : [];
+export function toolCallsOf(payload: AssistantMessage): ToolCall[] {
+  return payload.tool_calls ?? [];
 }
 
 export function executedToolCalls(rows: Array<Pick<MessageRow, "payload">>): number {
@@ -87,37 +85,25 @@ export function executedToolCalls(rows: Array<Pick<MessageRow, "payload">>): num
   return total;
 }
 
-function assistantCallId(call: Record<string, unknown>): string | null {
-  return typeof call.id === "string" && call.id ? call.id : null;
-}
-
 function rememberPendingAssistantCalls(
-  pending: Map<string, [Record<string, unknown>, number]>,
+  pending: Map<string, [ToolCall, number]>,
   order: string[],
-  payload: Record<string, unknown>,
+  payload: AssistantMessage,
   generation: number,
 ): void {
   for (const call of toolCallsOf(payload)) {
-    const callId = assistantCallId(call);
-    if (!callId) {
+    if (!call.id) {
       continue;
     }
-    if (!pending.has(callId)) {
-      order.push(callId);
+    if (!pending.has(call.id)) {
+      order.push(call.id);
     }
-    pending.set(callId, [call, generation]);
+    pending.set(call.id, [call, generation]);
   }
 }
 
-function forgetResolvedToolCall(
-  pending: Map<string, [Record<string, unknown>, number]>,
-  order: string[],
-  payload: Record<string, unknown>,
-): void {
+function forgetResolvedToolCall(pending: Map<string, [ToolCall, number]>, order: string[], payload: ToolMessage): void {
   const callId = payload.tool_call_id;
-  if (typeof callId !== "string") {
-    return;
-  }
   pending.delete(callId);
   const index = order.indexOf(callId);
   if (index >= 0) {
@@ -127,12 +113,12 @@ function forgetResolvedToolCall(
 
 export function pendingToolCalls(
   rows: Array<Pick<MessageRow, "payload" | "metadata">>,
-): Array<[Record<string, unknown>, number]> {
-  const pending = new Map<string, [Record<string, unknown>, number]>();
+): Array<[ToolCall, number]> {
+  const pending = new Map<string, [ToolCall, number]>();
   const order: string[] = [];
   for (const row of rows) {
     const payload = row.payload;
-    const generation = Number(row.metadata.generation || 1);
+    const generation = row.metadata.generation || 1;
     if (payload.role === "assistant") {
       rememberPendingAssistantCalls(pending, order, payload, generation);
     } else if (payload.role === "tool") {
@@ -145,28 +131,19 @@ export function pendingToolCalls(
   });
 }
 
-export function toolCallNameAndId(call: Record<string, unknown>): { name: string; callId: string } {
-  const fn = call.function;
-  return {
-    name: isPlainRecord(fn) && typeof fn.name === "string" ? fn.name : "",
-    callId: typeof call.id === "string" ? call.id : "",
-  };
-}
-
 /** A tool call's result as a run keeps it: the message the model reads, and its metadata. */
-export type ToolRecord = [Record<string, unknown>, Record<string, unknown>];
+export type ToolRecord = [ToolMessage, ToolResultMetadata];
 
-export function interruptionRecord(
-  call: Record<string, unknown>,
-  generation: number,
-): [Record<string, unknown>, Record<string, unknown>] {
-  const { name, callId } = toolCallNameAndId(call);
-  const payload = {
+/** The result a call gets when its execution was lost, numbered `generation`. */
+export function interruptionRecord(call: ToolCall, generation: number): [ToolMessage, ToolResultMetadata & { generation: number }] {
+  const name = call.function.name;
+  const callId = call.id;
+  const payload: ToolMessage = {
     role: "tool",
     tool_call_id: callId,
     content: INTERRUPTED_CONTENT,
   };
-  const metadata: Record<string, unknown> = {
+  const metadata: ToolResultMetadata & { generation: number } = {
     generation,
     tool_name: name,
     tool_call_id: callId,
@@ -227,7 +204,7 @@ export class ToolCalls {
   constructor(private readonly services: ToolCallsServices) {}
 
   /** Runs the model's calls in order, each result kept as it comes; a cancel stops before the next one. */
-  async execute(turn: RunGeneration, tools: GenerationTools, calls: Array<Record<string, unknown>>): Promise<void> {
+  async execute(turn: RunGeneration, tools: GenerationTools, calls: ToolCall[]): Promise<void> {
     const { db, events, generations } = this.services;
     const history = await db.listMessages(turn.runId);
     let executed = executedToolCalls(history);
@@ -277,13 +254,13 @@ export class ToolCalls {
    * from the native tool, where a read of a range unchanged since an earlier read points to it.
    */
   private async callTool(
-    call: Record<string, unknown>,
+    call: ToolCall,
     tools: GenerationTools,
     owner: AgentRow | null,
-    reads: Array<{ seq: number; metadata: Record<string, unknown> }>,
+    reads: ReadRow[],
   ): Promise<ToolRecord> {
     const { ctx, connections, secrets } = tools;
-    const { name } = toolCallNameAndId(call);
+    const name = call.function.name;
     const offered = ctx.offered_tools === null || ctx.offered_tools.has(name) || name in ctx.dynamic_tools;
     const target = Object.hasOwn(connections, name) ? connections[name] : undefined;
     if (offered && target !== undefined) {
@@ -304,13 +281,14 @@ export class ToolCalls {
 
   /** Calls `remoteName` on the connection; a failure is the call's result, as the model reads it. */
   private async callConnectionTool(
-    call: Record<string, unknown>,
+    call: ToolCall,
     [connectionId, remoteName]: [string, string],
     owner: AgentRow | null,
     secrets: Record<string, string>,
   ): Promise<ToolRecord> {
     const { db, mcp, machines } = this.services;
-    const { name, callId } = toolCallNameAndId(call);
+    const name = call.function.name;
+    const callId = call.id;
     const started = performance.now();
     let error: string | null = null;
     let raw: string;
@@ -337,7 +315,7 @@ export class ToolCalls {
       error = errorMessage(caught);
     }
     const [content, pipeline] = processOutput(raw, identityOutput, secrets, toolResultMaxBytes());
-    if (typeof pipeline.error === "string" && pipeline.error) {
+    if (pipeline.error) {
       error = pipeline.error;
     }
     return [

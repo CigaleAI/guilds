@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { AgentMessageLimitReached, GroupChatCleared } from "../../src/db/errors.js";
-import type { NewAgentGroupMessage, NewUserGroupMessage } from "../../src/db/group-chat.js";
+import type { GroupMessageRow, NewAgentGroupMessage, NewUserGroupMessage } from "../../src/db/group-chat.js";
+import { groupMessageRow } from "../helpers/group-chat.js";
 import { groupMessageItem } from "../../src/db/views.js";
 import {
   CLEARED_ERROR,
@@ -427,18 +428,14 @@ async function waitDispatch(chat: GroupChat, guildId = "guild_1"): Promise<void>
   }
 }
 
-function chatRow(seq: number, content: string, author = "user"): Record<string, unknown> {
+function chatRow(seq: number, content: string, author = "user"): GroupMessageRow {
   const agent = author !== "user";
-  return {
-    id: seq,
-    seq,
+  return groupMessageRow(seq, {
     author_type: agent ? "agent" : "user",
     author_name: author,
     author_agent_id: agent ? "a_1" : null,
     content,
-    tagged_names: [],
-    tagged_agent_ids: [],
-  };
+  });
 }
 
 describe("groupchat", { concurrency: 1 }, () => {
@@ -722,6 +719,7 @@ describe("groupchat", { concurrency: 1 }, () => {
       ctx,
       {
         id: "call_1",
+        type: "function",
         function: { name: "group_post", arguments: '{"content":"shared finding"}' },
       },
       {},
@@ -750,6 +748,7 @@ describe("groupchat", { concurrency: 1 }, () => {
       ctx,
       {
         id: "call_2",
+        type: "function",
         function: { name: "group_post", arguments: '{"content":"too many"}' },
       },
       {},
@@ -815,26 +814,8 @@ describe("groupchat", { concurrency: 1 }, () => {
         { id: "a_2", name: "agent2" },
       ],
       rows: [
-        {
-          id: 1,
-          seq: 1,
-          author_type: "user",
-          author_name: "user",
-          author_agent_id: null,
-          content: "Plan the release.",
-          tagged_names: [],
-          tagged_agent_ids: [],
-        },
-        {
-          id: 2,
-          seq: 2,
-          author_type: "agent",
-          author_name: "agent1",
-          author_agent_id: "a_1",
-          content: "I found the relevant constraints.",
-          tagged_names: [],
-          tagged_agent_ids: [],
-        },
+        groupMessageRow(1, { author_type: "user", author_name: "user", author_agent_id: null, content: "Plan the release.", tagged_names: [], tagged_agent_ids: [] }),
+        groupMessageRow(2, { author_type: "agent", author_name: "agent1", author_agent_id: "a_1", content: "I found the relevant constraints.", tagged_names: [], tagged_agent_ids: [] }),
       ],
     });
     assert.equal(payload.role, "user");
@@ -925,16 +906,7 @@ describe("groupchat", { concurrency: 1 }, () => {
         { id: "a_2", name: "writer" },
       ],
       rows: [
-        {
-          id: 1,
-          seq: 1,
-          author_type: "user",
-          author_name: "user",
-          author_agent_id: null,
-          content: "@writer please take this.",
-          tagged_names: ["writer"],
-          tagged_agent_ids: ["a_2"],
-        },
+        groupMessageRow(1, { author_type: "user", author_name: "user", author_agent_id: null, content: "@writer please take this.", tagged_names: ["writer"], tagged_agent_ids: ["a_2"] }),
       ],
       viewerName: "writer",
     });
@@ -950,26 +922,8 @@ describe("groupchat", { concurrency: 1 }, () => {
 
   test("group_chat_user_message_flags_tag_anywhere_after_cursor", () => {
     const rows = [
-      {
-        id: 1,
-        seq: 1,
-        author_type: "user",
-        author_name: "user",
-        author_agent_id: null,
-        content: "@writer please take this.",
-        tagged_names: ["writer"],
-        tagged_agent_ids: ["a_2"],
-      },
-      {
-        id: 2,
-        seq: 2,
-        author_type: "agent",
-        author_name: "researcher",
-        author_agent_id: "a_1",
-        content: "Status update.",
-        tagged_names: [],
-        tagged_agent_ids: [],
-      },
+      groupMessageRow(1, { author_type: "user", author_name: "user", author_agent_id: null, content: "@writer please take this.", tagged_names: ["writer"], tagged_agent_ids: ["a_2"] }),
+      groupMessageRow(2, { author_type: "agent", author_name: "researcher", author_agent_id: "a_1", content: "Status update.", tagged_names: [], tagged_agent_ids: [] }),
     ];
     const members = [
       { id: "a_1", name: "researcher" },

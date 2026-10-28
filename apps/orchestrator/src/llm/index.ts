@@ -35,7 +35,7 @@ export {
 } from "./models-dev.js";
 export type { ModelsDevFeed, ModelsDevModel, ModelsDevSnapshot } from "./models-dev.js";
 export { catalogCostUsd } from "./cost.js";
-export type { CostSource, TokenUsage } from "./cost.js";
+export type { CostSource, TokenUsage } from "../db/schema/index.js";
 export {
   GenerationLimitError,
   INPUT_TOKEN_LIMIT_MESSAGE,
@@ -76,5 +76,6 @@ export {
   redactApiKey,
   streamCompletion,
 } from "./client.js";
-export type { Completion, ModelEvent, ReasoningDetail } from "./client.js";
+export type { Completion, ModelEvent } from "./client.js";
+export type { ReasoningDetail } from "../db/schema/index.js";
 export { listMessagesModels, messagesFromHistory, messagesRequestBody, streamMessages } from "./anthropic.js";

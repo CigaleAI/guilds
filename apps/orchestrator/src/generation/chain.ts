@@ -1,7 +1,7 @@
 import { getAgent } from "../db/agents.js";
-import { isPlainRecord } from "../db/json.js";
+import type { AssistantMessage } from "../db/schema/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { completeRun, getRun, listMessages, mergeRunMetadata, type RunRow } from "../db/runs.js";
+import { completeRun, getRun, listMessages, mergeRunMetadata, type RunMessage, type RunRow } from "../db/runs.js";
 import { INPUT_TOKEN_LIMIT_MESSAGE, type Completion } from "../llm/index.js";
 import { remainingAfter, stampToolResult } from "../toolbox/index.js";
 import { completionRequest, historyTokens, type ModelCompletion } from "./completion.js";
@@ -9,7 +9,7 @@ import { GenerationCancelled, RunLimitError } from "./errors.js";
 import type { RunEvents } from "./events.js";
 import type { Generation } from "./generate.js";
 import type { Runs } from "./runs.js";
-import { executedToolCalls, toolCallNameAndId, toolCallsOf, type GenerationTools } from "./tool-calls.js";
+import { executedToolCalls, toolCallsOf, type GenerationTools } from "./tool-calls.js";
 
 /**
  * Run chains. A coding run whose prompt reaches this share of `max_input_tokens` asks the
@@ -43,25 +43,15 @@ export function continuedBy(run: Pick<RunRow, "metadata">): string | null {
 }
 
 /** The text of the agent's hand-off reply; empty when it wrote none. */
-export function handoffText(payload: Record<string, unknown>): string {
-  const content = payload.content;
-  if (typeof content === "string") {
-    return content.trim();
-  }
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (isPlainRecord(part) ? String(part.text ?? "") : ""))
-      .join("")
-      .trim();
-  }
-  return "";
+export function handoffText(payload: AssistantMessage): string {
+  return payload.content.trim();
 }
 
 /** The one user message a continuation run opens with. */
 export function continuationMessage(
   previousRunId: string,
   handoff: string,
-): [Record<string, unknown>, Record<string, unknown>] {
+): RunMessage {
   const body: Record<string, unknown> = { previous_run_id: previousRunId, handoff: handoff || null };
   if (!handoff) {
     body.note = "The previous run wrote no hand-off. Work from Memory, notes, and the working tree.";
@@ -204,7 +194,8 @@ export class RunChains {
     const { db, events } = this.services;
     let executed = executedToolCalls(await db.listMessages(gen.runId));
     for (const call of toolCallsOf(reply.payload)) {
-      const { name, callId } = toolCallNameAndId(call);
+      const name = call.function.name;
+      const callId = call.id;
       executed += 1;
       const [payload, metadata] = stampToolResult(
         { role: "tool", tool_call_id: callId, content: HANDOFF_TOOL_REFUSED },

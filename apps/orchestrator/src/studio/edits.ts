@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { ArtifactError, assertNoteKeyFree, hashArtifactContent, normalizeNoteKey, ownerPrefix, parseDisplayPath, type ArtifactStore } from "../artifacts/index.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
-import { jsonObj } from "../db/json.js";
 import { changeGuild } from "../guilds/changes.js";
 import type { Schedules } from "../schedules/service.js";
 import { GuildValidationError, validateAbout, validateGuildDescription } from "../guilds/validation.js";
@@ -16,7 +15,8 @@ import { STUDIO_ROUTINE_TOOL, applyRoutine, isRoutineTool, reviewRoutine, type R
 import { getAgent, listAgents, type AgentRow } from "../db/agents.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
-import { getConversationMessage, updateConversationMessage } from "../db/conversations.js";
+import { getConversationMessage, updateConversationMessage, type ConversationMessageRow } from "../db/conversations.js";
+import type { ConversationMessageMetadata, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 import { deleteByDisplayPath, getByDisplayPath, writeNote } from "../artifacts/notes.js";
 import { getMemoryRow, writeMemory } from "../artifacts/memory.js";
@@ -573,7 +573,7 @@ export type EditRecord = {
   toolCallId: string;
   widget: Record<string, unknown>;
   args: Record<string, unknown>;
-  metadata: Record<string, unknown>;
+  metadata: ConversationMessageMetadata;
 };
 
 function parseJsonObject(text: unknown): Record<string, unknown> | null {
@@ -586,39 +586,39 @@ function parseJsonObject(text: unknown): Record<string, unknown> | null {
   }
 }
 
-export function findEditRecord(messages: Array<Record<string, unknown>>, seq: number): EditRecord {
-  const message = messages.find((row) => Number(row.seq) === seq);
-  const payload = (jsonObj(message?.payload) as Record<string, unknown> | null) ?? {};
-  const widget = payload.role === "tool" ? parseJsonObject(payload.content) : null;
-  if (!message || !widget || widget.widget !== STUDIO_EDIT_WIDGET) {
-    throw new StudioError(404, "edit request not found");
-  }
-  const toolCallId = String(payload.tool_call_id ?? "");
-  for (const row of messages) {
-    const assistant = (jsonObj(row.payload) as Record<string, unknown> | null) ?? {};
-    if (assistant.role !== "assistant" || !Array.isArray(assistant.tool_calls)) continue;
-    for (const call of assistant.tool_calls as Array<Record<string, unknown>>) {
-      if (String(call.id ?? "") !== toolCallId) continue;
-      const fn = (call.function ?? {}) as Record<string, unknown>;
-      const name = String(fn.name ?? "");
-      const args = parseJsonObject(fn.arguments);
-      if (!args || !(STUDIO_EDIT_TOOLS as readonly string[]).includes(name)) break;
-      return {
-        seq,
-        toolName: name as StudioEditTool,
-        toolCallId,
-        widget,
-        args,
-        metadata: (jsonObj(message.metadata) as Record<string, unknown> | null) ?? {},
-      };
+function isEditTool(name: string): name is StudioEditTool {
+  return STUDIO_EDIT_TOOLS.some((tool) => tool === name);
+}
+
+/** The call of an assistant message in `messages` with the id `callId`. */
+function callById(messages: ConversationMessageRow[], callId: string): ToolCall | undefined {
+  for (const { payload } of messages) {
+    const call = payload.role === "assistant" ? payload.tool_calls?.find((item) => item.id === callId) : undefined;
+    if (call) {
+      return call;
     }
   }
-  throw new StudioError(404, "edit request not found");
+  return undefined;
+}
+
+export function findEditRecord(messages: ConversationMessageRow[], seq: number): EditRecord {
+  const message = messages.find((row) => row.seq === seq);
+  const payload = message?.payload;
+  const widget = payload?.role === "tool" ? parseJsonObject(payload.content) : null;
+  if (!message || payload?.role !== "tool" || !widget || widget.widget !== STUDIO_EDIT_WIDGET) {
+    throw new StudioError(404, "edit request not found");
+  }
+  const toolCallId = payload.tool_call_id;
+  const call = callById(messages, toolCallId);
+  const args = call ? parseJsonObject(call.function.arguments) : null;
+  if (!call || !args || !isEditTool(call.function.name)) {
+    throw new StudioError(404, "edit request not found");
+  }
+  return { seq, toolName: call.function.name, toolCallId, widget, args, metadata: message.metadata };
 }
 
 export function editStatus(record: EditRecord): StudioEditStatus {
-  const status = record.metadata.edit_status;
-  return status === "applied" || status === "declined" ? status : "pending";
+  return record.metadata.edit_status ?? "pending";
 }
 
 async function loadBaseFor(scope: EditScope, record: EditRecord): Promise<EditBase> {

@@ -22,7 +22,7 @@ import type { AgentRow, AgentScriptRow, NewAgentScript } from "../../src/db/agen
 import type { ScriptDatabase } from "../../src/scripts/catalog.js";
 import type { NewDirectRun, NewGroupRun, NewMessage, NewScheduleRun } from "../../src/db/runs.js";
 import type { ScheduleRow, PlannedWake } from "../../src/db/schedules.js";
-import type { AgentConfig, RunConfigSnapshot } from "../../src/db/schema/index.js";
+import type { AgentConfig, CompletionMetadata, RunConfigSnapshot, ToolCall } from "../../src/db/schema/index.js";
 import { validateConfig } from "../../src/agents/validation.js";
 
 export const AGENT_CONFIG: AgentConfig = {
@@ -990,45 +990,44 @@ export async function seededLoop(
 
 export function fakeStream(
   db: { llm_histories: Array<Array<Record<string, unknown>>> },
-  calls: Array<Record<string, unknown>>,
+  calls: ToolCall[],
 ): (options: { messages: Array<Record<string, unknown>> }) => AsyncGenerator<["done", Completion]> {
   return async function* stream(options: { messages: Array<Record<string, unknown>> }) {
     db.llm_histories.push([...options.messages]);
-    const payload =
-      db.llm_histories.length === 1
-        ? { role: "assistant", content: null, tool_calls: calls }
-        : { role: "assistant", content: "done" };
-    yield [
-      "done",
-      {
-        payload,
-        metadata: {
-          usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
-          latency_ms: 1,
-          finish_reason: "tool_calls" in payload ? "tool_calls" : "stop",
-          model: "test",
-          response_id: "c1",
-          provider_request_id: null,
-          cost_usd: 0.0,
-        },
-      },
-    ];
+    yield ["done", db.llm_histories.length === 1 ? completionCalling(calls) : completionReply()];
+  };
+}
+
+/** What a completion records, with `overrides`. */
+export function completionMetadata(overrides: Partial<CompletionMetadata> = {}): CompletionMetadata {
+  return {
+    usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
+    latency_ms: 1,
+    finish_reason: "stop",
+    model: "test",
+    response_id: "c1",
+    provider_request_id: null,
+    cost_usd: 0.0,
+    cost_source: "unavailable",
+    ...overrides,
   };
 }
 
 export function completionReply(content = "done"): Completion {
+  return { payload: { role: "assistant", content }, metadata: completionMetadata() };
+}
+
+/** A completion that makes `calls` and says nothing. */
+export function completionCalling(calls: ToolCall[]): Completion {
   return {
-    payload: { role: "assistant", content },
-    metadata: {
-      usage: { input_tokens: 1, output_tokens: 1, cache_read_tokens: 0 },
-      latency_ms: 1,
-      finish_reason: "stop",
-      model: "test",
-      response_id: "c1",
-      provider_request_id: null,
-      cost_usd: 0.0,
-    },
+    payload: { role: "assistant", content: "", tool_calls: calls },
+    metadata: completionMetadata({ finish_reason: "tool_calls" }),
   };
+}
+
+/** A call of the tool `name` with `args`, as the model makes it. */
+export function toolCall(id: string, name: string, args: Record<string, unknown> = {}): ToolCall {
+  return { id, type: "function", function: { name, arguments: JSON.stringify(args) } };
 }
 
 /** A secret granted to agent a_1 of guild_1. */

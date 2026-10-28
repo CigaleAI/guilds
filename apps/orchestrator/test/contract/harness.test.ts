@@ -72,6 +72,7 @@ for (const { harness, credential } of LIVE) {
         ctx,
         {
           id: "call_live",
+          type: "function",
           function: {
             name: "code_task",
             arguments: JSON.stringify({

@@ -1,45 +1,19 @@
-import { jsonObj } from "../db/json.js";
 import {
   IMAGE_INPUT_TOKENS,
   SIGNED_URL_TTL_MS,
   objectKey,
-  type AttachmentRef,
 } from "./types.js";
+import type { AttachmentRef, MessageMetadata, MessagePayload } from "../db/schema/index.js";
 import type { BlobStore } from "../lib/blob-store.js";
-import { isAttachmentKind } from "./sniff.js";
 
-function asRecord(value: unknown): Record<string, unknown> {
-  const parsed = jsonObj(value);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? (parsed as Record<string, unknown>)
-    : {};
+/** A stored message as the attachments read it: what the model reads, and the files attached to it. */
+export type AttachedMessage = { payload: MessagePayload; metadata: Pick<MessageMetadata, "attachments"> };
+
+export function attachmentsOf(metadata: Pick<MessageMetadata, "attachments">): AttachmentRef[] {
+  return metadata.attachments ?? [];
 }
 
-export function attachmentsOf(metadata: unknown): AttachmentRef[] {
-  const meta = asRecord(metadata);
-  const raw = meta.attachments;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const out: AttachmentRef[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      continue;
-    }
-    const row = item as Record<string, unknown>;
-    const id = typeof row.id === "string" ? row.id : "";
-    const filename = typeof row.filename === "string" ? row.filename : "";
-    const mime = typeof row.mime === "string" ? row.mime : "";
-    const kind = typeof row.kind === "string" && isAttachmentKind(row.kind) ? row.kind : null;
-    if (!id || !filename || !mime || !kind) {
-      continue;
-    }
-    out.push({ id, filename, mime, kind });
-  }
-  return out;
-}
-
-export function attachmentImageCount(rows: Array<{ metadata?: unknown }>): number {
+export function attachmentImageCount(rows: Array<Pick<AttachedMessage, "metadata">>): number {
   let count = 0;
   for (const row of rows) {
     for (const item of attachmentsOf(row.metadata)) {
@@ -53,16 +27,11 @@ export function attachmentImageCount(rows: Array<{ metadata?: unknown }>): numbe
 
 export function countRunInputTokens(
   model: string,
-  rows: Array<{ payload?: unknown; metadata?: unknown }>,
+  rows: AttachedMessage[],
   tools: unknown[] | null,
   countInputTokens: (model: string, messages: unknown[], tools?: unknown[] | null) => number,
 ): number {
-  const payloads = rows.map((row) => {
-    const payload = jsonObj(row.payload);
-    return payload && typeof payload === "object" && !Array.isArray(payload)
-      ? payload
-      : { role: "user", content: "" };
-  });
+  const payloads = rows.map((row) => row.payload);
   return countInputTokens(model, payloads, tools) + attachmentImageCount(rows) * IMAGE_INPUT_TOKENS;
 }
 
@@ -71,20 +40,20 @@ function dataUrl(mime: string, bytes: Buffer): string {
 }
 
 export async function hydrateMessages(
-  rows: Array<{ payload?: unknown; metadata?: unknown; org_id?: unknown }>,
+  rows: AttachedMessage[],
   store: BlobStore,
   orgId: string,
   options: { inlineImages?: boolean } = {},
 ): Promise<Array<Record<string, unknown>>> {
   const messages: Array<Record<string, unknown>> = [];
   for (const row of rows) {
-    const payload = { ...asRecord(row.payload) };
+    const payload = row.payload;
     const refs = attachmentsOf(row.metadata).filter((item) => item.kind === "image");
     if (!refs.length) {
       messages.push(payload);
       continue;
     }
-    const text = typeof payload.content === "string" ? payload.content : "";
+    const text = payload.content;
     const parts: Array<Record<string, unknown>> = [];
     if (text) {
       parts.push({ type: "text", text });
@@ -98,8 +67,7 @@ export async function hydrateMessages(
     if (!parts.length) {
       parts.push({ type: "text", text: refs.map((item) => `[image: ${item.filename}]`).join(" ") });
     }
-    payload.content = parts;
-    messages.push(payload);
+    messages.push({ ...payload, content: parts });
   }
   return messages;
 }

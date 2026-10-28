@@ -868,7 +868,7 @@ describe("artifact store", { concurrency: 1 }, () => {
         artifacts: toolArtifacts(store),
         artifact_actor: south,
       }),
-      { id: "call_write", function: { name: "note_write", arguments: { path: planPath, content: "overwritten" } } },
+      { id: "call_write", type: "function", function: { name: "note_write", arguments: JSON.stringify({ path: planPath, content: "overwritten" }) } },
       {},
       32_768,
     );
@@ -1077,7 +1077,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       }),
     });
     const call = async (id: string, name: string, args: Record<string, unknown>) =>
-      invokeTool(ctx, { id, function: { name, arguments: args } }, {}, 32_768);
+      invokeTool(ctx, { id, type: "function", function: { name, arguments: JSON.stringify(args) } }, {}, 32_768);
 
     const [, createdMetadata] = await call("call_create", "note_write", {
       level: "agent",

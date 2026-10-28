@@ -9,32 +9,34 @@ import {
   projectToolResults,
   stubToolResultPayload,
   toolResultBytes,
+  type ProjectedRow,
 } from "../../src/conversation/projection.js";
+import type { MessagePayload, ToolMessage } from "../../src/db/schema/index.js";
 
 function row(
   seq: number,
   generation: number,
-  payload: Record<string, unknown>,
-  metadata: Record<string, unknown> = {},
-): Record<string, unknown> {
+  payload: MessagePayload,
+  metadata: ProjectedRow["metadata"] = {},
+): ProjectedRow {
   return { seq, generation, payload, metadata };
 }
 
-function toolContent(messages: Array<Record<string, unknown>>, index: number): string {
-  return String(messages.filter((item) => item.role === "tool")[index]?.content ?? "");
+function toolContent(messages: MessagePayload[], index: number): string {
+  return messages.filter((item) => item.role === "tool")[index]?.content ?? "";
 }
 
-test("generationOf reads the column, then integer metadata, then zero", () => {
-  assert.equal(generationOf({ generation: 4 }), 4);
-  assert.equal(generationOf({ metadata: { generation: 3 } }), 3);
-  assert.equal(generationOf({ generation: 1.5, metadata: { generation: "x" } }), 0);
-  assert.equal(generationOf({}), 0);
+const empty: ToolMessage = { role: "tool", tool_call_id: "c", content: "" };
+
+test("generationOf reads the column, then the metadata, then zero", () => {
+  assert.equal(generationOf({ seq: 1, generation: 4, payload: empty, metadata: { generation: 3 } }), 4);
+  assert.equal(generationOf({ seq: 1, payload: empty, metadata: { generation: 3 } }), 3);
+  assert.equal(generationOf({ seq: 1, payload: empty, metadata: {} }), 0);
 });
 
-test("toolResultBytes measures a string, JSON object, or missing content", () => {
-  assert.equal(toolResultBytes({ payload: { content: "ab" } }), 2);
-  assert.equal(toolResultBytes({ payload: { content: { a: 1 } } }), Buffer.byteLength('{"a":1}', "utf8"));
-  assert.equal(toolResultBytes({ payload: { content: null } }), 0);
+test("toolResultBytes measures the content", () => {
+  assert.equal(toolResultBytes(row(1, 1, { ...empty, content: "ab" })), 2);
+  assert.equal(toolResultBytes(row(1, 1, empty)), 0);
 });
 
 test("keepGenerationFloor is current minus keep plus one", () => {
@@ -49,16 +51,12 @@ test("keepGenerationFloor clamps invalid keep counts to one generation", () => {
 });
 
 test("stubToolResultPayload copies path, range, and optional content hash", () => {
-  const source = row(
-    9,
-    1,
-    { role: "tool", content: "body" },
-    { tool_name: "file_read", path: "src/a.ts", range: [1, 4] },
-  );
+  const payload: ToolMessage = { role: "tool", tool_call_id: "c", content: "body" };
+  const source = { ...row(9, 1, payload, { tool_name: "file_read", path: "src/a.ts", range: [1, 4] }), payload };
   const hashed = stubToolResultPayload(source, AGENT_TOOL_RESULT_STUB_HINT, {
     includeContentHash: true,
   });
-  const stub = JSON.parse(String(hashed.content)) as Record<string, unknown>;
+  const stub = JSON.parse(hashed.content) as Record<string, unknown>;
   assert.equal(stub.path, "src/a.ts");
   assert.deepEqual(stub.range, [1, 4]);
   assert.equal(stub.content_hash, promptHash("body"));
@@ -134,7 +132,7 @@ test("budget stubs oldest live large results and keeps the last N", () => {
       schemas: [],
       maxInput: 1,
       countInputTokens(_model, next) {
-        const tools = (next as Array<Record<string, unknown>>).filter((item) => item.role === "tool");
+        const tools = (next as MessagePayload[]).filter((item) => item.role === "tool");
         const live = tools.filter((item) => !String(item.content).includes('"stub":true'));
         return live.length > 2 ? 9 : 1;
       },

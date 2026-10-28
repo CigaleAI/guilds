@@ -1,12 +1,5 @@
+import type { CostSource, TokenUsage } from "../db/schema/index.js";
 import { modelCatalog, type ModelCatalog } from "./catalog.js";
-
-export type CostSource = "provider" | "catalog" | "unavailable";
-
-export type TokenUsage = {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-};
 
 /**
  * The cost of a call from the catalog's rates, for a billed provider whose row has a price.

@@ -167,7 +167,7 @@ describe("shared files", { concurrency: 1 }, () => {
 
     await assert.rejects(() => deleteByDisplayPath(store, alpha, files.view(own).display_path), /use file_delete for files/);
     const ctx = createToolContext({ run_id: "r_1", agent_id: "a_alpha", guild_id: "guild_alpha", sandbox: null, secrets: {}, artifacts: toolArtifacts(store), artifact_actor: alpha });
-    const [got] = await invokeTool(ctx, { id: "c1", function: { name: "note_get", arguments: { path: files.view(own).display_path } } }, {}, 32_768);
+    const [got] = await invokeTool(ctx, { id: "c1", type: "function", function: { name: "note_get", arguments: JSON.stringify({ path: files.view(own).display_path }) } }, {}, 32_768);
     assert.match(String(got.content), /use file_fetch for files/);
   });
 
@@ -187,7 +187,7 @@ describe("shared files", { concurrency: 1 }, () => {
       workspace_dir: workspace,
     });
     const call = (name: string, args: Record<string, unknown>) =>
-      invokeTool(ctx, { id: `c_${name}`, function: { name, arguments: args } }, {}, 32_768).then(([message]) => String(message.content));
+      invokeTool(ctx, { id: `c_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } }, {}, 32_768).then(([message]) => String(message.content));
 
     const put = await call("file_put", { home_path: "out/report.pdf", level: "guild", description: "The quarterly report" });
     assert.equal(put, "org/org_home/guilds/guild_alpha/files/report.pdf");

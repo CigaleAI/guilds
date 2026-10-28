@@ -134,7 +134,7 @@ function context(sandbox: HostCodeSandbox, overrides: Partial<ToolContext> = {})
 async function codeTask(ctx: ToolContext, args: Record<string, unknown>, callId = "call_task") {
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: callId, function: { name: "code_task", arguments: JSON.stringify(args) } },
+    { id: callId, type: "function", function: { name: "code_task", arguments: JSON.stringify(args) } },
     ctx.secrets,
     65536,
   );

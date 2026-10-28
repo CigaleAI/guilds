@@ -16,6 +16,7 @@ import {
   stampToolResult,
   withRemainingToolCalls,
 } from "../../src/toolbox/index.js";
+import type { ToolCall } from "../../src/db/schema/index.js";
 import { functionSchema, omitEmptyOptionalStrings } from "../../src/toolbox/schema.js";
 import { HELPER } from "../../src/toolbox/browser.js";
 import { Scripts } from "../../src/scripts/catalog.js";
@@ -293,7 +294,7 @@ test("invoke_script_run stores payload and exit_code", async () => {
   });
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_1", function: { name: "script_run", arguments: '{"name":"hello"}' } },
+    { id: "call_1", type: "function", function: { name: "script_run", arguments: '{"name":"hello"}' } },
     {},
     1024,
   );
@@ -317,7 +318,7 @@ test("invoke unknown tool is error message", async () => {
   });
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_x", function: { name: "nope", arguments: "{}" } },
+    { id: "call_x", type: "function", function: { name: "nope", arguments: "{}" } },
     {},
     1024,
   );
@@ -341,6 +342,7 @@ test("invoke refuses a native tool the run did not offer", async () => {
     ctx,
     {
       id: "call_x",
+      type: "function",
       function: {
         name: "script_create",
         arguments: '{"name":"scratch","description":"why","source":"print(1)"}',
@@ -383,7 +385,7 @@ test("invoke still runs a first-class script when it is not in offered_tools", a
   });
   const [payload, metadata] = await invokeTool(
     ctx,
-    { id: "call_1", function: { name: "priced", arguments: "{}" } },
+    { id: "call_1", type: "function", function: { name: "priced", arguments: "{}" } },
     {},
     1024,
   );
@@ -525,16 +527,16 @@ test("browser_eval runs helper", async () => {
   assert.equal(result, '"ok"');
 });
 
-test("parseArguments accepts an object or a JSON object string", () => {
-  assert.deepEqual(parseArguments({ function: { arguments: { path: "a.ts" } } }), { path: "a.ts" });
-  assert.deepEqual(parseArguments({ function: { arguments: '{"path":"a.ts"}' } }), { path: "a.ts" });
-  assert.deepEqual(parseArguments({ function: { arguments: "" } }), {});
-  assert.deepEqual(parseArguments({}), {});
+const withArguments = (raw: string): ToolCall => ({ id: "c1", type: "function", function: { name: "note_get", arguments: raw } });
+
+test("parseArguments reads a JSON object string, and none as empty", () => {
+  assert.deepEqual(parseArguments(withArguments('{"path":"a.ts"}')), { path: "a.ts" });
+  assert.deepEqual(parseArguments(withArguments("")), {});
 });
 
 test("parseArguments throws when JSON is not an object", () => {
-  assert.throws(() => parseArguments({ function: { arguments: "[]" } }), /JSON object/);
-  assert.throws(() => parseArguments({ function: { arguments: 3 } }), /JSON object/);
+  assert.throws(() => parseArguments(withArguments("[]")), /JSON object/);
+  assert.throws(() => parseArguments(withArguments("3")), /JSON object/);
 });
 
 test("remaining tool calls stamp", () => {
@@ -552,7 +554,16 @@ test("remaining tool calls stamp", () => {
   );
   const [payload, metadata] = stampToolResult(
     { role: "tool", tool_call_id: "c1", content: "page found" },
-    { tool_name: "note_read" },
+    {
+      tool_name: "note_read",
+      tool_call_id: "c1",
+      duration_ms: 1,
+      output_filter: "identity",
+      truncated: false,
+      original_bytes: 10,
+      stored_bytes: 10,
+      error: null,
+    },
     12,
   );
   assert.equal(payload.content, "page found\n\nremaining_tool_calls: 12");

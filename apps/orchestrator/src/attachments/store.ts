@@ -4,15 +4,15 @@ import { modelNeedsInlineImages } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { iso } from "../db/views.js";
 import { sanitizeFilename, sniffImage } from "./sniff.js";
-import { hydrateMessages } from "./hydrate.js";
+import { hydrateMessages, type AttachedMessage } from "./hydrate.js";
 import {
   AttachmentError,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
   objectKey,
-  type AttachmentRef,
   type AttachmentRow,
 } from "./types.js";
+import type { AttachmentRef } from "../db/schema/index.js";
 import { BlobMissing, type BlobStore } from "../lib/blob-store.js";
 import { getAttachment, insertAttachment, listAttachmentsByIds } from "../db/attachments.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -50,7 +50,7 @@ export class AttachmentService {
 
   async projectMessages(
     orgId: string,
-    rows: Array<{ payload?: unknown; metadata?: unknown }>,
+    rows: AttachedMessage[],
     model = "",
   ): Promise<Array<Record<string, unknown>>> {
     return hydrateMessages(rows, this.blobs, orgId, {

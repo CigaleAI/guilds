@@ -1,4 +1,7 @@
 import { Buffer } from "node:buffer";
+import { Type } from "@sinclair/typebox";
+import type { MessageMetadata, ReportedToolMetadata } from "../db/schema/index.js";
+import { keepMatching } from "../lib/decode.js";
 import { executeCommand } from "./shell.js";
 import { functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";
@@ -84,6 +87,26 @@ function helperResult(execution: Parameters<typeof stdoutOf>[0] & Parameters<typ
   return { text: typeof envelope.text === "string" ? envelope.text : "", meta: meta as Record<string, unknown> };
 }
 
+const ReportedFields = Type.Object({
+  exit_code: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  cwd: Type.Optional(Type.String()),
+  path: Type.Optional(Type.String()),
+  range: Type.Optional(Type.Union([Type.Tuple([Type.Number(), Type.Number()]), Type.Null()])),
+  content_hash: Type.Optional(Type.String()),
+  lines: Type.Optional(Type.Number()),
+  log_path: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  timed_out: Type.Optional(Type.Boolean()),
+  background_id: Type.Optional(Type.String()),
+  state: Type.Optional(Type.String()),
+  matches: Type.Optional(Type.Number()),
+  files: Type.Optional(Type.Number()),
+});
+
+/** The fields of a helper's metadata a call's result keeps; one of another shape is dropped. */
+function reportedFields(meta: Record<string, unknown>): ReportedToolMetadata | null {
+  return keepMatching(ReportedFields, meta);
+}
+
 /**
  * Runs one op of a sandbox helper (`guilds-code` unless `helper` names another). The request
  * travels base64 on the command line, or through the sandbox file API when it is too large
@@ -110,7 +133,7 @@ export async function runCodeHelper(
     timeoutSeconds: options.timeoutSeconds ?? CODE_HELPER_TIMEOUT_SECONDS,
   });
   const result = helperResult(execution);
-  ctx.tool_metadata = result.meta;
+  ctx.tool_metadata = reportedFields(result.meta);
   return result;
 }
 
@@ -265,15 +288,23 @@ function measured(result: CodeResult): number {
   return mib;
 }
 
-type ReadRow = { seq: number; metadata: Record<string, unknown> };
+/** A tool result of the run's history, by its seq. */
+export type ReadRow = { seq: number; metadata: MessageMetadata };
 
-function readRange(metadata: Record<string, unknown>): [number, number] | null {
-  const range = metadata.range;
-  if (!Array.isArray(range) || range.length !== 2) {
-    return null;
-  }
-  const [start, end] = range;
-  return typeof start === "number" && typeof end === "number" ? [start, end] : null;
+/** Whether `prior` is a `file_read` result whose text still holds what `metadata`'s read returned. */
+function holdsRead(prior: MessageMetadata, metadata: MessageMetadata, range: [number, number]): boolean {
+  return (
+    prior.tool_name === "file_read" &&
+    !prior.error &&
+    prior.truncated !== true &&
+    prior.repeat_of === undefined &&
+    prior.path === metadata.path &&
+    prior.content_hash === metadata.content_hash &&
+    prior.range !== undefined &&
+    prior.range !== null &&
+    prior.range[0] <= range[0] &&
+    prior.range[1] >= range[1]
+  );
 }
 
 /**
@@ -281,37 +312,22 @@ function readRange(metadata: Record<string, unknown>): [number, number] | null {
  * read: same file, same content hash, a range that covers this one, and its text still
  * in history (not itself a pointer).
  */
-export function repeatedReadStep(rows: ReadRow[], metadata: Record<string, unknown>): number | null {
-  if (metadata.tool_name !== "file_read" || metadata.error) {
-    return null;
-  }
-  const range = readRange(metadata);
-  if (range === null || typeof metadata.content_hash !== "string") {
+export function repeatedReadStep(rows: ReadRow[], metadata: MessageMetadata): number | null {
+  const range = metadata.range;
+  if (metadata.tool_name !== "file_read" || metadata.error || !range || metadata.content_hash === undefined) {
     return null;
   }
   let found: number | null = null;
   for (const row of rows) {
-    const prior = row.metadata;
-    if (
-      prior.tool_name !== "file_read" ||
-      prior.error ||
-      prior.truncated === true ||
-      prior.repeat_of !== undefined ||
-      prior.path !== metadata.path ||
-      prior.content_hash !== metadata.content_hash
-    ) {
-      continue;
-    }
-    const held = readRange(prior);
-    if (held !== null && held[0] <= range[0] && held[1] >= range[1]) {
+    if (holdsRead(row.metadata, metadata, range)) {
       found = row.seq;
     }
   }
   return found;
 }
 
-export function repeatedReadText(metadata: Record<string, unknown>, step: number): string {
-  const range = readRange(metadata);
+export function repeatedReadText(metadata: MessageMetadata, step: number): string {
+  const range = metadata.range;
   const lines = range ? ` lines ${range[0]}–${range[1]}` : "";
-  return `${String(metadata.path)}${lines}: unchanged since step ${step}; read that result.`;
+  return `${metadata.path ?? ""}${lines}: unchanged since step ${step}; read that result.`;
 }

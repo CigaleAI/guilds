@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import type { ToolCall } from "../../src/db/schema/index.js";
+import type { RunActivityStepRow } from "../../src/db/activity.js";
 import { test } from "node:test";
 import {
   activityWindow,
@@ -302,7 +304,15 @@ test("a direct chat is a wake only when it has steps in the window, and a runnin
 });
 
 test("a wake lists its tool calls with their results, its last text, and a direct chat's opening", () => {
-  const call = (id: string, name: string, args: string) => ({ id, type: "function", function: { name, arguments: args } });
+  const call = (id: string, name: string, args: string) => ({ id, type: "function" as const, function: { name, arguments: args } }) satisfies ToolCall;
+  const step = (row: Pick<RunActivityStepRow, "run_id" | "seq" | "created_at" | "role"> & Partial<RunActivityStepRow>): RunActivityStepRow => ({
+    tool_calls: null,
+    text: null,
+    tool_call_id: null,
+    error: null,
+    duration_ms: null,
+    ...row,
+  });
   const view = projectActivity(
     input({
       runs: [
@@ -311,11 +321,11 @@ test("a wake lists its tool calls with their results, its last text, and a direc
       ],
       stats: [{ run_id: "r_chat", last_seq: 12, first_at: ts("14:58:00"), last_at: ts("15:00:00"), cost_usd: "0" }],
       steps: [
-        { run_id: "r_tick", seq: 1, created_at: ts("14:00:10"), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" },
-        { run_id: "r_tick", seq: 2, created_at: ts("14:00:11"), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" },
-        { run_id: "r_tick", seq: 3, created_at: ts("14:00:12"), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" },
-        { run_id: "r_tick", seq: 4, created_at: ts("14:00:40"), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " },
-        { run_id: "r_chat", seq: 11, created_at: ts("14:59:00"), role: "assistant", tool_calls: [], text: "Here are the likes." },
+        step({ run_id: "r_tick", seq: 1, created_at: ts("14:00:10").toISOString(), role: "assistant", tool_calls: [call("c_bal", "wallet_get_balance", '{"chain":"base"}'), call("c_note", "note_get", `{"path":"${"p".repeat(300)}"}`)], text: "" }),
+        step({ run_id: "r_tick", seq: 2, created_at: ts("14:00:11").toISOString(), role: "tool", tool_call_id: "c_bal", error: "wallet credentials are missing", duration_ms: "98" }),
+        step({ run_id: "r_tick", seq: 3, created_at: ts("14:00:12").toISOString(), role: "tool", tool_call_id: "c_note", error: null, duration_ms: "4" }),
+        step({ run_id: "r_tick", seq: 4, created_at: ts("14:00:40").toISOString(), role: "assistant", tool_calls: null, text: "  Balances unavailable; nothing to post.  " }),
+        step({ run_id: "r_chat", seq: 11, created_at: ts("14:59:00").toISOString(), role: "assistant", tool_calls: [], text: "Here are the likes." }),
       ],
       openings: [{ run_id: "r_chat", text: "how many likes on my last post?" }, { run_id: "r_tick", text: "Schedule wake-up: {}" }],
     }),

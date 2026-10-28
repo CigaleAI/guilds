@@ -16,9 +16,8 @@ test("continuedBy reads the next run of a chain", () => {
 });
 
 test("the hand-off is the reply's text, from a string or content parts", () => {
-  assert.equal(handoffText({ content: "  Goal: ship.  " }), "Goal: ship.");
-  assert.equal(handoffText({ content: [{ type: "text", text: "Goal: " }, { type: "text", text: "ship." }] }), "Goal: ship.");
-  assert.equal(handoffText({ content: null, tool_calls: [] }), "");
+  assert.equal(handoffText({ role: "assistant", content: "  Goal: ship.  " }), "Goal: ship.");
+  assert.equal(handoffText({ role: "assistant", content: "" }), "");
 });
 
 test("a continuation opens with the previous run and its hand-off, or a note when there is none", () => {

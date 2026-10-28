@@ -17,6 +17,8 @@ import { getMcpConnection, listMcpTools, type McpConnectionRow } from "../db/mcp
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import type { LoadedConnector } from "../connectors/load.js";
+import type { ConversationMessageRow } from "../db/conversations.js";
+import type { ConversationMessageMetadata, MessagePayload, ToolMessage } from "../db/schema/index.js";
 import type { StudioSessionRow } from "../db/studio.js";
 
 export const STUDIO_CONNECTION_ACCESS_WIDGET = "studio_connection_access";
@@ -27,12 +29,12 @@ export type StudioLoginStatus = "pending" | "granted" | "declined";
 export type LoginRecord = {
   seq: number;
   connectionId: string;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown>;
+  payload: ToolMessage;
+  metadata: ConversationMessageMetadata;
 };
 
-function widgetOf(payload: Record<string, unknown>): Record<string, unknown> | null {
-  if (payload.role !== "tool" || typeof payload.content !== "string") return null;
+function widgetOf(payload: MessagePayload): Record<string, unknown> | null {
+  if (payload.role !== "tool") return null;
   try {
     return jsonObj(JSON.parse(payload.content)) as Record<string, unknown> | null;
   } catch {
@@ -41,24 +43,23 @@ function widgetOf(payload: Record<string, unknown>): Record<string, unknown> | n
 }
 
 /** The login request at a tool message seq; anything else there is not found. */
-export function findLoginRecord(message: Record<string, unknown> | null, seq: number): LoginRecord {
-  const payload = (jsonObj(message?.payload) as Record<string, unknown> | null) ?? {};
-  const widget = widgetOf(payload);
+export function findLoginRecord(message: ConversationMessageRow | null, seq: number): LoginRecord {
+  const payload = message?.payload;
+  const widget = payload ? widgetOf(payload) : null;
   const connection = (jsonObj(widget?.connection) as Record<string, unknown> | null) ?? {};
-  if (!message || widget?.widget !== STUDIO_CONNECTION_ACCESS_WIDGET || typeof connection.id !== "string") {
+  if (
+    !message ||
+    payload?.role !== "tool" ||
+    widget?.widget !== STUDIO_CONNECTION_ACCESS_WIDGET ||
+    typeof connection.id !== "string"
+  ) {
     throw new StudioError(404, "login request not found");
   }
-  return {
-    seq,
-    connectionId: connection.id,
-    payload,
-    metadata: (jsonObj(message.metadata) as Record<string, unknown> | null) ?? {},
-  };
+  return { seq, connectionId: connection.id, payload, metadata: message.metadata };
 }
 
 export function loginStatus(record: LoginRecord): StudioLoginStatus {
-  const status = record.metadata.access_status;
-  return status === "granted" || status === "declined" ? status : "pending";
+  return record.metadata.access_status ?? "pending";
 }
 
 export type StudioMcpClient = {

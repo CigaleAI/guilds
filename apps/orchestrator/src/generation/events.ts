@@ -1,5 +1,6 @@
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { appendRunError, insertMessage, nextSeq, type MessageRow } from "../db/runs.js";
+import type { MessageMetadata, MessagePayload } from "../db/schema/index.js";
 import { messageItem } from "../db/views.js";
 import { EventQueue } from "../lib/event.js";
 import { errorMessage, errorName, redactText, writeLog } from "../observability/log.js";
@@ -68,8 +69,8 @@ export class RunEvents {
   /** Appends the message to the run's history and publishes it. */
   async commitMessage(
     runId: string,
-    payload: Record<string, unknown>,
-    metadata: Record<string, unknown>,
+    payload: MessagePayload,
+    metadata: MessageMetadata,
   ): Promise<MessageRow> {
     const seq = await this.db.nextSeq(runId);
     const row = await this.db.insertMessage({ runId, seq, payload, metadata }, new Date());

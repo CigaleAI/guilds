@@ -1,5 +1,6 @@
 import type { RuntimeAccess } from "../access/runtime.js";
 import { RUN_PROJECTION_POLICY_VERSION } from "../conversation/projection.js";
+import type { GroupMessageRow } from "../db/group-chat.js";
 import type { AgentRow } from "../db/agents.js";
 import type { RunRow } from "../db/runs.js";
 import type {
@@ -68,7 +69,7 @@ export type PreparedRun = {
   config: AgentConfig;
   access: RuntimeAccess;
   members: Array<Record<string, unknown>>;
-  historyRows: Array<Record<string, unknown>>;
+  historyRows: GroupMessageRow[];
   standing: string;
   system: string;
   task: string;

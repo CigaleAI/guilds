@@ -1,6 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { type Queryable, stamp } from "./pg.js";
-import { fileChanges, messages, runs } from "./schema/index.js";
+import { fileChanges, messages, runs, type ToolCall } from "./schema/index.js";
 
 type Run = InferSelectModel<typeof runs>;
 type Message = InferSelectModel<typeof messages>;
@@ -38,8 +38,9 @@ export type RunGroupPostRow = Pick<Message, "run_id" | "seq" | "created_at"> & {
 };
 
 export type RunActivityStepRow = Pick<Message, "run_id" | "seq" | "created_at"> & {
-  role: string | null;
-  tool_calls: unknown;
+  role: "assistant" | "tool";
+  /** An assistant step's calls; null for a tool result or a step that made none. */
+  tool_calls: ToolCall[] | null;
   text: string | null;
   tool_call_id: string | null;
   error: string | null;

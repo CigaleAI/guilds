@@ -9,6 +9,8 @@ import {
   recordSearch,
   recordUpdate,
 } from "./artifacts.js";
+import { isPlainRecord } from "../db/json.js";
+import type { ReportedToolMetadata, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
 import { writeLog } from "../observability/log.js";
 import { identityOutput, processOutput } from "./output.js";
 import { browserClick, browserEval, browserFill, browserNavigate, browserScreenshot, browserScroll, browserSnapshot, browserType } from "./browser.js";
@@ -79,52 +81,31 @@ export function schemasFor(names: string[]): Array<Record<string, unknown>> {
   return names.flatMap((name) => (REGISTRY[name] ? [REGISTRY[name].schema] : []));
 }
 
-export function toolCallFunction(call: Record<string, unknown>): Record<string, unknown> {
-  if (call.function && typeof call.function === "object" && !Array.isArray(call.function)) {
-    return call.function as Record<string, unknown>;
-  }
-  return {};
-}
-
-function parsedJsonObject(raw: string): Record<string, unknown> {
-  const loaded = JSON.parse(raw) as unknown;
-  if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
-    throw new Error("tool arguments must be a JSON object");
-  }
-  return loaded as Record<string, unknown>;
-}
-
-function parseArgumentsObject(raw: unknown): Record<string, unknown> {
-  if (raw == null || raw === "") {
+/** A call's arguments: the JSON object the model wrote, empty when it wrote none. */
+export function parseArguments(call: ToolCall): Record<string, unknown> {
+  if (call.function.arguments === "") {
     return {};
   }
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  if (typeof raw !== "string") {
+  const loaded: unknown = JSON.parse(call.function.arguments);
+  if (!isPlainRecord(loaded)) {
     throw new Error("tool arguments must be a JSON object");
   }
-  return parsedJsonObject(raw);
-}
-
-export function parseArguments(call: Record<string, unknown>): Record<string, unknown> {
-  return parseArgumentsObject(toolCallFunction(call).arguments);
+  return loaded;
 }
 
 export async function invokeTool(
   ctx: ToolContext,
-  call: Record<string, unknown>,
+  call: ToolCall,
   secrets: Record<string, string>,
   maxBytes: number,
-): Promise<[Record<string, unknown>, Record<string, unknown>]> {
-  const fn = toolCallFunction(call);
-  const name = typeof fn.name === "string" ? fn.name : "";
-  const callId = typeof call.id === "string" ? call.id : "";
+): Promise<[ToolMessage, ToolResultMetadata]> {
+  const name = call.function.name;
+  const callId = call.id;
   const started = performance.now();
   ctx.exit_code = null;
   let error: string | null = null;
   const registered = REGISTRY[name] ?? ctx.dynamic_tools[name];
-  let reported: Record<string, unknown> | null = null;
+  let reported: ReportedToolMetadata | null = null;
   let raw: string;
   let outputFilter = identityOutput;
   let filterName = "identity";
@@ -173,11 +154,11 @@ export async function invokeTool(
     }
   }
   const [content, pipeline] = processOutput(raw, outputFilter, secrets, maxBytes);
-  if (typeof pipeline.error === "string" && pipeline.error) {
+  if (pipeline.error) {
     error = pipeline.error;
   }
-  const payload = { role: "tool", tool_call_id: callId, content };
-  const metadata: Record<string, unknown> = {
+  const payload: ToolMessage = { role: "tool", tool_call_id: callId, content };
+  const metadata: ToolResultMetadata = {
     ...(reported ?? {}),
     tool_name: name,
     tool_call_id: callId,

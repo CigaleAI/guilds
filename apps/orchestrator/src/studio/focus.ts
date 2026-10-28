@@ -1,6 +1,5 @@
 import { ArtifactError, listFileChanges, parseDisplayPath, type ArtifactStore, type FileChangeView } from "../artifacts/index.js";
 import { wrapEvidence } from "../conversation/trust.js";
-import { jsonObj } from "../db/json.js";
 import { isoOrNull } from "../db/views.js";
 import {
   buildMemoryTimeline,
@@ -15,11 +14,12 @@ import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";
 import { studioReachesParsed } from "./reach.js";
 import { getAgent, getAgentTask, type AgentRow } from "../db/agents.js";
-import { getRun, listMessages } from "../db/runs.js";
+import { getRun, listMessages, type MessageRow } from "../db/runs.js";
 import { getSchedule } from "../db/schedules.js";
 import { getIssue } from "../db/issues.js";
 import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
+import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
 import { getByDisplayPath } from "../artifacts/notes.js";
 import { operatorContext } from "../artifacts/store.js";
@@ -32,33 +32,6 @@ import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 // fills in what it can, and writes the evidence block the coach reads.
 
 export const STUDIO_FOCUS_SOURCE = "studio_focus";
-export const STUDIO_FOCUS_KINDS = [
-  "run",
-  "memory_version",
-  "routine",
-  "file",
-  "issue",
-  "tool",
-] as const;
-export type StudioFocusKind = (typeof STUDIO_FOCUS_KINDS)[number];
-
-export type StudioFocus = {
-  kind: StudioFocusKind;
-  agent_id: string;
-  agent_name: string;
-  label: string;
-  run_id: string | null;
-  seq: number | null;
-  call_id: string | null;
-  tool_name: string | null;
-  revision_id: string | null;
-  version_index: number | null;
-  schedule_id: string | null;
-  display_path: string | null;
-  change_id: string | null;
-  issue_id: string | null;
-};
-
 export type StudioFocusDeps = {
   db: Queryable;
   artifacts: ArtifactStore;
@@ -134,6 +107,40 @@ function evidenceBlock(
   return `${wrapEvidence({ source, coordinates, body })}\n\n${tail}`;
 }
 
+/** The assistant message of `rows` that made the call `callId`, and the call. */
+function callRequest(rows: MessageRow[], callId: string): { row: MessageRow; call: ToolCall } | undefined {
+  for (const row of rows) {
+    const call = row.payload.role === "assistant" ? row.payload.tool_calls?.find((item) => item.id === callId) : undefined;
+    if (call) {
+      return { row, call };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The message a run focus names: by call id, the call's result and the message that made the
+ * call, at least one of which must exist; else the message at `seq`.
+ */
+function focusedMessages(
+  rows: MessageRow[],
+  at: { seq: number | null; callId: string },
+): { target: MessageRow | undefined; request: { row: MessageRow; call: ToolCall } | undefined } {
+  if (at.callId) {
+    const target = rows.find((row) => row.payload.role === "tool" && row.payload.tool_call_id === at.callId);
+    const request = callRequest(rows, at.callId);
+    if (!target && !request) {
+      throw new StudioUnprocessableError("focus tool call not found in that run");
+    }
+    return { target, request };
+  }
+  const target = rows.find((row) => row.seq === at.seq);
+  if (!target) {
+    throw new StudioUnprocessableError("focus message not found in that run");
+  }
+  return { target, request: undefined };
+}
+
 async function resolveRun(
   deps: StudioFocusDeps,
   input: Record<string, unknown>,
@@ -176,68 +183,27 @@ async function resolveRun(
   let tail = `Load the transcript with studio_get_run(run_id="${runId}").`;
   if (seq !== null || callId) {
     const rows = await listMessages(deps.db, runId);
-    let target: Record<string, unknown> | undefined;
-    let request: Record<string, unknown> | undefined;
-    if (callId) {
-      target = rows.find((row) => {
-        const payload = (jsonObj(row.payload) ?? {}) as Record<string, unknown>;
-        return payload.role === "tool" && String(payload.tool_call_id ?? "") === callId;
-      });
-      request = rows.find((row) => {
-        const payload = (jsonObj(row.payload) ?? {}) as Record<string, unknown>;
-        const calls = Array.isArray(payload.tool_calls)
-          ? (payload.tool_calls as Array<Record<string, unknown>>)
-          : [];
-        return calls.some((call) => String(call.id ?? "") === callId);
-      });
-      if (!target && !request) {
-        throw new StudioUnprocessableError("focus tool call not found in that run");
-      }
-    } else if (seq !== null) {
-      target = rows.find((row) => Number(row.seq) === seq);
-      if (!target) {
-        throw new StudioUnprocessableError("focus message not found in that run");
-      }
-    }
-    const focusedSeq = target ? Number(target.seq) : request ? Number(request.seq) : null;
+    const { target, request } = focusedMessages(rows, { seq, callId });
+    const focusedSeq = target?.seq ?? request?.row.seq ?? null;
     focus.seq = focusedSeq;
     focus.call_id = callId || null;
     coordinates.seq = focusedSeq;
     coordinates.call_id = callId || null;
     if (request) {
-      const payload = (jsonObj(request.payload) ?? {}) as Record<string, unknown>;
-      const call = (
-        Array.isArray(payload.tool_calls)
-          ? (payload.tool_calls as Array<Record<string, unknown>>)
-          : []
-      ).find((item) => String(item.id ?? "") === callId);
-      const fn = (call?.function ?? {}) as Record<string, unknown>;
-      focus.tool_name = trimmedText(fn.name) || null;
+      const fn = request.call.function;
+      focus.tool_name = fn.name.trim() || null;
       coordinates.tool_name = focus.tool_name;
-      lines.push(
-        "",
-        `Requested at seq ${String(request.seq)}: ${String(fn.name ?? "tool")} with arguments`,
-        excerpt(String(fn.arguments ?? "{}")),
-      );
+      lines.push("", `Requested at seq ${request.row.seq}: ${fn.name} with arguments`, excerpt(fn.arguments));
     }
     if (target) {
-      const payload = (jsonObj(target.payload) ?? {}) as Record<string, unknown>;
-      const meta = (jsonObj(target.metadata) ?? {}) as Record<string, unknown>;
+      const { payload, metadata } = target;
       if (!focus.tool_name && payload.role === "tool") {
-        focus.tool_name = trimmedText(meta.tool_name) || null;
+        focus.tool_name = metadata.tool_name?.trim() || null;
         coordinates.tool_name = focus.tool_name;
       }
       const label =
-        payload.role === "tool"
-          ? `Tool result at seq ${String(target.seq)}`
-          : `${String(payload.role ?? "message")} message at seq ${String(target.seq)}`;
-      const content =
-        typeof payload.content === "string" ? payload.content : JSON.stringify(payload);
-      lines.push(
-        "",
-        `${label}${meta.error ? ` (error: ${String(meta.error)})` : ""}:`,
-        excerpt(content),
-      );
+        payload.role === "tool" ? `Tool result at seq ${target.seq}` : `${payload.role} message at seq ${target.seq}`;
+      lines.push("", `${label}${metadata.error ? ` (error: ${metadata.error})` : ""}:`, excerpt(payload.content));
     }
     focus.label = `${runKindLabel(kind)} · ${focus.tool_name ? `${focus.tool_name} · ` : ""}seq ${String(focusedSeq)}`;
     tail = `Load the surrounding steps with studio_get_run(run_id="${runId}", seq_start, seq_end) around seq ${String(focusedSeq)}.`;

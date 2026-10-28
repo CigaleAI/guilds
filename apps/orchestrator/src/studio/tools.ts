@@ -50,7 +50,7 @@ import { listTables, readTable } from "./tables.js";
 import { studioReachesParsed, studioReachesPath } from "./reach.js";
 import { getAgent, getAgentTask, listAgentTaskRevisions, listAgents, type AgentRow } from "../db/agents.js";
 import { listSchedules, listSchedulesForGuild } from "../db/schedules.js";
-import { getRun, listMessages, listRunHeaders, routineRunStats, type RunHeaderRow } from "../db/runs.js";
+import { getRun, listMessages, listRunHeaders, routineRunStats, type MessageRow, type RunHeaderRow } from "../db/runs.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { listGuildsForUser } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -474,6 +474,19 @@ export const studioListRuns: StudioTool = {
   },
 };
 
+/** The assistant messages of `messages` that called `toolName`, and those calls' results. */
+function callsOfTool(messages: MessageRow[], toolName: string): MessageRow[] {
+  const callIds = new Set<string>();
+  return messages.filter(({ payload }) => {
+    if (payload.role === "assistant") {
+      const mine = (payload.tool_calls ?? []).filter((call) => call.function.name === toolName);
+      for (const call of mine) callIds.add(call.id);
+      return mine.length > 0;
+    }
+    return payload.role === "tool" && callIds.has(payload.tool_call_id);
+  });
+}
+
 export const studioGetRun: StudioTool = {
   name: "studio_get_run",
   schema: functionSchema(
@@ -500,37 +513,14 @@ export const studioGetRun: StudioTool = {
     const seqStart = argInteger(args, "seq_start", 0);
     const seqEnd = argInteger(args, "seq_end", 10_000);
     const toolName = argString(args, "tool_name");
-    let messages = (await listMessages(ctx.db, runId)).filter(
-      (row) => Number(row.seq) >= seqStart && Number(row.seq) <= seqEnd,
-    );
+    let messages = (await listMessages(ctx.db, runId)).filter((row) => row.seq >= seqStart && row.seq <= seqEnd);
     if (toolName) {
-      const callIds = new Set<string>();
-      messages = messages.filter((row) => {
-        const payload = jsonObj(row.payload) as Record<string, unknown>;
-        if (payload.role === "assistant") {
-          const calls = Array.isArray(payload.tool_calls) ? (payload.tool_calls as Array<Record<string, unknown>>) : [];
-          const mine = calls.filter((call) => String((call.function as Record<string, unknown> | undefined)?.name ?? "") === toolName);
-          for (const call of mine) callIds.add(String(call.id ?? ""));
-          return mine.length > 0;
-        }
-        if (payload.role === "tool") {
-          return callIds.has(String(payload.tool_call_id ?? ""));
-        }
-        return false;
-      });
+      messages = callsOfTool(messages, toolName);
     }
-    const capped = [];
-    for (const row of messages) {
-      const payload = jsonObj(row.payload) as Record<string, unknown>;
-      const content = typeof payload.content === "string" ? payload.content : JSON.stringify(payload);
-      const [cut, truncated] = capBytes(content, STUDIO_TOOL_RESULT_MAX_BYTES);
-      capped.push({
-        seq: row.seq,
-        payload: { ...payload, content: cut },
-        metadata: jsonObj(row.metadata),
-        truncated,
-      });
-    }
+    const capped = messages.map((row) => {
+      const [cut, truncated] = capBytes(row.payload.content, STUDIO_TOOL_RESULT_MAX_BYTES);
+      return { seq: row.seq, payload: { ...row.payload, content: cut }, metadata: row.metadata, truncated };
+    });
     return {
       run: {
         id: run.id,
@@ -546,14 +536,11 @@ export const studioGetRun: StudioTool = {
         ...row,
         payload: {
           ...row.payload,
-          content:
-            typeof row.payload.content === "string"
-              ? wrapEvidence({
-                  source: "run_message",
-                  coordinates: { run_id: runId, seq: row.seq },
-                  body: String(row.payload.content),
-                })
-              : row.payload.content,
+          content: wrapEvidence({
+            source: "run_message",
+            coordinates: { run_id: runId, seq: row.seq },
+            body: row.payload.content,
+          }),
         },
       })),
     };

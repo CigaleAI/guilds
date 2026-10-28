@@ -18,6 +18,7 @@ import {
 import { Type, type Static } from "@sinclair/typebox";
 import { sql } from "drizzle-orm";
 import { timestamptz } from "./columns.js";
+import type { MessageMetadata, MessagePayload } from "./messages.js";
 import { guilds, machines, orgs, users } from "./organisations.js";
 
 /**
@@ -324,8 +325,8 @@ export const messages = pgTable(
     id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
     run_id: text("run_id").notNull(),
     seq: integer("seq").notNull(),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    payload: jsonb("payload").$type<MessagePayload>().notNull(),
+    metadata: jsonb("metadata").$type<MessageMetadata>().notNull().default(sql`'{}'::jsonb`),
     created_at: timestamptz("created_at").notNull(),
     cost_usd: numeric("cost_usd"),
   },

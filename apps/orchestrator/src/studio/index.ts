@@ -59,7 +59,8 @@ import {
   reachableConnection,
   type StudioMcpClient,
 } from "./connections.js";
-import { resolveStudioFocus, STUDIO_FOCUS_SOURCE, type StudioFocus } from "./focus.js";
+import type { StudioFocus } from "../db/schema/index.js";
+import { resolveStudioFocus, STUDIO_FOCUS_SOURCE } from "./focus.js";
 import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
 import type { RoutineChange } from "./routines.js";
@@ -730,16 +731,12 @@ export class StudioService {
   ): Promise<string> {
     const system = this.composeLiveSystem(session, rows);
     const existing = await getConversationMessage(client ?? this.deps.db, "studio", session.id, 0);
-    const metadata =
-      existing?.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
-        ? (existing.metadata as Record<string, unknown>)
-        : {};
-    if (existing && String(metadata.system_prompt_hash ?? "") !== system.hash) {
+    if (existing && existing.metadata.system_prompt_hash !== system.hash) {
       await updateConversationMessage(client ?? this.deps.db, "studio", {
         session_id: session.id,
         seq: 0,
         payload: { role: "system", content: system.content },
-        metadata: { ...metadata, source: "studio_system", system_prompt_hash: system.hash, refreshed: true },
+        metadata: { ...existing.metadata, source: "studio_system", system_prompt_hash: system.hash, refreshed: true },
       });
     }
     return system.content;

@@ -8,7 +8,7 @@ import { isPlainRecord } from "../db/json.js";
 import { getMcpConnectionForOwner, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, mergeRunMetadata, type RunRow } from "../db/runs.js";
-import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange } from "../db/schema/index.js";
+import { RunRepositoryChangeSchema, type Harness, type RunRepositoryChange, type ToolCall, type ToolMessage, type ToolResultMetadata } from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
 import { GITHUB_SERVER_ID } from "../github/index.js";
 import { RepositoryAccessError } from "../github/tokens.js";
@@ -288,9 +288,9 @@ export class CodingRuns {
    */
   async interruptedCodeTask(
     run: RunRow,
-    call: Record<string, unknown>,
-    record: [Record<string, unknown>, Record<string, unknown>],
-  ): Promise<[Record<string, unknown>, Record<string, unknown>]> {
+    call: ToolCall,
+    record: [ToolMessage, ToolResultMetadata & { generation: number }],
+  ): Promise<[ToolMessage, ToolResultMetadata & { generation: number }]> {
     const harness = run.config_snapshot.harness;
     if (harness === null) {
       return record;

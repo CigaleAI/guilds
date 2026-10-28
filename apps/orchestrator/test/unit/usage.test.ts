@@ -20,12 +20,12 @@ test("usage_delta_reads_assistant_metadata", () => {
 });
 
 test("usage_delta_ignores_rows_without_usage", () => {
-  assert.equal(usageDelta({ source: "tool", tool_name: "note_read" }), null);
+  assert.equal(usageDelta({ cost_usd: 0 }), null);
   assert.equal(usageDelta({}), null);
 });
 
 test("message_cost_usd_null_without_usage", () => {
-  assert.equal(messageCostUsd({ source: "tool", tool_name: "note_read" }), null);
+  assert.equal(messageCostUsd({ cost_usd: 0 }), null);
   assert.equal(messageCostUsd({}), null);
 });
 
@@ -37,7 +37,7 @@ test("message_cost_usd_reads_assistant_cost", () => {
     }),
     0.001,
   );
-  assert.equal(messageCostUsd({ usage: {} }), 0);
+  assert.equal(messageCostUsd({ usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 } }), 0);
 });
 
 test("usage_fields_zeros_missing_row", () => {

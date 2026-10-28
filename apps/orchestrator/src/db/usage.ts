@@ -1,8 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type pg from "pg";
-import { isPlainRecord } from "./json.js";
 import { type Queryable, stamp } from "./pg.js";
-import { orgMonthlyUsage, usageCounters } from "./schema/index.js";
+import { orgMonthlyUsage, usageCounters, type CompletionMetadata } from "./schema/index.js";
 
 export const GLOBAL_SCOPE = "global";
 export const GLOBAL_SCOPE_ID = "";
@@ -19,22 +18,20 @@ export function utcMonth(now = new Date()): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/** The usage a message's metadata records: an assistant message's completion. */
+export type UsageMetadata = Partial<Pick<CompletionMetadata, "usage" | "cost_usd">>;
+
 /** The tokens and cost a message's metadata records, or null when it records no usage. */
-export function usageDelta(metadata: Record<string, unknown>): UsageDelta | null {
-  const record = metadata.usage;
-  if (!isPlainRecord(record)) {
+export function usageDelta(metadata: UsageMetadata): UsageDelta | null {
+  if (metadata.usage === undefined) {
     return null;
   }
-  return {
-    input_tokens: Number(record.input_tokens || 0),
-    output_tokens: Number(record.output_tokens || 0),
-    cache_read_tokens: Number(record.cache_read_tokens || 0),
-    cost_usd: Number(metadata.cost_usd || 0),
-  };
+  const { input_tokens, output_tokens, cache_read_tokens } = metadata.usage;
+  return { input_tokens, output_tokens, cache_read_tokens, cost_usd: metadata.cost_usd ?? 0 };
 }
 
 /** The cost a message's metadata records, the `cost_usd` column stored beside it. */
-export function messageCostUsd(metadata: Record<string, unknown>): number | null {
+export function messageCostUsd(metadata: UsageMetadata): number | null {
   const delta = usageDelta(metadata);
   return delta === null ? null : delta.cost_usd;
 }
@@ -116,7 +113,7 @@ export async function claimMonthlyStudioBuilderRun(
 export async function incrementUsage(
   client: pg.PoolClient,
   runId: string,
-  metadata: Record<string, unknown>,
+  metadata: UsageMetadata,
   now: Date,
 ): Promise<void> {
   const delta = usageDelta(metadata);
@@ -149,7 +146,7 @@ export async function incrementUsage(
 export async function incrementOrgUsage(
   pool: Queryable,
   orgId: string,
-  metadata: Record<string, unknown>,
+  metadata: UsageMetadata,
   now: Date,
 ): Promise<void> {
   const delta = usageDelta(metadata);

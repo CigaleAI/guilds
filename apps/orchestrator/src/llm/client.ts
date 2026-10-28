@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { AssistantMessage, CompletionMetadata, ReasoningDetail, ToolCall } from "../db/schema/index.js";
 import { listMessagesModels, streamMessages } from "./anthropic.js";
 import { modelCatalog } from "./catalog.js";
 import { catalogCostUsd } from "./cost.js";
@@ -21,13 +22,12 @@ export function asLlmError(error: unknown, apiKey?: string | null): LLMError {
 }
 
 export type Completion = {
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown>;
+  payload: AssistantMessage;
+  metadata: CompletionMetadata;
 };
 
 export type ModelEvent = ["delta", string] | ["reasoning", string] | ["done", Completion];
 
-export type ReasoningDetail = Record<string, unknown> & { index?: number };
 
 export const MODEL_USER_AGENT = "guilds.run";
 
@@ -134,21 +134,9 @@ function optionalString(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
-export function assistantPayload(message: Record<string, unknown>): Record<string, unknown> {
-  const dump: Record<string, unknown> = {};
-  if (message.role !== null && message.role !== undefined) {
-    dump.role = message.role;
-  }
-  if (message.content !== null && message.content !== undefined) {
-    dump.content = message.content;
-  }
-  if (message.tool_calls !== null && message.tool_calls !== undefined) {
-    dump.tool_calls = message.tool_calls;
-  }
-  if (!dump || typeof dump !== "object" || Array.isArray(dump)) {
-    throw new LLMError("assistant payload must be an object");
-  }
-  return dump;
+/** The assistant message a completion returns: its text, and its tool calls when it made any. */
+export function assistantPayload(content: string, toolCalls: ToolCall[]): AssistantMessage {
+  return { role: "assistant", content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) };
 }
 
 export function assistantMetadata(
@@ -169,51 +157,30 @@ export function assistantMetadata(
     reasoning_details?: ReasoningDetail[];
   },
   options: { latencyMs: number; model: string },
-): Record<string, unknown> {
+): CompletionMetadata {
   const usage = assembled.usage ?? {};
-  const details = usage.prompt_tokens_details;
-  let cacheRead = usage.cache_read_input_tokens;
-  if (cacheRead === undefined || cacheRead === null) {
-    cacheRead = details?.cached_tokens || 0;
-  }
+  const cacheRead = usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
   const tokenUsage = {
     input_tokens: Number(usage.prompt_tokens || 0),
     output_tokens: Number(usage.completion_tokens || 0),
     cache_read_tokens: Number(cacheRead || 0),
   };
-  let cost: number | null = null;
-  let costSource: string | undefined;
-  if (typeof assembled.provider_cost === "number") {
-    cost = assembled.provider_cost;
-    costSource = "provider";
-  } else if (typeof usage.cost === "number") {
-    cost = usage.cost;
-    costSource = "provider";
-  }
-  const metadata: Record<string, unknown> = {
+  const providerCost = typeof assembled.provider_cost === "number" ? assembled.provider_cost : usage.cost;
+  const cost =
+    typeof providerCost === "number"
+      ? { cost_usd: providerCost, cost_source: "provider" as const }
+      : catalogCostUsd(options.model, tokenUsage);
+  return {
     usage: tokenUsage,
     latency_ms: options.latencyMs,
-    finish_reason: assembled.finish_reason || "stop",
-    model: optionalString(assembled.model) || "",
+    finish_reason: optionalString(assembled.finish_reason) ?? "stop",
+    model: optionalString(assembled.model) ?? "",
     response_id: optionalString(assembled.id),
     provider_request_id: optionalString(assembled.provider_request_id),
+    ...cost,
+    ...(assembled.reasoning ? { reasoning: assembled.reasoning } : {}),
+    ...(assembled.reasoning_details?.length ? { reasoning_details: assembled.reasoning_details } : {}),
   };
-  if (cost === null) {
-    const fallback = catalogCostUsd(options.model, tokenUsage);
-    metadata.cost_usd = fallback.cost_usd;
-    metadata.cost_source = fallback.cost_source;
-    metadata.pricing_version = fallback.pricing_version;
-  } else {
-    metadata.cost_usd = cost;
-    metadata.cost_source = costSource;
-  }
-  if (assembled.reasoning) {
-    metadata.reasoning = assembled.reasoning;
-  }
-  if (assembled.reasoning_details?.length) {
-    metadata.reasoning_details = assembled.reasoning_details;
-  }
-  return metadata;
 }
 
 const REASONING_TEXT_KEYS = ["text", "summary", "data"] as const;
@@ -494,28 +461,14 @@ export async function* streamCompletion(options: {
   if (!chunks.length) {
     throw new LLMError("provider returned no chunks");
   }
-  const message: Record<string, unknown> = { role: "assistant" };
-  if (content) {
-    message.content = content;
-  } else {
-    message.content = content;
-  }
-  if (toolCalls.length) {
-    message.tool_calls = toolCalls.map((call) => ({
-      id: call.id,
+  const payload = assistantPayload(
+    content,
+    toolCalls.map((call) => ({
+      id: call.id ?? "",
       type: call.type ?? "function",
-      function: {
-        name: call.function?.name ?? "",
-        arguments: call.function?.arguments ?? "",
-      },
-    }));
-  }
-  let payload: Record<string, unknown>;
-  try {
-    payload = assistantPayload(message);
-  } catch (error) {
-    throw error instanceof LLMError ? error : new LLMError("provider response could not be assembled");
-  }
+      function: { name: call.function?.name ?? "", arguments: call.function?.arguments ?? "" },
+    })),
+  );
   const latencyMs = Math.trunc(performance.now() - started);
   yield [
     "done",

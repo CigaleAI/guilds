@@ -275,11 +275,7 @@ export async function* streamMessages(options: {
       ? [{ id: block.id, type: "function", function: { name: block.name, arguments: JSON.stringify(block.input ?? {}) } }]
       : [],
   );
-  const payload = assistantPayload({
-    role: "assistant",
-    content: text,
-    ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
-  });
+  const payload = assistantPayload(text, toolCalls);
   const cacheRead = message.usage.cache_read_input_tokens ?? 0;
   const cacheWrite = message.usage.cache_creation_input_tokens ?? 0;
   yield [

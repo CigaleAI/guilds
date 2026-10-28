@@ -1,7 +1,7 @@
 import type { InferSelectModel } from "drizzle-orm";
 import { RowMissing } from "./errors.js";
 import { type Queryable, stamp, withTransaction } from "./pg.js";
-import { messages, runs, type RunError, type RunMetadata, type RunScriptSnapshot, type SecretRef } from "./schema/index.js";
+import { messages, runs, type MessageMetadata, type MessagePayload, type RunError, type RunMetadata, type RunScriptSnapshot, type SecretRef } from "./schema/index.js";
 import { incrementUsage, messageCostUsd } from "./usage.js";
 
 /** What a run listing filters on; every field left out matches every run. */
@@ -41,6 +41,9 @@ export type RunHeaderRow = RunBaseRow & Pick<Run, "schedule_id">;
 
 export type MessageRow = InferSelectModel<typeof messages>;
 
+/** A message a run stores, and the metadata stored beside it. */
+export type RunMessage = [MessagePayload, MessageMetadata];
+
 export type NewDirectRun = {
   runId: string;
   agentId: string;
@@ -51,9 +54,9 @@ export type NewDirectRun = {
   systemPromptHash: string;
   taskPromptHash: string;
   memoryPromptHash: string;
-  extraMessages?: Array<[Record<string, unknown>, Record<string, unknown>]> | undefined;
+  extraMessages?: RunMessage[] | undefined;
   runMetadata?: Run["metadata"] | undefined;
-  userMetadata?: Record<string, unknown> | undefined;
+  userMetadata?: MessageMetadata | undefined;
   startedByUserId?: string | null | undefined;
 };
 
@@ -63,7 +66,7 @@ export type NewGroupRun = {
   configSnapshot: Run["config_snapshot"];
   systemContent: string;
   taskContent: string;
-  projected: Array<[Record<string, unknown>, Record<string, unknown>]>;
+  projected: RunMessage[];
   throughSeq: number;
   systemPromptHash: string;
   taskPromptHash: string;
@@ -78,7 +81,7 @@ export type NewScheduleRun = {
   configSnapshot: Run["config_snapshot"];
   systemContent: string;
   taskContent: string;
-  projected: Array<[Record<string, unknown>, Record<string, unknown>]>;
+  projected: RunMessage[];
   systemPromptHash: string;
   taskPromptHash: string;
   memoryPromptHash: string;
@@ -94,7 +97,7 @@ export type NewRun = {
   configSnapshot: Run["config_snapshot"];
   systemContent: string;
   taskContent: string;
-  opening: Array<[Record<string, unknown>, Record<string, unknown>]>;
+  opening: RunMessage[];
   systemPromptHash: string;
   taskPromptHash: string;
   memoryPromptHash: string;
@@ -108,8 +111,8 @@ export type NewRun = {
 export type NewMessage = {
   runId: string;
   seq: number;
-  payload: Record<string, unknown>;
-  metadata: Record<string, unknown>;
+  payload: MessagePayload;
+  metadata: MessageMetadata;
 };
 
 type RoutineRunStatsQueryRow = RunHeaderRow & {
@@ -220,11 +223,11 @@ export async function getRun(pool: Queryable, runId: string): Promise<RunRow | n
 }
 
 export async function insertRun(pool: Queryable, run: NewRun, now: Date): Promise<void> {
-  const systemMetadata: Record<string, unknown> = { source: "system" };
+  const systemMetadata: MessageMetadata = { source: "system" };
   if (run.runMetadata?.task_source) {
     systemMetadata.task_source = run.runMetadata.task_source;
   }
-  const rows: Array<[Record<string, unknown>, Record<string, unknown>]> = [
+  const rows: RunMessage[] = [
     [{ role: "system", content: run.systemContent }, systemMetadata],
     ...run.opening,
   ];
@@ -412,7 +415,7 @@ export async function getToolResultMetadata(
   pool: Queryable,
   runId: string,
   toolCallId: string,
-): Promise<Record<string, unknown> | null> {
+): Promise<MessageMetadata | null> {
   const result = await pool.query<Pick<MessageRow, "metadata">>(
     `SELECT metadata FROM messages
      WHERE run_id = $1 AND payload->>'role' = 'tool' AND metadata->>'tool_call_id' = $2
@@ -422,10 +425,7 @@ export async function getToolResultMetadata(
   return result.rows[0]?.metadata ?? null;
 }
 
-export async function listPayloads(
-  pool: Queryable,
-  runId: string,
-): Promise<Array<Record<string, unknown>>> {
+export async function listPayloads(pool: Queryable, runId: string): Promise<MessagePayload[]> {
   return (await listMessages(pool, runId)).map((row) => row.payload);
 }
 

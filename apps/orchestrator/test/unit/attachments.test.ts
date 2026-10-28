@@ -54,9 +54,9 @@ test("hydrateMessages turns stored refs into image_url parts without writing byt
   await store.put("org_1/att_1", PNG, "image/png");
   const rows = [
     {
-      payload: { role: "user", content: "look" },
+      payload: { role: "user" as const, content: "look" },
       metadata: {
-        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }],
+        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const }],
       },
     },
   ];
@@ -83,9 +83,9 @@ test("hydrateMessages inlines images when the provider refuses public URLs", asy
   };
   const rows = [
     {
-      payload: { role: "user", content: "look" },
+      payload: { role: "user" as const, content: "look" },
       metadata: {
-        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }],
+        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const }],
       },
     },
   ];
@@ -102,9 +102,9 @@ test("hydrateMessages inlines images when the provider refuses public URLs", asy
 test("countRunInputTokens adds a flat image cost and does not encode a data URL", () => {
   const rows = [
     {
-      payload: { role: "user", content: "look" },
+      payload: { role: "user" as const, content: "look" },
       metadata: {
-        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" }],
+        attachments: [{ id: "att_1", filename: "shot.png", mime: "image/png", kind: "image" as const }],
       },
     },
   ];

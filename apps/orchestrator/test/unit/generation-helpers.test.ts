@@ -13,7 +13,7 @@ import { mcpRedactions } from "../../src/generation/run-secrets.js";
 import { workspaceMaxMib } from "../../src/generation/workspace.js";
 import { offeredToolNames } from "../../src/toolbox/offered.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
-import { AGENT_CONFIG, runSnapshot } from "../helpers/generation.js";
+import { AGENT_CONFIG, runSnapshot, toolCall } from "../helpers/generation.js";
 
 test("workspaceMaxMib uses a positive integer env value and otherwise the default", () => {
   assert.equal(workspaceMaxMib({ WORKSPACE_MAX_MIB: "512" }), 512);
@@ -34,12 +34,8 @@ test("pendingToolCalls ignores assistant calls without ids and keeps first-seen 
     {
       payload: {
         role: "assistant",
-        tool_calls: [
-          { function: { name: "note_find" } },
-          { id: "", function: { name: "note_get" } },
-          { id: "call_b", function: { name: "note_write" } },
-          { id: "call_a", function: { name: "note_find" } },
-        ],
+        content: "",
+        tool_calls: [toolCall("", "note_get"), toolCall("call_b", "note_write"), toolCall("call_a", "note_find")],
       },
       metadata: { generation: 2 },
     },
@@ -55,7 +51,8 @@ test("pendingToolCalls leaves unmatched tool rows out of the pending map", () =>
     {
       payload: {
         role: "assistant",
-        tool_calls: [{ id: "call_1", function: { name: "note_find" } }],
+        content: "",
+        tool_calls: [toolCall("call_1", "note_find")],
       },
       metadata: { generation: 1 },
     },
@@ -68,20 +65,17 @@ test("pendingToolCalls leaves unmatched tool rows out of the pending map", () =>
 test("executedToolCalls counts tool role rows only", () => {
   assert.equal(
     executedToolCalls([
-      { payload: { role: "assistant" } },
-      { payload: { role: "tool" } },
-      { payload: { role: "tool" } },
-      { payload: { role: "user" } },
+      { payload: { role: "assistant", content: "" } },
+      { payload: { role: "tool", tool_call_id: "call_1", content: "" } },
+      { payload: { role: "tool", tool_call_id: "call_2", content: "" } },
+      { payload: { role: "user", content: "" } },
     ]),
     2,
   );
 });
 
 test("interruptionRecord writes interrupted content and exit_code for shell", () => {
-  const [payload, metadata] = interruptionRecord(
-    { id: "call_1", function: { name: "shell" } },
-    4,
-  );
+  const [payload, metadata] = interruptionRecord(toolCall("call_1", "shell"), 4);
   assert.equal(payload.content, INTERRUPTED_CONTENT);
   assert.equal(payload.tool_call_id, "call_1");
   assert.equal(metadata.tool_name, "shell");
@@ -90,7 +84,7 @@ test("interruptionRecord writes interrupted content and exit_code for shell", ()
 });
 
 test("interruptionRecord omits exit_code for non-shell tools", () => {
-  const [, metadata] = interruptionRecord({ id: "call_2", function: { name: "note_find" } }, 1);
+  const [, metadata] = interruptionRecord(toolCall("call_2", "note_find"), 1);
   assert.equal(metadata.tool_name, "note_find");
   assert.equal("exit_code" in metadata, false);
 });

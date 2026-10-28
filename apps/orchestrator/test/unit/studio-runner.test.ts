@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseToolArgs, projectConversationHistory, recoverPartialToolArgs } from "../../src/conversation/runner.js";
-import { TOOL_RESULT_STUB_MIN_BYTES } from "../../src/conversation/projection.js";
+import { TOOL_RESULT_STUB_MIN_BYTES, type ProjectedRow } from "../../src/conversation/projection.js";
+import type { MessagePayload, ToolCall } from "../../src/db/schema/index.js";
 import { STUDIO_TOOL_RESULT_STUB_HINT } from "../../src/studio/constants.js";
 
 const large = (text: string) => `${text}${" ".repeat(TOOL_RESULT_STUB_MIN_BYTES)}`;
@@ -9,10 +10,14 @@ const large = (text: string) => `${text}${" ".repeat(TOOL_RESULT_STUB_MIN_BYTES)
 function row(
   seq: number,
   generation: number,
-  payload: Record<string, unknown>,
-  metadata: Record<string, unknown> = {},
-): Record<string, unknown> {
+  payload: MessagePayload,
+  metadata: ProjectedRow["metadata"] = {},
+): ProjectedRow {
   return { seq, generation, payload, metadata };
+}
+
+function call(id: string): ToolCall {
+  return { id, type: "function", function: { name: "studio_get_agent_context", arguments: "{}" } };
 }
 
 test("projection keeps current-generation tool results including standing tasks", () => {
@@ -21,15 +26,15 @@ test("projection keeps current-generation tool results including standing tasks"
     history: [
       row(0, 0, { role: "system", content: "studio" }),
       row(1, 1, { role: "user", content: "Review this guild" }),
-      row(2, 1, { role: "assistant", content: "", tool_calls: [{ id: "c1" }] }),
+      row(2, 1, { role: "assistant", content: "", tool_calls: [call("c1")] }),
       row(3, 1, { role: "tool", tool_call_id: "c1", content: '{"task":{"content":"Write the digest."}}' }, { tool_name: "studio_get_agent_context" }),
-      row(4, 1, { role: "assistant", content: "", tool_calls: [{ id: "c2" }] }),
+      row(4, 1, { role: "assistant", content: "", tool_calls: [call("c2")] }),
       row(5, 1, { role: "tool", tool_call_id: "c2", content: '{"task":{"content":"Scout listings."}}' }, { tool_name: "studio_get_agent_context" }),
-      row(6, 1, { role: "assistant", content: "", tool_calls: [{ id: "c3" }] }),
+      row(6, 1, { role: "assistant", content: "", tool_calls: [call("c3")] }),
       row(7, 1, { role: "tool", tool_call_id: "c3", content: '{"task":{"content":"Post the brief."}}' }, { tool_name: "studio_get_agent_context" }),
-      row(8, 1, { role: "assistant", content: "", tool_calls: [{ id: "c4" }] }),
+      row(8, 1, { role: "assistant", content: "", tool_calls: [call("c4")] }),
       row(9, 1, { role: "tool", tool_call_id: "c4", content: '{"task":{"content":"Manage the wallet."}}' }, { tool_name: "studio_get_agent_context" }),
-      row(10, 1, { role: "assistant", content: "", tool_calls: [{ id: "c5" }] }),
+      row(10, 1, { role: "assistant", content: "", tool_calls: [call("c5")] }),
       row(11, 1, { role: "tool", tool_call_id: "c5", content: '{"task":{"content":"Track the fund."}}' }, { tool_name: "studio_get_agent_context" }),
     ],
     generationContext: "roster",

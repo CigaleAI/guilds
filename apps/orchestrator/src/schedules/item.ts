@@ -1,3 +1,4 @@
+import type { UserMessage } from "../db/schema/index.js";
 import type { AgentScheduleRow, ScheduleDefinition, ScheduleRow, ScheduleTiming } from "../db/schedules.js";
 import { iso, isoOrNull } from "../db/views.js";
 import { promptHash } from "../prompts/index.js";
@@ -74,7 +75,7 @@ export function scheduleWakeUserMessage(row: {
   timing: ScheduleTiming;
   instruction: string;
   previousRunAt: string | null;
-}): [{ role: string; content: string }, ScheduleWakeMetadata] {
+}): [UserMessage, ScheduleWakeMetadata] {
   const info = {
     id: row.id,
     ...(row.timing.cron ? { cron: row.timing.cron } : { window: row.timing.window }),

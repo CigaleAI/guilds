@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { ToolCall } from "../../src/db/schema/index.js";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
@@ -181,7 +182,7 @@ test("storeAgentSecret validates its input and stops at the per-agent cap", asyn
   await storeAgentSecret(db as never, AGENT, { name: "KEY_0", description: "rotating is not a new secret", value: "y" });
 });
 
-function call(name: string, args: Record<string, unknown>): Record<string, unknown> {
+function call(name: string, args: Record<string, unknown>): ToolCall {
   return { id: `call_${name}`, type: "function", function: { name, arguments: JSON.stringify(args) } };
 }
 

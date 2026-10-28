@@ -6,7 +6,8 @@ export {
   SIGNED_URL_TTL_MS,
   objectKey,
 } from "./types.js";
-export type { AttachmentKind, AttachmentRef, AttachmentRow } from "./types.js";
+export type { AttachmentRow } from "./types.js";
+export type { AttachmentKind, AttachmentRef } from "../db/schema/index.js";
 export { sniffImage, sanitizeFilename } from "./sniff.js";
 export { AttachmentService, attachmentPayload, attachmentDisposition, inlineDisposition } from "./store.js";
 export type { AttachmentDatabase } from "./store.js";

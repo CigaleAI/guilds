@@ -3,7 +3,7 @@ import { secretAliasesOf } from "../agents/validation.js";
 import type { AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
-import { HARNESSES, type Harness, type HarnessLogins, type RunRepositoryChange } from "../db/schema/index.js";
+import { HARNESSES, type Harness, type HarnessLogins, type MessageMetadata, type RunRepositoryChange } from "../db/schema/index.js";
 import type { CodingRuns } from "../generation/coding.js";
 import { RunRequestError } from "../generation/errors.js";
 import { harnessEffortOf } from "./harness-models.js";
@@ -33,19 +33,19 @@ function codingOf(services: RunReviewServices): NonNullable<RunReviewServices["c
 }
 
 /** The repository a `code_task` result's diff is in, or null when the result has no end checkpoint. */
-function taskDiffRepository(metadata: Item | null): string | null {
-  const repository = metadata?.tool_name === "code_task" ? metadata.repository : null;
-  return typeof repository === "string" && repository && typeof metadata?.end_sha === "string"
-    ? repository
-    : null;
+function taskDiffRepository(metadata: MessageMetadata | null): string | null {
+  if (metadata?.tool_name !== "code_task" || !metadata.end_sha) {
+    return null;
+  }
+  return metadata.repository || null;
 }
 
 /** The harness a `code_task` call ran on, when its result names one and the log it kept. */
-function taskLogHarness(metadata: Item | null): Harness | null {
-  const harness = metadata?.tool_name === "code_task" ? metadata.harness : null;
-  return isHarness(harness) && typeof metadata?.log_path === "string" && metadata.log_path
-    ? harness
-    : null;
+function taskLogHarness(metadata: MessageMetadata | null): Harness | null {
+  if (metadata?.tool_name !== "code_task" || !metadata.log_path) {
+    return null;
+  }
+  return metadata.harness ?? null;
 }
 
 /** The repositories a run changed, as its metadata lists them. */

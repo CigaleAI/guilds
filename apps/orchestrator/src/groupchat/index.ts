@@ -22,8 +22,8 @@ import { advanceGroupCursor,
   updateGroupAgentMessageLimit, type GroupChatStateRow, type GroupMessageRow, type PendingGroupAgentRow } from "../db/group-chat.js";
 import { getGuild, listGuilds } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
-import { getRun } from "../db/runs.js";
-import type { RecipientRouting } from "../db/schema/index.js";
+import { getRun, type RunMessage } from "../db/runs.js";
+import type { RecipientRouting, UserMessage } from "../db/schema/index.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 
 export {
@@ -249,10 +249,10 @@ function viewerWasTagged(
 
 export function groupChatUserMessage(args: {
   members: Array<Record<string, unknown>>;
-  rows: Array<Record<string, unknown>>;
+  rows: GroupMessageRow[];
   viewerName?: string;
   deliveredThrough?: number;
-}): [Record<string, unknown>, Record<string, unknown>] {
+}): RunMessage {
   const viewerName = args.viewerName ?? "";
   const deliveredThrough = args.deliveredThrough ?? 0;
   const history = groupChatHistory(args.rows);
@@ -261,24 +261,27 @@ export function groupChatUserMessage(args: {
     latestMessage: latest,
     youWereTagged: viewerWasTagged(args.rows, viewerName, deliveredThrough),
   };
-  const payload = {
+  const payload: UserMessage = {
     role: "user",
     content: `Group Chat info: ${JSON.stringify(info, null, 2)}`,
   };
-  const metadata: Record<string, unknown> = { source: "group_chat" };
-  if (args.rows.length) {
-    const last = args.rows[args.rows.length - 1] as Record<string, unknown>;
-    metadata.group_message_id = last.id;
-    metadata.group_seq = last.seq;
-    metadata.author_type = last.author_type;
-    metadata.author_name = last.author_name;
-    metadata.tagged = latest ? latest.tagged : [];
-    metadata.you_were_tagged = info.youWereTagged;
-    metadata.recipients = [
-      ...recipientNamesAfter(args.rows, args.members, deliveredThrough),
-    ].sort();
+  const last = args.rows.at(-1);
+  if (last === undefined) {
+    return [payload, { source: "group_chat" }];
   }
-  return [payload, metadata];
+  return [
+    payload,
+    {
+      source: "group_chat",
+      group_message_id: last.id,
+      group_seq: last.seq,
+      author_type: last.author_type,
+      author_name: last.author_name,
+      tagged: latest ? latest.tagged : [],
+      you_were_tagged: info.youWereTagged,
+      recipients: [...recipientNamesAfter(args.rows, args.members, deliveredThrough)].sort(),
+    },
+  ];
 }
 
 /** The db/ functions a guild's group chat is read and written through, on `db`. */

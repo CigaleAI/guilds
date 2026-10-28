@@ -757,7 +757,6 @@ async function finishHarnessTurn(ctx: ToolContext, turn: HarnessTurn, ending: Tu
     session_id: outcome.session_id,
     repository: turn.repository,
     exit_code: exitCode,
-    duration_ms: outcome.duration_ms,
     files_changed: outcome.files_changed,
     insertions: outcome.insertions,
     deletions: outcome.deletions,

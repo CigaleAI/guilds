@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { MessageMetadata, ToolCall } from "../../src/db/schema/index.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -15,6 +16,7 @@ import {
   CODING_TOOLS,
   INLINE_REQUEST_MAX,
   repeatedReadStep,
+  type ReadRow,
   repeatedReadText,
 } from "../../src/toolbox/code.js";
 import { REGISTRY } from "../../src/toolbox/index.js";
@@ -80,7 +82,7 @@ async function call(
   callCount += 1;
   const [payload, metadata] = await invokeTool(
     ctxFor(sandbox, runId),
-    { id: `call_${callCount}`, function: { name, arguments: JSON.stringify(args) } },
+    { id: `call_${callCount}`, type: "function", function: { name, arguments: JSON.stringify(args) } },
     { TOKEN: "s3cr3t-value" },
     32768,
   );
@@ -227,11 +229,11 @@ test("a read of a range already held, unchanged, points at the earlier step", ()
   const earlier = {
     seq: 7,
     metadata: { tool_name: "file_read", path: "/home/a_1/a.ts", range: [1, 200], content_hash: "h1", error: null },
-  };
-  const again = { tool_name: "file_read", path: "/home/a_1/a.ts", range: [10, 50], content_hash: "h1", error: null };
+  } satisfies ReadRow;
+  const again: MessageMetadata = { tool_name: "file_read", path: "/home/a_1/a.ts", range: [10, 50], content_hash: "h1", error: null };
   assert.equal(repeatedReadStep([earlier], again), 7);
   assert.equal(repeatedReadStep([earlier], { ...again, content_hash: "h2" }), null);
-  assert.equal(repeatedReadStep([earlier], { ...again, range: [150, 250] }), null);
+  assert.equal(repeatedReadStep([earlier], { ...again, range: [150, 250] as [number, number] }), null);
   assert.equal(repeatedReadStep([earlier], { ...again, path: "/home/a_1/b.ts" }), null);
   const pointer = { seq: 9, metadata: { ...again, repeat_of: 7 } };
   assert.equal(repeatedReadStep([pointer], again), null);
@@ -322,11 +324,11 @@ describe("coding runs in the generation loop", () => {
     return configSnapshot(CODER, { tools: [], secrets: [], mcp: [] }, "schedule");
   }
 
-  function scripted(db: FakeDB, turns: Array<Array<Record<string, unknown>>>) {
+  function scripted(db: FakeDB, turns: ToolCall[][]) {
     return async function* stream(options: { messages: Array<Record<string, unknown>> }) {
       db.llm_histories.push([...options.messages]);
       const calls = turns[db.llm_histories.length - 1];
-      const payload = calls ? { role: "assistant", content: null, tool_calls: calls } : { role: "assistant", content: "done" };
+      const payload = calls ? { role: "assistant" as const, content: "", tool_calls: calls } : { role: "assistant" as const, content: "done" };
       const completion: Completion = {
         payload,
         metadata: {
@@ -337,6 +339,7 @@ describe("coding runs in the generation loop", () => {
           response_id: "c1",
           provider_request_id: null,
           cost_usd: 0,
+          cost_source: "catalog" as const,
         },
       };
       yield ["done", completion] as ["done", Completion];
@@ -360,10 +363,10 @@ describe("coding runs in the generation loop", () => {
     writeFileSync(path.join(sandbox.home, "repo/a.txt"), "one\ntwo\nthree\n");
     const db = withRepositories(new FakeDB(codingSnapshot()), ["shop", "admin"]);
     db.agent.config = { ...CODER };
-    const read = (id: string) => ({ id, function: { name: "file_read", arguments: '{"path":"repo/a.txt"}' } });
+    const read = (id: string) => ({ id, type: "function" as const, function: { name: "file_read", arguments: '{"path":"repo/a.txt"}' } });
     live.streamCompletion = scripted(db, [
       [read("c1"), read("c2")],
-      [{ id: "c3", function: { name: "shell", arguments: '{"command":"printf \'one\\\\n2\\\\nthree\\\\n\' > repo/a.txt"}' } }],
+      [{ id: "c3", type: "function" as const, function: { name: "shell", arguments: '{"command":"printf \'one\\\\n2\\\\nthree\\\\n\' > repo/a.txt"}' } }],
       [read("c4")],
     ]) as typeof live.streamCompletion;
     const { sandboxes, machines } = codingSandboxes(sandbox);
@@ -467,6 +470,7 @@ describe("coding runs in the generation loop", () => {
       [
         {
           id: "c1",
+          type: "function" as const,
           function: {
             name: "shell",
             arguments: JSON.stringify({
@@ -601,11 +605,11 @@ describe("repositories in a coding generation", () => {
     return bare;
   }
 
-  function scripted(db: FakeDB, turns: Array<Array<Record<string, unknown>>>) {
+  function scripted(db: FakeDB, turns: ToolCall[][]) {
     return async function* stream(options: { messages: Array<Record<string, unknown>> }) {
       db.llm_histories.push([...options.messages]);
       const calls = turns.shift();
-      const payload = calls ? { role: "assistant", content: null, tool_calls: calls } : { role: "assistant", content: "done" };
+      const payload = calls ? { role: "assistant" as const, content: "", tool_calls: calls } : { role: "assistant" as const, content: "done" };
       yield [
         "done",
         {
@@ -618,6 +622,7 @@ describe("repositories in a coding generation", () => {
             response_id: "c1",
             provider_request_id: null,
             cost_usd: 0,
+            cost_source: "catalog" as const,
           },
         } as Completion,
       ] as ["done", Completion];
@@ -641,6 +646,7 @@ describe("repositories in a coding generation", () => {
     const { sandbox, db, loop } = setup(`file://${origin()}`);
     const edit = (id: string, text: string) => ({
       id,
+      type: "function" as const,
       function: { name: "shell", arguments: JSON.stringify({ command: `echo ${text} >> README.md && pwd` }) },
     });
     live.streamCompletion = scripted(db, [[edit("c1", "one")]]) as typeof live.streamCompletion;

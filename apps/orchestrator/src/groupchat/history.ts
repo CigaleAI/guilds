@@ -24,10 +24,7 @@ function historyItem(row: Record<string, unknown>): {
   };
 }
 
-export function recentGroupRows(
-  rows: Array<Record<string, unknown>>,
-  limit = CONTEXT_HISTORY_LIMIT,
-): Array<Record<string, unknown>> {
+export function recentGroupRows<R>(rows: R[], limit = CONTEXT_HISTORY_LIMIT): R[] {
   if (limit < 1) {
     return [];
   }

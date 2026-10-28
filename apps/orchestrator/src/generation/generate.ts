@@ -82,7 +82,7 @@ function completesItself(run: RunRow): boolean {
 /** The instruction the run's schedule wake-up message carries; empty when it carries none. */
 function scheduleInstructionOf(rows: MessageRow[]): string {
   const raw = rows.find((row) => row.metadata.source === "schedule")?.payload.content;
-  if (typeof raw !== "string" || !raw.startsWith(SCHEDULE_WAKE_PREFIX)) {
+  if (raw === undefined || !raw.startsWith(SCHEDULE_WAKE_PREFIX)) {
     return "";
   }
   const text = raw.slice(SCHEDULE_WAKE_PREFIX.length);
@@ -96,8 +96,8 @@ function scheduleInstructionOf(rows: MessageRow[]): string {
 
 /** The names the group message that woke the run tags. */
 function groupTagsOf(rows: MessageRow[]): string[] {
-  const tagged = rows.find((row) => row.metadata.source === "group_chat")?.metadata.tagged;
-  return Array.isArray(tagged) ? tagged.filter((item) => item).map((item) => String(item)) : [];
+  const tagged = rows.find((row) => row.metadata.source === "group_chat")?.metadata.tagged ?? [];
+  return tagged.filter((item) => item);
 }
 
 /** The db/ functions a generation reads its run and keeps its progress through, on `db`. */

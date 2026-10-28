@@ -14,9 +14,12 @@ import {
   listRunGroupPosts,
   listRunOpenings,
   type GuildActivityRunRow,
+  type RunActivityStepRow,
+  type RunGroupDeliveryRow,
 } from "../db/activity.js";
 import type { RunError, RunMetadata } from "../db/schema/index.js";
 import { listSchedulesForGuild } from "../db/schedules.js";
+import type { MessageMetadata } from "../db/schema/index.js";
 import { listGroupMessagesForActivity } from "../db/group-chat.js";
 import type { Queryable } from "../db/pg.js";
 
@@ -158,10 +161,10 @@ export type ActivityInput = {
   agents: Array<Record<string, unknown>>;
   runs: GuildActivityRunRow[];
   stats: Array<Record<string, unknown>>;
-  deliveries: Array<Record<string, unknown>>;
+  deliveries: RunGroupDeliveryRow[];
   posts: Array<Record<string, unknown>>;
   changes: Array<Record<string, unknown>>;
-  steps: Array<Record<string, unknown>>;
+  steps: RunActivityStepRow[];
   openings: Array<Record<string, unknown>>;
   messages: Array<Record<string, unknown>>;
   schedules: ScheduleRow[];
@@ -200,11 +203,6 @@ function num(value: unknown): number | null {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function obj(value: unknown): Record<string, unknown> {
-  const parsed = jsonObj(value);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
 }
 
 function list(value: unknown): unknown[] {
@@ -316,7 +314,7 @@ function inferWakeSeq(
 function messageTrigger(
   run: GuildActivityRunRow,
   agentName: string,
-  delivery: Record<string, unknown>,
+  delivery: MessageMetadata,
   messagesBySeq: Map<number, Record<string, unknown>>,
 ): ActivityTrigger {
   const routing = routingOf(run.metadata);
@@ -341,9 +339,9 @@ function errorsOf(errors: RunError[], sinceMs: number): ActivityError[] {
 type WakeSteps = { calls: ActivityToolCall[]; count: number; reply: string | null };
 
 // Each run's tool calls in order, paired with their results, and its last text.
-function stepsByRun(rows: Array<Record<string, unknown>>): Map<string, WakeSteps> {
-  const resultKey = (runId: unknown, callId: unknown) => `${String(runId)}\u0000${String(callId)}`;
-  const results = new Map<string, Record<string, unknown>>();
+function stepsByRun(rows: RunActivityStepRow[]): Map<string, WakeSteps> {
+  const resultKey = (runId: string, callId: string) => `${runId}\u0000${callId}`;
+  const results = new Map<string, RunActivityStepRow>();
   for (const row of rows) {
     if (row.role === "tool" && row.tool_call_id) {
       results.set(resultKey(row.run_id, row.tool_call_id), row);
@@ -354,28 +352,24 @@ function stepsByRun(rows: Array<Record<string, unknown>>): Map<string, WakeSteps
     if (row.role !== "assistant") {
       continue;
     }
-    const runId = String(row.run_id);
+    const runId = row.run_id;
     const steps = byRun.get(runId) ?? { calls: [], count: 0, reply: null };
-    for (const entry of list(row.tool_calls)) {
-      const call = obj(entry);
-      const fn = obj(call.function);
-      const callId = text(call.id);
+    for (const call of row.tool_calls ?? []) {
       steps.count += 1;
       if (steps.calls.length >= ACTIVITY_TOOL_CALLS_MAX) {
         continue;
       }
-      const result = callId ? results.get(resultKey(runId, callId)) : undefined;
-      const args = typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments ?? {});
+      const result = call.id ? results.get(resultKey(runId, call.id)) : undefined;
       steps.calls.push({
-        call_id: callId,
-        name: String(fn.name ?? ""),
-        arguments: preview(args, ACTIVITY_ARGUMENT_CHARS),
-        error: text(result?.error),
+        call_id: call.id || null,
+        name: call.function.name,
+        arguments: preview(call.function.arguments, ACTIVITY_ARGUMENT_CHARS),
+        error: result?.error || null,
         duration_ms: num(result?.duration_ms),
         at: iso(row.created_at),
       });
     }
-    const said = typeof row.text === "string" ? row.text.trim() : "";
+    const said = row.text?.trim() ?? "";
     if (said) {
       steps.reply = preview(said, ACTIVITY_PREVIEW_CHARS);
     }
@@ -389,7 +383,7 @@ export function projectActivity(input: ActivityInput): ActivityView {
   const nowIso = input.now.toISOString();
   const agentsById = new Map(input.agents.map((agent) => [String(agent.id), agent]));
   const statsByRun = new Map(input.stats.map((row) => [String(row.run_id), row]));
-  const deliveryByRun = new Map(input.deliveries.map((row) => [String(row.run_id), obj(row.metadata)]));
+  const deliveryByRun = new Map(input.deliveries.map((row) => [row.run_id, row.metadata]));
   const messagesBySeq = new Map<number, Record<string, unknown>>();
   for (const message of input.messages) {
     const seq = num(message.seq);

@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
-import type { Harness, Effort, RunHarnessTask } from "../db/schema/index.js";
+import type { Harness, Effort, ReportedToolMetadata, RunHarnessTask } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
@@ -152,7 +152,7 @@ export type ToolContext = {
   /** The provider id of the call being invoked. */
   tool_call_id: string;
   /** Fields a handler reports for the call's metadata row (exit code, path, line counts). */
-  tool_metadata: Record<string, unknown> | null;
+  tool_metadata: ReportedToolMetadata | null;
   /** The agent's home in its machine, where its commands run: `/home/<agent id>`. */
   agent_home: string;
   /** Chrome's DevTools port for the agent's browser, from its slot; null without one. */
