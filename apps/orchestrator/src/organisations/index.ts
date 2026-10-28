@@ -1,4 +1,5 @@
 import { NAME_RE } from "../lib/names.js";
+import type { OrgMemberRow, OrgRow } from "../db/orgs.js";
 import { iso } from "../db/views.js";
 
 export const ORG_HEADER = "X-Guilds-Org";
@@ -88,38 +89,40 @@ export function canManageSettings(role: string): boolean {
   return role === "owner" || role === "admin";
 }
 
-function rowGet(row: Record<string, unknown>, key: string): unknown {
-  return Object.prototype.hasOwnProperty.call(row, key) ? row[key] : undefined;
-}
+/** An organisation as the API shows it: with the reader's role when the row carries one. */
+export type OrgItem = {
+  id: string;
+  name: string;
+  slug: string;
+  created_at: string;
+  updated_at: string;
+  role?: string;
+};
 
-export function orgItem(row: Record<string, unknown>): Record<string, unknown> {
-  const item: Record<string, unknown> = {
+export function orgItem(row: OrgRow & { role?: string }): OrgItem {
+  return {
     id: row.id,
     name: row.name,
     slug: row.slug,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
+    ...(row.role ? { role: row.role } : {}),
   };
-  const role = rowGet(row, "role");
-  if (role !== undefined && role !== null) {
-    item.role = role;
-  }
-  return item;
 }
 
-export function memberItem(row: Record<string, unknown>): {
-  user_id: unknown;
-  name: unknown;
-  image: unknown;
-  color: unknown;
-  role: unknown;
+export function memberItem(row: OrgMemberRow): {
+  user_id: string;
+  name: string;
+  image: string | null;
+  color: string | null;
+  role: string;
   created_at: string;
 } {
   return {
     user_id: row.user_id,
     name: row.name,
-    image: rowGet(row, "image") ?? null,
-    color: rowGet(row, "color") ?? null,
+    image: row.image,
+    color: row.color,
     role: row.role,
     created_at: iso(row.created_at),
   };

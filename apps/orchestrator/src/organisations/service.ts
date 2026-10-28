@@ -165,7 +165,11 @@ export async function listOrgMembers(db: Queryable, membership: OrgMembershipRow
 
 async function memberOf(db: Queryable, orgId: string, userId: string): Promise<Item> {
   const rows = await listMembers(db, orgId);
-  return memberItem(rows.find((row) => row.user_id === userId) ?? {});
+  const row = rows.find((item) => item.user_id === userId);
+  if (row === undefined) {
+    throw new OrgError(404, "member not found");
+  }
+  return memberItem(row);
 }
 
 /** Adds a user to the organisation with `role`; only an owner adds an owner, and an admin anyone else. */
