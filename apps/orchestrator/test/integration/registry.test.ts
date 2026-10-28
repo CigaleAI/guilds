@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
+import { builderValidateRecipe } from "../../src/builder/tools.js";
+import { CapabilityService } from "../../src/capabilities/index.js";
 import { connectorCommand } from "../../src/cli/connector.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { connect } from "../../src/seed/connect.js";
@@ -179,6 +181,24 @@ test("the CLI, the admin routes, recipe import, and apply preview read the regis
         const codes = (preview.json().findings as Array<{ code: string }>).map((item) => item.code);
         assert.ok(codes.includes(expected.from === "registry" ? "server.registry" : "server.organisation"));
       }
+
+      // The coach's validate tool names the registry's offer for a connector the box lacks, as the library's Validate does.
+      const drafted = await app.inject({ method: "POST", url: "/api/recipes/import", headers: AUTH, payload: { recipe: missing } });
+      const coached = await builderValidateRecipe.handler({
+        orgId: "org_home",
+        capabilities: new CapabilityService(db),
+        recipeId: String(drafted.json().id),
+        connection: db,
+        apply,
+      });
+      assert.ok("findings" in coached);
+      assert.ok(coached.findings.some((item) => item.code === "server.registry"));
+      const validated = await app.inject({
+        method: "POST",
+        url: `/api/recipes/${String(drafted.json().id)}/validate`,
+        headers: AUTH,
+      });
+      assert.deepEqual(coached.findings, validated.json().findings);
     } finally {
       await app.close();
     }

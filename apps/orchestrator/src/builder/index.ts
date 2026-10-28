@@ -23,13 +23,20 @@ import { OPEN_POLICY, claimCoachRun, coachRunClaims, type OrgPolicy } from "../p
 import { ConversationRunner } from "../conversation/runner.js";
 import type { CapabilityService } from "../capabilities/index.js";
 import { assignGuildLooks } from "../avatars/looks.js";
-import { applyAccessEdits, operatorAccessCuts, parseAccessEdits } from "../recipes/access-edits.js";
+import { applyAccessEdits, parseAccessEdits } from "../recipes/access-edits.js";
 import { emptyRecipe } from "../recipes/minimal.js";
-import { addRecipeDraft, linkRecipeToBuilder, markRecipeReady, writeRecipe } from "../recipes/library.js";
+import {
+  addRecipeDraft,
+  linkRecipeToBuilder,
+  markRecipeReady,
+  validateLibraryRecipe,
+  writeRecipe,
+  type RecipeValidation,
+} from "../recipes/library.js";
 import { getRecipe, type RecipeRow } from "../db/recipes.js";
 import { validationContext, type ApplyChoices, type RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";
-import { applyReview, unreviewedFields, type ReviewAction } from "../recipes/review.js";
+import { applyReview, type ReviewAction } from "../recipes/review.js";
 import { createSkeleton } from "../recipes/skeleton.js";
 import { blockingErrors, validateRecipe } from "../recipes/validate.js";
 import {
@@ -250,7 +257,7 @@ export class BuilderService {
       recipeId: String(session.recipe_id),
       connection: this.deps.db,
       coachModel: session.config_snapshot.model,
-      validationContext: () => validationContext(this.deps.apply, session.org_id),
+      apply: this.deps.apply,
     };
   }
 
@@ -411,20 +418,8 @@ export class BuilderService {
     return { ...written, access_cuts: cuts };
   }
 
-  async validate(session: BuilderSessionRow): Promise<Record<string, unknown>> {
-    const row = await this.recipeFor(session);
-    const recipe = row.body;
-    const ctx = await validationContext(this.deps.apply, session.org_id);
-    ctx.groupLimit = recipe.guild.group_agent_message_limit;
-    const findings = validateRecipe(recipe, ctx);
-    return {
-      findings,
-      errors: blockingErrors(findings),
-      unreviewed: unreviewedFields(recipe),
-      access_cuts: operatorAccessCuts(recipe),
-      body_version: row.body_version,
-      status: row.status,
-    };
+  async validate(session: BuilderSessionRow): Promise<RecipeValidation> {
+    return validateLibraryRecipe(this.deps.apply, await this.recipeFor(session));
   }
 
   async publish(session: BuilderSessionRow): Promise<Record<string, unknown>> {

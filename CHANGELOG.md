@@ -8,6 +8,13 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** The Builder's Validate and the coach's
+`builder_validate_recipe` find what the library's Validate finds. A
+connector the box lacks that the registry offers is named with the
+registry's version, where both said `unknown or unpublished
+connector`. The coach's tool checks a tagged handoff's budget against
+the recipe's `group_agent_message_limit`, where it checked it against 20.
+
 **No impact.** Creating an agent in a guild at its agent limit answers
 409 with `this guild is limited to N agents`, where it answered 500.
 

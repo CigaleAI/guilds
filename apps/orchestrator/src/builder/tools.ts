@@ -1,6 +1,5 @@
 import { assignGuildLooks } from "../avatars/looks.js";
-import { operatorAccessCuts } from "../recipes/access-edits.js";
-import type { ValidationContext } from "../recipes/findings.js";
+import type { RecipeApply } from "../recipes/apply.js";
 import { parseRecipe } from "../recipes/parse.js";
 import { stampBuilderWrite } from "../recipes/review.js";
 import { RECIPE_WRITE_HINT } from "./constants.js";
@@ -21,8 +20,7 @@ import type { RecipeDocument } from "../recipes/schema.js";
 import { RecipeConflictError, RecipeError } from "../recipes/errors.js";
 import type { Queryable } from "../db/pg.js";
 import { getRecipe } from "../db/recipes.js";
-import { writeRecipe } from "../recipes/library.js";
-import { validateRecipe } from "../recipes/validate.js";
+import { validateLibraryRecipe, writeRecipe } from "../recipes/library.js";
 
 export type BuilderCapabilityContext = {
   orgId: string;
@@ -38,7 +36,8 @@ export type BuilderToolContext = BuilderCapabilityContext & {
   connection: Queryable;
   /** The coach's own model: the recommendation a role without one is written with. */
   coachModel?: string;
-  validationContext: () => Promise<ValidationContext>;
+  /** The services the recipe is validated in its organisation with. */
+  apply: RecipeApply;
   onRecipeChanged?: (recipe: Record<string, unknown>) => Promise<void>;
 };
 
@@ -517,9 +516,8 @@ export const builderValidateRecipe = {
     if (!row) {
       return { error: "recipe not found" };
     }
-    const recipe = row.body;
-    const findings = validateRecipe(recipe, await ctx.validationContext());
-    return { findings, access_cuts: operatorAccessCuts(recipe), body_version: row.body_version };
+    const validation = await validateLibraryRecipe(ctx.apply, row);
+    return { findings: validation.findings, access_cuts: validation.access_cuts, body_version: validation.body_version };
   },
 };
 
