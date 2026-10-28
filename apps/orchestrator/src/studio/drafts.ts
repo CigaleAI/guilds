@@ -363,7 +363,10 @@ export class StudioDrafts implements StudioDraftService {
         priorEffective = promptHash(
           await inlineTaskEmbeds(embedSource(this.artifacts), taskEmbedActor(agent.org_id, agent), liveContent),
         );
-      } catch {
+      } catch (error) {
+        if (!(error instanceof ArtifactError)) {
+          throw error;
+        }
         priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;
       }
     }

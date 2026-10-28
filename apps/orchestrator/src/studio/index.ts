@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "../artifacts/index.js";
 import {
+  ArtifactError,
   collectTaskEmbeds,
   displayPathFor,
   hashArtifactContent,
@@ -592,7 +593,10 @@ export class StudioService {
         task?.content_text ?? "",
       );
     } catch (error) {
-      embedWarning = error instanceof Error ? error.message : "embed preflight failed";
+      if (!(error instanceof ArtifactError)) {
+        throw error;
+      }
+      embedWarning = error.message;
     }
     const sourceHash = task?.content_hash ?? hashArtifactContent("");
     const effectiveHash = promptHash(effectiveTask);

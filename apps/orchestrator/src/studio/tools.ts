@@ -341,7 +341,10 @@ export const studioGetAgentContext: StudioTool = {
       try {
         effectiveTask = await inlineTaskEmbeds(embedSource(ctx.artifacts), taskEmbedActor(ctx.orgId, agent), effectiveTask);
       } catch (error) {
-        embedWarning = error instanceof Error ? error.message : "embed preflight failed";
+        if (!(error instanceof ArtifactError)) {
+          throw error;
+        }
+        embedWarning = error.message;
       }
       const preview = await currentState();
       const tools = await projectOfferedToolSchemas(ctx.preview, agent);

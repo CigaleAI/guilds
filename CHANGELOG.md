@@ -18,6 +18,12 @@ record bodies, studio drafts, recipe bodies and apply previews. A row
 read back is used as stored: a field the type requires and the row
 lacks fails where it is read, where some readers filled it in before.
 
+**No impact.** The Studio inspector, `studio_get_agent_context` and a
+Task draft's preflight show an embed warning, or keep the stored Task
+hash as the prior effective hash, only when the store refuses the
+Task's embeds, such as past the embed budget. A failure to read the
+store fails the request, where it was shown as that warning.
+
 **No impact.** A tool result keeps the metadata fields the app reads
 (`exit_code`, `cwd`, `path`, `range`, `content_hash`, `lines`,
 `log_path`, `timed_out`, `background_id`, `state`, `matches`,
