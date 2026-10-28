@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { writeBinding } from "../../src/access/bindings.js";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { displayPathFor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/paths.js";
@@ -10,7 +11,6 @@ import { runItem } from "../../src/db/views.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import type { RemoteCall } from "../../src/mcp/pool.js";
 import { buildApp } from "../../src/app.js";
-import { changeGuild } from "../../src/guilds/changes.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -57,7 +57,7 @@ import { listConfigChanges } from "../../src/db/config-changes.js";
 import { userActor } from "../../src/lib/change-actor.js";
 import { createToolContext } from "../../src/toolbox/index.js";
 import { scheduleCreateCron, schedulePause } from "../../src/toolbox/schedule.js";
-import { getGuild, insertGuild } from "../../src/db/guilds.js";
+import { getGuild, insertGuild, updateGuild } from "../../src/db/guilds.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
 import { getAgentTask } from "../../src/db/agents.js";
@@ -155,29 +155,18 @@ test("studio sessions, inventory, drafts, and authorization", { timeout: 60_000 
     { guildId: "guild_other", name: "other-guild", orgId: "org_home", about: "" },
     now,
   );
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_studio",
-    guildId: "guild_studio",
-    guildName: "studio-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "writer",
-    focus: "Write notes",
-    config: CONFIG,
+  await addAgent(
+    { db, notes, artifacts },
+    { agent: { agentId: "a_studio", guildId: "guild_studio", name: "writer", config: CONFIG, focus: "Write notes" }, task: "Write notes", placement: {} },
+    systemActor("org_home", { guildId: "guild_studio", agentId: "a_studio" }),
     now,
-    artifacts,
-  });
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_other",
-    guildId: "guild_other",
-    guildName: "other-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "outsider",
-    config: CONFIG,
+  );
+  await addAgent(
+    { db, notes, artifacts },
+    { agent: { agentId: "a_other", guildId: "guild_other", name: "outsider", config: CONFIG }, task: "", placement: {} },
+    systemActor("org_home", { guildId: "guild_other", agentId: "a_other" }),
     now,
-    artifacts,
-  });
+  );
   const teammate = await insertUser(db, { userId: "user_teammate", name: "teammate", image: null, email: "teammate@example.com" }, now);
   await insertMember(db, "org_home", String(teammate.id), "member", now);
 
@@ -431,18 +420,12 @@ test("studio reads agent access, script source, and granted connections", { time
     { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "" },
     now,
   );
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_access",
-    guildId: "guild_access",
-    guildName: "access-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "curator",
-    focus: "Curate the database",
-    config: CONFIG,
+  await addAgent(
+    { db, notes, artifacts },
+    { agent: { agentId: "a_access", guildId: "guild_access", name: "curator", config: CONFIG, focus: "Curate the database" }, task: "Curate the database", placement: {} },
+    systemActor("org_home", { guildId: "guild_access", agentId: "a_access" }),
     now,
-    artifacts,
-  });
+  );
   await scripts.create(
     operatorActor({
       orgId: "org_home",
@@ -709,18 +692,12 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
     { guildId: "guild_ev", name: "evidence-guild", orgId: "org_home", about: "Evidence" },
     now,
   );
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_ev",
-    guildId: "guild_ev",
-    guildName: "evidence-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "curator",
-    focus: "Keep the digest",
-    config: CONFIG,
+  await addAgent(
+    { db, notes, artifacts },
+    { agent: { agentId: "a_ev", guildId: "guild_ev", name: "curator", config: CONFIG, focus: "Keep the digest" }, task: "Keep the digest", placement: {} },
+    systemActor("org_home", { guildId: "guild_ev", agentId: "a_ev" }),
     now,
-    artifacts,
-  });
+  );
   const operator = operatorContext("org_home", "user_operator", "operator", {
     guildId: "guild_ev",
     agentId: "a_ev",
@@ -948,17 +925,12 @@ test("studio inspects the effective prompt, memory timeline, routine runs, file 
       { guildId: "guild_far", name: "far-guild", orgId: "org_home", about: "" },
       now,
     );
-    await persistAgent(agentDatabase(db), notes, {
-      agentId: "a_far",
-      guildId: "guild_far",
-      guildName: "far-guild",
-      orgSlug: "home",
-      orgId: "org_home",
-      name: "stranger",
-      config: CONFIG,
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId: "a_far", guildId: "guild_far", name: "stranger", config: CONFIG }, task: "", placement: {} },
+      systemActor("org_home", { guildId: "guild_far", agentId: "a_far" }),
       now,
-      artifacts,
-    });
+    );
     await createRun(db,
       {
         runId: "r_far",
@@ -1080,18 +1052,12 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     },
     now,
   );
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_ed",
-    guildId: "guild_ed",
-    guildName: "edit-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "curator",
-    focus: "Keep the digest",
-    config: CONFIG,
+  await addAgent(
+    { db, notes, artifacts },
+    { agent: { agentId: "a_ed", guildId: "guild_ed", name: "curator", config: CONFIG, focus: "Keep the digest" }, task: "Keep the digest", placement: {} },
+    systemActor("org_home", { guildId: "guild_ed", agentId: "a_ed" }),
     now,
-    artifacts,
-  });
+  );
   const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_ed", agentId: "a_ed" });
   await writeMemory(artifacts, operator, "a_ed", { content: "- be brief\n- digest in notes\n- nothing yet", detail: "seed" });
   const { row: note } = await writeNote(
@@ -1288,24 +1254,18 @@ test("studio proposes tables to create, change, and delete that the operator app
     },
     now,
   );
-  for (const [agentId, guildId, guildName, name] of [
-    ["a_scout", "guild_tb", "table-guild", "scout"],
-    ["a_writer", "guild_tb", "table-guild", "writer"],
-    ["a_nb", "guild_nb", "neighbour-guild", "neighbour"],
-    ["a_pv", "guild_pv", "private-guild", "hidden-agent"],
+  for (const [agentId, guildId, name] of [
+    ["a_scout", "guild_tb", "scout"],
+    ["a_writer", "guild_tb", "writer"],
+    ["a_nb", "guild_nb", "neighbour"],
+    ["a_pv", "guild_pv", "hidden-agent"],
   ] as const) {
-    await persistAgent(agentDatabase(db), notes, {
-      agentId,
-      guildId,
-      guildName,
-      orgSlug: "home",
-      orgId: "org_home",
-      name,
-      focus: "Keep the tables",
-      config: CONFIG,
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId, guildId, name, config: CONFIG, focus: "Keep the tables" }, task: "Keep the tables", placement: {} },
+      systemActor("org_home", { guildId, agentId }),
       now,
-      artifacts,
-    });
+    );
   }
   const operator = operatorContext("org_home", "user_operator", "operator");
   const column = (name: string, type: string, extra: Record<string, unknown> = {}) => ({ name, type, description: `The ${name}.`, ...extra });
@@ -1622,19 +1582,12 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     ["a_sc", "scout", `Find candidates.\n\n![[${rolesPath}]]\n`],
     ["a_ar", "archivist", "File candidates."],
   ] as const) {
-    await persistAgent(agentDatabase(db), notes, {
-      agentId,
-      guildId: "guild_nw",
-      guildName: "narrow-guild",
-      orgSlug: "home",
-      orgId: "org_home",
-      name,
-      focus: `The ${name}`,
-      task,
-      config: CONFIG,
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId, guildId: "guild_nw", name, config: CONFIG, focus: `The ${name}` }, task: task, placement: {} },
+      systemActor("org_home", { guildId: "guild_nw", agentId }),
       now,
-      artifacts,
-    });
+    );
   }
   const server = await getMcpServerBySlug(db, "notion");
   assert.ok(server, "seeded Notion catalog row");
@@ -1865,7 +1818,7 @@ test("studio proposes notes to create and delete and narrows an agent's access",
     assert.equal((await resolve(widenSeq, "decline")).statusCode, 200);
 
     // A user who can no longer see the guild loses its sessions, edits included.
-    await changeGuild(db, "guild_nw", { visibility: "private" }, TEST_ACTOR);
+    await updateGuild(db, "guild_nw", new Date(), { visibility: "private" });
     assert.equal(
       (await app.inject({ method: "GET", url: `/api/studio/sessions/${session.id}/edits/${widenSeq}`, headers: AUTH })).statusCode,
       404,
@@ -1905,19 +1858,12 @@ test("studio proposes routines to create, change, and delete that the operator a
 
   const now = new Date();
   await insertGuild(db, { guildId: "guild_rt", name: "routine-guild", orgId: "org_home" }, now);
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_wt",
-    guildId: "guild_rt",
-    guildName: "routine-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "watcher",
-    focus: "The watcher",
-    task: "Watch the feed.",
-    config: CONFIG,
+  await addAgent(
+    { db, notes, artifacts },
+    { agent: { agentId: "a_wt", guildId: "guild_rt", name: "watcher", config: CONFIG, focus: "The watcher" }, task: "Watch the feed.", placement: {} },
+    systemActor("org_home", { guildId: "guild_rt", agentId: "a_wt" }),
     now,
-    artifacts,
-  });
+  );
 
   try {
     const created = await app.inject({

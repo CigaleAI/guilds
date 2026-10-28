@@ -28,7 +28,7 @@ import {
   type GithubRepository,
 } from "../github/index.js";
 import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import { newId } from "../lib/ids.js";
 import type { McpPool } from "../mcp/pool.js";
 import { retireLogin } from "../mcp/service.js";

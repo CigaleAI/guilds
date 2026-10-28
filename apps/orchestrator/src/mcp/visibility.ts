@@ -5,7 +5,7 @@ import type { McpConnectionRow } from "../db/mcp.js";
 import { getMembership } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import type { LoadedConnector } from "../connectors/servers.js";
 
 /** A request about a connector login refused, with the HTTP status it answers with. */

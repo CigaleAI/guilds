@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { insertGuild } from "../../src/db/guilds.js";
 import { insertIssue } from "../../src/db/issues.js";
 import { insertMember } from "../../src/db/orgs.js";
@@ -48,8 +48,9 @@ test(
       { guildId: "guild_items", name: "items-desk", orgId: "org_home" },
       new Date(),
     );
-    await addAgent(
+    await addTestAgent(
       db,
+      "org_home",
       { agentId: "a_items", guildId: "guild_items", name: "keeper", config: agentConfig({}) },
       new Date(),
     );

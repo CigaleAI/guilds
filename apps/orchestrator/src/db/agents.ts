@@ -111,8 +111,6 @@ export type NewAgent = {
   wakeTriggers?: string | undefined;
   avatarShape?: string | undefined;
   avatarColor?: string | undefined;
-  task?: string | undefined;
-  taskHash?: string | undefined;
 };
 
 /** Where a new agent goes: a named machine, and the most agents a machine may hold. */
@@ -185,7 +183,7 @@ export async function guildHasOperatorNamed(db: Queryable, guildId: string, name
 }
 
 /** A new agent as written: its task and the machine slot it sits in decided. */
-export type AgentInsert = Omit<NewAgent, "task" | "taskHash"> & {
+export type AgentInsert = NewAgent & {
   task: string;
   taskHash: string;
   machineId: string;

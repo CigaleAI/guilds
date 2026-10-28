@@ -16,7 +16,7 @@ import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../h
 import { insertUser } from "../../src/db/users.js";
 import { insertMember, insertOrg } from "../../src/db/orgs.js";
 import { deleteGuild, insertGuild } from "../../src/db/guilds.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { deleteAgent } from "../../src/db/agents.js";
 import { getSecret, listAgentSecrets } from "../../src/db/secrets.js";
 import { agentConfig } from "../helpers/generation.js";
@@ -99,13 +99,13 @@ before(async () => {
     now,
   );
   const config = agentConfig({ model: TEST_MODEL });
-  await addAgent(db, { agentId: "a_open", guildId: "guild_open", name: "opener", config }, now);
-  await addAgent(db,
+  await addTestAgent(db, "org_home", { agentId: "a_open", guildId: "guild_open", name: "opener", config }, now);
+  await addTestAgent(db, "org_home",
     { agentId: "a_open_two", guildId: "guild_open", name: "second", config },
     now,
   );
-  await addAgent(db, { agentId: "a_side", guildId: "guild_side", name: "sider", config }, now);
-  await addAgent(db,
+  await addTestAgent(db, "org_home", { agentId: "a_side", guildId: "guild_side", name: "sider", config }, now);
+  await addTestAgent(db, "org_home",
     { agentId: "a_hidden", guildId: "guild_hidden", name: "hider", config },
     now,
   );
@@ -330,11 +330,11 @@ test("a secret goes with the guild or agent that held its last grant", async () 
   const now = new Date();
   const config = agentConfig({ model: TEST_MODEL });
   await insertGuild(db, { guildId: "guild_doomed", name: "doomed-desk", orgId: "org_home" }, now);
-  await addAgent(db,
+  await addTestAgent(db, "org_home",
     { agentId: "a_doomed", guildId: "guild_doomed", name: "doomed", config },
     now,
   );
-  await addAgent(db, { agentId: "a_gone", guildId: "guild_side", name: "leaver", config }, now);
+  await addTestAgent(db, "org_home", { agentId: "a_gone", guildId: "guild_side", name: "leaver", config }, now);
   const inGuild = (await create(OWNER, { name: "ONLY_DOOMED", guild_ids: ["guild_doomed"], agent_ids: ["a_doomed"] })).json().id;
   const shared = (await create(OWNER, { name: "DOOMED_AND_SIDE", guild_ids: ["guild_doomed", "guild_side"] })).json().id;
   const onlyAgent = (await create(OWNER, { name: "ONLY_LEAVER", agent_ids: ["a_gone"] })).json().id;

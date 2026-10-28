@@ -10,7 +10,7 @@ import {
   type AgentServices,
   type AgentSettingsPatch,
 } from "../agents/service.js";
-import { loadAgentView } from "../agents/view.js";
+import { loadAgentView } from "../access/view.js";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import type { AgentRow } from "../db/agents.js";
 import { requireVisibleGuild } from "../guilds/access.js";

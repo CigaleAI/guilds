@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { agentActor } from "../../src/artifacts/actors.js";
 import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
@@ -75,18 +76,12 @@ test("studio activity lists each wake with what started it and what it produced"
     ["a_scout", "scout"],
     ["a_desk", "desk"],
   ] as const) {
-    await persistAgent(agentDatabase(db), notes, {
-      agentId,
-      guildId: "guild_act",
-      guildName: "activity-guild",
-      orgSlug: "home",
-      orgId: "org_home",
-      name,
-      focus: "",
-      config: CONFIG,
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId, guildId: "guild_act", name, config: CONFIG, focus: "" }, task: "", placement: {} },
+      systemActor("org_home", { guildId: "guild_act", agentId }),
       now,
-      artifacts,
-    });
+    );
   }
 
   // The operator tags scout; scout's wake posts a row that tags desk.

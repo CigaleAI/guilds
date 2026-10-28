@@ -472,7 +472,6 @@ The name may be reused.
   triggers, and avatar rules
 - `apps/orchestrator/src/avatars/`: the default look, the stored shape
   and colour formats, and the renderer
-- `apps/orchestrator/src/agents/persist.ts`: create
 - `apps/orchestrator/src/agents/service.ts`: create, configure, move,
   and delete
 - `apps/orchestrator/src/http/agent-routes.ts`: agent routes

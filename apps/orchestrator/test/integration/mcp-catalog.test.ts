@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { getMcpServer, saveOauthClient } from "../../src/connectors/servers.js";
-import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
+import { addGuild } from "../../src/guilds/service.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
@@ -282,34 +283,29 @@ test("admin catalog, overrides, seed preservation, listed tools, and leaks", { t
   const remaining = body.remaining as { agents: number; browser_agents: number };
   assert.equal(remaining.agents, 25);
   const now = new Date();
-  await persistGuild(guildDatabase(db), notes, {
-    guildId: "guild_catalog",
-    name: "catalog-guild",
+  await addGuild(
+    { db, notes },
+    {
+      guild: { guildId: "guild_catalog", name: "catalog-guild", orgId: "org_home", about: "", creatorUserId: "user_operator" },
+      orgSlug: "home",
+    },
     now,
-    orgId: "org_home",
-    orgSlug: "home",
-    about: "",
-    creatorUserId: "user_operator",
+  );
+  const config = agentConfig({
+    model: "openrouter/openai/gpt-5.6-luna",
+    temperature: 1,
+    max_tokens: 8192,
+    max_steps: 30,
+    max_tool_calls: 50,
+    max_input_tokens: 100000,
+    browser: false,
   });
-  await persistAgent(agentDatabase(db), notes, {
-    agentId: "a_catalog",
-    guildId: "guild_catalog",
-    guildName: "catalog-guild",
-    orgSlug: "home",
-    orgId: "org_home",
-    name: "catalog-agent",
-    focus: "",
-    config: agentConfig({
-      model: "openrouter/openai/gpt-5.6-luna",
-      temperature: 1,
-      max_tokens: 8192,
-      max_steps: 30,
-      max_tool_calls: 50,
-      max_input_tokens: 100000,
-      browser: false,
-    }),
+  await addAgent(
+    { db, notes, artifacts: null },
+    { agent: { agentId: "a_catalog", guildId: "guild_catalog", name: "catalog-agent", config, focus: "" }, task: "", placement: {} },
+    systemActor("org_home", { guildId: "guild_catalog", agentId: "a_catalog" }),
     now,
-  });
+  );
   const afterAgent = await app.inject({ method: "GET", url: "/api/builder/capabilities", headers: AUTH });
   assert.equal((afterAgent.json().remaining as { agents: number }).agents, 24);
 

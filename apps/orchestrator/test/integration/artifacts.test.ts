@@ -7,7 +7,8 @@ import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { listFileChanges } from "../../src/db/file-changes.js";
 import { unreachableMarker, embedSource, inlineTaskEmbeds, inspectTaskEmbeds } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -57,20 +58,15 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-async function seedAgent(agentId: string, guildId: string, guildName: string, name: string, tag: string) {
+async function seedAgent(agentId: string, guildId: string, name: string, tag: string) {
   const now = new Date();
   const notes = new NotesStore(tempDir(`guilds-${tag}-notes-`), templatesRoot());
-  await persistAgent(agentDatabase(db), notes, {
-    agentId,
-    guildId,
-    guildName,
-    orgSlug: "home",
-    orgId: "org_home",
-    name,
-    config: CONFIG,
+  await addAgent(
+    { db, notes, artifacts: store },
+    { agent: { agentId, guildId, name, config: CONFIG }, task: "", placement: {} },
+    systemActor("org_home", { guildId, agentId }),
     now,
-    artifacts: store,
-  });
+  );
 }
 
 describe("artifact store", { concurrency: 1 }, () => {
@@ -84,8 +80,8 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_alpha", "guild_alpha", "alpha", "alpha", "art");
-    await seedAgent("a_beta", "guild_beta", "beta", "beta", "art-beta");
+    await seedAgent("a_alpha", "guild_alpha", "alpha", "art");
+    await seedAgent("a_beta", "guild_beta", "beta", "art-beta");
 
     const operator = operatorActor({
       orgId: "org_home",
@@ -400,7 +396,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_search", name: "search", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_search", "guild_search", "search", "searcher", "search");
+    await seedAgent("a_search", "guild_search", "searcher", "search");
     const searcher = agentActor({
       orgId: "org_home",
       guildId: "guild_search",
@@ -589,7 +585,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_scratch", name: "scratch", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_scratch", "guild_scratch", "scratch", "scratcher", "scratch");
+    await seedAgent("a_scratch", "guild_scratch", "scratcher", "scratch");
     const writer = agentActor({
       orgId: "org_home",
       guildId: "guild_scratch",
@@ -643,7 +639,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_tags", name: "tags", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_tags", "guild_tags", "tags", "tagger", "tags");
+    await seedAgent("a_tags", "guild_tags", "tagger", "tags");
     const tagger = agentActor({
       orgId: "org_home",
       guildId: "guild_tags",
@@ -716,8 +712,8 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_other", name: "other", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_own", "guild_own", "own", "owner-agent", "own");
-    await seedAgent("a_other", "guild_other", "other", "other-agent", "other");
+    await seedAgent("a_own", "guild_own", "owner-agent", "own");
+    await seedAgent("a_other", "guild_other", "other-agent", "other");
     const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
     const member = agentActor({ orgId: "org_home", guildId: "guild_own", agentId: "a_own", agentName: "owner-agent" });
     const outsider = agentActor({ orgId: "org_home", guildId: "guild_other", agentId: "a_other", agentName: "other-agent" });
@@ -818,9 +814,9 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_south", name: "south", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_north", "guild_north", "north", "north-agent", "north");
-    await seedAgent("a_south", "guild_south", "south", "south-agent", "south");
-    await seedAgent("a_south2", "guild_south", "south", "south-two", "south2");
+    await seedAgent("a_north", "guild_north", "north-agent", "north");
+    await seedAgent("a_south", "guild_south", "south-agent", "south");
+    await seedAgent("a_south2", "guild_south", "south-two", "south2");
     const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
     const north = agentActor({ orgId: "org_home", guildId: "guild_north", agentId: "a_north", agentName: "north-agent" });
     const south = agentActor({ orgId: "org_home", guildId: "guild_south", agentId: "a_south", agentName: "south-agent" });
@@ -845,7 +841,7 @@ describe("artifact store", { concurrency: 1 }, () => {
     assert.deepEqual(await found(south, "private"), []);
 
     // a guild row covers an agent created after it
-    await seedAgent("a_north_late", "guild_north", "north", "north-late", "north-late");
+    await seedAgent("a_north_late", "guild_north", "north-late", "north-late");
     const late = agentActor({ orgId: "org_home", guildId: "guild_north", agentId: "a_north_late", agentName: "north-late" });
     assert.equal((await getByDisplayPath(store, late, planPath)).row?.access, "write");
 
@@ -1021,7 +1017,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_provenance", name: "provenance", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_provenance", "guild_provenance", "provenance", "provenance-agent", "provenance");
+    await seedAgent("a_provenance", "guild_provenance", "provenance-agent", "provenance");
     assert.equal(
       (
         await listFileChanges(
@@ -1140,7 +1136,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_flat", name: "flat", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_flat", "guild_flat", "flat", "flat", "art-notes-flat");
+    await seedAgent("a_flat", "guild_flat", "flat", "art-notes-flat");
     const alpha = agentActor({
       orgId: "org_home",
       guildId: "guild_flat",
@@ -1189,7 +1185,7 @@ describe("artifact store", { concurrency: 1 }, () => {
       { guildId: "guild_tl", name: "timeline", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_tl", "guild_tl", "timeline", "timeline", "art-mem-tl");
+    await seedAgent("a_tl", "guild_tl", "timeline", "art-mem-tl");
     const operator = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",
@@ -1223,18 +1219,12 @@ describe("artifact store", { concurrency: 1 }, () => {
       now,
     );
     const notes = new NotesStore(tempDir("guilds-art-notes-taskver-"), templatesRoot());
-    await persistAgent(agentDatabase(db), notes, {
-      agentId: "a_taskver",
-      guildId: "guild_taskver",
-      guildName: "taskver",
-      orgSlug: "home",
-      orgId: "org_home",
-      name: "taskver",
-      focus: "seeded purpose",
-      config: CONFIG,
+    await addAgent(
+      { db, notes, artifacts: store },
+      { agent: { agentId: "a_taskver", guildId: "guild_taskver", name: "taskver", config: CONFIG, focus: "seeded purpose" }, task: "seeded purpose", placement: {} },
+      systemActor("org_home", { guildId: "guild_taskver", agentId: "a_taskver" }),
       now,
-      artifacts: store,
-    });
+    );
     const operator = operatorActor({
       orgId: "org_home",
       actorId: "user_operator",

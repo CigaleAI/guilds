@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
@@ -9,7 +10,7 @@ import { generationLive } from "../../src/conversation/runner.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { NotesStore } from "../../src/notes/store.js";
-import { guildDatabase, persistGuild } from "../../src/guilds/persist.js";
+import { addGuild } from "../../src/guilds/service.js";
 import { recipeApply } from "../../src/recipes/apply.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -352,27 +353,20 @@ test("builder, apply, and LinkedIn to Notion", { timeout: 90_000 }, async () => 
     });
     assert.equal(huskAbort.statusCode, 200, huskAbort.body);
 
-    await persistGuild(guildDatabase(db), notes, {
-      guildId: "guild_capture",
-      name: "capture-src",
+    await addGuild(
+      { db, notes },
+      {
+        guild: { guildId: "guild_capture", name: "capture-src", orgId: "org_home", about: "source", creatorUserId: "user_operator" },
+        orgSlug: "home",
+      },
       now,
-      orgId: "org_home",
-      orgSlug: "home",
-      about: "source",
-      creatorUserId: "user_operator",
-    });
-    await persistAgent(agentDatabase(db), notes, {
-      agentId: "a_capture",
-      guildId: "guild_capture",
-      guildName: "capture-src",
-      orgSlug: "home",
-      orgId: "org_home",
-      name: "scout",
-      focus: "Watch",
-      config: CONFIG,
+    );
+    await addAgent(
+      { db, notes, artifacts },
+      { agent: { agentId: "a_capture", guildId: "guild_capture", name: "scout", config: CONFIG, focus: "Watch" }, task: "Watch", placement: {} },
+      systemActor("org_home", { guildId: "guild_capture", agentId: "a_capture" }),
       now,
-      artifacts,
-    });
+    );
     await writeAgentTask(db, operatorContext("org_home", "user_operator", "operator", {
         guildId: "guild_capture",
         agentId: "a_capture",

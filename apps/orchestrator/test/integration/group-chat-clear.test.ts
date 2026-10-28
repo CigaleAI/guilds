@@ -13,7 +13,7 @@ import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { createRun } from "../../src/db/runs.js";
 import {
   markGroupChatSeen,
@@ -87,7 +87,7 @@ test(
       const base = `/api/guilds/${guildId}/group-chat`;
 
       const started = new Date(Date.now() - 60_000);
-      await addAgent(db, { agentId: "a_clear", guildId, name: "scout", config: agentConfig({}) }, started);
+      await addTestAgent(db, "org_home", { agentId: "a_clear", guildId, name: "scout", config: agentConfig({}) }, started);
       await createRun(db,
         {
           runId: "r_before",

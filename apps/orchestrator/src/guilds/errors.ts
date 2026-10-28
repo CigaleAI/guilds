@@ -8,3 +8,13 @@ export class GuildError extends Error {
     this.status = status;
   }
 }
+
+export class GuildAgentLimitError extends Error {
+  readonly limit: number;
+
+  constructor(limit: number) {
+    super(`this guild is limited to ${limit} agents`);
+    this.name = "GuildAgentLimitError";
+    this.limit = limit;
+  }
+}

@@ -1,5 +1,5 @@
 import { writeBinding } from "../access/bindings.js";
-import { agentDatabase, persistAgent } from "../agents/persist.js";
+import { addAgent } from "../agents/service.js";
 import { writeAgentTask } from "../artifacts/task.js";
 import { validateAgentConfig } from "../agents/config.js";
 import { operatorActor } from "../artifacts/actors.js";
@@ -15,8 +15,8 @@ import { insertRecipeApply, type RecipeApplyRow } from "../db/recipe-applies.js"
 import type { RecipeRow } from "../db/recipes.js";
 import type { ApplyPlan, PlannedCollection, PlannedConnection } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { guildDatabase, persistGuild } from "../guilds/persist.js";
-import { assertGuildAgentRoom, GuildAgentLimitError, guildAgentRoom } from "../guilds/validation.js";
+import { GuildAgentLimitError } from "../guilds/errors.js";
+import { addGuild, assertGuildAgentRoom } from "../guilds/service.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { assertCanCreateAgents, assertCanCreateGuild, assertCanPlaceAgents, machineCounts, orgCounts } from "../policy/index.js";
@@ -102,7 +102,7 @@ async function assertAllowed(
     codingAgents: recipe.roles.filter(roleCodes).length,
   });
   try {
-    await assertGuildAgentRoom(guildAgentRoom(apply.db), target.guildId || null, recipe.roles.length);
+    await assertGuildAgentRoom(apply.db, target.guildId || null, recipe.roles.length);
   } catch (error) {
     if (error instanceof GuildAgentLimitError) {
       throw new RecipeConflictError(error.message);
@@ -138,42 +138,41 @@ async function writeRecipeNote(skeleton: Skeleton, note: RecipeNote, actor: Arti
 
 async function createGuild(skeleton: Skeleton, recipe: RecipeDocument): Promise<void> {
   const { org, user } = skeleton.source;
-  await persistGuild(guildDatabase(skeleton.apply.db), skeleton.apply.notes, {
+  const guild = {
     guildId: skeleton.guildId,
     name: skeleton.guildName,
-    now: skeleton.now,
     orgId: org.id,
-    orgSlug: org.slug,
     about: recipe.guild.about,
     description: recipe.guild.objective,
-    groupAgentMessageLimit: recipe.guild.group_agent_message_limit,
+    agentMessageLimit: recipe.guild.group_agent_message_limit,
     creatorUserId: user.id,
-  });
+  };
+  await addGuild(skeleton.apply, { guild, orgSlug: org.slug }, skeleton.now);
   skeleton.created.guild = true;
 }
 
 async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeDocument): Promise<void> {
-  const { org } = skeleton.source;
   const agentId = newId("a");
-  await persistAgent(agentDatabase(skeleton.apply.db), skeleton.apply.notes, {
+  const agent = {
     agentId,
     guildId: skeleton.guildId,
-    guildName: skeleton.guildName,
-    orgSlug: org.slug,
-    orgId: org.id,
     name: skeleton.names.get(role.role) ?? role.name_suggestion,
     config: validateAgentConfig(role.config),
-    now: skeleton.now,
     focus: role.focus,
     wakeTriggers: role.wake_triggers,
-    task: withTrailingNewline(rewriteRolesToNames(roleTaskText(role, recipe), skeleton.names)),
     avatarShape: role.avatar_shape,
     avatarColor: role.avatar_color,
-    artifacts: skeleton.apply.artifacts,
-    actor: skeleton.actor,
-    machineId: skeleton.machineId,
-    maxAgentsPerMachine: skeleton.maxAgentsPerMachine,
-  });
+  };
+  await addAgent(
+    skeleton.apply,
+    {
+      agent,
+      task: withTrailingNewline(rewriteRolesToNames(roleTaskText(role, recipe), skeleton.names)),
+      placement: { machineId: skeleton.machineId, maxAgentsPerMachine: skeleton.maxAgentsPerMachine },
+    },
+    skeleton.actor,
+    skeleton.now,
+  );
   skeleton.created.agents.push(agentId);
   skeleton.roleToAgent.set(role.role, agentId);
 }

@@ -13,7 +13,7 @@ import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
 import { HEX_MASTER_KEY, testEnv } from "../helpers/env.js";
 import { templatesRoot } from "../helpers/fixtures.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
-import { addAgent } from "../../src/agents/persist.js";
+import { addTestAgent } from "../helpers/agents.js";
 import { createRun, insertMessage } from "../../src/db/runs.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
 
@@ -64,7 +64,7 @@ test("a code_task's diff and log are read from its own checkpoints and log, and 
     const guild = await app.inject({ method: "POST", url: "/api/guilds", headers: JSON_AUTH, payload: { name: "diff-desk" } });
     assert.equal(guild.statusCode, 201, guild.body);
     const now = new Date();
-    await addAgent(db,
+    await addTestAgent(db, "org_home",
       {
         agentId: "a_diff",
         guildId: String(guild.json().id),

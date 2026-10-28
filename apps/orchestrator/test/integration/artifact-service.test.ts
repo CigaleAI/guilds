@@ -29,7 +29,8 @@ import {
 import { artifactStore, hashArtifactContent, rowDisplayPath, type ArtifactStore } from "../../src/artifacts/store.js";
 import { writeAgentTask } from "../../src/artifacts/task.js";
 import { EMBED_BUDGET } from "../../src/artifacts/types.js";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { getAgent, type AgentRow } from "../../src/db/agents.js";
 import type { Database } from "../../src/db/client.js";
 import { insertGuild } from "../../src/db/guilds.js";
@@ -60,17 +61,12 @@ before(async () => {
   store = artifactStore(db, templatesRoot());
   await insertGuild(db, { guildId: GUILD, name: "svc", orgId: ORG, about: "" }, new Date());
   await insertGuild(db, { guildId: OTHER_GUILD, name: "other", orgId: ORG, about: "" }, new Date());
-  await persistAgent(agentDatabase(db), new NotesStore(tempDir("guilds-svc-notes-"), templatesRoot()), {
-    agentId: AGENT,
-    guildId: GUILD,
-    guildName: "svc",
-    orgSlug: "home",
-    orgId: ORG,
-    name: "svc",
-    config: agentConfig({ model: "openrouter/openai/gpt-5.6-luna" }),
-    now: new Date(),
-    artifacts: store,
-  });
+  await addAgent(
+    { db, notes: new NotesStore(tempDir("guilds-svc-notes-"), templatesRoot()), artifacts: store },
+    { agent: { agentId: AGENT, guildId: GUILD, name: "svc", config: agentConfig({ model: "openrouter/openai/gpt-5.6-luna" }) }, task: "", placement: {} },
+    systemActor(ORG, { guildId: GUILD, agentId: AGENT }),
+    new Date(),
+  );
   await writeNote(store, operator, { level: "guild", key: "rules.md", content: "Cite sources.\n" });
   const { row: shut } = await writeNote(store, operator, { level: "org", key: "shut.md", content: "Not for agents.\n" });
   await grantAccess(store, operator, { kind: "note", id: shut.id }, { type: "agent", id: AGENT, mode: "none" });

@@ -15,8 +15,7 @@ import {
 import { recordFileChange } from "../db/file-changes.js";
 import { type Queryable, withTransaction } from "../db/pg.js";
 
-export const FALLBACK_TASK = "Assist the user and collaborate with the guild members.\n";
-export const FALLBACK_TASK_HASH = "80672a5468f14aafbd6e02d8ca30846bdb8483f45e2408190cd4751a9e01d33a";
+const FALLBACK_TASK = "Assist the user and collaborate with the guild members.\n";
 
 export function resolveTaskContent(seed: string, templatesRoot = ""): string {
   const focus = seed.trim();

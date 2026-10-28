@@ -257,7 +257,7 @@ About and description reach the State snapshot as `group.about` and
 ([Operators](operators.md)).
 
 Code: `apps/orchestrator/src/guilds/validation.ts`,
-`apps/orchestrator/src/guilds/persist.ts`.
+`apps/orchestrator/src/guilds/service.ts`.
 
 ### Create
 

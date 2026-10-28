@@ -12,11 +12,6 @@
       "count": 2
     }
   },
-  "src/agents/persist.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "src/app.ts": {
     "complexity": {
       "count": 1
@@ -212,11 +207,6 @@
     },
     "max-lines": {
       "count": 1
-    }
-  },
-  "src/guilds/validation.ts": {
-    "@typescript-eslint/consistent-type-assertions": {
-      "count": 7
     }
   },
   "src/http/admin-instance-routes.ts": {
@@ -560,7 +550,7 @@
   },
   "src/studio/edits.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 17
+      "count": 16
     },
     "complexity": {
       "count": 6

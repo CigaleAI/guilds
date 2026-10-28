@@ -4,7 +4,7 @@ import { listGuilds, type GuildRow } from "../db/guilds.js";
 import type { Queryable } from "../db/pg.js";
 import { listOrgs, type OrgRow } from "../db/orgs.js";
 import { getUsage, listUsageCounters } from "../db/usage.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import { usageCounterKey, usageFields, usageTree, type UsageSource } from "./index.js";
 
 /** A coach whose conversations spend tokens, by organisation. */

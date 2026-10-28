@@ -1,6 +1,8 @@
 import { accessPayload, mcpToolView, resolvedMcp } from "./index.js";
-import { resolveMcpTool } from "./runtime.js";
+import { accessDatabase, agentSecrets, resolveMcpTool } from "./runtime.js";
+import { agentDetail } from "../agents/view.js";
 import { listServers, serverTools, type LoadedConnector } from "../connectors/servers.js";
+import type { AgentRow } from "../db/agents.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -129,4 +131,24 @@ export async function loadAccessView(
     connections,
     listedTools,
   });
+}
+
+/** An agent as its page shows it: its settings, whether it is generating, and its access with the secrets it reaches. */
+export async function loadAgentView(
+  db: Queryable,
+  mcp: McpPool | null,
+  row: AgentRow,
+  generating: boolean,
+): Promise<Record<string, unknown>> {
+  const access = await loadAccessView(accessViewDatabase(db), {
+    orgId: row.org_id,
+    guildId: row.guild_id,
+    agentId: row.id,
+    viewScope: "agent",
+    mcp,
+  });
+  return {
+    ...agentDetail(row, generating),
+    access: { ...access, secrets: await agentSecrets(accessDatabase(db), row) },
+  };
 }

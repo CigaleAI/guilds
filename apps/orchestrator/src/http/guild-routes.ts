@@ -4,6 +4,7 @@ import { removeOperator, setOperatorRole } from "../guilds/operators.js";
 import {
   createGuild,
   deleteGuild,
+  guildItem,
   listUserGuilds,
   updateGuildSettings,
   type GuildActor,
@@ -15,7 +16,6 @@ import type { AppDeps } from "./deps.js";
 import { missingBodyFields, notesWrite } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
 import { identityDatabase } from "../users/identity.js";
-import { guildItem } from "../guilds/view.js";
 import { bodyOf, param } from "./request.js";
 import type { UserRow } from "../db/users.js";
 

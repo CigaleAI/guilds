@@ -1,7 +1,6 @@
 import { jsonObj } from "../db/json.js";
 import { AgentMessageLimitReached, GroupChatCleared } from "../db/errors.js";
 import { groupMessageItem } from "../db/views.js";
-import { guildOperators, type GuildOperator } from "../guilds/validation.js";
 import { AsyncEvent, EventQueue } from "../lib/event.js";
 import { writeLog } from "../observability/log.js";
 import {
@@ -20,7 +19,7 @@ import { advanceGroupCursor,
   postAgentGroupMessage,
   postUserGroupMessage,
   updateGroupAgentMessageLimit, type GroupChatStateRow, type GroupMessageRow, type PendingGroupAgentRow } from "../db/group-chat.js";
-import { getGuild, listGuilds } from "../db/guilds.js";
+import { getGuild, listGuilds, type GuildOperatorRow } from "../db/guilds.js";
 import { getAgent, listAgents } from "../db/agents.js";
 import { getRun, type RunMessage } from "../db/runs.js";
 import type { RecipientRouting, UserMessage } from "../db/schema/index.js";
@@ -95,7 +94,7 @@ export function parseTags(content: string, names: Set<string>): string[] {
 
 export function taggableNames(
   members: Array<Record<string, unknown>>,
-  operators: GuildOperator[] = [],
+  operators: GuildOperatorRow[] = [],
 ): Set<string> {
   const names = new Set<string>();
   for (const member of members) {
@@ -117,7 +116,7 @@ export type GroupTags = { names: string[]; agentIds: string[]; userIds: string[]
 export function recognizedTags(
   content: string,
   members: Array<Record<string, unknown>>,
-  operators: GuildOperator[] = [],
+  operators: GuildOperatorRow[] = [],
 ): GroupTags {
   const names = parseTags(content, taggableNames(members, operators));
   const agentIdsByName = new Map<string, string>();
@@ -689,7 +688,7 @@ export class GroupChat {
   async _tags(guildId: string, text: string): Promise<GroupTags> {
     const members = await this.db.listAgents(guildId);
     const guild = await this.db.getGuild(guildId);
-    return recognizedTags(text, members, guild ? guildOperators(guild) : []);
+    return recognizedTags(text, members, guild ? guild.operators : []);
   }
 
   async _after_commit(guildId: string, message: Record<string, unknown>): Promise<void> {

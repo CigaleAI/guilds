@@ -10,7 +10,6 @@ import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { guildOperators } from "../guilds/validation.js";
 import { McpDisconnectedError } from "../mcp/errors.js";
 import type { McpPool } from "../mcp/pool.js";
 import { readMemory } from "../memory/index.js";
@@ -132,7 +131,7 @@ export class RunPreparation {
     await this.prepareHome(agent);
     const state = this.runState(agent, {
       members,
-      operators: guildOperators({ operators: agent.guild_operators }),
+      operators: agent.guild_operators,
       historyRows: history.rows,
       guildAbout: agent.guild_about,
       guildDescription: agent.guild_description,

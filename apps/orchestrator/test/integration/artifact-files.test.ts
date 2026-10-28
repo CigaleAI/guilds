@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { ArtifactFiles, fileBlobKey } from "../../src/artifacts/files.js";
 import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
 import { listFileChanges } from "../../src/db/file-changes.js";
@@ -53,19 +54,14 @@ after(async () => {
   await dropIsolatedDatabase(dbName);
 });
 
-async function seedAgent(agentId: string, guildId: string, guildName: string, name: string) {
+async function seedAgent(agentId: string, guildId: string, name: string) {
   const notes = new NotesStore(tempDir(`guilds-${name}-notes-`), templatesRoot());
-  await persistAgent(agentDatabase(db), notes, {
-    agentId,
-    guildId,
-    guildName,
-    orgSlug: "home",
-    orgId: "org_home",
-    name,
-    config: CONFIG,
-    now: new Date(),
-    artifacts: store,
-  });
+  await addAgent(
+    { db, notes, artifacts: store },
+    { agent: { agentId, guildId, name, config: CONFIG }, task: "", placement: {} },
+    systemActor("org_home", { guildId, agentId }),
+    new Date(),
+  );
 }
 
 const operator = operatorActor({ orgId: "org_home", actorId: "user_operator", actorName: "operator" });
@@ -83,8 +79,8 @@ describe("shared files", { concurrency: 1 }, () => {
       { guildId: "guild_beta", name: "beta", orgId: "org_home", about: "" },
       now,
     );
-    await seedAgent("a_alpha", "guild_alpha", "alpha", "alpha");
-    await seedAgent("a_beta", "guild_beta", "beta", "beta");
+    await seedAgent("a_alpha", "guild_alpha", "alpha");
+    await seedAgent("a_beta", "guild_beta", "beta");
   });
 
   test("a file is created, replaced version by version, and found by its description", async () => {

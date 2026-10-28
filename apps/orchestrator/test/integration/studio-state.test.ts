@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
+import { addAgent } from "../../src/agents/service.js";
+import { systemActor } from "../helpers/agents.js";
 import { agentActor } from "../../src/artifacts/actors.js";
 import { ownerPrefix } from "../../src/artifacts/paths.js";
 import { buildApp } from "../../src/app.js";
@@ -92,18 +93,12 @@ test("studio's State lists the guild's items with who changed and read each one"
       ["a_far", "far", "guild_far"],
     ];
     for (const [agentId, name, guildId] of agents) {
-      await persistAgent(agentDatabase(db), notes, {
-        agentId,
-        guildId,
-        guildName: guildId === "guild_st" ? "state-guild" : "far-guild",
-        orgSlug: "home",
-        orgId: "org_home",
-        name,
-        focus: "Work",
-        config: CONFIG,
+      await addAgent(
+        { db, notes, artifacts },
+        { agent: { agentId, guildId, name, config: CONFIG, focus: "Work" }, task: "Work", placement: {} },
+        systemActor("org_home", { guildId, agentId }),
         now,
-        artifacts,
-      });
+      );
     }
     const operator = operatorContext("org_home", "user_operator", "operator", { guildId: "guild_st" });
     const asRun = (agentId: string, name: string, guildId: string, runId: string) => ({

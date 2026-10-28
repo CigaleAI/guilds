@@ -11,7 +11,7 @@ import { artifactStore } from "../../src/artifacts/store.js";
 import { actorColumns, studioLink } from "../../src/db/config-changes.js";
 import { runActor, userActor } from "../../src/lib/change-actor.js";
 import type { ScheduleRow } from "../../src/db/schedules.js";
-import { guildTextChange } from "../../src/guilds/changes.js";
+import { guildTextChange } from "../../src/guilds/service.js";
 import { routineChange, routineUpdateSummary } from "../../src/schedules/changes.js";
 import { editActor } from "../../src/studio/actor.js";
 import type { EditScope } from "../../src/studio/edits.js";

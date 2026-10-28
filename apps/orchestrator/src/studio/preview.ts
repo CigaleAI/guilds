@@ -7,7 +7,6 @@ import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { previewConnectorState } from "../mcp/pool.js";
 import { collectRunState } from "../state/index.js";
-import { guildOperators } from "../guilds/validation.js";
 import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -51,7 +50,7 @@ export async function previewCurrentState(
   const config = agent.config;
   const state = collectRunState(null, agent.org_slug, agent.guild_name, agent.name, {
     members,
-    operators: guildOperators({ operators: agent.guild_operators }),
+    operators: agent.guild_operators,
     historyRows: historyRows.slice(-CONTEXT_HISTORY_LIMIT),
     guildAbout: agent.guild_about,
     guildDescription: agent.guild_description,

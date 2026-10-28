@@ -4,9 +4,9 @@ import { parseDisplayPath } from "../artifacts/paths.js";
 import { artifactAt, parseActorPath, planNote, writeNote, type PlannedNote } from "../artifacts/service.js";
 import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
-import { changeGuild } from "../guilds/changes.js";
+import { updateGuildText } from "../guilds/service.js";
 import type { Schedules } from "../schedules/service.js";
-import { GuildValidationError, validateAbout, validateGuildDescription } from "../guilds/validation.js";
+import { GuildValidationError, validateGuildTextPatch, type GuildTextPatch } from "../guilds/validation.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_ACCESS_TOOLS, applyAccess, isAccessTool, reviewAccess, reviewAccessRequest } from "./access.js";
 import { StudioConflictError, StudioError, StudioUnprocessableError } from "./errors.js";
@@ -178,19 +178,23 @@ function assertContent(content: string): void {
   }
 }
 
+/** The guild text a studio_edit_guild call sets: each of about and description it gives as a string. */
+function guildTextPatch(args: Record<string, unknown>): GuildTextPatch {
+  return {
+    ...(typeof args.about === "string" ? { about: args.about } : {}),
+    ...(typeof args.description === "string" ? { description: args.description } : {}),
+  };
+}
+
 // The complete replacement a tool call asks for, validated against its base.
 export function proposedFor(base: EditBase, args: Record<string, unknown>): string | GuildText {
   if (base.kind === "guild") {
-    const hasAbout = typeof args.about === "string";
-    const hasDescription = typeof args.description === "string";
-    if (!hasAbout && !hasDescription) {
+    const patch = guildTextPatch(args);
+    if (patch.about === undefined && patch.description === undefined) {
       throw new StudioUnprocessableError("studio_edit_guild requires about, description, or both");
     }
     try {
-      return {
-        about: hasAbout ? validateAbout(String(args.about)) : base.text.about,
-        description: hasDescription ? validateGuildDescription(String(args.description)) : base.text.description,
-      };
+      return { ...base.text, ...validateGuildTextPatch(patch) };
     } catch (error) {
       if (error instanceof GuildValidationError) {
         throw new StudioUnprocessableError(error.message);
@@ -825,13 +829,7 @@ export async function applyEdit(
       artifactFailure(error);
     }
   }
-  const text = proposed as GuildText;
-  const row = await changeGuild(
-    scope.db,
-    base.guildId,
-    { about: text.about, description: text.description },
-    editActor(scope),
-  );
+  const row = await updateGuildText(scope.db, base.guildId, guildTextPatch(record.args), editActor(scope));
   if (!row) {
     throw new StudioUnprocessableError("source guild not found");
   }

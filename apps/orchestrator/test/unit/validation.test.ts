@@ -27,14 +27,14 @@ import {
   validateAgentName,
   validateWakeTriggers,
 } from "../../src/agents/validation.js";
+import type { GuildOperatorRow, GuildRow } from "../../src/db/guilds.js";
+import { canSeeGuild, guildRole } from "../../src/guilds/operators.js";
 import {
   GuildValidationError,
-  canSeeGuild,
-  guildRole,
   validateGuildOperatorRole,
-  assertGuildAgentRoom,
   validateAbout,
   validateGuildDescription,
+  validateGuildTextPatch,
   validateGitAuthorEmail,
   validateGuildName,
   validateMaxAgents,
@@ -103,35 +103,6 @@ test("max_agents is a positive integer", () => {
   assert.throws(() => validateMaxAgents(1.5), /max_agents/);
 });
 
-test("guild agent room refuses past max_agents", async () => {
-  const full = {
-    async getGuild() {
-      return { max_agents: 5 };
-    },
-    async countGuildAgents() {
-      return 5;
-    },
-  };
-  await assert.rejects(() => assertGuildAgentRoom(full as never, "guild_1", 1), /limited to 5/);
-  await assertGuildAgentRoom(full as never, "guild_1", 0);
-  await assert.rejects(
-    () =>
-      assertGuildAgentRoom(
-        {
-          async getGuild() {
-            return null;
-          },
-          async countGuildAgents() {
-            return 0;
-          },
-        },
-        null,
-        16,
-      ),
-    /limited to 15/,
-  );
-});
-
 test("guild routines switch is a boolean", () => {
   assert.equal(validateRoutinesEnabled(true), true);
   assert.equal(validateRoutinesEnabled(false), false);
@@ -144,8 +115,23 @@ test("guild visibility defaults to org and rejects unknown", () => {
   assert.throws(() => validateVisibility("secret"), /visibility must be/);
 });
 
+test("guild text patch validates only the fields it sets", () => {
+  assert.deepEqual(validateGuildTextPatch({}), {});
+  assert.deepEqual(validateGuildTextPatch({ about: "  weekly  " }), { about: "weekly" });
+  assert.deepEqual(validateGuildTextPatch({ description: "  brief  " }), { description: "brief" });
+  assert.deepEqual(validateGuildTextPatch({ about: "", description: " both " }), { about: "", description: "both" });
+});
+
+test("guild text patch refuses the about before the description", () => {
+  assert.throws(
+    () => validateGuildTextPatch({ about: "x".repeat(201), description: "x".repeat(8001) }),
+    /about must be at most 200/,
+  );
+  assert.throws(() => validateGuildTextPatch({ description: "x".repeat(8001) }), /description must be at most 8000/);
+});
+
 test("private guilds are visible only to their operators", () => {
-  const operators = [
+  const operators: GuildOperatorRow[] = [
     { user_id: "user_admin", name: "ada", role: "admin" },
     { user_id: "user_op", name: "otto", role: "operator" },
   ];
@@ -156,7 +142,7 @@ test("private guilds are visible only to their operators", () => {
 });
 
 test("guild roles come from the operators on the row", () => {
-  const guild = { operators: JSON.stringify([{ user_id: "user_admin", name: "ada", role: "admin" }]) };
+  const guild: Pick<GuildRow, "operators"> = { operators: [{ user_id: "user_admin", name: "ada", role: "admin" }] };
   assert.equal(guildRole(guild, "user_admin"), "admin");
   assert.equal(guildRole(guild, "user_other"), null);
   assert.equal(validateGuildOperatorRole("operator"), "operator");

@@ -3,7 +3,7 @@ import type { ArtifactStore } from "../artifacts/store.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { agentTask } from "../artifacts/service.js";
 import { memoryHistory } from "../memory/history.js";
-import { canSeeGuild } from "../guilds/validation.js";
+import { canSeeGuild } from "../guilds/operators.js";
 import {
   assertModelConnected,
   coreModelCredentials,

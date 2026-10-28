@@ -1,23 +1,31 @@
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
+import { ensureAgentRows } from "../artifacts/memory.js";
+import { hashTaskContent, resolveTaskContent, taskDisplayPath } from "../artifacts/task.js";
 import {
+  deleteAgent as deleteAgentRow,
   getAgent,
+  guildHasOperatorNamed,
+  insertAgent,
   listAgents,
   updateAgentConfig,
   type AgentConfigPatch,
+  type AgentPlacement,
   type AgentRow,
+  type NewAgent,
 } from "../db/agents.js";
-import { GuildNameTaken } from "../db/errors.js";
-import type { GuildRow } from "../db/guilds.js";
+import { GuildNameTaken, RowMissing } from "../db/errors.js";
+import { recordFileChange } from "../db/file-changes.js";
+import { getGuild, type GuildRow } from "../db/guilds.js";
 import { isPlainRecord } from "../db/json.js";
-import { isUniqueViolation, type Queryable } from "../db/pg.js";
+import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
 import type { AgentConfig } from "../db/schema/index.js";
 import type { GenerationLoop } from "../generation/index.js";
 import type { AgentMachines } from "../generation/machines.js";
-import { assertGuildAgentRoom, guildAgentRoom } from "../guilds/validation.js";
+import { assertGuildAgentRoom } from "../guilds/service.js";
 import { newId } from "../lib/ids.js";
 import { assertModelConnected, type ModelCredentialsProvider } from "../llm/credentials.js";
-import { placeAgent, type Placement } from "../machines/placement.js";
+import { freeSlot, placeAgent, placementMachine, type Placement } from "../machines/placement.js";
 import type { NotesStore } from "../notes/store.js";
 import {
   assertCanCreateAgent,
@@ -28,7 +36,6 @@ import {
 } from "../policy/index.js";
 import { AgentError } from "./errors.js";
 import { assertCodingAgent, validateAgentConfig, withCodingLimits } from "./config.js";
-import { agentDatabase, persistAgent } from "./persist.js";
 import {
   AgentValidationError,
   validateAgentName,
@@ -56,7 +63,7 @@ export type AgentServices = {
 };
 
 /** A new agent as it is asked for, before validation. */
-export type AgentDraft = {
+export type AgentRequest = {
   name: string;
   focus: string;
   wakeTriggers: string;
@@ -65,6 +72,12 @@ export type AgentDraft = {
   config: unknown;
   machineId: unknown;
 };
+
+/**
+ * A new agent as it is written: its row, the text its task is made from (the task template when
+ * the text is blank), and the machine it goes on.
+ */
+export type AgentDraft = { agent: NewAgent; task: string; placement: AgentPlacement };
 
 /** An agent's settings as a change asks for them, before validation; an undefined profile field stays as it is. */
 export type AgentSettingsPatch = {
@@ -135,69 +148,116 @@ export async function listBrokenTaskEmbeds(
 }
 
 /**
+ * Adds an agent to its guild, on the machine its placement names or else the organisation's only
+ * one, in the lowest free slot there, with its task's creation logged against `actor`. The agent
+ * gets its Memory in the artifact store, or its notes folder where there is no store; when that
+ * fails, the agent goes again.
+ */
+export async function addAgent(
+  services: Pick<AgentServices, "db" | "notes" | "artifacts">,
+  draft: AgentDraft,
+  actor: ArtifactActor,
+  now: Date,
+): Promise<AgentRow> {
+  const { db, notes, artifacts } = services;
+  const { agent, placement } = draft;
+  const task = resolveTaskContent(draft.task, artifacts?.templatesRoot ?? "");
+  const guild = await withTransaction(db, async (client) => {
+    if (await guildHasOperatorNamed(client, agent.guildId, agent.name)) {
+      throw new GuildNameTaken(agent.name, "operator");
+    }
+    const row = await getGuild(client, agent.guildId);
+    if (!row) {
+      throw new RowMissing("agent insert failed: guild not found");
+    }
+    const machine = await placementMachine(client, row.org_id, placement.machineId, {
+      browser: agent.config.browser === true,
+      coding: agent.config.coding === true,
+    });
+    const slot = await freeSlot(client, machine, placement.maxAgentsPerMachine ?? undefined);
+    const inserted = await insertAgent(
+      client,
+      { ...agent, task, taskHash: hashTaskContent(task), machineId: machine.id, machineSlot: slot },
+      now,
+    );
+    await recordFileChange(client, actor, {
+      orgId: inserted.org_id,
+      taskAgentId: agent.agentId,
+      displayPath: taskDisplayPath(inserted.org_id, agent.agentId),
+      operation: "create",
+      version: inserted.task_version,
+      createdAt: now,
+    });
+    return row;
+  });
+  try {
+    if (artifacts) {
+      await ensureAgentRows(artifacts, {
+        orgId: actor.orgId,
+        guildId: agent.guildId,
+        agentId: agent.agentId,
+        actor,
+      });
+    } else {
+      await notes.createAgent(guild.org_slug, guild.name, agent.name, draft.task);
+    }
+  } catch (error) {
+    await deleteAgentRow(db, agent.agentId);
+    throw error;
+  }
+  const created = await getAgent(db, agent.agentId);
+  if (created === null) {
+    throw new Error("agent not found after create");
+  }
+  return created;
+}
+
+/**
  * Creates an agent in the guild: validated, on a model the organisation has connected, within its
- * policy's caps and the guild's agent limit, and on the machine the draft names or the
+ * policy's caps and the guild's agent limit, and on the machine the request names or the
  * organisation's only one.
  */
 export async function createAgent(
   services: AgentServices,
   guild: GuildRow,
   operator: ArtifactActor,
-  draft: AgentDraft,
+  request: AgentRequest,
 ): Promise<AgentRow> {
   const { db, policy } = services;
   if (services.generation?.isDeletingGuild(guild.id)) {
     throw new AgentError(409, "guild is being deleted");
   }
-  const name = validateAgentName(draft.name);
-  const focus = validateFocus(draft.focus);
-  const wakeTriggers = validateWakeTriggers(draft.wakeTriggers);
-  const avatarShape = validateAvatarShape(draft.avatarShape);
-  const avatarColor = validateAvatarColor(draft.avatarColor);
-  const config = validateAgentConfig(withCodingLimits(configObject(draft.config)));
+  const name = validateAgentName(request.name);
+  const focus = validateFocus(request.focus);
+  const wakeTriggers = validateWakeTriggers(request.wakeTriggers);
+  const avatarShape = validateAvatarShape(request.avatarShape);
+  const avatarColor = validateAvatarColor(request.avatarColor);
+  const config = validateAgentConfig(withCodingLimits(configObject(request.config)));
   assertCodingAgent(config);
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
   const needs = { browser: config.browser, coding: config.coding };
   await assertCanCreateAgent(policy, orgCounts(db), guild.org_id, needs);
-  await assertGuildAgentRoom(guildAgentRoom(db), guild.id, 1);
+  await assertGuildAgentRoom(db, guild.id, 1);
   const { machine, maxAgentsPerMachine } = await placeAgent(
     services,
     guild.org_id,
     operator.actorId,
     {
-      requested: draft.machineId,
+      requested: request.machineId,
       needs,
     },
   );
   const agentId = newId("a");
-  const agent = {
-    agentId,
-    guildId: guild.id,
-    guildName: guild.name,
-    orgSlug: guild.org_slug,
-    name,
-    config,
-    now: new Date(),
-    focus,
-    wakeTriggers,
-    avatarShape,
-    avatarColor,
-    orgId: guild.org_id,
-    artifacts: services.artifacts,
-    actor: { ...operator, guildId: guild.id, agentId },
-    machineId: machine.id,
-    maxAgentsPerMachine,
+  const draft: AgentDraft = {
+    agent: { agentId, guildId: guild.id, name, config, focus, wakeTriggers, avatarShape, avatarColor },
+    task: focus,
+    placement: { machineId: machine.id, maxAgentsPerMachine },
   };
   try {
-    await persistAgent(agentDatabase(db), services.notes, agent);
+    return await addAgent(services, draft, { ...operator, guildId: guild.id, agentId }, new Date());
   } catch (error) {
     throw nameConflict(error);
   }
-  const created = await getAgent(db, agentId);
-  if (created === null) {
-    throw new Error("agent not found after create");
-  }
-  return created;
 }
 
 /** The profile fields a settings patch changes, each validated; an absent one is null. */
