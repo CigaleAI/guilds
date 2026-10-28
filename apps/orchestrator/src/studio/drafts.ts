@@ -6,7 +6,6 @@ import { taskDisplayPath, writeAgentTaskInTransaction } from "../artifacts/task.
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj as _jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
-import { memoryOf } from "../agents/validation.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { countInputTokens } from "../llm/tokens.js";
 import { instructionHash } from "../schedules/item.js";
@@ -228,7 +227,7 @@ export class StudioDrafts implements StudioDraftService {
       if (!agent) {
         throw new StudioUnprocessableError("target is not a publishable agent");
       }
-      const currentHash = JSON.stringify(agent.config ?? {});
+      const currentHash = JSON.stringify(agent.config);
       if (currentHash !== preflight.config_hash) {
         const again = await this.runPreflight(agent, String(draft.proposed_content), args);
         Object.assign(preflight, again);
@@ -328,8 +327,8 @@ export class StudioDrafts implements StudioDraftService {
     });
     const preview = await previewCurrentState(args.preview, agent);
     const tools = await projectOfferedToolSchemas(args.preview, agent);
-    const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
-    const memoryEnabled = memoryOf(config);
+    const { config } = agent;
+    const memoryEnabled = config.memory;
     const composed = composeAgentSystemPrompt(
       standing,
       expanded,
@@ -338,9 +337,8 @@ export class StudioDrafts implements StudioDraftService {
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
-    const tokens = countInputTokens(String(config.model ?? ""), [{ role: "system", content: composed }], tools.schemas);
-    const maxInput = Number(config.max_input_tokens ?? 100_000);
-    if (tokens > maxInput) {
+    const tokens = countInputTokens(config.model, [{ role: "system", content: composed }], tools.schemas);
+    if (tokens > config.max_input_tokens) {
       throw new StudioUnprocessableError("composed prompt exceeds the target agent's max_input_tokens");
     }
     const priorEffective = live.text && live.expanded.ok ? promptHash(live.expanded.text) : live.hash;

@@ -14,9 +14,7 @@ import {
 import { isMarketplaceModel } from "../llm/providers.js";
 import { newId } from "../lib/ids.js";
 import { EventQueue } from "../lib/event.js";
-import { memoryOf } from "../agents/validation.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
-import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
@@ -572,7 +570,7 @@ export class StudioService {
     const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
     const effectiveHash = promptHash(effectiveTask);
     const tools = await projectOfferedToolSchemas(this.previewDeps(), agent);
-    const memoryEnabled = memoryOf(jsonObj(agent.config));
+    const memoryEnabled = agent.config.memory;
     const composed = composeAgentSystemPrompt(
       standing,
       effectiveTask,

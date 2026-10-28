@@ -1,11 +1,35 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "../../src/avatars/clay.js";
 import {
+  normalizeAvatarColor,
+  normalizeAvatarShape,
   parseAvatarShape,
   renderAvatarFromShape,
   renderAvatarSvg,
   SUPPORTED_AVATAR_STYLES,
 } from "../../src/avatars/index.js";
+
+test("a shape is stored trimmed and lowercased, and a blank one is the default", () => {
+  assert.equal(normalizeAvatarShape("  Critters:Bell-1 "), "critters:bell-1");
+  assert.equal(normalizeAvatarShape(""), DEFAULT_AVATAR_SHAPE);
+  assert.equal(normalizeAvatarShape(undefined), DEFAULT_AVATAR_SHAPE);
+});
+
+test("a shape that is not one normalizes to null", () => {
+  assert.equal(normalizeAvatarShape("no spaces"), null);
+  assert.equal(normalizeAvatarShape("x".repeat(64)), null);
+});
+
+test("a colour is stored trimmed and lowercased, and a blank one is the default", () => {
+  assert.equal(normalizeAvatarColor(" #FF4D8D "), "#ff4d8d");
+  assert.equal(normalizeAvatarColor(null), DEFAULT_AVATAR_COLOR);
+});
+
+test("a colour that is not a 6-digit hex normalizes to null", () => {
+  assert.equal(normalizeAvatarColor("#fff"), null);
+  assert.equal(normalizeAvatarColor("red"), null);
+});
 
 test("parseAvatarShape extracts style and seed correctly", () => {
   assert.deepEqual(parseAvatarShape("critters:bell-preview"), {

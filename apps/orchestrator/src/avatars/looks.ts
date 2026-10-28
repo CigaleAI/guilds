@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "../agents/validation.js";
+import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "./clay.js";
 import { parseAvatarShape, type AvatarStyleName } from "./index.js";
 
 /** Mascot sets the builder picks from for a guild; pixelbot is still rendered when already stored. */

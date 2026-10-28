@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { DEFAULT_MAX_WORKSPACE_MIB } from "../src/agents/validation.js";
+import { DEFAULT_MAX_WORKSPACE_MIB } from "../src/agents/config.js";
 import { repoRoot } from "../src/lib/paths.js";
 import { installedConnectors } from "../src/connectors/index.js";
 import type { ConnectorEntry } from "../src/connectors/registry.js";

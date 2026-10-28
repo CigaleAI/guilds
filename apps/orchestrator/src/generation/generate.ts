@@ -1,5 +1,4 @@
 import { accessDatabase } from "../access/runtime.js";
-import { maxScriptsOf } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import type { ArtifactFiles } from "../artifacts/files.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
@@ -481,7 +480,7 @@ export class RunGenerator {
       persist_run_scripts: async (runScripts) => {
         await db.updateRunScripts(runId, runScripts, new Date());
       },
-      max_scripts: maxScriptsOf(agent.config),
+      max_scripts: agent.config.max_scripts,
       dynamic_tools: offer.names.has("script_run") ? dynamicScriptTools(offer.scripts) : {},
       connection_tool_names: Object.keys(offer.connections),
       offered_tools: offer.names,

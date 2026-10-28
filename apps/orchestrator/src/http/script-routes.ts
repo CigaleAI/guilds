@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import { loadOperatorActor } from "../artifacts/actors.js";
 import { displayPathFor } from "../artifacts/paths.js";
 import { requireVisibleAgent } from "../agents/access.js";
-import { maxScriptsOf } from "../agents/validation.js";
 import type { AgentRow } from "../db/agents.js";
 import { scriptItem, type AgentScript } from "../scripts/catalog.js";
 import type { AppDeps } from "./deps.js";
@@ -60,7 +59,7 @@ export async function registerScriptRoutes(app: FastifyInstance, deps: AppDeps):
       body.description,
       body.source,
       body.parameters ?? null,
-      { maxScripts: maxScriptsOf(agent.config) },
+      { maxScripts: agent.config.max_scripts },
     );
     await publishGroup(deps, agent.guild_id, "agent.scripts.changed", {
       agent_id: agent.id,

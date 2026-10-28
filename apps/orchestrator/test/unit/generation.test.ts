@@ -651,7 +651,7 @@ describe("generation", { concurrency: 1 }, () => {
     const db = {
       async getAgent(agentId: string) {
         return agentId === "a_1"
-          ? { id: "a_1", name: "researcher", guild_name: "research", org_slug: "acme", ...AGENT_MACHINE }
+          ? { id: "a_1", name: "researcher", guild_name: "research", org_slug: "acme", config: AGENT_CONFIG, ...AGENT_MACHINE }
           : null;
       },
       async deleteAgent(agentId: string) {

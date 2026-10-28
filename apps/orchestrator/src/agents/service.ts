@@ -27,18 +27,15 @@ import {
   type OrgPolicy,
 } from "../policy/index.js";
 import { AgentError } from "./errors.js";
+import { assertCodingAgent, validateAgentConfig, withCodingLimits } from "./config.js";
 import { agentDatabase, persistAgent } from "./persist.js";
 import {
   AgentValidationError,
-  assertCodingAgent,
-  browserLanguageOf,
   validateAgentName,
   validateAvatarColor,
   validateAvatarShape,
-  validateConfig,
   validateFocus,
   validateWakeTriggers,
-  withCodingLimits,
 } from "./validation.js";
 import { agentItem } from "./view.js";
 import { brokenTaskEmbeds } from "../artifacts/service.js";
@@ -157,7 +154,7 @@ export async function createAgent(
   const wakeTriggers = validateWakeTriggers(draft.wakeTriggers);
   const avatarShape = validateAvatarShape(draft.avatarShape);
   const avatarColor = validateAvatarColor(draft.avatarColor);
-  const config = validateConfig(withCodingLimits(configObject(draft.config)));
+  const config = validateAgentConfig(withCodingLimits(configObject(draft.config)));
   assertCodingAgent(config);
   await assertModelConnected(services.modelCredentials, guild.org_id, config.model);
   const needs = { browser: config.browser, coding: config.coding };
@@ -300,7 +297,7 @@ export async function reconfigureAgent(
   userId: string,
   patch: AgentSettingsPatch,
 ): Promise<AgentRow> {
-  const config = validateConfig(configObject(patch.config));
+  const config = validateAgentConfig(configObject(patch.config));
   const previous = agent.config;
   assertCodingAgent(config, previous);
   await assertModelConnected(services.modelCredentials, agent.org_id, config.model);
@@ -322,7 +319,7 @@ export async function reconfigureAgent(
     await moveAgentNotes(services, agent, config, renamed);
   }
   const browserOff = Boolean(previous.browser) && !config.browser;
-  const newLanguage = config.browser && browserLanguageOf(previous) !== config.browser_language;
+  const newLanguage = config.browser && previous.browser_language !== config.browser_language;
   if ((browserOff || newLanguage) && services.generation) {
     await services.generation.machines.agentBrowserChanged(agent.id);
   }

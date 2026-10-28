@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
+import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";

@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { getMcpServerBySlug } from "../connectors/servers.js";
-import { HARNESSES } from "../db/schema/index.js";
+import { HARNESSES, type AgentConfig } from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
 import { operatorActor } from "../artifacts/actors.js";
@@ -14,16 +14,6 @@ import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
 import { describeWindow } from "../schedules/window.js";
-import {
-  CONFIG_KEYS,
-  addMissingBrowser,
-  addMissingBrowserLanguage,
-  addMissingScriptingAndMemory,
-  addMissingRunLimits,
-  addMissingTemperatureAndStepLimits,
-  addMissingThinkingLevel,
-  secretAliasesOf,
-} from "../agents/validation.js";
 import { HARNESS_INFO, harnessSecretSource } from "../coding/harnesses.js";
 import { emptyRecipe } from "./minimal.js";
 import { parseRecipe } from "./parse.js";
@@ -96,9 +86,6 @@ function secretRecipeScope(secret: SecretRow, guildId: string): "org" | "guild" 
   return secret.grants.some((grant) => grant.guild_id === guildId) ? "guild" : "agent";
 }
 
-/** The harness keys a role leaves out while unset. */
-const HARNESS_KEYS = new Set(["harness", "harness_model", "harness_effort"]);
-
 /** The variables the harnesses read their subscription tokens from. */
 const HARNESS_TOKEN_VARIABLES = new Set(
   HARNESSES.flatMap((harness) => HARNESS_INFO[harness].secret ?? []),
@@ -109,64 +96,51 @@ const HARNESS_TOKEN_VARIABLES = new Set(
  * operator's own subscription, so a recipe leaves them out: the applying operator sets one up
  * for the harness they pick.
  */
-function harnessTokenSecrets(config: Record<string, unknown>): Set<string> {
-  if (config.coding !== true) return new Set();
-  const aliases = secretAliasesOf(config);
-  return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, aliases) ?? []));
+function harnessTokenSecrets(config: AgentConfig): Set<string> {
+  if (!config.coding) return new Set();
+  return new Set(HARNESSES.flatMap((harness) => harnessSecretSource(harness, config.secret_aliases) ?? []));
 }
 
 /** The role's secret aliases a recipe carries: a coding role's harness token aliases stay behind. */
-function portableSecretAliases(config: Record<string, unknown>): Record<string, string> {
-  const aliases = secretAliasesOf(config);
-  if (config.coding !== true) return aliases;
-  return Object.fromEntries(Object.entries(aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)));
+function portableSecretAliases(config: AgentConfig): Record<string, string> {
+  if (!config.coding) return config.secret_aliases;
+  return Object.fromEntries(
+    Object.entries(config.secret_aliases).filter(([variable]) => !HARNESS_TOKEN_VARIABLES.has(variable)),
+  );
 }
 
 function clippedHint(value: string | null | undefined): string {
   return (value ?? "").slice(0, RECIPE_HINT_MAX);
 }
 
-export function portableRoleConfig(
-  config: Record<string, unknown>,
-  browserRequired: boolean,
-): Record<string, unknown> {
-  const filled = addMissingScriptingAndMemory(
-    addMissingThinkingLevel(
-      addMissingBrowserLanguage(
-        addMissingRunLimits(
-          addMissingTemperatureAndStepLimits(
-            addMissingBrowser({
-              ...config,
-              browser: browserRequired || Boolean(config.browser),
-            }),
-          ),
-        ),
-      ),
-    ),
-  );
-  const out: Record<string, unknown> = {};
-  for (const key of CONFIG_KEYS) {
-    // A recipe carries the flags alone: at apply the box follows them, and a custom size stays behind.
-    if (key === "box" || key === "cpu" || key === "memory_mib") {
-      continue;
-    }
-    // A role without a harness, or on its harness's default model or effort, leaves the key out; apply settles it.
-    if (HARNESS_KEYS.has(key) && filled[key] == null) {
-      continue;
-    }
-    // A role left without secret aliases leaves the key out.
-    if (key === "secret_aliases") {
-      const aliases = portableSecretAliases(filled);
-      if (Object.keys(aliases).length) {
-        out.secret_aliases = aliases;
-      }
-      continue;
-    }
-    if (key in filled) {
-      out[key] = filled[key];
-    }
-  }
-  return out;
+/**
+ * The config a role carries for an agent: its settings, in the order of `CONFIG_KEYS`. A harness,
+ * harness model or harness effort left unset, and secret aliases a recipe carries none of, leave
+ * their key out; apply settles them.
+ */
+export function portableRoleConfig(config: AgentConfig): RecipeRole["config"] {
+  const aliases = portableSecretAliases(config);
+  return {
+    model: config.model,
+    temperature: config.temperature,
+    max_tokens: config.max_tokens,
+    max_steps: config.max_steps,
+    max_tool_calls: config.max_tool_calls,
+    max_input_tokens: config.max_input_tokens,
+    keep_tool_result_generations: config.keep_tool_result_generations,
+    max_scripts: config.max_scripts,
+    max_workspace_mib: config.max_workspace_mib,
+    browser: config.browser,
+    browser_language: config.browser_language,
+    coding: config.coding,
+    ...(config.harness === null ? {} : { harness: config.harness }),
+    ...(config.harness_model === null ? {} : { harness_model: config.harness_model }),
+    ...(config.harness_effort === null ? {} : { harness_effort: config.harness_effort }),
+    ...(Object.keys(aliases).length ? { secret_aliases: aliases } : {}),
+    scripting: config.scripting,
+    memory: config.memory,
+    thinking_level: config.thinking_level,
+  };
 }
 
 /** A tool as the access view lists it: its name, and whether the agent has it on. */
@@ -273,14 +247,11 @@ async function captureSchedules(capture: Capture, agentId: string, role: string)
 /** The role an agent becomes: its config made portable, its task, scripts, routines and native tools. */
 async function captureRole(capture: Capture, agent: GuildAgentRow, access: AgentAccess): Promise<RecipeRole> {
   const role = agent.name;
-  const config: Record<string, unknown> = agent.config;
+  const { config } = agent;
   const taskBody = (await capture.deps.db.getAgentTask(capture.orgId, agent.id))?.content_text ?? "";
   const scripts = await captureScripts(capture, agent.id);
-  const browserRequired = Boolean(config.browser);
-  const portable = portableRoleConfig(config, browserRequired);
-  if (scripts.length > Number(portable.max_scripts ?? 0)) {
-    portable.max_scripts = scripts.length;
-  }
+  const browserRequired = config.browser;
+  const portable = portableRoleConfig({ ...config, max_scripts: Math.max(config.max_scripts, scripts.length) });
   return {
     role,
     name_suggestion: role,

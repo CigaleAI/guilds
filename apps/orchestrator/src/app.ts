@@ -4,14 +4,9 @@ import Fastify from "fastify";
 import { Type } from "@sinclair/typebox";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import fastifyWebsocket from "@fastify/websocket";
-import {
-  DEFAULT_AVATAR_COLOR,
-  DEFAULT_AVATAR_SHAPE,
-  validateAvatarColor,
-  validateAvatarShape,
-} from "./agents/validation.js";
 import { artifactStore } from "./artifacts/store.js";
-import { renderAvatarSvg } from "./avatars/index.js";
+import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "./avatars/clay.js";
+import { normalizeAvatarColor, normalizeAvatarShape, renderAvatarSvg } from "./avatars/index.js";
 import type { Database } from "./db/client.js";
 import {
   extensionIdentity,
@@ -126,22 +121,12 @@ export async function buildApp(
     async (request, reply) => {
       const { style } = request.params;
       const query = request.query;
-      let seed = DEFAULT_AVATAR_SHAPE;
-      try {
-        seed = validateAvatarShape(query.seed);
-      } catch {
-        /* keep default */
-      }
-      // A color query may omit the leading '#'. The validator requires it.
+      const seed = normalizeAvatarShape(query.seed) ?? DEFAULT_AVATAR_SHAPE;
+      // A color query may omit the leading '#'. A stored colour has it.
       const rawColor = (query.color ?? "").trim();
-      let color = DEFAULT_AVATAR_COLOR;
-      try {
-        color = validateAvatarColor(
-          rawColor.startsWith("#") || rawColor === "" ? rawColor : `#${rawColor}`,
-        );
-      } catch {
-        /* keep default */
-      }
+      const color =
+        normalizeAvatarColor(rawColor.startsWith("#") || rawColor === "" ? rawColor : `#${rawColor}`) ??
+        DEFAULT_AVATAR_COLOR;
       return reply
         .type("image/svg+xml; charset=utf-8")
         .header("Cache-Control", "public, max-age=31536000, immutable")

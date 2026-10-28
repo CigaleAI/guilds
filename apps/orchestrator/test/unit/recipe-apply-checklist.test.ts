@@ -8,7 +8,8 @@ import {
   DEFAULT_MAX_STEPS,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TEMPERATURE,
-} from "../../src/agents/validation.js";
+  validateAgentConfig,
+} from "../../src/agents/config.js";
 import { operatorAuthor, linkedInNotionRecipe, huskLeadMatcherRecipe } from "../helpers/recipe-docs.js";
 import { validateRecipe } from "../../src/recipes/validate.js";
 import type { ApplyPlan, PlannedConnection } from "../../src/db/schema/index.js";
@@ -99,14 +100,14 @@ test("apply fills sparse builder config so the browser can start", () => {
   sparse.roles[0]!.config = { browser: true };
   sparse.roles[0]!.browser.required = true;
   assert.equal(configFromRecipeRole(sparse.roles[0]!).model, "");
-  const filled = configFromRecipeRole(sparse.roles[0]!, { model: TEST_MODEL });
+  const filled = validateAgentConfig(configFromRecipeRole(sparse.roles[0]!, { model: TEST_MODEL }));
   assert.equal(filled.model, TEST_MODEL);
   assert.equal(filled.browser, true);
   assert.equal(filled.temperature, DEFAULT_TEMPERATURE);
   assert.equal(filled.max_tokens, DEFAULT_MAX_TOKENS);
   assert.equal(filled.max_steps, DEFAULT_MAX_STEPS);
-  const prepared = prepareRecipeForApply(sparse);
-  assert.equal(prepared.roles[0]!.config.temperature, DEFAULT_TEMPERATURE);
+  const prepared = prepareRecipeForApply(sparse, { models: new Map([[sparse.roles[0]!.role, TEST_MODEL]]) });
+  assert.equal(validateAgentConfig(prepared.roles[0]!.config).temperature, DEFAULT_TEMPERATURE);
   assert.equal(prepared.roles[0]!.config.browser, true);
 });
 

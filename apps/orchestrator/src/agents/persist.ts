@@ -1,5 +1,5 @@
 import type { AgentConfig } from "../db/schema/index.js";
-import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "./validation.js";
+import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "../avatars/clay.js";
 import type { ArtifactActor } from "../artifacts/types.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { operatorActor } from "../artifacts/actors.js";

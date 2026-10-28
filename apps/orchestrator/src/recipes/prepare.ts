@@ -1,13 +1,5 @@
 import type { Effort, Harness } from "../db/schema/index.js";
-import {
-  addMissingBrowserLanguage,
-  addMissingFlags,
-  addMissingRunLimits,
-  addMissingScriptingAndMemory,
-  addMissingTemperatureAndStepLimits,
-  addMissingThinkingLevel,
-  secretAliasesOf,
-} from "../agents/validation.js";
+import { isValidSecretAliases } from "../agents/config.js";
 import { harnessModelOf, harnessOf } from "../coding/harnesses.js";
 import { harnessEffortOf, harnessEffortsFor } from "../coding/harness-models.js";
 import { INSTRUCTION_MAX, validateCron } from "../schedules/cron.js";
@@ -93,34 +85,25 @@ export type RoleChoice = { model?: string | undefined; harness?: Harness | undef
 /**
  * The agent config a role applies as: the role's, with the model and harness the operator chose
  * (else the recipe's), and the browser and coding flags settled. Only a coding role keeps a
- * harness, and the recipe's harness model and effort only with the recipe's harness. The machine the agent
- * goes on is the apply's.
+ * harness, and the recipe's harness model and effort only with the recipe's harness, and secret
+ * aliases that do not validate are left out. Every other setting the role leaves out takes its
+ * default when `validateAgentConfig` reads the config. The machine the agent goes on is the apply's.
  */
 export function configFromRecipeRole(role: RecipeRole, choice: RoleChoice = {}): Record<string, unknown> {
   const roleConfig = { ...role.config };
   const recommended = typeof roleConfig.model === "string" ? roleConfig.model.trim() : "";
   const coding = roleCodes(role);
   const applied = coding ? (choice.harness ?? harnessOf(roleConfig)) : null;
-  return addMissingFlags(
-    addMissingScriptingAndMemory(
-      addMissingThinkingLevel(
-        addMissingBrowserLanguage(
-          addMissingRunLimits(
-            addMissingTemperatureAndStepLimits({
-              ...roleConfig,
-              model: choice.model ?? recommended,
-              browser: roleBrowses(role),
-              coding,
-              harness: applied,
-              harness_model: appliedHarnessModel(roleConfig, applied),
-              harness_effort: appliedHarnessEffort(roleConfig, applied),
-              secret_aliases: secretAliasesOf(roleConfig),
-            }),
-          ),
-        ),
-      ),
-    ),
-  );
+  return {
+    ...roleConfig,
+    model: choice.model ?? recommended,
+    browser: roleBrowses(role),
+    coding,
+    harness: applied,
+    harness_model: appliedHarnessModel(roleConfig, applied),
+    harness_effort: appliedHarnessEffort(roleConfig, applied),
+    secret_aliases: isValidSecretAliases(roleConfig.secret_aliases) ? roleConfig.secret_aliases : {},
+  };
 }
 
 /** The model and harness chosen per role, by role. */

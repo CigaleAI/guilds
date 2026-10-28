@@ -148,7 +148,20 @@ flows are under `mcp/`: `connectors/connect.js` is `mcp/connect-token.js`.
 `agentMcpConnection` (`access/runtime.js`) is `agentLogins`, which
 answers every connected login of the agent, and `McpPool.state` and
 `previewConnectorState` take those logins. `GenerationLoopServices.mcp`
-is required.
+is required. An agent's configuration is the new export
+`agents/config.js`: `CONFIG_KEYS`, the `DEFAULT_*` settings,
+`BROWSER_LANGUAGES`, `withCodingLimits`, `validateBrowserLanguage`,
+`validateThinkingLevel`, `assertCodingAgent`, whose previous config is
+an `AgentConfig`, and `validateAgentConfig`, which was
+`validateConfig`. `isValidSecretAliases` says whether a value is
+secret aliases a config takes. `agents/validation.js` keeps
+`AgentValidationError` and the name, focus, wake-trigger and avatar
+validators. `memoryOf`, `scriptingOf`, `maxScriptsOf`,
+`maxWorkspaceMibOf`, `browserLanguageOf`, `secretAliasesOf`,
+`keepToolResultGenerationsOf` and the `addMissing*` functions are
+gone: an agent row's `config` holds every setting, read by name.
+`DEFAULT_AVATAR_SHAPE` and `DEFAULT_AVATAR_COLOR` are in
+`avatars/clay.ts`, which the package does not export.
 
 **Breaking for extending repositories.** The Makefile variables
 `EDITION`, `EDITION_TEST_PACKAGES`, and `EDITION_COMPOSE_FILES` are

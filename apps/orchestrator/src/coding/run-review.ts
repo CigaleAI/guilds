@@ -1,5 +1,4 @@
 import { accessDatabase, agentSecrets } from "../access/runtime.js";
-import { secretAliasesOf } from "../agents/validation.js";
 import type { AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { getToolResultMetadata, type RunRow } from "../db/runs.js";
@@ -82,7 +81,7 @@ export async function loadHarnessView(services: RunReviewServices, agent: AgentR
   const granted = new Set(
     (await agentSecrets(accessDatabase(services.db), agent)).map((secret) => secret.name),
   );
-  const aliases = secretAliasesOf(config);
+  const aliases = config.secret_aliases;
   const logins = agent.harness_logins;
   const carried = Array.isArray(agent.machine_harnesses)
     ? agent.machine_harnesses.filter(isHarness)

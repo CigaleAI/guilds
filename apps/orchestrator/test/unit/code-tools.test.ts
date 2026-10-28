@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, test } from "node:test";
-import { validateConfig, withCodingLimits } from "../../src/agents/validation.js";
+import { validateAgentConfig, withCodingLimits } from "../../src/agents/config.js";
 import { agentWorkspaceMaxMib } from "../../src/generation/workspace.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { configSnapshot } from "../../src/generation/snapshot.js";
@@ -298,21 +298,20 @@ test("coding offers code_task and the code tools; without it they are refused na
 });
 
 test("agent workspace max is the agent's cap, never above the host cap", () => {
-  assert.equal(agentWorkspaceMaxMib({}), 10240);
   assert.equal(agentWorkspaceMaxMib({ max_workspace_mib: 512 }), 512);
   assert.equal(agentWorkspaceMaxMib({ max_workspace_mib: 20000 }, { WORKSPACE_MAX_MIB: "4096" }), 4096);
 });
 
 test("coding defaults to off, and a new coding agent gets the coding budgets", () => {
-  assert.equal(validateConfig({ ...AGENT_CONFIG }).coding, false);
-  const coder = validateConfig(withCodingLimits({ model: AGENT_CONFIG.model, browser: false, coding: true }));
+  assert.equal(validateAgentConfig({ ...AGENT_CONFIG }).coding, false);
+  const coder = validateAgentConfig(withCodingLimits({ model: AGENT_CONFIG.model, browser: false, coding: true }));
   assert.equal(coder.max_steps, 200);
   assert.equal(coder.max_tool_calls, 200);
   assert.equal(coder.max_input_tokens, 100000);
-  const explicit = validateConfig(withCodingLimits({ ...AGENT_CONFIG, coding: true, max_steps: 12 }));
+  const explicit = validateAgentConfig(withCodingLimits({ ...AGENT_CONFIG, coding: true, max_steps: 12 }));
   assert.equal(explicit.max_steps, 12);
   assert.equal(explicit.max_tool_calls, AGENT_CONFIG.max_tool_calls);
-  assert.throws(() => validateConfig({ ...AGENT_CONFIG, coding: "yes" }), /coding must be a boolean/);
+  assert.throws(() => validateAgentConfig({ ...AGENT_CONFIG, coding: "yes" }), /coding must be a boolean/);
 });
 
 describe("coding runs in the generation loop", () => {

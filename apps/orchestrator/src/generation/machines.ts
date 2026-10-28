@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
-import { AgentValidationError, browserLanguageOf, validateConfig } from "../agents/validation.js";
+import { validateAgentConfig } from "../agents/config.js";
+import { AgentValidationError } from "../agents/validation.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
 import { setMachineHarnesses } from "../db/machines.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
@@ -66,7 +67,7 @@ export function agentSeat(agent: AgentRow): AgentSeat {
     agentId: agent.id,
     machineId: agent.machine_id,
     slot: agent.machine_slot,
-    browserLanguage: browserLanguageOf(agent.config),
+    browserLanguage: agent.config.browser_language,
   };
 }
 
@@ -346,7 +347,7 @@ export class AgentMachines {
   /** The agent's config, refused with 422 when it does not validate. */
   private validConfig(agent: AgentRow): AgentConfig {
     try {
-      return validateConfig(agent.config);
+      return validateAgentConfig(agent.config);
     } catch (error) {
       if (error instanceof AgentValidationError) {
         throw new RunRequestError(422, error.message);

@@ -1,8 +1,6 @@
 import { agentTask, artifactAt, memoryTimeline, parseActorPath } from "../artifacts/service.js";
-import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { memoryDiffText, type MemoryTimelineEntry } from "../artifacts/memory-timeline.js";
-import { memoryOf } from "../agents/validation.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { argInteger, argString, functionSchema } from "../toolbox/schema.js";
 import { scheduleItem } from "../schedules/item.js";
@@ -327,7 +325,7 @@ export const studioGetAgentContext: StudioTool = {
       const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
       const preview = await currentState();
       const tools = await projectOfferedToolSchemas(ctx.preview, agent);
-      const memoryEnabled = memoryOf(jsonObj(agent.config));
+      const memoryEnabled = agent.config.memory;
       const composed = composeAgentSystemPrompt(
         standing,
         effectiveTask,

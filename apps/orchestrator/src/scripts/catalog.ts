@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
+import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import { AsyncLock } from "../lib/lock.js";
 import { newId } from "../lib/ids.js";
 import { displayPathFor } from "../artifacts/paths.js";

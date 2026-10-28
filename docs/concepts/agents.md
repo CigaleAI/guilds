@@ -466,8 +466,12 @@ The name may be reused.
 
 ### Code
 
-- `apps/orchestrator/src/agents/validation.ts`: configuration keys,
-  defaults, and name, focus, and avatar rules
+- `apps/orchestrator/src/agents/config.ts`: configuration keys,
+  defaults, and their checks
+- `apps/orchestrator/src/agents/validation.ts`: name, focus, wake
+  triggers, and avatar rules
+- `apps/orchestrator/src/avatars/`: the default look, the stored shape
+  and colour formats, and the renderer
 - `apps/orchestrator/src/agents/persist.ts`: create
 - `apps/orchestrator/src/agents/service.ts`: create, configure, move,
   and delete

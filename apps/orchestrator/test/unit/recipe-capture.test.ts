@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TEST_MODEL } from "../helpers/models.js";
+import { CONFIG_KEYS, validateAgentConfig } from "../../src/agents/config.js";
+import { isPlainRecord } from "../../src/db/json.js";
 import { captureGuild,
   portableRoleConfig,
   preferRecipeScope,
@@ -61,6 +63,11 @@ const DEFAULT_ACCESS: Record<string, AccessRow[]> = {
   ],
 };
 
+/** An agent's config as the box stores it: every setting, with the fixture's own over the defaults. */
+function storedConfig(config: unknown): Record<string, unknown> {
+  return { ...validateAgentConfig({ model: TEST_MODEL }), ...(isPlainRecord(config) ? config : {}) };
+}
+
 function captureDeps(options: {
   agents?: Array<Record<string, unknown>>;
   task?: string;
@@ -106,7 +113,7 @@ function captureDeps(options: {
   ];
   return {
     db: {
-      listAgents: async () => agents,
+      listAgents: async () => agents.map((agent) => ({ ...agent, config: storedConfig(agent.config) })),
       getAgentTask: async (_orgId: string, agentId: string) =>
         agentId === "a_scout"
           ? { content_text: options.task ?? "Ping @scout and keep @user. See ![[org/org_1/guilds/guild_live/playbook.md]]" }
@@ -176,16 +183,41 @@ function captureDeps(options: {
   };
 }
 
-test("portable role config keeps generation keys and drops local ids", () => {
-  const config = portableRoleConfig(
-    { model: TEST_MODEL, browser: true, connection_id: "conn_1", sandbox_id: "sbx" },
-    true,
-  );
+test("portable role config carries every setting in the order of the config keys", () => {
+  const stored = validateAgentConfig({ model: TEST_MODEL, browser: true });
+  const config = portableRoleConfig(stored);
+  assert.deepEqual(Object.keys(config), [...CONFIG_KEYS].filter((key) => !key.startsWith("harness") && key !== "secret_aliases"));
   assert.equal(config.browser, true);
   assert.equal(config.model, TEST_MODEL);
   assert.equal(config.browser_language, "en-US");
-  assert.equal("connection_id" in config, false);
-  assert.equal("sandbox_id" in config, false);
+});
+
+test("portable role config leaves out a harness, model and effort left unset, and no secret aliases", () => {
+  const config = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL }));
+  assert.equal("harness" in config, false);
+  assert.equal("harness_model" in config, false);
+  assert.equal("harness_effort" in config, false);
+  assert.equal("secret_aliases" in config, false);
+});
+
+test("portable role config keeps a coding role's harness and its aliases but its harness tokens", () => {
+  const stored = validateAgentConfig({
+    model: TEST_MODEL,
+    coding: true,
+    harness: "claude-code",
+    harness_model: "opus",
+    secret_aliases: { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN", GH_PAT: "BOB_GH" },
+  });
+  const config = portableRoleConfig(stored);
+  assert.equal(config.harness, "claude-code");
+  assert.equal(config.harness_model, "opus");
+  assert.deepEqual(config.secret_aliases, { GH_PAT: "BOB_GH" });
+});
+
+test("portable role config of a role without coding keeps every secret alias", () => {
+  const aliases = { CLAUDE_CODE_OAUTH_TOKEN: "BOB_TOKEN" };
+  const config = portableRoleConfig(validateAgentConfig({ model: TEST_MODEL, secret_aliases: aliases }));
+  assert.deepEqual(config.secret_aliases, aliases);
 });
 
 test("recipe scope prefers organisation reuse", () => {

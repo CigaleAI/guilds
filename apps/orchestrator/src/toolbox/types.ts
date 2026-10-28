@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_SCRIPTS } from "../agents/validation.js";
+import { DEFAULT_MAX_SCRIPTS } from "../agents/config.js";
 import type { Harness, Effort, ReportedToolMetadata, RunHarnessTask } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import type { ArtifactActor } from "../artifacts/types.js";

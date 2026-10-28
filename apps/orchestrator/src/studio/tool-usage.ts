@@ -1,5 +1,3 @@
-import { memoryOf } from "../agents/validation.js";
-import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { REGISTRY } from "../toolbox/index.js";
 import { offeredToolNames } from "../toolbox/offered.js";
@@ -69,12 +67,12 @@ export function nativeGroup(name: string): string {
 type AgentAccess = Awaited<ReturnType<typeof projectAgentAccess>>;
 
 function nativeEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
-  const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
+  const { config } = agent;
   const offered = offeredToolNames(access.native_tools, {
-    browser: Boolean(config.browser),
-    coding: Boolean(config.coding),
-    scripting: config.scripting !== false,
-    memory: memoryOf(config),
+    browser: config.browser,
+    coding: config.coding,
+    scripting: config.scripting,
+    memory: config.memory,
     schedules: true,
     direct: true,
   });
@@ -119,10 +117,9 @@ function connectorEntries(agent: Pick<AgentRow, "id">, access: AgentAccess): Too
 
 /** Every tool one agent is offered now, and every script or connection tool it is withheld. */
 export function agentToolEntries(agent: Pick<AgentRow, "id" | "config">, access: AgentAccess): ToolEntry[] {
-  const config = (jsonObj(agent.config) as Record<string, unknown> | null) ?? {};
   return [
     ...nativeEntries(agent, access),
-    ...scriptEntries(agent, access, config.scripting !== false),
+    ...scriptEntries(agent, access, agent.config.scripting),
     ...connectorEntries(agent, access),
   ];
 }

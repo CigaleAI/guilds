@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
+import { DEFAULT_MAX_TOOL_CALLS } from "../agents/config.js";
 import { collectDirectoryListing, type DirectoryNotes } from "../directories/index.js";
 import { CONTEXT_HISTORY_LIMIT, groupChatHistory } from "../groupchat/history.js";
 import type { GuildOperator } from "../guilds/validation.js";

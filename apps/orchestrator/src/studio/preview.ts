@@ -8,7 +8,6 @@ import { bindQuery, type Queryable } from "../db/pg.js";
 import { previewConnectorState } from "../mcp/pool.js";
 import { collectRunState } from "../state/index.js";
 import { guildOperators } from "../guilds/validation.js";
-import { memoryOf } from "../agents/validation.js";
 import { schemasFor } from "../toolbox/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../groupchat/history.js";
 import type { Scripts } from "../scripts/catalog.js";
@@ -198,7 +197,7 @@ export async function projectOfferedToolSchemas(
   const agentId = agent.id;
   const rows = await deps.db.listBindingsCovering({ orgId, guildId, agentId });
   const nativeNames = enabledToolNames(resolvedTools(rows, { orgId, guildId, agentId })).filter(
-    (name) => memoryOf(agent.config as Record<string, unknown> | undefined) || name !== "memory_write",
+    (name) => agent.config.memory || name !== "memory_write",
   );
   const schemas = [...schemasFor(nativeNames)];
   const servers = await deps.db.listServers({ owner: { visibleTo: orgId } });
@@ -233,7 +232,7 @@ export async function projectOfferedToolSchemas(
       schemas.push(tool.schema);
     }
   }
-  const config = JSON.stringify(agent.config ?? {});
+  const config = JSON.stringify(agent.config);
   return {
     schemas,
     catalog_revision: latest,

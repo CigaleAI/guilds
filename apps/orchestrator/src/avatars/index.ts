@@ -5,8 +5,7 @@ import crittersDef from "@dicebear/styles/critters.json" with { type: "json" };
 import cutoutsDef from "@dicebear/styles/cutouts.json" with { type: "json" };
 import pixelbotDef from "@dicebear/styles/pixelbot.json" with { type: "json" };
 import voxelBotDef from "@dicebear/styles/voxel-bot.json" with { type: "json" };
-import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "../agents/validation.js";
-import { clayAvatarSvg, parseClayShape } from "./clay.js";
+import { clayAvatarSvg, DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE, parseClayShape } from "./clay.js";
 
 export { clayAvatarSvg, parseClayShape };
 
@@ -24,6 +23,10 @@ export type AvatarStyleName = (typeof SUPPORTED_AVATAR_STYLES)[number];
 
 const STYLE_SET = new Set<string>(SUPPORTED_AVATAR_STYLES);
 const PREFIX_STYLES = [...SUPPORTED_AVATAR_STYLES].sort((a, b) => b.length - a.length);
+
+/** A stored avatar shape: a seed, with or without its style's prefix. */
+const AVATAR_SEED_RE = /^[a-z0-9][a-z0-9:-]{0,62}$/;
+const AVATAR_COLOR_RE = /^#[0-9a-f]{6}$/;
 
 const crittersStyle = new Style(crittersDef);
 const cameoStyle = new Style(cameoDef);
@@ -49,6 +52,18 @@ function darkenHex(hex: string, amount: number): string {
         .padStart(2, "0"),
     )
     .join("");
+}
+
+/** A shape as it is stored: trimmed and lowercased, the default when blank; null when it is not a shape. */
+export function normalizeAvatarShape(value: string | null | undefined): string | null {
+  const text = (value ?? "").trim().toLowerCase() || DEFAULT_AVATAR_SHAPE;
+  return AVATAR_SEED_RE.test(text) ? text : null;
+}
+
+/** A colour as it is stored: trimmed and lowercased, the default when blank; null when it is not a hex colour. */
+export function normalizeAvatarColor(value: string | null | undefined): string | null {
+  const text = (value ?? "").trim().toLowerCase() || DEFAULT_AVATAR_COLOR;
+  return AVATAR_COLOR_RE.test(text) ? text : null;
 }
 
 export function parseAvatarShape(raw?: string | null): {

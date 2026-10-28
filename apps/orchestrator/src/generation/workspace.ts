@@ -1,8 +1,8 @@
-import { DEFAULT_MAX_WORKSPACE_MIB, maxWorkspaceMibOf } from "../agents/validation.js";
+import { DEFAULT_MAX_WORKSPACE_MIB } from "../agents/config.js";
 import { setAgentWorkspaceMib, type AgentRow } from "../db/agents.js";
 import { setMachineWorkspaceMib } from "../db/machines.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB } from "../db/schema/index.js";
+import { DEFAULT_MACHINE_MAX_WORKSPACE_MIB, type AgentConfig } from "../db/schema/index.js";
 import { agentHome } from "../lib/agent-file.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { agentSandbox, seatEnvironment, type SandboxHandle } from "../sandbox/index.js";
@@ -21,10 +21,10 @@ export function workspaceMaxMib(env: NodeJS.ProcessEnv = process.env): number {
 
 /** The workspace cap this agent is held to: its own max, and never above the host cap. */
 export function agentWorkspaceMaxMib(
-  config: Record<string, unknown> | null | undefined,
+  config: Pick<AgentConfig, "max_workspace_mib">,
   env: NodeJS.ProcessEnv = process.env,
 ): number {
-  return Math.min(maxWorkspaceMibOf(config), workspaceMaxMib(env));
+  return Math.min(config.max_workspace_mib, workspaceMaxMib(env));
 }
 
 /** A tool context for platform work in the sandbox: not cancellable, not tracked, no secrets. */

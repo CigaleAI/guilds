@@ -1,7 +1,7 @@
 import { writeBinding } from "../access/bindings.js";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
 import { writeAgentTask } from "../artifacts/task.js";
-import { maxScriptsOf, validateConfig } from "../agents/validation.js";
+import { validateAgentConfig } from "../agents/config.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { createCollection, deleteCollection } from "../artifacts/collections.js";
 import { ArtifactError } from "../artifacts/errors.js";
@@ -162,7 +162,7 @@ async function createAgent(skeleton: Skeleton, role: RecipeRole, recipe: RecipeD
     orgSlug: org.slug,
     orgId: org.id,
     name: skeleton.names.get(role.role) ?? role.name_suggestion,
-    config: validateConfig(role.config),
+    config: validateAgentConfig(role.config),
     now: skeleton.now,
     focus: role.focus,
     wakeTriggers: role.wake_triggers,
@@ -235,7 +235,7 @@ async function writeNativeAccess(skeleton: Skeleton, role: RecipeRole, agentId: 
 }
 
 async function createScripts(skeleton: Skeleton, role: RecipeRole, agentId: string): Promise<void> {
-  const scriptLimit = maxScriptsOf(role.config);
+  const scriptLimit = validateAgentConfig(role.config).max_scripts;
   if (role.scripts.length > scriptLimit) {
     throw new RecipeError(`${role.role} has ${role.scripts.length} scripts; max_scripts is ${scriptLimit}`);
   }

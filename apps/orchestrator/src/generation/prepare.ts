@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { accessDatabase, agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
-import { AgentValidationError, memoryOf, validateConfig } from "../agents/validation.js";
+import { validateAgentConfig } from "../agents/config.js";
+import { AgentValidationError } from "../agents/validation.js";
 import { agentActor } from "../artifacts/actors.js";
 import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";
@@ -91,7 +92,7 @@ export type PromptCapabilities = {
 };
 
 function promptCapabilities(config: AgentConfig, tools: string[]): PromptCapabilities {
-  const memory = memoryOf(config);
+  const memory = config.memory;
   return {
     scripts: config.scripting && SCRIPT_TOOLS.some((name) => tools.includes(name)),
     notes: NOTE_TOOLS.some((name) => tools.includes(name)),
@@ -161,7 +162,7 @@ export class RunPreparation {
   /** The agent's validated config and the tools, secrets, and connections it is granted; 422 when either fails. */
   private async agentAccess(agent: AgentRow): Promise<{ config: AgentConfig; access: RuntimeAccess }> {
     try {
-      const config = validateConfig(agent.config);
+      const config = validateAgentConfig(agent.config);
       const access = await agentRuntime(this.services.db, agent, { mcpPool: this.services.mcp });
       return { config, access };
     } catch (error) {

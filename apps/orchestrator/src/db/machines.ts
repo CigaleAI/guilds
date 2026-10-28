@@ -7,6 +7,7 @@ import {
   DEFAULT_MACHINE_BOX,
   DEFAULT_MACHINE_MAX_WORKSPACE_MIB,
   DEFAULT_MACHINE_NAME,
+  type AgentConfig,
   machines,
 } from "./schema/index.js";
 
@@ -36,7 +37,7 @@ export type MachineAgentQueryRow = {
   slot: number;
   browser: boolean;
   coding: boolean;
-  max_workspace_mib: unknown;
+  max_workspace_mib: AgentConfig["max_workspace_mib"];
 };
 
 export type MachineWithAgentsQueryRow = MachineQueryRow & {
