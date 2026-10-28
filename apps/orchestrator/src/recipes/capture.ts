@@ -3,7 +3,6 @@ import { getMcpServerBySlug } from "../connectors/servers.js";
 import { HARNESSES, type AgentConfig } from "../db/schema/index.js";
 import { decode } from "../lib/decode.js";
 import { newId } from "../lib/ids.js";
-import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { guildTables, notesNamed } from "../artifacts/service.js";
 import type { ArtifactActor } from "../artifacts/types.js";
@@ -35,7 +34,6 @@ import { listSchedules } from "../db/schedules.js";
 import { listSecrets, type SecretRow } from "../db/secrets.js";
 import { listGuildRepositories, type GuildRow } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import type { UserRow } from "../db/users.js";
 
 /** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
@@ -515,13 +513,15 @@ function captureDesign(recipe: RecipeDocument): void {
 
 /**
  * A portable recipe of a live guild: its roles with their tasks, scripts, routines and access, the
- * tables and notes it reaches, its connections, secrets and repositories, and the design it runs by.
+ * tables and notes it reaches as `actor` reads them, its connections, secrets and repositories, and
+ * the design it runs by. `includeNotes` names further notes by display path or file name.
  */
 export async function captureGuild(
   deps: CaptureDeps,
-  source: { guild: CapturedGuildRow; user: UserRow; includeNotes?: string[] },
+  actor: ArtifactActor,
+  guild: CapturedGuildRow,
+  includeNotes: string[],
 ): Promise<RecipeDocument> {
-  const { guild, user } = source;
   const agents = await deps.db.listAgents(guild.id);
   if (!agents.length) {
     throw new RecipeError("guild has no agents to capture");
@@ -531,7 +531,7 @@ export async function captureGuild(
     recipe: guildRecipe(guild),
     orgId: guild.org_id,
     guildId: guild.id,
-    actor: operatorActor({ orgId: guild.org_id, actorId: user.id, actorName: user.name, guildId: guild.id }),
+    actor,
     agents,
     captured: { guildId: guild.id, members: new Map(agents.map((agent) => [agent.id, agent.name])) },
   };
@@ -540,7 +540,7 @@ export async function captureGuild(
     await captureAgent(capture, agent);
   }
   await captureRepositories(capture);
-  const hrefToNoteId = await captureNotes(capture, source.includeNotes ?? []);
+  const hrefToNoteId = await captureNotes(capture, includeNotes);
   rewriteRefs(capture.recipe, { nameToRole: new Map(agents.map((agent) => [agent.name, agent.name])), hrefToNoteId });
   captureDesign(capture.recipe);
   return parseRecipe(capture.recipe);

@@ -8,6 +8,12 @@ commands for each effect are in
 
 ## Unreleased
 
+**No impact.** Capturing a guild as a recipe leaves out a note of a
+private guild the user does not operate, whether `include_notes` names
+it by display path or by file name. Before, any member who could see
+one guild got such a note's text in the recipe draft
+([SEC-51](docs/architecture/security-register.md#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate)).
+
 **Rebuild.** Migrations 0015 and 0016 drop `studio_sessions.coach_snapshot`
 and `studio_sessions.coach_agent_id`, which held nothing, and the
 defaults of `studio_sessions.source_guild_snapshot` and

@@ -11,6 +11,7 @@ import { captureGuild,
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
 import { userRow } from "../helpers/users.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { rowDisplayPath } from "../../src/artifacts/store.js";
 import type { ArtifactRow } from "../../src/db/artifacts.js";
 import type { ArtifactLevel } from "../../src/artifacts/types.js";
@@ -27,6 +28,7 @@ const GUILD = {
 };
 
 const USER = userRow();
+const ACTOR = operatorActor({ orgId: GUILD.org_id, actorId: USER.id, actorName: USER.name, guildId: GUILD.id });
 
 const SEEN_MAIL_COLUMNS = [
   { name: "thread_id", type: "text", description: "mail thread id", required: true, unique: true },
@@ -230,7 +232,7 @@ test("recipe scope prefers organisation reuse", () => {
 });
 
 test("captureGuild writes a portable snapshot from a live guild", async () => {
-  const recipe = await captureGuild(captureDeps(), { guild: GUILD, user: USER });
+  const recipe = await captureGuild(captureDeps(), ACTOR, GUILD, []);
   assert.equal(recipe.format, "guilds.recipe");
   assert.equal(recipe.meta.source.kind, "guild");
   assert.equal(recipe.meta.source.guild_id, "guild_live");
@@ -289,7 +291,9 @@ test("captureGuild takes the better of the organisation's and the guild's rows a
         acol_shut: [memberRow("a_scout", "scout", "none")],
       },
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.deepEqual(
     recipe.collections.map((item) => [item.name, item.guild, item.writers]),
@@ -329,7 +333,9 @@ test("captureGuild carries what each note's access list gives the guild and its 
         n_own: [],
       },
     }),
-    { guild: GUILD, user: USER, includeNotes: ["glossary.md", "open.md", "rules.md", "map.md", "own.md"] },
+    ACTOR,
+    GUILD,
+    ["glossary.md", "open.md", "rules.md", "map.md", "own.md"],
   );
   const access = Object.fromEntries(recipe.notes.map((item) => [item.key, [item.guild ?? null, item.writers]]));
   assert.deepEqual(access, {
@@ -356,7 +362,9 @@ test("captureGuild lists the guild's repositories by name, without their URLs", 
         { name: "api", url: "https://github.com/acme/api", default_branch: "main", connection_id: "conn_gh" },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.deepEqual(recipe.repositories, [{ name: "api", purpose: "" }]);
   assert.equal(JSON.stringify(recipe).includes("acme"), false);
@@ -414,7 +422,9 @@ test("captureGuild records a single-role specialization and org connector scope"
       ],
       tools: [{ namespaced_name: "notion.search", name: "notion.search", enabled: true }],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.equal(recipe.roles.length, 1);
   assert.equal(recipe.design.specialization[0]?.role, "scout");
@@ -440,7 +450,9 @@ test("captureGuild takes each secret's scope from how the role gets it", async (
         { id: "sec_mail", name: "MAIL_KEY", description: "Mail key", org_wide: false, grants: [grant({ agent_id: "a_writer" })] },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const desk = recipe.secrets.find((item) => item.name === "DESK_KEY");
   assert.equal(desk?.recommended_scope, "guild");
@@ -477,7 +489,9 @@ test("captureGuild leaves a coding role's harness tokens and their aliases behin
         { id: "sec_writer", name: "CLAUDE_CODE_OAUTH_TOKEN", description: "writer", org_wide: false, grants: [grant("a_writer")] },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const coder = recipe.roles.find((role) => role.role === "coder");
   assert.deepEqual(coder?.config.secret_aliases, { DEPLOY_KEY: "PROD_DEPLOY" });
@@ -503,7 +517,9 @@ test("captureGuild keeps a coding role's harness model and effort, and leaves th
         { id: "a_plain", name: "plain", focus: "Code", config: { model: TEST_MODEL, coding: true, harness: "codex" } },
       ],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const coder = recipe.roles.find((role) => role.role === "coder");
   assert.equal(coder?.config.harness_model, "gpt-6-luna");
@@ -519,7 +535,9 @@ test("captureGuild keeps a random window and labels its design cadence", async (
     captureDeps({
       schedules: [{ cron: null, wake_window: window, description: "Wander", instruction: "Look around." }],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   const scout = recipe.roles.find((role) => role.schedules.length);
   assert.ok(scout);
@@ -531,7 +549,7 @@ test("captureGuild keeps a random window and labels its design cadence", async (
 
 test("captureGuild refuses an empty roster", async () => {
   await assert.rejects(
-    () => captureGuild(captureDeps({ agents: [] }), { guild: GUILD, user: USER }),
+    () => captureGuild(captureDeps({ agents: [] }), ACTOR, GUILD, []),
     /no agents/,
   );
 });
@@ -564,7 +582,9 @@ test("captureGuild records an enabled GitHub login as a connection like any othe
       ],
       tools: [{ namespaced_name: "github_list_issues", name: "github_list_issues", enabled: true }],
     }),
-    { guild: GUILD, user: USER },
+    ACTOR,
+    GUILD,
+    [],
   );
   assert.deepEqual(
     recipe.connections.map((connection) => [connection.server, connection.recommended_scope]),

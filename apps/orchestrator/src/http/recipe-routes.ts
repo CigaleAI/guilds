@@ -9,6 +9,7 @@ import {
 } from "../recipes/library.js";
 import type { FastifyInstance } from "fastify";
 import { requireVisibleGuild } from "../guilds/access.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
 import { userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
 import { captureArtifacts, captureDatabase, captureGuild } from "../recipes/capture.js";
@@ -183,11 +184,9 @@ export async function registerRecipeRoutes(app: FastifyInstance, deps: AppDeps):
           scripts: deps.scripts,
           schedules: deps.schedules,
         },
-        {
-          guild,
-          user,
-          includeNotes: Array.isArray(body.include_notes) ? (body.include_notes as string[]) : [],
-        },
+        await loadOperatorActor(db, user, { orgId: guild.org_id, guildId: guild.id }),
+        guild,
+        Array.isArray(body.include_notes) ? (body.include_notes as string[]) : [],
       );
       const row = await addRecipeDraft(
         db,

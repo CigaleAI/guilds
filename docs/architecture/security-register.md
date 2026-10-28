@@ -9,7 +9,7 @@ risk is kept by design), or **Fixed** with its date.
 
 | Id | Issue | Status |
 |---|---|---|
-| [SEC-51](#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate) | A recipe capture copies the notes of private guilds its operator does not operate | Open |
+| [SEC-51](#sec-51--a-recipe-capture-copies-the-notes-of-private-guilds-its-operator-does-not-operate) | A recipe capture copies the notes of private guilds its operator does not operate | Fixed 2026-10-28 |
 | [SEC-50](#sec-50--an-operators-read-of-a-memory-revision-path-is-not-limited-to-its-organisation) | An operator's read of a Memory revision path is not limited to its organisation | Open |
 | [SEC-49](#sec-49--a-runs-diff-and-a-code-tasks-log-were-served-unredacted-when-the-agents-secrets-could-not-be-read) | A run's diff and a code task's log were served unredacted when the agent's secrets could not be read | Fixed 2026-10-27 |
 | [SEC-48](#sec-48--a-run-that-listed-a-logins-tools-for-the-first-time-was-offered-the-ones-that-start-off) | A run that listed a login's tools for the first time was offered the ones that start Off | Fixed 2026-10-26 |
@@ -63,7 +63,7 @@ risk is kept by design), or **Fixed** with its date.
 
 ## SEC-51 — A recipe capture copies the notes of private guilds its operator does not operate
 
-**Status:** open.
+**Status:** fixed 2026-10-28.
 
 **Found:** 2026-10-28, giving `artifacts/` one function for the notes a
 capture names with their access lists.
@@ -91,14 +91,14 @@ takes every other note of that name in the organisation.
 (SEC-42), so the embeds alone do not reach one. Tables are captured
 only when they are the guild's own or the organisation's.
 
-**Fix:** not yet. Fixing it takes building the capture's actor with
-the private guilds the user does not operate (`loadOperatorActor` in
-`apps/orchestrator/src/artifacts/actors.ts`), so `notesNamed` leaves
-their notes out.
+**Fix:** the route builds the capture's actor with `loadOperatorActor`
+(`apps/orchestrator/src/artifacts/actors.ts`), which carries the private
+guilds the user does not operate, and `captureGuild` in
+`apps/orchestrator/src/recipes/capture.ts` takes that actor, so
+`notesNamed` leaves their notes out, by display path and by file name.
 
-**Residual risk:** until then, any organisation member who can see one
-guild reads the notes of every private guild of the organisation
-through a capture.
+**Residual risk:** none known. A capture carries a private guild's note
+only for a user who operates that guild.
 
 ## SEC-50 — An operator's read of a Memory revision path is not limited to its organisation
 
