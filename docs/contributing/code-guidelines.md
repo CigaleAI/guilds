@@ -213,6 +213,26 @@ from another feature; when two features must share behaviour, move
 that behaviour to a shared directory or keep a thin call at the composition
 root (`compose.ts`, the router, a page that mounts both).
 
+In the orchestrator, a domain that reaches another reaches the module
+that owns the behaviour, through one named function. The domains form
+a stack: a domain imports nothing from a domain above it, and `db/` and
+`lib/` are the bottom. A file or a domain that enters an import cycle
+fails the check (`import-cycles`, see
+[Development](development.md#lint-and-format)). A module that only
+re-exports another does not exist.
+
+An import that points up the stack is a leak. The fix moves what
+leaked, not the import:
+
+- **Wiring**: a caller builds a domain's dependencies object. The
+  domain's public functions take a `Queryable` instead.
+- **Rule**: a caller re-derives a domain's rule from its data. The
+  domain exports the rule as one named function.
+- **Ownership**: a concept sits in the wrong domain, so both import
+  each other. The concept moves to the domain that owns it.
+- **Shape**: a caller parses a representation. It is parsed once, at
+  the boundary, into a named type.
+
 Core imports nothing from an extension built on it.
 `eslint.boundary.js` fails the file that tries.
 
