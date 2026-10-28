@@ -9,7 +9,7 @@ import { newId } from "../lib/ids.js";
 import { composeAgentSystemPrompt, hydrateStanding, promptHash, schemasOffer } from "../prompts/index.js";
 import { countInputTokens } from "../llm/tokens.js";
 import { instructionHash } from "../schedules/item.js";
-import { capBytes } from "../toolbox/output.js";
+import { capBytes } from "../lib/bytes.js";
 import {
   STUDIO_EVIDENCE_EXCERPT_BYTES,
   STUDIO_EVIDENCE_REF_MAX,

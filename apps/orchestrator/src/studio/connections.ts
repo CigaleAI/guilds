@@ -6,7 +6,7 @@ import { OPERATOR_CALLER, type McpPool } from "../mcp/pool.js";
 import { callTool, connectionTools } from "../mcp/service.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
-import { capBytes } from "../toolbox/output.js";
+import { capBytes } from "../lib/bytes.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioError, StudioUnprocessableError } from "./errors.js";
 import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";

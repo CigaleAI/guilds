@@ -3,7 +3,7 @@ import type { ConnectorTool } from "../connectors/types.js";
 import { jsonObj } from "../db/json.js";
 import type { McpToolRow } from "../db/mcp.js";
 import { ToolInputSchema } from "../db/schema/index.js";
-import { llmToolParameters } from "../toolbox/schema.js";
+import { llmToolParameters } from "../lib/tool-schema.js";
 import { McpError } from "./errors.js";
 import { namespacedName } from "../connectors/naming.js";
 

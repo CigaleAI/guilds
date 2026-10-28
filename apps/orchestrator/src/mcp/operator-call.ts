@@ -1,7 +1,7 @@
 import { asBuffer, decryptPayload } from "../credentials/crypto.js";
+import { capBytes } from "../lib/bytes.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
-import { capBytes } from "../toolbox/output.js";
 import { McpDisconnectedError, McpError } from "./errors.js";
 import { OPERATOR_CALLER, type McpPool } from "./pool.js";
 import { resolveConnectionTool } from "./service.js";

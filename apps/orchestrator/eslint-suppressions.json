@@ -289,6 +289,11 @@
       "count": 2
     }
   },
+  "src/lib/tool-schema.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
   "src/llm/anthropic.ts": {
     "@typescript-eslint/consistent-type-assertions": {
       "count": 6
@@ -660,9 +665,6 @@
   },
   "src/toolbox/schema.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 1
-    },
-    "complexity": {
       "count": 1
     }
   },

@@ -3,7 +3,6 @@ import { test } from "node:test";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import {
   REGISTRY,
-  capBytes,
   createToolContext,
   encodeSpec,
   formatExecution,
@@ -17,7 +16,7 @@ import {
   withRemainingToolCalls,
 } from "../../src/toolbox/index.js";
 import type { ToolCall } from "../../src/db/schema/index.js";
-import { functionSchema, omitEmptyOptionalStrings } from "../../src/toolbox/schema.js";
+import { functionSchema } from "../../src/toolbox/schema.js";
 import { HELPER } from "../../src/toolbox/browser.js";
 import { Scripts } from "../../src/scripts/catalog.js";
 import { MemoryScriptDB } from "../helpers/generation.js";
@@ -30,43 +29,6 @@ function schemaRequired(name: string): unknown {
   };
   return schema.function.parameters.required;
 }
-
-test("omitEmptyOptionalStrings drops empty optional keys only", () => {
-  const schema = {
-    type: "object",
-    properties: {
-      tweetId: { type: "string" },
-      agentId: { type: "string" },
-      campaignId: { type: "string" },
-      prompt: { type: "string" },
-    },
-    required: ["tweetId", "agentId"],
-  };
-  assert.deepEqual(
-    omitEmptyOptionalStrings(
-      {
-        tweetId: "",
-        agentId: "11111111-1111-1111-1111-111111111111",
-        campaignId: "",
-        prompt: "Reply",
-      },
-      schema,
-    ),
-    {
-      tweetId: "",
-      agentId: "11111111-1111-1111-1111-111111111111",
-      prompt: "Reply",
-    },
-  );
-  assert.deepEqual(
-    omitEmptyOptionalStrings({ campaignId: "", keep: "x" }, { type: "object" }),
-    { campaignId: "", keep: "x" },
-  );
-  assert.deepEqual(
-    omitEmptyOptionalStrings({ extra: "", campaignId: "" }, schema),
-    { extra: "" },
-  );
-});
 
 test("functionSchema drops format from optional properties", () => {
   const schema = functionSchema(
@@ -236,12 +198,6 @@ test("filter failure becomes error result", () => {
   );
   assert.equal(stored, "ERROR: tool output filter failed");
   assert.equal(meta.error, "tool output filter failed");
-});
-
-test("cap_bytes noop when under limit", () => {
-  const [text, truncated] = capBytes("hello", 100);
-  assert.equal(text, "hello");
-  assert.equal(truncated, false);
 });
 
 test("format_execution includes nonzero exit code", () => {

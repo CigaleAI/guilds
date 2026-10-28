@@ -1,8 +1,8 @@
 import type { ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
+import { capBytes } from "../lib/bytes.js";
 import { writeLog } from "../observability/log.js";
 import { redact } from "../secrets/index.js";
 
-export const TRUNCATION_MARKER = "\n[truncated]";
 export const REMAINING_TOOL_CALLS_PREFIX = "remaining_tool_calls: ";
 export const LOW_TOOL_CALL_BUDGET = 8;
 export const LOW_TOOL_CALL_WRAP_UP =
@@ -10,17 +10,6 @@ export const LOW_TOOL_CALL_WRAP_UP =
 
 export function identityOutput(result: string): string {
   return result;
-}
-
-export function capBytes(text: string, maxBytes: number): [string, boolean] {
-  const encoded = Buffer.from(text, "utf8");
-  if (encoded.length <= maxBytes) {
-    return [text, false];
-  }
-  const marker = Buffer.from(TRUNCATION_MARKER, "utf8");
-  const budget = Math.max(0, maxBytes - marker.length);
-  const cut = encoded.subarray(0, budget).toString("utf8");
-  return [cut + TRUNCATION_MARKER, true];
 }
 
 /** How a tool's output was kept: whether it was cut, its size before and after, and why the filter failed. */

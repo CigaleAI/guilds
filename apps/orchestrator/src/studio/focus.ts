@@ -6,7 +6,7 @@ import { wrapEvidence } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
 import { issueItem } from "../issues/index.js";
 import { scheduleItem } from "../schedules/item.js";
-import { capBytes } from "../toolbox/output.js";
+import { capBytes } from "../lib/bytes.js";
 import { STUDIO_FOCUS_EXCERPT_BYTES } from "./constants.js";
 import { ACTIVITY_MAX_HOURS } from "./activity.js";
 import { StudioUnprocessableError } from "./errors.js";

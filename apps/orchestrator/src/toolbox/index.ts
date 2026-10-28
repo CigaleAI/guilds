@@ -180,7 +180,6 @@ export function toolResultMaxBytes(env: NodeJS.ProcessEnv = process.env): number
 }
 
 export {
-  capBytes,
   identityOutput,
   LOW_TOOL_CALL_BUDGET,
   LOW_TOOL_CALL_WRAP_UP,
