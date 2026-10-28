@@ -20,6 +20,7 @@ import {
   agentTask,
   brokenTaskEmbeds,
   expandTaskText,
+  publishAgentTask,
   taskEmbedRun,
   taskSnapshot,
   writeAgentTask,
@@ -27,9 +28,10 @@ import {
 import { EMBED_BUDGET } from "../../src/artifacts/types.js";
 import { addAgent } from "../../src/agents/service.js";
 import { systemActor } from "../helpers/agents.js";
-import { getAgent, type AgentRow } from "../../src/db/agents.js";
+import { getAgent, listAgentTaskRevisions, type AgentRow } from "../../src/db/agents.js";
 import type { Database } from "../../src/db/client.js";
 import { insertGuild } from "../../src/db/guilds.js";
+import { withTransaction } from "../../src/db/pg.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { tempDir } from "../helpers/env.js";
@@ -123,6 +125,43 @@ describe("artifact service", { concurrency: 1 }, () => {
       name: "ArtifactError",
       message: "embed budget exceeded",
     });
+  });
+
+  test("publishAgentTask writes a draft built on the live version and keeps the text it replaces", async () => {
+    const row = await agentWithTask("Summarise the inbox.\n");
+    const result = await withTransaction(db, (tx) =>
+      publishAgentTask(tx, operator, AGENT, { content: "Summarise the inbox daily.\n", baseVersion: row.task_version }),
+    );
+    assert.ok(result.outcome === "published");
+    assert.equal(result.task.version, row.task_version + 1);
+    assert.equal(result.task.content_text, "Summarise the inbox daily.\n");
+    const revisions = await listAgentTaskRevisions(db, ORG, AGENT);
+    assert.equal(revisions[0]?.content, "Summarise the inbox.\n");
+  });
+
+  test("publishAgentTask writes nothing when the Task moved on from the draft's version", async () => {
+    const row = await agentWithTask("Summarise the inbox.\n");
+    const result = await withTransaction(db, (tx) =>
+      publishAgentTask(tx, operator, AGENT, { content: "Something else.\n", baseVersion: row.task_version - 1 }),
+    );
+    assert.deepEqual(result, { outcome: "conflict" });
+    assert.equal((await getAgent(db, AGENT))?.task, "Summarise the inbox.\n");
+  });
+
+  test("publishAgentTask writes nothing when the draft's text is the Task's", async () => {
+    const row = await agentWithTask("Summarise the inbox.\n");
+    const result = await withTransaction(db, (tx) =>
+      publishAgentTask(tx, operator, AGENT, { content: "Summarise the inbox.\n", baseVersion: row.task_version }),
+    );
+    assert.deepEqual(result, { outcome: "unchanged" });
+    assert.equal((await getAgent(db, AGENT))?.task_version, row.task_version);
+  });
+
+  test("publishAgentTask answers missing for an agent without a Task", async () => {
+    const result = await withTransaction(db, (tx) =>
+      publishAgentTask(tx, operator, "a_absent", { content: "Hello.\n", baseVersion: 1 }),
+    );
+    assert.deepEqual(result, { outcome: "missing" });
   });
 
   test("taskSnapshot keeps the notes and collections the agent reads, with the Task's version, hash and path", async () => {

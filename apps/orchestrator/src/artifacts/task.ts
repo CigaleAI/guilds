@@ -22,6 +22,7 @@ import { displayPathFor } from "./paths.js";
 import type { ArtifactStore } from "./store.js";
 import { TASK_REVISIONS_MAX, WRITE_MAX_BYTES, type ArtifactActor } from "./types.js";
 import {
+  getAgentTask,
   insertTaskRevision,
   lockAgentTask,
   pruneTaskRevisions,
@@ -82,7 +83,7 @@ export async function writeAgentTask(
  * Writes the agent's task inside the transaction `tx` runs. The text it replaces is kept as a
  * revision; a write that changes nothing returns the task as it is.
  */
-export async function writeAgentTaskInTransaction(
+async function writeAgentTaskInTransaction(
   tx: pg.PoolClient,
   actor: ArtifactActor,
   agentId: string,
@@ -123,6 +124,51 @@ export async function writeAgentTaskInTransaction(
     version: task.version,
   });
   return task;
+}
+
+/** A draft of an agent's Task: the text it proposes and the version of the Task it was built on. */
+export type TaskDraft = { content: string; baseVersion: number };
+
+/**
+ * What publishing a draft did: nothing when the agent has no Task, when its Task is no longer at
+ * the draft's version, or when the draft's text is the Task's; otherwise the Task as written.
+ */
+export type TaskPublish =
+  | { outcome: "missing" }
+  | { outcome: "conflict" }
+  | { outcome: "unchanged" }
+  | { outcome: "published"; task: AgentTaskRow };
+
+/**
+ * Writes a draft as the agent's Task inside the transaction `tx` runs, when the Task is still at
+ * the draft's version and the draft changes its text. A version that moves on during the write is
+ * a conflict too.
+ */
+export async function publishAgentTask(
+  tx: pg.PoolClient,
+  actor: ArtifactActor,
+  agentId: string,
+  draft: TaskDraft,
+): Promise<TaskPublish> {
+  const live = await getAgentTask(tx, actor.orgId, agentId);
+  if (!live) {
+    return { outcome: "missing" };
+  }
+  if (live.version !== draft.baseVersion) {
+    return { outcome: "conflict" };
+  }
+  if (hashTaskContent(draft.content) === live.content_hash) {
+    return { outcome: "unchanged" };
+  }
+  try {
+    const task = await writeAgentTaskInTransaction(tx, actor, agentId, draft.content, draft.baseVersion);
+    return { outcome: "published", task };
+  } catch (error) {
+    if (error instanceof ArtifactError && error.status === 409) {
+      return { outcome: "conflict" };
+    }
+    throw error;
+  }
 }
 
 /** A Task's text with its embeds inlined, or why the store refuses to inline them. */

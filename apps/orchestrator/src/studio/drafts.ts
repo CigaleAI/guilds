@@ -1,13 +1,8 @@
 import { collectTaskEmbeds } from "../artifacts/embeds.js";
 import { ArtifactError } from "../artifacts/errors.js";
-import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { operatorActor } from "../artifacts/actors.js";
-import {
-  agentTask,
-  expandTaskText,
-  taskDisplayPath,
-  writeAgentTaskInTransaction,
-} from "../artifacts/task.js";
+import { agentTask, expandTaskText, publishAgentTask, taskDisplayPath } from "../artifacts/task.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj as _jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
@@ -244,16 +239,18 @@ export class StudioDrafts implements StudioDraftService {
         guildId: String(draft.source_guild_id),
         agentId: String(draft.target_agent_id),
       });
-      const live = await getAgentTask(client ?? args.db, session.org_id, String(draft.target_agent_id));
-      if (!live) {
+      const result = await publishAgentTask(client, actor, String(draft.target_agent_id), {
+        content: String(draft.proposed_content),
+        baseVersion: Number(draft.base_version),
+      });
+      if (result.outcome === "missing") {
         throw new StudioUnprocessableError("task.md not found");
       }
-      if (Number(live.version) !== Number(draft.base_version)) {
+      if (result.outcome === "conflict") {
         await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
         throw new StudioConflictError("task version conflict");
       }
-      const proposedHash = hashArtifactContent(String(draft.proposed_content));
-      if (proposedHash === live.content_hash) {
+      if (result.outcome === "unchanged") {
         const unchanged = await updateStudioDraft(
           client,
           String(draft.id),
@@ -261,16 +258,7 @@ export class StudioDrafts implements StudioDraftService {
         );
         return { outcome: "unchanged", draft: viewDraft(unchanged ?? draft), preflight };
       }
-      let written;
-      try {
-        written = await writeAgentTaskInTransaction(client, actor, String(draft.target_agent_id), String(draft.proposed_content), Number(draft.base_version));
-      } catch (error) {
-        if (error instanceof ArtifactError && error.status === 409) {
-          await updateStudioDraft(client, String(draft.id), { status: "conflicted", resolved_at: now });
-          throw new StudioConflictError("task version conflict");
-        }
-        throw error;
-      }
+      const written = result.task;
       const published = await updateStudioDraft(
         client,
         String(draft.id),
