@@ -155,7 +155,7 @@ log.
 
 | Lane | Steps |
 | --- | --- |
-| orchestrator | `typecheck`, `lint`, `compat-verify`, `test-orchestrator` |
+| orchestrator | `typecheck`, `lint`, `import-cycles`, `compat-verify`, `test-orchestrator` |
 | web | `test-ui`, `test-web`, `build-web`, `build-storybook` |
 | core stack | `smoke-core-stack`: `./setup.sh` and `docker compose up` on a copy of the checkout, under its own Compose project, port, image tag, and state directory. It checks that the box is healthy, serves the app on loopback alone, holds one operator, and refuses a request from another web origin |
 
@@ -321,6 +321,18 @@ cleared entries.
 
 Prettier formats with semicolons, double quotes, trailing
 commas, and a width of 100 (`pnpm --filter <package> format`).
+
+The orchestrator also keeps its import graph from gaining a cycle
+(`pnpm --filter @guildsrun/orchestrator cycles`, the `import-cycles`
+step of the check). `scripts/import-cycles.ts` reads the value
+imports of `src/` (`import type` does not count), finds the files
+that import each other, directly or through others, and the domains
+(directories under `src/`) that do, and compares them with
+`import-cycles.json`. The check fails when a file or a domain is in a
+cycle and is not in that file. A file or a domain that leaves a cycle
+is reported, and `pnpm --filter @guildsrun/orchestrator cycles --write`
+rewrites the file from the tree as it is. Like
+`eslint-suppressions.json`, it only shrinks.
 
 ## Documentation
 
