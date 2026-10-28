@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { writeBinding } from "../../src/access/bindings.js";
-import { operatorActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { addAgent } from "../../src/agents/persist.js";
 import { insertAgent, upsertAgentScript } from "../../src/db/agents.js";

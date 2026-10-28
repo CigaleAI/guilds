@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EMBED_BUDGET, walkTaskEmbeds, type EmbedStep } from "../../src/artifacts/index.js";
+import { EMBED_BUDGET } from "../../src/artifacts/types.js";
+import { walkTaskEmbeds, type EmbedStep } from "../../src/artifacts/embeds.js";
 import {
   buildReferences,
   namedPaths,

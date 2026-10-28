@@ -1,4 +1,4 @@
-import { ArtifactError } from "../artifacts/index.js";
+import { ArtifactError } from "../artifacts/errors.js";
 import { validateMemory } from "../memory/index.js";
 import { argString, functionSchema } from "./schema.js";
 import { identityOutput } from "./output.js";

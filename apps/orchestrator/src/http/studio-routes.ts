@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { loadOperatorActor, ArtifactError, collectTaskEmbeds } from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import { ArtifactError } from "../artifacts/errors.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
@@ -206,7 +207,7 @@ export async function registerStudioRoutes(app: FastifyInstance, deps: AppDeps):
     try {
       const studio: StudioService = studioOf(deps);
       const session = await studio.getOwnedSession(param(request, "session_id"), user, org);
-      return await studio.inspector(session, user, param(request, "agent_id"));
+      return await studio.inspector(session, param(request, "agent_id"));
     } catch (error) {
       mapStudioError(error);
     }
@@ -566,5 +567,3 @@ async function loadDraftContext(
   }
   throw new HttpError(404, "draft not found");
 }
-
-export { collectTaskEmbeds };

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { requireVisibleAgent } from "../agents/access.js";
-import { loadOperatorActor } from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import type { RouteDeps } from "./deps.js";
 import { missingBodyFields } from "./errors.js";

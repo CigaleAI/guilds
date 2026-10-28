@@ -1,4 +1,5 @@
-import { inspectTaskEmbeds, taskEmbedActor, type ArtifactActor, type ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import {
   getAgent,
   listAgents,
@@ -40,7 +41,7 @@ import {
   withCodingLimits,
 } from "./validation.js";
 import { agentItem } from "./view.js";
-import { embedSource } from "../artifacts/embeds.js";
+import { embedSource, inspectTaskEmbeds, taskEmbedActor } from "../artifacts/embeds.js";
 
 /** What agents are created, changed, moved and deleted through, built once from the app's services. */
 export type AgentServices = {

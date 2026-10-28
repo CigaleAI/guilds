@@ -10,7 +10,7 @@ import {
   validateAvatarColor,
   validateAvatarShape,
 } from "./agents/validation.js";
-import { artifactStore } from "./artifacts/index.js";
+import { artifactStore } from "./artifacts/store.js";
 import { renderAvatarSvg } from "./avatars/index.js";
 import type { Database } from "./db/client.js";
 import {

@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { ArtifactError, assertNoteKeyFree, hashArtifactContent, normalizeNoteKey, ownerPrefix, parseDisplayPath, type ArtifactStore } from "../artifacts/index.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import { assertNoteKeyFree, normalizeNoteKey, ownerPrefix, parseDisplayPath } from "../artifacts/paths.js";
+import { artifactAt } from "../artifacts/service.js";
+import { hashArtifactContent, type ArtifactStore } from "../artifacts/store.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { changeGuild } from "../guilds/changes.js";
 import type { Schedules } from "../schedules/service.js";
@@ -118,50 +121,45 @@ export async function loadMemoryBase(scope: EditScope, agent: Pick<AgentRow, "id
 }
 
 export async function loadNoteBase(scope: EditScope, displayPath: string): Promise<EditBase> {
-  let parsed;
+  const actor = editActor(scope);
   try {
-    parsed = parseDisplayPath(displayPath);
+    const parsed = parseDisplayPath(displayPath);
+    if (parsed.orgId !== scope.orgId) {
+      throw new StudioUnprocessableError("artifact is not in this organisation");
+    }
+    if (parsed.kind !== "artifact") {
+      throw new StudioUnprocessableError("only notes can be edited here; records and memory revisions are not notes");
+    }
+    if (parsed.level === "agent" && !(await sourceAgentIds(scope)).has(parsed.ownerId)) {
+      throw new StudioUnprocessableError("artifact is not in the source guild");
+    }
+    if (parsed.level === "guild" && parsed.ownerId !== scope.sourceGuildId) {
+      throw new StudioUnprocessableError("artifact is not in the source guild");
+    }
+    const view = await artifactAt(scope.artifacts, actor, displayPath);
+    if (view.kind !== "row" || view.deleted) {
+      throw new StudioUnprocessableError("artifact not found");
+    }
+    const row = view.row;
+    if (row.kind === "memory") {
+      throw new StudioUnprocessableError("memory is edited with studio_edit_memory");
+    }
+    if (row.kind !== "note") {
+      throw new StudioUnprocessableError(`${row.kind} artifacts cannot be edited here; only notes`);
+    }
+    return {
+      kind: "note",
+      displayPath: `${ownerPrefix(row.org_id, row.level, row.owner_id)}${row.key}`,
+      level: row.level,
+      ownerId: row.owner_id,
+      title: row.title,
+      guildId: String(row.guild_id ?? scope.sourceGuildId),
+      version: Number(row.version),
+      content: row.content_text ?? "",
+    };
   } catch (error) {
     artifactFailure(error);
   }
-  if (parsed.orgId !== scope.orgId) {
-    throw new StudioUnprocessableError("artifact is not in this organisation");
-  }
-  if (parsed.kind !== "artifact") {
-    throw new StudioUnprocessableError("only notes can be edited here; records and memory revisions are not notes");
-  }
-  if (parsed.level === "agent" && !(await sourceAgentIds(scope)).has(parsed.ownerId)) {
-    throw new StudioUnprocessableError("artifact is not in the source guild");
-  }
-  if (parsed.level === "guild" && parsed.ownerId !== scope.sourceGuildId) {
-    throw new StudioUnprocessableError("artifact is not in the source guild");
-  }
-  let loaded;
-  try {
-    loaded = await getByDisplayPath(scope.artifacts, editActor(scope), displayPath);
-  } catch (error) {
-    artifactFailure(error);
-  }
-  const row = loaded.row;
-  if (!row || loaded.tombstone) {
-    throw new StudioUnprocessableError("artifact not found");
-  }
-  if (row.kind === "memory") {
-    throw new StudioUnprocessableError("memory is edited with studio_edit_memory");
-  }
-  if (row.kind !== "note") {
-    throw new StudioUnprocessableError(`${row.kind} artifacts cannot be edited here; only notes`);
-  }
-  return {
-    kind: "note",
-    displayPath: `${ownerPrefix(row.org_id, row.level, row.owner_id)}${row.key}`,
-    level: row.level,
-    ownerId: row.owner_id,
-    title: row.title,
-    guildId: String(row.guild_id ?? scope.sourceGuildId),
-    version: Number(row.version),
-    content: row.content_text ?? "",
-  };
 }
 
 export async function loadGuildBase(scope: EditScope): Promise<EditBase> {

@@ -1,10 +1,13 @@
-import { EMBED_BUDGET, EMBED_DEPTH, collectTaskEmbeds, inspectEmbed, parseDisplayPath, noteReader, taskEmbedActor, walkTaskEmbeds, withoutEmbeds, type ArtifactActor, type ArtifactLevel, type ArtifactRow, type ArtifactStore, type CollectionView, type EmbedStep } from "../artifacts/index.js";
-import { taskDisplayPath } from "../agents/task.js";
+import { EMBED_BUDGET, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
+import { parseDisplayPath } from "../artifacts/paths.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import type { ArtifactStore, CollectionView } from "../artifacts/store.js";
+import { taskDisplayPath } from "../artifacts/task.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { describeCollection, listCollections } from "../artifacts/collections.js";
 import { getByDisplayPath, listOwnerNotes } from "../artifacts/notes.js";
-import { embedSource } from "../artifacts/embeds.js";
+import { embedSource, EMBED_DEPTH, collectTaskEmbeds, inspectEmbed, noteReader, taskEmbedActor, walkTaskEmbeds, withoutEmbeds, type EmbedStep } from "../artifacts/embeds.js";
 
 export type ReferenceNodeKind = "task" | "note" | "table" | "unresolved";
 

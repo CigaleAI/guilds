@@ -8,16 +8,17 @@ import { createsWritable, defaultGrants } from "./access.js";
 import { ArtifactError } from "./errors.js";
 import { recordFileChange } from "../db/file-changes.js";
 import { FILES_SEGMENT, normalizeFileName, parseDisplayPath } from "./paths.js";
-import { artifactMode, assertLiveCount, assertRead, assertWrite, ownerFor, type ArtifactRow, type ArtifactStore, rowDisplayPath } from "./store.js";
+import { artifactMode, assertLiveCount, assertRead, assertWrite, ownerFor, type ArtifactStore, rowDisplayPath } from "./store.js";
+import type { ArtifactRow } from "../db/artifacts.js";
 import {
   FILE_DESCRIPTION_MAX,
   FILE_MAX_BYTES,
   ORG_FILE_BYTES_MAX,
   SEARCH_TEXT_MAX,
-  type AccessMode,
   type ArtifactActor,
   type ArtifactLevel,
 } from "./types.js";
+import type { AccessMode } from "../db/schema/index.js";
 import { writeGrants } from "./grants.js";
 import { deleteAccessList } from "../db/artifact-access.js";
 import {

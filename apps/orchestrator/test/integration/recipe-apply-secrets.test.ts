@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
 import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";

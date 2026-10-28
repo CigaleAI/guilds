@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentActor } from "../../src/artifacts/index.js";
+import { agentActor } from "../../src/artifacts/actors.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import { MemoryError } from "../../src/memory/index.js";
 import { memoryWrite } from "../../src/toolbox/memory.js";

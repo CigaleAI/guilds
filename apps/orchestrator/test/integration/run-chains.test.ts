@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { HANDOFF_REQUEST, HANDOFF_TOOL_REFUSED } from "../../src/generation/chain.js";
 import { generationDatabase, GenerationLoop, LOOP_TIMINGS, RunRequestError } from "../../src/generation/index.js";

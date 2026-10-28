@@ -10,6 +10,8 @@ import {
   recordDisplayPath,
 } from "../../src/artifacts/paths.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
+import { parseActorPath } from "../../src/artifacts/service.js";
 
 test("display paths put notes under their owner and records under the organisation", () => {
   assert.equal(
@@ -96,4 +98,35 @@ test("parseDisplayPath tells notes, collections, records, and revisions apart", 
   assert.throws(() => parseDisplayPath("org/org_1/guilds/guild_1/collections/papers/12"), ArtifactError);
   assert.throws(() => parseDisplayPath("org/org_1/agents/a_1/collections/papers"), ArtifactError);
   assert.equal(parseDisplayPath("org/org_1/agents/a_1/history-archive/20260101T000000Z-user.md").kind, "revision");
+});
+
+const operator = operatorActor({ orgId: "org_1", actorId: "u_1", actorName: "op" });
+const agent = agentActor({ orgId: "org_1", guildId: "guild_1", agentId: "a_1", agentName: "researcher" });
+const archived = "org/org_1/agents/a_1/history-archive/20260101T000000Z-user.md";
+
+test("parseActorPath parses a path in the actor's organisation", () => {
+  assert.deepEqual(parseActorPath(agent, "org/org_1/guilds/guild_1/rules.md"), {
+    kind: "artifact",
+    orgId: "org_1",
+    level: "guild",
+    ownerId: "guild_1",
+    path: "",
+    key: "rules.md",
+  });
+});
+
+test("parseActorPath refuses a malformed path as unknown", () => {
+  assert.throws(() => parseActorPath(operator, "notes/rules.md"), { name: "ArtifactError", message: "unknown artifact path" });
+});
+
+test("parseActorPath refuses a path outside the actor's organisation", () => {
+  assert.throws(() => parseActorPath(operator, "org/org_2/rules.md"), {
+    name: "ArtifactError",
+    message: "artifact is not in this organisation",
+  });
+});
+
+test("parseActorPath keeps the memory archive unknown to an agent and open to the operator", () => {
+  assert.throws(() => parseActorPath(agent, archived), { name: "ArtifactError", message: "unknown artifact path" });
+  assert.equal(parseActorPath(operator, archived).kind, "revision");
 });

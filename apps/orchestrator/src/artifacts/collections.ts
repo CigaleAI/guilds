@@ -26,7 +26,7 @@ import {
 import { recordChangeIfAny, recordConfigChange } from "../db/config-changes.js";
 import { getGuild } from "../db/guilds.js";
 import { isUniqueViolation, type Queryable, withTransaction } from "../db/pg.js";
-import type { CollectionColumn } from "../db/schema/index.js";
+import type { CollectionColumn, AccessMode } from "../db/schema/index.js";
 import { defaultGrants, reachedMode } from "./access.js";
 import {
   collectionCleared,
@@ -44,7 +44,6 @@ import {
   LIVE_COLLECTIONS_MAX,
   PURPOSE_MAX,
   STATE_COLLECTIONS_MAX,
-  type AccessMode,
   type ArtifactActor,
 } from "./types.js";
 

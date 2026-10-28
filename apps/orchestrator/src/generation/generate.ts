@@ -1,6 +1,7 @@
 import { accessDatabase } from "../access/runtime.js";
 import { maxScriptsOf } from "../agents/validation.js";
-import { agentActor, type ArtifactFiles } from "../artifacts/index.js";
+import { agentActor } from "../artifacts/actors.js";
+import type { ArtifactFiles } from "../artifacts/files.js";
 import { REPOSITORIES_MISSING, REPOSITORIES_MISSING_MESSAGE } from "../coding/harnesses.js";
 import { clearHarnessLogin, getAgent, markHarnessLogin, type AgentRow } from "../db/agents.js";
 import { isPlainRecord } from "../db/json.js";

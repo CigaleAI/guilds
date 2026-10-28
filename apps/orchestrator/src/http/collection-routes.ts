@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { loadOperatorActor, type ArtifactActor } from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import type { ArtifactActor } from "../artifacts/types.js";
 import {
   addRecord,
   clearRecords,

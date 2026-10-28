@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { agentActor } from "../../src/artifacts/index.js";
+import { agentActor } from "../../src/artifacts/actors.js";
 import { Scripts, scriptItem } from "../../src/scripts/catalog.js";
 import { SCRIPT_ARGS_ENV, launcherCommand } from "../../src/scripts/materialise.js";
 import { scriptSourceHash } from "../../src/scripts/validation.js";

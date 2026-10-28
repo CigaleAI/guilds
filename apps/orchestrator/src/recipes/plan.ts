@@ -1,6 +1,7 @@
 import { operatorActor } from "../artifacts/actors.js";
 import { listCollections } from "../artifacts/collections.js";
-import type { ArtifactActor, CollectionColumn } from "../artifacts/index.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { CollectionColumn } from "../db/schema/index.js";
 import { harnessesOn, harnessOffMessage, harnessOf, isHarness, isHarnessOff } from "../coding/harnesses.js";
 import { listServers } from "../connectors/servers.js";
 import { agentNameTaken, listAgents } from "../db/agents.js";

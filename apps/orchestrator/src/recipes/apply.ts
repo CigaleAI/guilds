@@ -1,4 +1,4 @@
-import type { ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { listServers } from "../connectors/servers.js";
 import { countOrgAgents, countOrgBrowserAgents, countOrgCodingAgents } from "../db/orgs.js";
 import type { Queryable } from "../db/pg.js";

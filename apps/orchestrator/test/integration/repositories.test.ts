@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { writeAgentTask } from "../../src/agents/task.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import type { Database } from "../../src/db/client.js";
 import { connect } from "../../src/seed/connect.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { newId } from "../../src/lib/ids.js";
-import { listFileChanges, operatorActor } from "../../src/artifacts/index.js";
+import { listFileChanges } from "../../src/db/file-changes.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { listUsersInSeedOrder } from "../../src/users/directory.js";

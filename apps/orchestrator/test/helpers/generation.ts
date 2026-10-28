@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { PLATFORM_SEED_TOOLS } from "../../src/access/runtime.js";
-import type { ArtifactActor } from "../../src/artifacts/index.js";
+import type { ArtifactActor } from "../../src/artifacts/types.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { secretPayload } from "../../src/credentials/validate.js";
 import {

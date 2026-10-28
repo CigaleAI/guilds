@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AccessEntry } from "../../src/artifacts/index.js";
+import type { AccessEntry } from "../../src/artifacts/access.js";
 import { accessRaises, agentsOfRoles, guildModeOn } from "../../src/recipes/access.js";
 
 function row(type: AccessEntry["type"], id: string, mode: AccessEntry["mode"]): AccessEntry {

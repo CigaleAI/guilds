@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { agentActor, type ArtifactActor } from "../../src/artifacts/index.js";
+import { agentActor } from "../../src/artifacts/actors.js";
+import type { ArtifactActor } from "../../src/artifacts/types.js";
 import { parseColumns } from "../../src/artifacts/columns.js";
 import { ArtifactError } from "../../src/artifacts/errors.js";
 import type { CollectionColumn } from "../../src/db/schema/index.js";

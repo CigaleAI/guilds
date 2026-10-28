@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { operatorActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { Scripts, catalogItem, scriptItem } from "../../src/scripts/catalog.js";
 import {
   SCRIPT_DESCRIPTION_MAX,

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { loadOperatorActor, displayPathFor } from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import { displayPathFor } from "../artifacts/paths.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { maxScriptsOf } from "../agents/validation.js";
 import type { AgentRow } from "../db/agents.js";

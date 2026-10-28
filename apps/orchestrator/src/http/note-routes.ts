@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { requireVisibleAgent } from "../agents/access.js";
-import { loadOperatorActor } from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
 import {
   latestFileChanges,
   listPathChanges,

@@ -1,13 +1,7 @@
 import { createHash } from "node:crypto";
-import type { ArtifactStore } from "../artifacts/index.js";
-import {
-  ArtifactError,
-  collectTaskEmbeds,
-  displayPathFor,
-  hashArtifactContent,
-  inlineTaskEmbeds,
-  taskEmbedActor,
-} from "../artifacts/index.js";
+import type { ArtifactStore } from "../artifacts/store.js";
+import { collectTaskEmbeds } from "../artifacts/embeds.js";
+import { agentTask } from "../artifacts/service.js";
 import { memoryHistory } from "../memory/history.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import {
@@ -66,7 +60,7 @@ import { isAccessTool } from "./access.js";
 import { applyEdit, editStatus, findEditRecord, markEdit, viewEdit, type EditScope } from "./edits.js";
 import type { RoutineChange } from "./routines.js";
 import { getGuild, type GuildRow } from "../db/guilds.js";
-import { getAgent, getAgentTask } from "../db/agents.js";
+import { getAgent } from "../db/agents.js";
 import { listRunHeaders } from "../db/runs.js";
 import type pg from "pg";
 import type { Queryable } from "../db/pg.js";
@@ -100,8 +94,6 @@ import type { AgentRow } from "../db/agents.js";
 import type { OrgMembershipRow } from "../db/orgs.js";
 import type { StudioSourceGuild } from "../db/schema/index.js";
 import { operatorContext } from "../artifacts/store.js";
-import { getMemoryRow, readStoredMemory } from "../artifacts/memory.js";
-import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioServiceDeps = {
   db: Queryable;
@@ -567,53 +559,31 @@ export class StudioService {
     };
   }
 
-  async inspector(session: StudioSessionRow, user: UserRow, agentId: string): Promise<Record<string, unknown>> {
+  async inspector(session: StudioSessionRow, agentId: string): Promise<Record<string, unknown>> {
     this.assertLive(session);
     const agent = await this.requireGuildAgent(session, agentId);
-    const actor = operatorContext(
-      session.org_id,
-      user.id,
-      user.name,
-      { guildId: session.source_guild_id, agentId },
-    );
-    const task = await getAgentTask(this.deps.db, session.org_id, agentId);
-    const memory = await getMemoryRow(this.deps.artifacts, actor, agentId);
+    const task = await agentTask(this.deps.artifacts, agent);
     const standing = hydrateStanding({
       systemPath: this.deps.notesSystemPath,
       agentName: agent.name,
       agentId: agent.id,
     });
     const preview = await previewCurrentState(this.previewDeps(), agent);
-    let effectiveTask = task?.content_text ?? "";
-    let embedWarning: string | null = null;
-    try {
-      effectiveTask = await inlineTaskEmbeds(
-        embedSource(this.deps.artifacts),
-        taskEmbedActor(session.org_id, agent),
-        task?.content_text ?? "",
-      );
-    } catch (error) {
-      if (!(error instanceof ArtifactError)) {
-        throw error;
-      }
-      embedWarning = error.message;
-    }
-    const sourceHash = task?.content_hash ?? hashArtifactContent("");
+    const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
     const effectiveHash = promptHash(effectiveTask);
     const tools = await projectOfferedToolSchemas(this.previewDeps(), agent);
-    const memoryText = await readStoredMemory(this.deps.artifacts, actor, agentId);
     const memoryEnabled = memoryOf(jsonObj(agent.config));
     const composed = composeAgentSystemPrompt(
       standing,
       effectiveTask,
       preview.state,
-      memoryText,
+      task.memoryText,
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
     const latestRun = (await listRunHeaders(this.deps.db, agentId, { limit: 1 }))[0] ?? null;
     const guidelinesHash = promptHash(standing);
-    const memoryPromptHash = promptHash(memoryText);
+    const memoryPromptHash = promptHash(task.memoryText);
     return {
       agent: {
         id: agent.id,
@@ -630,23 +600,14 @@ export class StudioService {
       task: {
         ownership: "operator-owned",
         editable: true,
-        display_path: task
-          ? displayPathFor({
-              orgId: session.org_id,
-              level: "agent",
-              ownerId: agentId,
-              kind: "task",
-              path: "",
-              key: "task.md",
-            })
-          : null,
-        version: task?.version ?? null,
-        content: task?.content_text ?? "",
-        content_hash: sourceHash,
+        display_path: task.displayPath,
+        version: task.version,
+        content: task.text,
+        content_hash: task.hash,
         effective_hash: effectiveHash,
-        effective_matches_source: sourceHash === effectiveHash,
-        has_embeds: collectTaskEmbeds(task?.content_text ?? "").length > 0,
-        embed_warning: embedWarning,
+        effective_matches_source: task.hash === effectiveHash,
+        has_embeds: task.hasEmbeds,
+        embed_warning: task.expanded.ok ? null : task.expanded.error,
       },
       state: {
         ownership: "derived",
@@ -657,8 +618,8 @@ export class StudioService {
       memory: {
         ownership: "agent-owned",
         editable: false,
-        content: memory?.content_text ?? "",
-        content_hash: memory?.content_hash ?? null,
+        content: task.memory?.content_text ?? "",
+        content_hash: task.memory?.content_hash ?? null,
         prompt_hash: memoryPromptHash,
       },
       effective_prompt: {

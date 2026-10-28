@@ -1,20 +1,10 @@
 import { createHash } from "node:crypto";
-import {
-  ArtifactError,
-  collectionDisplayPath,
-  columnCatalog,
-  describeColumn,
-  parseColumnChange,
-  parseColumns,
-  resolveAccess,
-  validateCollectionName,
-  validatePurpose,
-  type AccessEntry,
-  type AccessMode,
-  type AgentAccessMode,
-  type ArtifactActor,
-  type CollectionColumn,
-} from "../artifacts/index.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import { collectionDisplayPath } from "../artifacts/paths.js";
+import { columnCatalog, describeColumn, parseColumnChange, parseColumns } from "../artifacts/columns.js";
+import { resolveAccess, type AgentAccessMode, type ArtifactActor } from "../artifacts/types.js";
+import type { AccessEntry } from "../artifacts/access.js";
+import type { AccessMode, CollectionColumn } from "../db/schema/index.js";
 import { argString } from "../toolbox/schema.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import type { EditAction } from "./actions.js";
@@ -27,7 +17,7 @@ import { getGuild, hiddenGuildsFor } from "../db/guilds.js";
 import { listAgents } from "../db/agents.js";
 import { listRecords } from "../artifacts/records.js";
 import { grantAccess, listAccess, reachOf as subjectReach } from "../artifacts/access-lists.js";
-import { createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection } from "../artifacts/collections.js";
+import { createCollection, deleteCollection, describeCollection, getCollection, listCollectionsWithCounts, updateCollection, validateCollectionName, validatePurpose } from "../artifacts/collections.js";
 import { operatorContext } from "../artifacts/store.js";
 
 // Tables (collections) the coach reads and proposes to create, change, or

@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type pg from "pg";
-import { ArtifactError } from "../artifacts/errors.js";
-import { displayPathFor } from "../artifacts/paths.js";
-import { TASK_REVISIONS_MAX, WRITE_MAX_BYTES, type ArtifactActor } from "../artifacts/types.js";
+import { ArtifactError } from "./errors.js";
+import { displayPathFor } from "./paths.js";
+import { TASK_REVISIONS_MAX, WRITE_MAX_BYTES, type ArtifactActor } from "./types.js";
 import {
   insertTaskRevision,
   lockAgentTask,

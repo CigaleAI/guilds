@@ -1,8 +1,6 @@
 import { ACCESS_MODES, type AccessMode } from "../db/schema/index.js";
 import type { ChangeActor } from "../lib/change-actor.js";
 
-export { ACCESS_MODES, type AccessMode };
-
 export const ARTIFACT_LEVELS = ["agent", "guild", "org"] as const;
 export type ArtifactLevel = (typeof ARTIFACT_LEVELS)[number];
 

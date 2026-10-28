@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { AttachmentService } from "../../src/attachments/index.js";
 import { MemoryBlobStore } from "../../src/lib/blob-store.js";
 import { buildApp } from "../../src/app.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { generationDatabase, GenerationLoop } from "../../src/generation/index.js";
 import { newId } from "../../src/lib/ids.js";

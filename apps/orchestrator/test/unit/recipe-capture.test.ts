@@ -9,8 +9,9 @@ import { captureGuild,
 import type { Scripts } from "../../src/scripts/catalog.js";
 import type { Schedules } from "../../src/schedules/service.js";
 import { userRow } from "../helpers/users.js";
-import { rowDisplayPath, type ArtifactRow } from "../../src/artifacts/store.js";
-import type { ArtifactLevel } from "../../src/artifacts/index.js";
+import { rowDisplayPath } from "../../src/artifacts/store.js";
+import type { ArtifactRow } from "../../src/db/artifacts.js";
+import type { ArtifactLevel } from "../../src/artifacts/types.js";
 import { artifactRow, noteRowAt } from "../helpers/artifacts.js";
 import { serverRow } from "../helpers/servers.js";
 

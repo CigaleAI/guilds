@@ -1,4 +1,5 @@
-import { ArtifactError, collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds, listFileChanges, parseDisplayPath, taskEmbedActor, type ArtifactStore } from "../artifacts/index.js";
+import { parseDisplayPath } from "../artifacts/paths.js";
+import { agentTask, artifactAt } from "../artifacts/service.js";
 import { jsonObj } from "../db/json.js";
 import { iso } from "../db/views.js";
 import { buildMemoryTimeline, memoryDiffText, type MemoryTimelineEntry } from "../memory/timeline.js";
@@ -48,7 +49,8 @@ import {
 import { editActionOf } from "./actions.js";
 import { listTables, readTable } from "./tables.js";
 import { studioReachesParsed, studioReachesPath } from "./reach.js";
-import { getAgent, getAgentTask, listAgentTaskRevisions, listAgents, type AgentRow } from "../db/agents.js";
+import { getAgent, listAgentTaskRevisions, listAgents, type AgentRow } from "../db/agents.js";
+import { listFileChanges } from "../db/file-changes.js";
 import { listSchedules, listSchedulesForGuild } from "../db/schedules.js";
 import { getRun, listMessages, listRunHeaders, routineRunStats, type MessageRow, type RunHeaderRow } from "../db/runs.js";
 import { listGroupMessages } from "../db/group-chat.js";
@@ -56,10 +58,9 @@ import { listGuildsForUser } from "../db/guilds.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getStudioSession, type StudioSessionRow } from "../db/studio.js";
 import type { UserRow } from "../db/users.js";
-import { findNotes, getByDisplayPath } from "../artifacts/notes.js";
-import { operatorContext } from "../artifacts/store.js";
-import { getMemoryRow, listRevisions, readStoredMemory } from "../artifacts/memory.js";
-import { embedSource } from "../artifacts/embeds.js";
+import { findNotes } from "../artifacts/notes.js";
+import { hashArtifactContent, operatorContext, type ArtifactStore } from "../artifacts/store.js";
+import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 export type StudioToolContext = {
   session: StudioSessionRow;
@@ -268,12 +269,8 @@ export const studioGetAgentContext: StudioTool = {
       : [...STUDIO_DEFAULT_CONTEXT_SECTIONS];
     const want = new Set(requested);
     const cursor = args.cursor;
-    const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
-      guildId: ctx.sourceGuildId,
-      agentId: agent.id,
-    });
-    const task = await getAgentTask(ctx.db, ctx.orgId, agent.id);
-    const memory = await getMemoryRow(ctx.artifacts, actor, agent.id);
+    const task = await agentTask(ctx.artifacts, agent);
+    const memory = task.memory;
     // state and effective_prompt read the same projection; take it once.
     let statePreview: ReturnType<typeof previewCurrentState> | null = null;
     const currentState = () => (statePreview ??= previewCurrentState(ctx.preview, agent));
@@ -282,20 +279,13 @@ export const studioGetAgentContext: StudioTool = {
       name: agent.name,
       focus: agent.focus,
     };
-    if (want.has("task") && task) {
-      const sliced = sliceStudioBytes(task.content_text ?? "", cursor);
+    if (want.has("task")) {
+      const sliced = sliceStudioBytes(task.text, cursor);
       result.task = {
-        display_path: displayPathFor({
-          orgId: ctx.orgId,
-          level: "agent",
-          ownerId: agent.id,
-          kind: "task",
-          path: "",
-          key: "task.md",
-        }),
+        display_path: task.displayPath,
         version: task.version,
-        content_hash: task.content_hash,
-        has_embeds: collectTaskEmbeds(task.content_text ?? "").length > 0,
+        content_hash: task.hash,
+        has_embeds: task.hasEmbeds,
         ownership: "operator-owned",
         editable: true,
         content: wrapEvidence({ source: "task", coordinates: { version: task.version }, body: sliced.text }),
@@ -336,25 +326,15 @@ export const studioGetAgentContext: StudioTool = {
         agentName: agent.name,
         agentId: agent.id,
       });
-      let effectiveTask = task?.content_text ?? "";
-      let embedWarning: string | null = null;
-      try {
-        effectiveTask = await inlineTaskEmbeds(embedSource(ctx.artifacts), taskEmbedActor(ctx.orgId, agent), effectiveTask);
-      } catch (error) {
-        if (!(error instanceof ArtifactError)) {
-          throw error;
-        }
-        embedWarning = error.message;
-      }
+      const effectiveTask = task.expanded.ok ? task.expanded.text : task.text;
       const preview = await currentState();
       const tools = await projectOfferedToolSchemas(ctx.preview, agent);
-      const memoryText = await readStoredMemory(ctx.artifacts, actor, agent.id);
       const memoryEnabled = memoryOf(jsonObj(agent.config));
       const composed = composeAgentSystemPrompt(
         standing,
         effectiveTask,
         preview.state,
-        memoryText,
+        task.memoryText,
         memoryEnabled,
         memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
       );
@@ -364,9 +344,9 @@ export const studioGetAgentContext: StudioTool = {
         editable: false,
         hash: promptHash(composed),
         task_hash: promptHash(effectiveTask),
-        memory_hash: promptHash(memoryText),
+        memory_hash: promptHash(task.memoryText),
         projected_at: preview.projected_at,
-        ...(embedWarning ? { embed_warning: embedWarning } : {}),
+        ...(task.expanded.ok ? {} : { embed_warning: task.expanded.error }),
         content: wrapEvidence({ source: "effective_prompt", coordinates: { agent_id: agent.id }, body: sliced.text }),
         ...(sliced.next_cursor ? { next_cursor: sliced.next_cursor } : {}),
         ...(sliced.truncated ? { truncated: true } : {}),
@@ -375,7 +355,7 @@ export const studioGetAgentContext: StudioTool = {
     if (want.has("effective_prompt_headers")) {
       result.effective_prompt_headers = [
         { section: "guidelines", ownership: "shared", editable: false },
-        { section: "task", ownership: "operator-owned", editable: true, version: task?.version, content_hash: task?.content_hash },
+        { section: "task", ownership: "operator-owned", editable: true, version: task.version, content_hash: task.hash },
         { section: "state", ownership: "derived", editable: false },
         { section: "memory", ownership: "agent-owned", editable: true, version: memory?.version },
       ];
@@ -778,15 +758,7 @@ export const studioGetArtifact: StudioTool = {
   ),
   async handler(ctx, args) {
     const displayPath = argString(args, "display_path");
-    let parsed;
-    try {
-      parsed = parseDisplayPath(displayPath);
-    } catch (error) {
-      if (error instanceof ArtifactError) {
-        throw new StudioUnprocessableError(error.message);
-      }
-      throw error;
-    }
+    const parsed = parseDisplayPath(displayPath);
     if (parsed.orgId !== ctx.orgId) {
       throw new StudioUnprocessableError("artifact is not in this organisation");
     }
@@ -799,31 +771,24 @@ export const studioGetArtifact: StudioTool = {
     const actor = operatorContext(ctx.orgId, String(ctx.user.id), String(ctx.user.name ?? "operator"), {
       guildId: ctx.sourceGuildId,
     });
-    let loaded;
-    try {
-      loaded = await getByDisplayPath(ctx.artifacts, actor, displayPath);
-    } catch (error) {
-      if (error instanceof ArtifactError) {
-        throw new StudioUnprocessableError(error.message);
-      }
-      throw error;
-    }
-    if (!loaded.row) {
+    const view = await artifactAt(ctx.artifacts, actor, displayPath);
+    if (view.kind !== "row") {
       throw new StudioUnprocessableError("artifact not found");
     }
-    const text = loaded.row.content_text ?? JSON.stringify(loaded.row.content_json ?? {});
+    const row = view.row;
+    const text = row.content_text ?? JSON.stringify(row.content_json ?? {});
     const offset = cursorOffset(args.cursor);
     const encoded = Buffer.from(text, "utf8");
     const slice = encoded.subarray(offset, offset + STUDIO_TOOL_RESULT_MAX_BYTES).toString("utf8");
     return {
       display_path: displayPath,
-      kind: loaded.row.kind,
-      title: loaded.row.title,
-      version: loaded.row.version,
-      editable: loaded.row.kind === "note",
+      kind: row.kind,
+      title: row.title,
+      version: row.version,
+      editable: row.kind === "note",
       content: wrapEvidence({
         source: "artifact",
-        coordinates: { display_path: displayPath, version: loaded.row.version },
+        coordinates: { display_path: displayPath, version: row.version },
         body: slice,
       }),
       next_cursor: offset + STUDIO_TOOL_RESULT_MAX_BYTES < encoded.length ? String(offset + STUDIO_TOOL_RESULT_MAX_BYTES) : null,
@@ -845,15 +810,7 @@ export const studioListFileChanges: StudioTool = {
   ),
   async handler(ctx, args) {
     const displayPath = argString(args, "display_path");
-    let parsed;
-    try {
-      parsed = parseDisplayPath(displayPath);
-    } catch (error) {
-      if (error instanceof ArtifactError) {
-        throw new StudioUnprocessableError(error.message);
-      }
-      throw error;
-    }
+    const parsed = parseDisplayPath(displayPath);
     if (parsed.orgId !== ctx.orgId) {
       throw new StudioUnprocessableError("path is not in this organisation");
     }

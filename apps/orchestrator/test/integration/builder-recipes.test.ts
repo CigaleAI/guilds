@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { writeAgentTask } from "../../src/agents/task.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import { buildApp } from "../../src/app.js";
 import { BuilderService } from "../../src/builder/index.js";
 import { CapabilityService } from "../../src/capabilities/index.js";
@@ -34,7 +33,7 @@ import { agentConfig } from "../helpers/generation.js";
 import { grantAccess } from "../../src/artifacts/access-lists.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 import { createCollection } from "../../src/artifacts/collections.js";
-import { operatorContext } from "../../src/artifacts/store.js";
+import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",

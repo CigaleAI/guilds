@@ -1,11 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import {
-  loadOperatorActor,
-  ArtifactFiles,
-  FILE_MAX_BYTES,
-  type ArtifactActor,
-  type ArtifactLevel,
-} from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import { ArtifactFiles } from "../artifacts/files.js";
+import { FILE_MAX_BYTES, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { requireVisibleAgent } from "../agents/access.js";
 import { attachmentDisposition } from "../attachments/index.js";

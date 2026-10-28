@@ -5,8 +5,7 @@ import path from "node:path";
 import { after, describe, test } from "node:test";
 import { DeliveryBusyError } from "../../src/groupchat/index.js";
 import { CONTEXT_HISTORY_LIMIT } from "../../src/groupchat/history.js";
-import { ArtifactError, operatorActor } from "../../src/artifacts/index.js";
-import { unreachableMarker } from "../../src/artifacts/embeds.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import * as generationMod from "../../src/generation/index.js";
 import { generationLive } from "../../src/generation/completion.js";
 import { PolicyError } from "../../src/policy/index.js";
@@ -2398,29 +2397,40 @@ describe("generation", { concurrency: 1 }, () => {
     );
   });
 
-  test("hydrate_inlines_task_embeds_as_the_agent_and_marks_what_it_cannot_read", async () => {
+  test("hydrate_runs_with_the_inlined_task_and_the_memory_the_store_gives_the_agent", async () => {
     const { notes, tmp } = await seededLoop();
-    const rules = "org/org_1/guilds/guild_1/rules.md";
-    const shut = "org/org_1/shut.md";
-    const readers: boolean[] = [];
+    const asked: string[] = [];
     const artifacts = {
-      async getByDisplayPath(actor: { operator: boolean }, href: string) {
-        readers.push(actor.operator);
-        if (actor.operator || href === rules) {
-          return { row: { kind: "note", level: "guild", key: "rules.md", content_text: "Cite sources." } };
-        }
-        throw new ArtifactError("artifact not found", 404);
-      },
-      async readStoredMemory() {
-        return "";
+      async agentTask(agent: { id: string }) {
+        asked.push(agent.id);
+        return { expanded: { ok: true, text: "Follow the inlined rules." }, memoryText: "- remembered" };
       },
     };
     const loop = makeLoop(new FakeDB({}), notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
       artifacts: artifacts as never,
     });
-    const [, task] = await loop.preparation.prompts(agentRow({ task: `![[${rules}]] then ![[${shut}]]` }));
-    assert.equal(task, `<rules path="${rules}" level="guild">\nCite sources.\n</rules> then ${unreachableMarker(shut)}`);
-    assert.deepEqual(readers, [false, false]);
+    const [, task, memory] = await loop.preparation.prompts(agentRow({ task: "Follow ![[org/org_1/rules.md]]" }));
+    assert.equal(task, "Follow the inlined rules.");
+    assert.equal(memory, "- remembered");
+    assert.deepEqual(asked, ["a_1"]);
+  });
+
+  test("hydrate_refuses_a_run_whose_task_embeds_the_store_refuses", async () => {
+    const { notes, tmp } = await seededLoop();
+    const artifacts = {
+      async agentTask() {
+        return { expanded: { ok: false, error: "embed budget exceeded" }, memoryText: "" };
+      },
+    };
+    const loop = makeLoop(new FakeDB({}), notes, path.join(tmp, "workspaces"), new FakeSandboxes(), {
+      artifacts: artifacts as never,
+    });
+    await assert.rejects(loop.preparation.prompts(agentRow({})), (error: unknown) => {
+      assert.ok(error instanceof RunRequestError);
+      assert.equal(error.status, 422);
+      assert.equal(error.message, "embed budget exceeded");
+      return true;
+    });
   });
 
   test("event bus drops stalled subscribers", async () => {

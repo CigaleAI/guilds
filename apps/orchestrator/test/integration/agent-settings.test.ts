@@ -13,7 +13,7 @@ import {
   type AgentSettingsPatch,
 } from "../../src/agents/service.js";
 import { AgentValidationError } from "../../src/agents/validation.js";
-import { operatorActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { connect } from "../../src/seed/connect.js";
 import type { GuildRow } from "../../src/db/guilds.js";
 import { createGuild } from "../../src/guilds/service.js";

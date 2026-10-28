@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { operatorActor } from "../../src/artifacts/index.js";
+import { operatorActor } from "../../src/artifacts/actors.js";
 import { repoRoot } from "../../src/lib/paths.js";
 import {
   SCRIPT_ARGS_ENV,

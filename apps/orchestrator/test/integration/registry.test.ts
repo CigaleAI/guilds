@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
 import { connectorCommand } from "../../src/cli/connector.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";

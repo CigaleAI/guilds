@@ -9,7 +9,7 @@ import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/gene
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
 import { McpPool } from "../../src/mcp/pool.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";

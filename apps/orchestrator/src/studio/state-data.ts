@@ -1,4 +1,5 @@
-import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { Queryable } from "../db/pg.js";
 import {
   listItemChanges,

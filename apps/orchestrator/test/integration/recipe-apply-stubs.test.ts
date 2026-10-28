@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { artifactStore } from "../../src/artifacts/index.js";
 import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
@@ -31,7 +30,7 @@ import { connectMcp } from "../../src/db/mcp.js";
 import { listSchedules } from "../../src/db/schedules.js";
 import { listBindingsCovering } from "../../src/db/bindings.js";
 import { getByDisplayPath } from "../../src/artifacts/notes.js";
-import { operatorContext } from "../../src/artifacts/store.js";
+import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
 
 const AUTH = {
   "X-Guilds-User": "user_operator",

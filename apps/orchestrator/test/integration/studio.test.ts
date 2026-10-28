@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { writeBinding } from "../../src/access/bindings.js";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { writeAgentTask } from "../../src/agents/task.js";
-import { agentActor, artifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
+import { displayPathFor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/paths.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { runItem } from "../../src/db/views.js";
 import { mcpDatabase } from "../../src/mcp/database.js";
@@ -69,11 +70,11 @@ import { getStudioDraft, getStudioSession } from "../../src/db/studio.js";
 import { userRow } from "../helpers/users.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { getByDisplayPath, writeNote } from "../../src/artifacts/notes.js";
-import { operatorContext } from "../../src/artifacts/store.js";
+import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
 import { createCollection, describeCollection, updateCollection } from "../../src/artifacts/collections.js";
 import { grantAccess, listAccess, reachOf } from "../../src/artifacts/access-lists.js";
 import { addRecord, listRecords } from "../../src/artifacts/records.js";
-import { getMemoryRow, readStoredMemory, writeMemory } from "../../src/artifacts/memory.js";
+import { getMemoryRow, writeMemory } from "../../src/artifacts/memory.js";
 
 const TEST_ACTOR = userActor({ id: "user_operator", name: "operator" });
 
@@ -1205,7 +1206,7 @@ test("studio proposes memory, note, and guild edits that the operator applies or
     const memoryApplied = await resolve(memorySeq, "apply");
     assert.equal(memoryApplied.statusCode, 200, memoryApplied.body);
     assert.equal((memoryApplied.json() as { applied_version: number }).applied_version, Number(memory?.version) + 1);
-    assert.match(await readStoredMemory(artifacts, operator, "a_ed"), /notes\/digest\.md/);
+    assert.match((await getMemoryRow(artifacts, operator, "a_ed"))?.content_text ?? "", /notes\/digest\.md/);
     const memoryPath = displayPathFor({ orgId: "org_home", level: "agent", ownerId: "a_ed", kind: "memory", path: "", key: "memory.md" });
     const memoryChanges = (await studioListFileChanges.handler(await ctx(), { display_path: memoryPath })) as {
       changes: Array<{ actor: { type: string; name: string }; tool: { name: string } | null; studio: unknown }>;

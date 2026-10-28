@@ -1,4 +1,4 @@
-import type { ArtifactRow } from "../../src/artifacts/store.js";
+import type { ArtifactRow } from "../../src/db/artifacts.js";
 import { parseDisplayPath } from "../../src/artifacts/paths.js";
 
 const STAMP = "2026-09-22T05:42:10.000Z";

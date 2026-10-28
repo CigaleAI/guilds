@@ -11,7 +11,7 @@ import {
   type AgentSettingsPatch,
 } from "../agents/service.js";
 import { loadAgentView } from "../agents/view.js";
-import { loadOperatorActor } from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
 import type { AgentRow } from "../db/agents.js";
 import { requireVisibleGuild } from "../guilds/access.js";
 import { OPEN_POLICY } from "../policy/index.js";

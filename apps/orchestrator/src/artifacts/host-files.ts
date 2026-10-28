@@ -1,11 +1,14 @@
 // The files an operator's pages list, read and write at each level, and their provenance.
-import { ArtifactError, type ArtifactStore, hostFileDisplayPath, listFileChanges, listLatestFileChanges, normalizeNoteKey, parseDisplayPath, type ArtifactActor, type ArtifactLevel, MEMORY_KEY, TASK_KEY } from "./index.js";
-import { taskDisplayPath, writeAgentTask } from "../agents/task.js";
+import { ArtifactError } from "./errors.js";
+import { hostFileDisplayPath, normalizeNoteKey, parseDisplayPath, MEMORY_KEY, TASK_KEY } from "./paths.js";
+import { listFileChanges, listLatestFileChanges } from "../db/file-changes.js";
+import type { ArtifactActor, ArtifactLevel } from "./types.js";
+import { taskDisplayPath, writeAgentTask } from "./task.js";
 import { formatColumnTimestamp } from "../db/codecs.js";
 import { getAgentTask, listAgentTaskRevisions, type AgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import { canReadDisplayPath, deleteByDisplayPath, getByDisplayPath, listEmbeddableNotes, listOwnerNotes, writeNote } from "./notes.js";
-import { artifactView } from "./store.js";
+import { artifactView, type ArtifactStore } from "./store.js";
 import { ensureAgentRows, writeMemory } from "./memory.js";
 
 /** What host files are read and written through: the artifact store, and the database an agent's Task lives in. */

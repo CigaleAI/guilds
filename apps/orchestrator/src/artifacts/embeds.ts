@@ -8,7 +8,8 @@ import { bindQuery } from "../db/pg.js";
 import type { TaskEmbedSnapshot } from "../db/schema/index.js";
 import { describeCollection } from "./collections.js";
 import { getByDisplayPath, type DisplayPathRead } from "./notes.js";
-import type { ArtifactRow, ArtifactStore, CollectionDescription } from "./store.js";
+import type { ArtifactRow } from "../db/artifacts.js";
+import type { ArtifactStore, CollectionDescription } from "./store.js";
 
 const EMBED_RE = /!\[\[([^\]]+)\]\]/g;
 

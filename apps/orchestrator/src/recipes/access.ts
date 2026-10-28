@@ -1,4 +1,6 @@
-import { isAccessMode, resolveAccess, type AccessMode, type AccessSubject, type AccessTarget, type AgentAccessMode, type ArtifactActor, type ArtifactStore } from "../artifacts/index.js";
+import { isAccessMode, resolveAccess, type AccessSubject, type AccessTarget, type AgentAccessMode, type ArtifactActor } from "../artifacts/types.js";
+import type { AccessMode } from "../db/schema/index.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { AccessEntry, AccessGrant } from "../artifacts/access.js";
 import type { RecipeCollection, RecipeNote } from "./schema.js";
 import { grantAccess, listAccess } from "../artifacts/access-lists.js";

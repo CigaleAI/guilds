@@ -1,7 +1,7 @@
-import { parseDisplayPath, type ArtifactStore, type ParsedDisplayPath } from "../artifacts/index.js";
+import { parseDisplayPath, type ParsedDisplayPath } from "../artifacts/paths.js";
 import { listAgents } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { operatorContext } from "../artifacts/store.js";
+import { operatorContext, type ArtifactStore } from "../artifacts/store.js";
 import { describeCollection } from "../artifacts/collections.js";
 
 // What a Studio session reaches outside its own transcript: the source

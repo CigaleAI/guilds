@@ -3,7 +3,7 @@ import { readAgentMode } from "../db/artifact-access.js";
 import { countLiveArtifacts, type ArtifactRow } from "../db/artifacts.js";
 import { formatOperationalTimestamp } from "../db/codecs.js";
 import type { RecordRow } from "../db/collections.js";
-import type { CollectionColumn, RecordBody } from "../db/schema/index.js";
+import type { CollectionColumn, RecordBody, AccessMode } from "../db/schema/index.js";
 import type { Queryable } from "../db/pg.js";
 import { reachedMode } from "./access.js";
 import { operatorActor } from "./actors.js";
@@ -12,14 +12,11 @@ import { displayPathFor } from "./paths.js";
 import {
   LIVE_ARTIFACTS_MAX,
   WRITE_MAX_BYTES,
-  type AccessMode,
   type ArtifactActor,
   type ArtifactKind,
   type ArtifactLevel,
   type HiddenGuilds,
 } from "./types.js";
-
-export type { ArtifactRow };
 
 /** What notes, Memory, collections, records, and access lists are read and written through. */
 export type ArtifactStore = {

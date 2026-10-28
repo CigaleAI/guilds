@@ -1,10 +1,13 @@
 import { writeBinding } from "../access/bindings.js";
 import { agentDatabase, persistAgent } from "../agents/persist.js";
-import { writeAgentTask } from "../agents/task.js";
+import { writeAgentTask } from "../artifacts/task.js";
 import { maxScriptsOf, validateConfig } from "../agents/validation.js";
 import { operatorActor } from "../artifacts/actors.js";
 import { createCollection, deleteCollection } from "../artifacts/collections.js";
-import { ArtifactError, ownerPrefix, type ArtifactActor, type CollectionView } from "../artifacts/index.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import { ownerPrefix } from "../artifacts/paths.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { CollectionView } from "../artifacts/store.js";
 import { writeNote } from "../artifacts/notes.js";
 import { deleteAgent } from "../db/agents.js";
 import { deleteGuild } from "../db/guilds.js";

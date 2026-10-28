@@ -1,4 +1,6 @@
-import { loadOperatorActor, type ArtifactActor, type ArtifactStore } from "../artifacts/index.js";
+import { loadOperatorActor } from "../artifacts/actors.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import {
   deleteHostFile,
   ensureAgentArtifacts,

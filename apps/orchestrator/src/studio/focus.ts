@@ -1,4 +1,7 @@
-import { ArtifactError, listFileChanges, parseDisplayPath, type ArtifactStore, type FileChangeView } from "../artifacts/index.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import { parseDisplayPath } from "../artifacts/paths.js";
+import { artifactAt } from "../artifacts/service.js";
+import { listFileChanges, type FileChangeView } from "../db/file-changes.js";
 import { wrapEvidence } from "../conversation/trust.js";
 import { isoOrNull } from "../db/views.js";
 import {
@@ -21,8 +24,7 @@ import { listGuildToolCallStats, listGuildToolCalls } from "../db/activity.js";
 import type { Queryable } from "../db/pg.js";
 import type { StudioFocus, StudioFocusKind, ToolCall } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { getByDisplayPath } from "../artifacts/notes.js";
-import { operatorContext } from "../artifacts/store.js";
+import { operatorContext, type ArtifactStore } from "../artifacts/store.js";
 import { getMemoryRow, listRevisions } from "../artifacts/memory.js";
 
 // A focus pin names one piece of evidence the operator is asking about: a
@@ -357,79 +359,61 @@ async function loadFileForFocus(
   version: number | null;
   content: string;
 }> {
-  let parsed;
+  const actor = operatorContext(deps.orgId, String(deps.user.id), String(deps.user.name ?? "operator"), {
+    guildId: deps.sourceGuildId,
+  });
   try {
-    parsed = parseDisplayPath(displayPath);
-  } catch (error) {
-    if (error instanceof ArtifactError) {
-      throw new StudioUnprocessableError(error.message);
+    const parsed = parseDisplayPath(displayPath);
+    if (parsed.orgId !== deps.orgId) {
+      throw new StudioUnprocessableError("focus file is not in this organisation");
     }
-    throw error;
-  }
-  if (parsed.orgId !== deps.orgId) {
-    throw new StudioUnprocessableError("focus file is not in this organisation");
-  }
-  if (parsed.kind === "collection") {
-    throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
-  }
-  let agent: AgentRow | null = null;
-  if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
-    agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
-  } else if (!(await studioReachesParsed(deps, parsed))) {
-    throw new StudioUnprocessableError(
-      "focus file is not in the source guild or the organisation's shared files",
-    );
-  }
-  const actor = operatorContext(
-    deps.orgId,
-    String(deps.user.id),
-    String(deps.user.name ?? "operator"),
-    {
-      guildId: deps.sourceGuildId,
-      ...(agent ? { agentId: agent.id } : {}),
-    },
-  );
-  if (
-    parsed.kind === "artifact" &&
-    parsed.level === "agent" &&
-    parsed.path === "" &&
-    parsed.key === "task.md" &&
-    agent
-  ) {
-    const task = await getAgentTask(deps.db, deps.orgId, agent.id);
+    if (parsed.kind === "collection") {
+      throw new StudioUnprocessableError("focus on a collection is not supported; pick a record");
+    }
+    let agent: AgentRow | null = null;
+    if (parsed.kind === "revision" || (parsed.kind === "artifact" && parsed.level === "agent")) {
+      agent = await guildAgent(deps, parsed.kind === "revision" ? parsed.agentId : parsed.ownerId);
+    } else if (!(await studioReachesParsed(deps, parsed))) {
+      throw new StudioUnprocessableError(
+        "focus file is not in the source guild or the organisation's shared files",
+      );
+    }
+    if (
+      parsed.kind === "artifact" &&
+      parsed.level === "agent" &&
+      parsed.path === "" &&
+      parsed.key === "task.md" &&
+      agent
+    ) {
+      const task = await getAgentTask(deps.db, deps.orgId, agent.id);
+      return {
+        agent,
+        kind: "task",
+        version: task?.version ?? null,
+        content: task?.content_text ?? "",
+      };
+    }
+    const view = await artifactAt(deps.artifacts, actor, displayPath);
+    if (view.kind === "revision") {
+      return { agent, kind: "memory_revision", version: null, content: view.content };
+    }
+    const row = view.row;
+    const content =
+      row.kind === "object"
+        ? JSON.stringify(row.content_json ?? {}, null, 2)
+        : String(row.content_text ?? "");
     return {
       agent,
-      kind: "task",
-      version: task?.version ?? null,
-      content: task?.content_text ?? "",
+      kind: view.deleted ? `${row.kind} (deleted)` : String(row.kind),
+      version: row.version,
+      content,
     };
-  }
-  let loaded;
-  try {
-    loaded = await getByDisplayPath(deps.artifacts, actor, displayPath);
   } catch (error) {
     if (error instanceof ArtifactError) {
       throw new StudioUnprocessableError(error.message);
     }
     throw error;
   }
-  if (loaded.revision) {
-    return { agent, kind: "memory_revision", version: null, content: loaded.revision.content };
-  }
-  if (!loaded.row) {
-    throw new StudioUnprocessableError("focus file not found");
-  }
-  const row = loaded.row;
-  const content =
-    row.kind === "object"
-      ? JSON.stringify(row.content_json ?? {}, null, 2)
-      : String(row.content_text ?? "");
-  return {
-    agent,
-    kind: loaded.tombstone ? `${row.kind} (deleted)` : String(row.kind),
-    version: row.version,
-    content,
-  };
 }
 
 function changeSummary(change: FileChangeView): string {

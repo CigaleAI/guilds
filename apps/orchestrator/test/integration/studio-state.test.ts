@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { agentActor, artifactStore, ownerPrefix, snapshotTaskCollections } from "../../src/artifacts/index.js";
+import { agentActor } from "../../src/artifacts/actors.js";
+import { ownerPrefix } from "../../src/artifacts/paths.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { NotesStore } from "../../src/notes/store.js";
@@ -19,8 +20,8 @@ import { agentConfig, runSnapshot } from "../helpers/generation.js";
 import { writeNote } from "../../src/artifacts/notes.js";
 import { addRecord, removeRecord } from "../../src/artifacts/records.js";
 import { createCollection } from "../../src/artifacts/collections.js";
-import { operatorContext } from "../../src/artifacts/store.js";
-import { embedSource } from "../../src/artifacts/embeds.js";
+import { operatorContext, artifactStore } from "../../src/artifacts/store.js";
+import { embedSource, snapshotTaskCollections } from "../../src/artifacts/embeds.js";
 
 const AUTH = { "X-Guilds-User": "user_operator", "X-Guilds-Org": "org_home" };
 

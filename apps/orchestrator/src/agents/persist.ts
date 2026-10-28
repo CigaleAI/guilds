@@ -1,8 +1,9 @@
 import type { AgentConfig } from "../db/schema/index.js";
 import { DEFAULT_AVATAR_COLOR, DEFAULT_AVATAR_SHAPE } from "./validation.js";
-import type { ArtifactActor, ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactActor } from "../artifacts/types.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { operatorActor } from "../artifacts/actors.js";
-import { FALLBACK_TASK, FALLBACK_TASK_HASH, hashTaskContent, resolveTaskContent, taskDisplayPath } from "./task.js";
+import { FALLBACK_TASK, FALLBACK_TASK_HASH, hashTaskContent, resolveTaskContent, taskDisplayPath } from "../artifacts/task.js";
 import {
   deleteAgent,
   guildHasOperatorNamed,

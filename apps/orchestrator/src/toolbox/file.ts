@@ -1,5 +1,6 @@
 import path from "node:path";
-import { ArtifactError, FILE_MAX_BYTES, isArtifactLevel, type ArtifactActor, type ArtifactLevel } from "../artifacts/index.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import { FILE_MAX_BYTES, isArtifactLevel, type ArtifactActor, type ArtifactLevel } from "../artifacts/types.js";
 import { ArtifactFiles, mimeForName } from "../artifacts/files.js";
 import { AgentFileError, agentDisplayPath, readAgentFile, writeAgentFile } from "../lib/agent-file.js";
 import { argInteger, argString, functionSchema } from "./schema.js";

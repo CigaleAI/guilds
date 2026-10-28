@@ -1,4 +1,5 @@
-import { agentActor, type ArtifactStore } from "../artifacts/index.js";
+import { agentActor } from "../artifacts/actors.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
 import { accessDatabase, agentLogins, agentSecrets, resolveMcpTool } from "../access/runtime.js";
 import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";

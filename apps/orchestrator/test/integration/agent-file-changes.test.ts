@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { addAgent } from "../../src/agents/persist.js";
-import { hashTaskContent, writeAgentTask } from "../../src/agents/task.js";
+import { hashTaskContent, writeAgentTask } from "../../src/artifacts/task.js";
 import { operatorActor } from "../../src/artifacts/actors.js";
 import type { Database } from "../../src/db/client.js";
 import { insertGuild } from "../../src/db/guilds.js";

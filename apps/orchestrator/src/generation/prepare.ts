@@ -1,9 +1,10 @@
 import { existsSync, statSync } from "node:fs";
 import { accessDatabase, agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
 import { AgentValidationError, memoryOf, validateConfig } from "../agents/validation.js";
-import { ArtifactError, agentActor, collectTaskEmbeds, displayPathFor, inlineTaskEmbeds, operatorActor, snapshotTaskCollections, snapshotTaskEmbeds, taskEmbedActor } from "../artifacts/index.js";
+import { agentActor } from "../artifacts/actors.js";
+import { ArtifactError } from "../artifacts/errors.js";
 import { stateRepositories } from "../coding/repositories.js";
-import type { AgentConfig, RunTaskSource, TaskEmbedSnapshot } from "../db/schema/index.js";
+import type { AgentConfig, RunTaskSource } from "../db/schema/index.js";
 import { FILE_TOOLS, NOTE_TOOLS } from "../seed/catalog.js";
 import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
@@ -32,8 +33,7 @@ import { RunRequestError } from "./errors.js";
 import type { AgentMachines } from "./machines.js";
 import type { PreparedRun } from "./snapshot.js";
 import { collectionCatalog } from "../artifacts/collections.js";
-import { embedSource } from "../artifacts/embeds.js";
-import { readStoredMemory } from "../artifacts/memory.js";
+import { agentTask, taskSnapshot } from "../artifacts/service.js";
 import type { ArtifactStore } from "../artifacts/store.js";
 import { toolArtifacts } from "../toolbox/artifacts.js";
 
@@ -41,8 +41,8 @@ import { toolArtifacts } from "../toolbox/artifacts.js";
 export function generationArtifacts(store: ArtifactStore) {
   return {
     ...toolArtifacts(store),
-    ...embedSource(store),
-    readStoredMemory: bindQuery(store, readStoredMemory),
+    agentTask: bindQuery(store, agentTask),
+    taskSnapshot: bindQuery(store, taskSnapshot),
     collectionCatalog: bindQuery(store, collectionCatalog),
   };
 }
@@ -223,23 +223,11 @@ export class RunPreparation {
       }
       throw error;
     }
-    const operator = operatorActor({
-      orgId: agent.org_id,
-      actorId: "hydrate",
-      actorName: "operator",
-      guildId: agent.guild_id,
-      agentId: agent.id,
-    });
-    try {
-      const task = await inlineTaskEmbeds(artifacts, taskEmbedActor(agent.org_id, agent), agent.task);
-      const memory = await artifacts.readStoredMemory(operator, agent.id);
-      return [system, task, memory];
-    } catch (error) {
-      if (error instanceof ArtifactError) {
-        throw new RunRequestError(422, error.message);
-      }
-      throw error;
+    const task = await artifacts.agentTask(agent);
+    if (!task.expanded.ok) {
+      throw new RunRequestError(422, task.expanded.error);
     }
+    return [system, task.expanded.text, task.memoryText];
   }
 
   /** The agent's home on its machine, created when it is missing. */
@@ -297,31 +285,6 @@ export class RunPreparation {
     if (!artifacts || !agent.org_id) {
       return null;
     }
-    const actor = taskEmbedActor(agent.org_id, agent);
-    let embeds: TaskEmbedSnapshot[] = [];
-    let collections: string[] = [];
-    try {
-      embeds = await snapshotTaskEmbeds(artifacts, actor, agent.task);
-      collections = await snapshotTaskCollections(artifacts, actor, agent.task);
-    } catch (error) {
-      if (!(error instanceof ArtifactError)) {
-        throw error;
-      }
-    }
-    return {
-      version: agent.task_version,
-      hash: agent.task_hash,
-      display_path: displayPathFor({
-        orgId: agent.org_id,
-        level: "agent",
-        ownerId: agent.id,
-        kind: "task",
-        path: "",
-        key: "task.md",
-      }),
-      embeds,
-      collections,
-      has_embeds: collectTaskEmbeds(agent.task).length > 0,
-    };
+    return artifacts.taskSnapshot(agent);
   }
 }

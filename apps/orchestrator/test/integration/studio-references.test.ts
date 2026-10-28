@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { unreachableMarker } from "../../src/artifacts/embeds.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";

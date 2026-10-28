@@ -71,8 +71,8 @@ async function createMemory(store: ArtifactStore, actor: ArtifactActor, owner: M
   });
 }
 
-export async function readStoredMemory(store: ArtifactStore, actor: ArtifactActor, agentId: string): Promise<string> {
-  const row = await loadMemoryRow(store.db, actor.orgId, agentId);
+/** The Memory text a prompt reads from the agent's Memory row: empty when it has none. */
+export function storedMemoryText(row: HashedArtifactRow | null): string {
   return row?.content_text || EMPTY_MEMORY;
 }
 

@@ -1,5 +1,5 @@
 import type { AttachmentRef, AttachmentService } from "../attachments/index.js";
-import type { ArtifactFiles } from "../artifacts/index.js";
+import type { ArtifactFiles } from "../artifacts/files.js";
 import { deleteAgent, getAgent, listAgents } from "../db/agents.js";
 import { deleteGuild, getGuild } from "../db/guilds.js";
 import { getOrgModelProvider } from "../db/orgs.js";

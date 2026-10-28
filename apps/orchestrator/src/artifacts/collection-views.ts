@@ -1,6 +1,8 @@
 // Collections and their records as the Tables page and the settings surfaces show them.
 import { isPlainRecord } from "../db/json.js";
-import { ArtifactError, type ArtifactActor, type ArtifactStore } from "./index.js";
+import { ArtifactError } from "./errors.js";
+import type { ArtifactActor } from "./types.js";
+import type { ArtifactStore } from "./store.js";
 import * as collections from "./collections.js";
 import * as recordStore from "./records.js";
 

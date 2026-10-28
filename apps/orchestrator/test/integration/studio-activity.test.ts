@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
-import { agentActor, artifactStore } from "../../src/artifacts/index.js";
+import { agentActor } from "../../src/artifacts/actors.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { buildApp } from "../../src/app.js";
 import { connect } from "../../src/seed/connect.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";

@@ -3,11 +3,11 @@ import {
   isAccessMode,
   isAccessSubject,
   isAgentAccessMode,
-  type AccessMode,
   type AccessSubject,
   type AgentAccessMode,
   type ArtifactLevel,
 } from "./types.js";
+import type { AccessMode } from "../db/schema/index.js";
 
 /** One row of an item's access list as the operator reads and writes it. */
 export type AccessEntry = {

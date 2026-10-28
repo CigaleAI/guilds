@@ -1,16 +1,11 @@
 import type pg from "pg";
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { writeAgentTask } from "../../src/agents/task.js";
+import { writeAgentTask } from "../../src/artifacts/task.js";
 import { artifactStore, type ArtifactStore, artifactView, rowDisplayPath } from "../../src/artifacts/store.js";
-import {
-  agentActor,
-  inlineTaskEmbeds,
-  inspectTaskEmbeds,
-  listFileChanges,
-  operatorActor,
-} from "../../src/artifacts/index.js";
-import { unreachableMarker, embedSource } from "../../src/artifacts/embeds.js";
+import { agentActor, operatorActor } from "../../src/artifacts/actors.js";
+import { listFileChanges } from "../../src/db/file-changes.js";
+import { unreachableMarker, embedSource, inlineTaskEmbeds, inspectTaskEmbeds } from "../../src/artifacts/embeds.js";
 import { revisionDisplayPath } from "../../src/artifacts/paths.js";
 import { agentDatabase, persistAgent } from "../../src/agents/persist.js";
 import type { Database } from "../../src/db/client.js";

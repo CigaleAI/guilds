@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
-import { artifactStore } from "../../src/artifacts/index.js";
+import { artifactStore } from "../../src/artifacts/store.js";
 import { connect } from "../../src/seed/connect.js";
 import { setInstanceKeys } from "../../src/instance/integrations.js";
 import { NotesStore } from "../../src/notes/store.js";

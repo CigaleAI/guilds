@@ -1,5 +1,9 @@
-import { writeAgentTaskInTransaction } from "../agents/task.js";
-import { ArtifactError, collectTaskEmbeds, displayPathFor, hashArtifactContent, inlineTaskEmbeds, taskEmbedActor, type ArtifactStore } from "../artifacts/index.js";
+import { collectTaskEmbeds } from "../artifacts/embeds.js";
+import { getMemoryRow, storedMemoryText } from "../artifacts/memory.js";
+import { ArtifactError } from "../artifacts/errors.js";
+import { agentTask, expandTaskText } from "../artifacts/service.js";
+import { hashArtifactContent, operatorContext, type ArtifactStore } from "../artifacts/store.js";
+import { taskDisplayPath, writeAgentTaskInTransaction } from "../artifacts/task.js";
 import { WRITE_MAX_BYTES } from "../artifacts/types.js";
 import { jsonObj as _jsonObj } from "../db/json.js";
 import { newId } from "../lib/ids.js";
@@ -28,9 +32,6 @@ import { listConversationMessages, type ConversationMessageRow } from "../db/con
 import { isPlainRecord } from "../db/json.js";
 import { EVIDENCE_REF_KINDS, type EvidenceRef, type EvidenceRefKind, type EvidenceWarning } from "../db/schema/index.js";
 import type { UserRow } from "../db/users.js";
-import { getMemoryRow } from "../artifacts/memory.js";
-import { operatorContext } from "../artifacts/store.js";
-import { embedSource } from "../artifacts/embeds.js";
 
 export type StudioDraftService = {
   createFromTool(ctx: StudioToolContext, args: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -103,14 +104,7 @@ export class StudioDrafts implements StudioDraftService {
             focus: agent.focus,
           },
           source_artifact_id: null,
-          source_display_path: displayPathFor({
-            orgId: ctx.orgId,
-            level: "agent",
-            ownerId: targetId,
-            kind: "task",
-            path: "",
-            key: "task.md",
-          }),
+          source_display_path: taskDisplayPath(ctx.orgId, targetId),
           base_version: task.version,
           base_hash: task.content_hash,
           base_content: task.content_text ?? "",
@@ -326,7 +320,7 @@ export class StudioDrafts implements StudioDraftService {
     );
     let expanded: string;
     try {
-      expanded = await inlineTaskEmbeds(embedSource(this.artifacts), taskEmbedActor(agent.org_id, agent), proposed);
+      expanded = await expandTaskText(this.artifacts, agent, proposed);
     } catch (error) {
       if (error instanceof ArtifactError) {
         throw new StudioUnprocessableError(error.message);
@@ -338,7 +332,7 @@ export class StudioDrafts implements StudioDraftService {
       agentName: agent.name,
       agentId: agent.id,
     });
-    const memoryRow = await getMemoryRow(this.artifacts, actor, agent.id);
+    const memory = await getMemoryRow(this.artifacts, actor, agent.id);
     const preview = await previewCurrentState(args.preview, agent);
     const tools = await projectOfferedToolSchemas(args.preview, agent);
     const config = (agent.config && typeof agent.config === "object" ? agent.config : {}) as Record<string, unknown>;
@@ -347,7 +341,7 @@ export class StudioDrafts implements StudioDraftService {
       standing,
       expanded,
       preview.state,
-      memoryRow?.content_text ?? "",
+      storedMemoryText(memory),
       memoryEnabled,
       memoryEnabled && schemasOffer(tools.schemas, "memory_write"),
     );
@@ -356,20 +350,8 @@ export class StudioDrafts implements StudioDraftService {
     if (tokens > maxInput) {
       throw new StudioUnprocessableError("composed prompt exceeds the target agent's max_input_tokens");
     }
-    const liveContent = String(agent.task ?? "");
-    let priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;
-    if (liveContent) {
-      try {
-        priorEffective = promptHash(
-          await inlineTaskEmbeds(embedSource(this.artifacts), taskEmbedActor(agent.org_id, agent), liveContent),
-        );
-      } catch (error) {
-        if (!(error instanceof ArtifactError)) {
-          throw error;
-        }
-        priorEffective = typeof agent.task_hash === "string" ? agent.task_hash : null;
-      }
-    }
+    const live = await agentTask(this.artifacts, agent);
+    const priorEffective = live.text && live.expanded.ok ? promptHash(live.expanded.text) : live.hash;
     return {
       config_hash: tools.config_hash,
       projected_at: preview.projected_at,

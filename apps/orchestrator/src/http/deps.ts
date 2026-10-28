@@ -1,4 +1,5 @@
-import type { ArtifactFiles, ArtifactStore } from "../artifacts/index.js";
+import type { ArtifactFiles } from "../artifacts/files.js";
+import type { ArtifactStore } from "../artifacts/store.js";
 import type { Database } from "../db/client.js";
 import type { OrgCreatedHook } from "../db/orgs.js";
 import type { NotesStore } from "../notes/store.js";
