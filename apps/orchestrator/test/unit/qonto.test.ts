@@ -18,6 +18,7 @@ import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 /** A temporary host directory named after agent a_1, as its home sits on its machine. */
 async function agentWorkspace(prefix: string): Promise<string> {
@@ -278,7 +279,7 @@ test("upload_invoice posts, reuses the idempotency key, and polls", async () => 
 test("sync Qonto writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
   pool.connectors = CONNECTORS.withAdapter("qonto", {
     async validate(stored) {
       const creds = { login: stored.login, secretKey: stored.secret_key };
@@ -289,20 +290,10 @@ test("sync Qonto writes the curated catalog", async () => {
     },
   });
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
-  const db = {
-    rows: [] as Array<Record<string, unknown>>,
-    async replaceMcpTools(_id: string, tools: ListedTool[]) {
-      this.rows = tools.map((tool) => ({ ...tool }));
-    },
-    async listMcpTools() {
-      return this.rows;
-    },
-    async insertBindingIfAbsent() {},
-  };
   const connection = connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce });
   const server = serverRow("qonto", { id: "mcp_qonto", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `qonto_${spec.name}`));
   assert.deepEqual(first, second);
@@ -312,7 +303,7 @@ test("sync Qonto writes the curated catalog", async () => {
 test("call Qonto dispatches with stored login and secret", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("qonto", {
     async call(name, arguments_, creds, ctx) {
       seen.name = name;
@@ -325,12 +316,9 @@ test("call Qonto dispatches with stored login and secret", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ login: "org-login", secret_key: "org-secret" }, KEY);
   const stored = await pool.call(
-    { async listMcpTools() { return []; }, async replaceMcpTools() { return; } } as never,
     connectionRow({ id: "conn_qonto", status: "connected", ciphertext, nonce }),
     serverRow("qonto", { id: "mcp_qonto", auth: "token" }),
-    "list_missing_invoices",
-    { side: "debit" },
-    { workspaceDir: "/tmp/ws" },
+    { tool: "list_missing_invoices", arguments: { side: "debit" }, caller: { orgId: null, workspaceDir: "/tmp/ws" } },
   );
   assert.equal(stored, "count=0  total=0");
   assert.deepEqual(seen, {

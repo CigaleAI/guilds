@@ -1,19 +1,14 @@
 import { getMcpServer } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { jsonObj } from "../db/json.js";
-import {
-  isReadOnlyRemote,
-  listedFromRows,
-  type McpDatabase,
-  mcpDatabase,
-  McpError,
-} from "../mcp/index.js";
+import { McpError, OPERATOR_CALLER, type McpPool } from "../mcp/index.js";
+import { callTool, connectionTools } from "../mcp/service.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
 import { STUDIO_TOOL_RESULT_MAX_BYTES } from "./constants.js";
 import { StudioError, StudioUnprocessableError } from "./errors.js";
-import { getMcpConnection, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
+import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { getAgent } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
 import type { LoadedConnector } from "../connectors/load.js";
@@ -62,15 +57,8 @@ export function loginStatus(record: LoginRecord): StudioLoginStatus {
   return record.metadata.access_status ?? "pending";
 }
 
-export type StudioMcpClient = {
-  call(
-    db: McpDatabase,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    remoteName: string,
-    arguments_: Record<string, unknown>,
-  ): Promise<string>;
-};
+/** The pool Studio calls a granted connection's tools through. */
+export type StudioMcpClient = Pick<McpPool, "call" | "database">;
 
 export type ReachableConnection = {
   connection: McpConnectionRow;
@@ -146,13 +134,13 @@ export async function callConnectionTool(args: {
   }
   const slug = server.slug;
   const wanted = args.tool.trim();
-  const listed = listedFromRows(await listMcpTools(args.db, connection.id)).find(
+  const listed = (await connectionTools(args.db, connection, server)).find(
     (tool) => tool.namespaced_name === wanted || tool.remote_name === wanted,
   );
   if (!listed) {
     throw new StudioUnprocessableError(`tool ${wanted} is not listed on this connection`);
   }
-  if (!isReadOnlyRemote(slug, listed.remote_name, { readOnlyHint: listed.read_only_hint, verified: server.verified })) {
+  if (!listed.read_only) {
     throw new StudioUnprocessableError(`tool ${listed.namespaced_name} is not read-only; Studio proxies read-only tools`);
   }
   let redactions: Record<string, string>;
@@ -166,7 +154,12 @@ export async function callConnectionTool(args: {
   }
   let raw: string;
   try {
-    raw = await args.mcp.call(mcpDatabase(args.db), connection, server, listed.remote_name, args.arguments);
+    raw = await callTool(args.mcp, {
+      connectionId: connection.id,
+      tool: listed.remote_name,
+      arguments: args.arguments,
+      caller: OPERATOR_CALLER,
+    });
   } catch (error) {
     if (error instanceof McpError) {
       throw new StudioUnprocessableError(`${slug} call failed: ${error.message}`);

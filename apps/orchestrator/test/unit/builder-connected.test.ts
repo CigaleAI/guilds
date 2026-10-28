@@ -9,6 +9,8 @@ import {
   searchConnectedWorkspace,
 } from "../../src/builder/connected.js";
 import { builderAskConnection, builderAskOrgConnection, builderAskQuestion, builderSearchConnected } from "../../src/builder/tools.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { connectionRow, serverRow } from "../helpers/servers.js";
 
 function notionServer() {
   return {
@@ -46,6 +48,14 @@ function repoStub(options: {
       return options.servers ?? (server ? [server] : []);
     },
   };
+}
+
+/** The pool's database holding the organisation's connected Notion login `conn_1`. */
+function notionLogin(): MemoryMcpDatabase {
+  const database = new MemoryMcpDatabase();
+  database.connections = [connectionRow({ id: "conn_1", mcp_server_id: "mcp_notion" })];
+  database.servers = [serverRow("notion", { id: "mcp_notion" })];
+  return database;
 }
 
 test("parseWorkspaceHits prefers Notion databases and unwraps MCP text", () => {
@@ -99,6 +109,7 @@ test("builder_search_connected returns databases from the org workspace", async 
       ],
     }) as never,
     mcp: {
+      database: notionLogin(),
       async call() {
         return JSON.stringify({
           results: [{ id: "db1", title: "Projects", object: "database" }],

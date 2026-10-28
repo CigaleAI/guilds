@@ -7,7 +7,7 @@ import { decodeMasterKey } from "../../src/config/index.js";
 import { connect } from "../../src/seed/connect.js";
 import { generationDatabase, GenerationLoop, LOOP_TIMINGS } from "../../src/generation/index.js";
 import { TEST_MODEL, connectModelProvider } from "../helpers/models.js";
-import { McpPool } from "../../src/mcp/index.js";
+import { McpPool, mcpDatabase } from "../../src/mcp/index.js";
 import { artifactStore } from "../../src/artifacts/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
@@ -46,7 +46,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
       notes,
       workspaceRoot,
       sandboxes,
-      mcp: new McpPool(),
+      mcp: new McpPool(mcpDatabase(db)),
       artifacts: generationArtifacts(artifacts),
     },
     { ...LOOP_TIMINGS, idleTimeoutMs: 5 * 60 * 1000 },
@@ -58,7 +58,7 @@ test("an organisation's machines host its agents: placement, tiers, resizes, mov
     scripts: new Scripts(scriptDatabase(db)),
     schedules: new Schedules(scheduleDatabase(db)),
     masterKey: decodeMasterKey(HEX_MASTER_KEY),
-    mcp: new McpPool(),
+    mcp: new McpPool(mcpDatabase(db)),
     generation,
   });
   let guildId = "";

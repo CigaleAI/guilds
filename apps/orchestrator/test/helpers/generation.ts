@@ -13,7 +13,9 @@ import {
 } from "../../src/generation/index.js";
 import { type GenerationSandboxes } from "../../src/generation/machines.js";
 import type { Completion } from "../../src/llm/index.js";
+import { McpPool } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
+import { MemoryMcpDatabase } from "./mcp-database.js";
 import { SandboxError, type AgentSeat, type MachineSpec } from "../../src/sandbox/index.js";
 import { HEX_MASTER_KEY, tempDir } from "./env.js";
 import { templatesRoot } from "./fixtures.js";
@@ -966,6 +968,8 @@ export function makeLoop(
       workspaceRoot,
       sandboxes: sandboxes as GenerationSandboxes,
       credentials: TEST_CREDENTIALS,
+      // A loop's runs reach no connector until a test gives them a pool that does.
+      mcp: new McpPool(new MemoryMcpDatabase()),
       ...services,
     },
     { idleTimeoutMs, schedulerTickMs },

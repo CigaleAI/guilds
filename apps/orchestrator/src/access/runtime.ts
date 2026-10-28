@@ -1,18 +1,13 @@
 import { listMcpServers } from "../connectors/servers.js";
 import { listBindingsCovering } from "../db/bindings.js";
-import { listMcpConnections, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
+import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getSecret, listAgentSecrets } from "../db/secrets.js";
 import { writeLog } from "../observability/log.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { secretValue } from "../credentials/validate.js";
-import {
-  listedFromRows,
-  mcpSchema,
-  McpDisconnectedError,
-  type ListedTool,
-  type McpPool,
-} from "../mcp/index.js";
+import { McpDisconnectedError, type ConnectorLogin, type McpPool } from "../mcp/index.js";
+import { connectionTools, resolveConnectionTool, type ConnectionTool } from "../mcp/service.js";
 import { MissingSecretError } from "../secrets/index.js";
 import { serverManifest, type LoadedConnector } from "../connectors/load.js";
 import { ACCESS_NATIVE_TOOLS, enabledToolNames, resolveItem, resolvedMcp, resolvedTools, type Resolved } from "./index.js";
@@ -32,7 +27,7 @@ export type RuntimeAccess = {
   mcp: RuntimeMcpConnection[];
 };
 
-/** The db/ functions an agent's runtime access is resolved through, on `db`. */
+/** The db/ functions an agent's runtime access is resolved through, and the stored tool listings it reads, on `db`. */
 export function accessDatabase(db: Queryable) {
   return {
     listBindingsCovering: bindQuery(db, listBindingsCovering),
@@ -40,7 +35,7 @@ export function accessDatabase(db: Queryable) {
     getSecret: bindQuery(db, getSecret),
     listMcpServers: bindQuery(db, listMcpServers),
     listMcpConnections: bindQuery(db, listMcpConnections),
-    listMcpTools: bindQuery(db, listMcpTools),
+    connectionTools: bindQuery(db, connectionTools),
   };
 }
 
@@ -96,35 +91,33 @@ export async function agentSecrets(db: AccessDatabase, agent: AgentPlaceRow): Pr
   return rows.map((row) => ({ id: row.id, name: row.name, description: row.description }));
 }
 
+type RuntimeScope = { orgId: string | null; guildId: string; agentId: string };
+
+/** The pool an agent's logins list their tools through. */
+type ToolSync = Pick<McpPool, "syncTools">;
+
+/** A login and the tools it lists, for one connector the agent has on. */
+type Listing = ConnectorLogin & { listed: ConnectionTool[] };
+
+/** What an agent's logins are read through: its bindings, the servers it sees, and the logins covering it. */
+type LoginReads = Pick<AccessDatabase, "listBindingsCovering" | "listMcpServers" | "listMcpConnections">;
+
 /**
- * The connected login behind an enabled MCP server for the agent, or null
- * when the server is off or the login is not connected.
+ * The connected logins behind the MCP servers the agent has on, each with its server. A server
+ * that is off for the agent, or whose login is missing or not connected, has none.
  */
-export async function agentMcpConnection(
-  db: AccessDatabase,
-  agent: AgentPlaceRow,
-  slug: string,
-): Promise<McpConnectionRow | null> {
-  const orgId = agent.org_id;
-  const guildId = agent.guild_id;
-  const agentId = agent.id;
-  const scope = { orgId, guildId, agentId };
-  const server = (await db.listMcpServers(orgId)).find((row) => row.slug === slug);
-  if (!server) {
-    return null;
-  }
+export async function agentLogins(db: LoginReads, agent: AgentPlaceRow): Promise<ConnectorLogin[]> {
+  const scope: RuntimeScope = { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id };
   const rows = await db.listBindingsCovering(scope);
-  const item = resolveItem(rows, "mcp", server.id, scope);
-  if (!item.enabled || item.connection_id === null) {
-    return null;
+  const connections = await loginsById(db, scope);
+  const logins: ConnectorLogin[] = [];
+  for (const [item, server] of resolvedMcp(rows, await db.listMcpServers(scope.orgId), scope)) {
+    const connection = item.enabled && item.connection_id !== null ? connections.get(item.connection_id) : undefined;
+    if (connection?.status === "connected") {
+      logins.push({ connection, server });
+    }
   }
-  const connection = (await db.listMcpConnections(scope)).find(
-    (row) => row.id === item.connection_id,
-  );
-  if (connection?.status !== "connected") {
-    return null;
-  }
-  return connection;
+  return logins;
 }
 
 /**
@@ -138,34 +131,20 @@ export async function agentToolConnection(
   slug: string,
   remoteName: string,
 ): Promise<McpConnectionRow | null> {
-  const connection = await agentMcpConnection(db, agent, slug);
-  if (!connection) {
+  const login = (await agentLogins(db, agent)).find((item) => item.server.slug === slug);
+  if (!login) {
     return null;
   }
-  const orgId = agent.org_id;
-  const guildId = agent.guild_id;
-  const agentId = agent.id;
-  const scope = { orgId, guildId, agentId };
-  const server = (await db.listMcpServers(orgId)).find((row) => row.slug === slug);
-  if (!server) {
-    return null;
-  }
+  const scope: RuntimeScope = { orgId: agent.org_id, guildId: agent.guild_id, agentId: agent.id };
   const rows = await db.listBindingsCovering(scope);
-  const tool = listedFromRows(await db.listMcpTools(connection.id)).find(
-    (row) => row.remote_name === remoteName,
+  const tool = (await db.connectionTools(login.connection, login.server)).find(
+    (item) => item.remote_name === remoteName,
   );
   if (!tool || !resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled) {
     return null;
   }
-  return connection;
+  return login.connection;
 }
-
-type RuntimeScope = { orgId: string | null; guildId: string; agentId: string };
-
-type ToolSync = McpPool | { syncTools?: McpPool["syncTools"] } | null;
-
-/** A login and the tools it lists, for one connector the agent has on. */
-type Listing = { connection: McpConnectionRow; server: LoadedConnector; listed: ListedTool[] };
 
 /**
  * The connected login a connector the agent has on resolves to, or null when it offers nothing:
@@ -187,32 +166,39 @@ function connectedLogin(
   return connection?.status === "connected" ? connection : null;
 }
 
-/** The tools a login lists: synced when the pool can, else the stored catalog. A sync that fails falls back to it. */
-async function loginTools(db: AccessDatabase, mcpPool: ToolSync, listing: Omit<Listing, "listed">, agentId: string) {
-  const { connection, server } = listing;
-  try {
-    const synced = await mcpPool?.syncTools?.(db as never, connection, server);
-    if (synced) {
-      return synced;
+/**
+ * The tools a login lists: synced when there is a pool, else the stored catalog. A sync that
+ * finds the login disconnected throws; any other failed sync falls back to the stored catalog.
+ */
+async function loginTools(
+  db: AccessDatabase,
+  mcpPool: ToolSync | null,
+  login: ConnectorLogin,
+  agentId: string,
+): Promise<ConnectionTool[]> {
+  const { connection, server } = login;
+  if (mcpPool !== null) {
+    try {
+      return (await mcpPool.syncTools(connection, server)).map((tool) => resolveConnectionTool(server, tool));
+    } catch (error) {
+      if (error instanceof McpDisconnectedError) {
+        throw error;
+      }
+      writeLog("warn", "mcp tool sync failed; using stored catalog", {
+        agent_id: agentId,
+        operation: `mcp.sync.${server.slug}`,
+        error_type: error instanceof Error ? error.name : "Error",
+      }, error);
     }
-  } catch (error) {
-    if (error instanceof McpDisconnectedError) {
-      throw error;
-    }
-    writeLog("warn", "mcp tool sync failed; using stored catalog", {
-      agent_id: agentId,
-      operation: `mcp.sync.${server.slug}`,
-      error_type: error instanceof Error ? error.name : "Error",
-    }, error);
   }
-  return listedFromRows(await db.listMcpTools(connection.id));
+  return db.connectionTools(connection, server);
 }
 
 /** The login's entry in the run's MCP access: its tools that resolve On, or null when none does. */
 function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, scope: RuntimeScope): RuntimeMcpConnection | null {
   const offered = listing.listed
     .filter((tool) => resolveMcpTool(rows, tool.namespaced_name, { serverEnabled: true, ...scope }).enabled)
-    .map((tool) => ({ name: tool.namespaced_name, remote_name: tool.remote_name, schema: mcpSchema(tool) }));
+    .map((tool) => ({ name: tool.namespaced_name, remote_name: tool.remote_name, schema: tool.schema }));
   if (!offered.length) {
     return null;
   }
@@ -220,7 +206,7 @@ function offeredLogin(rows: Array<Record<string, unknown>>, listing: Listing, sc
 }
 
 /** The logins covering the agent, by id. */
-async function loginsById(db: AccessDatabase, scope: RuntimeScope): Promise<Map<string, McpConnectionRow>> {
+async function loginsById(db: Pick<AccessDatabase, "listMcpConnections">, scope: RuntimeScope): Promise<Map<string, McpConnectionRow>> {
   const logins = await db.listMcpConnections(scope);
   return new Map(logins.map((connection) => [connection.id, connection]));
 }
@@ -228,7 +214,7 @@ async function loginsById(db: AccessDatabase, scope: RuntimeScope): Promise<Map<
 export async function agentRuntime(
   db: AccessDatabase,
   agent: AgentPlaceRow,
-  options: { mcpPool?: ToolSync } = {},
+  options: { mcpPool?: ToolSync | null } = {},
 ): Promise<RuntimeAccess> {
   const scope: RuntimeScope = {
     orgId: agent.org_id,

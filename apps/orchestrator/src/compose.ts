@@ -22,7 +22,7 @@ import { generationDatabase, GenerationLoop } from "./generation/index.js";
 import { coreModelCredentials, modelProviderStore } from "./llm/credentials.js";
 import { modelsDatabase, ModelsService } from "./llm/models.js";
 import { layOutAgentHomes } from "./machines/layout.js";
-import { McpPool, TOOLS_TTL_MS } from "./mcp/index.js";
+import { McpPool, mcpDatabase, TOOLS_TTL_MS } from "./mcp/index.js";
 import { NotesStore } from "./notes/store.js";
 import { startRuntimeMetrics } from "./observability/runtime.js";
 import { OPEN_POLICY } from "./policy/index.js";
@@ -100,7 +100,7 @@ export async function createServer(
   const models = new ModelsService({ db: modelsDatabase(db), credentials: modelCredentials, masterKey });
   // Tool lists stay cached for their ttl. Calls go through the forward proxy when one is set,
   // and the policy above caps the ones a platform login makes.
-  const mcp = new McpPool(TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");
+  const mcp = new McpPool(mcpDatabase(db), TOOLS_TTL_MS, process.env.ADAPTER_PROXY_URL ?? "");
   mcp.policy = policy;
   // An extension's manager, or one OpenSandbox manager for this box. Homes are laid out next,
   // and that step asks the manager to destroy sandboxes still running per agent.

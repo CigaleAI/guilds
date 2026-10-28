@@ -1,9 +1,10 @@
 import { defaultSearchServer, isSearchable, storageHint } from "../connectors/builder.js";
-import { getMcpServer, getMcpServerBySlug } from "../connectors/servers.js";
-import { type McpDatabase, mcpDatabase, McpError } from "../mcp/index.js";
+import { getMcpServer, getMcpServerBySlug, listMcpServers } from "../connectors/servers.js";
+import { McpError, OPERATOR_CALLER, type McpPool } from "../mcp/index.js";
+import { callTool } from "../mcp/service.js";
+import { listMcpConnections, listMcpTools, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { LoadedConnector } from "../connectors/load.js";
-import type { McpConnectionRow } from "../db/mcp.js";
 
 
 const SEARCH_REMOTES = ["search", "notion-search", "Search"];
@@ -11,22 +12,17 @@ const MAX_HITS = 20;
 const MAX_SNIPPET = 240;
 const MAX_RAW = 4_000;
 
-export type BuilderMcpClient = {
-  call(
-    db: McpDatabase,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    remoteName: string,
-    arguments_: Record<string, unknown>,
-  ): Promise<string>;
-};
+/** The pool the Builder searches a connected workspace through. */
+export type BuilderMcpClient = Pick<McpPool, "call" | "database">;
 
-/** The db/ functions the Builder's connected-workspace tools read and call through, on `db`. */
+/** The db/ functions the Builder's connected-workspace tools read through, on `db`. */
 export function connectedDatabase(db: Queryable) {
   return {
-    ...mcpDatabase(db),
     getMcpServer: bindQuery(db, getMcpServer),
     getMcpServerBySlug: bindQuery(db, getMcpServerBySlug),
+    listMcpServers: bindQuery(db, listMcpServers),
+    listMcpConnections: bindQuery(db, listMcpConnections),
+    listMcpTools: bindQuery(db, listMcpTools),
   };
 }
 
@@ -324,7 +320,12 @@ export async function searchConnectedWorkspace(args: {
   const tools = await args.db.listMcpTools(connection.id);
   const remoteName = pickSearchRemote(tools);
   try {
-    const raw = await args.mcp.call(args.db, connection, server, remoteName, query ? { query } : {});
+    const raw = await callTool(args.mcp, {
+      connectionId: connection.id,
+      tool: remoteName,
+      arguments: query ? { query } : {},
+      caller: OPERATOR_CALLER,
+    });
     const parsed = parseWorkspaceHits(raw);
     const databases = parsed.hits.filter((hit) => hit.kind === "database");
     return {

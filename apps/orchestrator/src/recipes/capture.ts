@@ -7,7 +7,7 @@ import { operatorActor } from "../artifacts/actors.js";
 import { collectTaskEmbeds } from "../artifacts/index.js";
 import type { AccessEntry, ArtifactActor, ArtifactStore } from "../artifacts/index.js";
 import { rowDisplayPath, type ArtifactRow } from "../artifacts/store.js";
-import { loadAccessView } from "../access/view.js";
+import { accessViewDatabase, loadAccessView } from "../access/view.js";
 import type { Scripts } from "../scripts/catalog.js";
 import type { Schedules } from "../schedules/service.js";
 import { rowTiming } from "../schedules/timing.js";
@@ -38,7 +38,6 @@ import { recipeNotePath, rewriteGuildTextToRecipeRefs } from "./rewrite.js";
 import { RecipeError } from "./errors.js";
 import { capturedNoteAccess, capturedTableAccess, type CapturedGuild } from "./access.js";
 import { exportManifest } from "../mcp/catalog.js";
-import { mcpDatabase } from "../mcp/index.js";
 import { getAgentTask, listAgents, type GuildAgentRow } from "../db/agents.js";
 import { listSchedules } from "../db/schedules.js";
 import { listSecrets, type SecretRow } from "../db/secrets.js";
@@ -49,10 +48,10 @@ import { getByDisplayPath, listEmbeddableNotes } from "../artifacts/notes.js";
 import { listAccess } from "../artifacts/access-lists.js";
 import { listCollections } from "../artifacts/collections.js";
 
-/** The db/ functions a guild is captured into a recipe through, on `db`. */
+/** The db/ functions a guild is captured into a recipe through, and the access view it reads, on `db`. */
 export function captureDatabase(db: Queryable) {
   return {
-    ...mcpDatabase(db),
+    ...accessViewDatabase(db),
     listAgents: bindQuery(db, listAgents),
     getAgentTask: bindQuery(db, getAgentTask),
     listSchedules: bindQuery(db, listSchedules),

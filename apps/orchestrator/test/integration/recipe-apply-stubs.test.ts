@@ -5,7 +5,7 @@ import { buildApp } from "../../src/app.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
 import { newId } from "../../src/lib/ids.js";
-import { CALL_TOOL_TIMEOUT_MS, mcpDatabase, McpPool } from "../../src/mcp/index.js";
+import { CALL_TOOL_TIMEOUT_MS, McpPool, mcpDatabase } from "../../src/mcp/index.js";
 import { proxyFetch } from "../../src/net/http.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { recipeApply } from "../../src/recipes/apply.js";
@@ -66,7 +66,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
   const scripts = new Scripts(scriptDatabase(db));
   const schedules = new Schedules(scheduleDatabase(db));
   const apply = recipeApply({ db, artifacts, notes, scripts, schedules, registry: null });
-  const mcp = new McpPool();
+  const mcp = new McpPool(mcpDatabase(db));
   // The stub servers listen on loopback, which the pool refuses by default.
   mcp.endpointFetch = proxyFetch("", CALL_TOOL_TIMEOUT_MS);
   const app = await buildApp(database, {
@@ -282,7 +282,7 @@ test("apply complete and husk two-agent recipes against stub mail and crm", { ti
         },
         now,
       );
-      const listed = await mcp.syncTools(mcpDatabase(db), connection, server, { force: true });
+      const listed = await mcp.syncTools(connection, server, { force: true });
       assert.deepEqual(
         listed.map((tool) => tool.namespaced_name),
         [`${server.slug}_ping`],

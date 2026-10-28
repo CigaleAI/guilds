@@ -19,7 +19,7 @@ import {
   postsTool,
   searchTool,
 } from "../../src/connectors/twitterapiio/client.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { ListedTool, McpError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
@@ -27,6 +27,7 @@ import { loadJsonFixture } from "../helpers/fixtures.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 const fixture = loadJsonFixture<{
   search: string;
@@ -39,15 +40,6 @@ const fixture = loadJsonFixture<{
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("twitterapiio")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatSearch is compact TSV", () => {
   const stored = formatSearch(
@@ -214,7 +206,7 @@ test("callTool unknown name", async () => {
 test("sync TwitterAPI.io writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
   pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
     async validate(creds) {
       const apiKey = creds.token;
@@ -224,11 +216,10 @@ test("sync TwitterAPI.io writes the curated catalog", async () => {
     },
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce });
   const server = serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `twitterapiio_${spec.name}`));
   assert.deepEqual(first, second);
@@ -238,7 +229,7 @@ test("sync TwitterAPI.io writes the curated catalog", async () => {
 
 test("sync TwitterAPI.io rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
     async validate() {
       throw new ConnectorError("Unauthorized", 401);
@@ -248,7 +239,6 @@ test("sync TwitterAPI.io rejects a bad key", async () => {
   await assert.rejects(
     () =>
       pool.syncTools(
-        new MemoryDb() as never,
         connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce }),
         serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" }),
         { force: true },
@@ -260,7 +250,7 @@ test("sync TwitterAPI.io rejects a bad key", async () => {
 test("call TwitterAPI.io dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("twitterapiio", {
     async call(name, arguments_, creds) {
       seen.name = name;
@@ -271,11 +261,9 @@ test("call TwitterAPI.io dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "tok-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_twitterapiio", status: "connected", ciphertext, nonce }),
     serverRow("twitterapiio", { id: "mcp_twitterapiio", auth: "token" }),
-    "search",
-    { query: "from:x" },
+    { tool: "search", arguments: { query: "from:x" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "from:x  n=0");
   assert.deepEqual(seen, { name: "search", arguments: { query: "from:x" }, api_key: "tok-test" });

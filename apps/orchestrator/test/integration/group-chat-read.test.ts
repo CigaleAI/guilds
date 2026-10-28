@@ -12,6 +12,7 @@ import { ExportSandboxes } from "../helpers/live.js";
 import { createIsolatedDatabase, dropIsolatedDatabase, uniqueDbName } from "../helpers/postgres.js";
 import { insertUser } from "../../src/db/users.js";
 import { insertMember } from "../../src/db/orgs.js";
+import { mcpDatabase, McpPool } from "../../src/mcp/index.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -37,6 +38,7 @@ test(
     const workspaceRoot = tempDir("guilds-group-read-workspaces-");
     const generation = new GenerationLoop({
       db: generationDatabase(db),
+      mcp: new McpPool(mcpDatabase(db)),
       notes,
       workspaceRoot,
       sandboxes: new ExportSandboxes(workspaceRoot),

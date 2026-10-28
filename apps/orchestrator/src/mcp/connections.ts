@@ -17,7 +17,7 @@ import {
 } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { awaitingSettings, mcpDatabase, type McpPool } from "./index.js";
+import { awaitingSettings, type McpPool } from "./index.js";
 import { callOwnedConnectionTool } from "./operator-call.js";
 import { ConnectionError, seesConnection, serverVisible } from "./visibility.js";
 import type { LoadedConnector } from "../connectors/load.js";
@@ -140,7 +140,6 @@ export async function callConnectionTool(
     throw new ConnectionError(422, "arguments must be an object");
   }
   return callOwnedConnectionTool({
-    db: mcpDatabase(services.db),
     mcp,
     connection,
     server,
@@ -184,7 +183,7 @@ export async function lookupWithLogin(
   const { property, q } = requireLookup(lookup);
   try {
     return {
-      options: await mcp.lookupLogin(mcpDatabase(services.db), connection, server, property, q),
+      options: await mcp.lookupLogin(connection, server, property, q),
     };
   } catch (error) {
     connectFailure(error, server);
@@ -213,7 +212,7 @@ export async function saveConnectionSettings(
   const valid = validateSettings(schema, settings ?? null);
   let accountHint = "";
   try {
-    accountHint = await mcp.validateLogin(mcpDatabase(services.db), connection, server, valid);
+    accountHint = await mcp.validateLogin(connection, server, valid);
   } catch (error) {
     connectFailure(error, server);
   }
@@ -240,7 +239,7 @@ async function syncAfterSettings(
   server: LoadedConnector,
 ): Promise<void> {
   try {
-    await mcp.syncTools(mcpDatabase(services.db), row, server, { force: true, validate: false });
+    await mcp.syncTools(row, server, { force: true, validate: false });
   } catch {
     // The settings stand; the login's tools list on the next sync.
   }

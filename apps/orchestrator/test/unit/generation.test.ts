@@ -48,6 +48,10 @@ import {
 } from "../helpers/generation.js";
 import { limitedPolicy } from "../helpers/policy.js";
 import { noteRowAt } from "../helpers/artifacts.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
+import { connectionRow, serverRow } from "../helpers/servers.js";
+import type { McpConnectionRow } from "../../src/db/mcp.js";
+import { McpPool, type RemoteCall } from "../../src/mcp/index.js";
 
 const HOME = "/home/a_1";
 
@@ -88,6 +92,16 @@ function restoreBindings(): void {
   live.countInputTokens = originalCount;
   live.cancelGraceMs = originalGrace;
   live.shutdownTimeoutMs = originalShutdown;
+}
+
+/** A pool whose database holds the connected Notion login `conn_u`, answering each remote call with `answer`. */
+function notionPool(answer: (connection: McpConnectionRow, call: RemoteCall) => Promise<string>): McpPool {
+  const database = new MemoryMcpDatabase();
+  database.connections = [connectionRow({ id: "conn_u", mcp_server_id: "mcp_notion" })];
+  database.servers = [serverRow("notion", { id: "mcp_notion" })];
+  const pool = new McpPool(database);
+  pool.call = async (connection, _server, call) => answer(connection, call);
+  return pool;
 }
 
 function withoutWorkspaceMeasure(commands: unknown): string[] {
@@ -441,18 +455,10 @@ describe("generation", { concurrency: 1 }, () => {
     db.mcp_connection = { id: "conn_u", mcp_server_id: "mcp_notion", status: "connected" };
     db.mcp_server = { id: "mcp_notion", slug: "notion" };
     const calls: Array<[string, string, Record<string, unknown>]> = [];
-    const pool = {
-      async call(
-        _db: unknown,
-        connection: Record<string, unknown>,
-        _server: Record<string, unknown>,
-        remoteName: string,
-        arguments_: Record<string, unknown>,
-      ) {
-        calls.push([String(connection.id), remoteName, arguments_]);
-        return "page found";
-      },
-    };
+    const pool = notionPool(async (connection, call) => {
+      calls.push([connection.id, call.tool, call.arguments]);
+      return "page found";
+    });
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), new FakeSandboxes(), { mcp: pool });
     live.streamCompletion = fakeStream(db, [
       { id: "call_1", type: "function" as const, function: { name: "notion_search", arguments: '{"query":"notes"}' } },
@@ -505,11 +511,7 @@ describe("generation", { concurrency: 1 }, () => {
       nonce,
     };
     db.mcp_server = { id: "mcp_notion", slug: "notion" };
-    const pool = {
-      async call() {
-        return "token is tok-access and tok-refresh";
-      },
-    };
+    const pool = notionPool(async () => "token is tok-access and tok-refresh");
     const sandboxes = new FakeSandboxes();
     const loop = makeLoop(db, {}, tempDir("guilds-gen-"), sandboxes, { mcp: pool });
     live.streamCompletion = fakeStream(db, [

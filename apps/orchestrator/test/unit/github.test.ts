@@ -528,8 +528,8 @@ test("a repository the App no longer reaches is named, whether it has an id or n
   );
 });
 
-test("a disconnected connection is refused; GitHub refusing the installation disconnects it", async () => {
-  const saved: string[] = [];
+test("a disconnected connection is refused; GitHub refusing the installation retires it as installation_gone", async () => {
+  const retired: string[] = [];
   const offline = new RepositoryTokens(
     { getMcpConnection: async (id: string) => connection(id, "disconnected", 11) } as never,
     [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a" }],
@@ -539,16 +539,15 @@ test("a disconnected connection is refused; GitHub refusing the installation dis
   const gone = new RepositoryTokens(
     {
       getMcpConnection: async (id: string) => connection(id, "connected", 11),
-      saveMcpConnection: async (id: string, options: { status: string }) => {
-        saved.push(`${id}:${options.status}`);
-        return null;
+      retireLogin: async (_pool: unknown, login: { id: string }, failure: string) => {
+        retired.push(`${login.id}:${failure}`);
       },
     } as never,
     [{ name: "shop", url: "https://github.com/acme/shop", connection_id: "conn_a", github_id: 101 }],
     { app: APP, masterKey: MASTER, fetch: fakeFetch(() => json(403, { message: "suspended" })).fetch },
   );
   await assert.rejects(gone.mint(), /now disconnected/);
-  assert.deepEqual(saved, ["conn_a:disconnected"]);
+  assert.deepEqual(retired, ["conn_a:installation_gone"]);
 });
 
 test("a login token reaches the repositories the login picked with every permission the installation grants; a login with none picked gets none", async () => {

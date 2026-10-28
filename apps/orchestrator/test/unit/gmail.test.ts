@@ -21,27 +21,18 @@ import {
   rfc2822Raw,
   stripTags,
 } from "../../src/connectors/gmail/client.js";
-import { ListedTool, McpDisconnectedError, McpPool } from "../../src/mcp/index.js";
+import { ListedTool, McpDisconnectedError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("gmail")!.manifest.tools!;
 const TOKEN = "ya29.gmail-test";
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-  async insertBindingIfAbsent() {}
-}
 
 function payload(headers: Array<{ name: string; value: string }>, text: string) {
   return {
@@ -426,7 +417,7 @@ test("Gmail errors surface provider messages", async () => {
 test("sync Gmail writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
   pool.connectors = CONNECTORS.withAdapter("gmail", {
     async validate(creds) {
       const accessToken = creds.access_token;
@@ -436,11 +427,10 @@ test("sync Gmail writes the curated catalog", async () => {
     },
   });
   const [ciphertext, nonce] = encryptPayload({ access_token: TOKEN }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_gmail", status: "connected", ciphertext, nonce });
   const server = serverRow("gmail", { id: "mcp_gmail", auth: "oauth", config: { url: "https://gmail.googleapis.com/gmail/v1" } });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(
     first.map((tool) => tool.namespaced_name),
@@ -456,7 +446,7 @@ test("sync Gmail writes the curated catalog", async () => {
 test("call Gmail dispatches with the stored access token", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("gmail", {
     async call(name, arguments_, creds) {
       seen.name = name;
@@ -467,11 +457,9 @@ test("call Gmail dispatches with the stored access token", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ access_token: TOKEN }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_gmail", status: "connected", ciphertext, nonce }),
     serverRow("gmail", { id: "mcp_gmail", auth: "oauth" }),
-    "search_threads",
-    { query: "from:ada" },
+    { tool: "search_threads", arguments: { query: "from:ada" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "from:ada  n=0");
   assert.deepEqual(seen, { name: "search_threads", arguments: { query: "from:ada" }, token: TOKEN });
@@ -480,22 +468,15 @@ test("call Gmail dispatches with the stored access token", async () => {
 test("sync Gmail disconnects a login with no token to refresh", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const [ciphertext, nonce] = encryptPayload({}, KEY);
-  const saved: string[] = [];
-  const db = Object.assign(new MemoryDb(), {
-    async saveMcpConnection(_id: string, options: { status: string }) {
-      saved.push(options.status);
-      return null;
-    },
-  });
+  const db = new MemoryMcpDatabase();
   await assert.rejects(
     () =>
-      new McpPool().syncTools(
-        db as never,
+      new McpPool(db).syncTools(
         connectionRow({ id: "conn_gmail", status: "connected", ciphertext, nonce }),
         serverRow("gmail", { id: "mcp_gmail", auth: "oauth" }),
         { force: true },
       ),
     (error: unknown) => error instanceof McpDisconnectedError,
   );
-  assert.deepEqual(saved, ["disconnected"]);
+  assert.deepEqual(db.saved, ["conn_gmail:disconnected"]);
 });

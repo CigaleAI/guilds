@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { connectorFiles } from "../../scripts/build-connector.js";
 import { installedConnectors } from "../../src/connectors/index.js";
 import { encryptPayload } from "../../src/credentials/crypto.js";
-import { McpError, McpPool, type McpDatabase } from "../../src/mcp/index.js";
+import { McpError, McpPool, OPERATOR_CALLER, mcpDatabase } from "../../src/mcp/index.js";
 import { syncCodeConnectors } from "../../src/registry/code.js";
 import { updateConnector } from "../../src/db/connectors.js";
 import { insertUser } from "../../src/db/users.js";
@@ -226,7 +226,7 @@ test("code connectors install from a verified, signed index and swap in without 
     process.env.CONNECTORS_ROOT = root;
     const notes = new NotesStore(tempDir("guilds-registry-code-notes-"), templatesRoot());
     await notes.ensureSystemPrompt();
-    const pool = new McpPool();
+    const pool = new McpPool(mcpDatabase(db));
     const app = await buildApp(database, {
       db,
       notes,
@@ -243,11 +243,10 @@ test("code connectors install from a verified, signed index and swap in without 
       const server = (await getMcpServerBySlug(db, "echo", null))!;
       const [ciphertext, nonce] = encryptPayload({}, Buffer.from(HEX_MASTER_KEY, "hex"));
       const connection = connectionRow({ id: "conn_echo", mcp_server_id: server.id, owner_scope: "org", owner_id: "org_home", status: "connected", ciphertext, nonce });
-      // The connection is not stored, so its tools are neither read nor written.
-      const tools = { listMcpTools: async () => [], replaceMcpTools: async () => {} } as unknown as McpDatabase;
-      assert.equal(await pool.call(tools, connection, server, "say", { text: "hi" }), "echo: hi");
+      // The connection is not stored, so it lists no tools.
+      assert.equal(await pool.call(connection, server, { tool: "say", arguments: { text: "hi" }, caller: OPERATOR_CALLER }), "echo: hi");
       await assert.rejects(
-        () => pool.call(tools, connection, server, "refuse", {}),
+        () => pool.call(connection, server, { tool: "refuse", arguments: {}, caller: OPERATOR_CALLER }),
         (error: unknown) => error instanceof McpError && error.status === 422 && /echo refuses refuse/.test(error.message),
       );
 
@@ -264,7 +263,7 @@ test("code connectors install from a verified, signed index and swap in without 
         payload: { experimental: true },
       });
       assert.equal(updated.statusCode, 200);
-      assert.equal(await pool.call(tools, connection, server, "say", { text: "hi" }), "ECHO: hi");
+      assert.equal(await pool.call(connection, server, { tool: "say", arguments: { text: "hi" }, caller: OPERATOR_CALLER }), "ECHO: hi");
       assert.equal(existsSync(path.join(root, "echo", "1.0.0")), false);
       assert.equal((await getMcpServerBySlug(db, "echo", null))?.experimental, true);
 

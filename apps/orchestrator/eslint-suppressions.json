@@ -9,7 +9,7 @@
   },
   "src/access/runtime.ts": {
     "@typescript-eslint/consistent-type-assertions": {
-      "count": 3
+      "count": 2
     }
   },
   "src/agents/persist.ts": {
@@ -367,7 +367,7 @@
       "count": 14
     },
     "@typescript-eslint/max-params": {
-      "count": 4
+      "count": 2
     },
     "complexity": {
       "count": 3

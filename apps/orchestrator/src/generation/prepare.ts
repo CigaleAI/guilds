@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { accessDatabase, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
+import { accessDatabase, agentLogins, agentRuntime, type RuntimeAccess } from "../access/runtime.js";
 import { AgentValidationError, memoryOf, validateConfig } from "../agents/validation.js";
 import { ArtifactError, agentActor, collectTaskEmbeds, displayPathFor, inlineTaskEmbeds, operatorActor, snapshotTaskCollections, snapshotTaskEmbeds, taskEmbedActor } from "../artifacts/index.js";
 import { stateRepositories } from "../coding/repositories.js";
@@ -9,7 +9,7 @@ import { listAgents, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { guildOperators } from "../guilds/validation.js";
-import { McpDisconnectedError, mcpDatabase, type McpPool } from "../mcp/index.js";
+import { McpDisconnectedError, type McpPool } from "../mcp/index.js";
 import { readMemory } from "../memory/index.js";
 import { NotesError, type NotesStore } from "../notes/store.js";
 import {
@@ -52,7 +52,6 @@ export type GenerationArtifacts = ReturnType<typeof generationArtifacts>;
 export function runPreparationDatabase(db: Queryable) {
   return {
     ...accessDatabase(db),
-    ...mcpDatabase(db),
     ...codingRepositoriesDatabase(db),
     listAgents: bindQuery(db, listAgents),
     listGroupMessages: bindQuery(db, listGroupMessages),
@@ -61,8 +60,11 @@ export function runPreparationDatabase(db: Queryable) {
 
 export type RunPreparationDatabase = ReturnType<typeof runPreparationDatabase>;
 
-/** The connector pool generation calls connection tools through; a test pool may lack syncing and connector state. */
-export type ConnectorPool = Pick<McpPool, "call"> & Partial<Pick<McpPool, "syncTools" | "state">>;
+/**
+ * The connector pool generation calls connection tools, lists their tools, and reads connector
+ * State through; `callTool` reads a call's connection and connector through its `database`.
+ */
+export type ConnectorPool = Pick<McpPool, "call" | "database" | "syncTools" | "state">;
 
 /** What runs are prepared with, built once by the loop. */
 export type RunPreparationServices = {
@@ -264,7 +266,7 @@ export class RunPreparation {
 
   private async connectorState(agent: AgentRow): Promise<Record<string, unknown>> {
     const { mcp, db } = this.services;
-    return mcp.state ? mcp.state(db, agent) : {};
+    return mcp.state(await agentLogins(db, agent));
   }
 
   /** The guild's state as the run's system prompt shows it; a notes folder it cannot read is a 422. */

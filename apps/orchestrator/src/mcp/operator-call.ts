@@ -2,7 +2,8 @@ import { asBuffer, decryptPayload } from "../credentials/crypto.js";
 import { tokenRedactions } from "../oauth/index.js";
 import { redact } from "../secrets/index.js";
 import { capBytes } from "../toolbox/output.js";
-import { listedFromRows, McpDisconnectedError, McpError, type McpDatabase } from "./index.js";
+import { McpDisconnectedError, McpError, OPERATOR_CALLER, type McpPool } from "./index.js";
+import { resolveConnectionTool } from "./service.js";
 import type { LoadedConnector } from "../connectors/load.js";
 import type { McpConnectionRow } from "../db/mcp.js";
 
@@ -18,20 +19,9 @@ export class OperatorCallError extends Error {
   }
 }
 
-export type OperatorCallMcp = {
-  call(
-    db: McpDatabase,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    remoteName: string,
-    arguments_: Record<string, unknown>,
-  ): Promise<string>;
-};
-
 /** Calls one listed tool on a connected login the operator can see. Results are redacted and capped. */
 export async function callOwnedConnectionTool(args: {
-  db: McpDatabase;
-  mcp: OperatorCallMcp;
+  mcp: Pick<McpPool, "call" | "database">;
   connection: McpConnectionRow;
   server: LoadedConnector;
   tool: string;
@@ -46,9 +36,9 @@ export async function callOwnedConnectionTool(args: {
   if (!wanted) {
     throw new OperatorCallError(422, "tool is required");
   }
-  const listed = listedFromRows(await args.db.listMcpTools(connection.id)).find(
-    (tool) => tool.namespaced_name === wanted || tool.remote_name === wanted,
-  );
+  const listed = (await args.mcp.database.listMcpTools(connection.id))
+    .map((row) => resolveConnectionTool(server, row))
+    .find((tool) => tool.namespaced_name === wanted || tool.remote_name === wanted);
   if (!listed) {
     throw new OperatorCallError(422, `tool ${wanted} is not listed on this connection`);
   }
@@ -63,7 +53,11 @@ export async function callOwnedConnectionTool(args: {
   }
   let raw: string;
   try {
-    raw = await args.mcp.call(args.db, connection, server, listed.remote_name, args.arguments);
+    raw = await args.mcp.call(connection, server, {
+      tool: listed.remote_name,
+      arguments: args.arguments,
+      caller: OPERATOR_CALLER,
+    });
   } catch (error) {
     if (error instanceof McpDisconnectedError) {
       throw new OperatorCallError(409, error.message);

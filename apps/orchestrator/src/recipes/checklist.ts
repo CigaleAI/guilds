@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { writeBinding } from "../access/bindings.js";
-import { loadAccessView } from "../access/view.js";
+import { accessViewDatabase, loadAccessView } from "../access/view.js";
 import { getMcpServerBySlug } from "../connectors/servers.js";
 import { listBindingsCovering } from "../db/bindings.js";
 import { listGuildRepositories } from "../db/guilds.js";
@@ -15,7 +15,6 @@ import type { UserRow } from "../db/users.js";
 import { GITHUB_SLUG } from "../github/index.js";
 import { type ChangeActor, userActor } from "../lib/change-actor.js";
 import { newId } from "../lib/ids.js";
-import { mcpDatabase } from "../mcp/index.js";
 import { accessOf, managesOrgSecrets } from "../secrets/access.js";
 import type { RecipeApply } from "./apply.js";
 import { RecipeError } from "./errors.js";
@@ -308,7 +307,7 @@ const AccessServers = Type.Array(
 
 /** The connection the guild reaches `slug` through, when it is connected. */
 async function guildConnection(apply: RecipeApply, row: RecipeApplyRow, slug: string): Promise<string | null> {
-  const access = await loadAccessView(mcpDatabase(apply.db), {
+  const access = await loadAccessView(accessViewDatabase(apply.db), {
     orgId: row.org_id,
     guildId: applyGuild(row),
     viewScope: "guild",

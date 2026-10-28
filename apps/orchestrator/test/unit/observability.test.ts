@@ -9,9 +9,10 @@ import {
 } from "../../src/observability/http.js";
 import { LOG_KEYS, logWriter } from "../../src/observability/log.js";
 import { sentryCapture } from "../../src/observability/sentry.js";
-import { McpDisconnectedError, McpPool } from "../../src/mcp/index.js";
+import { McpDisconnectedError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 function captureStdout(run: () => Promise<void> | void): Promise<{
   lines: Record<string, unknown>[];
@@ -177,16 +178,14 @@ test("client errors are ingested as frontend stdout logs", async () => {
 });
 
 test("MCP disconnected calls log at warn and rethrow", async () => {
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   const captured = await captureStdout(async () => {
     await assert.rejects(
       () =>
         pool.call(
-          {} as never,
           connectionRow({ id: "conn_1", status: "disconnected" }),
           serverRow("notion"),
-          "search",
-          {},
+          { tool: "search", arguments: {}, caller: OPERATOR_CALLER },
         ),
       (error: unknown) => error instanceof McpDisconnectedError,
     );

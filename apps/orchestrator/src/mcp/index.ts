@@ -1,9 +1,17 @@
 import { Value } from "@sinclair/typebox/value";
-import { saveOauthClient } from "../connectors/servers.js";
+import { getMcpServer, saveOauthClient } from "../connectors/servers.js";
 import { decryptPayload } from "../credentials/crypto.js";
 import { insertBindingIfAbsent } from "../db/bindings.js";
 import { countConnectorCalls, recordConnectorCall } from "../db/connectors.js";
-import { replaceMcpTools, saveMcpConnection, type McpConnectionRow, type McpToolRow } from "../db/mcp.js";
+import {
+  deleteMcpConnection,
+  getMcpConnection,
+  listMcpTools,
+  replaceMcpTools,
+  saveMcpConnection,
+  type McpConnectionRow,
+  type McpToolRow,
+} from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { jsonObj } from "../db/json.js";
 import { ToolInputSchema, type Manifest } from "../db/schema/index.js";
@@ -20,7 +28,6 @@ import {
   type RepositoryToken,
 } from "../github/tokens.js";
 import { accessExpired, isGithubApp, OAuthReauthError, refreshConnection, TOKEN_FIELDS } from "../oauth/index.js";
-import { accessDatabase, agentMcpConnection, type AccessDatabase } from "../access/runtime.js";
 import { installedConnectors } from "../connectors/index.js";
 import type { ConnectorRegistry } from "../connectors/registry.js";
 import {
@@ -46,7 +53,6 @@ import { instanceCredentials } from "../connectors/instance.js";
 export { awaitingSettings } from "../connectors/login.js";
 import { writeLog } from "../observability/log.js";
 import { llmToolParameters, omitEmptyOptionalStrings } from "../toolbox/schema.js";
-import type { AgentPlaceRow } from "../db/agents.js";
 
 export { namespacedName } from "./names.js";
 export { isReadOnlyRemote } from "./policy.js";
@@ -103,7 +109,7 @@ export class ListedTool {
   ) {}
 }
 
-export function mcpSchema(tool: ListedTool): Record<string, unknown> {
+export function mcpSchema(tool: Pick<ListedTool, "namespaced_name" | "description" | "input_schema">): Record<string, unknown> {
   const parameters = Object.keys(tool.input_schema).length ? tool.input_schema : { type: "object" };
   return {
     type: "function",
@@ -156,7 +162,7 @@ export function fromRemote(slug: string, tool: Record<string, unknown>): ListedT
   );
 }
 
-export function listedFromRows(rows: McpToolRow[]): ListedTool[] {
+function listedFromRows(rows: McpToolRow[]): ListedTool[] {
   return rows.map(
     (row) =>
       new ListedTool(
@@ -556,24 +562,39 @@ export class McpSession {
   }
 }
 
-/** The db/ functions the pool lists, meters and refreshes logins through, on `db`. */
+/** The db/ functions MCP reads logins and their tools, meters calls, and refreshes and retires logins through, on `db`. */
 export function mcpDatabase(db: Queryable) {
   return {
-    ...accessDatabase(db),
     ...githubRepositoryRecorder(db),
+    getMcpConnection: bindQuery(db, getMcpConnection),
+    getMcpServer: bindQuery(db, getMcpServer),
+    listMcpTools: bindQuery(db, listMcpTools),
     countConnectorCalls: bindQuery(db, countConnectorCalls),
     recordConnectorCall: bindQuery(db, recordConnectorCall),
     replaceMcpTools: bindQuery(db, replaceMcpTools),
     insertBindingIfAbsent: bindQuery(db, insertBindingIfAbsent),
     saveMcpConnection: bindQuery(db, saveMcpConnection),
+    deleteMcpConnection: bindQuery(db, deleteMcpConnection),
     saveOauthClient: bindQuery(db, saveOauthClient),
   };
 }
 
 export type McpDatabase = ReturnType<typeof mcpDatabase>;
 
-/** What refreshing and disconnecting a login needs. */
-type LoginDb = Pick<McpDatabase, "saveMcpConnection" | "saveOauthClient" | "recordGithubRepository">;
+/** A login and the connector it signs into. */
+export type ConnectorLogin = { connection: McpConnectionRow; server: LoadedConnector };
+
+/**
+ * Who makes a tool call: the organisation a call on a platform login counts against, and the
+ * agent workspace an adapter reads and writes files in. An operator's call has neither.
+ */
+export type McpCaller = { orgId: string | null; workspaceDir: string | null };
+
+/** The caller of a call no agent makes: it counts against no organisation and has no workspace. */
+export const OPERATOR_CALLER: McpCaller = { orgId: null, workspaceDir: null };
+
+/** A call of one of a login's remote tools: its name on the remote, its arguments, and who calls it. */
+export type RemoteCall = { tool: string; arguments: Record<string, unknown>; caller: McpCaller };
 
 /** What a login's session sends, and when that stops working; null when it does not expire while the session lives. */
 type SessionAuth = { headers: Record<string, string>; expiresAt: number | null };
@@ -633,17 +654,14 @@ async function withTimeout<T>(work: Promise<T>, ms: number, message: string): Pr
   }
 }
 
-export type StateDatabase = AccessDatabase & LoginDb;
-
-/** Studio's stand-in for `McpPool.state`: each key the agent's connectors fill, without calling them. */
-export async function previewConnectorState(
-  db: AccessDatabase,
-  agent: AgentPlaceRow,
+/** Studio's stand-in for `McpPool.state`: each key the connectors of an agent's logins fill, without calling them. */
+export function previewConnectorState(
+  logins: ConnectorLogin[],
   connectors: ConnectorRegistry = installedConnectors(),
-): Promise<Record<string, unknown>> {
+): Record<string, unknown> {
   const state: Record<string, unknown> = {};
   for (const entry of connectors.entries()) {
-    if (entry.manifest.state && (await agentMcpConnection(db, agent, entry.manifest.slug))) {
+    if (entry.manifest.state && logins.some((login) => login.server.id === entry.id)) {
       state[entry.manifest.state.key] = { unavailable: "fetched live at run start" };
     }
   }
@@ -662,26 +680,25 @@ export class McpPool {
   endpointFetch: FetchFn;
   /** The organisation policy that caps calls on platform logins; none caps nothing. */
   policy: OrgPolicy | null = null;
+  /** The db/ functions the pool reads and writes logins, tool listings and call counts through. */
+  readonly database: McpDatabase;
 
   /** The login's pooled session, reopened once the credential it sends is within `TOKEN_REFRESH_MS` of expiry. */
-  session: (
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    db: LoginDb,
-  ) => Promise<McpSession>;
+  session: (connection: McpConnectionRow, server: LoadedConnector) => Promise<McpSession>;
 
-  constructor(toolsTtlMs = TOOLS_TTL_MS, proxyUrl = "") {
+  constructor(database: McpDatabase, toolsTtlMs = TOOLS_TTL_MS, proxyUrl = "") {
+    this.database = database;
     this.toolsTtlMs = toolsTtlMs;
     this.proxyUrl = proxyUrl;
     this.fetchFn = proxyFetch(this.proxyUrl);
     this.endpointFetch = publicOnly(proxyFetch(this.proxyUrl, CALL_TOOL_TIMEOUT_MS));
-    this.session = async (connection, server, db) => {
+    this.session = async (connection, server) => {
       const connectionId = connection.id;
       const current = this.sessions.get(connectionId);
       if (current && (current.expiresAt === null || current.expiresAt - Date.now() > TOKEN_REFRESH_MS)) {
         return current.session;
       }
-      const auth = await this.sessionAuth(db, connection, server);
+      const auth = await this.sessionAuth(connection, server);
       const opened = new McpSession(serverUrl(server), auth.headers, this.endpointFetch);
       this.sessions.set(connectionId, { session: opened, expiresAt: auth.expiresAt });
       return opened;
@@ -696,26 +713,22 @@ export class McpPool {
    * What a login's session sends. A GitHub App login sends an installation token for the
    * repositories it picked, which expires; any other login sends its stored credential.
    */
-  private async sessionAuth(
-    db: LoginDb,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-  ): Promise<SessionAuth> {
+  private async sessionAuth(connection: McpConnectionRow, server: LoadedConnector): Promise<SessionAuth> {
     if (!isGithubApp(server)) {
       return { headers: authHeaders(connection, server, this.registry), expiresAt: null };
     }
-    const minted = await this.mintGithubAppToken(db, connection);
+    const minted = await this.mintGithubAppToken(connection);
     const manifest = this.resolve(server).manifest ?? serverManifest(server);
     return { headers: headersFor(minted.token, manifest), expiresAt: Date.parse(minted.expiresAt) };
   }
 
   /** A GitHub App login's installation token (`mintLoginToken`). GitHub refusing the installation disconnects the login. */
-  private async mintGithubAppToken(db: LoginDb, connection: McpConnectionRow): Promise<RepositoryToken> {
+  private async mintGithubAppToken(connection: McpConnectionRow): Promise<RepositoryToken> {
     try {
-      return await mintLoginToken(db, connection, { fetch: this.fetchFn });
+      return await mintLoginToken(this.database, connection, { fetch: this.fetchFn });
     } catch (error) {
       if (error instanceof GithubInstallationGoneError) {
-        return this.disconnect(db, connection);
+        return this.disconnect(connection);
       }
       throw error instanceof RepositoryAccessError ? new McpError(error.message, 422) : error;
     }
@@ -761,20 +774,18 @@ export class McpPool {
   }
 
   private async persistTools(
-    db: McpDatabase,
     connection: McpConnectionRow,
     server: LoadedConnector,
     listed: ListedTool[],
     now: Date,
   ): Promise<void> {
-    await db.replaceMcpTools(connection.id, listed, now);
-    await this.writeDefaultOff(db, connection, server, listed, now);
+    await this.database.replaceMcpTools(connection.id, listed, now);
+    await this.writeDefaultOff(connection, server, listed, now);
     this.syncedAt.set(connection.id, now.getTime());
   }
 
   /** Writes an Off overlay at the login's owner for each listed tool that starts Off, unless one is there. */
   private async writeDefaultOff(
-    db: McpDatabase,
     connection: McpConnectionRow,
     server: LoadedConnector,
     listed: ListedTool[],
@@ -795,7 +806,7 @@ export class McpPool {
       }
     }
     for (const tool of off.values()) {
-      await db.insertBindingIfAbsent(
+      await this.database.insertBindingIfAbsent(
         {
           bindingId: newId("bind"),
           catalogKind: "mcp_tool",
@@ -810,8 +821,8 @@ export class McpPool {
   }
 
   /** Disconnects the login and throws the disconnected error. */
-  private async disconnect(db: LoginDb, connection: McpConnectionRow): Promise<never> {
-    await markDisconnected(db, connection);
+  private async disconnect(connection: McpConnectionRow): Promise<never> {
+    await markDisconnected(this.database, connection);
     this.drop(connection.id);
     throw new McpDisconnectedError("connection is disconnected");
   }
@@ -820,11 +831,7 @@ export class McpPool {
    * The login with a fresh access token; a refresh that needs a new authorization disconnects it.
    * A login still waiting for its settings counts as signed in.
    */
-  private async ready(
-    db: LoginDb,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-  ): Promise<McpConnectionRow> {
+  private async ready(connection: McpConnectionRow, server: LoadedConnector): Promise<McpConnectionRow> {
     if (connection.status !== "connected" && !awaitingSettings(connection)) {
       throw new McpDisconnectedError("connection is not connected");
     }
@@ -832,20 +839,16 @@ export class McpPool {
     if (payload === null || !accessExpired(payload, { now: new Date() })) {
       return connection;
     }
-    return this.refresh(db, connection, server);
+    return this.refresh(connection, server);
   }
 
-  private async refresh(
-    db: LoginDb,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-  ): Promise<McpConnectionRow> {
+  private async refresh(connection: McpConnectionRow, server: LoadedConnector): Promise<McpConnectionRow> {
     let refreshed: McpConnectionRow;
     try {
-      refreshed = await refreshConnection(db, connection, server, { decrypt: decryptPayload });
+      refreshed = await refreshConnection(this.database, connection, server, { decrypt: decryptPayload });
     } catch (error) {
       if (error instanceof OAuthReauthError) {
-        return this.disconnect(db, connection);
+        return this.disconnect(connection);
       }
       throw error;
     }
@@ -857,42 +860,37 @@ export class McpPool {
    * The login after its endpoint refused its credential with a 401. A GitHub App login gets a
    * new installation token with its next session; any other OAuth login refreshes its token.
    */
-  private async reauthorize(
-    db: LoginDb,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-  ): Promise<McpConnectionRow> {
+  private async reauthorize(connection: McpConnectionRow, server: LoadedConnector): Promise<McpConnectionRow> {
     if (isGithubApp(server)) {
       this.drop(connection.id);
       return connection;
     }
-    return this.refresh(db, connection, server);
+    return this.refresh(connection, server);
   }
 
   private async withAuthRetry<T>(
-    db: LoginDb,
     login: Login,
     server: LoadedConnector,
     action: (session: McpSession) => Promise<T>,
   ): Promise<T> {
-    let session = await this.session(login.connection, server, db);
+    let session = await this.session(login.connection, server);
     try {
       return await action(session);
     } catch (error) {
       if (!(error instanceof McpError) || error.status !== 401 || !isOauth(server)) {
         throw error;
       }
-      login.connection = await this.reauthorize(db, login.connection, server);
-      session = await this.session(login.connection, server, db);
+      login.connection = await this.reauthorize(login.connection, server);
+      session = await this.session(login.connection, server);
       return await action(session);
     }
   }
 
   /** The endpoint's session for a saved login: pooled, inside the auth retry, dropped on error. */
-  private remoteFor(db: LoginDb, login: Login, server: LoadedConnector): RemoteSession {
+  private remoteFor(login: Login, server: LoadedConnector): RemoteSession {
     const run = async <T>(action: (session: McpSession) => Promise<T>): Promise<T> => {
       try {
-        return await this.withAuthRetry(db, login, server, action);
+        return await this.withAuthRetry(login, server, action);
       } catch (error) {
         this.drop(login.connection.id);
         throw error;
@@ -944,7 +942,6 @@ export class McpPool {
    * the adapter gets one refresh and one retry. A `ConnectorError` leaves as an `McpError`.
    */
   private async onLogin<T>(
-    db: LoginDb,
     login: Login,
     server: LoadedConnector,
     resolved: Resolved,
@@ -954,7 +951,7 @@ export class McpPool {
   ): Promise<T> {
     const attempt = () => {
       const ctx = this.context(
-        this.remoteFor(db, login, server),
+        this.remoteFor(login, server),
         resolved,
         login.connection.id,
         settings ?? login.connection.settings,
@@ -966,7 +963,7 @@ export class McpPool {
     };
     try {
       if (isOauth(server)) {
-        login.connection = await this.ready(db, login.connection, server);
+        login.connection = await this.ready(login.connection, server);
       }
       try {
         return await attempt();
@@ -974,7 +971,7 @@ export class McpPool {
         if (!isConnectorError(error) || error.status !== 401 || !isOauth(server)) {
           throw error;
         }
-        login.connection = await this.refresh(db, login.connection, server);
+        login.connection = await this.refresh(login.connection, server);
         return await attempt();
       }
     } catch (error) {
@@ -1047,14 +1044,12 @@ export class McpPool {
 
   /** Checks a saved login with the settings it is about to store. Returns the account hint. */
   async validateLogin(
-    db: LoginDb,
     connection: McpConnectionRow,
     server: LoadedConnector,
     settings: Record<string, unknown>,
   ): Promise<string> {
     const resolved = this.resolve(server);
     return this.onLogin(
-      db,
       { connection },
       server,
       resolved,
@@ -1065,25 +1060,20 @@ export class McpPool {
   }
 
   /** What a saved login's endpoint says about itself: its name and instructions. */
-  async describeEndpoint(
-    db: LoginDb,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-  ): Promise<RemoteInfo> {
+  async describeEndpoint(connection: McpConnectionRow, server: LoadedConnector): Promise<RemoteInfo> {
     const resolved = this.resolve(server);
-    return this.onLogin(db, { connection }, server, resolved, (_credentials, ctx) => ctx.remote.initialize());
+    return this.onLogin({ connection }, server, resolved, (_credentials, ctx) => ctx.remote.initialize());
   }
 
   /** Values for a settings property marked `x-lookup`, searched with a saved login. */
   async lookupLogin(
-    db: LoginDb,
     connection: McpConnectionRow,
     server: LoadedConnector,
     property: string,
     query: string,
   ): Promise<LookupOption[]> {
     const resolved = this.resolve(server);
-    return this.onLogin(db, { connection }, server, resolved, (credentials, ctx) => {
+    return this.onLogin({ connection }, server, resolved, (credentials, ctx) => {
       if (!resolved.adapter.lookup) {
         throw new ConnectorError(`${server.slug} has no lookup`, 404);
       }
@@ -1092,7 +1082,6 @@ export class McpPool {
   }
 
   async syncTools(
-    db: McpDatabase,
     connection: McpConnectionRow,
     server: LoadedConnector,
     options: { force?: boolean; validate?: boolean } = {},
@@ -1100,14 +1089,14 @@ export class McpPool {
     const force = options.force ?? false;
     const validate = options.validate ?? force;
     const now = new Date();
-    const stored = await db.listMcpTools(connection.id);
+    const stored = await this.database.listMcpTools(connection.id);
     if (connection.status !== "connected" || (!force && this.catalogFresh(connection.id, now, stored))) {
       return listedFromRows(stored);
     }
     const resolved = this.resolve(server);
     const login: Login = { connection };
     const prefix = String(server.tool_prefix || server.slug);
-    const tools = await this.onLogin(db, login, server, resolved, async (credentials, ctx) => {
+    const tools = await this.onLogin(login, server, resolved, async (credentials, ctx) => {
       if (validate && resolved.adapter.validate) {
         await resolved.adapter.validate(credentials, ctx);
       }
@@ -1129,39 +1118,36 @@ export class McpPool {
         tool.destructive_hint ?? null,
       );
     });
-    await this.persistTools(db, login.connection, server, listed, now);
+    await this.persistTools(login.connection, server, listed, now);
     return listed;
   }
 
-  async call(
-    db: McpDatabase,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    remoteName: string,
-    arguments_: Record<string, unknown>,
-    extras: { workspaceDir?: string; orgId?: string } = {},
-  ): Promise<string> {
-    const metered = connection.owner_scope === "platform" && extras.orgId ? extras.orgId : null;
+  /**
+   * Calls one of a login's remote tools and answers its result as text. A call on a platform
+   * login counts against the caller's organisation, whose cap may refuse it.
+   */
+  async call(connection: McpConnectionRow, server: LoadedConnector, call: RemoteCall): Promise<string> {
+    const metered = connection.owner_scope === "platform" && call.caller.orgId ? call.caller.orgId : null;
     if (metered !== null) {
-      const refusal = await this.overCap(db, metered, server);
+      const refusal = await this.overCap(metered, server);
       if (refusal !== null) {
         return refusal;
       }
     }
     try {
-      let argumentsForCall = arguments_;
+      let argumentsForCall = call.arguments;
       try {
-        const listed = listedFromRows(await db.listMcpTools(connection.id));
-        const tool = listed.find((item) => item.remote_name === remoteName);
-        argumentsForCall = omitEmptyOptionalStrings(arguments_, tool?.input_schema);
+        const listed = listedFromRows(await this.database.listMcpTools(connection.id));
+        const tool = listed.find((item) => item.remote_name === call.tool);
+        argumentsForCall = omitEmptyOptionalStrings(call.arguments, tool?.input_schema);
       } catch {
-        argumentsForCall = arguments_;
+        argumentsForCall = call.arguments;
       }
       try {
-        return await this.invokeCall(db, connection, server, remoteName, argumentsForCall, extras);
+        return await this.invokeCall(connection, server, { ...call, arguments: argumentsForCall });
       } finally {
         if (metered !== null) {
-          await db.recordConnectorCall(metered, server.id, utcMonth(), new Date());
+          await this.database.recordConnectorCall(metered, server.id, utcMonth(), new Date());
         }
       }
     } catch (error) {
@@ -1188,7 +1174,7 @@ export class McpPool {
    * The tool result for a call the organisation's cap on this connector's platform login
    * refuses this month, or null while it may call.
    */
-  private async overCap(db: McpDatabase, orgId: string, server: LoadedConnector): Promise<string | null> {
+  private async overCap(orgId: string, server: LoadedConnector): Promise<string | null> {
     if (this.policy === null) {
       return null;
     }
@@ -1198,59 +1184,49 @@ export class McpPool {
     if (cap === undefined) {
       return null;
     }
-    const calls = await db.countConnectorCalls(orgId, server.id, utcMonth());
+    const calls = await this.database.countConnectorCalls(orgId, server.id, utcMonth());
     return calls >= cap ? `ERROR: ${limits.source} limit reached: ${slug} calls this month` : null;
   }
 
-  private async invokeCall(
-    db: McpDatabase,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    remoteName: string,
-    arguments_: Record<string, unknown>,
-    extras: { workspaceDir?: string } = {},
-  ): Promise<string> {
+  private async invokeCall(connection: McpConnectionRow, server: LoadedConnector, call: RemoteCall): Promise<string> {
     if (connection.status !== "connected") {
       throw new McpDisconnectedError("connection is not connected");
     }
     const resolved = this.resolve(server);
     return this.onLogin(
-      db,
       { connection },
       server,
       resolved,
       (credentials, ctx) =>
         resolved.adapter.call
-          ? resolved.adapter.call(remoteName, arguments_, credentials, ctx)
-          : ctx.remote.call(remoteName, arguments_),
-      extras.workspaceDir,
+          ? resolved.adapter.call(call.tool, call.arguments, credentials, ctx)
+          : ctx.remote.call(call.tool, call.arguments),
+      call.caller.workspaceDir ?? undefined,
     );
   }
 
   /**
-   * The State entries connectors add for one agent: every connector with a `state` hook whose
-   * server the agent has on with a connected login. Hooks run in parallel under one budget; a
-   * hook that fails, times out, or returns too much yields `{ unavailable }` under its key.
+   * The State entries connectors add for an agent's logins: every connector with a `state` hook
+   * one of the logins signs into. Hooks run in parallel under one budget; a hook that fails,
+   * times out, or returns too much yields `{ unavailable }` under its key.
    */
-  async state(db: StateDatabase, agent: AgentPlaceRow): Promise<Record<string, unknown>> {
+  async state(logins: ConnectorLogin[]): Promise<Record<string, unknown>> {
     const entries = this.registry.entries().filter((entry) => entry.manifest.state && entry.adapter.state);
     if (!entries.length) {
       return {};
     }
-    const orgId = typeof agent.org_id === "string" ? agent.org_id : null;
-    const servers = await db.listMcpServers(orgId);
     const values = await Promise.all(
       entries.map(async (entry): Promise<[string, unknown] | null> => {
         const key = entry.manifest.state!.key;
-        const server = servers.find((row) => row.id === entry.id);
-        const connection = server ? await agentMcpConnection(db, agent, entry.manifest.slug) : null;
-        if (!server || !connection) {
+        const login = logins.find((item) => item.server.id === entry.id);
+        if (!login) {
           return null;
         }
+        const { connection, server } = login;
         const secrets = loginSecrets(connection, entry.manifest);
         try {
           const value = await withTimeout(
-            this.onLogin(db, { connection }, server, this.resolve(server), (creds, ctx) => entry.adapter.state!(creds, ctx)),
+            this.onLogin({ connection }, server, this.resolve(server), (creds, ctx) => entry.adapter.state!(creds, ctx)),
             STATE_TIMEOUT_MS,
             `timed out after ${STATE_TIMEOUT_MS} ms`,
           );

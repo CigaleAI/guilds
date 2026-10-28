@@ -5,17 +5,13 @@ import type { RemoteInfo } from "../connectors/types.js";
 import { asBuffer, decryptPayload, encryptPayload } from "../credentials/crypto.js";
 import { updateConnector } from "../db/connectors.js";
 import { isPlainRecord } from "../db/json.js";
-import {
-  bindMcpConnection,
-  deleteMcpConnection,
-  getMcpConnectionByOauthState,
-  type McpConnectionRow,
-} from "../db/mcp.js";
+import { bindMcpConnection, getMcpConnectionByOauthState, type McpConnectionRow } from "../db/mcp.js";
 import type { Queryable } from "../db/pg.js";
 import type { Manifest } from "../db/schema/index.js";
 import { newId } from "../lib/ids.js";
 import { DESCRIPTION_MAX } from "../mcp/catalog.js";
-import { markDisconnected, mcpDatabase, type McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/index.js";
+import { retireLogin } from "../mcp/service.js";
 import { pendingReplaces } from "./index.js";
 
 /** What connector logins are made through, built once from the app's services. */
@@ -82,12 +78,7 @@ export async function discardAttempt(
       keep = false;
     }
   }
-  if (keep) {
-    await markDisconnected(mcpDatabase(services.db), row);
-  } else {
-    await deleteMcpConnection(services.db, row.id);
-  }
-  services.mcp?.forget(row.id);
+  await retireLogin(services.mcp, services.db, row, keep ? "unauthorised" : "never_connected");
 }
 
 export async function abandonAttempt(
@@ -138,7 +129,7 @@ export async function fillFromEndpoint(
     return;
   }
   try {
-    const info = await services.mcp.describeEndpoint(mcpDatabase(services.db), connection, server);
+    const info = await services.mcp.describeEndpoint(connection, server);
     const next = filledManifest(manifest, blank, info);
     if (next.display_name !== manifest.display_name || next.description !== manifest.description) {
       await updateConnector(services.db, server.id, { manifest: next }, new Date());

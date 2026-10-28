@@ -1,10 +1,10 @@
 import { agentActor, type ArtifactStore } from "../artifacts/index.js";
 import { enabledToolNames, resolvedMcp, resolvedTools } from "../access/index.js";
-import { accessDatabase, agentSecrets, resolveMcpTool } from "../access/runtime.js";
+import { accessDatabase, agentLogins, agentSecrets, resolveMcpTool } from "../access/runtime.js";
 import { listAgents, type AgentPlaceRow, type AgentRow } from "../db/agents.js";
 import { listGroupMessages } from "../db/group-chat.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { isReadOnlyRemote, listedFromRows, mcpSchema, previewConnectorState } from "../mcp/index.js";
+import { previewConnectorState } from "../mcp/index.js";
 import { collectRunState } from "../state/index.js";
 import { guildOperators } from "../guilds/validation.js";
 import { memoryOf } from "../agents/validation.js";
@@ -59,7 +59,7 @@ export async function previewCurrentState(
     secrets,
     scripts: await deps.scripts.catalog(agentId),
     maxToolCalls: Number(config.max_tool_calls ?? 50),
-    connectors: await previewConnectorState(deps.db, agent),
+    connectors: previewConnectorState(await agentLogins(deps.db, agent)),
   });
   return { state, projected_at: projectedAt };
 }
@@ -87,8 +87,7 @@ export async function projectConnection(
   connection: McpConnectionRow,
   server: LoadedConnector,
 ): Promise<ProjectedConnection> {
-  const slug = server.slug;
-  const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
+  const listed = await deps.db.connectionTools(connection, server);
   return {
     id: connection.id,
     server: serverSummary(server),
@@ -100,10 +99,7 @@ export async function projectConnection(
       name: tool.namespaced_name,
       remote_name: tool.remote_name,
       description: tool.description,
-      read_only: isReadOnlyRemote(slug, tool.remote_name, {
-        readOnlyHint: tool.read_only_hint,
-        verified: server.verified,
-      }),
+      read_only: tool.read_only,
     })),
   };
 }
@@ -214,7 +210,7 @@ export async function projectOfferedToolSchemas(
       latest = stamp;
     }
   }
-  for (const [item] of resolvedMcp(rows, servers, { orgId, guildId, agentId })) {
+  for (const [item, server] of resolvedMcp(rows, servers, { orgId, guildId, agentId })) {
     if (!item.enabled || item.connection_id === null) {
       continue;
     }
@@ -222,7 +218,7 @@ export async function projectOfferedToolSchemas(
     if (!connection) {
       continue;
     }
-    const listed = listedFromRows(await deps.db.listMcpTools(connection.id));
+    const listed = await deps.db.connectionTools(connection, server);
     for (const tool of listed) {
       const resolved = resolveMcpTool(rows, tool.namespaced_name, {
         serverEnabled: true,
@@ -233,7 +229,7 @@ export async function projectOfferedToolSchemas(
       if (!resolved.enabled) {
         continue;
       }
-      schemas.push(mcpSchema(tool));
+      schemas.push(tool.schema);
     }
   }
   const config = JSON.stringify(agent.config ?? {});

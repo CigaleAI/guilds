@@ -6,7 +6,7 @@ import { projectConnectors } from "../../src/seed/system.js";
 import { QUOTES } from "../helpers/quotes.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { connect } from "../../src/seed/connect.js";
-import { McpPool } from "../../src/mcp/index.js";
+import { McpPool, mcpDatabase } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -29,7 +29,7 @@ test("a login waits for its settings, looks them up, and connects once they are 
   const notes = new NotesStore(tempDir("guilds-settings-notes-"), templatesRoot());
   await notes.ensureSystemPrompt();
   const db = database.pool;
-  const mcp = new McpPool();
+  const mcp = new McpPool(mcpDatabase(db));
   const validated: unknown[] = [];
   mcp.connectors = installedConnectors().withAdapter("quotes", {
     async validate(creds, ctx) {

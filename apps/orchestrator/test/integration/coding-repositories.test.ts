@@ -4,7 +4,7 @@ import { after, test } from "node:test";
 import { buildApp } from "../../src/app.js";
 import { decryptPayload } from "../../src/credentials/crypto.js";
 import { connect } from "../../src/seed/connect.js";
-import { McpPool } from "../../src/mcp/index.js";
+import { McpPool, mcpDatabase } from "../../src/mcp/index.js";
 import { NotesStore } from "../../src/notes/store.js";
 import { scriptDatabase, Scripts } from "../../src/scripts/catalog.js";
 import { scheduleDatabase, Schedules } from "../../src/schedules/service.js";
@@ -373,7 +373,7 @@ test("a second guild reuses the GitHub App and picks its own repositories", { ti
   await notes.ensureSystemPrompt();
   const db = database.pool;
   await connectModelProvider(db, "org_home", "openrouter");
-  const mcp = new McpPool();
+  const mcp = new McpPool(mcpDatabase(db));
   const dropped: string[] = [];
   mcp.drop = (connectionId: string) => {
     dropped.push(connectionId);

@@ -132,7 +132,7 @@ function captureDeps(options: {
       listMcpConnections: async () => options.connections ?? [],
       listGuildRepositories: async () => options.repositories ?? [],
       listMcpServers: async () => options.servers ?? [],
-      listMcpTools: async () => options.tools ?? [],
+      connectionTools: async () => options.tools ?? [],
       listMcpCatalogTools: async () => options.tools ?? [],
     } as never,
     artifacts: {

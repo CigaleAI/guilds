@@ -10,13 +10,13 @@ import {
 import { resolveMcpTool } from "../access/runtime.js";
 import { listMcpServers } from "../connectors/servers.js";
 import { newId } from "../lib/ids.js";
-import { isReadOnlyRemote, listedFromRows } from "../mcp/index.js";
+import { connectionTools } from "../mcp/service.js";
 import type { EditScope } from "./edits.js";
 import { editActor } from "./actor.js";
 import { StudioConflictError, StudioUnprocessableError } from "./errors.js";
 import { getAgent } from "../db/agents.js";
 import { getBinding, listBindingsCovering } from "../db/bindings.js";
-import { listMcpConnections, listMcpTools } from "../db/mcp.js";
+import { listMcpConnections } from "../db/mcp.js";
 import type { LoadedConnector } from "../connectors/load.js";
 
 // One agent's access as the coach proposes to narrow or widen it: the native
@@ -93,7 +93,7 @@ async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot
   for (const connection of await listMcpConnections(scope.db, resolveScope)) {
     const server = serverById.get(String(connection.mcp_server_id));
     if (!server) continue;
-    const listed = listedFromRows(await listMcpTools(scope.db, String(connection.id)));
+    const listed = await connectionTools(scope.db, connection, server);
     const name = String(server.display_name || server.slug);
     const account = String(connection.account_hint ?? "");
     connections.set(String(connection.id), {
@@ -101,13 +101,7 @@ async function loadSnapshot(scope: EditScope, agentId: string): Promise<Snapshot
       serverId: server.id,
       label: `${name} (${connection.owner_scope} login${account ? `, ${account}` : ""})`,
       status: String(connection.status),
-      tools: listed.map((tool) => ({
-        name: tool.namespaced_name,
-        readOnly: isReadOnlyRemote(server.slug, tool.remote_name, {
-          readOnlyHint: tool.read_only_hint,
-          verified: server.verified,
-        }),
-      })),
+      tools: listed.map((tool) => ({ name: tool.namespaced_name, readOnly: tool.read_only })),
     });
   }
   return {

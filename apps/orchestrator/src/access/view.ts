@@ -1,9 +1,28 @@
 import { accessPayload, mcpToolView, resolvedMcp } from "./index.js";
 import { resolveMcpTool } from "./runtime.js";
+import { listMcpServers } from "../connectors/servers.js";
 import { manifestTools } from "../connectors/load.js";
-import { listedFromRows, type ListedTool, type McpDatabase, type McpPool } from "../mcp/index.js";
+import { listBindingsCovering } from "../db/bindings.js";
+import { listMcpConnections, type McpConnectionRow } from "../db/mcp.js";
+import { bindQuery, type Queryable } from "../db/pg.js";
+import type { McpPool } from "../mcp/index.js";
+import { connectionTools, currentTools, type ConnectionTool } from "../mcp/service.js";
 import type { LoadedConnector } from "../connectors/load.js";
-import type { McpConnectionRow } from "../db/mcp.js";
+
+/** The pool a view lists its connections' tools through. */
+type ToolListing = Pick<McpPool, "syncTools" | "database">;
+
+/** The db/ functions a scope's access view reads, and the stored tool listings it shows, on `db`. */
+export function accessViewDatabase(db: Queryable) {
+  return {
+    listBindingsCovering: bindQuery(db, listBindingsCovering),
+    listMcpServers: bindQuery(db, listMcpServers),
+    listMcpConnections: bindQuery(db, listMcpConnections),
+    connectionTools: bindQuery(db, connectionTools),
+  };
+}
+
+export type AccessViewDatabase = ReturnType<typeof accessViewDatabase>;
 
 function visibleServers(
   servers: LoadedConnector[],
@@ -14,45 +33,37 @@ function visibleServers(
 }
 
 /**
- * Each connection's listed tools, by connection id: synced from its server while it is connected
- * and the pool can sync, else as last stored. A connection whose server the scope does not see is
- * left out.
+ * Each connection's listed tools, by connection id: as the pool lists them now when there is one,
+ * else as last stored. A connection whose server the scope does not see is left out.
  */
 async function listConnectionTools(
-  db: McpDatabase,
-  mcp: McpPool | { syncTools?: McpPool["syncTools"] } | null | undefined,
+  db: AccessViewDatabase,
+  mcp: ToolListing | null,
   connections: McpConnectionRow[],
   servers: LoadedConnector[],
-): Promise<Record<string, ListedTool[]>> {
+): Promise<Record<string, ConnectionTool[]>> {
   const serversById = new Map(servers.map((server) => [server.id, server]));
-  const rawListed: Record<string, ListedTool[]> = {};
+  const rawListed: Record<string, ConnectionTool[]> = {};
   for (const connection of connections) {
     const server = serversById.get(connection.mcp_server_id);
-    if (server === undefined) {
-      continue;
+    if (server !== undefined) {
+      rawListed[connection.id] = mcp === null
+        ? await db.connectionTools(connection, server)
+        : await currentTools(mcp, connection, server);
     }
-    if (connection.status === "connected" && mcp?.syncTools) {
-      try {
-        rawListed[connection.id] = await mcp.syncTools(db, connection, server);
-        continue;
-      } catch {
-        /* use stored rows */
-      }
-    }
-    rawListed[connection.id] = listedFromRows(await db.listMcpTools(connection.id));
   }
   return rawListed;
 }
 
 /** The tools, connectors and bindings a scope sees, with each listed tool resolved for it. */
 export async function loadAccessView(
-  db: McpDatabase,
+  db: AccessViewDatabase,
   options: {
     orgId?: string | null;
     guildId?: string | null;
     agentId?: string | null;
     viewScope: string;
-    mcp?: McpPool | { syncTools?: McpPool["syncTools"] } | null;
+    mcp?: ToolListing | null;
   },
 ): Promise<Record<string, unknown>> {
   const scope = {
@@ -62,7 +73,7 @@ export async function loadAccessView(
   };
   const connections = await db.listMcpConnections(scope);
   const servers = visibleServers(await db.listMcpServers(scope.orgId), connections);
-  const rawListed = await listConnectionTools(db, options.mcp, connections, servers);
+  const rawListed = await listConnectionTools(db, options.mcp ?? null, connections, servers);
   // Read after the syncs: a sync writes an Off binding for each tool it lists for the first time.
   const rows = await db.listBindingsCovering(scope);
   const listedTools: Record<string, Array<Record<string, unknown>>> = {};

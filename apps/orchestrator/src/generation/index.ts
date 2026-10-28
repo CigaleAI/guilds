@@ -22,7 +22,6 @@ import { GroupChat, groupChatDatabase, type GroupDelivery, type GroupRunner } fr
 import { Issues, issuesDatabase } from "../issues/index.js";
 import { sleep } from "../lib/event.js";
 import { coreModelCredentials, type ModelCredentialsProvider } from "../llm/credentials.js";
-import { McpPool } from "../mcp/index.js";
 import type { NotesStore } from "../notes/store.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { OPEN_POLICY, type OrgPolicy } from "../policy/index.js";
@@ -119,7 +118,8 @@ export type GenerationLoopServices = {
   /** Where machine directories are kept when the provider names no host for a machine. */
   workspaceRoot: string;
   sandboxes: GenerationSandboxes;
-  mcp?: ConnectorPool;
+  /** The pool runs list and call connection tools through. */
+  mcp: ConnectorPool;
   artifacts?: GenerationArtifacts | null;
   files?: ArtifactFiles | null;
   attachments?: AttachmentService | null;
@@ -165,7 +165,7 @@ export class GenerationLoop implements GroupRunner {
     const { db, notes, workspaceRoot, sandboxes } = services;
     this.db = db;
     this.notes = notes;
-    this.mcp = services.mcp ?? new McpPool();
+    this.mcp = services.mcp;
     this.artifacts = services.artifacts ?? null;
     this.files = services.files ?? null;
     this.attachments = services.attachments ?? null;

@@ -1,11 +1,9 @@
 import { DEFAULT_MAX_TOOL_CALLS } from "../agents/validation.js";
-import { getMcpServer } from "../connectors/servers.js";
 import { getAgent, type AgentRow } from "../db/agents.js";
-import { getMcpConnection } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import { getRun, listMessages, type RunRow, type MessageRow } from "../db/runs.js";
 import type { AssistantMessage, Harness, ToolCall, ToolMessage, ToolResultMetadata } from "../db/schema/index.js";
-import { McpDisconnectedError, McpError, mcpDatabase } from "../mcp/index.js";
+import { callTool } from "../mcp/service.js";
 import { errorMessage, errorName, writeLog } from "../observability/log.js";
 import { callSegment, repeatedReadStep, repeatedReadText, type ReadRow } from "../toolbox/code.js";
 import {
@@ -160,15 +158,12 @@ export function interruptionRecord(call: ToolCall, generation: number): [ToolMes
   return [payload, metadata];
 }
 
-/** The db/ functions tool calls read the run and call connections through, on `db`. */
+/** The db/ functions tool calls read the run through, on `db`. */
 export function toolCallsDatabase(db: Queryable) {
   return {
-    ...mcpDatabase(db),
     getAgent: bindQuery(db, getAgent),
     getRun: bindQuery(db, getRun),
     listMessages: bindQuery(db, listMessages),
-    getMcpConnection: bindQuery(db, getMcpConnection),
-    getMcpServer: bindQuery(db, getMcpServer),
   };
 }
 
@@ -286,24 +281,18 @@ export class ToolCalls {
     owner: AgentRow | null,
     secrets: Record<string, string>,
   ): Promise<ToolRecord> {
-    const { db, mcp, machines } = this.services;
+    const { mcp, machines } = this.services;
     const name = call.function.name;
     const callId = call.id;
     const started = performance.now();
     let error: string | null = null;
     let raw: string;
     try {
-      const connection = await db.getMcpConnection(connectionId);
-      if (connection === null) {
-        throw new McpDisconnectedError("connection not found");
-      }
-      const server = await db.getMcpServer(connection.mcp_server_id);
-      if (server === null) {
-        throw new McpError("mcp server not found");
-      }
-      raw = await mcp.call(db, connection, server, remoteName, parseArguments(call), {
-        workspaceDir: await machines.agentWorkspace(owner),
-        ...(owner?.org_id ? { orgId: owner.org_id } : {}),
+      raw = await callTool(mcp, {
+        connectionId,
+        tool: remoteName,
+        arguments: parseArguments(call),
+        caller: { orgId: owner?.org_id ?? null, workspaceDir: await machines.agentWorkspace(owner) },
       });
     } catch (caught) {
       writeLog("warn", errorMessage(caught), {

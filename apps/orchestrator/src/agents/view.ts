@@ -1,8 +1,8 @@
-import { loadAccessView } from "../access/view.js";
+import { accessViewDatabase, loadAccessView } from "../access/view.js";
 import { accessDatabase, agentSecrets } from "../access/runtime.js";
 import type { AgentRow, GuildAgentRow } from "../db/agents.js";
 import type { Queryable } from "../db/pg.js";
-import { mcpDatabase, type McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/index.js";
 
 export function agentItem(row: GuildAgentRow, generating = false): Record<string, unknown> {
   return {
@@ -36,7 +36,7 @@ export async function loadAgentView(
   row: AgentRow,
   generating: boolean,
 ): Promise<Record<string, unknown>> {
-  const access = await loadAccessView(mcpDatabase(db), {
+  const access = await loadAccessView(accessViewDatabase(db), {
     orgId: row.org_id,
     guildId: row.guild_id,
     agentId: row.id,

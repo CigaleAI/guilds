@@ -7,9 +7,10 @@ import {
   githubRepositoryRecorder,
   type RepositoryToken,
 } from "../github/tokens.js";
-import { getMcpConnection, saveMcpConnection, type McpConnectionRow } from "../db/mcp.js";
+import { getMcpConnection, type McpConnectionRow } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
-import { markDisconnected } from "../mcp/index.js";
+import type { McpPool } from "../mcp/index.js";
+import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import type { FetchFn } from "../net/http.js";
 import type { SandboxFiles } from "../toolbox/types.js";
 import type { AgentRow } from "../db/agents.js";
@@ -33,12 +34,14 @@ export function agentGitIdentity(
 
 export type TokenEntry = { token: string; expires_at: string; host: string; path: string };
 
-/** The db/ functions a run's repository tokens are minted and stored through, on `db`. */
+/** The db/ functions a run's repository tokens are minted and stored through, and the retiring of a login, on `db`. */
 export function repositoryTokenDatabase(db: Queryable) {
   return {
     ...githubRepositoryRecorder(db),
     getMcpConnection: bindQuery(db, getMcpConnection),
-    saveMcpConnection: bindQuery(db, saveMcpConnection),
+    /** Retires a login that stopped working, and `pool` forgets it when there is one (`retireLogin`). */
+    retireLogin: (pool: Pick<McpPool, "forget"> | null, connection: McpConnectionRow, failure: LoginFailure) =>
+      retireLogin(pool, db, connection, failure),
   };
 }
 
@@ -129,7 +132,7 @@ export class RepositoryTokens {
       if (!(error instanceof GithubInstallationGoneError)) {
         throw error;
       }
-      await markDisconnected(this.db, connection);
+      await this.db.retireLogin(null, connection, "installation_gone");
       throw new RepositoryAccessError(
         `GitHub refused the installation for ${loginAccount(connection)}; the connection is now disconnected`,
       );

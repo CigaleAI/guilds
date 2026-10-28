@@ -1,8 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { requireVisibleAgent } from "../agents/access.js";
-import { loadAccessView } from "../access/view.js";
+import { accessViewDatabase, loadAccessView } from "../access/view.js";
 import { requireVisibleGuild } from "../guilds/access.js";
-import { mcpDatabase } from "../mcp/index.js";
 import type { AppDeps } from "./deps.js";
 import { HttpError } from "./errors.js";
 import { currentOrg, currentUser } from "./identity.js";
@@ -14,6 +13,7 @@ import { param } from "./request.js";
 export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps): Promise<void> {
   const { db } = deps;
   const identityDb = identityDatabase(db);
+  const accessView = accessViewDatabase(db);
   const mcp = deps.mcp ?? null;
 
   app.get("/api/platform", async (request) => {
@@ -21,19 +21,19 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
     if (!(await isInstanceAdmin(deps, user.id))) {
       throw new HttpError(404, "Not Found");
     }
-    return loadAccessView(mcpDatabase(db), { viewScope: "platform", mcp });
+    return loadAccessView(accessView, { viewScope: "platform", mcp });
   });
 
   app.get("/api/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const org = await currentOrg(identityDb, request, user);
-    return loadAccessView(mcpDatabase(db), { orgId: String(org.id), viewScope: "org", mcp });
+    return loadAccessView(accessView, { orgId: String(org.id), viewScope: "org", mcp });
   });
 
   app.get("/api/guilds/:guild_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const guild = await requireVisibleGuild(db, param(request, "guild_id"), user.id);
-    return loadAccessView(mcpDatabase(db), {
+    return loadAccessView(accessView, {
       orgId: guild.org_id,
       guildId: guild.id,
       viewScope: "guild",
@@ -44,7 +44,7 @@ export async function registerAccessRoutes(app: FastifyInstance, deps: AppDeps):
   app.get("/api/agents/:agent_id/access", async (request) => {
     const user = await currentUser(identityDb, request, deps);
     const agent = await requireVisibleAgent(db, param(request, "agent_id"), user.id);
-    return loadAccessView(mcpDatabase(db), {
+    return loadAccessView(accessView, {
       orgId: agent.org_id,
       guildId: agent.guild_id,
       agentId: agent.id,

@@ -15,26 +15,18 @@ import {
   ping,
   searchTool,
 } from "../../src/connectors/dexpaprika/client.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { ListedTool, McpError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("dexpaprika")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatSearch drops descriptions and caps rows", () => {
   const payload = {
@@ -242,7 +234,7 @@ test("callTool unknown name", async () => {
 test("sync DexPaprika writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
   pool.connectors = CONNECTORS.withAdapter("dexpaprika", {
     async validate(creds) {
       const apiKey = creds.token;
@@ -252,11 +244,10 @@ test("sync DexPaprika writes the curated catalog", async () => {
     },
   });
   const [ciphertext, nonce] = encryptPayload({ token: "api_test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce });
   const server = serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `dexpaprika_${spec.name}`));
   assert.deepEqual(first, second);
@@ -265,7 +256,7 @@ test("sync DexPaprika writes the curated catalog", async () => {
 
 test("sync DexPaprika rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("dexpaprika", {
     async validate() {
       throw new ConnectorError("invalid key", 401);
@@ -273,7 +264,7 @@ test("sync DexPaprika rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }), serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }), { force: true }),
+    () => pool.syncTools(connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }), serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401 && error.message === "invalid key",
   );
 });
@@ -281,7 +272,7 @@ test("sync DexPaprika rejects a bad key", async () => {
 test("call DexPaprika dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("dexpaprika", {
     async call(name, arguments_, creds) {
       seen.name = name;
@@ -292,11 +283,9 @@ test("call DexPaprika dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "api_test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_dp", status: "connected", ciphertext, nonce }),
     serverRow("dexpaprika", { id: "mcp_dexpaprika", auth: "token" }),
-    "search",
-    { query: "sol" },
+    { tool: "search", arguments: { query: "sol" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "tokens\nsolana  sol  SOL  Solana  p=100");
   assert.deepEqual(seen, { name: "search", arguments: { query: "sol" }, api_key: "api_test" });

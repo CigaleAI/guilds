@@ -6,6 +6,7 @@ import { writeAgentTask } from "../../src/agents/task.js";
 import { agentActor, artifactStore, displayPathFor, operatorActor, ownerPrefix, recordDisplayPath } from "../../src/artifacts/index.js";
 import { getMcpServerBySlug } from "../../src/connectors/servers.js";
 import { runItem } from "../../src/db/views.js";
+import { mcpDatabase, type RemoteCall } from "../../src/mcp/index.js";
 import { buildApp } from "../../src/app.js";
 import { changeGuild } from "../../src/guilds/changes.js";
 import { connect } from "../../src/seed/connect.js";
@@ -390,15 +391,10 @@ test("studio reads agent access, script source, and granted connections", { time
   const schedules = new Schedules(scheduleDatabase(db));
   const calls: Array<{ remote: string; args: Record<string, unknown> }> = [];
   const mcp = {
-    async call(
-      _db: unknown,
-      _connection: Record<string, unknown>,
-      _server: Record<string, unknown>,
-      remoteName: string,
-      arguments_: Record<string, unknown>,
-    ) {
-      calls.push({ remote: remoteName, args: arguments_ });
-      return JSON.stringify({ remote: remoteName, echo: arguments_, leaked: "notion-secret-token" });
+    database: mcpDatabase(db),
+    async call(_connection: unknown, _server: unknown, call: RemoteCall) {
+      calls.push({ remote: call.tool, args: call.arguments });
+      return JSON.stringify({ remote: call.tool, echo: call.arguments, leaked: "notion-secret-token" });
     },
   };
   const studio = new StudioService({

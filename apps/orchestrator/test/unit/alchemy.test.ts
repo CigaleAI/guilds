@@ -13,26 +13,18 @@ import {
   nftTool,
   ping,
 } from "../../src/connectors/alchemy/client.js";
-import { ListedTool, McpError, McpPool } from "../../src/mcp/index.js";
+import { ListedTool, McpError, McpPool, OPERATOR_CALLER } from "../../src/mcp/index.js";
 import { CONNECTORS } from "../../src/connectors/index.js";
 import { ConnectorError } from "../../src/connectors/types.js";
 import { HEX_MASTER_KEY } from "../helpers/env.js";
 import { mockFetch } from "../helpers/http.js";
 import { serverRow } from "../helpers/servers.js";
 import { connectionRow } from "../helpers/servers.js";
+import { MemoryMcpDatabase } from "../helpers/mcp-database.js";
 
 const KEY = decodeMasterKey(HEX_MASTER_KEY);
 const TOOLS = CONNECTORS.bySlug("alchemy")!.manifest.tools!;
 
-class MemoryDb {
-  rows: Array<Record<string, unknown>> = [];
-  async replaceMcpTools(_id: string, tools: ListedTool[]) {
-    this.rows = tools.map((tool) => ({ ...tool }));
-  }
-  async listMcpTools() {
-    return this.rows;
-  }
-}
 
 test("formatHoldings drops images and descriptions", () => {
   const payload = {
@@ -259,7 +251,7 @@ test("callTool unknown name", async () => {
 test("sync Alchemy writes the curated catalog", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   let pinged = 0;
-  const pool = new McpPool(10 * 60 * 1000);
+  const pool = new McpPool(new MemoryMcpDatabase(), 10 * 60 * 1000);
   pool.connectors = CONNECTORS.withAdapter("alchemy", {
     async validate(creds) {
       const apiKey = creds.token;
@@ -269,11 +261,10 @@ test("sync Alchemy writes the curated catalog", async () => {
     },
   });
   const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
-  const db = new MemoryDb();
   const connection = connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce });
   const server = serverRow("alchemy", { id: "mcp_alchemy", auth: "token" });
-  const first = await pool.syncTools(db as never, connection, server, { force: true });
-  const second = await pool.syncTools(db as never, connection, server);
+  const first = await pool.syncTools(connection, server, { force: true });
+  const second = await pool.syncTools(connection, server);
   assert.equal(pinged, 1);
   assert.deepEqual(first.map((tool) => tool.namespaced_name), TOOLS.map((spec) => `alchemy_${spec.name}`));
   assert.deepEqual(first, second);
@@ -282,7 +273,7 @@ test("sync Alchemy writes the curated catalog", async () => {
 
 test("sync Alchemy rejects a bad key", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("alchemy", {
     async validate() {
       throw new ConnectorError("invalid key", 401);
@@ -290,7 +281,7 @@ test("sync Alchemy rejects a bad key", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "bad" }, KEY);
   await assert.rejects(
-    () => pool.syncTools(new MemoryDb() as never, connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }), serverRow("alchemy", { id: "mcp_alchemy", auth: "token" }), { force: true }),
+    () => pool.syncTools(connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }), serverRow("alchemy", { id: "mcp_alchemy", auth: "token" }), { force: true }),
     (error: unknown) => error instanceof McpError && error.status === 401,
   );
 });
@@ -298,7 +289,7 @@ test("sync Alchemy rejects a bad key", async () => {
 test("call Alchemy dispatches", async () => {
   process.env.SECRETS_MASTER_KEY = HEX_MASTER_KEY;
   const seen: Record<string, unknown> = {};
-  const pool = new McpPool();
+  const pool = new McpPool(new MemoryMcpDatabase());
   pool.connectors = CONNECTORS.withAdapter("alchemy", {
     async call(name, arguments_, creds) {
       seen.name = name;
@@ -309,11 +300,9 @@ test("call Alchemy dispatches", async () => {
   });
   const [ciphertext, nonce] = encryptPayload({ token: "alc-test" }, KEY);
   const stored = await pool.call(
-    new MemoryDb() as never,
     connectionRow({ id: "conn_alc", status: "connected", ciphertext, nonce }),
     serverRow("alchemy", { id: "mcp_alchemy", auth: "token" }),
-    "holdings",
-    { owner: "0xd8da" },
+    { tool: "holdings", arguments: { owner: "0xd8da" }, caller: OPERATOR_CALLER },
   );
   assert.equal(stored, "0xd8da  ethereum  total=0");
   assert.deepEqual(seen, { name: "holdings", arguments: { owner: "0xd8da" }, api_key: "alc-test" });

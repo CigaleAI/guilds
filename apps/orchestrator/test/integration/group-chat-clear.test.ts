@@ -21,6 +21,7 @@ import {
   postUserGroupMessage,
 } from "../../src/db/group-chat.js";
 import { agentConfig, runSnapshot } from "../helpers/generation.js";
+import { mcpDatabase, McpPool } from "../../src/mcp/index.js";
 
 const OWNER = {
   "X-Guilds-User": "user_operator",
@@ -48,6 +49,7 @@ test(
     const workspaceRoot = tempDir("guilds-group-clear-workspaces-");
     const generation = new GenerationLoop({
       db: generationDatabase(db),
+      mcp: new McpPool(mcpDatabase(db)),
       notes,
       workspaceRoot,
       sandboxes: new ExportSandboxes(workspaceRoot),

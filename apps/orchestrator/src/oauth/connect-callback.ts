@@ -15,7 +15,6 @@ import {
   requireGithubApp,
   userAuthorizationUrl,
 } from "../github/index.js";
-import { mcpDatabase } from "../mcp/index.js";
 import {
   accountHint,
   ensureClient,
@@ -109,7 +108,7 @@ async function finishOauthConnection(
   }
   await bindToOwner(services.db, connected, now);
   try {
-    await services.mcp?.syncTools(mcpDatabase(services.db), connected, server, { force: true });
+    await services.mcp?.syncTools(connected, server, { force: true });
   } catch {
     // The login stands; its tools list on the next sync.
   }

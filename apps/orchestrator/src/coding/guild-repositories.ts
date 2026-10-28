@@ -30,7 +30,8 @@ import {
 import { installationIdOf, RepositoryAccessError } from "../github/tokens.js";
 import { canSeeGuild } from "../guilds/validation.js";
 import { newId } from "../lib/ids.js";
-import { markDisconnected, mcpDatabase, type McpPool } from "../mcp/index.js";
+import type { McpPool } from "../mcp/index.js";
+import { retireLogin } from "../mcp/service.js";
 import { seesConnection } from "../mcp/visibility.js";
 import {
   DEFAULT_BRANCH,
@@ -106,7 +107,7 @@ export async function reachableRepositories(
     );
   } catch (error) {
     if (error instanceof GithubInstallationGoneError) {
-      await markDisconnected(mcpDatabase(services.db), connection);
+      await retireLogin(services.mcp, services.db, connection, "installation_gone");
       throw new RepositoryValidationError(
         "GitHub refused the installation; the connection is now disconnected",
       );

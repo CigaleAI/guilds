@@ -4,14 +4,14 @@ import type {
   McpConnectionRow,
 } from "../db/mcp.js";
 import { newId } from "../lib/ids.js";
-import type { ListedTool } from "../mcp/index.js";
-import { markDisconnected, mcpDatabase, McpDisconnectedError, McpError } from "../mcp/index.js";
+import { McpDisconnectedError, McpError, type McpPool } from "../mcp/index.js";
+import { retireLogin, type LoginFailure } from "../mcp/service.js";
 import { authFields } from "./manifest.js";
 import type { ConnectorRegistry } from "./registry.js";
 import { installedConnectors } from "./index.js";
 import { settingsComplete, SettingsError, validateSettings } from "./settings.js";
 import type { Credentials } from "./types.js";
-import { connectMcp, deleteMcpConnection, getMcpConnectionForOwner } from "../db/mcp.js";
+import { connectMcp, getMcpConnectionForOwner } from "../db/mcp.js";
 import { bindQuery, type Queryable } from "../db/pg.js";
 import type { LoadedConnector } from "./load.js";
 
@@ -57,28 +57,21 @@ export class ConnectError extends Error {
   }
 }
 
-/** The db/ functions a login is connected and bound through, on `db`. */
+/** The pool a login is validated, listed and forgotten through. */
+export type ConnectPool = Pick<McpPool, "validate" | "syncTools" | "forget">;
+
+/** The db/ functions a login is connected and bound through, and the retiring of it, on `db`. */
 export function connectDatabase(db: Queryable) {
   return {
-    ...mcpDatabase(db),
     getMcpConnectionForOwner: bindQuery(db, getMcpConnectionForOwner),
     connectMcp: bindQuery(db, connectMcp),
-    deleteMcpConnection: bindQuery(db, deleteMcpConnection),
+    /** Retires a login that stopped working, and `pool` forgets it (`retireLogin`). */
+    retireLogin: (pool: ConnectPool, connection: McpConnectionRow, failure: LoginFailure) =>
+      retireLogin(pool, db, connection, failure),
   };
 }
 
 export type ConnectDatabase = ReturnType<typeof connectDatabase>;
-
-export type ConnectPool = {
-  validate(server: LoadedConnector, credentials: Credentials, settings?: Record<string, unknown>): Promise<string>;
-  syncTools(
-    db: ConnectDatabase,
-    connection: McpConnectionRow,
-    server: LoadedConnector,
-    options?: { force?: boolean; validate?: boolean },
-  ): Promise<ListedTool[]>;
-  forget(connectionId: string): void;
-};
 
 /** The form's values for a token login, by field: every declared field trimmed, the required ones present. */
 export function tokenCredentials(
@@ -202,15 +195,10 @@ export async function connect(
     return { connection, outcome: "installed" };
   }
   try {
-    await pool.syncTools(db, connection, server, { force: true, validate: false });
+    await pool.syncTools(connection, server, { force: true, validate: false });
   } catch (error) {
     if (error instanceof McpError && (error.status === 401 || error.status === 403)) {
-      if (existing === null) {
-        await db.deleteMcpConnection(connection.id);
-      } else {
-        await markDisconnected(db, connection);
-      }
-      pool.forget(connection.id);
+      await db.retireLogin(pool, connection, existing === null ? "never_connected" : "unauthorised");
       throw new ConnectError(422, "api key was rejected");
     }
   }
